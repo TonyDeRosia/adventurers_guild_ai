@@ -13,10 +13,11 @@ from engine.save_manager import SaveManager
 class GameStateManager:
     """Owns in-memory campaign state and persistence interactions."""
 
-    def __init__(self, data_dir: Path) -> None:
-        self.data_dir = data_dir
-        self.sample_campaign_path = data_dir / "sample_campaign.json"
-        self.save_manager = SaveManager(data_dir / "saves")
+    def __init__(self, content_data_dir: Path, saves_dir: Path, user_data_dir: Path | None = None) -> None:
+        self.content_data_dir = content_data_dir
+        self.user_data_dir = user_data_dir
+        self.sample_campaign_path = content_data_dir / "sample_campaign.json"
+        self.save_manager = SaveManager(saves_dir)
 
     def new_from_sample(self) -> CampaignState:
         payload = json.loads(self.sample_campaign_path.read_text(encoding="utf-8"))

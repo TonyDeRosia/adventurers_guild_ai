@@ -6,7 +6,7 @@ import argparse
 import traceback
 import webbrowser
 
-from app.pathing import data_dir, project_root, static_dir
+from app.pathing import initialize_user_data_paths, project_root, static_dir
 
 
 def _print_banner() -> None:
@@ -17,12 +17,13 @@ def _print_banner() -> None:
 
 def _initialize_paths() -> None:
     root = project_root()
-    resolved_data_dir = data_dir()
+    paths = initialize_user_data_paths()
     resolved_static = static_dir()
-    resolved_data_dir.mkdir(parents=True, exist_ok=True)
     if not resolved_static.exists():
         print(f"Warning: static assets not found at {resolved_static}")
     print(f"Runtime root: {root}")
+    print(f"Content data: {paths.content_data}")
+    print(f"User data: {paths.user_data}")
 
 
 def _parse_args() -> argparse.Namespace:

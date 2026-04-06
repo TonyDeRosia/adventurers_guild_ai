@@ -22,7 +22,7 @@ from images.base import ImageGenerationRequest, ImageGenerationResult, ImageGene
 from images.local_adapter import LocalPlaceholderImageAdapter
 from images.workflow_manager import WorkflowManager
 from models.registry import create_model_adapter
-from app.pathing import data_dir, project_root, static_dir
+from app.pathing import initialize_user_data_paths, project_root, static_dir
 from app.runtime_config import ModelRuntimeConfig, RuntimeConfigStore
 
 
@@ -37,13 +37,14 @@ class WebRuntime:
 
     def __init__(self, root: Path) -> None:
         self.root = root
-        self.data_dir = data_dir()
-        self.state_manager = GameStateManager(self.data_dir)
-        self.config_store = RuntimeConfigStore(self.data_dir / "app_config.json")
+        self.paths = initialize_user_data_paths()
+        self.data_dir = self.paths.user_data
+        self.state_manager = GameStateManager(self.paths.content_data, self.paths.saves, self.paths.user_data)
+        self.config_store = RuntimeConfigStore(self.paths.config / "app_config.json")
         self.model_config = self.config_store.load()
-        self.engine = CampaignEngine(self._create_model_adapter(), data_dir=self.data_dir)
-        self.workflow_manager = WorkflowManager(self.data_dir / "workflows")
-        self.generated_image_dir = self.data_dir / "generated_images"
+        self.engine = CampaignEngine(self._create_model_adapter(), data_dir=self.paths.content_data)
+        self.workflow_manager = WorkflowManager(self.paths.workflows)
+        self.generated_image_dir = self.paths.generated_images
         self.image_adapter = self._create_image_adapter()
         self.session = WebSession(state=self._default_state())
         self._append_message("system", "Web session initialized. GUI mode is active.")
@@ -170,7 +171,7 @@ class WebRuntime:
         return []
 
     def list_saves(self) -> list[str]:
-        save_dir = self.data_dir / "saves"
+        save_dir = self.paths.saves
         if not save_dir.exists():
             return []
         return sorted(path.stem for path in save_dir.glob("*.json"))
