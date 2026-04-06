@@ -14,9 +14,10 @@ End users do **not** need Python, source files, or repository batch scripts.
 
 ## Installed App Launch Behavior
 
-- The installed executable starts the local backend service.
-- It waits for the `/health` endpoint to report ready.
-- It opens the browser UI automatically at `http://127.0.0.1:8000` by default.
+- The launcher has a single startup owner (`run.py` / `AdventurerGuildAI.exe`).
+- It checks `http://127.0.0.1:8000/health` first.
+- If healthy, it reuses the existing backend and opens the browser without starting a second server.
+- If not healthy, it starts the local backend service exactly once, waits for `/health`, then opens the browser UI.
 - If auto-open is blocked, the app prints a clear manual URL.
 - Terminal mode is disabled in standard frozen/end-user builds unless explicitly enabled for debugging.
 
@@ -74,7 +75,7 @@ Prompts for an install folder, copies project files there, builds `AdventurerGui
 ```bat
 launch_browser_window.bat
 ```
-Starts `AdventurerGuildAI.exe` when present (or source mode fallback) and opens the browser UI window at `http://127.0.0.1:8000`.
+Starts `AdventurerGuildAI.exe` when present (or source mode fallback to `run.py`). The launcher delegates startup to that single owner; browser-open logic is handled there after `/health` is ready.
 
 ## Troubleshooting
 

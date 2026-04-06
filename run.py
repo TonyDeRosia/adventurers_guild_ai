@@ -115,17 +115,32 @@ def _try_launch_browser(url: str) -> BrowserLaunchResult:
 
 def _launch_browser_when_ready(host: str, port: int) -> None:
     browser_url = f"http://{_browser_host(host)}:{port}"
+    print(f"[startup] Waiting for health at {browser_url}/health ...")
     ready, reason = _wait_for_web_health(browser_url)
     if not ready:
-        print(f"[web] Browser auto-open skipped: {reason}")
-        print(f"[web] Open this URL manually: {browser_url}")
+        print(f"[startup] Browser auto-open skipped: {reason}")
+        print(f"[startup] Open this URL manually: {browser_url}")
         return
+    print("[startup] Health ready.")
+    print(f"[startup] Opening browser: {browser_url}")
     result = _try_launch_browser(browser_url)
     if result.success:
-        print(f"[web] Opened browser via {result.method}: {browser_url}")
+        print(f"[startup] Opened browser via {result.method}: {browser_url}")
     else:
-        print(f"[web] Could not auto-open browser ({result.method}): {result.reason}")
-        print(f"[web] Open this URL manually: {browser_url}")
+        print(f"[startup] Could not auto-open browser ({result.method}): {result.reason}")
+        print(f"[startup] Open this URL manually: {browser_url}")
+
+
+def _is_address_in_use_error(exc: OSError) -> bool:
+    message = str(exc).lower()
+    winerror = getattr(exc, "winerror", None)
+    errno = getattr(exc, "errno", None)
+    return (
+        winerror == 10048
+        or errno in {98, 10048}
+        or "address already in use" in message
+        or "only one usage of each socket address" in message
+    )
 
 
 def main() -> int:
@@ -148,12 +163,19 @@ def main() -> int:
             if FastAPI is None or uvicorn is None:
                 raise RuntimeError("FastAPI/uvicorn is not installed. Install dependencies and try again.")
 
-            print("Starting backend...")
+            browser_url = f"http://{_browser_host(args.host)}:{args.port}"
+            print(f"[startup] Checking for existing backend at {browser_url}/health ...")
+            already_running, _ = _wait_for_web_health(browser_url, timeout_seconds=1.5)
+            if already_running:
+                print(f"[startup] Backend already running at {browser_url}")
+                print(f"[startup] Opening browser without starting another backend.")
+                _launch_browser_when_ready(args.host, args.port)
+                return 0
+
+            print(f"[startup] Starting backend at http://{args.host}:{args.port} ...")
             print("Initializing app...")
             runtime = WebRuntime(project_root())
             app = create_web_app(runtime=runtime, static_root=_resolve_static_root())
-            print(f"Launching server on http://{args.host}:{args.port}")
-            print(f"Open your browser at: http://{args.host}:{args.port}")
             opener_thread = threading.Thread(
                 target=_launch_browser_when_ready,
                 args=(args.host, args.port),
@@ -161,7 +183,24 @@ def main() -> int:
                 name="browser-launcher",
             )
             opener_thread.start()
-            uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+            print(f"[startup] Launching server on http://{args.host}:{args.port}")
+            try:
+                uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+            except OSError as exc:
+                if not _is_address_in_use_error(exc):
+                    raise
+                print(f"[startup] Backend start reported port conflict: {exc}")
+                print(f"[startup] Verifying whether {browser_url} is already healthy...")
+                recovered, reason = _wait_for_web_health(browser_url, timeout_seconds=2.0)
+                if recovered:
+                    print(f"[startup] Backend already running at {browser_url}")
+                    _launch_browser_when_ready(args.host, args.port)
+                    return 0
+                print(
+                    f"[startup] Port {args.port} is occupied, but /health is not ready ({reason}). "
+                    f"Another process is using the port."
+                )
+                return 1
             return 0
 
         from app.main import main as terminal_main
