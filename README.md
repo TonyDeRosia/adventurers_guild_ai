@@ -4,10 +4,10 @@ Adventurer's Guild AI is a local-first fantasy campaign application with a brows
 
 ## Launch model (single clear paths)
 
-- **Developer source path (root):** `dev_run.bat`
+- **Developer source path (root):** `run.bat`
 - **End-user installed path:** `AdventurerGuildAI-Setup.exe` installer → Start Menu/Desktop shortcut
 
-`run.bat` has been removed to eliminate launch ambiguity.
+`run.bat` is the one primary source launcher. `dev_run.bat` and `tools\dev_run.bat` are compatibility wrappers.
 
 ---
 
@@ -30,15 +30,15 @@ End users should **not** run repository `.bat` scripts.
 
 ### Source run (browser UI default)
 ```bat
-dev_run.bat
+run.bat
 ```
 
 ### Optional terminal mode (developer-only)
 ```bat
-dev_run.bat --terminal
+run.bat --terminal
 ```
 
-`dev_run.bat` will:
+`run.bat` will:
 - detect Python (`py -3` or `python`),
 - install dependencies via `tools\setup_dev_env.bat` when needed,
 - start backend in web mode by default,
@@ -107,11 +107,12 @@ User data includes saves/config/logs/generated images and remains separate from 
 ## Script responsibilities
 
 ### Root
-- `dev_run.bat` → **primary developer source launcher** (browser by default, pause-on-error).
+- `run.bat` → **primary developer source launcher** (browser by default, pause-on-error).
+- `dev_run.bat` → compatibility wrapper to `run.bat`.
 - `launch_packaged_exe.bat` → maintenance helper to launch an existing packaged exe from the repo tree.
 
 ### tools/ (developer-only)
-- `tools\dev_run.bat` → compatibility wrapper that forwards to root `dev_run.bat`.
+- `tools\dev_run.bat` → compatibility wrapper that forwards to root `run.bat`.
 - `tools\setup_dev_env.bat` → install/update Python dependencies for development.
 - `tools\build_exe.bat` → build standalone exe with PyInstaller.
 - `tools\build_installer.bat` → build installer with Inno Setup.
