@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from engine.entities import CampaignState
+from engine.entities import CampaignState, SessionSummary
 
 
 class SaveManager:
@@ -19,6 +19,16 @@ class SaveManager:
         return self.save_dir / f"{slot}.json"
 
     def save(self, state: CampaignState, slot: str = "autosave") -> Path:
+        latest = state.session_summaries[-1] if state.session_summaries else None
+        if latest is None or latest.trigger != f"save:{slot}" or latest.turn != state.turn_count:
+            state.session_summaries.append(
+                SessionSummary(
+                    turn=state.turn_count,
+                    trigger=f"save:{slot}",
+                    summary=f"Save checkpoint written to slot '{slot}' at turn {state.turn_count}.",
+                    location_id=state.current_location_id,
+                )
+            )
         path = self._save_path(slot)
         path.write_text(json.dumps(state.to_dict(), indent=2), encoding="utf-8")
         return path

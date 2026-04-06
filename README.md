@@ -4,6 +4,7 @@ A local-first, modular fantasy campaign engine with:
 - Existing terminal gameplay loop (preserved)
 - New additive local web chat scaffold
 - Optional image generation architecture via workflow templates
+- Campaign memory + retrieval + analysis mode
 
 ## Install
 
@@ -127,6 +128,74 @@ To wire ComfyUI in later phases:
 2. Instantiate and set `ComfyUIAdapter` in `WebRuntime`.
 3. Keep using workflow files in `data/workflows/` for template-driven prompts.
 
+## Core campaign intelligence flow (local-first)
+
+### Memory flow
+
+The engine now tracks five additive memory layers in save-compatible state:
+
+- `recent_memory`: short rolling context from the latest turns
+- `long_term_memory`: structured entries (quest/NPC/world/summary categories)
+- `session_summaries`: compact milestone summaries for reuse
+- `unresolved_plot_threads`: open hooks to revisit
+- `important_world_facts`: durable world truths for continuity
+
+Memory is updated automatically after each turn, and save checkpoints are also recorded as summaries.
+
+### Retrieval flow
+
+Before narration generation, a retrieval pipeline ranks and gathers context by:
+
+- current location
+- active quests
+- current NPC focus
+- recent actions
+- important world-state flags
+
+The selected memory snippets are assembled into the prompt as a dedicated `[Memory Context]` layer.
+
+### Summary flow
+
+Summaries are generated for important actions (movement, combat, dialogue, quest changes) and save events.
+Each summary is compact and structured with turn, trigger, location, related quest IDs, and optional NPC/world references.
+
+### Analysis mode
+
+Use terminal command `analyze <question>` for campaign intelligence queries, for example:
+
+- `analyze summarize my campaign so far`
+- `analyze what quests are active`
+- `analyze what does this npc think of me`
+- `analyze what happened recently`
+- `analyze what choices are affecting the world`
+
+Use `summarize` for a quick campaign state digest.
+
+### Prompt assembly layers
+
+Prompt construction is now explicitly layered:
+
+1. system role
+2. campaign tone
+3. content settings (narration-only maturity/tone layer)
+4. requested mode (`play`, `summarize`, `analyze`)
+5. memory context
+6. scene context
+7. player state summary
+
+## Updated terminal command flow
+
+- Existing commands remain available (`look`, `move`, `talk`, `attack`, etc.)
+- New commands:
+  - `summarize`
+  - `analyze <question>`
+- Output now uses a lightweight chat-style presentation:
+  - player (`🧭 You`)
+  - narrator (`📜 Narrator`)
+  - npc (`🗣️ NPC`)
+  - quest updates (`📌 Quest`)
+  - system (`⚙️ System`)
+
 ## Existing game systems (preserved)
 
 - Save/load
@@ -136,6 +205,7 @@ To wire ComfyUI in later phases:
 - Inventory/stats
 - World state + faction/relationship tracking
 - Model adapter scaffold
+- Save compatibility with additive memory fields
 
 ## Run tests
 

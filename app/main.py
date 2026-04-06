@@ -7,6 +7,7 @@ from pathlib import Path
 from engine.campaign_engine import CampaignEngine
 from engine.game_state_manager import GameStateManager
 from models.registry import create_model_adapter
+from app.terminal_presenter import TerminalPresenter
 
 
 def _print_startup_banner() -> None:
@@ -25,6 +26,7 @@ def main() -> None:
 
     model = create_model_adapter("null")
     engine = CampaignEngine(model, data_dir=root / "data")
+    presenter = TerminalPresenter()
 
     print("Type 'help' for commands. Type 'exit' to quit.")
     while True:
@@ -36,26 +38,28 @@ def main() -> None:
 
         lower = action.lower()
         if lower == "save":
+            print(presenter.format_player(action))
             path = state_manager.save(state, "autosave")
-            print(f"Saved campaign to {path}")
+            print(f"⚙️ System: Saved campaign to {path}")
             continue
 
         if lower == "load":
+            print(presenter.format_player(action))
             if state_manager.can_load("autosave"):
                 state = state_manager.load("autosave")
-                print("Loaded autosave.")
+                print("⚙️ System: Loaded autosave.")
             else:
-                print("No autosave found.")
+                print("⚙️ System: No autosave found.")
             continue
 
+        print(presenter.format_player(action))
         result = engine.run_turn(state, action)
-        for message in result.system_messages:
-            print(f"[system] {message}")
-        print(f"[narrator] {result.narrative}")
+        for line in presenter.render_turn(result):
+            print(line)
 
         if result.should_exit:
             state_manager.save(state, "autosave")
-            print("Progress saved. Goodbye.")
+            print("⚙️ System: Progress saved. Goodbye.")
             break
 
 

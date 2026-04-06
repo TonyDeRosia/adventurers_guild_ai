@@ -10,8 +10,11 @@ from engine.content_registry import ContentRegistry
 from engine.dialogue_service import DialogueService
 from engine.entities import CampaignState
 from engine.inventory import InventoryService
+from memory.campaign_memory import CampaignMemory
 from memory.npc_memory import NPCMemoryTracker
 from memory.quest_tracker import QuestTracker
+from memory.retrieval import MemoryRetrievalPipeline, RetrievalRequest
+from memory.summary import SummaryGenerator
 from memory.world_state import WorldStateTracker
 from models.base import NarrationModelAdapter
 from prompts.renderer import PromptRenderer
@@ -39,6 +42,9 @@ class CampaignEngine:
         self.inventory = InventoryService(self.content)
         self.character_sheet = CharacterSheetService()
         self.dialogue = DialogueService(self.content, self.quests, self.npc_memory)
+        self.memory = CampaignMemory()
+        self.retrieval = MemoryRetrievalPipeline()
+        self.summary = SummaryGenerator()
 
     def run_turn(self, state: CampaignState, action: str) -> TurnResult:
         state.turn_count += 1
@@ -47,6 +53,7 @@ class CampaignEngine:
         self.quests.refresh_availability(state)
         normalized = action.strip().lower()
         system_messages: list[str] = []
+        requested_mode = "play"
 
         if normalized in {"exit", "quit"}:
             return TurnResult(narrative="Your adventure pauses here.", system_messages=[], should_exit=True)
@@ -249,13 +256,22 @@ class CampaignEngine:
             system_messages.append(
                 "Commands: look, move <location_id>, talk <npc_id>, choose <number>, attack, rest, status, "
                 "inventory, use <item>, equip <item>, take <item>, drop <item>, quests, sheet, "
-                "defend, ability, flee, save, load, help, exit"
+                "defend, ability, flee, analyze <question>, summarize, save, load, help, exit"
             )
+
+        elif normalized == "summarize":
+            requested_mode = "summarize"
+            system_messages.append(self._campaign_summary(state))
+
+        elif normalized.startswith("analyze"):
+            requested_mode = "analyze"
+            question = action.split(" ", 1)[1] if " " in action else "summarize my campaign so far"
+            system_messages.append(self._analysis_response(state, question))
 
         else:
             system_messages.append("Action noted.")
 
-        return self._finish_turn(state, action, system_messages)
+        return self._finish_turn(state, action, system_messages, requested_mode=requested_mode)
 
     def _maybe_start_location_encounter(self, state: CampaignState, system_messages: list[str]) -> None:
         if state.current_location_id == "moonfall_catacombs" and not state.world_flags.get("catacombs_cleared", False):
@@ -303,14 +319,115 @@ class CampaignEngine:
                 state.world_events.append("catacombs_stabilized_with_relic")
                 system_messages.append("Thorne accepts the Moonsigil Relic as proof and seals the crypt entrance.")
 
-    def _finish_turn(self, state: CampaignState, action: str, system_messages: list[str]) -> TurnResult:
+    def _finish_turn(
+        self, state: CampaignState, action: str, system_messages: list[str], requested_mode: str = "play"
+    ) -> TurnResult:
+        self.memory.record_recent(state, f"Player action: {action}")
         for msg in system_messages:
             self.quests.add_event(state, msg)
+            self.memory.record_recent(state, msg)
+            self._capture_important_memory(state, msg)
+
+        if self.summary.should_summarize(action, system_messages):
+            summary = self.summary.build_summary(state, action, system_messages)
+            self.memory.add_session_summary(
+                state,
+                trigger=action,
+                summary=summary,
+                quest_ids=[quest.id for quest in state.quests.values() if quest.status == "active"],
+                npc_ids=[npc_id for npc_id, npc in state.npcs.items() if npc.location_id == state.current_location_id],
+                world_flags=[k for k, v in state.world_flags.items() if v],
+            )
+            self.memory.record_long_term(
+                state,
+                category="summary",
+                text=summary,
+                location_id=state.current_location_id,
+                weight=2,
+            )
+
         location_summary = self.world.get_current_location_summary(state)
-        turn_prompt = self.prompts.build_turn_prompt(state, action, location_summary)
-        system_prompt = self.prompts.build_system_prompt(state)
-        narrative = self.model.generate(turn_prompt, system_prompt)
+        retrieval_request = RetrievalRequest(
+            location_id=state.current_location_id,
+            active_quest_ids=[quest.id for quest in state.quests.values() if quest.status == "active"],
+            current_npc_id=state.active_dialogue_npc_id,
+            recent_actions=[event.lower() for event in state.event_log[-4:]],
+            important_world_state=[flag.lower() for flag, enabled in state.world_flags.items() if enabled],
+        )
+        memory_context = self.retrieval.retrieve(state, retrieval_request)
+        prompt_packet = self.prompts.build_prompt_packet(
+            state,
+            action=action,
+            location_summary=location_summary,
+            memory=memory_context,
+            requested_mode=requested_mode,
+        )
+        narrative = self.model.generate(prompt_packet.turn_prompt, prompt_packet.system_prompt)
         return TurnResult(narrative=narrative, system_messages=system_messages)
+
+    def _campaign_summary(self, state: CampaignState) -> str:
+        active_quests = [quest.title for quest in state.quests.values() if quest.status == "active"]
+        recent = state.recent_memory[-3:] if state.recent_memory else state.event_log[-3:]
+        return (
+            f"Campaign '{state.campaign_name}' at turn {state.turn_count}. "
+            f"Location: {state.current_location_id}. "
+            f"Active quests: {', '.join(active_quests) if active_quests else 'none'}. "
+            f"Recent: {' | '.join(recent) if recent else 'no recent events'}."
+        )
+
+    def _analysis_response(self, state: CampaignState, question: str) -> str:
+        lowered = question.lower()
+        if "active quest" in lowered:
+            active = self.quests.list_active_quests(state)
+            return "Active quests: " + ("; ".join(active) if active else "none")
+        if "npc" in lowered and ("think" in lowered or "relationship" in lowered):
+            npc_id = state.active_dialogue_npc_id
+            if not npc_id:
+                npc_id = next((n.id for n in state.npcs.values() if n.location_id == state.current_location_id), None)
+            if npc_id and npc_id in state.npcs:
+                npc = state.npcs[npc_id]
+                return f"{npc.name} disposition={npc.disposition}, tier={npc.relationship_tier}."
+            return "No relevant NPC is currently in focus."
+        if "recent" in lowered or "happened" in lowered:
+            return "Recent actions: " + (" | ".join(state.recent_memory[-5:]) if state.recent_memory else "none")
+        if "choice" in lowered or "affecting the world" in lowered:
+            flags = [f"{k}=true" for k, v in state.world_flags.items() if v]
+            return "World-impacting choices: " + (", ".join(flags) if flags else "none tracked yet")
+        return self._campaign_summary(state)
+
+    def _capture_important_memory(self, state: CampaignState, message: str) -> None:
+        lowered = message.lower()
+        if "quest" in lowered and ("active" in lowered or "completed" in lowered):
+            self.memory.record_long_term(
+                state,
+                category="quest",
+                text=message,
+                location_id=state.current_location_id,
+                quest_id=next((quest.id for quest in state.quests.values() if quest.status == "active"), None),
+                weight=3,
+            )
+        if "relationship tier" in lowered:
+            npc_id = state.active_dialogue_npc_id
+            self.memory.record_long_term(
+                state,
+                category="npc",
+                text=message,
+                location_id=state.current_location_id,
+                npc_id=npc_id,
+                weight=3,
+            )
+        if "travel to" in lowered or "defeated" in lowered:
+            self.memory.record_long_term(
+                state,
+                category="world",
+                text=message,
+                location_id=state.current_location_id,
+                weight=2,
+            )
+        if "you recover" in lowered or "find" in lowered:
+            self.memory.add_plot_thread(state, f"Follow up on discovery: {message}")
+        if "catacombs_cleared" in str(state.world_events[-2:]):
+            self.memory.add_world_fact(state, "The catacombs have been cleared, shifting town safety.")
 
     def _ensure_enemy_active(self, state: CampaignState, system_messages: list[str]) -> bool:
         if state.active_enemy_id is None or state.active_enemy_hp is None or state.active_enemy_hp <= 0:
