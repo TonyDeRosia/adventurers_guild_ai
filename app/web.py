@@ -401,6 +401,10 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     app.mount("/static", StaticFiles(directory=static_root), name="static")
     app.mount("/generated", StaticFiles(directory=runtime.generated_image_dir), name="generated")
 
+    @app.on_event("startup")
+    async def _log_server_ready() -> None:
+        print("Server ready (health endpoint active)")
+
     @app.exception_handler(HTTPException)
     async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse:
         return JSONResponse(status_code=exc.status_code, content={"error": str(exc.detail)})

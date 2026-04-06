@@ -49,7 +49,7 @@ if defined ENABLE_TERMINAL (
 )
 
 echo [source] Starting application...
-call %PYTHON_CMD% run.py %*
+call %PYTHON_CMD% -u run.py %*
 if errorlevel 1 (
     echo.
     echo [error] Launch failed with exit code %errorlevel%.
