@@ -2,34 +2,47 @@
 
 Adventurer's Guild AI is a local-first fantasy campaign application with a browser-first UI.
 
-## End User Install
+## Run from source (normal path)
 
-1. Download **`AdventurerGuildAI_Setup.exe`**.
-2. Run the installer.
-3. Choose your install folder in the installer wizard.
-4. (Optional) Enable desktop shortcut creation.
-5. Finish installation and launch the app from Start Menu/Desktop.
+1. Double click `run.bat` from the repository root.
+2. The script checks for Python (`py -3` first, then `python`).
+3. The script installs dependencies from `requirements.txt`.
+4. The script runs `python run.py`.
+5. `run.py` starts the backend once, waits for `/health`, and opens the browser UI.
 
-End users do **not** need Python, source files, or repository batch scripts.
+If startup fails, keep the console open and read the printed error details.
 
-## Installed App Launch Behavior
+### Source startup behavior
 
-- The launcher has a single startup owner (`run.py` / `AdventurerGuildAI.exe`).
-- It checks `http://127.0.0.1:8000/health` first.
-- If healthy, it reuses the existing backend and opens the browser without starting a second server.
-- If not healthy, it starts the local backend service exactly once, waits for `/health`, then opens the browser UI.
-- If auto-open is blocked, the app prints a clear manual URL.
-- Terminal mode is disabled in standard frozen/end-user builds unless explicitly enabled for debugging.
+- Browser UI is the default interface.
+- Terminal mode remains available only for fallback/debug usage.
+- If port `8000` is already in use, `run.py` prints a clear error and exits.
+- If browser auto-open fails, the launcher prints the manual URL.
 
-## Where User Data Is Stored
+## Packaging and build workflows (developer-only)
 
-The install directory is treated as program files (read-only app payload).
+These scripts are for packaging/distribution work and are **not** part of normal source running:
 
-Writable data is stored in the user profile:
+- Build standalone executable (PyInstaller):
+  ```bat
+  tools\build_exe.bat
+  ```
+- Build Windows installer (Inno Setup):
+  ```bat
+  tools\build_installer.bat
+  ```
+- Optional release handoff package:
+  ```bat
+  release\create_release_package.bat
+  ```
+
+## Where user data is stored
+
+Writable user data is stored in the user profile:
 - Primary location: `%LOCALAPPDATA%\AdventurerGuildAI`
 - Fallback: `%APPDATA%\AdventurerGuildAI`
 
-Mutable folders created there:
+Typical folders:
 - `saves/`
 - `config/`
 - `campaign_memory/`
@@ -38,53 +51,7 @@ Mutable folders created there:
 - `cache/`
 - `workflows/`
 
-The app seeds default configuration/workflow templates into the user-data area on first run.
-
-## Developer Build
-
-Developer scripts are in `tools\` and are not part of the end-user runtime path.
-
-### Build standalone executable (PyInstaller)
-```bat
-tools\build_exe.bat
-```
-Produces:
-- `dist\AdventurerGuildAI.exe`
-
-### Build Windows installer (Inno Setup)
-```bat
-tools\build_installer.bat
-```
-Produces:
-- `installer\Output\AdventurerGuildAI_Setup.exe`
-
-### Optional release handoff package
-```bat
-release\create_release_package.bat
-```
-Produces:
-- `release\user\AdventurerGuildAI_Setup.exe`
-
-### Bootstrap install + build + launch from source tree
-```bat
-run.bat
-```
-`run.bat` is the single bootstrap script for repository setup. It:
-1. Prompts for an install folder.
-2. Copies project files into that folder.
-3. Builds `AdventurerGuildAI.exe` in that install location.
-4. Launches `dist\AdventurerGuildAI.exe` directly.
-
-After bootstrap, `AdventurerGuildAI.exe` is the real runtime app. No secondary launcher batch file is required.
-
-### Developer source run (optional)
-```bat
-tools\dev_run.bat
-```
-Runs `run.py` directly for source-mode development and debugging.
-
 ## Troubleshooting
 
 - If browser did not open, use the printed URL manually (default `http://127.0.0.1:8000`).
-- If the port is already in use, relaunch with a different port in developer mode.
-- If building fails, verify Python 3.10+ and Inno Setup 6 are installed for developer workflows.
+- If a port conflict is reported, stop the other process or launch with a different port in developer mode.
