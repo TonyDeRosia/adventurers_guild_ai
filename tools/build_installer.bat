@@ -35,5 +35,5 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo Installer build complete: installer\Output\AdventurerGuildAI-Setup.exe
+echo Installer build complete: installer\Output\AdventurerGuildAI_Setup.exe
 exit /b 0

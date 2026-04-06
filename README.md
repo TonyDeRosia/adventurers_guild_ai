@@ -2,59 +2,76 @@
 
 Adventurer's Guild AI is a local-first fantasy campaign application with a browser-first UI.
 
-## Run from source
+## End User Install
 
-Double click `run.bat` at the repository root.
-
-What should happen:
-- The launcher detects Python (`py -3`, then `python`).
-- If dependencies are not initialized yet, it runs `tools\setup_dev_env.bat` automatically.
-- It starts `run.py` in browser mode by default.
-- The app opens `http://127.0.0.1:8000` after the `/health` readiness check passes.
-- If your browser does not open automatically, the launcher prints the local URL so you can open it manually.
-- If startup fails, the window stays open and shows the error.
-
-`run.bat` is the one primary source launcher.
-
-## Packaged release / installer
-
-End users should use the installed app, not repository scripts.
-
-1. Build/download `AdventurerGuildAI-Setup.exe`.
+1. Download **`AdventurerGuildAI_Setup.exe`**.
 2. Run the installer.
-3. Launch from Start Menu or Desktop shortcut.
+3. Choose your install folder in the installer wizard.
+4. (Optional) Enable desktop shortcut creation.
+5. Finish installation and launch the app from Start Menu/Desktop.
 
-Repository `.bat` files are for source development and release maintenance only.
+End users do **not** need Python, source files, or repository batch scripts.
 
-## Optional developer commands
+## Installed App Launch Behavior
 
-### Terminal mode (developer/debug only)
-```bat
-run.bat --terminal
-```
+- The installed executable starts the local backend service.
+- It waits for the `/health` endpoint to report ready.
+- It opens the browser UI automatically at `http://127.0.0.1:8000` by default.
+- If auto-open is blocked, the app prints a clear manual URL.
+- Terminal mode is disabled in standard frozen/end-user builds unless explicitly enabled for debugging.
 
-### Build standalone executable
+## Where User Data Is Stored
+
+The install directory is treated as program files (read-only app payload).
+
+Writable data is stored in the user profile:
+- Primary location: `%LOCALAPPDATA%\AdventurerGuildAI`
+- Fallback: `%APPDATA%\AdventurerGuildAI`
+
+Mutable folders created there:
+- `saves/`
+- `config/`
+- `campaign_memory/`
+- `logs/`
+- `generated_images/`
+- `cache/`
+- `workflows/`
+
+The app seeds default configuration/workflow templates into the user-data area on first run.
+
+## Developer Build
+
+Developer scripts are in `tools\` and are not part of the end-user path.
+
+### Build standalone executable (PyInstaller)
 ```bat
 tools\build_exe.bat
 ```
-Output:
+Produces:
 - `dist\AdventurerGuildAI.exe`
 
-### Build Windows installer
+### Build Windows installer (Inno Setup)
 ```bat
 tools\build_installer.bat
 ```
-Output:
-- `installer\Output\AdventurerGuildAI-Setup.exe`
+Produces:
+- `installer\Output\AdventurerGuildAI_Setup.exe`
 
-### Prepare installer-only handoff package
+### Optional release handoff package
 ```bat
 release\create_release_package.bat
 ```
-Output:
-- `release\user\AdventurerGuildAI-Setup.exe`
+Produces:
+- `release\user\AdventurerGuildAI_Setup.exe`
 
-### Launch an already-built packaged exe (maintainers)
+### Developer source run only
 ```bat
-launch_packaged_exe.bat
+run.bat
 ```
+This is for developers working from source. End users should use the installed app.
+
+## Troubleshooting
+
+- If browser did not open, use the printed URL manually (default `http://127.0.0.1:8000`).
+- If the port is already in use, relaunch with a different port in developer mode.
+- If building fails, verify Python 3.10+ and Inno Setup 6 are installed for developer workflows.

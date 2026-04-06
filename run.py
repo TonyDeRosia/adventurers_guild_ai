@@ -118,12 +118,14 @@ def _launch_browser_when_ready(host: str, port: int) -> None:
     ready, reason = _wait_for_web_health(browser_url)
     if not ready:
         print(f"[web] Browser auto-open skipped: {reason}")
+        print(f"[web] Open this URL manually: {browser_url}")
         return
     result = _try_launch_browser(browser_url)
     if result.success:
         print(f"[web] Opened browser via {result.method}: {browser_url}")
     else:
         print(f"[web] Could not auto-open browser ({result.method}): {result.reason}")
+        print(f"[web] Open this URL manually: {browser_url}")
 
 
 def main() -> int:
