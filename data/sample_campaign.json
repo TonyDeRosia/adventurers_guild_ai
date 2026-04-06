@@ -1,8 +1,8 @@
 {
-  "campaign_id": "emberfall",
-  "campaign_name": "Shadows of Emberfall",
+  "campaign_id": "moonfall",
+  "campaign_name": "Moonfall: Echoes Below",
   "turn_count": 0,
-  "current_location_id": "town_square",
+  "current_location_id": "moonfall_town",
   "player": {
     "id": "player_1",
     "name": "Aria",
@@ -12,67 +12,59 @@
     "max_hp": 20,
     "armor_class": 12,
     "attack_bonus": 3,
-    "inventory": ["Dagger", "Traveler's Cloak"],
+    "inventory": ["Worn Backpack", "Torch"],
     "xp": 0
   },
   "npcs": {
-    "elder_maren": {
-      "id": "elder_maren",
-      "name": "Elder Maren",
-      "location_id": "town_square",
+    "elder_thorne": {
+      "id": "elder_thorne",
+      "name": "Elder Thorne",
+      "location_id": "moonfall_town",
       "disposition": 10,
-      "notes": ["Worried about missing caravans"],
-      "relationships": {}
-    },
-    "captain_ves": {
-      "id": "captain_ves",
-      "name": "Captain Ves",
-      "location_id": "watchtower",
-      "disposition": 0,
-      "notes": [],
-      "relationships": {}
+      "notes": ["Keeps watch over the catacomb gate."],
+      "relationships": {
+        "player_1": 10
+      }
     }
   },
   "locations": {
-    "town_square": {
-      "id": "town_square",
-      "name": "Emberfall Square",
-      "description": "A stone plaza lit by enchanted braziers and crowded with anxious townsfolk.",
-      "connections": ["watchtower", "whispering_woods"]
+    "moonfall_town": {
+      "id": "moonfall_town",
+      "name": "Moonfall Town",
+      "description": "A fortified hill-town huddled around a chapel and market square.",
+      "connections": ["moonfall_catacombs"]
     },
-    "watchtower": {
-      "id": "watchtower",
-      "name": "North Watchtower",
-      "description": "An old tower overlooking the northern road where caravans vanish.",
-      "connections": ["town_square"]
-    },
-    "whispering_woods": {
-      "id": "whispering_woods",
-      "name": "Whispering Woods",
-      "description": "Twisted pines shiver with distant voices and hidden tracks.",
-      "connections": ["town_square"]
+    "moonfall_catacombs": {
+      "id": "moonfall_catacombs",
+      "name": "Moonfall Catacombs",
+      "description": "A damp crypt where broken sigils glow in the dark and bones stir.",
+      "connections": ["moonfall_town"]
     }
   },
   "quests": {
-    "q_missing_caravans": {
-      "id": "q_missing_caravans",
-      "title": "The Missing Caravans",
-      "description": "Find out why trade caravans disappear on the north road.",
-      "status": "active",
+    "q_catacomb_blight": {
+      "id": "q_catacomb_blight",
+      "title": "Silence Beneath Moonfall",
+      "description": "Take Elder Thorne's task and clear the Bone Warden from the catacombs.",
+      "status": "inactive",
       "objectives": [
-        "Speak with Elder Maren",
-        "Inspect the watchtower logs",
-        "Track signs in Whispering Woods"
+        "Speak with Elder Thorne in Moonfall Town",
+        "Travel to Moonfall Catacombs",
+        "Defeat the Bone Warden",
+        "Return with proof"
       ]
     }
   },
   "world_flags": {
-    "north_road_open": false
+    "catacombs_cleared": false
   },
+  "active_enemy_id": null,
+  "active_enemy_hp": null,
   "event_log": [
     "Campaign initialized"
   ],
   "settings": {
+    "profile": "classic_fantasy",
     "mature_content_enabled": false,
     "narration_tone": "heroic",
     "image_generation_enabled": false

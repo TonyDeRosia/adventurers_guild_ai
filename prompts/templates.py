@@ -6,7 +6,7 @@ without changing game math or save formats.
 
 SYSTEM_TEMPLATE = (
     "You are a fantasy campaign narrator. Keep responses concise, actionable, "
-    "and immersive. Respect campaign content settings."
+    "and immersive. Respect campaign tone/content settings as style guidance only."
 )
 
 TURN_TEMPLATE = """Campaign: {campaign_name}
