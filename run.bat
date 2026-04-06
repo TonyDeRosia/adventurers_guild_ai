@@ -5,7 +5,7 @@ set "ROOT_DIR=%~dp0"
 cd /d "%ROOT_DIR%"
 
 echo ==================================================
-echo Adventurer's Guild AI - Source Launcher
+echo Adventurer's Guild AI - Developer Source Launcher
 echo ==================================================
 
 echo [source] Detecting Python...
@@ -48,7 +48,8 @@ if defined ENABLE_TERMINAL (
     echo [source] Terminal mode enabled (developer-only).
     set "ADVENTURER_GUILD_AI_ENABLE_TERMINAL=1"
 ) else (
-    echo [source] Browser UI mode enabled (default).
+    echo [source] Browser UI mode enabled (default for developer source runs).
+echo [source] End users should run the installed app from Start Menu/Desktop.
 )
 
 echo [source] Starting application...

@@ -140,6 +140,7 @@ def initialize_user_data_paths() -> RuntimePaths:
         folder.mkdir(parents=True, exist_ok=True)
 
     legacy_root = install_dir() / "data"
+    _copy_if_missing(paths.content_data / "defaults" / "app_config.json", paths.config / "app_config.json")
     _copy_if_missing(legacy_root / "app_config.json", paths.config / "app_config.json")
     _copy_tree_missing(legacy_root / "saves", paths.saves)
     _copy_tree_missing(legacy_root / "generated_images", paths.generated_images)

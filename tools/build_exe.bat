@@ -31,10 +31,11 @@ echo Cleaning prior build outputs...
 if exist "build" rmdir /s /q "build"
 if exist "dist\AdventurerGuildAI.exe" del /q "dist\AdventurerGuildAI.exe"
 
+set "PYINSTALLER_CMD=%PYTHON_CMD% -m PyInstaller --noconfirm --clean --onefile --windowed --name AdventurerGuildAI run.py --add-data data;data --add-data app/static;app/static --collect-submodules app --collect-submodules engine --collect-submodules images --collect-submodules memory --collect-submodules models --collect-submodules prompts --collect-submodules rules --collect-all fastapi --collect-all uvicorn --collect-all starlette"
+
 echo Building standalone executable with PyInstaller...
-echo - onefile bundle with embedded Python runtime
-echo - windowed mode to avoid terminal/Python noise for end users
-call %PYTHON_CMD% -m PyInstaller --noconfirm --clean --onefile --windowed --name AdventurerGuildAI run.py --add-data "data;data" --add-data "app/static;app/static" --collect-submodules app --collect-submodules engine --collect-submodules images --collect-submodules memory --collect-submodules models --collect-submodules prompts --collect-submodules rules
+echo %PYINSTALLER_CMD%
+call %PYINSTALLER_CMD%
 if errorlevel 1 (
     echo Executable build failed.
     exit /b 1
