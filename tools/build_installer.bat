@@ -1,12 +1,12 @@
 @echo off
 setlocal
 
-set "ROOT_DIR=%~dp0"
+set "ROOT_DIR=%~dp0.."
 cd /d "%ROOT_DIR%"
 
 if not exist "dist\AdventurerGuildAI.exe" (
     echo No executable detected in dist\. Building executable first...
-    call "%ROOT_DIR%dev_build_exe.bat"
+    call "%~dp0build_exe.bat"
     if errorlevel 1 (
         echo Could not build executable.
         exit /b 1

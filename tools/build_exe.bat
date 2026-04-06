@@ -1,7 +1,7 @@
 @echo off
 setlocal
 
-set "ROOT_DIR=%~dp0"
+set "ROOT_DIR=%~dp0.."
 cd /d "%ROOT_DIR%"
 
 set "PYTHON_CMD="

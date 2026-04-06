@@ -1,7 +1,7 @@
 @echo off
 setlocal
 
-set "ROOT_DIR=%~dp0"
+set "ROOT_DIR=%~dp0.."
 cd /d "%ROOT_DIR%"
 
 set "PYTHON_CMD="
@@ -21,7 +21,7 @@ if "%PYTHON_CMD%"=="" (
 )
 
 if not exist ".deps_installed" (
-    call "%ROOT_DIR%setup.bat"
+    call "%~dp0setup_dev_env.bat"
     if errorlevel 1 (
         echo Setup failed.
         exit /b 1

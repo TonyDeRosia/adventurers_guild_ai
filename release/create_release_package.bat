@@ -7,7 +7,7 @@ cd /d "%ROOT_DIR%"
 set "INSTALLER=installer\Output\AdventurerGuildAI-Setup.exe"
 if not exist "%INSTALLER%" (
     echo Installer not found at %INSTALLER%.
-    echo Build it first with dev_build_installer.bat
+    echo Build it first with tools\build_installer.bat
     exit /b 1
 )
 

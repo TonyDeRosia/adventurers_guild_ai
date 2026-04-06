@@ -4,6 +4,7 @@ setlocal
 set "ROOT_DIR=%~dp0"
 cd /d "%ROOT_DIR%"
 
+REM Release launcher only: this script does not run source mode.
 if exist "AdventurerGuildAI.exe" (
     start "" "AdventurerGuildAI.exe"
     exit /b 0
@@ -14,13 +15,8 @@ if exist "dist\AdventurerGuildAI.exe" (
     exit /b 0
 )
 
-echo Adventurer Guild AI executable was not found.
+echo AdventurerGuildAI.exe was not found in this folder.
 echo.
-echo End users should launch the installed app from:
-echo - Start Menu shortcut, or
-echo - Desktop shortcut, or
-echo - AdventurerGuildAI.exe
-
-echo.
-echo Developers: use dev_run.bat for source-mode runs.
+echo End users should launch the installed app from Start Menu/Desktop after running the installer.
+echo Developers should run source mode with tools\dev_run.bat
 exit /b 1
