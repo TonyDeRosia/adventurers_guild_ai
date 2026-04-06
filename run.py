@@ -4,12 +4,27 @@ from __future__ import annotations
 
 import argparse
 import os
+import platform
+import subprocess
 import sys
+import threading
+import time
 import traceback
+import webbrowser
+from dataclasses import dataclass
+from urllib.error import URLError
+from urllib.request import urlopen
 
 from app.pathing import initialize_user_data_paths, project_root, static_dir
 
 TERMINAL_ENABLE_ENV = "ADVENTURER_GUILD_AI_ENABLE_TERMINAL"
+
+
+@dataclass
+class BrowserLaunchResult:
+    success: bool
+    method: str
+    reason: str = ""
 
 
 def _print_banner() -> None:
@@ -47,6 +62,62 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _browser_host(host: str) -> str:
+    return "127.0.0.1" if host in {"0.0.0.0", "::"} else host
+
+
+def _wait_for_web_health(base_url: str, timeout_seconds: float = 15.0) -> tuple[bool, str]:
+    deadline = time.time() + timeout_seconds
+    last_reason = "health endpoint unavailable"
+    while time.time() < deadline:
+        try:
+            with urlopen(f"{base_url}/health", timeout=1.0) as response:
+                payload = response.read().decode("utf-8", errors="replace")
+                if response.status == 200 and '"status": "ok"' in payload:
+                    return True, "ready"
+                last_reason = "health response did not include status ok"
+        except URLError as exc:
+            last_reason = str(exc.reason) if getattr(exc, "reason", None) else str(exc)
+        except OSError as exc:
+            last_reason = str(exc)
+        time.sleep(0.2)
+    return False, last_reason
+
+
+def _try_launch_browser(url: str) -> BrowserLaunchResult:
+    if platform.system() == "Windows":
+        try:
+            os.startfile(url)  # type: ignore[attr-defined]
+            return BrowserLaunchResult(success=True, method="os.startfile")
+        except OSError as first_error:
+            try:
+                subprocess.Popen(["cmd", "/c", "start", "", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return BrowserLaunchResult(success=True, method="cmd start")
+            except OSError as second_error:
+                reason = f"{first_error}; {second_error}"
+                return BrowserLaunchResult(success=False, method="os.startfile -> cmd start", reason=reason)
+    try:
+        opened = webbrowser.open(url)
+        if opened:
+            return BrowserLaunchResult(success=True, method="webbrowser.open")
+        return BrowserLaunchResult(success=False, method="webbrowser.open", reason="browser reported open=False")
+    except webbrowser.Error as exc:
+        return BrowserLaunchResult(success=False, method="webbrowser.open", reason=str(exc))
+
+
+def _launch_browser_when_ready(host: str, port: int) -> None:
+    browser_url = f"http://{_browser_host(host)}:{port}"
+    ready, reason = _wait_for_web_health(browser_url)
+    if not ready:
+        print(f"[web] Browser auto-open skipped: {reason}")
+        return
+    result = _try_launch_browser(browser_url)
+    if result.success:
+        print(f"[web] Opened browser via {result.method}: {browser_url}")
+    else:
+        print(f"[web] Could not auto-open browser ({result.method}): {result.reason}")
+
+
 def main() -> int:
     _print_banner()
     print("Initializing systems...")
@@ -73,6 +144,13 @@ def main() -> int:
             app = create_web_app(runtime=runtime, static_root=_resolve_static_root())
             print(f"Launching server on http://{args.host}:{args.port}")
             print(f"Open your browser at: http://{args.host}:{args.port}")
+            opener_thread = threading.Thread(
+                target=_launch_browser_when_ready,
+                args=(args.host, args.port),
+                daemon=True,
+                name="browser-launcher",
+            )
+            opener_thread.start()
             uvicorn.run(app, host=args.host, port=args.port, log_level="info")
             return 0
 
