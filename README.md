@@ -2,75 +2,35 @@
 
 Adventurer's Guild AI is a local-first fantasy campaign application with a browser-first UI.
 
-## Launch model (single clear paths)
+## Run from source
 
-- **Developer source path (root):** `run.bat`
-- **End-user installed path:** `AdventurerGuildAI-Setup.exe` installer → Start Menu/Desktop shortcut
+Double click `run.bat` at the repository root.
 
-`run.bat` is the one primary source launcher. `dev_run.bat` and `tools\dev_run.bat` are compatibility wrappers.
+What should happen:
+- The launcher detects Python (`py -3`, then `python`).
+- If dependencies are not initialized yet, it runs `tools\setup_dev_env.bat` automatically.
+- It starts `run.py` in browser mode by default.
+- The app opens `http://127.0.0.1:8000` after the `/health` readiness check passes.
+- If startup fails, the window stays open and shows the error.
 
----
+`run.bat` is the one primary source launcher.
 
-## End User: install and run (no Python, no .bat scripts)
+## Packaged release / installer
 
-1. Download `AdventurerGuildAI-Setup.exe`.
-2. Run installer.
-3. Choose install location.
-4. Launch app from Start Menu or Desktop shortcut.
+End users should use the installed app, not repository scripts.
 
-End users should **not** run repository `.bat` scripts.
+1. Build/download `AdventurerGuildAI-Setup.exe`.
+2. Run the installer.
+3. Launch from Start Menu or Desktop shortcut.
 
----
+Repository `.bat` files are for source development and release maintenance only.
 
-## Developer: run from source
+## Optional developer commands
 
-### Prerequisites
-- Windows
-- Python 3.10+
-
-### Source run (browser UI default)
-```bat
-run.bat
-```
-
-### Optional terminal mode (developer-only)
+### Terminal mode (developer/debug only)
 ```bat
 run.bat --terminal
 ```
-
-`run.bat` will:
-- detect Python (`py -3` or `python`),
-- install dependencies via `tools\setup_dev_env.bat` when needed,
-- start backend in web mode by default,
-- wait for health readiness before opening browser,
-- keep the console window open on launch failure (pause-on-error).
-
----
-
-## Packaged/release launch behavior
-
-- Installer output: `installer\Output\AdventurerGuildAI-Setup.exe`
-- User handoff package: `release\user\AdventurerGuildAI-Setup.exe`
-- Maintenance-only packaged exe helper: `launch_packaged_exe.bat` (for repo maintainers validating local `AdventurerGuildAI.exe` or `dist\AdventurerGuildAI.exe`)
-
-The release experience for end users remains: install and launch from Start Menu/Desktop.
-
----
-
-## Browser readiness behavior
-
-On web launch, browser auto-open waits for a **real HTTP readiness check**:
-- Polls `http://<host>:<port>/health`
-- Requires HTTP 200 and payload containing `{"status": "ok"}`
-- Retries until timeout
-- Opens browser only after readiness succeeds
-- Prints failure reason if readiness does not succeed
-
-This prevents opening the browser before the app can answer web requests.
-
----
-
-## Developer: build release artifacts
 
 ### Build standalone executable
 ```bat
@@ -93,29 +53,7 @@ release\create_release_package.bat
 Output:
 - `release\user\AdventurerGuildAI-Setup.exe`
 
----
-
-## Files and data separation
-
-- **Install files:** chosen install directory (e.g., `C:\Program Files\AdventurerGuildAI`)
-- **User data:** `%LOCALAPPDATA%\AdventurerGuildAI`
-
-User data includes saves/config/logs/generated images and remains separate from installed binaries.
-
----
-
-## Script responsibilities
-
-### Root
-- `run.bat` → **primary developer source launcher** (browser by default, pause-on-error).
-- `dev_run.bat` → compatibility wrapper to `run.bat`.
-- `launch_packaged_exe.bat` → maintenance helper to launch an existing packaged exe from the repo tree.
-
-### tools/ (developer-only)
-- `tools\dev_run.bat` → compatibility wrapper that forwards to root `run.bat`.
-- `tools\setup_dev_env.bat` → install/update Python dependencies for development.
-- `tools\build_exe.bat` → build standalone exe with PyInstaller.
-- `tools\build_installer.bat` → build installer with Inno Setup.
-
-### release/
-- `release\create_release_package.bat` → copy installer into `release\user\` for end-user handoff.
+### Launch an already-built packaged exe (maintainers)
+```bat
+launch_packaged_exe.bat
+```
