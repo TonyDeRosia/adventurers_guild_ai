@@ -64,11 +64,17 @@ release\create_release_package.bat
 Produces:
 - `release\user\AdventurerGuildAI_Setup.exe`
 
-### Developer source run only
+### Guided install + build from source tree
 ```bat
 run.bat
 ```
-This is for developers working from source. End users should use the installed app.
+Prompts for an install folder, copies project files there, builds `AdventurerGuildAI.exe`, then launches the browser-ready launcher.
+
+### Browser launcher (exe-first fallback)
+```bat
+launch_browser_window.bat
+```
+Starts `AdventurerGuildAI.exe` when present (or source mode fallback) and opens the browser UI window at `http://127.0.0.1:8000`.
 
 ## Troubleshooting
 
