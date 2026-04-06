@@ -32,7 +32,9 @@ if exist "build" rmdir /s /q "build"
 if exist "dist\AdventurerGuildAI.exe" del /q "dist\AdventurerGuildAI.exe"
 
 echo Building standalone executable with PyInstaller...
-call %PYTHON_CMD% -m PyInstaller --noconfirm --clean --onefile --name AdventurerGuildAI run.py --add-data "data;data" --add-data "app/static;app/static" --collect-submodules app --collect-submodules engine --collect-submodules images --collect-submodules memory --collect-submodules models --collect-submodules prompts --collect-submodules rules
+echo - onefile bundle with embedded Python runtime
+echo - windowed mode to avoid terminal/Python noise for end users
+call %PYTHON_CMD% -m PyInstaller --noconfirm --clean --onefile --windowed --name AdventurerGuildAI run.py --add-data "data;data" --add-data "app/static;app/static" --collect-submodules app --collect-submodules engine --collect-submodules images --collect-submodules memory --collect-submodules models --collect-submodules prompts --collect-submodules rules
 if errorlevel 1 (
     echo Executable build failed.
     exit /b 1

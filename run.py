@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import os
+import sys
 import traceback
 import webbrowser
 
 from app.pathing import initialize_user_data_paths, project_root, static_dir
+
+TERMINAL_ENABLE_ENV = "ADVENTURER_GUILD_AI_ENABLE_TERMINAL"
 
 
 def _print_banner() -> None:
@@ -58,6 +62,11 @@ def main() -> int:
         _initialize_paths()
 
         launch_mode = "terminal" if args.terminal else args.mode
+        frozen = bool(getattr(sys, "frozen", False))
+        terminal_enabled = os.getenv(TERMINAL_ENABLE_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
+        if launch_mode == "terminal" and frozen and not terminal_enabled:
+            print("Terminal mode is disabled in standard end-user builds. Launching browser UI instead.")
+            launch_mode = "web"
         if launch_mode == "web":
             from app.web import run_web_server
 

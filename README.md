@@ -46,6 +46,7 @@ Output artifact:
 
 Notes:
 - The executable bundles Python runtime + app code.
+- The build uses `--windowed` so end users do not see a Python/console window by default.
 - End users do **not** need Python installed to run the built executable.
 
 ---
@@ -67,6 +68,15 @@ Installer behavior:
 - offers optional Desktop shortcut
 - supports uninstall via standard Windows uninstall flow
 
+Create a clean **end-user release package** (installer only):
+
+```bat
+release\create_release_package.bat
+```
+
+Release output:
+- `release/user/AdventurerGuildAI-Setup.exe`
+
 ---
 
 ## End User Install
@@ -82,6 +92,7 @@ Default launch behavior for end users:
 - App starts local backend
 - App opens browser UI at `http://127.0.0.1:8000`
 - Terminal mode is **not** the default user experience
+- End users do not run Python scripts or batch build scripts
 
 ---
 
@@ -117,6 +128,7 @@ On first run, workflow templates are copied from bundled defaults into the user-
 - `dev_build_exe.bat` - build standalone EXE with PyInstaller
 - `dev_build_installer.bat` - build installer with Inno Setup
 - `setup.bat` - install/update Python dependencies for development
+- `release/create_release_package.bat` - prepare installer-only user release folder
 
 ### Compatibility wrappers (developer convenience)
 - `build_exe.bat` -> forwards to `dev_build_exe.bat`
@@ -128,6 +140,7 @@ On first run, workflow templates are copied from bundled defaults into the user-
 ### End-user artifacts
 - `dist/AdventurerGuildAI.exe`
 - `installer/Output/AdventurerGuildAI-Setup.exe`
+- `release/user/AdventurerGuildAI-Setup.exe`
 
 ---
 
@@ -135,4 +148,23 @@ On first run, workflow templates are copied from bundled defaults into the user-
 
 `run.py` defaults to web mode (`--mode web`) and opens a browser unless `--no-browser` is specified.
 
-Terminal mode is only entered through explicit developer action (`--terminal` or `--mode terminal`).
+Terminal mode is only entered through explicit developer action (`--terminal` or `--mode terminal`) and is blocked in standard frozen end-user builds unless `ADVENTURER_GUILD_AI_ENABLE_TERMINAL=1` is intentionally set.
+
+---
+
+## Exact Flows
+
+### Exact developer build flow
+
+1. `setup.bat` (once, or when dependencies change)
+2. `dev_build_exe.bat`
+3. `dev_build_installer.bat`
+4. `release\create_release_package.bat` (optional, for handoff folder)
+
+### Exact end-user install flow
+
+1. User receives `AdventurerGuildAI-Setup.exe` from `release/user/`
+2. User runs installer and chooses install location
+3. Installer places app files in chosen install path and creates shortcuts
+4. User launches from Start Menu/Desktop
+5. App starts backend + opens browser UI automatically
