@@ -6,7 +6,6 @@ import argparse
 import json
 import os
 import platform
-import subprocess
 import sys
 import threading
 import time
@@ -97,13 +96,8 @@ def _try_launch_browser(url: str) -> BrowserLaunchResult:
         try:
             os.startfile(url)  # type: ignore[attr-defined]
             return BrowserLaunchResult(success=True, method="os.startfile")
-        except OSError as first_error:
-            try:
-                subprocess.Popen(["cmd", "/c", "start", "", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                return BrowserLaunchResult(success=True, method="cmd start")
-            except OSError as second_error:
-                reason = f"{first_error}; {second_error}"
-                return BrowserLaunchResult(success=False, method="os.startfile -> cmd start", reason=reason)
+        except OSError as exc:
+            return BrowserLaunchResult(success=False, method="os.startfile", reason=str(exc))
     try:
         opened = webbrowser.open(url)
         if opened:
@@ -167,7 +161,8 @@ def main() -> int:
             print(f"[startup] Checking for existing backend at {browser_url}/health ...")
             already_running, _ = _wait_for_web_health(browser_url, timeout_seconds=1.5)
             if already_running:
-                print(f"[startup] Backend already running at {browser_url}")
+                print("Backend already running")
+                print(f"[startup] Reusing existing backend at {browser_url}")
                 print(f"[startup] Opening browser without starting another backend.")
                 _launch_browser_when_ready(args.host, args.port)
                 return 0
@@ -193,7 +188,8 @@ def main() -> int:
                 print(f"[startup] Verifying whether {browser_url} is already healthy...")
                 recovered, reason = _wait_for_web_health(browser_url, timeout_seconds=2.0)
                 if recovered:
-                    print(f"[startup] Backend already running at {browser_url}")
+                    print("Backend already running")
+                    print(f"[startup] Reusing existing backend at {browser_url}")
                     _launch_browser_when_ready(args.host, args.port)
                     return 0
                 print(

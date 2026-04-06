@@ -66,25 +66,19 @@ def test_try_launch_browser_windows_prefers_startfile(monkeypatch) -> None:
     assert calls == ["http://127.0.0.1:8000"]
 
 
-def test_try_launch_browser_windows_falls_back_to_cmd_start(monkeypatch) -> None:
+def test_try_launch_browser_windows_reports_startfile_failure(monkeypatch) -> None:
     monkeypatch.setattr(run.platform, "system", lambda: "Windows")
 
     def broken_startfile(_url: str) -> None:
         raise OSError("shell association missing")
 
-    popen_calls: list[list[str]] = []
     monkeypatch.setattr(run.os, "startfile", broken_startfile, raising=False)
-    monkeypatch.setattr(
-        run.subprocess,
-        "Popen",
-        lambda cmd, stdout, stderr: popen_calls.append(cmd),
-    )
 
     result = run._try_launch_browser("http://127.0.0.1:8000")
 
-    assert result.success is True
-    assert result.method == "cmd start"
-    assert popen_calls == [["cmd", "/c", "start", "", "http://127.0.0.1:8000"]]
+    assert result.success is False
+    assert result.method == "os.startfile"
+    assert "shell association missing" in result.reason
 
 
 def test_try_launch_browser_reports_failure_reason(monkeypatch) -> None:
@@ -93,18 +87,13 @@ def test_try_launch_browser_reports_failure_reason(monkeypatch) -> None:
     def broken_startfile(_url: str) -> None:
         raise OSError("startfile failed")
 
-    def broken_popen(_cmd, stdout, stderr):
-        raise OSError("cmd start failed")
-
     monkeypatch.setattr(run.os, "startfile", broken_startfile, raising=False)
-    monkeypatch.setattr(run.subprocess, "Popen", broken_popen)
 
     result = run._try_launch_browser("http://127.0.0.1:8000")
 
     assert result.success is False
-    assert result.method == "os.startfile -> cmd start"
+    assert result.method == "os.startfile"
     assert "startfile failed" in result.reason
-    assert "cmd start failed" in result.reason
 
 
 def test_try_launch_browser_non_windows_uses_webbrowser(monkeypatch) -> None:
