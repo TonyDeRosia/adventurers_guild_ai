@@ -42,7 +42,7 @@ The app seeds default configuration/workflow templates into the user-data area o
 
 ## Developer Build
 
-Developer scripts are in `tools\` and are not part of the end-user path.
+Developer scripts are in `tools\` and are not part of the end-user runtime path.
 
 ### Build standalone executable (PyInstaller)
 ```bat
@@ -65,17 +65,23 @@ release\create_release_package.bat
 Produces:
 - `release\user\AdventurerGuildAI_Setup.exe`
 
-### Guided install + build from source tree
+### Bootstrap install + build + launch from source tree
 ```bat
 run.bat
 ```
-Prompts for an install folder, copies project files there, builds `AdventurerGuildAI.exe`, then launches the browser-ready launcher.
+`run.bat` is the single bootstrap script for repository setup. It:
+1. Prompts for an install folder.
+2. Copies project files into that folder.
+3. Builds `AdventurerGuildAI.exe` in that install location.
+4. Launches `dist\AdventurerGuildAI.exe` directly.
 
-### Browser launcher (exe-first fallback)
+After bootstrap, `AdventurerGuildAI.exe` is the real runtime app. No secondary launcher batch file is required.
+
+### Developer source run (optional)
 ```bat
-launch_browser_window.bat
+tools\dev_run.bat
 ```
-Starts `AdventurerGuildAI.exe` when present (or source mode fallback to `run.py`). The launcher delegates startup to that single owner; browser-open logic is handled there after `/health` is ready.
+Runs `run.py` directly for source-mode development and debugging.
 
 ## Troubleshooting
 
