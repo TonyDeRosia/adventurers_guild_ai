@@ -13,4 +13,6 @@ def create_model_adapter(provider: str, **kwargs: str) -> NarrationModelAdapter:
         return OllamaAdapter(**kwargs)
     if provider == "gpt4all":
         return GPT4AllAdapter(**kwargs)
+    if provider in {"local_template", "null"}:
+        return NullNarrationAdapter()
     return NullNarrationAdapter()

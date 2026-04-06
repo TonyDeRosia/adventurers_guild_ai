@@ -1,0 +1,101 @@
+{
+  "elder_thorne": {
+    "start_node": "greeting",
+    "nodes": {
+      "greeting": {
+        "text": "Elder Thorne studies the chapel bellrope and nods as you approach.",
+        "options": [
+          {
+            "id": "accept_catacombs",
+            "text": "I will clear the catacombs for Moonfall.",
+            "effects": {
+              "quest_updates": [{"quest_id": "q_catacomb_blight", "status": "active"}],
+              "relationship_delta": 7,
+              "set_flags": {"thorne_trusts_player": true}
+            },
+            "next_node": "accepted"
+          },
+          {
+            "id": "ask_reward",
+            "text": "What does Moonfall offer in return?",
+            "effects": {
+              "relationship_delta": -2,
+              "set_flags": {"thorne_thinks_player_greedy": true}
+            },
+            "next_node": "reward_terms"
+          },
+          {
+            "id": "refuse",
+            "text": "This is not my burden.",
+            "effects": {
+              "quest_updates": [{"quest_id": "q_catacomb_blight", "status": "inactive"}],
+              "relationship_delta": -8,
+              "set_flags": {"thorne_refused_once": true}
+            },
+            "next_node": "refused"
+          }
+        ]
+      },
+      "accepted": {
+        "text": "Then carry this lantern sigil. Return after the crypt grows quiet.",
+        "options": []
+      },
+      "reward_terms": {
+        "text": "A fair question. Moonfall pays in silver and standing, if you stand with us first.",
+        "options": [
+          {
+            "id": "accept_after_terms",
+            "text": "Fair enough. I accept the task.",
+            "effects": {
+              "quest_updates": [{"quest_id": "q_catacomb_blight", "status": "active"}],
+              "relationship_delta": 4,
+              "set_flags": {"thorne_trusts_player": true}
+            },
+            "next_node": "accepted"
+          }
+        ]
+      },
+      "refused": {
+        "text": "Thorne's eyes narrow. 'Then keep clear of the crypt mouth, traveler.'",
+        "options": []
+      }
+    }
+  },
+  "warden_elira": {
+    "start_node": "woods_greeting",
+    "nodes": {
+      "woods_greeting": {
+        "text": "Warden Elira kneels beside a broken shrine lantern under the pines.",
+        "options": [
+          {
+            "id": "accept_lantern_quest",
+            "text": "I can recover your stolen moonlantern.",
+            "effects": {
+              "quest_updates": [{"quest_id": "q_moonlantern_oath", "status": "active"}],
+              "relationship_delta": 5,
+              "set_flags": {"elira_trusts_player": true}
+            },
+            "next_node": "lantern_task"
+          },
+          {
+            "id": "decline_lantern_quest",
+            "text": "I have other priorities.",
+            "effects": {
+              "relationship_delta": -4,
+              "set_flags": {"elira_refused_once": true}
+            },
+            "next_node": "declined"
+          }
+        ]
+      },
+      "lantern_task": {
+        "text": "'Search the old watch cache in the woods. Bring the moonlantern back unbroken.'",
+        "options": []
+      },
+      "declined": {
+        "text": "'Then tread softly. Without that light, the trail spirits turn cruel at dusk.'",
+        "options": []
+      }
+    }
+  }
+}

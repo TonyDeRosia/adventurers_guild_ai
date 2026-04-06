@@ -35,7 +35,7 @@ class GameStateManager:
         new_payload["campaign_name"] = f"{player_name}'s {profile.replace('_', ' ').title()} Campaign"
         new_payload["player"]["name"] = player_name
         new_payload["player"]["char_class"] = char_class
-        new_payload["player"]["inventory"] = ["Worn Backpack", "Torch"]
+        new_payload["player"]["inventory"] = ["worn_backpack", "torch", "field_draught"]
         new_payload["settings"]["profile"] = profile
         new_payload["settings"]["mature_content_enabled"] = mature_content_enabled
         new_payload["settings"]["narration_tone"] = "grim" if profile == "dark_fantasy" else "heroic"

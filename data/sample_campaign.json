@@ -12,8 +12,9 @@
     "max_hp": 20,
     "armor_class": 12,
     "attack_bonus": 3,
-    "inventory": ["Worn Backpack", "Torch"],
-    "xp": 0
+    "inventory": ["worn_backpack", "torch", "field_draught"],
+    "xp": 0,
+    "equipped_item_id": null
   },
   "npcs": {
     "elder_thorne": {
@@ -25,6 +26,16 @@
       "relationships": {
         "player_1": 10
       }
+    },
+    "warden_elira": {
+      "id": "warden_elira",
+      "name": "Warden Elira",
+      "location_id": "whispering_woods",
+      "disposition": 5,
+      "notes": ["Protects the woodland shrine path."],
+      "relationships": {
+        "player_1": 5
+      }
     }
   },
   "locations": {
@@ -32,13 +43,19 @@
       "id": "moonfall_town",
       "name": "Moonfall Town",
       "description": "A fortified hill-town huddled around a chapel and market square.",
-      "connections": ["moonfall_catacombs"]
+      "connections": ["moonfall_catacombs", "whispering_woods"]
     },
     "moonfall_catacombs": {
       "id": "moonfall_catacombs",
       "name": "Moonfall Catacombs",
       "description": "A damp crypt where broken sigils glow in the dark and bones stir.",
-      "connections": ["moonfall_town"]
+      "connections": ["moonfall_town", "whispering_woods"]
+    },
+    "whispering_woods": {
+      "id": "whispering_woods",
+      "name": "Whispering Woods",
+      "description": "Tall pines circle an old ranger cache where shrine-lanterns once burned all night.",
+      "connections": ["moonfall_town", "moonfall_catacombs"]
     }
   },
   "quests": {
@@ -53,13 +70,29 @@
         "Defeat the Bone Warden",
         "Return with proof"
       ]
+    },
+    "q_moonlantern_oath": {
+      "id": "q_moonlantern_oath",
+      "title": "Moonlantern Oath",
+      "description": "Help Warden Elira recover the missing moonlantern from the woods/catacombs trail.",
+      "status": "inactive",
+      "objectives": [
+        "Speak with Warden Elira in Whispering Woods",
+        "Recover the moonlantern",
+        "Return the moonlantern to Elira"
+      ]
     }
   },
   "world_flags": {
-    "catacombs_cleared": false
+    "catacombs_cleared": false,
+    "catacombs_cleared_violently": false,
+    "thorne_trusts_player": false,
+    "moonlantern_returned": false
   },
   "active_enemy_id": null,
   "active_enemy_hp": null,
+  "active_dialogue_npc_id": null,
+  "active_dialogue_node_id": null,
   "event_log": [
     "Campaign initialized"
   ],

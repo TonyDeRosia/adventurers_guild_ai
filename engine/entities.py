@@ -24,6 +24,7 @@ class Character:
     attack_bonus: int = 3
     inventory: list[str] = field(default_factory=list)
     xp: int = 0
+    equipped_item_id: str | None = None
 
 
 @dataclass
@@ -84,6 +85,8 @@ class CampaignState:
     world_flags: dict[str, bool] = field(default_factory=dict)
     active_enemy_id: str | None = None
     active_enemy_hp: int | None = None
+    active_dialogue_npc_id: str | None = None
+    active_dialogue_node_id: str | None = None
     event_log: list[str] = field(default_factory=list)
     settings: CampaignSettings = field(default_factory=CampaignSettings)
 
@@ -108,9 +111,11 @@ class CampaignState:
             npcs={k: NPC(**v) for k, v in payload["npcs"].items()},
             locations={k: Location(**v) for k, v in payload["locations"].items()},
             quests={k: Quest(**v) for k, v in payload["quests"].items()},
-            world_flags=payload.get("world_flags", {}),
+            world_flags={k: bool(v) for k, v in payload.get("world_flags", {}).items()},
             active_enemy_id=payload.get("active_enemy_id"),
             active_enemy_hp=payload.get("active_enemy_hp"),
+            active_dialogue_npc_id=payload.get("active_dialogue_npc_id"),
+            active_dialogue_node_id=payload.get("active_dialogue_node_id"),
             event_log=payload.get("event_log", []),
             settings=CampaignSettings(**payload.get("settings", {})),
         )

@@ -1,0 +1,40 @@
+{
+  "worn_backpack": {
+    "id": "worn_backpack",
+    "name": "Worn Backpack",
+    "type": "quest",
+    "description": "A stitched satchel with room for field supplies."
+  },
+  "torch": {
+    "id": "torch",
+    "name": "Torch",
+    "type": "quest",
+    "description": "Pitch-soaked cloth wrapped around a cedar haft."
+  },
+  "field_draught": {
+    "id": "field_draught",
+    "name": "Field Draught",
+    "type": "healing",
+    "description": "A bitter herbal tonic that restores 8 HP.",
+    "heal_amount": 8
+  },
+  "moonsigil_relic": {
+    "id": "moonsigil_relic",
+    "name": "Moonsigil Relic",
+    "type": "quest",
+    "description": "A silver seal recovered from beneath Moonfall."
+  },
+  "moonlantern": {
+    "id": "moonlantern",
+    "name": "Moonlantern",
+    "type": "quest",
+    "description": "A shrine lantern that steadies wandering spirits."
+  },
+  "rangers_charm": {
+    "id": "rangers_charm",
+    "name": "Ranger's Charm",
+    "type": "trinket",
+    "description": "A carved ash token that sharpens your stance.",
+    "attack_bonus": 1
+  }
+}
