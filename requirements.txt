@@ -1,2 +1,2 @@
-# Adventurer Guild AI currently uses only Python's standard library at runtime.
-# Keep this file so setup/run scripts have a stable install target.
+fastapi>=0.111,<1.0
+uvicorn>=0.30,<1.0

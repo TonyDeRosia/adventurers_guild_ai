@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-import mimetypes
+import sys
+import traceback
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -11,6 +12,23 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
+
+try:
+    from fastapi import FastAPI, HTTPException
+    from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.responses import FileResponse, JSONResponse
+    from fastapi.staticfiles import StaticFiles
+    from starlette.requests import Request
+    import uvicorn
+except ModuleNotFoundError:  # pragma: no cover - optional dependency in some test environments
+    FastAPI = None
+    HTTPException = Exception
+    CORSMiddleware = None
+    FileResponse = None
+    JSONResponse = None
+    StaticFiles = None
+    Request = Any
+    uvicorn = None
 
 from app.pathing import initialize_user_data_paths, project_root, static_dir
 from app.runtime_config import AppRuntimeConfig, ImageRuntimeConfig, ModelRuntimeConfig, RuntimeConfigStore
@@ -358,33 +376,167 @@ class WebRuntime:
         return f"/generated/{relative.as_posix()}"
 
 
-class WebHandler(BaseHTTPRequestHandler):
+def _resolve_static_root() -> Path:
+    candidates = [static_dir(), project_root() / "static"]
+    if getattr(sys, "frozen", False):
+        executable_root = Path(sys.executable).resolve().parent
+        candidates.extend([executable_root / "app" / "static", executable_root / "static"])
+    for candidate in candidates:
+        if candidate.exists() and (candidate / "index.html").exists():
+            return candidate
+    return static_dir()
+
+
+def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
+    if FastAPI is None:
+        raise RuntimeError("FastAPI is not installed")
+    app = FastAPI(title="Adventurer Guild AI Web API")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    app.mount("/static", StaticFiles(directory=static_root), name="static")
+    app.mount("/generated", StaticFiles(directory=runtime.generated_image_dir), name="generated")
+
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse:
+        return JSONResponse(status_code=exc.status_code, content={"error": str(exc.detail)})
+
+    @app.get("/")
+    def root() -> FileResponse:
+        index_path = static_root / "index.html"
+        if not index_path.exists():
+            raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="index.html not found")
+        return FileResponse(index_path)
+
+    @app.get("/health")
+    def health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    @app.get("/api/campaign/state")
+    def campaign_state() -> dict[str, Any]:
+        return {"state": runtime.serialize_state()}
+
+    @app.get("/api/campaign/messages")
+    def campaign_messages(limit: int = 200) -> dict[str, Any]:
+        safe_limit = max(limit, 1)
+        return {"messages": runtime.session.message_history[-safe_limit:]}
+
+    @app.get("/api/campaign/saves")
+    def campaign_saves() -> dict[str, Any]:
+        return {"saves": runtime.list_saves()}
+
+    @app.get("/api/campaigns")
+    def campaigns() -> dict[str, Any]:
+        return {"campaigns": runtime.list_campaigns()}
+
+    @app.get("/api/settings/global")
+    def settings_global() -> dict[str, Any]:
+        return {"settings": runtime.get_global_settings()}
+
+    @app.get("/api/model/options")
+    def model_options() -> dict[str, Any]:
+        return {"models": runtime.list_available_local_models()}
+
+    @app.post("/api/campaign/input")
+    def campaign_input(payload: dict[str, Any]) -> dict[str, Any]:
+        player_text = str(payload.get("text", "")).strip()
+        if not player_text:
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="'text' is required")
+        return runtime.handle_player_input(player_text)
+
+    @app.post("/api/campaign/start")
+    def campaign_start(payload: dict[str, Any]) -> dict[str, Any]:
+        mode = payload.get("mode", "load")
+        try:
+            if mode == "new":
+                return {"mode": "new", **runtime.create_campaign(payload)}
+            slot = str(payload.get("slot", "autosave"))
+            return {"mode": "load", **runtime.switch_campaign(slot)}
+        except ValueError as exc:
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.post("/api/campaign/save")
+    def campaign_save(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return runtime.save_active_campaign(str(payload.get("slot", "")).strip() or None)
+        except ValueError as exc:
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.post("/api/campaign/delete")
+    def campaign_delete(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return runtime.delete_campaign(str(payload.get("slot", "")))
+        except ValueError as exc:
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.post("/api/campaign/rename")
+    def campaign_rename(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return runtime.rename_campaign(str(payload.get("slot", "")), str(payload.get("new_name", "")))
+        except ValueError as exc:
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.post("/api/settings/global")
+    def settings_global_update(payload: dict[str, Any]) -> dict[str, Any]:
+        return {"settings": runtime.set_global_settings(payload)}
+
+    @app.post("/api/settings/campaign")
+    def settings_campaign_update(payload: dict[str, Any]) -> dict[str, Any]:
+        return {"settings": runtime.set_campaign_settings(payload)}
+
+    @app.post("/api/images/generate")
+    def image_generate(payload: dict[str, Any]) -> dict[str, Any]:
+        result = runtime.generate_image(payload)
+        if result.success:
+            public_image_url = runtime.public_image_path(result.result_path)
+            runtime._append_message(
+                "image",
+                payload.get("prompt", "Image generated"),
+                image={"url": public_image_url, "metadata": result.metadata, "workflow_id": result.workflow_id},
+            )
+        if not result.success:
+            return JSONResponse(status_code=HTTPStatus.BAD_REQUEST, content=result.to_dict())
+        return result.to_dict()
+
+    return app
+
+
+class _FallbackWebHandler(BaseHTTPRequestHandler):
     runtime: WebRuntime
     static_root: Path
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
-        if parsed.path == "/":
-            return self._serve_file("index.html", "text/html; charset=utf-8")
-        if parsed.path.startswith("/static/"):
-            return self._serve_static(parsed.path.replace("/static/", "", 1))
-        if parsed.path.startswith("/generated/"):
-            return self._serve_generated(parsed.path.replace("/generated/", "", 1))
-        if parsed.path == "/api/campaign/state":
-            return self._json_response({"state": self.runtime.serialize_state()})
-        if parsed.path == "/api/campaign/messages":
-            qs = parse_qs(parsed.query)
-            limit = int(qs.get("limit", ["200"])[0])
-            return self._json_response({"messages": self.runtime.session.message_history[-max(limit, 1) :]})
-        if parsed.path == "/api/campaign/saves":
-            return self._json_response({"saves": self.runtime.list_saves()})
-        if parsed.path == "/api/campaigns":
-            return self._json_response({"campaigns": self.runtime.list_campaigns()})
-        if parsed.path == "/api/settings/global":
-            return self._json_response({"settings": self.runtime.get_global_settings()})
-        if parsed.path == "/api/model/options":
-            return self._json_response({"models": self.runtime.list_available_local_models()})
-        self._json_response({"error": "Not found"}, status=HTTPStatus.NOT_FOUND)
+        try:
+            if parsed.path == "/":
+                return self._serve_file("index.html", "text/html; charset=utf-8")
+            if parsed.path == "/health":
+                return self._json_response({"status": "ok"})
+            if parsed.path.startswith("/static/"):
+                return self._serve_static(parsed.path.replace("/static/", "", 1))
+            if parsed.path.startswith("/generated/"):
+                return self._serve_generated(parsed.path.replace("/generated/", "", 1))
+            if parsed.path == "/api/campaign/state":
+                return self._json_response({"state": self.runtime.serialize_state()})
+            if parsed.path == "/api/campaign/messages":
+                qs = parse_qs(parsed.query)
+                limit = int(qs.get("limit", ["200"])[0])
+                return self._json_response({"messages": self.runtime.session.message_history[-max(limit, 1) :]})
+            if parsed.path == "/api/campaign/saves":
+                return self._json_response({"saves": self.runtime.list_saves()})
+            if parsed.path == "/api/campaigns":
+                return self._json_response({"campaigns": self.runtime.list_campaigns()})
+            if parsed.path == "/api/settings/global":
+                return self._json_response({"settings": self.runtime.get_global_settings()})
+            if parsed.path == "/api/model/options":
+                return self._json_response({"models": self.runtime.list_available_local_models()})
+            self._json_response({"error": "Not found"}, status=HTTPStatus.NOT_FOUND)
+        except Exception as exc:
+            self._json_response({"error": f"Internal server error: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def do_POST(self) -> None:  # noqa: N802
         payload = self._parse_json_body()
@@ -425,7 +577,7 @@ class WebHandler(BaseHTTPRequestHandler):
             self._json_response({"error": "Not found"}, status=HTTPStatus.NOT_FOUND)
         except ValueError as exc:
             self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
-        except Exception as exc:  # pragma: no cover
+        except Exception as exc:
             self._json_response({"error": f"Internal server error: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def _parse_json_body(self) -> dict[str, Any] | None:
@@ -441,14 +593,14 @@ class WebHandler(BaseHTTPRequestHandler):
         file_path = self.static_root / relative
         if not file_path.exists() or not file_path.is_file():
             return self._json_response({"error": "Asset not found"}, status=HTTPStatus.NOT_FOUND)
-        mime = "text/plain; charset=utf-8"
+        content_type = "application/octet-stream"
         if file_path.suffix == ".css":
-            mime = "text/css; charset=utf-8"
+            content_type = "text/css; charset=utf-8"
         elif file_path.suffix == ".js":
-            mime = "application/javascript; charset=utf-8"
+            content_type = "application/javascript; charset=utf-8"
         elif file_path.suffix == ".html":
-            mime = "text/html; charset=utf-8"
-        self._serve_file(relative, mime)
+            content_type = "text/html; charset=utf-8"
+        self._serve_file(relative, content_type)
 
     def _serve_generated(self, relative: str) -> None:
         file_path = (self.runtime.generated_image_dir / relative).resolve()
@@ -457,10 +609,9 @@ class WebHandler(BaseHTTPRequestHandler):
             return self._json_response({"error": "Invalid image path"}, status=HTTPStatus.BAD_REQUEST)
         if not file_path.exists() or not file_path.is_file():
             return self._json_response({"error": "Image not found"}, status=HTTPStatus.NOT_FOUND)
-        mime = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
         data = file_path.read_bytes()
         self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", mime)
+        self.send_header("Content-Type", "application/octet-stream")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
@@ -487,21 +638,37 @@ class WebHandler(BaseHTTPRequestHandler):
 
 def run_web_server(host: str = "127.0.0.1", port: int = 8000) -> None:
     runtime = WebRuntime(project_root())
-
-    class _BoundHandler(WebHandler):
-        pass
-
-    _BoundHandler.runtime = runtime
-    _BoundHandler.static_root = static_dir()
-
-    server = ThreadingHTTPServer((host, port), _BoundHandler)
+    static_root = _resolve_static_root()
     print(f"Web UI running at http://{host}:{port}")
+    print(f"Serving static assets from {static_root}")
+    if FastAPI is None or uvicorn is None:
+        print("Warning: FastAPI/uvicorn not installed. Falling back to built-in HTTP server.")
+        class _BoundHandler(_FallbackWebHandler):
+            pass
+        _BoundHandler.runtime = runtime
+        _BoundHandler.static_root = static_root
+        server = ThreadingHTTPServer((host, port), _BoundHandler)
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            print("\nStopping web server...")
+        except Exception as exc:
+            print(f"\nFallback web server failed: {exc}")
+            print(traceback.format_exc())
+            raise
+        finally:
+            server.server_close()
+        return
+
+    app = create_web_app(runtime=runtime, static_root=static_root)
     try:
-        server.serve_forever()
+        uvicorn.run(app, host=host, port=port, log_level="info")
     except KeyboardInterrupt:
         print("\nStopping web server...")
-    finally:
-        server.server_close()
+    except Exception as exc:
+        print(f"\nWeb server failed to start: {exc}")
+        print(traceback.format_exc())
+        raise
 
 
 def main() -> None:

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import argparse
 import os
+import socket
 import sys
+import threading
+import time
 import traceback
 import webbrowser
 
@@ -53,6 +56,24 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _wait_for_server(host: str, port: int, timeout_seconds: float = 15.0) -> bool:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=0.5):
+                return True
+        except OSError:
+            time.sleep(0.1)
+    return False
+
+
+def _open_browser_when_ready(host: str, port: int, url: str) -> None:
+    if _wait_for_server(host, port):
+        webbrowser.open(url)
+    else:
+        print(f"Warning: server at {url} did not become ready before timeout; browser not auto-opened.")
+
+
 def main() -> int:
     _print_banner()
     print("Initializing systems...")
@@ -73,7 +94,7 @@ def main() -> int:
             url = f"http://{args.host}:{args.port}"
             print("Starting web mode (default)...")
             if not args.no_browser:
-                webbrowser.open(url)
+                threading.Thread(target=_open_browser_when_ready, args=(args.host, args.port, url), daemon=True).start()
             run_web_server(host=args.host, port=args.port)
             return 0
 
