@@ -20,6 +20,7 @@ from engine.game_state_manager import GameStateManager
 from images.base import ImageGenerationRequest, ImageGenerationResult, ImageGeneratorAdapter, NullImageAdapter
 from images.workflow_manager import WorkflowManager
 from models.registry import create_model_adapter
+from app.pathing import data_dir, project_root, static_dir
 from app.runtime_config import ModelRuntimeConfig, RuntimeConfigStore
 
 
@@ -34,7 +35,7 @@ class WebRuntime:
 
     def __init__(self, root: Path) -> None:
         self.root = root
-        self.data_dir = root / "data"
+        self.data_dir = data_dir()
         self.state_manager = GameStateManager(self.data_dir)
         self.config_store = RuntimeConfigStore(self.data_dir / "app_config.json")
         self.model_config = self.config_store.load()
@@ -54,7 +55,9 @@ class WebRuntime:
 
     def _default_state(self) -> CampaignState:
         if self.state_manager.can_load("autosave"):
-            return self.state_manager.load("autosave")
+            loaded = self.state_manager.load("autosave")
+            if loaded is not None:
+                return loaded
         return self.state_manager.create_new_campaign(
             player_name="Aria",
             char_class="Ranger",
@@ -307,14 +310,14 @@ class WebHandler(BaseHTTPRequestHandler):
 
 
 def run_web_server(host: str = "127.0.0.1", port: int = 8000) -> None:
-    root = Path(__file__).resolve().parent.parent
+    root = project_root()
     runtime = WebRuntime(root)
 
     class _BoundHandler(WebHandler):
         pass
 
     _BoundHandler.runtime = runtime
-    _BoundHandler.static_root = root / "app" / "static"
+    _BoundHandler.static_root = static_dir()
 
     server = ThreadingHTTPServer((host, port), _BoundHandler)
     print(f"Web UI running at http://{host}:{port}")

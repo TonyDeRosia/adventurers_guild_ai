@@ -6,6 +6,43 @@ A local-first, modular fantasy campaign engine with:
 - Optional image generation architecture via workflow templates
 - Campaign memory + retrieval + analysis mode
 
+## Quick Start (Recommended)
+
+1. Download `AdventurerGuildAI.exe` from the latest build artifacts/release.
+2. Double-click the executable to launch.
+3. No separate Python installation is required for the `.exe` build.
+
+## Alternative (Developer Mode)
+
+1. Install Python 3.10+.
+2. Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+3. Run terminal mode:
+
+```bash
+python run.py
+```
+
+4. Run web mode:
+
+```bash
+python run.py --mode web
+```
+
+## Build Executable (Windows)
+
+Use the provided script:
+
+```bat
+build_exe.bat
+```
+
+The script builds `dist/AdventurerGuildAI.exe` using PyInstaller and bundles required runtime data files.
+
 ## Install
 
 ```bash

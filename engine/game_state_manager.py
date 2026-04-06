@@ -68,7 +68,19 @@ class GameStateManager:
         return self.save_manager.save(state, slot)
 
     def load(self, slot: str = "autosave") -> CampaignState:
-        return self.save_manager.load(slot)
+        loaded = self.save_manager.load(slot)
+        if loaded is not None:
+            return loaded
+        return self.create_new_campaign(
+            player_name="Aria",
+            char_class="Ranger",
+            profile="classic_fantasy",
+            mature_content_enabled=False,
+            content_settings_enabled=True,
+            campaign_tone="heroic",
+            maturity_level="standard",
+            thematic_flags=["adventure", "mystery"],
+        )
 
     def can_load(self, slot: str = "autosave") -> bool:
         return self.save_manager.exists(slot)

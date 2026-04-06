@@ -12,7 +12,14 @@ from models.ollama_adapter import OllamaAdapter
 def create_model_adapter(provider: str, **kwargs: Any) -> NarrationModelAdapter:
     provider = provider.lower().strip()
     if provider == "ollama":
-        return OllamaAdapter(**kwargs)
+        adapter = OllamaAdapter(**kwargs)
+        configured_model = str(kwargs.get("model", "")).strip()
+        detected_models = adapter.list_local_models()
+        if configured_model and detected_models and configured_model not in detected_models:
+            return NullNarrationAdapter()
+        if configured_model and not detected_models:
+            return NullNarrationAdapter()
+        return adapter
     if provider == "gpt4all":
         return GPT4AllAdapter(**kwargs)
     if provider in {"local_template", "null"}:
