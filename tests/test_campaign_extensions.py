@@ -189,6 +189,7 @@ def test_relationship_tier_transitions_and_dialogue_gating() -> None:
     state.faction_reputation["town"] = 2
     state.npcs["elder_thorne"].disposition = 25
     state.npcs["elder_thorne"].relationship_tier = "friendly"
+    state.npcs["elder_thorne"].dynamic_state.trust_toward_player = 8
 
     first = engine.run_turn(state, "talk elder_thorne")
     assert any("safer way than direct combat" in msg.lower() for msg in first.system_messages)

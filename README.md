@@ -130,6 +130,86 @@ To wire ComfyUI in later phases:
 
 ## Core campaign intelligence flow (local-first)
 
+## NPC personality graph system (new)
+
+NPC behavior now includes a modular, data-driven personality layer loaded from `data/npc_personalities.json`.
+
+### NPC profile structure
+
+Each profile contains:
+
+- identity
+- core_traits
+- values
+- fears
+- desires
+- speech_style
+- faction_ties
+- moral_tendencies
+- state_defaults
+- evolution_rules
+
+Two current NPCs are refactored to use this profile system:
+
+- `elder_thorne`
+- `warden_elira`
+
+### Dynamic state
+
+Every NPC now persists additive state fields:
+
+- `trust_toward_player`
+- `fear_toward_player`
+- `stress`
+- `hope`
+- `anger`
+- `loyalty`
+- `instability`
+
+State is clamped and updated by dialogue effects, explicit personality events, and profile evolution rules.
+
+### Memory flow (NPC-specific)
+
+NPCs now track structured memory entries (`memory_log`) with:
+
+- event_type
+- summary
+- turn
+- world_event_id (optional)
+- player_action (optional)
+- impact map
+- tags
+
+Memories are appended as interactions occur and are used by behavior evaluation and evolution thresholds.
+
+### Evolution rule flow
+
+Evolution rules live in profile data and can trigger from events such as:
+
+- quest completion
+- player betrayal
+- faction conflict
+- village danger
+- repeated kindness/cruelty
+
+Rules can:
+
+- modify dynamic state
+- unlock behavior tags (used by dialogue conditions)
+- record a milestone memory
+
+### Behavior evaluation layer
+
+Before dialogue output, NPC responses are evaluated from:
+
+- profile moral tendencies + speech style
+- current dynamic state
+- recent memory signals (e.g., betrayal)
+- scene context
+- active world/quest context (via event-driven state updates)
+
+Evaluation modifies tone framing, willingness to share, hostility/friendliness, and quest openness.
+
 ### Memory flow
 
 The engine now tracks five additive memory layers in save-compatible state:

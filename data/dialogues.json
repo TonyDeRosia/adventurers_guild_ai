@@ -22,7 +22,18 @@
               "reputation_delta": {
                 "town": 1,
                 "guild": 2
-              }
+              },
+              "npc_state_delta": {
+                "trust_toward_player": 4,
+                "hope": 3,
+                "stress": -2,
+                "loyalty": 3
+              },
+              "personality_event": "player_kindness",
+              "personality_tags": [
+                "quest",
+                "kindness"
+              ]
             },
             "next_node": "accepted"
           },
@@ -36,7 +47,16 @@
               },
               "reputation_delta": {
                 "town": -1
-              }
+              },
+              "npc_state_delta": {
+                "trust_toward_player": -2,
+                "anger": 3,
+                "stress": 2
+              },
+              "personality_event": "player_betrayal",
+              "personality_tags": [
+                "self_interest"
+              ]
             },
             "next_node": "reward_terms"
           },
@@ -57,7 +77,17 @@
               "reputation_delta": {
                 "town": -2,
                 "guild": -2
-              }
+              },
+              "npc_state_delta": {
+                "trust_toward_player": -6,
+                "anger": 6,
+                "fear_toward_player": 2,
+                "hope": -4
+              },
+              "personality_event": "player_betrayal",
+              "personality_tags": [
+                "betrayal"
+              ]
             },
             "next_node": "refused"
           },
@@ -71,7 +101,10 @@
               "npc_relationship_tiers": [
                 "friendly",
                 "loyal"
-              ]
+              ],
+              "npc_state_min": {
+                "trust_toward_player": 6
+              }
             },
             "effects": {
               "set_flags": {
@@ -79,9 +112,39 @@
               },
               "reputation_delta": {
                 "town": 1
-              }
+              },
+              "personality_event": "player_kindness",
+              "personality_tags": [
+                "peace"
+              ]
             },
             "next_node": "peace_offer"
+          },
+          {
+            "id": "ask_hidden_catacomb_paths",
+            "text": "Share the old catacomb side paths with me.",
+            "conditions": {
+              "required_behaviors": [
+                "shares_catacomb_secrets"
+              ],
+              "npc_state_max": {
+                "fear_toward_player": 30
+              }
+            },
+            "effects": {
+              "set_flags": {
+                "thorne_shared_secret_routes": true
+              },
+              "npc_state_delta": {
+                "trust_toward_player": 2,
+                "loyalty": 2
+              },
+              "personality_event": "player_kindness",
+              "personality_tags": [
+                "trusted_info"
+              ]
+            },
+            "next_node": "secret_routes"
           }
         ]
       },
@@ -125,6 +188,10 @@
       "peace_offer": {
         "text": "If your standing holds, I can offer a sealing rite instead of bloodshed. Bring me the Moonsigil Relic.",
         "options": []
+      },
+      "secret_routes": {
+        "text": "Thorne unrolls an old charcoal map and marks a dry side passage known only to town wardens.",
+        "options": []
       }
     }
   },
@@ -150,7 +217,17 @@
               },
               "reputation_delta": {
                 "town": 1
-              }
+              },
+              "npc_state_delta": {
+                "trust_toward_player": 4,
+                "hope": 4,
+                "stress": -1
+              },
+              "personality_event": "player_kindness",
+              "personality_tags": [
+                "quest",
+                "kindness"
+              ]
             },
             "next_node": "lantern_task"
           },
@@ -164,9 +241,45 @@
               },
               "reputation_delta": {
                 "town": -1
-              }
+              },
+              "npc_state_delta": {
+                "trust_toward_player": -4,
+                "anger": 4,
+                "hope": -2,
+                "stress": 2
+              },
+              "personality_event": "player_cruelty",
+              "personality_tags": [
+                "betrayal"
+              ]
             },
             "next_node": "declined"
+          },
+          {
+            "id": "ask_hidden_trail",
+            "text": "Can you guide me through your hidden ranger trail?",
+            "conditions": {
+              "required_behaviors": [
+                "offers_hidden_trail"
+              ],
+              "npc_state_min": {
+                "trust_toward_player": 8
+              }
+            },
+            "effects": {
+              "set_flags": {
+                "elira_shared_hidden_trail": true
+              },
+              "npc_state_delta": {
+                "loyalty": 2,
+                "trust_toward_player": 1
+              },
+              "personality_event": "player_kindness",
+              "personality_tags": [
+                "trusted_info"
+              ]
+            },
+            "next_node": "hidden_trail"
           }
         ]
       },
@@ -176,6 +289,10 @@
       },
       "declined": {
         "text": "'Then tread softly. Without that light, the trail spirits turn cruel at dusk.'",
+        "options": []
+      },
+      "hidden_trail": {
+        "text": "Elira gestures between cedar roots. 'Follow this ridge at dawn; it avoids the spirit-haunted ravine.'",
         "options": []
       }
     }

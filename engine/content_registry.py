@@ -69,6 +69,7 @@ class ContentRegistry:
         self._enemies = self._load_enemies()
         self._items = self._load_items()
         self._factions = self._load_optional("factions.json")
+        self._npc_personalities = self._load_optional("npc_personalities.json")
 
     def _load_optional(self, filename: str) -> dict[str, Any]:
         path = self.data_dir / filename
@@ -149,3 +150,7 @@ class ContentRegistry:
     def faction_defaults(self) -> dict[str, int]:
         factions = self._factions.get("factions", {})
         return {faction_id: int(raw.get("starting_reputation", 0)) for faction_id, raw in factions.items()}
+
+    def get_npc_profile(self, profile_id: str) -> dict[str, Any] | None:
+        profiles = self._npc_personalities.get("profiles", {})
+        return profiles.get(profile_id)

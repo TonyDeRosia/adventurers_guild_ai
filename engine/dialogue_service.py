@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from engine.content_registry import ContentRegistry, DialogueNode, DialogueOption
 from engine.entities import CampaignState
 from memory.npc_memory import NPCMemoryTracker
+from memory.npc_personality import NPCPersonalitySystem
 from memory.quest_tracker import QuestTracker
 
 
@@ -22,6 +23,7 @@ class DialogueService:
         self.content = content
         self.quests = quests
         self.npcs = npcs
+        self.personality = NPCPersonalitySystem(content)
 
     def start_dialogue(self, state: CampaignState, npc_id: str) -> DialogueOutput | None:
         tree = self.content.get_dialogue(npc_id)
@@ -29,6 +31,12 @@ class DialogueService:
             return None
         state.active_dialogue_npc_id = npc_id
         state.active_dialogue_node_id = tree.start_node
+        self.personality.apply_event(
+            state,
+            npc_id,
+            event_type="dialogue_started",
+            payload={"summary": f"Started dialogue with {npc_id}", "player_action": "talk"},
+        )
         node = tree.nodes[tree.start_node]
         return self._render_node(state, npc_id, node)
 
@@ -75,6 +83,15 @@ class DialogueService:
             self.npcs.record_interaction(state, npc_id, f"Dialogue choice: {option.id}", delta=delta)
             npc = state.npcs[npc_id]
             npc.relationships[state.player.id] = npc.disposition
+            self.personality.apply_state_delta(
+                state,
+                npc_id,
+                {
+                    "trust_toward_player": delta,
+                    "loyalty": int(delta / 2),
+                    "anger": -1 if delta > 0 else 2,
+                },
+            )
 
         for faction, rep_delta in effects.get("reputation_delta", {}).items():
             state.faction_reputation[faction] = state.faction_reputation.get(faction, 0) + int(rep_delta)
@@ -82,11 +99,27 @@ class DialogueService:
         for key, value in effects.get("set_flags", {}).items():
             state.world_flags[key] = bool(value)
 
+        if effects.get("npc_state_delta"):
+            self.personality.apply_state_delta(state, npc_id, effects["npc_state_delta"])
+        if effects.get("personality_event"):
+            self.personality.apply_event(
+                state,
+                npc_id,
+                event_type=str(effects["personality_event"]),
+                payload={
+                    "summary": f"Dialogue effect {option.id}",
+                    "player_action": option.text,
+                    "tags": effects.get("personality_tags", []),
+                },
+            )
+
     def _render_node(self, state: CampaignState, npc_id: str, node: DialogueNode) -> DialogueOutput:
         options = self._available_options(state, npc_id, node)
+        evaluation = self.personality.evaluate(state, npc_id, scene="quest_offer" if "quest" in node.text.lower() else "dialogue")
+        styled_text = f"[{evaluation.tone}/{evaluation.speech_style}] {node.text}"
         if not options:
-            return DialogueOutput(node.text, [], True)
-        return DialogueOutput(node.text, self._option_lines(options), False)
+            return DialogueOutput(styled_text, [], True)
+        return DialogueOutput(styled_text, self._option_lines(options), False)
 
     def _option_lines(self, options: list[DialogueOption]) -> list[str]:
         return [f"{idx}) {option.text}" for idx, option in enumerate(options, start=1)]
@@ -115,4 +148,34 @@ class DialogueService:
             for key, value in required_flags.items():
                 if state.world_flags.get(str(key)) is not bool(value):
                     return False
+
+        state_min = conditions.get("npc_state_min", {})
+        if isinstance(state_min, dict):
+            npc = state.npcs.get(npc_id)
+            if not npc:
+                return False
+            for field, minimum in state_min.items():
+                if not hasattr(npc.dynamic_state, field):
+                    return False
+                if int(getattr(npc.dynamic_state, field)) < int(minimum):
+                    return False
+
+        state_max = conditions.get("npc_state_max", {})
+        if isinstance(state_max, dict):
+            npc = state.npcs.get(npc_id)
+            if not npc:
+                return False
+            for field, maximum in state_max.items():
+                if not hasattr(npc.dynamic_state, field):
+                    return False
+                if int(getattr(npc.dynamic_state, field)) > int(maximum):
+                    return False
+
+        required_behaviors = conditions.get("required_behaviors", [])
+        if isinstance(required_behaviors, list) and required_behaviors:
+            npc = state.npcs.get(npc_id)
+            if not npc:
+                return False
+            if not all(behavior in npc.unlocked_behaviors for behavior in required_behaviors):
+                return False
         return True
