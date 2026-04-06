@@ -11,6 +11,7 @@ What should happen:
 - If dependencies are not initialized yet, it runs `tools\setup_dev_env.bat` automatically.
 - It starts `run.py` in browser mode by default.
 - The app opens `http://127.0.0.1:8000` after the `/health` readiness check passes.
+- If your browser does not open automatically, the launcher prints the local URL so you can open it manually.
 - If startup fails, the window stays open and shows the error.
 
 `run.bat` is the one primary source launcher.
