@@ -7,7 +7,7 @@ from engine.game_state_manager import GameStateManager
 from models.ollama_adapter import OllamaAdapter
 from models.registry import create_model_adapter
 from app.runtime_config import ModelRuntimeConfig, RuntimeConfigStore
-from app.pathing import data_dir
+from app.pathing import initialize_user_data_paths
 from app.terminal_presenter import TerminalPresenter
 
 
@@ -18,9 +18,9 @@ def _print_startup_banner() -> None:
 
 
 def main() -> None:
-    resolved_data_dir = data_dir()
-    state_manager = GameStateManager(resolved_data_dir)
-    config_store = RuntimeConfigStore(resolved_data_dir / "app_config.json")
+    paths = initialize_user_data_paths()
+    state_manager = GameStateManager(paths.content_data, paths.saves, paths.user_data)
+    config_store = RuntimeConfigStore(paths.config / "app_config.json")
     _print_startup_banner()
     print("Loading campaign systems...")
 
@@ -32,7 +32,7 @@ def main() -> None:
         base_url=model_config.base_url,
         timeout_seconds=model_config.timeout_seconds,
     )
-    engine = CampaignEngine(model, data_dir=resolved_data_dir)
+    engine = CampaignEngine(model, data_dir=paths.content_data)
     presenter = TerminalPresenter()
 
     print("Type 'help' for commands. Type 'exit' to quit.")

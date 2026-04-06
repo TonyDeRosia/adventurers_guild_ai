@@ -12,6 +12,30 @@ A local-first, modular fantasy campaign engine with:
 2. Double-click the executable to launch.
 3. No separate Python installation is required for the `.exe` build.
 
+## Windows Installer (Recommended for Players)
+
+A full Inno Setup installer is included for Windows users who want normal install/uninstall behavior.
+
+### Installed mode
+
+- Installer lets users choose install folder (default: `C:\Program Files\AdventurerGuildAI`).
+- App binaries are installed to the chosen folder.
+- User-writable runtime data is stored separately in `%LOCALAPPDATA%\AdventurerGuildAI`:
+  - `saves/`
+  - `config/`
+  - `campaign_memory/`
+  - `logs/`
+  - `generated_images/`
+  - `cache/`
+  - `workflows/`
+- Start Menu shortcut is created by default.
+- Desktop shortcut is optional during setup.
+- Uninstall support is provided by Inno Setup.
+
+### Portable mode fallback
+
+Portable executable usage is still supported. Set `ADVENTURER_GUILD_AI_PORTABLE=1` before launch to keep writable data next to the EXE under `portable_data/`.
+
 ## Alternative (Developer Mode)
 
 1. Install Python 3.10+.
@@ -41,7 +65,21 @@ Use the provided script:
 build_exe.bat
 ```
 
-The script builds `dist/AdventurerGuildAI.exe` using PyInstaller and bundles required runtime data files.
+The script builds `dist/AdventurerGuildAI.exe` using PyInstaller and bundles required read-only content/static files.
+
+## Build Installer (Windows)
+
+Use the installer build script:
+
+```bat
+build_installer.bat
+```
+
+`build_installer.bat` will:
+1. Build `dist/AdventurerGuildAI.exe` via `build_exe.bat` if needed.
+2. Compile `installer/AdventurerGuildAI.iss` with Inno Setup (`ISCC.exe`).
+3. Produce a setup EXE in `installer/Output/`.
+
 
 ## Install
 
@@ -67,7 +105,7 @@ During startup you can now select:
 - local Ollama model name (for example `llama3.1:8b`)
 - Ollama base URL (default `http://localhost:11434`)
 
-The selection is saved in `data/app_config.json` and reused by terminal + web modes.
+The selection is saved in `%LOCALAPPDATA%\AdventurerGuildAI\config\app_config.json` (installed mode) and reused by terminal + web modes. Portable mode stores this under `portable_data/config/app_config.json`.
 
 ## Run web UI mode (default primary flow)
 
@@ -115,7 +153,7 @@ You can also configure from web mode using:
 - Terminal mode remains available as an explicit fallback via `--terminal` or `python -m app.main`.
 - Both interfaces share backend systems (`CampaignEngine`, `GameStateManager`) without moving gameplay rules into frontend code.
 - No gameplay rules were moved into frontend files; UI is presentation/API only.
-- Save files remain under `data/saves` and are shared across both modes.
+- Save files are stored in `%LOCALAPPDATA%\AdventurerGuildAI\saves` (installed mode) and are shared across both modes.
 
 ## Web UI architecture scaffold
 
@@ -208,13 +246,13 @@ Expected shape (simplified):
 ## Configure local image generation
 
 By default, web mode uses a local placeholder image adapter when workflow templates are present.
-Generated files are written under `data/generated_images` and served to the UI for inline display and side preview.
+Generated files are written under `%LOCALAPPDATA%\AdventurerGuildAI\generated_images` (installed mode) and served to the UI for inline display and side preview.
 
 To wire ComfyUI in later phases:
 
 1. Run ComfyUI locally (default expected URL: `http://localhost:8188`)
 2. Instantiate and set `ComfyUIAdapter` in `WebRuntime`.
-3. Keep using workflow files in `data/workflows/` for template-driven prompts.
+3. Keep using workflow files in `%LOCALAPPDATA%\AdventurerGuildAI\workflows` for template-driven prompts (initialized from bundled defaults on first run).
 
 ### UI image flow
 

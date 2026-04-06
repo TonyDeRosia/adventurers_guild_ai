@@ -220,7 +220,7 @@ def test_prompt_renderer_includes_content_settings_layer() -> None:
 
 
 def test_campaign_creation_can_disable_content_settings() -> None:
-    manager = GameStateManager(Path("data"))
+    manager = GameStateManager(Path("data"), Path("data") / "saves")
     state = manager.create_new_campaign(
         player_name="Mira",
         char_class="Mage",
