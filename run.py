@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import platform
+import socket
 import sys
 import threading
 import time
@@ -125,6 +126,18 @@ def _launch_browser_when_ready(host: str, port: int) -> None:
         print(f"[startup] Open this URL manually: {browser_url}")
 
 
+def _is_port_available(host: str, port: int) -> tuple[bool, str]:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind((host, port))
+        except OSError as exc:
+            return False, str(exc)
+    return True, ""
+
+
+
+
 def _is_address_in_use_error(exc: OSError) -> bool:
     message = str(exc).lower()
     winerror = getattr(exc, "winerror", None)
@@ -135,7 +148,6 @@ def _is_address_in_use_error(exc: OSError) -> bool:
         or "address already in use" in message
         or "only one usage of each socket address" in message
     )
-
 
 def main() -> int:
     _print_banner()
@@ -151,26 +163,25 @@ def main() -> int:
         if launch_mode == "terminal" and frozen and not terminal_enabled:
             print("Terminal mode is disabled in standard end-user builds. Launching browser UI instead.")
             launch_mode = "web"
+
         if launch_mode == "web":
             from app.web import FastAPI, WebRuntime, _resolve_static_root, create_web_app, uvicorn
 
             if FastAPI is None or uvicorn is None:
                 raise RuntimeError("FastAPI/uvicorn is not installed. Install dependencies and try again.")
 
-            browser_url = f"http://{_browser_host(args.host)}:{args.port}"
-            print(f"[startup] Checking for existing backend at {browser_url}/health ...")
-            already_running, _ = _wait_for_web_health(browser_url, timeout_seconds=1.5)
-            if already_running:
-                print("Backend already running")
-                print(f"[startup] Reusing existing backend at {browser_url}")
-                print(f"[startup] Opening browser without starting another backend.")
-                _launch_browser_when_ready(args.host, args.port)
-                return 0
+            available, reason = _is_port_available(args.host, args.port)
+            if not available:
+                print(
+                    f"[startup] Port {args.port} is already in use on host {args.host}. "
+                    f"Please stop the other process or choose a different port."
+                )
+                print(f"[startup] Port check detail: {reason}")
+                return 1
 
-            print(f"[startup] Starting backend at http://{args.host}:{args.port} ...")
-            print("Initializing app...")
             runtime = WebRuntime(project_root())
             app = create_web_app(runtime=runtime, static_root=_resolve_static_root())
+
             opener_thread = threading.Thread(
                 target=_launch_browser_when_ready,
                 args=(args.host, args.port),
@@ -178,25 +189,9 @@ def main() -> int:
                 name="browser-launcher",
             )
             opener_thread.start()
-            print(f"[startup] Launching server on http://{args.host}:{args.port}")
-            try:
-                uvicorn.run(app, host=args.host, port=args.port, log_level="info")
-            except OSError as exc:
-                if not _is_address_in_use_error(exc):
-                    raise
-                print(f"[startup] Backend start reported port conflict: {exc}")
-                print(f"[startup] Verifying whether {browser_url} is already healthy...")
-                recovered, reason = _wait_for_web_health(browser_url, timeout_seconds=2.0)
-                if recovered:
-                    print("Backend already running")
-                    print(f"[startup] Reusing existing backend at {browser_url}")
-                    _launch_browser_when_ready(args.host, args.port)
-                    return 0
-                print(
-                    f"[startup] Port {args.port} is occupied, but /health is not ready ({reason}). "
-                    f"Another process is using the port."
-                )
-                return 1
+
+            print(f"[startup] Starting backend at http://{args.host}:{args.port} ...")
+            uvicorn.run(app, host=args.host, port=args.port, log_level="info")
             return 0
 
         from app.main import main as terminal_main
