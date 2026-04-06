@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import platform
 import subprocess
@@ -73,9 +74,16 @@ def _wait_for_web_health(base_url: str, timeout_seconds: float = 15.0) -> tuple[
         try:
             with urlopen(f"{base_url}/health", timeout=1.0) as response:
                 payload = response.read().decode("utf-8", errors="replace")
-                if response.status == 200 and '"status": "ok"' in payload:
-                    return True, "ready"
-                last_reason = "health response did not include status ok"
+                if response.status == 200:
+                    try:
+                        parsed = json.loads(payload)
+                    except json.JSONDecodeError:
+                        parsed = {}
+                    if isinstance(parsed, dict) and str(parsed.get("status", "")).lower() == "ok":
+                        return True, "ready"
+                    last_reason = "health response did not include status ok"
+                else:
+                    last_reason = f"health returned HTTP {response.status}"
         except URLError as exc:
             last_reason = str(exc.reason) if getattr(exc, "reason", None) else str(exc)
         except OSError as exc:
