@@ -30,6 +30,19 @@
       "name": "Elder Thorne",
       "location_id": "moonfall_town",
       "disposition": 10,
+      "profile_id": "elder_thorne",
+      "dynamic_state": {
+        "trust_toward_player": 5,
+        "fear_toward_player": 0,
+        "stress": 12,
+        "hope": 4,
+        "anger": 2,
+        "loyalty": 6,
+        "instability": 0
+      },
+      "memory_log": [],
+      "unlocked_behaviors": [],
+      "applied_evolution_rules": [],
       "notes": [
         "Keeps watch over the catacomb gate."
       ],
@@ -43,6 +56,19 @@
       "name": "Warden Elira",
       "location_id": "whispering_woods",
       "disposition": 5,
+      "profile_id": "warden_elira",
+      "dynamic_state": {
+        "trust_toward_player": 4,
+        "fear_toward_player": 0,
+        "stress": 8,
+        "hope": 6,
+        "anger": 1,
+        "loyalty": 5,
+        "instability": 0
+      },
+      "memory_log": [],
+      "unlocked_behaviors": [],
+      "applied_evolution_rules": [],
       "notes": [
         "Protects the woodland shrine path."
       ],

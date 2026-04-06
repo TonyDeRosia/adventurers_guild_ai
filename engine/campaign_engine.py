@@ -12,6 +12,7 @@ from engine.entities import CampaignState
 from engine.inventory import InventoryService
 from memory.campaign_memory import CampaignMemory
 from memory.npc_memory import NPCMemoryTracker
+from memory.npc_personality import NPCPersonalitySystem
 from memory.quest_tracker import QuestTracker
 from memory.retrieval import MemoryRetrievalPipeline, RetrievalRequest
 from memory.summary import SummaryGenerator
@@ -37,8 +38,9 @@ class CampaignEngine:
         self.world = WorldStateTracker()
         self.quests = QuestTracker()
         self.npc_memory = NPCMemoryTracker()
-        self.combat = CombatEngine()
         self.content = ContentRegistry(data_dir or Path("data"))
+        self.personality = NPCPersonalitySystem(self.content)
+        self.combat = CombatEngine()
         self.inventory = InventoryService(self.content)
         self.character_sheet = CharacterSheetService()
         self.dialogue = DialogueService(self.content, self.quests, self.npc_memory)
@@ -101,6 +103,12 @@ class CampaignEngine:
                     system_messages.append(f"{state.npcs[npc_id].name} is not here.")
                 else:
                     self.npc_memory.record_interaction(state, npc_id, f"Turn {state.turn_count}: {action}", delta=1)
+                    self.personality.apply_event(
+                        state,
+                        npc_id,
+                        event_type="player_kindness",
+                        payload={"summary": "Player initiated respectful dialogue", "player_action": action, "impact": {"trust_toward_player": 1}},
+                    )
                     dialogue_output = self.dialogue.start_dialogue(state, npc_id)
                     if dialogue_output:
                         system_messages.append(dialogue_output.text)
@@ -111,6 +119,11 @@ class CampaignEngine:
                         system_messages.append(self.npc_memory.describe_npc(state, npc_id))
                     npc = state.npcs[npc_id]
                     system_messages.append(f"Relationship tier with {npc.name}: {npc.relationship_tier}.")
+                    eval_snapshot = self.personality.evaluate(state, npc_id, scene="dialogue")
+                    system_messages.append(
+                        f"Disposition lens: tone={eval_snapshot.tone}, friendliness={eval_snapshot.friendliness}, "
+                        f"hostility={eval_snapshot.hostility}, willingness={eval_snapshot.willingness_to_share}."
+                    )
                     self._post_talk_consequences(state, npc_id, system_messages)
             else:
                 system_messages.append(f"No NPC with id '{npc_id}' is present.")
@@ -306,6 +319,17 @@ class CampaignEngine:
                 state.npcs[npc_id].relationship_tier = self.npc_memory.relationship_tier_for_score(state.npcs[npc_id].disposition)
                 state.faction_reputation["town"] = state.faction_reputation.get("town", 0) + 2
                 state.world_events.append("elira_moonlantern_returned")
+                self.personality.apply_event(
+                    state,
+                    npc_id,
+                    event_type="player_kindness",
+                    payload={
+                        "summary": "Player returned Moonlantern to Elira",
+                        "world_event_id": "elira_moonlantern_returned",
+                        "impact": {"trust_toward_player": 8, "hope": 6, "stress": -3, "loyalty": 6},
+                        "tags": ["gift", "kindness"],
+                    },
+                )
                 self.inventory.add_item(state.player, "rangers_charm")
                 system_messages.append("You return the Moonlantern. Elira rewards you with a Ranger's Charm.")
 
@@ -317,6 +341,17 @@ class CampaignEngine:
                 state.world_flags["catacombs_cleared_violently"] = False
                 state.faction_reputation["guild"] = state.faction_reputation.get("guild", 0) + 2
                 state.world_events.append("catacombs_stabilized_with_relic")
+                self.personality.apply_event(
+                    state,
+                    npc_id,
+                    event_type="quest_completed",
+                    payload={
+                        "summary": "Player resolved catacomb blight peacefully with relic",
+                        "world_event_id": "catacombs_stabilized_with_relic",
+                        "impact": {"trust_toward_player": 8, "hope": 4, "anger": -4, "loyalty": 5},
+                        "tags": ["quest", "peaceful_resolution"],
+                    },
+                )
                 system_messages.append("Thorne accepts the Moonsigil Relic as proof and seals the crypt entrance.")
 
     def _finish_turn(
@@ -479,6 +514,22 @@ class CampaignEngine:
         state.faction_reputation["guild"] = state.faction_reputation.get("guild", 0) + 3
         state.faction_reputation["town"] = state.faction_reputation.get("town", 0) + 2
         state.world_events.append(f"catacombs_cleared_{outcome}")
+        self.personality.apply_event(
+            state,
+            "elder_thorne",
+            event_type="quest_completed",
+            payload={
+                "summary": f"Catacombs resolved via {outcome}",
+                "world_event_id": f"catacombs_cleared_{outcome}",
+                "impact": {
+                    "trust_toward_player": 5 if outcome != "combat" else 2,
+                    "fear_toward_player": 2 if outcome == "combat" else -2,
+                    "hope": 4,
+                    "anger": 2 if outcome == "combat" else -2,
+                },
+                "tags": ["quest", outcome],
+            },
+        )
         state.world_flags["catacombs_echo_silenced"] = True
         for reward_item in enemy.reward.items:
             self.inventory.add_item(state.player, reward_item)

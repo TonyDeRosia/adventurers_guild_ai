@@ -1,0 +1,144 @@
+{
+  "profiles": {
+    "elder_thorne": {
+      "id": "elder_thorne",
+      "identity": {
+        "role": "Town elder",
+        "background": "Veteran steward of Moonfall's catacomb ward"
+      },
+      "core_traits": ["duty-bound", "pragmatic", "protective"],
+      "values": ["community survival", "oaths", "measured justice"],
+      "fears": ["village collapse", "reckless violence"],
+      "desires": ["stable town", "trustworthy champions"],
+      "speech_style": "formal and deliberate",
+      "faction_ties": {
+        "town": "leader",
+        "guild": "ally"
+      },
+      "moral_tendencies": {
+        "compassion": 3,
+        "severity": 2
+      },
+      "state_defaults": {
+        "trust_toward_player": 5,
+        "fear_toward_player": 0,
+        "stress": 12,
+        "hope": 4,
+        "anger": 2,
+        "loyalty": 6,
+        "instability": 0
+      },
+      "evolution_rules": [
+        {
+          "id": "thorne_repeated_kindness",
+          "event_type": "player_kindness",
+          "conditions": {
+            "memory_event_count": {
+              "player_kindness": 3
+            }
+          },
+          "state_delta": {
+            "trust_toward_player": 8,
+            "hope": 5,
+            "loyalty": 6,
+            "stress": -4
+          },
+          "unlock_behavior": "shares_catacomb_secrets",
+          "memory_note": "Thorne now sees the player as a dependable protector."
+        },
+        {
+          "id": "thorne_village_danger",
+          "event_type": "village_danger",
+          "repeatable": true,
+          "state_delta": {
+            "stress": 8,
+            "fear_toward_player": 2,
+            "hope": -3
+          }
+        },
+        {
+          "id": "thorne_betrayal_response",
+          "event_type": "player_betrayal",
+          "state_delta": {
+            "trust_toward_player": -15,
+            "anger": 10,
+            "fear_toward_player": 7,
+            "loyalty": -10
+          },
+          "unlock_behavior": "withholds_sensitive_quests"
+        }
+      ]
+    },
+    "warden_elira": {
+      "id": "warden_elira",
+      "identity": {
+        "role": "Forest warden",
+        "background": "Ranger captain guarding shrine lanes"
+      },
+      "core_traits": ["vigilant", "empathetic", "independent"],
+      "values": ["balance", "honor", "mutual aid"],
+      "fears": ["corruption in wilds", "broken oaths"],
+      "desires": ["safe trails", "reliable allies"],
+      "speech_style": "concise and observant",
+      "faction_ties": {
+        "town": "ally",
+        "rangers": "captain"
+      },
+      "moral_tendencies": {
+        "compassion": 5,
+        "severity": 1
+      },
+      "state_defaults": {
+        "trust_toward_player": 4,
+        "fear_toward_player": 0,
+        "stress": 8,
+        "hope": 6,
+        "anger": 1,
+        "loyalty": 5,
+        "instability": 0
+      },
+      "evolution_rules": [
+        {
+          "id": "elira_repeated_cruelty",
+          "event_type": "player_cruelty",
+          "conditions": {
+            "memory_event_count": {
+              "player_cruelty": 2
+            }
+          },
+          "state_delta": {
+            "trust_toward_player": -10,
+            "fear_toward_player": 6,
+            "anger": 8,
+            "hope": -4
+          },
+          "unlock_behavior": "warns_ranger_outposts"
+        },
+        {
+          "id": "elira_moonlantern_returned",
+          "event_type": "quest_completed",
+          "conditions": {
+            "required_tags": ["gift", "kindness"]
+          },
+          "state_delta": {
+            "trust_toward_player": 6,
+            "loyalty": 6,
+            "hope": 4,
+            "stress": -3
+          },
+          "unlock_behavior": "offers_hidden_trail"
+        },
+        {
+          "id": "elira_faction_conflict",
+          "event_type": "faction_conflict",
+          "repeatable": true,
+          "state_delta": {
+            "stress": 6,
+            "anger": 4,
+            "instability": 2
+          }
+        }
+      ]
+    }
+  }
+}
