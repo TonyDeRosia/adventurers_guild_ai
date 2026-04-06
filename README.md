@@ -53,9 +53,12 @@ tests/
 
 - Python 3.10+
 
-### Run the MVP
+### Run the MVP (exact commands)
 
 ```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -U pip pytest
 python -m app.main
 ```
 
@@ -66,12 +69,35 @@ Useful commands inside the game loop:
 - `move <location_id>`
 - `talk <npc_id>`
 - `attack`
+- `rest`
+- `status`
 - `inventory`
 - `take <item>` / `drop <item>`
 - `quests`
 - `sheet`
 - `save` / `load`
 - `exit`
+
+### Campaign start flow
+
+On launch, the game walks through:
+
+1. Load autosave or start a new campaign
+2. Character creation (name + class)
+3. Campaign profile selection:
+   - `classic fantasy`
+   - `dark fantasy`
+4. Mature themes toggle (tone/config only)
+
+The mature setting changes narration style only; combat/math/state rules remain unchanged.
+
+### Phase 1 playable content
+
+- **Town:** `moonfall_town`
+- **Questgiver:** `elder_thorne`
+- **Dungeon encounter:** `moonfall_catacombs`
+- **Enemy:** `Bone Warden`
+- **Quest:** `Silence Beneath Moonfall`
 
 ### Run tests
 

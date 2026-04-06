@@ -63,6 +63,7 @@ class Quest:
 class CampaignSettings:
     """Configurable campaign behavior toggles."""
 
+    profile: str = "classic_fantasy"
     mature_content_enabled: bool = False
     narration_tone: str = "heroic"
     image_generation_enabled: bool = False
@@ -81,6 +82,8 @@ class CampaignState:
     locations: dict[str, Location]
     quests: dict[str, Quest]
     world_flags: dict[str, bool] = field(default_factory=dict)
+    active_enemy_id: str | None = None
+    active_enemy_hp: int | None = None
     event_log: list[str] = field(default_factory=list)
     settings: CampaignSettings = field(default_factory=CampaignSettings)
 
@@ -106,6 +109,8 @@ class CampaignState:
             locations={k: Location(**v) for k, v in payload["locations"].items()},
             quests={k: Quest(**v) for k, v in payload["quests"].items()},
             world_flags=payload.get("world_flags", {}),
+            active_enemy_id=payload.get("active_enemy_id"),
+            active_enemy_hp=payload.get("active_enemy_hp"),
             event_log=payload.get("event_log", []),
             settings=CampaignSettings(**payload.get("settings", {})),
         )

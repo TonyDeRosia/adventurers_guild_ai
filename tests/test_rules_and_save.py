@@ -32,6 +32,14 @@ SAMPLE_STATE = {
         }
     },
     "quests": {},
+    "active_enemy_id": "bone_warden",
+    "active_enemy_hp": 7,
+    "settings": {
+        "profile": "dark_fantasy",
+        "mature_content_enabled": True,
+        "narration_tone": "grim",
+        "image_generation_enabled": False,
+    },
 }
 
 
@@ -43,6 +51,26 @@ def test_combat_result_shape() -> None:
     assert 0 <= result.damage <= 8
 
 
+def test_combat_math_hit_and_damage(monkeypatch) -> None:
+    monkeypatch.setattr("rules.combat.roll_d20", lambda bonus: (17, 17 + bonus))
+    monkeypatch.setattr("rules.combat.roll_die", lambda sides: 6)
+    engine = CombatEngine()
+    result = engine.resolve_attack("Hero", 3, "Bandit", 12, 10, damage_die=8)
+    assert result.hit is True
+    assert result.total_roll == 20
+    assert result.damage == 6
+    assert result.remaining_hp == 4
+
+
+def test_combat_math_miss(monkeypatch) -> None:
+    monkeypatch.setattr("rules.combat.roll_d20", lambda bonus: (2, 2 + bonus))
+    engine = CombatEngine()
+    result = engine.resolve_attack("Hero", 1, "Bandit", 12, 10, damage_die=8)
+    assert result.hit is False
+    assert result.damage == 0
+    assert result.remaining_hp == 10
+
+
 def test_save_and_load_roundtrip(tmp_path: Path) -> None:
     state = CampaignState.from_dict(SAMPLE_STATE)
     manager = SaveManager(tmp_path)
@@ -50,3 +78,6 @@ def test_save_and_load_roundtrip(tmp_path: Path) -> None:
     loaded = manager.load("slot1")
     assert loaded.campaign_id == "t"
     assert loaded.player.name == "Hero"
+    assert loaded.active_enemy_id == "bone_warden"
+    assert loaded.active_enemy_hp == 7
+    assert loaded.settings.profile == "dark_fantasy"
