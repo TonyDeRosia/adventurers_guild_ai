@@ -28,5 +28,14 @@ if not exist ".deps_installed" (
     )
 )
 
+set "ENABLE_TERMINAL="
+set "ARGS=%*"
+echo %ARGS% | findstr /I /C:"--terminal" >nul && set "ENABLE_TERMINAL=1"
+echo %ARGS% | findstr /I /C:"--mode terminal" >nul && set "ENABLE_TERMINAL=1"
+
+if defined ENABLE_TERMINAL (
+    set "ADVENTURER_GUILD_AI_ENABLE_TERMINAL=1"
+)
+
 call %PYTHON_CMD% run.py %*
 exit /b %errorlevel%
