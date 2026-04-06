@@ -39,6 +39,11 @@ SAMPLE_STATE = {
         "mature_content_enabled": True,
         "narration_tone": "grim",
         "image_generation_enabled": False,
+        "content_settings": {
+            "tone": "grim",
+            "maturity_level": "mature",
+            "thematic_flags": ["horror", "intrigue"],
+        },
     },
 }
 
@@ -81,3 +86,4 @@ def test_save_and_load_roundtrip(tmp_path: Path) -> None:
     assert loaded.active_enemy_id == "bone_warden"
     assert loaded.active_enemy_hp == 7
     assert loaded.settings.profile == "dark_fantasy"
+    assert loaded.settings.content_settings.maturity_level == "mature"

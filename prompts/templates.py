@@ -12,6 +12,13 @@ CAMPAIGN_TONE_TEMPLATE = (
     "Campaign profile: {profile}. Narration tone: {tone}. Mature themes tone-layer: {maturity}."
 )
 
+CONTENT_SETTINGS_TEMPLATE = (
+    "Content settings (local campaign configuration): tone={tone}; maturity_level={maturity_level}; "
+    "thematic_flags={thematic_flags}. "
+    "These settings only guide narration/dialogue/scene description and must never alter combat math, "
+    "character progression, item mechanics, or rules resolution."
+)
+
 TURN_TEMPLATE = """[Scene Context]
 Campaign: {campaign_name}
 Location: {location}

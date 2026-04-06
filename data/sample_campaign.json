@@ -100,6 +100,11 @@
     "profile": "classic_fantasy",
     "mature_content_enabled": false,
     "narration_tone": "heroic",
-    "image_generation_enabled": false
+    "image_generation_enabled": false,
+    "content_settings": {
+      "tone": "heroic",
+      "maturity_level": "standard",
+      "thematic_flags": ["adventure", "mystery"]
+    }
   }
 }

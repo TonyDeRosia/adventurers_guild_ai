@@ -26,6 +26,7 @@ This update extends the existing terminal MVP loop without replacing startup flo
 - **World flags** that carry consequences into later interactions.
 - Lightweight **model provider scaffold** for future local backends, while still working fully offline.
 - Cleaner narration prompt organization separating system tone, campaign tone, scene context, and player state summary.
+- Campaign-level `content_settings` for local narration controls (tone, maturity level, thematic flags).
 
 ## Folder structure
 
@@ -106,11 +107,39 @@ New additive fields include:
 - `active_dialogue_npc_id`
 - `active_dialogue_node_id`
 - additional `world_flags` keys for branching outcomes
+- `settings.content_settings`:
+  - `tone` (narrative style such as `heroic`, `grim`, `noir`, etc.)
+  - `maturity_level` (`standard` or `mature`)
+  - `thematic_flags` (list of active narrative themes)
+
+## Content settings (local-only configuration)
+
+Content behavior is controlled entirely by each campaign's local configuration. No external service, policy endpoint, or remote moderation toggle is required for this feature.
+
+### Where it applies
+
+- **Applies to:** narration, dialogue framing, and scene description prompt layering.
+- **Does not apply to:** combat calculations, stats, inventory effects, leveling/progression, or other rules logic.
+
+### Campaign creation flow
+
+When starting a new campaign, you can:
+
+1. Enable or disable custom content settings.
+2. Select campaign tone.
+3. Set maturity level (`standard` or `mature`).
+4. Provide thematic flags (comma-separated).
+
+If custom content settings are disabled, the campaign falls back to a neutral defaults layer (`standard` + no thematic flags).
+
+### Adult content support
+
+For adult (18+) campaigns, set `maturity_level` to `mature` and add any desired thematic flags. This project keeps content handling as a configurable narration layer rather than hardcoded gameplay restrictions.
 
 ## Design principles
 
 - Rules/math remain separated from narration and prompt construction.
-- Mature themes remain a tone/config layer only.
+- Mature/adult themes remain a tone/config layer only.
 - New systems are modular and data-driven for future content growth.
 
 ## Run tests
