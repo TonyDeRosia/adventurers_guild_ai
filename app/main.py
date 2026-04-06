@@ -9,10 +9,17 @@ from engine.game_state_manager import GameStateManager
 from models.registry import create_model_adapter
 
 
+def _print_startup_banner() -> None:
+    print("=" * 36)
+    print("      Adventurer Guild AI")
+    print("=" * 36)
+
+
 def main() -> None:
     root = Path(__file__).resolve().parent.parent
     state_manager = GameStateManager(root / "data")
-    print("=== Adventurer's Guild AI: Phase 1 MVP ===")
+    _print_startup_banner()
+    print("Loading campaign systems...")
 
     state = _campaign_start_flow(state_manager)
 

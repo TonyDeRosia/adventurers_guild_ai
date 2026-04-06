@@ -1,0 +1,2 @@
+# Adventurer Guild AI currently uses only Python's standard library at runtime.
+# Keep this file so setup/run scripts have a stable install target.
