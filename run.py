@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import argparse
 import os
-import socket
 import sys
 import threading
 import time
 import traceback
 import webbrowser
+from urllib.error import URLError
+from urllib.request import urlopen
 
 from app.pathing import initialize_user_data_paths, project_root, static_dir
 
@@ -56,22 +57,33 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _wait_for_server(host: str, port: int, timeout_seconds: float = 15.0) -> bool:
+def _browser_host(host: str) -> str:
+    clean = host.strip().lower()
+    if clean in {"0.0.0.0", "::", "[::]", ""}:
+        return "127.0.0.1"
+    return host
+
+
+def _wait_for_web_health(url: str, timeout_seconds: float = 20.0) -> bool:
+    health_url = f"{url.rstrip('/')}/health"
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
         try:
-            with socket.create_connection((host, port), timeout=0.5):
-                return True
-        except OSError:
-            time.sleep(0.1)
+            with urlopen(health_url, timeout=1.0) as response:
+                payload = response.read().decode("utf-8", errors="replace")
+                if response.status == 200 and '"status": "ok"' in payload.replace("\n", ""):
+                    return True
+        except (URLError, TimeoutError, OSError, ValueError):
+            pass
+        time.sleep(0.2)
     return False
 
 
-def _open_browser_when_ready(host: str, port: int, url: str) -> None:
-    if _wait_for_server(host, port):
+def _open_browser_when_ready(url: str) -> None:
+    if _wait_for_web_health(url):
         webbrowser.open(url)
     else:
-        print(f"Warning: server at {url} did not become ready before timeout; browser not auto-opened.")
+        print(f"Warning: server health endpoint at {url}/health did not become ready before timeout; browser not auto-opened.")
 
 
 def main() -> int:
@@ -91,10 +103,11 @@ def main() -> int:
         if launch_mode == "web":
             from app.web import run_web_server
 
-            url = f"http://{args.host}:{args.port}"
+            browser_url = f"http://{_browser_host(args.host)}:{args.port}"
             print("Starting web mode (default)...")
+            print(f"Browser auto-open waits for {browser_url}/health")
             if not args.no_browser:
-                threading.Thread(target=_open_browser_when_ready, args=(args.host, args.port, url), daemon=True).start()
+                threading.Thread(target=_open_browser_when_ready, args=(browser_url,), daemon=True).start()
             run_web_server(host=args.host, port=args.port)
             return 0
 
