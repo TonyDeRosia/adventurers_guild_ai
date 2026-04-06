@@ -22,5 +22,5 @@ class WorldStateTracker:
         destination = state.locations[destination_id]
         return f"You travel to {destination.name}."
 
-    def set_world_flag(self, state: CampaignState, key: str, value: bool) -> None:
+    def set_world_flag(self, state: CampaignState, key: str, value: object) -> None:
         state.world_flags[key] = value

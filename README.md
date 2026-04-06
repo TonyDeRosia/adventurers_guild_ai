@@ -1,50 +1,56 @@
-# Adventurer's Guild AI (Phase 1 MVP)
+# Adventurer's Guild AI (Phase 2 Foundation)
 
-A local-first, modular AI campaign engine for Dungeons & Dragons style fantasy play.
+A local-first, modular AI campaign engine for terminal-first fantasy play.
 
 ## Design principles
 
 - **Modular first:** every major subsystem is isolated and replaceable.
 - **Rules separate from narration:** combat math and dice logic live in `rules/`, while storytelling prompts live in `prompts/` and model adapters in `models/`.
-- **Memory separate from prompts:** campaign state and memory trackers are not mixed with prompt templates.
-- **Local model ready:** null adapter included by default, with Ollama/GPT4All adapter hooks.
-- **Desktop-friendly MVP:** terminal playable loop now; web UI can be added later without reworking engine core.
+- **Data-driven content:** enemies, items, dialogue trees, and world hooks live under `data/` instead of being hardcoded into the engine.
+- **Save-safe evolution:** state schema changes are additive and old saves are upgraded at load time.
+- **Local model ready:** mock/null narration path works without external dependencies.
 
-## Phase 1 folder structure
+## Folder structure
 
 ```text
 app/
-  main.py                    # Terminal entry point with minimal playable loop
+  main.py
 engine/
-  campaign_engine.py         # Turn orchestration across subsystems
-  game_state_manager.py      # State lifecycle and save integration
-  save_manager.py            # JSON save/load implementation
-  entities.py                # Dataclasses for campaign state
-  character_sheet.py         # Character progression and summary helpers
-  inventory.py               # Inventory mutation service
+  campaign_engine.py
+  content_repository.py
+  dialogue_service.py
+  world_content_service.py
+  game_state_manager.py
+  save_manager.py
+  entities.py
+  character_sheet.py
+  inventory.py
 memory/
-  npc_memory.py              # NPC notes/disposition tracking
-  world_state.py             # Location movement and world flag updates
-  quest_tracker.py           # Quest listing/status updates/event log helpers
+  npc_memory.py
+  world_state.py
+  quest_tracker.py
 rules/
-  dice.py                    # Dice rolling utilities
-  combat.py                  # Combat resolution engine
+  dice.py
+  combat.py
 models/
-  base.py                    # Narration model adapter interface + fallback
-  registry.py                # Provider factory
-  ollama_adapter.py          # Ollama HTTP adapter hook
-  gpt4all_adapter.py         # GPT4All integration placeholder adapter
+  base.py
+  provider.py
+  registry.py
+  ollama_adapter.py
+  gpt4all_adapter.py
 prompts/
-  templates.py               # Prompt templates
-  renderer.py                # Prompt rendering from campaign state
-images/
-  base.py                    # Image adapter interface
-  comfyui_adapter.py         # Optional ComfyUI HTTP hook
+  templates.py
+  renderer.py
 data/
-  sample_campaign.json       # Starter campaign state
-  saves/                     # Save slot JSON files (created/updated at runtime)
+  sample_campaign.json
+  dialogues.json
+  enemies.json
+  items.json
+  world_content.json
+  saves/
 tests/
-  test_rules_and_save.py     # Unit tests for combat + persistence roundtrip
+  test_rules_and_save.py
+  test_campaign_features.py
 ```
 
 ## Quick start
@@ -53,7 +59,7 @@ tests/
 
 - Python 3.10+
 
-### Run the MVP (exact commands)
+### Run (exact commands)
 
 ```bash
 python -m venv .venv
@@ -62,102 +68,110 @@ python -m pip install -U pip pytest
 python -m app.main
 ```
 
-Useful commands inside the game loop:
+## Terminal commands
 
 - `help`
 - `look`
 - `move <location_id>`
 - `talk <npc_id>`
+- `choose <number>`
 - `attack`
 - `rest`
 - `status`
 - `inventory`
+- `use <item>`
+- `equip <item>`
 - `take <item>` / `drop <item>`
 - `quests`
 - `sheet`
 - `save` / `load`
 - `exit`
 
-### Campaign start flow
+## Phase 2 foundation additions
 
-On launch, the game walks through:
+### Dialogue choices
 
-1. Load autosave or start a new campaign
-2. Character creation (name + class)
-3. Campaign profile selection:
-   - `classic fantasy`
-   - `dark fantasy`
-4. Mature themes toggle (tone/config only)
+- NPC dialogue graphs with multiple choice responses via `data/dialogues.json`.
+- Choices can update quest status, relationships, world flags, and grant item rewards.
+- `talk <npc_id>` remains the entry point; `choose <number>` layers branching choices on top.
 
-The mature setting changes narration style only; combat/math/state rules remain unchanged.
+### Enemy definitions
 
-### Phase 1 playable content
+- Enemy stats and encounter text are in `data/enemies.json`.
+- The Bone Warden encounter now uses the structured enemy definition and reward metadata.
 
-- **Town:** `moonfall_town`
-- **Questgiver:** `elder_thorne`
-- **Dungeon encounter:** `moonfall_catacombs`
-- **Enemy:** `Bone Warden`
-- **Quest:** `Silence Beneath Moonfall`
+### Inventory + equipment (minimal slots)
 
-### Run tests
+- Items are defined in `data/items.json` with stable IDs and display names.
+- Character inventory now persists both:
+  - `inventory` (display names, compatibility)
+  - `inventory_item_ids` (stable internal IDs)
+- Equipment is intentionally minimal:
+  - one `weapon` slot
+  - one `trinket` slot
+
+### Expanded world + second quest
+
+- Added location: `brindlewatch_outpost`.
+- Added NPC: `captain_mirel`.
+- Added quest: `q_supply_line` (recover and return a sealed supply crate).
+
+### World flags + consequences
+
+- Generic scalable flag map in `world_flags`.
+- Example branching consequence:
+  - Elder Thorne dialogue choices set trust/approach flags.
+  - Later status and interactions reflect those earlier flags.
+
+### Model adapter scaffold
+
+- Added `models/provider.py` with:
+  - `NarrationRequest`
+  - `NarrationProvider` protocol
+  - deterministic `MockNarrationProvider`
+- Engine now has a clean provider-backed call path while still working entirely offline.
+
+### Prompt organization
+
+Prompt rendering is lightweight and split into:
+
+- system tone
+- profile tone
+- scene context
+- player state summary
+
+## Save format changes (additive)
+
+The following fields were added without removing legacy fields:
+
+- `player.inventory_item_ids: list[str]`
+- `player.equipped_weapon_id: str | null`
+- `player.equipped_trinket_id: str | null`
+- `active_dialogue: { npc_id, node_id } | null`
+- `world_flags` expanded to a generic key/value store (not just booleans)
+
+### Backward compatibility behavior
+
+When loading older saves, `GameStateManager` applies additive defaults for:
+
+- missing new player fields
+- missing quests/NPCs/locations introduced in this phase
+- missing default world flags
+
+Legacy inventories with only display names remain valid and are mapped into stable item IDs at runtime.
+
+## Tests
+
+Run all tests:
 
 ```bash
 python -m pytest -q
 ```
 
-## Save format
+Includes deterministic checks for:
 
-- JSON persistence via `engine/save_manager.py`.
-- Sample campaign schema mirrors the `CampaignState` dataclass in `engine/entities.py`.
-
-## Model provider strategy
-
-- Provider abstraction: `NarrationModelAdapter`.
-- Current providers:
-  - `null` (default deterministic fallback)
-  - `ollama` (HTTP endpoint hook)
-  - `gpt4all` (non-network placeholder for future SDK integration)
-
-Switching adapters only changes engine wiring, not game state/rules code.
-
-## Content settings
-
-Campaign profile settings include:
-
-- `mature_content_enabled`
-- `narration_tone`
-- `image_generation_enabled`
-
-These are persisted in campaign JSON and referenced by prompt rendering.
-
-## Roadmap
-
-### Phase 2 – Better gameplay depth
-
-- Multi-enemy combat encounters and turn order.
-- Item stats/equipment slots and consumables.
-- Skill checks and non-combat challenge resolution.
-- Richer NPC relationship arcs and faction standing.
-- Expanded quest state machine (branching objectives and fail states).
-
-### Phase 3 – Local model + UI expansion
-
-- FastAPI API layer with lightweight local web UI.
-- Streaming narration responses and context windows.
-- Robust Ollama/GPT4All runtime integration and adapter configuration.
-- Campaign profile manager (multiple campaigns with settings UI).
-- Optional scene image generation panel via ComfyUI hook.
-
-### Phase 4 – Production hardening and ecosystem
-
-- SQLite backend option with migration tooling.
-- Plugin system for custom rulesets, worlds, and model providers.
-- Deterministic replay/debug logs for balancing.
-- Automated balancing tools and encounter simulation tests.
-- Packaging for desktop distributions and save import/export.
-
-## Notes for contributors
-
-- Keep systems decoupled and additive.
-- Avoid mixing rule math into prompt templates or model adapters.
-- Prefer interface-driven extensions over direct cross-module coupling.
+- dialogue branching effects
+- inventory use/equip behavior
+- second quest progression
+- save/load compatibility with new fields
+- combat + persistence roundtrip

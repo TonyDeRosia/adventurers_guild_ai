@@ -1,0 +1,50 @@
+{
+  "items": [
+    {
+      "id": "worn_backpack",
+      "name": "Worn Backpack",
+      "kind": "utility",
+      "description": "An old leather pack with enough room for supplies."
+    },
+    {
+      "id": "torch",
+      "name": "Torch",
+      "kind": "utility",
+      "description": "A resin-soaked torch that burns bright in the dark."
+    },
+    {
+      "id": "herbal_draught",
+      "name": "Herbal Draught",
+      "kind": "consumable",
+      "description": "A bitter tonic brewed by Moonfall's apothecary.",
+      "heal_amount": 8
+    },
+    {
+      "id": "moon_ward_charm",
+      "name": "Moon-Ward Charm",
+      "kind": "trinket",
+      "description": "A silver-thread charm that steadies the wearer.",
+      "slot": "trinket"
+    },
+    {
+      "id": "grave_iron_dagger",
+      "name": "Grave-Iron Dagger",
+      "kind": "weapon",
+      "description": "A dark iron dagger that bites cleanly.",
+      "slot": "weapon",
+      "attack_bonus": 1
+    },
+    {
+      "id": "moonsigil_relic",
+      "name": "Moonsigil Relic",
+      "kind": "quest",
+      "description": "A sigil shard recovered from the catacomb altar."
+    },
+    {
+      "id": "sealed_supply_crate",
+      "name": "Sealed Supply Crate",
+      "kind": "quest",
+      "description": "A crate stamped with Brindlewatch's crest."
+    }
+  ]
+}

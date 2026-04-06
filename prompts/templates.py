@@ -1,18 +1,18 @@
-"""Prompt templates for narration.
+"""Prompt templates for narration."""
 
-Prompt assets are isolated from rules and persistence so writers can iterate
-without changing game math or save formats.
-"""
-
-SYSTEM_TEMPLATE = (
+SYSTEM_TONE_TEMPLATE = (
     "You are a fantasy campaign narrator. Keep responses concise, actionable, "
-    "and immersive. Respect campaign tone/content settings as style guidance only."
+    "and immersive. Mature themes are a style/tone modifier only."
 )
 
-TURN_TEMPLATE = """Campaign: {campaign_name}
-Location: {location}
-Player: {player_name} (HP {hp}/{max_hp})
-Action: {action}
-Recent events: {recent_events}
-Respond with 2-4 sentences and one suggested next move.
-"""
+PROFILE_TONES = {
+    "classic_fantasy": "Tone profile: hopeful heroism, wonder, and grounded danger.",
+    "dark_fantasy": "Tone profile: grim atmosphere, difficult choices, and restrained dread.",
+}
+
+SCENE_TEMPLATE = "Scene: {location}. Recent events: {recent_events}."
+
+PLAYER_STATE_TEMPLATE = (
+    "Player: {player_name} HP {hp}/{max_hp} XP {xp}. "
+    "Equipped weapon: {weapon}. Equipped trinket: {trinket}."
+)

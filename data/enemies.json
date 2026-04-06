@@ -1,0 +1,24 @@
+{
+  "enemies": [
+    {
+      "id": "bone_warden",
+      "name": "Bone Warden",
+      "max_hp": 14,
+      "attack": 3,
+      "armor": 12,
+      "damage_die": 6,
+      "description": "A shrine-bound skeleton wrapped in cracked votive chains.",
+      "encounter_text": "You descend into the catacombs and disturb a Bone Warden!",
+      "reward": {
+        "xp": 40,
+        "item_ids": ["moonsigil_relic"],
+        "set_flags": {
+          "moonfall.catacombs_cleared": true
+        }
+      }
+    }
+  ],
+  "location_encounters": {
+    "moonfall_catacombs": "bone_warden"
+  }
+}

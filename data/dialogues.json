@@ -1,0 +1,151 @@
+{
+  "dialogues": {
+    "elder_thorne": {
+      "start_node": "greeting",
+      "nodes": {
+        "greeting": {
+          "npc_text": "Elder Thorne steadies himself on a carved staff. 'Moonfall needs steady hands. What do you offer?'",
+          "choices": [
+            {
+              "id": "accept_hunt",
+              "text": "I'll clear the catacombs and return with proof.",
+              "next_node": "accepted",
+              "effects": {
+                "quest_updates": {"q_catacomb_blight": "active"},
+                "relationship_delta": 6,
+                "set_flags": {"moonfall.thorne_trusts_player": true}
+              }
+            },
+            {
+              "id": "ask_peaceful",
+              "text": "Could this be handled without more bloodshed?",
+              "next_node": "peaceful_path",
+              "effects": {
+                "relationship_delta": 3,
+                "set_flags": {"moonfall.prefers_peaceful_solution": true}
+              }
+            },
+            {
+              "id": "refuse",
+              "text": "I won't get involved.",
+              "next_node": "refused",
+              "effects": {
+                "quest_updates": {"q_catacomb_blight": "inactive"},
+                "relationship_delta": -6,
+                "set_flags": {"moonfall.thorne_refused_help": true}
+              }
+            }
+          ]
+        },
+        "accepted": {
+          "npc_text": "'Then take this draught and keep your blade high. Bring back the moonsigil relic.'",
+          "choices": [
+            {
+              "id": "end",
+              "text": "I'll return when it's done.",
+              "effects": {
+                "give_items": ["herbal_draught"],
+                "set_flags": {"moonfall.thorne_gave_draught": true}
+              }
+            }
+          ]
+        },
+        "peaceful_path": {
+          "npc_text": "'If the shrine still listens, place the moon-ward charm and let the dead sleep. If not, fight.'",
+          "choices": [
+            {
+              "id": "take_charm",
+              "text": "I'll try the charm first.",
+              "effects": {
+                "quest_updates": {"q_catacomb_blight": "active"},
+                "give_items": ["moon_ward_charm"],
+                "set_flags": {"moonfall.charm_path_unlocked": true}
+              }
+            }
+          ]
+        },
+        "refused": {
+          "npc_text": "'Then pray the dark below stays sleeping without you.'",
+          "choices": [
+            {
+              "id": "end_refusal",
+              "text": "I'll reconsider later."
+            }
+          ]
+        },
+        "after_completion": {
+          "npc_text": "'Moonfall stands because of your work. The chapel bells ring easier tonight.'",
+          "choices": [
+            {
+              "id": "completion_close",
+              "text": "Glad to be of service.",
+              "effects": {
+                "relationship_delta": 2
+              }
+            }
+          ]
+        }
+      }
+    },
+    "captain_mirel": {
+      "start_node": "request",
+      "nodes": {
+        "request": {
+          "npc_text": "Captain Mirel of Brindlewatch narrows her eyes. 'A supply crate vanished near the old watch path. Will you recover it?'",
+          "choices": [
+            {
+              "id": "accept",
+              "text": "I'll recover the crate.",
+              "next_node": "accepted",
+              "effects": {
+                "quest_updates": {"q_supply_line": "active"},
+                "relationship_delta": 5,
+                "set_flags": {"brindlewatch.mirel_trusts_player": true}
+              }
+            },
+            {
+              "id": "demand_pay",
+              "text": "Only if the guild pays first.",
+              "next_node": "haggled",
+              "effects": {
+                "relationship_delta": -2,
+                "set_flags": {"brindlewatch.player_drove_hard_bargain": true}
+              }
+            }
+          ]
+        },
+        "accepted": {
+          "npc_text": "'Good. Scouts marked the crate with red wax. Bring it intact.'",
+          "choices": [
+            {"id": "close", "text": "Understood."}
+          ]
+        },
+        "haggled": {
+          "npc_text": "'Do the work first. Then we discuss coin.'",
+          "choices": [
+            {
+              "id": "accept_after_haggle",
+              "text": "Fine. I'll still take the job.",
+              "effects": {
+                "quest_updates": {"q_supply_line": "active"}
+              }
+            }
+          ]
+        },
+        "after_return": {
+          "npc_text": "Mirel checks the crate's seal and nods. 'You kept your word. Brindlewatch remembers that.'",
+          "choices": [
+            {
+              "id": "close_after_return",
+              "text": "Keep the roads clear.",
+              "effects": {
+                "relationship_delta": 4,
+                "give_items": ["grave_iron_dagger"]
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

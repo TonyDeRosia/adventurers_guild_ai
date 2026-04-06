@@ -1,0 +1,17 @@
+{
+  "location_items": {
+    "brindlewatch_outpost": ["sealed_supply_crate"]
+  },
+  "npc_quest_turnins": {
+    "elder_thorne": {
+      "quest_id": "q_catacomb_blight",
+      "required_item_id": "moonsigil_relic",
+      "completion_flag": "moonfall.catacombs_resolved"
+    },
+    "captain_mirel": {
+      "quest_id": "q_supply_line",
+      "required_item_id": "sealed_supply_crate",
+      "completion_flag": "brindlewatch.supply_line_resolved"
+    }
+  }
+}

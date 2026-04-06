@@ -13,6 +13,9 @@
     "armor_class": 12,
     "attack_bonus": 3,
     "inventory": ["Worn Backpack", "Torch"],
+    "inventory_item_ids": ["worn_backpack", "torch"],
+    "equipped_weapon_id": null,
+    "equipped_trinket_id": null,
     "xp": 0
   },
   "npcs": {
@@ -25,6 +28,16 @@
       "relationships": {
         "player_1": 10
       }
+    },
+    "captain_mirel": {
+      "id": "captain_mirel",
+      "name": "Captain Mirel",
+      "location_id": "brindlewatch_outpost",
+      "disposition": 5,
+      "notes": ["Commands scouts along the eastern ridge road."],
+      "relationships": {
+        "player_1": 5
+      }
     }
   },
   "locations": {
@@ -32,12 +45,18 @@
       "id": "moonfall_town",
       "name": "Moonfall Town",
       "description": "A fortified hill-town huddled around a chapel and market square.",
-      "connections": ["moonfall_catacombs"]
+      "connections": ["moonfall_catacombs", "brindlewatch_outpost"]
     },
     "moonfall_catacombs": {
       "id": "moonfall_catacombs",
       "name": "Moonfall Catacombs",
       "description": "A damp crypt where broken sigils glow in the dark and bones stir.",
+      "connections": ["moonfall_town"]
+    },
+    "brindlewatch_outpost": {
+      "id": "brindlewatch_outpost",
+      "name": "Brindlewatch Outpost",
+      "description": "A wind-battered watch post guarding the old ridge road and supply route.",
       "connections": ["moonfall_town"]
     }
   },
@@ -50,16 +69,33 @@
       "objectives": [
         "Speak with Elder Thorne in Moonfall Town",
         "Travel to Moonfall Catacombs",
-        "Defeat the Bone Warden",
+        "Defeat the Bone Warden or calm the shrine",
         "Return with proof"
+      ]
+    },
+    "q_supply_line": {
+      "id": "q_supply_line",
+      "title": "The Broken Supply Line",
+      "description": "Captain Mirel needs a missing crate recovered from Brindlewatch.",
+      "status": "inactive",
+      "objectives": [
+        "Speak with Captain Mirel",
+        "Travel to Brindlewatch Outpost",
+        "Find and secure the sealed crate",
+        "Return the crate to Mirel"
       ]
     }
   },
   "world_flags": {
-    "catacombs_cleared": false
+    "moonfall.catacombs_cleared": false,
+    "moonfall.catacombs_resolved": false,
+    "moonfall.catacombs_resolved_style": "unknown",
+    "brindlewatch.crate_found": false,
+    "brindlewatch.supply_line_resolved": false
   },
   "active_enemy_id": null,
   "active_enemy_hp": null,
+  "active_dialogue": null,
   "event_log": [
     "Campaign initialized"
   ],
