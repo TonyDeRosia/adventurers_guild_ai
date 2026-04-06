@@ -23,5 +23,5 @@ echo.
 echo End users should launch the installed app from Start Menu/Desktop
 
 echo after running AdventurerGuildAI-Setup.exe.
-echo Developers should run source mode with dev_run.bat.
+echo Developers should run source mode with run.bat.
 exit /b 1
