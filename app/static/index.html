@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Adventurer Guild AI - Web Chat</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar left">
+        <h2>Campaigns</h2>
+        <div id="save-list" class="save-list"></div>
+        <button id="load-autosave">Load autosave</button>
+        <button id="new-campaign">New campaign</button>
+      </aside>
+
+      <main class="chat-main">
+        <header class="chat-header">
+          <h1>Adventurer Guild AI</h1>
+          <p id="campaign-meta">Loading campaign...</p>
+        </header>
+        <section id="chat-thread" class="chat-thread"></section>
+        <footer class="input-bar">
+          <input id="chat-input" type="text" placeholder="Enter your action (look, talk elder_thorne, attack...)" />
+          <button id="send-btn">Send</button>
+          <button id="gen-image-btn">Generate Scene</button>
+        </footer>
+      </main>
+
+      <aside class="sidebar right">
+        <h2>Context Panel</h2>
+        <div id="state-panel" class="state-panel"></div>
+        <h3>Image Preview</h3>
+        <div id="image-preview" class="image-preview">No generated image yet.</div>
+      </aside>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

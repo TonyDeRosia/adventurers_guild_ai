@@ -1,11 +1,19 @@
-# Adventurer's Guild AI (Expanded Terminal Foundation)
+# Adventurer's Guild AI
 
-A local-first, modular AI campaign engine for D&D-style fantasy play.
+A local-first, modular fantasy campaign engine with:
+- Existing terminal gameplay loop (preserved)
+- New additive local web chat scaffold
+- Optional image generation architecture via workflow templates
 
-## Quick Start
+## Install
 
 ```bash
 python -m pip install -r requirements.txt
+```
+
+## Run terminal mode (existing flow)
+
+```bash
 python -m app.main
 ```
 
@@ -15,164 +23,119 @@ Alternative launcher:
 python run.py
 ```
 
-## What this phase adds
+## Run web UI mode (new additive flow)
 
-This update extends the existing terminal MVP loop without replacing startup flow or core architecture.
-
-- Data-driven **NPC dialogue trees** with branching player choices.
-- Data-driven **enemy definitions** (Bone Warden now loaded from `data/enemies.json`).
-- Expanded **item + inventory system** with consumables, quest items, and equipable trinkets.
-- Lightweight **player stats layer** (`strength`, `agility`, `intellect`, `vitality`) integrated into combat and item modifiers.
-- Expanded **combat actions**: `defend`, `ability`, and `flee` alongside the existing `attack`.
-- **Faction reputation** tracking (`town`, `guild`, `unknown`) with dialogue and quest availability hooks.
-- **Relationship tiers** (`hostile`, `neutral`, `friendly`, `loyal`) derived from disposition and used in branching logic.
-- **Branching quest outcomes** (`combat`, `dialogue`, `item`) persisted in state for future consequences.
-- Simple **world event/consequence log** for triggered aftermath states.
-- Lightweight enemy behavior types (`aggressive`, `defensive`, `reckless`) driving turn-to-turn AI flavor.
-- A second location (`whispering_woods`) and a second quest (`q_moonlantern_oath`) with a new NPC (`warden_elira`).
-- **World flags** that carry consequences into later interactions.
-- Lightweight **model provider scaffold** for future local backends, while still working fully offline.
-- Cleaner narration prompt organization separating system tone, campaign tone, scene context, and player state summary.
-- Campaign-level `content_settings` for local narration controls (tone, maturity level, thematic flags).
-
-## Folder structure
-
-```text
-app/
-  main.py
-engine/
-  campaign_engine.py
-  game_state_manager.py
-  save_manager.py
-  entities.py
-  character_sheet.py
-  inventory.py
-  content_registry.py      # Data loader for dialogues/enemies/items
-  dialogue_service.py      # Dialogue node/choice runner
-memory/
-  npc_memory.py
-  world_state.py
-  quest_tracker.py
-rules/
-  dice.py
-  combat.py
-models/
-  base.py
-  provider.py              # Future-facing narration provider scaffold
-  registry.py
-  ollama_adapter.py
-  gpt4all_adapter.py
-prompts/
-  templates.py
-  renderer.py
-data/
-  sample_campaign.json
-  dialogues.json
-  enemies.json
-  items.json
-  saves/
-tests/
-  test_rules_and_save.py
-  test_campaign_extensions.py
+```bash
+python -m app.web
 ```
 
-## Current playable content
+Then open: <http://127.0.0.1:8000>
 
-- Locations: `moonfall_town`, `moonfall_catacombs`, `whispering_woods`
-- NPCs: `elder_thorne`, `warden_elira`
-- Quests:
-  - `q_catacomb_blight` (Silence Beneath Moonfall)
-  - `q_moonlantern_oath` (Moonlantern Oath)
-- Enemy: `bone_warden` (data-driven)
+## Terminal mode and web mode coexistence
 
-## Commands
+- Terminal mode remains unchanged and continues to use `app.main` + `CampaignEngine` directly.
+- Web mode is a separate entrypoint (`app.web`) that reuses the same backend `CampaignEngine` and `GameStateManager`.
+- No gameplay rules were moved into frontend files; UI is presentation/API only.
+- Save files remain under `data/saves` and are shared across both modes.
 
-- `help`
-- `look`
-- `move <location_id>`
-- `talk <npc_id>`
-- `choose <number>` (dialogue response)
-- `attack`
-- `defend`
-- `ability`
-- `flee`
-- `rest`
-- `status`
-- `inventory`
-- `use <item>`
-- `equip <item>`
-- `take <item>` / `drop <item>`
-- `quests`
-- `sheet`
-- `save` / `load`
-- `exit`
+## Web UI architecture scaffold
 
-## Save format notes
+The web UI is intentionally lightweight and dependency-minimal:
 
-Save compatibility is preserved with additive fields. Older saves still load.
+- `app/web.py`
+  - static file hosting
+  - API routes
+  - in-memory message presentation history for chat rendering
+- `app/static/index.html`
+  - left sidebar (campaign slots)
+  - center chat panel
+  - bottom input bar
+  - right panel placeholder (state/image preview)
+- `app/static/styles.css`
+  - clean chat-style panel layout
+- `app/static/app.js`
+  - minimal frontend state/render loop for local API calls
 
-New additive fields include:
+### API routes
 
-- `player.equipped_item_id`
-- `player.strength`
-- `player.agility`
-- `player.intellect`
-- `player.vitality`
-- `active_dialogue_npc_id`
-- `active_dialogue_node_id`
-- `faction_reputation`
-- `quest_outcomes`
-- `world_events`
-- `combat_effects`
-- additional `world_flags` keys for branching outcomes
-- `npc.relationship_tier`
-- `quest.availability`
-- `settings.content_settings`:
-  - `tone` (narrative style such as `heroic`, `grim`, `noir`, etc.)
-  - `maturity_level` (`standard` or `mature`)
-  - `thematic_flags` (list of active narrative themes)
+- `POST /api/campaign/input`
+  - send player input to the campaign engine
+- `GET /api/campaign/state`
+  - fetch current campaign state summary
+- `POST /api/campaign/start`
+  - start a new campaign or load a save slot
+- `GET /api/campaign/messages`
+  - fetch current session message history
+- `GET /api/campaign/saves`
+  - list save slots
+- `POST /api/images/generate`
+  - request image generation for a selected workflow template
 
-## Content settings (local-only configuration)
+## Image generation scaffold
 
-Content behavior is controlled entirely by each campaign's local configuration. No external service, policy endpoint, or remote moderation toggle is required for this feature.
+Image generation is kept separate from narration/rules systems.
 
-### Where it applies
+### Core modules
 
-- **Applies to:** narration, dialogue framing, and scene description prompt layering.
-- **Does not apply to:** combat calculations, stats, inventory effects, leveling/progression, or other rules logic.
+- `images/base.py`
+  - image adapter interface
+  - request/response dataclasses
+  - null adapter fallback
+- `images/comfyui_adapter.py`
+  - ComfyUI adapter scaffold (`/prompt` submission)
+- `images/workflow_manager.py`
+  - workflow template loader from files
+  - prompt/token injection utilities
+  - node input override support
 
-### Campaign creation flow
+### Workflow templates
 
-When starting a new campaign, you can:
+Workflow JSON templates live in `data/workflows/`:
 
-1. Enable or disable custom content settings.
-2. Select campaign tone.
-3. Set maturity level (`standard` or `mature`).
-4. Provide thematic flags (comma-separated).
+- `scene_image.json`
+- `character_portrait.json`
 
-If custom content settings are disabled, the campaign falls back to a neutral defaults layer (`standard` + no thematic flags).
+Templates support token injection such as:
 
-### Adult content support
+- `{{prompt}}`
+- `{{negative_prompt}}`
+- `{{seed}}`
+- `{{steps}}`
+- `{{cfg}}`
 
-For adult (18+) campaigns, set `maturity_level` to `mature` and add any desired thematic flags. This project keeps content handling as a configurable narration layer rather than hardcoded gameplay restrictions.
+Runtime parameters can also patch node input fields via `node_updates`.
 
-## Design principles
+## Workflow template structure
 
-- Rules/math remain separated from narration and prompt construction.
-- Mature/adult themes remain a tone/config layer only.
-- New systems are modular and data-driven for future content growth.
+Expected shape (simplified):
 
-## Gameplay depth systems (phase)
+```json
+{
+  "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "{{prompt}}"}},
+  "7": {"class_type": "CLIPTextEncode", "inputs": {"text": "{{negative_prompt}}"}},
+  "meta": {"template_type": "scene_image"}
+}
+```
 
-- **Combat math additions (deterministic):**
-  - Attack hit bonus now includes strength scaling.
-  - Damage receives a small strength bonus on successful hits.
-  - Defend reduces incoming damage using vitality.
-  - Ability attacks use intellect for improved hit/damage.
-  - Flee attempts use agility as their escape modifier.
-- **Quest consequences:**
-  - Quest completion now stores explicit outcome mode in `quest_outcomes`.
-  - Outcome flags are reused for later NPC reaction lines and world events.
+## Configure local image generation
+
+By default, web mode uses a null image adapter (safe fallback).
+
+To wire ComfyUI in later phases:
+
+1. Run ComfyUI locally (default expected URL: `http://localhost:8188`)
+2. Instantiate and set `ComfyUIAdapter` in `WebRuntime`.
+3. Keep using workflow files in `data/workflows/` for template-driven prompts.
+
+## Existing game systems (preserved)
+
+- Save/load
+- Dialogue trees + choice handling
+- Quests
+- Enemy encounters/combat
+- Inventory/stats
+- World state + faction/relationship tracking
+- Model adapter scaffold
 
 ## Run tests
 
