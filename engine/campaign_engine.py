@@ -18,6 +18,7 @@ from memory.retrieval import MemoryRetrievalPipeline, RetrievalRequest
 from memory.summary import SummaryGenerator
 from memory.world_state import WorldStateTracker
 from models.base import ChatMessage, NarrationModelAdapter
+from models.base import NullNarrationAdapter
 from prompts.renderer import PromptRenderer
 from rules.combat import CombatEngine
 
@@ -410,6 +411,9 @@ class CampaignEngine:
         )
         history = self._build_model_history(state)
         narrative = self.model.generate(prompt_packet.turn_prompt, prompt_packet.system_prompt, history=history)
+        if not narrative.strip() or narrative.lower().startswith("[ollama unavailable]"):
+            system_messages.append("Primary model provider unavailable; using local fallback narrator for this turn.")
+            narrative = NullNarrationAdapter().generate(prompt_packet.turn_prompt, prompt_packet.system_prompt, history=history)
         self.memory.record_recent(state, f"Narrator: {narrative}")
         self.memory.record_conversation_turn(
             state,

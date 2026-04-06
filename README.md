@@ -152,6 +152,59 @@ Terminal mode is only entered through explicit developer action (`--terminal` or
 
 ---
 
+## Browser Gameplay (Fully Wired)
+
+The browser experience is now the primary, fully operational flow:
+
+- Chat input sends turns to the backend campaign engine.
+- Structured turn output is returned and rendered as narrator/NPC/quest/system messages.
+- Turn history is persisted per campaign slot and restored after load/switch.
+- Autosave/write-on-turn is enabled through slot persistence APIs.
+
+### Campaign management in browser
+
+- **New campaign:** creates a fresh campaign state and save slot.
+- **Load/switch campaign:** loads any save slot and restores message history.
+- **Save campaign:** saves active state to current/new slot.
+- **Rename campaign:** renames the in-game campaign display name.
+- **Delete campaign:** removes non-active save slots safely.
+
+### Settings behavior
+
+Global settings (persisted in `config/app_config.json`):
+- model provider (`null`, `ollama`, `gpt4all`, `local_template`)
+- model name / base URL / timeout
+- image backend provider (`local`, `comfyui`, `null`)
+- image backend enabled flag
+
+Campaign settings (persisted in each save):
+- narration tone, profile, mature-content toggle
+- content settings (tone/maturity/thematic flags)
+- campaign-level image-generation enabled toggle
+
+Both global and campaign settings are wired to runtime behavior.
+
+### Model configuration and runtime behavior
+
+- Prompt assembly includes current scene, memory retrieval context, recent conversation, world state, and nearby NPC disposition context.
+- `ollama` is called via `/api/chat` with system prompt + rolling history.
+- If the primary model is unavailable at runtime, the engine gracefully falls back to local template narration for that turn and logs a readable system message.
+
+### Image generation behavior
+
+- Image generation flow: `request -> workflow template load/injection -> adapter call -> result metadata -> UI`.
+- With `comfyui`, requests go to the configured ComfyUI server.
+- If ComfyUI is unavailable, a graceful fallback generates a local placeholder SVG and marks fallback metadata.
+- Campaign-level image toggle can disable generation safely with readable API errors.
+
+### Reliability and error handling
+
+- Corrupt saves are detected and quarantined as `.corrupt.<timestamp>.json`.
+- API surfaces validation errors as readable JSON messages for UI display.
+- Missing slots, invalid settings, unavailable model/image backends are handled without crashing the campaign runtime.
+
+---
+
 ## Exact Flows
 
 ### Exact developer build flow
