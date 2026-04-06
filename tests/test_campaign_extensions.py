@@ -4,10 +4,11 @@ from copy import deepcopy
 from pathlib import Path
 
 from engine.campaign_engine import CampaignEngine
-from engine.entities import CampaignState
+from engine.entities import CampaignState, LongTermMemoryEntry, SessionSummary
 from engine.game_state_manager import GameStateManager
 from prompts.renderer import PromptRenderer
 from engine.save_manager import SaveManager
+from memory.retrieval import MemoryRetrievalPipeline, RetrievalRequest
 from models.base import NullNarrationAdapter
 
 
@@ -233,3 +234,87 @@ def test_campaign_creation_can_disable_content_settings() -> None:
     assert state.settings.content_settings.tone == "heroic"
     assert state.settings.content_settings.maturity_level == "standard"
     assert state.settings.content_settings.thematic_flags == []
+
+
+def test_memory_retrieval_pipeline_prefers_contextual_entries() -> None:
+    state = load_state()
+    state.turn_count = 10
+    state.current_location_id = "moonfall_town"
+    state.quests["q_catacomb_blight"].status = "active"
+    state.long_term_memory = [
+        LongTermMemoryEntry(
+            id="m1",
+            category="quest",
+            text="q_catacomb_blight advanced in moonfall_town",
+            location_id="moonfall_town",
+            quest_id="q_catacomb_blight",
+            turn=9,
+            weight=3,
+        ),
+        LongTermMemoryEntry(
+            id="m2",
+            category="npc",
+            text="warden_elira distrusts delays",
+            location_id="whispering_woods",
+            npc_id="warden_elira",
+            turn=2,
+            weight=1,
+        ),
+    ]
+    state.recent_memory = ["Player action: talk elder_thorne", "Quest q_catacomb_blight set to active."]
+    state.session_summaries = [
+        SessionSummary(
+            turn=8,
+            trigger="talk elder_thorne",
+            summary="Thorne shared catacomb warning.",
+            location_id="moonfall_town",
+            quest_ids=["q_catacomb_blight"],
+        )
+    ]
+
+    pipeline = MemoryRetrievalPipeline()
+    result = pipeline.retrieve(
+        state,
+        RetrievalRequest(
+            location_id="moonfall_town",
+            active_quest_ids=["q_catacomb_blight"],
+            current_npc_id="elder_thorne",
+            recent_actions=["talk", "quest"],
+            important_world_state=[],
+        ),
+    )
+
+    assert result.long_term_memory[0].startswith("q_catacomb_blight advanced")
+    assert result.session_summaries == ["Thorne shared catacomb warning."]
+    assert any("talk elder_thorne" in item for item in result.recent_memory)
+
+
+def test_analysis_mode_answers_core_questions() -> None:
+    state = load_state()
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+    state.npcs["elder_thorne"].disposition = 30
+    state.npcs["elder_thorne"].relationship_tier = "friendly"
+
+    quest_answer = engine.run_turn(state, "analyze what quests are active")
+    npc_answer = engine.run_turn(state, "analyze what does this npc think of me")
+    recent_answer = engine.run_turn(state, "analyze what happened recently")
+
+    assert any("Active quests:" in msg for msg in quest_answer.system_messages)
+    assert any("tier=friendly" in msg for msg in npc_answer.system_messages)
+    assert any("Recent actions:" in msg for msg in recent_answer.system_messages)
+
+
+def test_summary_persistence_and_save_load_compatibility_for_memory(tmp_path: Path) -> None:
+    state = load_state()
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+    engine.run_turn(state, "summarize")
+    assert state.session_summaries
+    assert state.recent_memory
+
+    manager = SaveManager(tmp_path)
+    manager.save(state, "slot_memory")
+    loaded = manager.load("slot_memory")
+
+    assert loaded.session_summaries
+    assert loaded.recent_memory
+    assert isinstance(loaded.long_term_memory, list)

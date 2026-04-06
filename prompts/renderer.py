@@ -2,14 +2,29 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from engine.entities import CampaignState
-from prompts.templates import CAMPAIGN_TONE_TEMPLATE, CONTENT_SETTINGS_TEMPLATE, SYSTEM_TONE_TEMPLATE, TURN_TEMPLATE
+from memory.retrieval import RetrievedMemory
+from prompts.templates import (
+    CAMPAIGN_TONE_TEMPLATE,
+    CONTENT_SETTINGS_TEMPLATE,
+    SYSTEM_ROLE_TEMPLATE,
+    SYSTEM_TONE_TEMPLATE,
+    TURN_TEMPLATE,
+)
+
+
+@dataclass
+class PromptPacket:
+    system_prompt: str
+    turn_prompt: str
 
 
 class PromptRenderer:
     """Converts current state + player action into model-ready prompts."""
 
-    def build_system_prompt(self, state: CampaignState) -> str:
+    def build_system_prompt(self, state: CampaignState, requested_mode: str = "play") -> str:
         maturity = "enabled" if state.settings.mature_content_enabled else "disabled"
         content_settings = state.settings.content_settings
         thematic_flags = ", ".join(content_settings.thematic_flags) if content_settings.thematic_flags else "none"
@@ -24,16 +39,31 @@ class PromptRenderer:
             thematic_flags=thematic_flags,
         )
         return (
+            f"[System Role]\n{SYSTEM_ROLE_TEMPLATE}\n"
             f"[System Tone]\n{SYSTEM_TONE_TEMPLATE}\n"
             f"[Campaign Tone]\n{campaign_tone}\n"
-            f"[Content Settings]\n{content_layer}"
+            f"[Content Settings]\n{content_layer}\n"
+            f"[Requested Mode]\n{requested_mode}"
         )
 
-    def build_turn_prompt(self, state: CampaignState, action: str, location_summary: str) -> str:
+    def build_turn_prompt(
+        self,
+        state: CampaignState,
+        action: str,
+        location_summary: str,
+        memory: RetrievedMemory,
+        requested_mode: str = "play",
+    ) -> str:
         recent = " | ".join(state.event_log[-4:]) if state.event_log else "No significant events yet"
         active_quest_count = sum(1 for quest in state.quests.values() if quest.status == "active")
         flags = ", ".join(k for k, v in sorted(state.world_flags.items()) if v) or "none"
         return TURN_TEMPLATE.format(
+            requested_mode=requested_mode,
+            recent_memory=" | ".join(memory.recent_memory) if memory.recent_memory else "none",
+            long_term_memory=" | ".join(memory.long_term_memory) if memory.long_term_memory else "none",
+            session_summaries=" | ".join(memory.session_summaries) if memory.session_summaries else "none",
+            plot_threads=" | ".join(memory.unresolved_plot_threads) if memory.unresolved_plot_threads else "none",
+            world_facts=" | ".join(memory.important_world_facts) if memory.important_world_facts else "none",
             campaign_name=state.campaign_name,
             location=location_summary,
             action=action,
@@ -45,4 +75,24 @@ class PromptRenderer:
             active_quest_count=active_quest_count,
             world_flags=flags,
             recent_events=recent,
+        )
+
+    def build_prompt_packet(
+        self,
+        state: CampaignState,
+        *,
+        action: str,
+        location_summary: str,
+        memory: RetrievedMemory,
+        requested_mode: str = "play",
+    ) -> PromptPacket:
+        return PromptPacket(
+            system_prompt=self.build_system_prompt(state, requested_mode=requested_mode),
+            turn_prompt=self.build_turn_prompt(
+                state,
+                action=action,
+                location_summary=location_summary,
+                memory=memory,
+                requested_mode=requested_mode,
+            ),
         )

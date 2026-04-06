@@ -86,6 +86,33 @@ class CampaignSettings:
 
 
 @dataclass
+class SessionSummary:
+    """Compact reusable summary for a campaign milestone."""
+
+    turn: int
+    trigger: str
+    summary: str
+    location_id: str
+    quest_ids: list[str] = field(default_factory=list)
+    npc_ids: list[str] = field(default_factory=list)
+    world_flags: list[str] = field(default_factory=list)
+
+
+@dataclass
+class LongTermMemoryEntry:
+    """Structured long-term memory item used during retrieval."""
+
+    id: str
+    category: str
+    text: str
+    location_id: str | None = None
+    quest_id: str | None = None
+    npc_id: str | None = None
+    turn: int = 0
+    weight: int = 1
+
+
+@dataclass
 class CampaignState:
     """Top-level persistent campaign state."""
 
@@ -107,6 +134,11 @@ class CampaignState:
     active_dialogue_npc_id: str | None = None
     active_dialogue_node_id: str | None = None
     event_log: list[str] = field(default_factory=list)
+    recent_memory: list[str] = field(default_factory=list)
+    long_term_memory: list[LongTermMemoryEntry] = field(default_factory=list)
+    session_summaries: list[SessionSummary] = field(default_factory=list)
+    unresolved_plot_threads: list[str] = field(default_factory=list)
+    important_world_facts: list[str] = field(default_factory=list)
     settings: CampaignSettings = field(default_factory=CampaignSettings)
 
     def to_dict(self) -> dict[str, Any]:
@@ -152,6 +184,11 @@ class CampaignState:
             active_dialogue_npc_id=payload.get("active_dialogue_npc_id"),
             active_dialogue_node_id=payload.get("active_dialogue_node_id"),
             event_log=payload.get("event_log", []),
+            recent_memory=[str(v) for v in payload.get("recent_memory", [])],
+            long_term_memory=[LongTermMemoryEntry(**v) for v in payload.get("long_term_memory", [])],
+            session_summaries=[SessionSummary(**v) for v in payload.get("session_summaries", [])],
+            unresolved_plot_threads=[str(v) for v in payload.get("unresolved_plot_threads", [])],
+            important_world_facts=[str(v) for v in payload.get("important_world_facts", [])],
             settings=cls._settings_from_payload(payload.get("settings", {})),
         )
 

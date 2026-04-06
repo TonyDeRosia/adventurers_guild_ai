@@ -7,6 +7,9 @@ without changing game math or save formats.
 SYSTEM_TONE_TEMPLATE = (
     "You are a fantasy campaign narrator. Keep responses concise, actionable, and immersive."
 )
+SYSTEM_ROLE_TEMPLATE = (
+    "Role: Local campaign intelligence narrator and analyst. Maintain continuity and respect rules boundaries."
+)
 
 CAMPAIGN_TONE_TEMPLATE = (
     "Campaign profile: {profile}. Narration tone: {tone}. Mature themes tone-layer: {maturity}."
@@ -19,7 +22,17 @@ CONTENT_SETTINGS_TEMPLATE = (
     "character progression, item mechanics, or rules resolution."
 )
 
-TURN_TEMPLATE = """[Scene Context]
+TURN_TEMPLATE = """[Requested Mode]
+{requested_mode}
+
+[Memory Context]
+Recent memory: {recent_memory}
+Long-term memory: {long_term_memory}
+Session summaries: {session_summaries}
+Unresolved plot threads: {plot_threads}
+Important world facts: {world_facts}
+
+[Scene Context]
 Campaign: {campaign_name}
 Location: {location}
 Action: {action}
