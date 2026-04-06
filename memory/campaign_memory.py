@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from engine.entities import CampaignState, LongTermMemoryEntry, SessionSummary
+from engine.entities import CampaignState, ConversationTurn, LongTermMemoryEntry, SessionSummary
 
 
 class CampaignMemory:
@@ -12,6 +12,7 @@ class CampaignMemory:
         self.recent_limit = recent_limit
         self.long_term_limit = long_term_limit
         self.summary_limit = summary_limit
+        self.conversation_limit = 120
 
     def record_recent(self, state: CampaignState, memory: str) -> None:
         text = memory.strip()
@@ -87,3 +88,25 @@ class CampaignMemory:
         clean = fact.strip()
         if clean and clean not in state.important_world_facts:
             state.important_world_facts.append(clean)
+
+    def record_conversation_turn(
+        self,
+        state: CampaignState,
+        *,
+        player_input: str,
+        system_messages: list[str],
+        narrator_response: str,
+        requested_mode: str,
+    ) -> None:
+        state.conversation_turns.append(
+            ConversationTurn(
+                turn=state.turn_count,
+                player_input=player_input.strip(),
+                system_messages=[message.strip() for message in system_messages if message.strip()],
+                narrator_response=narrator_response.strip(),
+                requested_mode=requested_mode,
+                location_id=state.current_location_id,
+            )
+        )
+        if len(state.conversation_turns) > self.conversation_limit:
+            state.conversation_turns = state.conversation_turns[-self.conversation_limit :]

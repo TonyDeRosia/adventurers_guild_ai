@@ -25,6 +25,9 @@ CONTENT_SETTINGS_TEMPLATE = (
 TURN_TEMPLATE = """[Requested Mode]
 {requested_mode}
 
+[Conversation Context]
+Recent chat turns: {recent_conversation}
+
 [Memory Context]
 Recent memory: {recent_memory}
 Long-term memory: {long_term_memory}

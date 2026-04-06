@@ -24,6 +24,14 @@ Alternative launcher:
 python run.py
 ```
 
+During startup you can now select:
+
+- model provider (`null` or `ollama`)
+- local Ollama model name (for example `llama3.1:8b`)
+- Ollama base URL (default `http://localhost:11434`)
+
+The selection is saved in `data/app_config.json` and reused by terminal + web modes.
+
 ## Run web UI mode (new additive flow)
 
 ```bash
@@ -31,6 +39,33 @@ python -m app.web
 ```
 
 Then open: <http://127.0.0.1:8000>
+
+## Local Ollama setup
+
+1. Install Ollama from <https://ollama.com/download>.
+2. Start the local Ollama server:
+
+```bash
+ollama serve
+```
+
+3. Pull at least one local model:
+
+```bash
+ollama pull llama3.1:8b
+```
+
+4. Start Adventurer's Guild AI and select provider `ollama` when prompted:
+
+```bash
+python -m app.main
+```
+
+You can also configure from web mode using:
+
+- `GET /api/model/config`
+- `POST /api/model/config`
+- `GET /api/model/options`
 
 ## Terminal mode and web mode coexistence
 
@@ -71,6 +106,12 @@ The web UI is intentionally lightweight and dependency-minimal:
   - list save slots
 - `POST /api/images/generate`
   - request image generation for a selected workflow template
+- `GET /api/model/config`
+  - fetch active local model configuration
+- `POST /api/model/config`
+  - update provider/model/base URL and hot-swap engine model adapter
+- `GET /api/model/options`
+  - list locally available model names (from Ollama `/api/tags` when enabled)
 
 ## Image generation scaffold
 
@@ -259,9 +300,21 @@ Prompt construction is now explicitly layered:
 2. campaign tone
 3. content settings (narration-only maturity/tone layer)
 4. requested mode (`play`, `summarize`, `analyze`)
-5. memory context
-6. scene context
-7. player state summary
+5. conversation context (recent turn history)
+6. memory context
+7. scene context
+8. player state summary
+
+### Model call flow
+
+1. `CampaignEngine.run_turn` resolves gameplay/rules and system messages.
+2. Memory layers are updated (`recent_memory`, long-term, summaries).
+3. Prompt packet is assembled (`system_prompt` + `turn_prompt`).
+4. Conversation history is converted into chat messages.
+5. Adapter call:
+   - `OllamaAdapter` -> `POST /api/chat` (local server)
+   - `NullNarrationAdapter` -> local template fallback
+6. Narrative is returned and persisted into `conversation_turns` for future turns.
 
 ## Updated terminal command flow
 

@@ -55,10 +55,15 @@ class PromptRenderer:
         requested_mode: str = "play",
     ) -> str:
         recent = " | ".join(state.event_log[-4:]) if state.event_log else "No significant events yet"
+        recent_conversation = " | ".join(
+            f"You: {turn.player_input} || Narrator: {turn.narrator_response}"
+            for turn in state.conversation_turns[-3:]
+        )
         active_quest_count = sum(1 for quest in state.quests.values() if quest.status == "active")
         flags = ", ".join(k for k, v in sorted(state.world_flags.items()) if v) or "none"
         return TURN_TEMPLATE.format(
             requested_mode=requested_mode,
+            recent_conversation=recent_conversation or "none",
             recent_memory=" | ".join(memory.recent_memory) if memory.recent_memory else "none",
             long_term_memory=" | ".join(memory.long_term_memory) if memory.long_term_memory else "none",
             session_summaries=" | ".join(memory.session_summaries) if memory.session_summaries else "none",

@@ -20,6 +20,7 @@ from engine.game_state_manager import GameStateManager
 from images.base import ImageGenerationRequest, ImageGenerationResult, ImageGeneratorAdapter, NullImageAdapter
 from images.workflow_manager import WorkflowManager
 from models.registry import create_model_adapter
+from app.runtime_config import ModelRuntimeConfig, RuntimeConfigStore
 
 
 @dataclass
@@ -35,11 +36,21 @@ class WebRuntime:
         self.root = root
         self.data_dir = root / "data"
         self.state_manager = GameStateManager(self.data_dir)
-        self.engine = CampaignEngine(create_model_adapter("null"), data_dir=self.data_dir)
+        self.config_store = RuntimeConfigStore(self.data_dir / "app_config.json")
+        self.model_config = self.config_store.load()
+        self.engine = CampaignEngine(self._create_model_adapter(), data_dir=self.data_dir)
         self.workflow_manager = WorkflowManager(self.data_dir / "workflows")
         self.image_adapter: ImageGeneratorAdapter = NullImageAdapter()
         self.session = WebSession(state=self._default_state())
         self._append_message("system", "Web session initialized.")
+
+    def _create_model_adapter(self):
+        return create_model_adapter(
+            self.model_config.provider,
+            model=self.model_config.model_name,
+            base_url=self.model_config.base_url,
+            timeout_seconds=self.model_config.timeout_seconds,
+        )
 
     def _default_state(self) -> CampaignState:
         if self.state_manager.can_load("autosave"):
@@ -69,11 +80,8 @@ class WebRuntime:
         self._append_message("player", text)
         result = self.engine.run_turn(self.session.state, text)
 
-        for system_message in result.system_messages:
-            classified = self._classify_system_message(system_message)
-            self._append_message(classified, system_message)
-
-        self._append_message("narrator", result.narrative)
+        for message in result.messages:
+            self._append_message(message["type"], message["text"])
 
         if result.should_exit:
             self.state_manager.save(self.session.state, "autosave")
@@ -82,7 +90,9 @@ class WebRuntime:
         return {
             "narrative": result.narrative,
             "system_messages": result.system_messages,
+            "messages": result.messages,
             "should_exit": result.should_exit,
+            "metadata": result.metadata or {},
             "state": self.serialize_state(),
         }
 
@@ -113,7 +123,40 @@ class WebRuntime:
             "active_enemy_hp": state.active_enemy_hp,
             "faction_reputation": state.faction_reputation,
             "quest_status": {qid: quest.status for qid, quest in state.quests.items()},
+            "conversation_turn_count": len(state.conversation_turns),
         }
+
+    def get_model_config(self) -> dict[str, Any]:
+        return {
+            "provider": self.model_config.provider,
+            "model_name": self.model_config.model_name,
+            "base_url": self.model_config.base_url,
+            "timeout_seconds": self.model_config.timeout_seconds,
+        }
+
+    def set_model_config(self, payload: dict[str, Any]) -> dict[str, Any]:
+        provider = str(payload.get("provider", self.model_config.provider)).strip().lower()
+        if provider not in {"null", "ollama"}:
+            raise ValueError("provider must be 'null' or 'ollama'")
+        model_name = str(payload.get("model_name", self.model_config.model_name)).strip() or self.model_config.model_name
+        base_url = str(payload.get("base_url", self.model_config.base_url)).strip() or self.model_config.base_url
+        timeout_seconds = int(payload.get("timeout_seconds", self.model_config.timeout_seconds))
+        self.model_config = ModelRuntimeConfig(
+            provider=provider,
+            model_name=model_name,
+            base_url=base_url,
+            timeout_seconds=timeout_seconds,
+        )
+        self.config_store.save(self.model_config)
+        self.engine.model = self._create_model_adapter()
+        self._append_message("system", f"Model configuration updated ({provider}:{model_name}).")
+        return self.get_model_config()
+
+    def list_available_local_models(self) -> list[str]:
+        adapter = self._create_model_adapter()
+        if hasattr(adapter, "list_local_models"):
+            return getattr(adapter, "list_local_models")()
+        return []
 
     def list_saves(self) -> list[str]:
         save_dir = self.data_dir / "saves"
@@ -179,6 +222,10 @@ class WebHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/api/campaign/saves":
             return self._json_response({"saves": self.runtime.list_saves()})
+        if parsed.path == "/api/model/config":
+            return self._json_response({"config": self.runtime.get_model_config()})
+        if parsed.path == "/api/model/options":
+            return self._json_response({"models": self.runtime.list_available_local_models()})
 
         self._json_response({"error": "Not found"}, status=HTTPStatus.NOT_FOUND)
 
@@ -208,6 +255,8 @@ class WebHandler(BaseHTTPRequestHandler):
                         image=result.to_dict(),
                     )
                 return self._json_response(result.to_dict(), status=HTTPStatus.OK if result.success else HTTPStatus.BAD_REQUEST)
+            if self.path == "/api/model/config":
+                return self._json_response({"config": self.runtime.set_model_config(payload)})
 
             self._json_response({"error": "Not found"}, status=HTTPStatus.NOT_FOUND)
         except ValueError as exc:
