@@ -2,6 +2,62 @@
 
 A local-first, modular AI campaign engine for Dungeons & Dragons style fantasy play.
 
+## Quick Start (Windows)
+
+### Step 1: Install Python
+
+1. Download Python 3.10+ from: https://www.python.org/downloads/windows/
+2. During install, enable **"Add Python to PATH"**.
+
+### Step 2: Download this repository
+
+- Click **Code → Download ZIP** and extract it, or clone with Git.
+
+### Step 3: Double-click `run.bat`
+
+- `run.bat` checks Python.
+- On first run, it launches `setup.bat` to install dependencies.
+- Then it starts the game.
+
+That is the main path for non-technical users.
+
+## Manual Run (all platforms)
+
+If you prefer terminal commands:
+
+```bash
+python -m pip install -r requirements.txt
+python -m app.main
+```
+
+Alternative root launcher:
+
+```bash
+python run.py
+```
+
+## Troubleshooting
+
+- **"Python is not installed or not available in PATH"**
+  - Install Python 3.10+ and re-run `run.bat`.
+  - If already installed, restart terminal/Windows and try again.
+- **Dependency install fails**
+  - Check internet connection.
+  - Run `python -m pip install --upgrade pip` then `python -m pip install -r requirements.txt`.
+- **Window closes immediately after an error**
+  - Run `run.bat` from Command Prompt to read full output.
+
+## Optional: build a one-file executable
+
+This is optional and not required for normal play.
+
+```bash
+python -m pip install pyinstaller
+pyinstaller --onefile run.py
+```
+
+The executable appears in `dist/`.
+
 ## Design principles
 
 - **Modular first:** every major subsystem is isolated and replaceable.
@@ -47,22 +103,7 @@ tests/
   test_rules_and_save.py     # Unit tests for combat + persistence roundtrip
 ```
 
-## Quick start
-
-### Requirements
-
-- Python 3.10+
-
-### Run the MVP (exact commands)
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -U pip pytest
-python -m app.main
-```
-
-Useful commands inside the game loop:
+## Useful in-game commands
 
 - `help`
 - `look`
@@ -78,7 +119,7 @@ Useful commands inside the game loop:
 - `save` / `load`
 - `exit`
 
-### Campaign start flow
+## Campaign start flow
 
 On launch, the game walks through:
 
@@ -91,7 +132,7 @@ On launch, the game walks through:
 
 The mature setting changes narration style only; combat/math/state rules remain unchanged.
 
-### Phase 1 playable content
+## Phase 1 playable content
 
 - **Town:** `moonfall_town`
 - **Questgiver:** `elder_thorne`
@@ -99,7 +140,7 @@ The mature setting changes narration style only; combat/math/state rules remain 
 - **Enemy:** `Bone Warden`
 - **Quest:** `Silence Beneath Moonfall`
 
-### Run tests
+## Run tests
 
 ```bash
 python -m pytest -q
