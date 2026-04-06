@@ -8,31 +8,38 @@
   </head>
   <body>
     <div class="app-shell">
-      <aside class="sidebar left">
-        <h2>Campaigns</h2>
+      <aside class="sidebar left-panel">
+        <h2>Campaigns & Saves</h2>
         <div id="save-list" class="save-list"></div>
-        <button id="load-autosave">Load autosave</button>
-        <button id="new-campaign">New campaign</button>
+        <div class="button-row">
+          <button id="load-autosave">Load autosave</button>
+          <button id="new-campaign">New campaign</button>
+        </div>
       </aside>
 
       <main class="chat-main">
         <header class="chat-header">
           <h1>Adventurer Guild AI</h1>
-          <p id="campaign-meta">Loading campaign...</p>
+          <p id="campaign-meta">Loading campaign...</p>  
         </header>
         <section id="chat-thread" class="chat-thread"></section>
         <footer class="input-bar">
           <input id="chat-input" type="text" placeholder="Enter your action (look, talk elder_thorne, attack...)" />
           <button id="send-btn">Send</button>
-          <button id="gen-image-btn">Generate Scene</button>
+          <button id="gen-image-btn">Generate Image</button>
         </footer>
       </main>
 
-      <aside class="sidebar right">
-        <h2>Context Panel</h2>
-        <div id="state-panel" class="state-panel"></div>
-        <h3>Image Preview</h3>
-        <div id="image-preview" class="image-preview">No generated image yet.</div>
+      <aside class="sidebar right-panel">
+        <h2>Adventure Panel</h2>
+        <section class="panel-block">
+          <h3>Character / Quests / Inventory</h3>
+          <pre id="state-panel" class="state-panel"></pre>
+        </section>
+        <section class="panel-block">
+          <h3>Image Preview</h3>
+          <div id="image-preview" class="image-preview">Click an inline image to preview it here.</div>
+        </section>
       </aside>
     </div>
 

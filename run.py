@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import traceback
+import webbrowser
 
 from app.pathing import data_dir, project_root, static_dir
 
@@ -27,13 +28,23 @@ def _initialize_paths() -> None:
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Start Adventurer Guild AI")
     parser.add_argument(
+        "--terminal",
+        action="store_true",
+        help="Launch terminal mode (fallback/debug interface).",
+    )
+    parser.add_argument(
         "--mode",
         choices=["terminal", "web"],
-        default="terminal",
+        default="web",
         help="Choose interface mode",
     )
     parser.add_argument("--host", default="127.0.0.1", help="Web host (web mode only)")
     parser.add_argument("--port", type=int, default=8000, help="Web port (web mode only)")
+    parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Do not open a browser tab automatically in web mode.",
+    )
     return parser.parse_args()
 
 
@@ -45,16 +56,20 @@ def main() -> int:
         args = _parse_args()
         _initialize_paths()
 
-        if args.mode == "web":
+        launch_mode = "terminal" if args.terminal else args.mode
+        if launch_mode == "web":
             from app.web import run_web_server
 
-            print("Starting web mode...")
+            url = f"http://{args.host}:{args.port}"
+            print("Starting web mode (default)...")
+            if not args.no_browser:
+                webbrowser.open(url)
             run_web_server(host=args.host, port=args.port)
             return 0
 
         from app.main import main as terminal_main
 
-        print("Starting terminal mode...")
+        print("Starting terminal mode (fallback/debug)...")
         terminal_main()
         return 0
     except KeyboardInterrupt:
