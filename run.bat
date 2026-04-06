@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal EnableDelayedExpansion
 
 set "ROOT_DIR=%~dp0"
 cd /d "%ROOT_DIR%"
@@ -37,9 +37,12 @@ if not exist ".deps_installed" (
 )
 
 set "ENABLE_TERMINAL="
-set "ARGS=%*"
-echo %ARGS% | findstr /I /C:"--terminal" >nul && set "ENABLE_TERMINAL=1"
-echo %ARGS% | findstr /I /C:"--mode terminal" >nul && set "ENABLE_TERMINAL=1"
+set "PREV_ARG="
+for %%A in (%*) do (
+    if /I "%%~A"=="--terminal" set "ENABLE_TERMINAL=1"
+    if /I "!PREV_ARG!"=="--mode" if /I "%%~A"=="terminal" set "ENABLE_TERMINAL=1"
+    set "PREV_ARG=%%~A"
+)
 
 if defined ENABLE_TERMINAL (
     echo [source] Terminal mode enabled (developer-only).
