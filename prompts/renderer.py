@@ -61,6 +61,12 @@ class PromptRenderer:
         )
         active_quest_count = sum(1 for quest in state.quests.values() if quest.status == "active")
         flags = ", ".join(k for k, v in sorted(state.world_flags.items()) if v) or "none"
+        nearby_npcs = [
+            f"{npc.name}(tier={npc.relationship_tier}, trust={npc.dynamic_state.trust_toward_player}, stress={npc.dynamic_state.stress})"
+            for npc in state.npcs.values()
+            if npc.location_id == state.current_location_id
+        ]
+        npc_context = " | ".join(nearby_npcs) if nearby_npcs else "none"
         return TURN_TEMPLATE.format(
             requested_mode=requested_mode,
             recent_conversation=recent_conversation or "none",
@@ -79,7 +85,7 @@ class PromptRenderer:
             attack_bonus=state.player.attack_bonus,
             active_quest_count=active_quest_count,
             world_flags=flags,
-            recent_events=recent,
+            recent_events=f"{recent} | Nearby NPC context: {npc_context}",
         )
 
     def build_prompt_packet(
