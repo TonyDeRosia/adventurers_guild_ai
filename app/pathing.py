@@ -28,7 +28,15 @@ def install_dir() -> Path:
 
 
 def static_dir() -> Path:
-    return project_root() / "app" / "static"
+    root = project_root()
+    candidates = [root / "app" / "static", root / "static"]
+    if getattr(sys, "frozen", False):
+        executable_root = Path(sys.executable).resolve().parent
+        candidates.extend([executable_root / "app" / "static", executable_root / "static"])
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
 
 
 def content_data_dir() -> Path:
