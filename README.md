@@ -1,8 +1,8 @@
 # Adventurer's Guild AI
 
 A local-first, modular fantasy campaign engine with:
-- Existing terminal gameplay loop (preserved)
-- New additive local web chat scaffold
+- GUI-first local web chat experience (default launch)
+- Existing terminal gameplay loop (preserved fallback/debug mode)
 - Optional image generation architecture via workflow templates
 - Campaign memory + retrieval + analysis mode
 
@@ -21,16 +21,16 @@ A local-first, modular fantasy campaign engine with:
 pip install -r requirements.txt
 ```
 
-3. Run terminal mode:
+3. Run the default local GUI mode:
 
 ```bash
 python run.py
 ```
 
-4. Run web mode:
+4. Run terminal fallback/debug mode:
 
 ```bash
-python run.py --mode web
+python run.py --terminal
 ```
 
 ## Build Executable (Windows)
@@ -49,7 +49,7 @@ The script builds `dist/AdventurerGuildAI.exe` using PyInstaller and bundles req
 python -m pip install -r requirements.txt
 ```
 
-## Run terminal mode (existing flow)
+## Run terminal mode (fallback/debug flow)
 
 ```bash
 python -m app.main
@@ -58,7 +58,7 @@ python -m app.main
 Alternative launcher:
 
 ```bash
-python run.py
+python run.py --terminal
 ```
 
 During startup you can now select:
@@ -69,13 +69,18 @@ During startup you can now select:
 
 The selection is saved in `data/app_config.json` and reused by terminal + web modes.
 
-## Run web UI mode (new additive flow)
+## Run web UI mode (default primary flow)
 
 ```bash
-python -m app.web
+python run.py
 ```
 
-Then open: <http://127.0.0.1:8000>
+The launcher starts the backend and opens: <http://127.0.0.1:8000>
+
+Optional flags:
+
+- `python run.py --no-browser` (skip auto-open)
+- `python run.py --mode web --host 127.0.0.1 --port 8000`
 
 ## Local Ollama setup
 
@@ -106,8 +111,9 @@ You can also configure from web mode using:
 
 ## Terminal mode and web mode coexistence
 
-- Terminal mode remains unchanged and continues to use `app.main` + `CampaignEngine` directly.
-- Web mode is a separate entrypoint (`app.web`) that reuses the same backend `CampaignEngine` and `GameStateManager`.
+- Web mode is now the default launch path from `run.py`.
+- Terminal mode remains available as an explicit fallback via `--terminal` or `python -m app.main`.
+- Both interfaces share backend systems (`CampaignEngine`, `GameStateManager`) without moving gameplay rules into frontend code.
 - No gameplay rules were moved into frontend files; UI is presentation/API only.
 - Save files remain under `data/saves` and are shared across both modes.
 
@@ -120,10 +126,10 @@ The web UI is intentionally lightweight and dependency-minimal:
   - API routes
   - in-memory message presentation history for chat rendering
 - `app/static/index.html`
-  - left sidebar (campaign slots)
+  - left sidebar (campaign slots/saves)
   - center chat panel
   - bottom input bar
-  - right panel placeholder (state/image preview)
+  - right panel placeholder (character/quests/inventory + image preview)
 - `app/static/styles.css`
   - clean chat-style panel layout
 - `app/static/app.js`
@@ -166,6 +172,9 @@ Image generation is kept separate from narration/rules systems.
   - workflow template loader from files
   - prompt/token injection utilities
   - node input override support
+- `images/local_adapter.py`
+  - local placeholder SVG image output (no external services required)
+  - keeps image rendering metadata separate from gameplay logic
 
 ### Workflow templates
 
@@ -198,13 +207,27 @@ Expected shape (simplified):
 
 ## Configure local image generation
 
-By default, web mode uses a null image adapter (safe fallback).
+By default, web mode uses a local placeholder image adapter when workflow templates are present.
+Generated files are written under `data/generated_images` and served to the UI for inline display and side preview.
 
 To wire ComfyUI in later phases:
 
 1. Run ComfyUI locally (default expected URL: `http://localhost:8188`)
 2. Instantiate and set `ComfyUIAdapter` in `WebRuntime`.
 3. Keep using workflow files in `data/workflows/` for template-driven prompts.
+
+### UI image flow
+
+1. Click **Generate Image** in the chat input row.
+2. Frontend sends `POST /api/images/generate` with `workflow_id` and prompt.
+3. Backend returns `result_path` and appends an `image` message with safe local URL (`/generated/...`).
+4. Chat thread renders inline image cards; clicking an image updates the right-side preview panel.
+
+## Packaging direction (GUI-first)
+
+- Keep `run.py` as the default executable entrypoint for desktop packaging.
+- Package static assets + local API server together so web/GUI mode is the product-first experience.
+- Preserve terminal mode as an explicit developer support path (`--terminal`) instead of the primary packaged UX.
 
 ## Core campaign intelligence flow (local-first)
 

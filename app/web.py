@@ -6,6 +6,7 @@ This module is additive and keeps the terminal app fully intact.
 from __future__ import annotations
 
 import json
+import mimetypes
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -18,6 +19,7 @@ from engine.campaign_engine import CampaignEngine
 from engine.entities import CampaignState
 from engine.game_state_manager import GameStateManager
 from images.base import ImageGenerationRequest, ImageGenerationResult, ImageGeneratorAdapter, NullImageAdapter
+from images.local_adapter import LocalPlaceholderImageAdapter
 from images.workflow_manager import WorkflowManager
 from models.registry import create_model_adapter
 from app.pathing import data_dir, project_root, static_dir
@@ -41,9 +43,15 @@ class WebRuntime:
         self.model_config = self.config_store.load()
         self.engine = CampaignEngine(self._create_model_adapter(), data_dir=self.data_dir)
         self.workflow_manager = WorkflowManager(self.data_dir / "workflows")
-        self.image_adapter: ImageGeneratorAdapter = NullImageAdapter()
+        self.generated_image_dir = self.data_dir / "generated_images"
+        self.image_adapter = self._create_image_adapter()
         self.session = WebSession(state=self._default_state())
-        self._append_message("system", "Web session initialized.")
+        self._append_message("system", "Web session initialized. GUI mode is active.")
+
+    def _create_image_adapter(self) -> ImageGeneratorAdapter:
+        if self.workflow_manager.list_templates():
+            return LocalPlaceholderImageAdapter(self.generated_image_dir)
+        return NullImageAdapter()
 
     def _create_model_adapter(self):
         return create_model_adapter(
@@ -72,12 +80,22 @@ class WebRuntime:
     def _append_message(self, message_type: str, text: str, **extra: Any) -> None:
         entry = {
             "id": f"m_{len(self.session.message_history) + 1}",
-            "type": message_type,
+            "type": self._normalize_message_type(message_type, text),
             "text": text,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         entry.update(extra)
         self.session.message_history.append(entry)
+
+    def _normalize_message_type(self, message_type: str, text: str) -> str:
+        if message_type in {"player", "narrator", "npc", "quest", "image", "system"}:
+            return message_type
+        lowered = text.lower()
+        if "quest" in lowered:
+            return "quest"
+        if lowered.startswith('"') or "relationship tier" in lowered:
+            return "npc"
+        return "system"
 
     def handle_player_input(self, text: str) -> dict[str, Any]:
         self._append_message("player", text)
@@ -98,16 +116,6 @@ class WebRuntime:
             "metadata": result.metadata or {},
             "state": self.serialize_state(),
         }
-
-    def _classify_system_message(self, message: str) -> str:
-        lowered = message.lower()
-        if "quest" in lowered:
-            return "quest"
-        if "relationship tier" in lowered or "choose <number>" in lowered:
-            return "npc"
-        if lowered.startswith("you say") or lowered.startswith('"'):
-            return "npc"
-        return "system"
 
     def serialize_state(self) -> dict[str, Any]:
         state = self.session.state
@@ -200,6 +208,16 @@ class WebRuntime:
         )
         return self.image_adapter.generate(request, self.workflow_manager)
 
+    def public_image_path(self, result_path: str | None) -> str | None:
+        if not result_path:
+            return None
+        local_path = Path(result_path)
+        try:
+            relative = local_path.resolve().relative_to(self.generated_image_dir.resolve())
+        except ValueError:
+            return None
+        return f"/generated/{relative.as_posix()}"
+
 
 class WebHandler(BaseHTTPRequestHandler):
     runtime: WebRuntime
@@ -213,6 +231,9 @@ class WebHandler(BaseHTTPRequestHandler):
         if parsed.path.startswith("/static/"):
             relative = parsed.path.replace("/static/", "", 1)
             return self._serve_static(relative)
+        if parsed.path.startswith("/generated/"):
+            relative = parsed.path.replace("/generated/", "", 1)
+            return self._serve_generated(relative)
 
         if parsed.path == "/api/campaign/state":
             return self._json_response({"state": self.runtime.serialize_state()})
@@ -252,10 +273,11 @@ class WebHandler(BaseHTTPRequestHandler):
             if self.path == "/api/images/generate":
                 result = self.runtime.generate_image(payload)
                 if result.success:
+                    public_image_url = self.runtime.public_image_path(result.result_path)
                     self.runtime._append_message(
                         "image",
                         payload.get("prompt", "Image generated"),
-                        image=result.to_dict(),
+                        image={"url": public_image_url, "metadata": result.metadata, "workflow_id": result.workflow_id},
                     )
                 return self._json_response(result.to_dict(), status=HTTPStatus.OK if result.success else HTTPStatus.BAD_REQUEST)
             if self.path == "/api/model/config":
@@ -288,6 +310,21 @@ class WebHandler(BaseHTTPRequestHandler):
         elif file_path.suffix == ".html":
             mime = "text/html; charset=utf-8"
         self._serve_file(relative, mime)
+
+    def _serve_generated(self, relative: str) -> None:
+        file_path = (self.runtime.generated_image_dir / relative).resolve()
+        root = self.runtime.generated_image_dir.resolve()
+        if root not in file_path.parents and file_path != root:
+            return self._json_response({"error": "Invalid image path"}, status=HTTPStatus.BAD_REQUEST)
+        if not file_path.exists() or not file_path.is_file():
+            return self._json_response({"error": "Image not found"}, status=HTTPStatus.NOT_FOUND)
+        mime = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
+        data = file_path.read_bytes()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", mime)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def _serve_file(self, relative: str, content_type: str) -> None:
         file_path = self.static_root / relative
