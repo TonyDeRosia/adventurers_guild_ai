@@ -1,204 +1,120 @@
-# Adventurer's Guild AI (Phase 1 MVP)
+# Adventurer's Guild AI (Expanded Terminal Foundation)
 
-A local-first, modular AI campaign engine for Dungeons & Dragons style fantasy play.
+A local-first, modular AI campaign engine for D&D-style fantasy play.
 
-## Quick Start (Windows)
-
-### Step 1: Install Python
-
-1. Download Python 3.10+ from: https://www.python.org/downloads/windows/
-2. During install, enable **"Add Python to PATH"**.
-
-### Step 2: Download this repository
-
-- Click **Code → Download ZIP** and extract it, or clone with Git.
-
-### Step 3: Double-click `run.bat`
-
-- `run.bat` checks Python.
-- On first run, it launches `setup.bat` to install dependencies.
-- Then it starts the game.
-
-That is the main path for non-technical users.
-
-## Manual Run (all platforms)
-
-If you prefer terminal commands:
+## Quick Start
 
 ```bash
 python -m pip install -r requirements.txt
 python -m app.main
 ```
 
-Alternative root launcher:
+Alternative launcher:
 
 ```bash
 python run.py
 ```
 
-## Troubleshooting
+## What this phase adds
 
-- **"Python is not installed or not available in PATH"**
-  - Install Python 3.10+ and re-run `run.bat`.
-  - If already installed, restart terminal/Windows and try again.
-- **Dependency install fails**
-  - Check internet connection.
-  - Run `python -m pip install --upgrade pip` then `python -m pip install -r requirements.txt`.
-- **Window closes immediately after an error**
-  - Run `run.bat` from Command Prompt to read full output.
+This update extends the existing terminal MVP loop without replacing startup flow or core architecture.
 
-## Optional: build a one-file executable
+- Data-driven **NPC dialogue trees** with branching player choices.
+- Data-driven **enemy definitions** (Bone Warden now loaded from `data/enemies.json`).
+- Expanded **item + inventory system** with consumables, quest items, and equipable trinkets.
+- A second location (`whispering_woods`) and a second quest (`q_moonlantern_oath`) with a new NPC (`warden_elira`).
+- **World flags** that carry consequences into later interactions.
+- Lightweight **model provider scaffold** for future local backends, while still working fully offline.
+- Cleaner narration prompt organization separating system tone, campaign tone, scene context, and player state summary.
 
-This is optional and not required for normal play.
-
-```bash
-python -m pip install pyinstaller
-pyinstaller --onefile run.py
-```
-
-The executable appears in `dist/`.
-
-## Design principles
-
-- **Modular first:** every major subsystem is isolated and replaceable.
-- **Rules separate from narration:** combat math and dice logic live in `rules/`, while storytelling prompts live in `prompts/` and model adapters in `models/`.
-- **Memory separate from prompts:** campaign state and memory trackers are not mixed with prompt templates.
-- **Local model ready:** null adapter included by default, with Ollama/GPT4All adapter hooks.
-- **Desktop-friendly MVP:** terminal playable loop now; web UI can be added later without reworking engine core.
-
-## Phase 1 folder structure
+## Folder structure
 
 ```text
 app/
-  main.py                    # Terminal entry point with minimal playable loop
+  main.py
 engine/
-  campaign_engine.py         # Turn orchestration across subsystems
-  game_state_manager.py      # State lifecycle and save integration
-  save_manager.py            # JSON save/load implementation
-  entities.py                # Dataclasses for campaign state
-  character_sheet.py         # Character progression and summary helpers
-  inventory.py               # Inventory mutation service
+  campaign_engine.py
+  game_state_manager.py
+  save_manager.py
+  entities.py
+  character_sheet.py
+  inventory.py
+  content_registry.py      # Data loader for dialogues/enemies/items
+  dialogue_service.py      # Dialogue node/choice runner
 memory/
-  npc_memory.py              # NPC notes/disposition tracking
-  world_state.py             # Location movement and world flag updates
-  quest_tracker.py           # Quest listing/status updates/event log helpers
+  npc_memory.py
+  world_state.py
+  quest_tracker.py
 rules/
-  dice.py                    # Dice rolling utilities
-  combat.py                  # Combat resolution engine
+  dice.py
+  combat.py
 models/
-  base.py                    # Narration model adapter interface + fallback
-  registry.py                # Provider factory
-  ollama_adapter.py          # Ollama HTTP adapter hook
-  gpt4all_adapter.py         # GPT4All integration placeholder adapter
+  base.py
+  provider.py              # Future-facing narration provider scaffold
+  registry.py
+  ollama_adapter.py
+  gpt4all_adapter.py
 prompts/
-  templates.py               # Prompt templates
-  renderer.py                # Prompt rendering from campaign state
-images/
-  base.py                    # Image adapter interface
-  comfyui_adapter.py         # Optional ComfyUI HTTP hook
+  templates.py
+  renderer.py
 data/
-  sample_campaign.json       # Starter campaign state
-  saves/                     # Save slot JSON files (created/updated at runtime)
+  sample_campaign.json
+  dialogues.json
+  enemies.json
+  items.json
+  saves/
 tests/
-  test_rules_and_save.py     # Unit tests for combat + persistence roundtrip
+  test_rules_and_save.py
+  test_campaign_extensions.py
 ```
 
-## Useful in-game commands
+## Current playable content
+
+- Locations: `moonfall_town`, `moonfall_catacombs`, `whispering_woods`
+- NPCs: `elder_thorne`, `warden_elira`
+- Quests:
+  - `q_catacomb_blight` (Silence Beneath Moonfall)
+  - `q_moonlantern_oath` (Moonlantern Oath)
+- Enemy: `bone_warden` (data-driven)
+
+## Commands
 
 - `help`
 - `look`
 - `move <location_id>`
 - `talk <npc_id>`
+- `choose <number>` (dialogue response)
 - `attack`
 - `rest`
 - `status`
 - `inventory`
+- `use <item>`
+- `equip <item>`
 - `take <item>` / `drop <item>`
 - `quests`
 - `sheet`
 - `save` / `load`
 - `exit`
 
-## Campaign start flow
+## Save format notes
 
-On launch, the game walks through:
+Save compatibility is preserved with additive fields. Older saves still load.
 
-1. Load autosave or start a new campaign
-2. Character creation (name + class)
-3. Campaign profile selection:
-   - `classic fantasy`
-   - `dark fantasy`
-4. Mature themes toggle (tone/config only)
+New additive fields include:
 
-The mature setting changes narration style only; combat/math/state rules remain unchanged.
+- `player.equipped_item_id`
+- `active_dialogue_npc_id`
+- `active_dialogue_node_id`
+- additional `world_flags` keys for branching outcomes
 
-## Phase 1 playable content
+## Design principles
 
-- **Town:** `moonfall_town`
-- **Questgiver:** `elder_thorne`
-- **Dungeon encounter:** `moonfall_catacombs`
-- **Enemy:** `Bone Warden`
-- **Quest:** `Silence Beneath Moonfall`
+- Rules/math remain separated from narration and prompt construction.
+- Mature themes remain a tone/config layer only.
+- New systems are modular and data-driven for future content growth.
 
 ## Run tests
 
 ```bash
 python -m pytest -q
 ```
-
-## Save format
-
-- JSON persistence via `engine/save_manager.py`.
-- Sample campaign schema mirrors the `CampaignState` dataclass in `engine/entities.py`.
-
-## Model provider strategy
-
-- Provider abstraction: `NarrationModelAdapter`.
-- Current providers:
-  - `null` (default deterministic fallback)
-  - `ollama` (HTTP endpoint hook)
-  - `gpt4all` (non-network placeholder for future SDK integration)
-
-Switching adapters only changes engine wiring, not game state/rules code.
-
-## Content settings
-
-Campaign profile settings include:
-
-- `mature_content_enabled`
-- `narration_tone`
-- `image_generation_enabled`
-
-These are persisted in campaign JSON and referenced by prompt rendering.
-
-## Roadmap
-
-### Phase 2 – Better gameplay depth
-
-- Multi-enemy combat encounters and turn order.
-- Item stats/equipment slots and consumables.
-- Skill checks and non-combat challenge resolution.
-- Richer NPC relationship arcs and faction standing.
-- Expanded quest state machine (branching objectives and fail states).
-
-### Phase 3 – Local model + UI expansion
-
-- FastAPI API layer with lightweight local web UI.
-- Streaming narration responses and context windows.
-- Robust Ollama/GPT4All runtime integration and adapter configuration.
-- Campaign profile manager (multiple campaigns with settings UI).
-- Optional scene image generation panel via ComfyUI hook.
-
-### Phase 4 – Production hardening and ecosystem
-
-- SQLite backend option with migration tooling.
-- Plugin system for custom rulesets, worlds, and model providers.
-- Deterministic replay/debug logs for balancing.
-- Automated balancing tools and encounter simulation tests.
-- Packaging for desktop distributions and save import/export.
-
-## Notes for contributors
-
-- Keep systems decoupled and additive.
-- Avoid mixing rule math into prompt templates or model adapters.
-- Prefer interface-driven extensions over direct cross-module coupling.

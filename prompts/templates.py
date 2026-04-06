@@ -4,15 +4,26 @@ Prompt assets are isolated from rules and persistence so writers can iterate
 without changing game math or save formats.
 """
 
-SYSTEM_TEMPLATE = (
-    "You are a fantasy campaign narrator. Keep responses concise, actionable, "
-    "and immersive. Respect campaign tone/content settings as style guidance only."
+SYSTEM_TONE_TEMPLATE = (
+    "You are a fantasy campaign narrator. Keep responses concise, actionable, and immersive."
 )
 
-TURN_TEMPLATE = """Campaign: {campaign_name}
+CAMPAIGN_TONE_TEMPLATE = (
+    "Campaign profile: {profile}. Narration tone: {tone}. Mature themes tone-layer: {maturity}."
+)
+
+TURN_TEMPLATE = """[Scene Context]
+Campaign: {campaign_name}
 Location: {location}
-Player: {player_name} (HP {hp}/{max_hp})
 Action: {action}
+
+[Player State Summary]
+Player: {player_name} ({char_class})
+HP: {hp}/{max_hp}
+Attack bonus: +{attack_bonus}
+Active quest count: {active_quest_count}
+World flags: {world_flags}
 Recent events: {recent_events}
+
 Respond with 2-4 sentences and one suggested next move.
 """

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
+from models.provider import LocalTemplateProvider, NarrationRequest
+
 
 class NarrationModelAdapter(ABC):
     """Provider interface for text generation."""
@@ -20,9 +22,14 @@ class NullNarrationAdapter(NarrationModelAdapter):
 
     provider_name = "null"
 
+    def __init__(self) -> None:
+        self.provider = LocalTemplateProvider()
+
     def generate(self, prompt: str, system_prompt: str = "") -> str:
-        return (
-            "[Local fallback narrator] "
-            "No model backend configured. Proceeding with deterministic narration. "
-            f"Context: {prompt[:180]}"
+        request = NarrationRequest(
+            system_tone=system_prompt,
+            campaign_tone=system_prompt,
+            scene_context=prompt,
+            player_state_summary=prompt,
         )
+        return self.provider.narrate(request)

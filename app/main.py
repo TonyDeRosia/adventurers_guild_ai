@@ -24,7 +24,7 @@ def main() -> None:
     state = _campaign_start_flow(state_manager)
 
     model = create_model_adapter("null")
-    engine = CampaignEngine(model)
+    engine = CampaignEngine(model, data_dir=root / "data")
 
     print("Type 'help' for commands. Type 'exit' to quit.")
     while True:

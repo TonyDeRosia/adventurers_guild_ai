@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from engine.entities import CampaignState
-from prompts.templates import SYSTEM_TEMPLATE, TURN_TEMPLATE
+from prompts.templates import CAMPAIGN_TONE_TEMPLATE, SYSTEM_TONE_TEMPLATE, TURN_TEMPLATE
 
 
 class PromptRenderer:
@@ -11,19 +11,27 @@ class PromptRenderer:
 
     def build_system_prompt(self, state: CampaignState) -> str:
         maturity = "enabled" if state.settings.mature_content_enabled else "disabled"
-        return (
-            f"{SYSTEM_TEMPLATE} Profile: {state.settings.profile}. "
-            f"Tone: {state.settings.narration_tone}. Mature themes: {maturity}."
+        campaign_tone = CAMPAIGN_TONE_TEMPLATE.format(
+            profile=state.settings.profile,
+            tone=state.settings.narration_tone,
+            maturity=maturity,
         )
+        return f"[System Tone]\n{SYSTEM_TONE_TEMPLATE}\n[Campaign Tone]\n{campaign_tone}"
 
     def build_turn_prompt(self, state: CampaignState, action: str, location_summary: str) -> str:
-        recent = " | ".join(state.event_log[-3:]) if state.event_log else "No significant events yet"
+        recent = " | ".join(state.event_log[-4:]) if state.event_log else "No significant events yet"
+        active_quest_count = sum(1 for quest in state.quests.values() if quest.status == "active")
+        flags = ", ".join(k for k, v in sorted(state.world_flags.items()) if v) or "none"
         return TURN_TEMPLATE.format(
             campaign_name=state.campaign_name,
             location=location_summary,
+            action=action,
             player_name=state.player.name,
+            char_class=state.player.char_class,
             hp=state.player.hp,
             max_hp=state.player.max_hp,
-            action=action,
+            attack_bonus=state.player.attack_bonus,
+            active_quest_count=active_quest_count,
+            world_flags=flags,
             recent_events=recent,
         )
