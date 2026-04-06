@@ -1,0 +1,80 @@
+{
+  "campaign_id": "emberfall",
+  "campaign_name": "Shadows of Emberfall",
+  "turn_count": 0,
+  "current_location_id": "town_square",
+  "player": {
+    "id": "player_1",
+    "name": "Aria",
+    "char_class": "Ranger",
+    "level": 1,
+    "hp": 20,
+    "max_hp": 20,
+    "armor_class": 12,
+    "attack_bonus": 3,
+    "inventory": ["Dagger", "Traveler's Cloak"],
+    "xp": 0
+  },
+  "npcs": {
+    "elder_maren": {
+      "id": "elder_maren",
+      "name": "Elder Maren",
+      "location_id": "town_square",
+      "disposition": 10,
+      "notes": ["Worried about missing caravans"],
+      "relationships": {}
+    },
+    "captain_ves": {
+      "id": "captain_ves",
+      "name": "Captain Ves",
+      "location_id": "watchtower",
+      "disposition": 0,
+      "notes": [],
+      "relationships": {}
+    }
+  },
+  "locations": {
+    "town_square": {
+      "id": "town_square",
+      "name": "Emberfall Square",
+      "description": "A stone plaza lit by enchanted braziers and crowded with anxious townsfolk.",
+      "connections": ["watchtower", "whispering_woods"]
+    },
+    "watchtower": {
+      "id": "watchtower",
+      "name": "North Watchtower",
+      "description": "An old tower overlooking the northern road where caravans vanish.",
+      "connections": ["town_square"]
+    },
+    "whispering_woods": {
+      "id": "whispering_woods",
+      "name": "Whispering Woods",
+      "description": "Twisted pines shiver with distant voices and hidden tracks.",
+      "connections": ["town_square"]
+    }
+  },
+  "quests": {
+    "q_missing_caravans": {
+      "id": "q_missing_caravans",
+      "title": "The Missing Caravans",
+      "description": "Find out why trade caravans disappear on the north road.",
+      "status": "active",
+      "objectives": [
+        "Speak with Elder Maren",
+        "Inspect the watchtower logs",
+        "Track signs in Whispering Woods"
+      ]
+    }
+  },
+  "world_flags": {
+    "north_road_open": false
+  },
+  "event_log": [
+    "Campaign initialized"
+  ],
+  "settings": {
+    "mature_content_enabled": false,
+    "narration_tone": "heroic",
+    "image_generation_enabled": false
+  }
+}
