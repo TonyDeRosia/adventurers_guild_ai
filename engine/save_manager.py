@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from engine.entities import CampaignState, SessionSummary
@@ -33,10 +34,17 @@ class SaveManager:
         path.write_text(json.dumps(state.to_dict(), indent=2), encoding="utf-8")
         return path
 
-    def load(self, slot: str = "autosave") -> CampaignState:
+    def load(self, slot: str = "autosave") -> CampaignState | None:
         path = self._save_path(slot)
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        return CampaignState.from_dict(payload)
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            return CampaignState.from_dict(payload)
+        except (OSError, json.JSONDecodeError, ValueError, TypeError):
+            if path.exists():
+                timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+                backup = path.with_suffix(f".corrupt.{timestamp}.json")
+                path.replace(backup)
+            return None
 
     def exists(self, slot: str = "autosave") -> bool:
         return self._save_path(slot).exists()

@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from engine.campaign_engine import CampaignEngine
 from engine.game_state_manager import GameStateManager
 from models.ollama_adapter import OllamaAdapter
 from models.registry import create_model_adapter
 from app.runtime_config import ModelRuntimeConfig, RuntimeConfigStore
+from app.pathing import data_dir
 from app.terminal_presenter import TerminalPresenter
 
 
@@ -19,9 +18,9 @@ def _print_startup_banner() -> None:
 
 
 def main() -> None:
-    root = Path(__file__).resolve().parent.parent
-    state_manager = GameStateManager(root / "data")
-    config_store = RuntimeConfigStore(root / "data" / "app_config.json")
+    resolved_data_dir = data_dir()
+    state_manager = GameStateManager(resolved_data_dir)
+    config_store = RuntimeConfigStore(resolved_data_dir / "app_config.json")
     _print_startup_banner()
     print("Loading campaign systems...")
 
@@ -33,7 +32,7 @@ def main() -> None:
         base_url=model_config.base_url,
         timeout_seconds=model_config.timeout_seconds,
     )
-    engine = CampaignEngine(model, data_dir=root / "data")
+    engine = CampaignEngine(model, data_dir=resolved_data_dir)
     presenter = TerminalPresenter()
 
     print("Type 'help' for commands. Type 'exit' to quit.")
@@ -78,8 +77,10 @@ def _campaign_start_flow(state_manager: GameStateManager):
         choice = input("Select option [1/2]: ").strip()
         if choice == "1":
             state = state_manager.load("autosave")
-            print(f"Loaded autosave for campaign: {state.campaign_name}")
-            return state
+            if state is not None:
+                print(f"Loaded autosave for campaign: {state.campaign_name}")
+                return state
+            print("Autosave could not be read. Starting a new campaign instead.")
 
     print("\n-- Campaign Creation --")
     name = input("Character name: ").strip() or "Aria"

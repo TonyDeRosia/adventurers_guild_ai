@@ -22,7 +22,12 @@ class RuntimeConfigStore:
     def load(self) -> ModelRuntimeConfig:
         if not self.path.exists():
             return ModelRuntimeConfig()
-        payload = json.loads(self.path.read_text(encoding="utf-8"))
+
+        try:
+            payload = json.loads(self.path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError, ValueError):
+            return ModelRuntimeConfig()
+
         return ModelRuntimeConfig(
             provider=str(payload.get("provider", "null")),
             model_name=str(payload.get("model_name", "llama3")),
