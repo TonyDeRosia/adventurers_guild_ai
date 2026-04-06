@@ -4,17 +4,27 @@ from __future__ import annotations
 
 import argparse
 import os
+import platform
+import subprocess
 import sys
 import threading
 import time
 import traceback
 import webbrowser
+from dataclasses import dataclass
 from urllib.error import URLError
 from urllib.request import urlopen
 
 from app.pathing import initialize_user_data_paths, project_root, static_dir
 
 TERMINAL_ENABLE_ENV = "ADVENTURER_GUILD_AI_ENABLE_TERMINAL"
+
+
+@dataclass(frozen=True)
+class BrowserLaunchResult:
+    success: bool
+    method: str
+    reason: str = ""
 
 
 def _print_banner() -> None:
@@ -85,15 +95,48 @@ def _wait_for_web_health(url: str, timeout_seconds: float = 20.0) -> tuple[bool,
     return False, last_reason
 
 
+def _try_launch_browser(url: str) -> BrowserLaunchResult:
+    if platform.system().lower() == "windows":
+        try:
+            os.startfile(url)  # type: ignore[attr-defined]
+            return BrowserLaunchResult(success=True, method="os.startfile")
+        except (AttributeError, OSError) as exc:
+            startfile_reason = f"{type(exc).__name__}: {exc}"
+        try:
+            subprocess.Popen(["cmd", "/c", "start", "", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return BrowserLaunchResult(success=True, method="cmd start")
+        except OSError as exc:
+            return BrowserLaunchResult(
+                success=False,
+                method="os.startfile -> cmd start",
+                reason=f"{startfile_reason}; {type(exc).__name__}: {exc}",
+            )
+
+    try:
+        if webbrowser.open(url):
+            return BrowserLaunchResult(success=True, method="webbrowser.open")
+        return BrowserLaunchResult(success=False, method="webbrowser.open", reason="returned False")
+    except webbrowser.Error as exc:
+        return BrowserLaunchResult(success=False, method="webbrowser.open", reason=f"{type(exc).__name__}: {exc}")
+
+
 def _open_browser_when_ready(url: str) -> None:
-    print("Waiting for browser readiness...")
+    print("Waiting for backend health check...")
     ready, reason = _wait_for_web_health(url)
-    if ready:
-        print("Opening browser...")
-        webbrowser.open(url)
-    else:
-        print(f"Warning: browser readiness check failed: {reason}")
-        print(f"Warning: server health endpoint at {url}/health was not ready; browser not auto-opened.")
+    if not ready:
+        print(f"Backend health check failed: {reason}")
+        print(f"Browser launch skipped because {url}/health did not report ready.")
+        return
+
+    print("Backend health is ready.")
+    print("Attempting browser launch...")
+    result = _try_launch_browser(url)
+    if result.success:
+        print(f"Browser launch command issued successfully via {result.method}.")
+        return
+
+    print(f"Browser auto-launch failed via {result.method}: {result.reason}")
+    print(f"Browser did not open automatically. Open this URL manually: {url}")
 
 
 def main() -> int:
@@ -115,7 +158,7 @@ def main() -> int:
 
             browser_url = f"http://{_browser_host(args.host)}:{args.port}"
             print("Starting backend (web mode default)...")
-            print(f"Waiting for browser readiness at {browser_url}/health")
+            print(f"Waiting for backend health at {browser_url}/health")
             if not args.no_browser:
                 threading.Thread(target=_open_browser_when_ready, args=(browser_url,), daemon=True).start()
             run_web_server(host=args.host, port=args.port)
