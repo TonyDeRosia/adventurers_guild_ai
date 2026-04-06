@@ -70,11 +70,22 @@ class InventoryService:
             current_def = self.content.get_item(current)
             if current_def and current_def.attack_bonus:
                 player.attack_bonus -= current_def.attack_bonus
+            if current_def:
+                self._apply_stat_modifiers(player, current_def.stat_modifiers, invert=True)
 
         player.equipped_item_id = normalized
         if definition.attack_bonus:
             player.attack_bonus += definition.attack_bonus
+        self._apply_stat_modifiers(player, definition.stat_modifiers)
         return f"You equip {definition.name}."
+
+    def _apply_stat_modifiers(self, player: Character, modifiers: dict[str, int], invert: bool = False) -> None:
+        factor = -1 if invert else 1
+        for key, value in modifiers.items():
+            if not hasattr(player, key):
+                continue
+            current = getattr(player, key)
+            setattr(player, key, max(0, current + (value * factor)))
 
     def _normalize_item_id(self, item_input: str | None) -> str:
         token = (item_input or "").strip().lower().replace(" ", "_")

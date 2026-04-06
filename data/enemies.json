@@ -10,7 +10,10 @@
     "encounter_text": "The Bone Warden claws itself from a collapsed ossuary, shield raised.",
     "reward": {
       "xp": 40,
-      "items": ["moonsigil_relic"]
-    }
+      "items": [
+        "moonsigil_relic"
+      ]
+    },
+    "behavior": "aggressive"
   }
 }

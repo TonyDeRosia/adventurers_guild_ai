@@ -9,9 +9,20 @@
             "id": "accept_catacombs",
             "text": "I will clear the catacombs for Moonfall.",
             "effects": {
-              "quest_updates": [{"quest_id": "q_catacomb_blight", "status": "active"}],
+              "quest_updates": [
+                {
+                  "quest_id": "q_catacomb_blight",
+                  "status": "active"
+                }
+              ],
               "relationship_delta": 7,
-              "set_flags": {"thorne_trusts_player": true}
+              "set_flags": {
+                "thorne_trusts_player": true
+              },
+              "reputation_delta": {
+                "town": 1,
+                "guild": 2
+              }
             },
             "next_node": "accepted"
           },
@@ -20,7 +31,12 @@
             "text": "What does Moonfall offer in return?",
             "effects": {
               "relationship_delta": -2,
-              "set_flags": {"thorne_thinks_player_greedy": true}
+              "set_flags": {
+                "thorne_thinks_player_greedy": true
+              },
+              "reputation_delta": {
+                "town": -1
+              }
             },
             "next_node": "reward_terms"
           },
@@ -28,11 +44,44 @@
             "id": "refuse",
             "text": "This is not my burden.",
             "effects": {
-              "quest_updates": [{"quest_id": "q_catacomb_blight", "status": "inactive"}],
+              "quest_updates": [
+                {
+                  "quest_id": "q_catacomb_blight",
+                  "status": "inactive"
+                }
+              ],
               "relationship_delta": -8,
-              "set_flags": {"thorne_refused_once": true}
+              "set_flags": {
+                "thorne_refused_once": true
+              },
+              "reputation_delta": {
+                "town": -2,
+                "guild": -2
+              }
             },
             "next_node": "refused"
+          },
+          {
+            "id": "ask_for_peaceful_resolution",
+            "text": "Is there a safer way than direct combat?",
+            "conditions": {
+              "faction_reputation_min": {
+                "town": 1
+              },
+              "npc_relationship_tiers": [
+                "friendly",
+                "loyal"
+              ]
+            },
+            "effects": {
+              "set_flags": {
+                "thorne_shared_peace_plan": true
+              },
+              "reputation_delta": {
+                "town": 1
+              }
+            },
+            "next_node": "peace_offer"
           }
         ]
       },
@@ -47,16 +96,34 @@
             "id": "accept_after_terms",
             "text": "Fair enough. I accept the task.",
             "effects": {
-              "quest_updates": [{"quest_id": "q_catacomb_blight", "status": "active"}],
+              "quest_updates": [
+                {
+                  "quest_id": "q_catacomb_blight",
+                  "status": "active"
+                }
+              ],
               "relationship_delta": 4,
-              "set_flags": {"thorne_trusts_player": true}
+              "set_flags": {
+                "thorne_trusts_player": true
+              }
             },
-            "next_node": "accepted"
+            "next_node": "accepted",
+            "conditions": {
+              "npc_relationship_tiers": [
+                "neutral",
+                "friendly",
+                "loyal"
+              ]
+            }
           }
         ]
       },
       "refused": {
         "text": "Thorne's eyes narrow. 'Then keep clear of the crypt mouth, traveler.'",
+        "options": []
+      },
+      "peace_offer": {
+        "text": "If your standing holds, I can offer a sealing rite instead of bloodshed. Bring me the Moonsigil Relic.",
         "options": []
       }
     }
@@ -71,9 +138,19 @@
             "id": "accept_lantern_quest",
             "text": "I can recover your stolen moonlantern.",
             "effects": {
-              "quest_updates": [{"quest_id": "q_moonlantern_oath", "status": "active"}],
+              "quest_updates": [
+                {
+                  "quest_id": "q_moonlantern_oath",
+                  "status": "active"
+                }
+              ],
               "relationship_delta": 5,
-              "set_flags": {"elira_trusts_player": true}
+              "set_flags": {
+                "elira_trusts_player": true
+              },
+              "reputation_delta": {
+                "town": 1
+              }
             },
             "next_node": "lantern_task"
           },
@@ -82,7 +159,12 @@
             "text": "I have other priorities.",
             "effects": {
               "relationship_delta": -4,
-              "set_flags": {"elira_refused_once": true}
+              "set_flags": {
+                "elira_refused_once": true
+              },
+              "reputation_delta": {
+                "town": -1
+              }
             },
             "next_node": "declined"
           }

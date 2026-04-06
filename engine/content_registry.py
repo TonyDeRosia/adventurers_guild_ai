@@ -14,6 +14,7 @@ class DialogueOption:
     text: str
     next_node: str | None = None
     effects: dict[str, Any] = field(default_factory=dict)
+    conditions: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -44,6 +45,7 @@ class EnemyDefinition:
     description: str
     encounter_text: str
     damage_die: int = 6
+    behavior: str = "aggressive"
     reward: EnemyReward = field(default_factory=EnemyReward)
 
 
@@ -55,6 +57,7 @@ class ItemDefinition:
     description: str
     heal_amount: int = 0
     attack_bonus: int = 0
+    stat_modifiers: dict[str, int] = field(default_factory=dict)
 
 
 class ContentRegistry:
@@ -65,6 +68,13 @@ class ContentRegistry:
         self._dialogues = self._load_dialogues()
         self._enemies = self._load_enemies()
         self._items = self._load_items()
+        self._factions = self._load_optional("factions.json")
+
+    def _load_optional(self, filename: str) -> dict[str, Any]:
+        path = self.data_dir / filename
+        if not path.exists():
+            return {}
+        return json.loads(path.read_text(encoding="utf-8"))
 
     def _read_json(self, filename: str) -> dict[str, Any]:
         return json.loads((self.data_dir / filename).read_text(encoding="utf-8"))
@@ -81,6 +91,7 @@ class ContentRegistry:
                         text=o["text"],
                         next_node=o.get("next_node"),
                         effects=o.get("effects", {}),
+                        conditions=o.get("conditions", {}),
                     )
                     for o in raw_node.get("options", [])
                 ]
@@ -101,6 +112,7 @@ class ContentRegistry:
                 attack=raw["attack"],
                 armor=raw["armor"],
                 damage_die=raw.get("damage_die", 6),
+                behavior=raw.get("behavior", "aggressive"),
                 description=raw["description"],
                 encounter_text=raw["encounter_text"],
                 reward=reward,
@@ -118,6 +130,7 @@ class ContentRegistry:
                 description=raw["description"],
                 heal_amount=raw.get("heal_amount", 0),
                 attack_bonus=raw.get("attack_bonus", 0),
+                stat_modifiers=raw.get("stat_modifiers", {}),
             )
         return items
 
@@ -132,3 +145,7 @@ class ContentRegistry:
 
     def all_items(self) -> dict[str, ItemDefinition]:
         return self._items
+
+    def faction_defaults(self) -> dict[str, int]:
+        factions = self._factions.get("factions", {})
+        return {faction_id: int(raw.get("starting_reputation", 0)) for faction_id, raw in factions.items()}

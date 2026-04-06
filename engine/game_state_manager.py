@@ -58,6 +58,10 @@ class GameStateManager:
                 "thematic_flags": [],
             }
         new_payload["event_log"] = [f"Campaign initialized for {player_name} ({char_class})"]
+        new_payload["faction_reputation"] = {"town": 0, "guild": 0, "unknown": 0}
+        new_payload["quest_outcomes"] = {}
+        new_payload["world_events"] = ["campaign_started"]
+        new_payload["combat_effects"] = {}
         return CampaignState.from_dict(new_payload)
 
     def save(self, state: CampaignState, slot: str = "autosave") -> Path:
