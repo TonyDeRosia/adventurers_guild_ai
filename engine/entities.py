@@ -64,10 +64,19 @@ class Quest:
 class CampaignSettings:
     """Configurable campaign behavior toggles."""
 
+    @dataclass
+    class ContentSettings:
+        """Narration-layer content controls configured per campaign."""
+
+        tone: str = "heroic"
+        maturity_level: str = "standard"
+        thematic_flags: list[str] = field(default_factory=lambda: ["adventure", "mystery"])
+
     profile: str = "classic_fantasy"
     mature_content_enabled: bool = False
     narration_tone: str = "heroic"
     image_generation_enabled: bool = False
+    content_settings: ContentSettings = field(default_factory=ContentSettings)
 
 
 @dataclass
@@ -117,5 +126,30 @@ class CampaignState:
             active_dialogue_npc_id=payload.get("active_dialogue_npc_id"),
             active_dialogue_node_id=payload.get("active_dialogue_node_id"),
             event_log=payload.get("event_log", []),
-            settings=CampaignSettings(**payload.get("settings", {})),
+            settings=cls._settings_from_payload(payload.get("settings", {})),
         )
+
+    @staticmethod
+    def _settings_from_payload(raw_settings: dict[str, Any]) -> CampaignSettings:
+        """Deserialize settings while preserving backward compatibility."""
+
+        settings = dict(raw_settings)
+        raw_content = settings.pop("content_settings", None)
+        content_settings: CampaignSettings.ContentSettings
+
+        if raw_content is None:
+            content_settings = CampaignSettings.ContentSettings(
+                tone=settings.get("narration_tone", "heroic"),
+                maturity_level="mature" if settings.get("mature_content_enabled") else "standard",
+            )
+        else:
+            content_settings = CampaignSettings.ContentSettings(
+                tone=raw_content.get("tone", settings.get("narration_tone", "heroic")),
+                maturity_level=raw_content.get(
+                    "maturity_level", "mature" if settings.get("mature_content_enabled") else "standard"
+                ),
+                thematic_flags=list(raw_content.get("thematic_flags", ["adventure", "mystery"])),
+            )
+
+        settings["content_settings"] = content_settings
+        return CampaignSettings(**settings)

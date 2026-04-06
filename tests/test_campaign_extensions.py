@@ -5,6 +5,8 @@ from pathlib import Path
 
 from engine.campaign_engine import CampaignEngine
 from engine.entities import CampaignState
+from engine.game_state_manager import GameStateManager
+from prompts.renderer import PromptRenderer
 from engine.save_manager import SaveManager
 from models.base import NullNarrationAdapter
 
@@ -123,3 +125,42 @@ def test_backward_compatible_load_defaults() -> None:
     assert loaded.player.equipped_item_id is None
     assert loaded.active_dialogue_npc_id is None
     assert loaded.world_flags == {}
+    assert loaded.settings.content_settings.tone == "heroic"
+    assert loaded.settings.content_settings.maturity_level == "standard"
+
+
+def test_prompt_renderer_includes_content_settings_layer() -> None:
+    state = load_state()
+    state.settings.profile = "dark_fantasy"
+    state.settings.narration_tone = "grim"
+    state.settings.content_settings.tone = "noir"
+    state.settings.content_settings.maturity_level = "mature"
+    state.settings.content_settings.thematic_flags = ["political_intrigue", "horror", "romance"]
+
+    prompt = PromptRenderer().build_system_prompt(state)
+
+    assert "[System Tone]" in prompt
+    assert "[Campaign Tone]" in prompt
+    assert "[Content Settings]" in prompt
+    assert "tone=noir" in prompt
+    assert "maturity_level=mature" in prompt
+    assert "political_intrigue, horror, romance" in prompt
+    assert "must never alter combat math" in prompt
+
+
+def test_campaign_creation_can_disable_content_settings() -> None:
+    manager = GameStateManager(Path("data"))
+    state = manager.create_new_campaign(
+        player_name="Mira",
+        char_class="Mage",
+        profile="classic_fantasy",
+        mature_content_enabled=True,
+        content_settings_enabled=False,
+        campaign_tone="heroic",
+        maturity_level="mature",
+        thematic_flags=["romance", "gore"],
+    )
+
+    assert state.settings.content_settings.tone == "heroic"
+    assert state.settings.content_settings.maturity_level == "standard"
+    assert state.settings.content_settings.thematic_flags == []

@@ -77,17 +77,35 @@ def _campaign_start_flow(state_manager: GameStateManager):
     print("2) dark fantasy")
     profile_choice = input("Profile [1/2]: ").strip()
     profile = "dark_fantasy" if profile_choice == "2" else "classic_fantasy"
-    mature_enabled = input("Enable mature themes tone? [y/N]: ").strip().lower() == "y"
+    default_tone = "grim" if profile == "dark_fantasy" else "heroic"
+    content_settings_enabled = input("Enable custom content settings? [Y/n]: ").strip().lower() != "n"
+    if content_settings_enabled:
+        selected_tone = input(f"Campaign tone [{default_tone}]: ").strip().lower() or default_tone
+        maturity_level = input("Maturity level [standard/mature] (default: standard): ").strip().lower() or "standard"
+        themes_input = input("Thematic flags (comma-separated, e.g. intrigue,horror,romance): ").strip()
+        thematic_flags = [theme.strip().lower() for theme in themes_input.split(",") if theme.strip()]
+        mature_enabled = maturity_level == "mature"
+    else:
+        selected_tone = default_tone
+        maturity_level = "standard"
+        thematic_flags = []
+        mature_enabled = False
 
     state = state_manager.create_new_campaign(
         player_name=name,
         char_class=char_class,
         profile=profile,
         mature_content_enabled=mature_enabled,
+        content_settings_enabled=content_settings_enabled,
+        campaign_tone=selected_tone,
+        maturity_level=maturity_level,
+        thematic_flags=thematic_flags,
     )
     print(
         f"Started new campaign: {state.campaign_name} "
-        f"(profile={state.settings.profile}, mature_tone={state.settings.mature_content_enabled})"
+        f"(profile={state.settings.profile}, tone={state.settings.content_settings.tone}, "
+        f"maturity={state.settings.content_settings.maturity_level}, "
+        f"themes={state.settings.content_settings.thematic_flags})"
     )
     state_manager.save(state, "autosave")
     return state
