@@ -138,6 +138,18 @@ class LongTermMemoryEntry:
 
 
 @dataclass
+class ConversationTurn:
+    """Persisted chat-style conversation turn for local sessions."""
+
+    turn: int
+    player_input: str
+    system_messages: list[str] = field(default_factory=list)
+    narrator_response: str = ""
+    requested_mode: str = "play"
+    location_id: str = ""
+
+
+@dataclass
 class CampaignState:
     """Top-level persistent campaign state."""
 
@@ -164,6 +176,7 @@ class CampaignState:
     session_summaries: list[SessionSummary] = field(default_factory=list)
     unresolved_plot_threads: list[str] = field(default_factory=list)
     important_world_facts: list[str] = field(default_factory=list)
+    conversation_turns: list[ConversationTurn] = field(default_factory=list)
     settings: CampaignSettings = field(default_factory=CampaignSettings)
 
     def to_dict(self) -> dict[str, Any]:
@@ -221,6 +234,7 @@ class CampaignState:
             session_summaries=[SessionSummary(**v) for v in payload.get("session_summaries", [])],
             unresolved_plot_threads=[str(v) for v in payload.get("unresolved_plot_threads", [])],
             important_world_facts=[str(v) for v in payload.get("important_world_facts", [])],
+            conversation_turns=[ConversationTurn(**v) for v in payload.get("conversation_turns", [])],
             settings=cls._settings_from_payload(payload.get("settings", {})),
         )
 

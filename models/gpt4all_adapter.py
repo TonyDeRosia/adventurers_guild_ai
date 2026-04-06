@@ -5,7 +5,7 @@ Kept dependency-free in phase 1; wire to the official SDK in a later phase.
 
 from __future__ import annotations
 
-from models.base import NarrationModelAdapter
+from models.base import ChatMessage, NarrationModelAdapter
 
 
 class GPT4AllAdapter(NarrationModelAdapter):
@@ -14,7 +14,7 @@ class GPT4AllAdapter(NarrationModelAdapter):
     def __init__(self, model_path: str = "") -> None:
         self.model_path = model_path
 
-    def generate(self, prompt: str, system_prompt: str = "") -> str:
+    def generate(self, prompt: str, system_prompt: str = "", history: list[ChatMessage] | None = None) -> str:
         if not self.model_path:
             return (
                 "[GPT4All adapter not configured] Set model_path and connect the "

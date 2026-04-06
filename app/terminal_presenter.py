@@ -19,10 +19,18 @@ class TerminalPresenter:
 
     def render_turn(self, result: TurnResult) -> list[str]:
         output: list[str] = []
+        if result.messages:
+            for message in result.messages:
+                output.append(self._format_message(message["type"], message["text"]))
+            return output
         for message in result.system_messages:
             output.append(self._format_system_message(message))
         output.append(f"{self.PREFIX['narrator']}: {result.narrative}")
         return output
+
+    def _format_message(self, message_type: str, message: str) -> str:
+        prefix = self.PREFIX.get(message_type, self.PREFIX["system"])
+        return f"{prefix}: {message}"
 
     def _format_system_message(self, message: str) -> str:
         lowered = message.lower()

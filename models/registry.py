@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from models.base import NarrationModelAdapter, NullNarrationAdapter
 from models.gpt4all_adapter import GPT4AllAdapter
 from models.ollama_adapter import OllamaAdapter
 
 
-def create_model_adapter(provider: str, **kwargs: str) -> NarrationModelAdapter:
+def create_model_adapter(provider: str, **kwargs: Any) -> NarrationModelAdapter:
     provider = provider.lower().strip()
     if provider == "ollama":
         return OllamaAdapter(**kwargs)

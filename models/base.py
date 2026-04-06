@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
 from models.provider import LocalTemplateProvider, NarrationRequest
+
+
+@dataclass
+class ChatMessage:
+    role: str
+    content: str
 
 
 class NarrationModelAdapter(ABC):
@@ -13,7 +20,7 @@ class NarrationModelAdapter(ABC):
     provider_name: str
 
     @abstractmethod
-    def generate(self, prompt: str, system_prompt: str = "") -> str:
+    def generate(self, prompt: str, system_prompt: str = "", history: list[ChatMessage] | None = None) -> str:
         """Generate a narration string from prompt context."""
 
 
@@ -25,7 +32,7 @@ class NullNarrationAdapter(NarrationModelAdapter):
     def __init__(self) -> None:
         self.provider = LocalTemplateProvider()
 
-    def generate(self, prompt: str, system_prompt: str = "") -> str:
+    def generate(self, prompt: str, system_prompt: str = "", history: list[ChatMessage] | None = None) -> str:
         request = NarrationRequest(
             system_tone=system_prompt,
             campaign_tone=system_prompt,

@@ -17,7 +17,7 @@ from memory.quest_tracker import QuestTracker
 from memory.retrieval import MemoryRetrievalPipeline, RetrievalRequest
 from memory.summary import SummaryGenerator
 from memory.world_state import WorldStateTracker
-from models.base import NarrationModelAdapter
+from models.base import ChatMessage, NarrationModelAdapter
 from prompts.renderer import PromptRenderer
 from rules.combat import CombatEngine
 
@@ -26,7 +26,9 @@ from rules.combat import CombatEngine
 class TurnResult:
     narrative: str
     system_messages: list[str]
+    messages: list[dict[str, str]]
     should_exit: bool = False
+    metadata: dict[str, object] | None = None
 
 
 class CampaignEngine:
@@ -58,7 +60,12 @@ class CampaignEngine:
         requested_mode = "play"
 
         if normalized in {"exit", "quit"}:
-            return TurnResult(narrative="Your adventure pauses here.", system_messages=[], should_exit=True)
+            return TurnResult(
+                narrative="Your adventure pauses here.",
+                system_messages=[],
+                messages=[{"type": "narrator", "text": "Your adventure pauses here."}],
+                should_exit=True,
+            )
 
         if normalized == "look":
             system_messages.append(self.world.get_current_location_summary(state))
@@ -176,6 +183,7 @@ class CampaignEngine:
                     return TurnResult(
                         narrative="You fall in the catacombs. Your campaign ends here.",
                         system_messages=system_messages,
+                        messages=self._build_structured_messages(system_messages, "You fall in the catacombs. Your campaign ends here."),
                         should_exit=True,
                     )
 
@@ -189,6 +197,7 @@ class CampaignEngine:
                 return TurnResult(
                     narrative="You fall in the catacombs. Your campaign ends here.",
                     system_messages=system_messages,
+                    messages=self._build_structured_messages(system_messages, "You fall in the catacombs. Your campaign ends here."),
                     should_exit=True,
                 )
 
@@ -222,6 +231,7 @@ class CampaignEngine:
                 return TurnResult(
                     narrative="You fall in the catacombs. Your campaign ends here.",
                     system_messages=system_messages,
+                    messages=self._build_structured_messages(system_messages, "You fall in the catacombs. Your campaign ends here."),
                     should_exit=True,
                 )
 
@@ -243,6 +253,7 @@ class CampaignEngine:
                     return TurnResult(
                         narrative="You fall while trying to flee. Your campaign ends here.",
                         system_messages=system_messages,
+                        messages=self._build_structured_messages(system_messages, "You fall while trying to flee. Your campaign ends here."),
                         should_exit=True,
                     )
 
@@ -397,8 +408,48 @@ class CampaignEngine:
             memory=memory_context,
             requested_mode=requested_mode,
         )
-        narrative = self.model.generate(prompt_packet.turn_prompt, prompt_packet.system_prompt)
-        return TurnResult(narrative=narrative, system_messages=system_messages)
+        history = self._build_model_history(state)
+        narrative = self.model.generate(prompt_packet.turn_prompt, prompt_packet.system_prompt, history=history)
+        self.memory.record_recent(state, f"Narrator: {narrative}")
+        self.memory.record_conversation_turn(
+            state,
+            player_input=action,
+            system_messages=system_messages,
+            narrator_response=narrative,
+            requested_mode=requested_mode,
+        )
+        return TurnResult(
+            narrative=narrative,
+            system_messages=system_messages,
+            messages=self._build_structured_messages(system_messages, narrative),
+            metadata={
+                "requested_mode": requested_mode,
+                "model_provider": self.model.provider_name,
+                "turn_count": state.turn_count,
+            },
+        )
+
+    def _build_model_history(self, state: CampaignState) -> list[ChatMessage]:
+        history: list[ChatMessage] = []
+        for turn in state.conversation_turns[-6:]:
+            if turn.player_input:
+                history.append(ChatMessage(role="user", content=turn.player_input))
+            if turn.narrator_response:
+                history.append(ChatMessage(role="assistant", content=turn.narrator_response))
+        return history
+
+    def _build_structured_messages(self, system_messages: list[str], narrative: str) -> list[dict[str, str]]:
+        payload = [{"type": self._classify_message_type(message), "text": message} for message in system_messages]
+        payload.append({"type": "narrator", "text": narrative})
+        return payload
+
+    def _classify_message_type(self, message: str) -> str:
+        lowered = message.lower()
+        if "quest" in lowered:
+            return "quest"
+        if "relationship tier" in lowered or "choose <number>" in lowered or lowered.startswith('"'):
+            return "npc"
+        return "system"
 
     def _campaign_summary(self, state: CampaignState) -> str:
         active_quests = [quest.title for quest in state.quests.values() if quest.status == "active"]

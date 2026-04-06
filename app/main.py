@@ -6,7 +6,9 @@ from pathlib import Path
 
 from engine.campaign_engine import CampaignEngine
 from engine.game_state_manager import GameStateManager
+from models.ollama_adapter import OllamaAdapter
 from models.registry import create_model_adapter
+from app.runtime_config import ModelRuntimeConfig, RuntimeConfigStore
 from app.terminal_presenter import TerminalPresenter
 
 
@@ -19,12 +21,18 @@ def _print_startup_banner() -> None:
 def main() -> None:
     root = Path(__file__).resolve().parent.parent
     state_manager = GameStateManager(root / "data")
+    config_store = RuntimeConfigStore(root / "data" / "app_config.json")
     _print_startup_banner()
     print("Loading campaign systems...")
 
     state = _campaign_start_flow(state_manager)
-
-    model = create_model_adapter("null")
+    model_config = _choose_model_config(config_store)
+    model = create_model_adapter(
+        model_config.provider,
+        model=model_config.model_name,
+        base_url=model_config.base_url,
+        timeout_seconds=model_config.timeout_seconds,
+    )
     engine = CampaignEngine(model, data_dir=root / "data")
     presenter = TerminalPresenter()
 
@@ -113,6 +121,34 @@ def _campaign_start_flow(state_manager: GameStateManager):
     )
     state_manager.save(state, "autosave")
     return state
+
+
+def _choose_model_config(config_store: RuntimeConfigStore) -> ModelRuntimeConfig:
+    config = config_store.load()
+    print(f"Model provider: {config.provider} (model: {config.model_name})")
+    provider = input("Model provider [null/ollama] (Enter keeps current): ").strip().lower() or config.provider
+    if provider not in {"null", "ollama"}:
+        print("Unknown provider selected; using null provider.")
+        provider = "null"
+
+    if provider == "ollama":
+        ollama = OllamaAdapter(model=config.model_name, base_url=config.base_url)
+        detected_models = ollama.list_local_models()
+        if detected_models:
+            print("Detected Ollama models:")
+            for model_name in detected_models[:12]:
+                print(f" - {model_name}")
+        else:
+            print("No Ollama models detected yet (run `ollama pull <model>` first).")
+
+        model_name = input(f"Ollama model [{config.model_name}]: ").strip() or config.model_name
+        base_url = input(f"Ollama base URL [{config.base_url}]: ").strip() or config.base_url
+        config = ModelRuntimeConfig(provider="ollama", model_name=model_name, base_url=base_url)
+    else:
+        config = ModelRuntimeConfig(provider="null", model_name=config.model_name, base_url=config.base_url)
+
+    config_store.save(config)
+    return config
 
 
 if __name__ == "__main__":
