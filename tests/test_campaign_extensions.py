@@ -44,6 +44,7 @@ def test_inventory_use_and_equip_flow() -> None:
     equip = engine.run_turn(state, "equip rangers_charm")
     assert state.player.equipped_item_id == "rangers_charm"
     assert state.player.attack_bonus == 4
+    assert state.player.agility == 4
     assert any("equip Ranger's Charm" in msg for msg in equip.system_messages)
 
 
@@ -125,8 +126,76 @@ def test_backward_compatible_load_defaults() -> None:
     assert loaded.player.equipped_item_id is None
     assert loaded.active_dialogue_npc_id is None
     assert loaded.world_flags == {}
+    assert loaded.faction_reputation == {}
+    assert loaded.quest_outcomes == {}
+    assert loaded.world_events == []
+    assert loaded.combat_effects == {}
     assert loaded.settings.content_settings.tone == "heroic"
     assert loaded.settings.content_settings.maturity_level == "standard"
+
+
+def test_stats_affect_combat_and_defend_action(monkeypatch) -> None:
+    state = load_state()
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+    state.player.strength = 6
+    state.player.vitality = 4
+    state.active_enemy_id = "bone_warden"
+    state.active_enemy_hp = 14
+
+    rolls = iter([(14, 20), (18, 22)])
+    monkeypatch.setattr("rules.combat.roll_d20", lambda bonus: next(rolls))
+    monkeypatch.setattr("rules.combat.roll_die", lambda sides: 6)
+
+    attack_turn = engine.run_turn(state, "attack")
+    assert any("for 8 damage" in msg for msg in attack_turn.system_messages)
+
+    state.player.hp = 20
+    state.active_enemy_hp = 10
+    defend_rolls = iter([(18, 22)])
+    monkeypatch.setattr("rules.combat.roll_d20", lambda bonus: next(defend_rolls))
+    monkeypatch.setattr("rules.combat.roll_die", lambda sides: 6)
+    engine.run_turn(state, "defend")
+    assert state.player.hp == 18
+
+
+def test_branching_quest_outcomes_and_reputation_changes(monkeypatch) -> None:
+    state = load_state()
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+    state.quests["q_catacomb_blight"].status = "active"
+    state.player.inventory.append("moonsigil_relic")
+    talk = engine.run_turn(state, "talk elder_thorne")
+    assert state.quests["q_catacomb_blight"].status == "completed"
+    assert state.quest_outcomes["q_catacomb_blight"] == "item"
+    assert state.faction_reputation["guild"] >= 2
+    assert any("seals the crypt entrance" in msg.lower() for msg in talk.system_messages)
+
+    state = load_state()
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+    engine.run_turn(state, "talk elder_thorne")
+    engine.run_turn(state, "choose 1")
+    engine.run_turn(state, "move moonfall_catacombs")
+    rolls = iter([(18, 21), (10, 13), (18, 21)])
+    monkeypatch.setattr("rules.combat.roll_d20", lambda bonus: next(rolls))
+    monkeypatch.setattr("rules.combat.roll_die", lambda sides: 8)
+    engine.run_turn(state, "attack")
+    engine.run_turn(state, "attack")
+    assert state.quest_outcomes["q_catacomb_blight"] == "combat"
+
+
+def test_relationship_tier_transitions_and_dialogue_gating() -> None:
+    state = load_state()
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+    state.faction_reputation["town"] = 2
+    state.npcs["elder_thorne"].disposition = 25
+    state.npcs["elder_thorne"].relationship_tier = "friendly"
+
+    first = engine.run_turn(state, "talk elder_thorne")
+    assert any("safer way than direct combat" in msg.lower() for msg in first.system_messages)
+
+    state.npcs["elder_thorne"].disposition = -30
+    state.npcs["elder_thorne"].relationship_tier = "hostile"
+    hostile = engine.run_turn(state, "talk elder_thorne")
+    assert not any("safer way than direct combat" in msg.lower() for msg in hostile.system_messages)
 
 
 def test_prompt_renderer_includes_content_settings_layer() -> None:

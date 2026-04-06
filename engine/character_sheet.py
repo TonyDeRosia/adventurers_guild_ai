@@ -14,7 +14,9 @@ class CharacterSheetService:
         return (
             f"{player.name} the {player.char_class} | Level {player.level} | "
             f"HP {player.hp}/{player.max_hp} | AC {player.armor_class} | "
-            f"Attack +{player.attack_bonus} | XP {player.xp} | Equipped: {equipped} | Inventory: {bag}"
+            f"Attack +{player.attack_bonus} | "
+            f"STR {player.strength} AGI {player.agility} INT {player.intellect} VIT {player.vitality} | "
+            f"XP {player.xp} | Equipped: {equipped} | Inventory: {bag}"
         )
 
     def grant_xp(self, player: Character, amount: int) -> str:

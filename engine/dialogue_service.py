@@ -30,7 +30,7 @@ class DialogueService:
         state.active_dialogue_npc_id = npc_id
         state.active_dialogue_node_id = tree.start_node
         node = tree.nodes[tree.start_node]
-        return self._render_node(node)
+        return self._render_node(state, npc_id, node)
 
     def choose_option(self, state: CampaignState, option_number: int) -> DialogueOutput:
         npc_id = state.active_dialogue_npc_id
@@ -45,10 +45,11 @@ class DialogueService:
             return DialogueOutput("Dialogue data missing.", [], True)
 
         node = tree.nodes[node_id]
-        if option_number < 1 or option_number > len(node.options):
-            return DialogueOutput("Invalid choice number.", self._option_lines(node), False)
+        available_options = self._available_options(state, npc_id, node)
+        if option_number < 1 or option_number > len(available_options):
+            return DialogueOutput("Invalid choice number.", self._option_lines(available_options), False)
 
-        chosen = node.options[option_number - 1]
+        chosen = available_options[option_number - 1]
         self._apply_effects(state, npc_id, chosen)
 
         if not chosen.next_node:
@@ -62,7 +63,7 @@ class DialogueService:
             state.active_dialogue_npc_id = None
             state.active_dialogue_node_id = None
             return DialogueOutput(next_node.text, [], True)
-        return self._render_node(next_node)
+        return self._render_node(state, npc_id, next_node)
 
     def _apply_effects(self, state: CampaignState, npc_id: str, option: DialogueOption) -> None:
         effects = option.effects
@@ -75,11 +76,43 @@ class DialogueService:
             npc = state.npcs[npc_id]
             npc.relationships[state.player.id] = npc.disposition
 
+        for faction, rep_delta in effects.get("reputation_delta", {}).items():
+            state.faction_reputation[faction] = state.faction_reputation.get(faction, 0) + int(rep_delta)
+
         for key, value in effects.get("set_flags", {}).items():
             state.world_flags[key] = bool(value)
 
-    def _render_node(self, node: DialogueNode) -> DialogueOutput:
-        return DialogueOutput(node.text, self._option_lines(node), False)
+    def _render_node(self, state: CampaignState, npc_id: str, node: DialogueNode) -> DialogueOutput:
+        options = self._available_options(state, npc_id, node)
+        if not options:
+            return DialogueOutput(node.text, [], True)
+        return DialogueOutput(node.text, self._option_lines(options), False)
 
-    def _option_lines(self, node: DialogueNode) -> list[str]:
-        return [f"{idx}) {option.text}" for idx, option in enumerate(node.options, start=1)]
+    def _option_lines(self, options: list[DialogueOption]) -> list[str]:
+        return [f"{idx}) {option.text}" for idx, option in enumerate(options, start=1)]
+
+    def _available_options(self, state: CampaignState, npc_id: str, node: DialogueNode) -> list[DialogueOption]:
+        return [option for option in node.options if self._conditions_met(state, npc_id, option.conditions)]
+
+    def _conditions_met(self, state: CampaignState, npc_id: str, conditions: dict[str, object]) -> bool:
+        if not conditions:
+            return True
+
+        rep_min = conditions.get("faction_reputation_min", {})
+        if isinstance(rep_min, dict):
+            for faction, minimum in rep_min.items():
+                if state.faction_reputation.get(str(faction), 0) < int(minimum):
+                    return False
+
+        required_tiers = conditions.get("npc_relationship_tiers")
+        if isinstance(required_tiers, list) and required_tiers:
+            npc = state.npcs.get(npc_id)
+            if not npc or npc.relationship_tier not in required_tiers:
+                return False
+
+        required_flags = conditions.get("required_flags", {})
+        if isinstance(required_flags, dict):
+            for key, value in required_flags.items():
+                if state.world_flags.get(str(key)) is not bool(value):
+                    return False
+        return True

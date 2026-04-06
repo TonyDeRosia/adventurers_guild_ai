@@ -12,9 +12,17 @@
     "max_hp": 20,
     "armor_class": 12,
     "attack_bonus": 3,
-    "inventory": ["worn_backpack", "torch", "field_draught"],
+    "inventory": [
+      "worn_backpack",
+      "torch",
+      "field_draught"
+    ],
     "xp": 0,
-    "equipped_item_id": null
+    "equipped_item_id": null,
+    "strength": 2,
+    "agility": 3,
+    "intellect": 2,
+    "vitality": 3
   },
   "npcs": {
     "elder_thorne": {
@@ -22,20 +30,26 @@
       "name": "Elder Thorne",
       "location_id": "moonfall_town",
       "disposition": 10,
-      "notes": ["Keeps watch over the catacomb gate."],
+      "notes": [
+        "Keeps watch over the catacomb gate."
+      ],
       "relationships": {
         "player_1": 10
-      }
+      },
+      "relationship_tier": "neutral"
     },
     "warden_elira": {
       "id": "warden_elira",
       "name": "Warden Elira",
       "location_id": "whispering_woods",
       "disposition": 5,
-      "notes": ["Protects the woodland shrine path."],
+      "notes": [
+        "Protects the woodland shrine path."
+      ],
       "relationships": {
         "player_1": 5
-      }
+      },
+      "relationship_tier": "neutral"
     }
   },
   "locations": {
@@ -43,19 +57,28 @@
       "id": "moonfall_town",
       "name": "Moonfall Town",
       "description": "A fortified hill-town huddled around a chapel and market square.",
-      "connections": ["moonfall_catacombs", "whispering_woods"]
+      "connections": [
+        "moonfall_catacombs",
+        "whispering_woods"
+      ]
     },
     "moonfall_catacombs": {
       "id": "moonfall_catacombs",
       "name": "Moonfall Catacombs",
       "description": "A damp crypt where broken sigils glow in the dark and bones stir.",
-      "connections": ["moonfall_town", "whispering_woods"]
+      "connections": [
+        "moonfall_town",
+        "whispering_woods"
+      ]
     },
     "whispering_woods": {
       "id": "whispering_woods",
       "name": "Whispering Woods",
       "description": "Tall pines circle an old ranger cache where shrine-lanterns once burned all night.",
-      "connections": ["moonfall_town", "moonfall_catacombs"]
+      "connections": [
+        "moonfall_town",
+        "moonfall_catacombs"
+      ]
     }
   },
   "quests": {
@@ -69,7 +92,19 @@
         "Travel to Moonfall Catacombs",
         "Defeat the Bone Warden",
         "Return with proof"
-      ]
+      ],
+      "availability": {
+        "faction_reputation": {
+          "town": -5
+        },
+        "npc_relationship_tiers": {
+          "elder_thorne": [
+            "neutral",
+            "friendly",
+            "loyal"
+          ]
+        }
+      }
     },
     "q_moonlantern_oath": {
       "id": "q_moonlantern_oath",
@@ -80,14 +115,27 @@
         "Speak with Warden Elira in Whispering Woods",
         "Recover the moonlantern",
         "Return the moonlantern to Elira"
-      ]
+      ],
+      "availability": {
+        "faction_reputation": {
+          "guild": -10
+        },
+        "npc_relationship_tiers": {
+          "warden_elira": [
+            "neutral",
+            "friendly",
+            "loyal"
+          ]
+        }
+      }
     }
   },
   "world_flags": {
     "catacombs_cleared": false,
     "catacombs_cleared_violently": false,
     "thorne_trusts_player": false,
-    "moonlantern_returned": false
+    "moonlantern_returned": false,
+    "catacombs_echo_silenced": false
   },
   "active_enemy_id": null,
   "active_enemy_hp": null,
@@ -104,7 +152,20 @@
     "content_settings": {
       "tone": "heroic",
       "maturity_level": "standard",
-      "thematic_flags": ["adventure", "mystery"]
+      "thematic_flags": [
+        "adventure",
+        "mystery"
+      ]
     }
-  }
+  },
+  "faction_reputation": {
+    "town": 0,
+    "guild": 0,
+    "unknown": 0
+  },
+  "quest_outcomes": {},
+  "world_events": [
+    "campaign_initialized"
+  ],
+  "combat_effects": {}
 }

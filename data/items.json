@@ -35,6 +35,9 @@
     "name": "Ranger's Charm",
     "type": "trinket",
     "description": "A carved ash token that sharpens your stance.",
-    "attack_bonus": 1
+    "attack_bonus": 1,
+    "stat_modifiers": {
+      "agility": 1
+    }
   }
 }

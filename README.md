@@ -22,6 +22,13 @@ This update extends the existing terminal MVP loop without replacing startup flo
 - Data-driven **NPC dialogue trees** with branching player choices.
 - Data-driven **enemy definitions** (Bone Warden now loaded from `data/enemies.json`).
 - Expanded **item + inventory system** with consumables, quest items, and equipable trinkets.
+- Lightweight **player stats layer** (`strength`, `agility`, `intellect`, `vitality`) integrated into combat and item modifiers.
+- Expanded **combat actions**: `defend`, `ability`, and `flee` alongside the existing `attack`.
+- **Faction reputation** tracking (`town`, `guild`, `unknown`) with dialogue and quest availability hooks.
+- **Relationship tiers** (`hostile`, `neutral`, `friendly`, `loyal`) derived from disposition and used in branching logic.
+- **Branching quest outcomes** (`combat`, `dialogue`, `item`) persisted in state for future consequences.
+- Simple **world event/consequence log** for triggered aftermath states.
+- Lightweight enemy behavior types (`aggressive`, `defensive`, `reckless`) driving turn-to-turn AI flavor.
 - A second location (`whispering_woods`) and a second quest (`q_moonlantern_oath`) with a new NPC (`warden_elira`).
 - **World flags** that carry consequences into later interactions.
 - Lightweight **model provider scaffold** for future local backends, while still working fully offline.
@@ -86,6 +93,9 @@ tests/
 - `talk <npc_id>`
 - `choose <number>` (dialogue response)
 - `attack`
+- `defend`
+- `ability`
+- `flee`
 - `rest`
 - `status`
 - `inventory`
@@ -104,9 +114,19 @@ Save compatibility is preserved with additive fields. Older saves still load.
 New additive fields include:
 
 - `player.equipped_item_id`
+- `player.strength`
+- `player.agility`
+- `player.intellect`
+- `player.vitality`
 - `active_dialogue_npc_id`
 - `active_dialogue_node_id`
+- `faction_reputation`
+- `quest_outcomes`
+- `world_events`
+- `combat_effects`
 - additional `world_flags` keys for branching outcomes
+- `npc.relationship_tier`
+- `quest.availability`
 - `settings.content_settings`:
   - `tone` (narrative style such as `heroic`, `grim`, `noir`, etc.)
   - `maturity_level` (`standard` or `mature`)
@@ -141,6 +161,18 @@ For adult (18+) campaigns, set `maturity_level` to `mature` and add any desired 
 - Rules/math remain separated from narration and prompt construction.
 - Mature/adult themes remain a tone/config layer only.
 - New systems are modular and data-driven for future content growth.
+
+## Gameplay depth systems (phase)
+
+- **Combat math additions (deterministic):**
+  - Attack hit bonus now includes strength scaling.
+  - Damage receives a small strength bonus on successful hits.
+  - Defend reduces incoming damage using vitality.
+  - Ability attacks use intellect for improved hit/damage.
+  - Flee attempts use agility as their escape modifier.
+- **Quest consequences:**
+  - Quest completion now stores explicit outcome mode in `quest_outcomes`.
+  - Outcome flags are reused for later NPC reaction lines and world events.
 
 ## Run tests
 

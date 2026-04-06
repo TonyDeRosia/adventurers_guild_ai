@@ -1,0 +1,16 @@
+{
+  "factions": {
+    "town": {
+      "name": "Moonfall Town Council",
+      "starting_reputation": 0
+    },
+    "guild": {
+      "name": "Adventurers Guild",
+      "starting_reputation": 0
+    },
+    "unknown": {
+      "name": "Unknown Faction",
+      "starting_reputation": 0
+    }
+  }
+}
