@@ -15,6 +15,8 @@ class SaveManager:
     def __init__(self, save_dir: Path) -> None:
         self.save_dir = save_dir
         self.save_dir.mkdir(parents=True, exist_ok=True)
+        self.campaign_state_root = self.save_dir / "campaign_state"
+        self.campaign_state_root.mkdir(parents=True, exist_ok=True)
 
     def _save_path(self, slot: str) -> Path:
         return self.save_dir / f"{slot}.json"
@@ -32,13 +34,23 @@ class SaveManager:
             )
         path = self._save_path(slot)
         path.write_text(json.dumps(state.to_dict(), indent=2), encoding="utf-8")
+        state_root = self.campaign_state_root / slot
+        state_root.mkdir(parents=True, exist_ok=True)
+        print(f"[campaign-memory] save campaign={slot}")
+        print(f"[campaign-memory] isolated_state_root={state_root}")
         return path
 
     def load(self, slot: str = "autosave") -> CampaignState | None:
         path = self._save_path(slot)
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
-            return CampaignState.from_dict(payload)
+            loaded = CampaignState.from_dict(payload)
+            print(f"[campaign-memory] load campaign={slot}")
+            print(f"[campaign-memory] isolated_state_root={self.campaign_state_root / slot}")
+            print(f"[campaign-memory] loaded_inventory_items={len(loaded.player.inventory)}")
+            print(f"[campaign-memory] loaded_spell_count={len(loaded.structured_state.runtime.spellbook)}")
+            print(f"[campaign-memory] loaded_npc_states={len(loaded.structured_state.runtime.npc_relationships)}")
+            return loaded
         except (OSError, json.JSONDecodeError, ValueError, TypeError):
             if path.exists():
                 timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")

@@ -54,6 +54,9 @@ Active quest count: {active_quest_count}
 World flags: {world_flags}
 Recent events: {recent_events}
 
+[Structured Campaign Context]
+{gm_context}
+
 {suggested_move_instruction}
 {npc_personality_guidance}
 {character_sheet_guidance}

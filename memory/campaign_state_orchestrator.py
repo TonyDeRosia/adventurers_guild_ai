@@ -1,0 +1,147 @@
+"""Campaign-scoped structured state orchestration for GM context and persistence."""
+
+from __future__ import annotations
+
+from dataclasses import asdict
+
+from engine.entities import CampaignState
+
+
+class CampaignStateOrchestrator:
+    """Maintains structured campaign canon/runtime/memory and assembles GM context."""
+
+    def __init__(self, recent_limit: int = 8) -> None:
+        self.recent_limit = recent_limit
+
+    def ensure_initialized(self, state: CampaignState) -> None:
+        structured = state.structured_state
+        if not structured.canon.campaign_premise:
+            structured.canon.campaign_premise = state.world_meta.premise
+        if not structured.canon.character_sheet_ids and state.character_sheets:
+            structured.canon.character_sheet_ids = [sheet.id for sheet in state.character_sheets if sheet.id]
+        if not structured.runtime.current_location_id:
+            structured.runtime.current_location_id = state.current_location_id
+
+    def update_runtime_state(self, state: CampaignState, *, action: str, system_messages: list[str], narrative: str) -> dict[str, bool]:
+        self.ensure_initialized(state)
+        runtime = state.structured_state.runtime
+        runtime.player_core = {
+            "name": state.player.name,
+            "class": state.player.char_class,
+            "level": state.player.level,
+            "hp": state.player.hp,
+            "max_hp": state.player.max_hp,
+            "xp": state.player.xp,
+            "attack_bonus": state.player.attack_bonus,
+            "energy_or_mana": state.player.energy_or_mana,
+        }
+        runtime.inventory = list(state.player.inventory)
+        runtime.equipment = {"equipped_item_id": state.player.equipped_item_id}
+        runtime.spellbook = sorted({*runtime.spellbook})
+        runtime.abilities_learned = sorted(set(runtime.abilities_learned + self._infer_abilities_from_messages(system_messages)))
+        runtime.current_location_id = state.current_location_id
+        runtime.discovered_locations = sorted(set(runtime.discovered_locations + list(state.locations.keys()) + [state.current_location_id]))
+        runtime.quest_state = {quest_id: quest.status for quest_id, quest in state.quests.items()}
+        runtime.npc_relationships = {
+            npc_id: {
+                "name": npc.name,
+                "disposition": npc.disposition,
+                "relationship_tier": npc.relationship_tier,
+                "trust": npc.dynamic_state.trust_toward_player,
+                "fear": npc.dynamic_state.fear_toward_player,
+                "suspicion": npc.dynamic_state.suspicion,
+                "loyalty": npc.dynamic_state.loyalty,
+                "location_id": npc.location_id,
+            }
+            for npc_id, npc in state.npcs.items()
+        }
+        runtime.party_state = {
+            "active_enemy_id": state.active_enemy_id,
+            "active_enemy_hp": state.active_enemy_hp,
+            "minions": runtime.party_state.get("minions", []),
+        }
+        runtime.status_effects = sorted([key for key, enabled in state.combat_effects.items() if bool(enabled)])
+        runtime.faction_changes = dict(state.faction_reputation)
+        runtime.world_state = {
+            "world_flags": dict(state.world_flags),
+            "quest_outcomes": dict(state.quest_outcomes),
+            "world_events": list(state.world_events[-24:]),
+        }
+
+        recent = state.structured_state.recent_turn_memory
+        recent.last_major_actions = self._append_bounded(recent.last_major_actions, f"T{state.turn_count} action: {action.strip()}")
+        for message in system_messages[-3:]:
+            recent.last_major_consequences = self._append_bounded(recent.last_major_consequences, message)
+            if "discover" in message.lower() or "find" in message.lower():
+                recent.recent_discoveries = self._append_bounded(recent.recent_discoveries, message)
+        if state.active_dialogue_npc_id:
+            recent.recent_dialogue = self._append_bounded(recent.recent_dialogue, f"{state.active_dialogue_npc_id}: {narrative[:120]}")
+        if state.session_summaries:
+            recent.running_summary = state.session_summaries[-1].summary
+
+        updates = {
+            "inventory": True,
+            "spellbook": True,
+            "quests": True,
+            "npc_states": True,
+            "world_state": True,
+            "recent_memory": True,
+        }
+        print(
+            "[campaign-memory] state_updated "
+            f"inventory={str(updates['inventory']).lower()} "
+            f"spellbook={str(updates['spellbook']).lower()} "
+            f"quests={str(updates['quests']).lower()}"
+        )
+        return updates
+
+    def set_scene_visual_state(self, state: CampaignState, payload: dict[str, object] | None) -> None:
+        state.structured_state.runtime.scene_visual_state = dict(payload or {})
+
+    def build_gm_context(self, state: CampaignState) -> str:
+        self.ensure_initialized(state)
+        structured = state.structured_state
+        nearby_npcs = [
+            entry
+            for entry in structured.runtime.npc_relationships.values()
+            if str(entry.get("location_id", "")) == state.current_location_id
+        ]
+        active_quests = [qid for qid, status in structured.runtime.quest_state.items() if status == "active"]
+        print(
+            "[gm-context] assembled "
+            f"campaign={state.campaign_id} location={structured.runtime.current_location_id} "
+            f"npc_count={len(nearby_npcs)} minion_count={len(structured.runtime.party_state.get('minions', []))} "
+            f"quest_count={len(active_quests)}"
+        )
+        print(f"[gm-context] using_character_sheets={str(bool(state.character_sheets)).lower()}")
+        print(f"[gm-context] using_recent_memory_entries={len(structured.recent_turn_memory.last_major_actions)}")
+        return (
+            "[Authoritative Campaign State]\n"
+            "Treat the structured campaign state below as source-of-truth over stylistic improvisation.\n"
+            f"Canon: {asdict(structured.canon)}\n"
+            f"Runtime: {{'player_core': {structured.runtime.player_core}, 'inventory': {structured.runtime.inventory}, "
+            f"'equipment': {structured.runtime.equipment}, 'spellbook': {structured.runtime.spellbook}, "
+            f"'abilities_learned': {structured.runtime.abilities_learned}, 'current_location_id': '{structured.runtime.current_location_id}', "
+            f"'active_quests': {active_quests}, 'nearby_npcs': {nearby_npcs}, "
+            f"'party_state': {structured.runtime.party_state}, 'status_effects': {structured.runtime.status_effects}, "
+            f"'faction_changes': {structured.runtime.faction_changes}, 'world_state': {structured.runtime.world_state}, "
+            f"'scene_visual_state': {structured.runtime.scene_visual_state}}}\n"
+            f"Recent Turn Memory: {asdict(structured.recent_turn_memory)}"
+        )
+
+    def _append_bounded(self, entries: list[str], value: str) -> list[str]:
+        clean = value.strip()
+        if not clean:
+            return entries
+        updated = entries + [clean]
+        return updated[-self.recent_limit :]
+
+    def _infer_abilities_from_messages(self, system_messages: list[str]) -> list[str]:
+        abilities: list[str] = []
+        for message in system_messages:
+            lowered = message.lower()
+            if "focused ability" in lowered:
+                abilities.append("focused_ability")
+            if "ranger's charm" in lowered:
+                abilities.append("rangers_charm_attunement")
+        return abilities

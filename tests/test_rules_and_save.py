@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from engine.entities import CampaignState
@@ -87,3 +88,23 @@ def test_save_and_load_roundtrip(tmp_path: Path) -> None:
     assert loaded.active_enemy_hp == 7
     assert loaded.settings.profile == "dark_fantasy"
     assert loaded.settings.content_settings.maturity_level == "mature"
+
+
+def test_structured_state_migrates_from_legacy_payload(tmp_path: Path) -> None:
+    manager = SaveManager(tmp_path)
+    legacy_payload = {
+        "campaign_id": "legacy",
+        "campaign_name": "Legacy Campaign",
+        "turn_count": 3,
+        "current_location_id": "starting_location",
+        "player": {"id": "p1", "name": "Aria", "char_class": "Ranger", "inventory": ["torch"]},
+        "npcs": {},
+        "locations": {"starting_location": {"id": "starting_location", "name": "Start", "description": "", "connections": []}},
+        "quests": {},
+        "world_flags": {"legacy_flag": True},
+    }
+    (tmp_path / "legacy_slot.json").write_text(json.dumps(legacy_payload), encoding="utf-8")
+    loaded = manager.load("legacy_slot")
+    assert loaded is not None
+    assert loaded.structured_state.runtime.inventory == ["torch"]
+    assert loaded.structured_state.runtime.current_location_id == "starting_location"

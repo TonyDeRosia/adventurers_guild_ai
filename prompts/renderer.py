@@ -71,6 +71,7 @@ class PromptRenderer:
         guidance_requested: bool = False,
         npc_guidance: list[str] | None = None,
         character_sheet_guidance: list[str] | None = None,
+        gm_context: str = "",
     ) -> str:
         recent = " | ".join(state.event_log[-4:]) if state.event_log else "No significant events yet"
         recent_conversation = " | ".join(
@@ -128,6 +129,7 @@ class PromptRenderer:
             suggested_move_instruction=suggested_move_instruction,
             npc_personality_guidance=npc_personality_guidance,
             character_sheet_guidance=sheet_guidance_text,
+            gm_context=gm_context or "none",
         )
 
     def build_prompt_packet(
@@ -140,6 +142,7 @@ class PromptRenderer:
         requested_mode: str = "play",
         guidance_requested: bool = False,
         npc_guidance: list[str] | None = None,
+        gm_context: str = "",
     ) -> PromptPacket:
         sheet_guidance = self.sheet_formatter.build_guidance_blocks(
             state.character_sheets,
@@ -156,5 +159,6 @@ class PromptRenderer:
                 guidance_requested=guidance_requested,
                 npc_guidance=npc_guidance,
                 character_sheet_guidance=sheet_guidance,
+                gm_context=gm_context,
             ),
         )
