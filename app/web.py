@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 import sys
 import urllib.request
@@ -79,6 +80,7 @@ class WebRuntime:
         self.session = WebSession(state=self._load_or_create(default_slot), active_slot=default_slot)
         self.session.message_history = self._history_for_slot(self.session.active_slot)
         self.image_startup_status: dict[str, Any] = {}
+        self._history_lock = threading.Lock()
         print("[web-runtime] session initialized")
 
     def _load_history_store(self) -> dict[str, list[dict[str, Any]]]:
@@ -1336,11 +1338,18 @@ class WebRuntime:
         payload.update(extra)
         return payload
 
-    def _append_message(self, message_type: str, text: str, **extra: Any) -> None:
+    def _append_message(self, message_type: str, text: str, persist: bool = True, **extra: Any) -> None:
         entry = self._message(message_type, text, **extra)
-        self.session.message_history.append(entry)
-        self.history_store[self.session.active_slot] = self.session.message_history
-        self._persist_history_store()
+        with self._history_lock:
+            self.session.message_history.append(entry)
+            self.history_store[self.session.active_slot] = self.session.message_history
+            if persist:
+                self._persist_history_store()
+
+    def _flush_history_store(self) -> None:
+        with self._history_lock:
+            self.history_store[self.session.active_slot] = self.session.message_history
+            self._persist_history_store()
 
     def _normalize_message_type(self, message_type: str, text: str) -> str:
         if message_type in {"player", "narrator", "npc", "quest", "image", "system", "error"}:
@@ -1414,9 +1423,10 @@ class WebRuntime:
             raise ValueError("save slot cannot be empty")
         self.state_manager.save(self.session.state, target_slot)
         if target_slot != self.session.active_slot:
-            self.history_store[target_slot] = list(self.session.message_history)
+            with self._history_lock:
+                self.history_store[target_slot] = list(self.session.message_history)
             self.session.active_slot = target_slot
-            self._persist_history_store()
+            self._flush_history_store()
         return {"slot": target_slot, "state": self.serialize_state()}
 
     def switch_campaign(self, slot: str) -> dict[str, Any]:
@@ -1488,23 +1498,53 @@ class WebRuntime:
         return {"slot": slot, "state": self.serialize_state()}
 
     def handle_player_input(self, text: str) -> dict[str, Any]:
+        request_started = time.perf_counter()
+        request_received_at = datetime.now(timezone.utc).isoformat()
         model_status = self.get_model_status()
         turn_visuals_mode = self.app_config.image.turn_visuals_mode
-        self._append_message("player", text)
+        validation_started = time.perf_counter()
+        clean_text = text.strip()
+        validation_ms = (time.perf_counter() - validation_started) * 1000
+        self._append_message("player", clean_text, persist=False)
+        message_append_ms = 0.0
+        auto_before_ms = 0.0
         if turn_visuals_mode == "auto_before":
-            self._run_turn_visual_generation(player_action=text, stage="before")
-        result = self.engine.run_turn(self.session.state, text)
+            auto_before_started = time.perf_counter()
+            self._run_turn_visual_generation(player_action=clean_text, stage="before")
+            auto_before_ms = (time.perf_counter() - auto_before_started) * 1000
+
+        engine_started = time.perf_counter()
+        result = self.engine.run_turn(self.session.state, clean_text)
+        engine_ms = (time.perf_counter() - engine_started) * 1000
+        message_append_started = time.perf_counter()
         for message in result.messages:
-            self._append_message(message["type"], message["text"])
+            self._append_message(message["type"], message["text"], persist=False)
+        message_append_ms = (time.perf_counter() - message_append_started) * 1000
+        background_image_queued = False
         if turn_visuals_mode == "auto_after":
-            self._run_turn_visual_generation(player_action=text, stage="after")
+            background_image_queued = self._run_turn_visual_generation_async(player_action=clean_text, stage="after")
+        save_started = time.perf_counter()
+        self._flush_history_store()
         self.save_active_campaign(self.session.active_slot)
+        save_ms = (time.perf_counter() - save_started) * 1000
+        total_ms = (time.perf_counter() - request_started) * 1000
+        turn_timing = {
+            "request_received_at": request_received_at,
+            "action_validation_ms": round(validation_ms, 2),
+            "auto_before_image_ms": round(auto_before_ms, 2),
+            "engine_turn_ms": round(engine_ms, 2),
+            "message_append_ms": round(message_append_ms, 2),
+            "save_ms": round(save_ms, 2),
+            "total_request_ms": round(total_ms, 2),
+            "auto_after_image_queued": background_image_queued,
+        }
+        print(f"[turn-timing] {json.dumps(turn_timing)}")
         return {
             "narrative": result.narrative,
             "system_messages": result.system_messages,
             "messages": result.messages,
             "should_exit": result.should_exit,
-            "metadata": {**(result.metadata or {}), "model_status": model_status},
+            "metadata": {**(result.metadata or {}), "model_status": model_status, "timing": turn_timing},
             "state": self.serialize_state(),
         }
 
@@ -1530,6 +1570,25 @@ class WebRuntime:
             f"Turn visual ({stage} narration): {player_action}",
             image={"url": public_image_url, "metadata": result.metadata, "workflow_id": result.workflow_id},
         )
+
+    def _run_turn_visual_generation_async(self, player_action: str, stage: str) -> bool:
+        if self.app_config.image.provider != "comfyui" or not self.session.state.settings.image_generation_enabled:
+            return False
+        slot = self.session.active_slot
+
+        def _worker() -> None:
+            started = time.perf_counter()
+            try:
+                self._run_turn_visual_generation(player_action=player_action, stage=stage)
+                elapsed_ms = (time.perf_counter() - started) * 1000
+                print(
+                    f"[turn-timing] {json.dumps({'async_image_stage': stage, 'slot': slot, 'image_generation_ms': round(elapsed_ms, 2)})}"
+                )
+            except Exception as exc:  # pragma: no cover - defensive runtime logging
+                print(f"[turn-timing] async image generation failed stage={stage} slot={slot} error={exc}")
+
+        threading.Thread(target=_worker, name=f"turn-image-{slot}-{stage}", daemon=True).start()
+        return True
 
     def get_global_settings(self) -> dict[str, Any]:
         return {

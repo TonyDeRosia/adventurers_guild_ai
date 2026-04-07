@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import re
+import time
 
 from engine.character_sheet import CharacterSheetService
 from engine.content_registry import ContentRegistry
@@ -370,6 +371,7 @@ class CampaignEngine:
     def _finish_turn(
         self, state: CampaignState, action: str, system_messages: list[str], requested_mode: str = "play"
     ) -> TurnResult:
+        turn_started = time.perf_counter()
         self.memory.record_recent(state, f"Player action: {action}")
         for msg in system_messages:
             self.quests.add_event(state, msg)
@@ -394,7 +396,10 @@ class CampaignEngine:
                 weight=2,
             )
 
+        location_started = time.perf_counter()
         location_summary = self.world.get_current_location_summary(state)
+        location_ms = (time.perf_counter() - location_started) * 1000
+        retrieval_started = time.perf_counter()
         retrieval_request = RetrievalRequest(
             location_id=state.current_location_id,
             active_quest_ids=[quest.id for quest in state.quests.values() if quest.status == "active"],
@@ -403,6 +408,8 @@ class CampaignEngine:
             important_world_state=[flag.lower() for flag, enabled in state.world_flags.items() if enabled],
         )
         memory_context = self.retrieval.retrieve(state, retrieval_request)
+        retrieval_ms = (time.perf_counter() - retrieval_started) * 1000
+        prompt_started = time.perf_counter()
         prompt_packet = self.prompts.build_prompt_packet(
             state,
             action=action,
@@ -410,13 +417,17 @@ class CampaignEngine:
             memory=memory_context,
             requested_mode=requested_mode,
         )
+        prompt_build_ms = (time.perf_counter() - prompt_started) * 1000
+        history_started = time.perf_counter()
         history = self._build_model_history(state)
+        history_ms = (time.perf_counter() - history_started) * 1000
         selected_provider = self.model.provider_name
         selected_model = getattr(self.model, "model", getattr(self.model, "model_path", "n/a"))
         provider_attempted = True
         fallback_used = False
         fallback_reason = ""
         raw_narrative = ""
+        model_started = time.perf_counter()
         try:
             raw_narrative = self.model.generate(prompt_packet.turn_prompt, prompt_packet.system_prompt, history=history)
             if not raw_narrative.strip():
@@ -427,6 +438,7 @@ class CampaignEngine:
                 raise
             fallback_used = True
             raw_narrative = NullNarrationAdapter().generate(prompt_packet.turn_prompt, prompt_packet.system_prompt, history=history)
+        model_ms = (time.perf_counter() - model_started) * 1000
         sanitized_narrative, was_sanitized = self._sanitize_narrative(raw_narrative)
         if not fallback_used:
             print(
@@ -447,6 +459,15 @@ class CampaignEngine:
             narrator_response=narrative,
             requested_mode=requested_mode,
         )
+        total_ms = (time.perf_counter() - turn_started) * 1000
+        timing = {
+            "location_summary_ms": round(location_ms, 2),
+            "memory_retrieval_ms": round(retrieval_ms, 2),
+            "prompt_build_ms": round(prompt_build_ms, 2),
+            "history_build_ms": round(history_ms, 2),
+            "llm_generate_ms": round(model_ms, 2),
+            "turn_finalize_ms": round(total_ms, 2),
+        }
         return TurnResult(
             narrative=narrative,
             system_messages=system_messages,
@@ -460,6 +481,7 @@ class CampaignEngine:
                 "fallback_reason": fallback_reason,
                 "sanitized_output": was_sanitized,
                 "turn_count": state.turn_count,
+                "timing": timing,
             },
         )
 
