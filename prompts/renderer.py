@@ -68,7 +68,7 @@ class PromptRenderer:
         location_summary: str,
         memory: RetrievedMemory,
         requested_mode: str = "play",
-        suggested_moves_enabled: bool = True,
+        guidance_requested: bool = False,
         npc_guidance: list[str] | None = None,
         character_sheet_guidance: list[str] | None = None,
     ) -> str:
@@ -86,9 +86,13 @@ class PromptRenderer:
         ]
         npc_context = " | ".join(nearby_npcs) if nearby_npcs else "none"
         suggested_move_instruction = (
-            "Respond with 2-4 sentences and one suggested next move."
-            if suggested_moves_enabled
-            else "Respond with 2-4 sentences. Do not include any suggested next move line."
+            "Respond with 2-4 immersive sentences focused on scene and consequences. "
+            "Do not suggest actions, next steps, or recommended moves unless the player explicitly asked for guidance. "
+            + (
+                "In this turn, the player explicitly asked for guidance, so you may include clear options or recommendations."
+                if guidance_requested
+                else "In this turn, the player did not ask for guidance, so do not include advisory phrasing."
+            )
         )
         npc_personality_guidance = (
             "[NPC Personality Guidance]\n" + " | ".join(npc_guidance)
@@ -134,7 +138,7 @@ class PromptRenderer:
         location_summary: str,
         memory: RetrievedMemory,
         requested_mode: str = "play",
-        suggested_moves_enabled: bool = True,
+        guidance_requested: bool = False,
         npc_guidance: list[str] | None = None,
     ) -> PromptPacket:
         sheet_guidance = self.sheet_formatter.build_guidance_blocks(
@@ -149,7 +153,7 @@ class PromptRenderer:
                 location_summary=location_summary,
                 memory=memory,
                 requested_mode=requested_mode,
-                suggested_moves_enabled=suggested_moves_enabled,
+                guidance_requested=guidance_requested,
                 npc_guidance=npc_guidance,
                 character_sheet_guidance=sheet_guidance,
             ),
