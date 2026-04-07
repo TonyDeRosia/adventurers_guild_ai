@@ -40,7 +40,7 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency in some te
 
 from app.pathing import initialize_user_data_paths, project_root, static_dir
 from app.runtime_config import AppRuntimeConfig, ImageRuntimeConfig, ModelRuntimeConfig, RuntimeConfigStore
-from engine.campaign_engine import CampaignEngine
+from engine.campaign_engine import CampaignEngine, TurnResult
 from engine.entities import CampaignSettings, CampaignState
 from engine.game_state_manager import GameStateManager
 from images.base import ImageGenerationRequest, ImageGenerationResult, ImageGeneratorAdapter, NullImageAdapter
@@ -1698,7 +1698,7 @@ class WebRuntime:
         for message in result.messages:
             self._append_message(message["type"], message["text"], persist=False)
         message_append_ms = (time.perf_counter() - message_append_started) * 1000
-        narrator_response = str(result.narrative or "").strip()
+        narrator_response = self._extract_narrator_response(result)
         background_image_queued = self._maybe_queue_auto_turn_visual(
             mode=turn_visuals_mode,
             player_action=clean_text,
@@ -1731,34 +1731,11 @@ class WebRuntime:
         }
 
     def _run_turn_visual_generation(self, player_action: str, narrator_response: str, stage: str) -> None:
-        if self.app_config.image.provider != "comfyui" or not self.session.state.settings.image_generation_enabled:
-            return
-        if not bool(self.get_image_status().get("ready", False)):
-            return
-        prompt = self.turn_image_prompts.build(
-            self.session.state,
-            player_action=player_action,
-            narrator_response=narrator_response,
-        )
-        request_payload = {
-            "workflow_id": "scene_image",
-            "prompt": prompt,
-            "parameters": {"checkpoint": self.app_config.image.preferred_checkpoint},
-        }
-        result = self.generate_image(request_payload)
-        if not result.success:
-            return
-        public_image_url = self.public_image_path(result.result_path)
-        if not public_image_url:
-            return
-        self._set_scene_visual(
-            slot=self.session.active_slot,
-            image_url=public_image_url,
-            prompt=prompt,
+        self._request_scene_visual_generation(
             source="automatic",
             stage=stage,
-            turn=self.session.state.turn_count,
-            metadata={"workflow_id": result.workflow_id, "result_metadata": result.metadata},
+            player_action=player_action,
+            narrator_response=narrator_response,
         )
 
     def _has_meaningful_scene_content(self, narrator_response: str) -> bool:
@@ -1768,18 +1745,80 @@ class WebRuntime:
         return bool(re.search(r"[A-Za-z].*[A-Za-z]", text))
 
     def _maybe_queue_auto_turn_visual(self, *, mode: str, player_action: str, narrator_response: str, stage: str) -> bool:
+        print(f"[turn-visual] mode={mode}")
+        narrator_turn_detected = bool(narrator_response.strip())
+        print(f"[turn-visual] narrator_turn_detected={narrator_turn_detected}")
         if mode != "auto_after_narration":
+            print(f"[turn-visual] auto_image_skipped reason=mode_{mode}")
             return False
         if not self._has_meaningful_scene_content(narrator_response):
+            print("[turn-visual] auto_image_skipped reason=no_meaningful_narration")
             return False
-        return self._run_turn_visual_generation_async(
+        triggered = self._run_turn_visual_generation_async(
             player_action=player_action,
             narrator_response=narrator_response,
             stage=stage,
         )
+        print(f"[turn-visual] auto_image_triggered={triggered}")
+        return triggered
+
+    def _extract_narrator_response(self, result: TurnResult) -> str:
+        narrative = str(result.narrative or "").strip()
+        if narrative:
+            return narrative
+        for message in reversed(result.messages):
+            if str(message.get("type", "")).strip().lower() == "narrator":
+                candidate = str(message.get("text", "")).strip()
+                if candidate:
+                    return candidate
+        return ""
+
+    def _request_scene_visual_generation(
+        self,
+        *,
+        source: str,
+        stage: str,
+        player_action: str,
+        narrator_response: str,
+        prompt_override: str | None = None,
+    ) -> dict[str, Any]:
+        log_source = "auto" if source == "automatic" else source
+        prompt = str(prompt_override or "").strip() or self.turn_image_prompts.build(
+            self.session.state,
+            player_action=player_action,
+            narrator_response=narrator_response,
+        )
+        prompt_preview = " ".join(prompt.split())[:160]
+        print(f"[turn-visual] auto_prompt_preview={prompt_preview}")
+        request_payload = {
+            "workflow_id": "scene_image",
+            "prompt": prompt,
+            "parameters": {"checkpoint": self.app_config.image.preferred_checkpoint},
+        }
+        print(f"[turn-visual] image_request_started source={log_source}")
+        result = self.generate_image(request_payload)
+        if not result.success:
+            print(f"[turn-visual] image_request_failed source={log_source} error={result.error}")
+            return {"ok": False, "error": result.error, "result": result}
+        public_image_url = self.public_image_path(result.result_path)
+        if not public_image_url:
+            print(f"[turn-visual] image_request_failed source={log_source} error=missing_public_image_url")
+            return {"ok": False, "error": "missing_public_image_url", "result": result}
+        self._set_scene_visual(
+            slot=self.session.active_slot,
+            image_url=public_image_url,
+            prompt=prompt,
+            source=source,
+            stage=stage,
+            turn=self.session.state.turn_count,
+            metadata={"workflow_id": result.workflow_id, "result_metadata": result.metadata},
+        )
+        print(f"[turn-visual] image_request_completed source={log_source}")
+        return {"ok": True, "result": result, "prompt": prompt, "image_url": public_image_url}
 
     def _run_turn_visual_generation_async(self, player_action: str, narrator_response: str, stage: str) -> bool:
         if self.app_config.image.provider != "comfyui" or not self.session.state.settings.image_generation_enabled:
+            print("[turn-visual] auto_image_skipped reason=image_provider_not_ready")
             return False
         slot = self.session.active_slot
         turn = int(self.session.state.turn_count)
@@ -2274,33 +2313,30 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     @app.post("/api/images/generate")
     def image_generate(payload: dict[str, Any]) -> dict[str, Any]:
         print("[image-pipeline] request started")
-        result = runtime.generate_image(payload)
+        shared_result = runtime._request_scene_visual_generation(
+            source="manual",
+            stage="manual",
+            player_action="",
+            narrator_response="",
+            prompt_override=str(payload.get("prompt", "")),
+        )
+        result = shared_result["result"]
         response_payload = result.to_dict()
-        if result.success:
-            public_image_url = runtime.public_image_path(result.result_path)
+        if shared_result.get("ok"):
             image_meta = {}
             if isinstance(result.metadata, dict):
                 image_meta = dict(result.metadata.get("image", {}) or result.metadata.get("image_info", {}) or {})
             response_payload["ok"] = True
-            response_payload["prompt"] = payload.get("prompt", "")
+            response_payload["prompt"] = shared_result.get("prompt", payload.get("prompt", ""))
             response_payload["image"] = {
                 "filename": image_meta.get("filename", ""),
                 "subfolder": image_meta.get("subfolder", ""),
                 "type": image_meta.get("type", "output"),
-                "url": public_image_url,
+                "url": shared_result.get("image_url"),
             }
-            runtime._set_scene_visual(
-                slot=runtime.session.active_slot,
-                image_url=public_image_url,
-                prompt=str(payload.get("prompt", "")),
-                source="manual",
-                stage="manual",
-                turn=runtime.session.state.turn_count,
-                metadata={"workflow_id": result.workflow_id, "result_metadata": result.metadata},
-            )
             response_payload["scene_visual"] = runtime._scene_visual_for_slot()
             print("[image-pipeline] image display updated")
-        if not result.success:
+        if not shared_result.get("ok"):
             reason = result.metadata.get("error_category", "unknown") if isinstance(result.metadata, dict) else "unknown"
             status_code = result.metadata.get("status_code", 400) if isinstance(result.metadata, dict) else 400
             print(f"[image-pipeline] request failed status={status_code} reason={reason}")
