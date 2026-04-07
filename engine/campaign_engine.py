@@ -557,9 +557,20 @@ class CampaignEngine:
             )
         suggested_moves_enabled = state.settings.suggested_moves_active()
         last_narration = state.structured_state.runtime.last_narration
+        sanitized_concrete = self._is_concrete_scene_grounded_output(
+            action=action,
+            narrative=sanitized_narrative,
+            scene_state=scene_state,
+        ) or self._is_concrete_scene_grounded_output(
+            action=action,
+            narrative=raw_narrative,
+            scene_state=scene_state,
+        )
         narration_invalid = self._is_invalid_narration_output(sanitized_narrative)
+        if was_sanitized and sanitized_concrete:
+            narration_invalid = False
         narration_repetitive = self._is_repetitive_narration(sanitized_narrative, last_narration)
-        forced_fallback = was_sanitized
+        forced_fallback = was_sanitized and not sanitized_concrete
         if forced_fallback or narration_invalid or narration_repetitive:
             narrative = self._build_scene_aware_fallback(action, scene_state)
             cleanup_applied = False
@@ -576,7 +587,9 @@ class CampaignEngine:
             narrative, grounding_cleanup_applied = self._apply_grounding_enforcement(state, action, narrative)
             quality_fallback_used = False
             if self._contains_blocked_filler(action, narrative) or (
-                not guidance_requested and not self._is_action_grounded(action, narrative)
+                not guidance_requested
+                and not self._is_action_grounded(action, narrative)
+                and not self._is_concrete_scene_grounded_output(action, narrative, scene_state)
             ):
                 narrative = self._build_scene_aware_fallback(action, scene_state)
                 narration_invalid = True
@@ -916,6 +929,10 @@ class CampaignEngine:
         refusal_markers = ("i cannot", "i can't", "cannot create")
         if any(marker in text for marker in refusal_markers):
             return True
+        if re.search(r"\b(?:wall|stone|floor|room|chamber|torch|arch|dust|gate|road|scene|view)\b", text) and re.search(
+            r"\b(?:remains|flickers|sheds|cracked|visible|stands|opens|echoes)\b", text
+        ):
+            return False
         degraded_patterns = (
             "the darkness surrounding you",
             "your minions",
@@ -1115,44 +1132,192 @@ class CampaignEngine:
         print(f"[scene-state] recent_consequences_count={len(scene_state.get('recent_consequences', []))}")
 
     def _build_scene_aware_fallback(self, action: str, scene_state: dict[str, Any]) -> str:
-        base = self._build_grounded_fallback_narration(action)
-        lowered = action.lower()
-        damaged_objects = [str(v).lower() for v in scene_state.get("damaged_objects", [])]
-        altered_environment = [str(v).lower() for v in scene_state.get("altered_environment", [])]
-        if "wall" in lowered and any("wall" in entry for entry in damaged_objects):
-            return f"{base} The already-cracked wall splinters further on impact."
-        if "door" in lowered and any("door" in entry for entry in damaged_objects):
-            return f"{base} The doorway is already broken open, so debris shifts instead of breaking anew."
-        if "floor" in lowered and any("frost" in entry or "ice" in entry for entry in altered_environment):
-            return f"{base} Frost already coats the floor, and the surface stays slick after the impact."
-        recent = [str(v) for v in scene_state.get("recent_consequences", []) if str(v).strip()]
-        if recent:
-            return f"{base} Ongoing consequence: {recent[-1]}."
-        return base
+        subtype = self._classify_gameplay_action_subtype(action)
+        print(f"[turn-quality] fallback_subtype={subtype}")
+        if subtype == "perception":
+            return self._build_perception_fallback(scene_state)
+        if subtype == "movement":
+            return self._build_movement_fallback(scene_state)
+        if subtype == "interaction":
+            return self._build_interaction_fallback(action, scene_state)
+        if subtype == "attack_or_spell":
+            return self._build_attack_or_spell_fallback(action, scene_state)
+        if subtype == "dialogue":
+            return self._build_dialogue_fallback(action, scene_state)
+        return self._build_generic_fallback(scene_state)
 
-    def _build_grounded_fallback_narration(self, action: str) -> str:
-        clean_action = re.sub(r"\s+", " ", action.strip())
-        lowered = clean_action.lower()
-        if lowered.startswith("i "):
-            clean_action = clean_action[2:].strip()
-        first_sentence = clean_action[:1].upper() + clean_action[1:] if clean_action else "Your action resolves."
-        if not first_sentence.endswith((".", "!", "?")):
-            first_sentence += "."
-        effect_sentence = "The action resolves immediately, producing a direct physical effect."
-        outcome_sentence = "The immediate outcome is visible at the point of impact."
-        if "cast" in lowered or "spell" in lowered:
-            effect_sentence = "Energy discharges at once and connects with the target area."
-            outcome_sentence = "The impact leaves clear heat, force, or light where it lands."
-        elif any(word in lowered for word in ("attack", "strike", "stab", "slash", "shoot")):
-            effect_sentence = "The hit lands immediately with visible force."
-            outcome_sentence = "The target shows a clear, immediate reaction to the blow."
-        elif any(word in lowered for word in ("look", "inspect", "examine", "search")):
-            effect_sentence = "Your focus locks onto nearby details without delay."
-            outcome_sentence = "Specific surface features and changes become immediately visible."
-        elif any(word in lowered for word in ("move", "run", "walk", "step", "go")):
-            effect_sentence = "Your movement changes position right away."
-            outcome_sentence = "The new position creates an immediate, observable change in viewpoint."
-        return f"{first_sentence} {effect_sentence} {outcome_sentence}"
+    def _classify_gameplay_action_subtype(self, action: str) -> str:
+        normalized = re.sub(r"\s+", " ", action.strip().lower())
+        if not normalized:
+            return "generic"
+        if re.search(r"['\"][^'\"]+['\"]", normalized):
+            return "dialogue"
+        if any(keyword in normalized for keyword in (" say ", " ask ", " tell ", " shout ", " speak ")):
+            return "dialogue"
+        if normalized.startswith(("say ", "ask ", "tell ", "shout ", "speak ")):
+            return "dialogue"
+        if any(
+            phrase in normalized
+            for phrase in (
+                "look",
+                "look around",
+                "inspect",
+                "examine",
+                "what is around me",
+                "what is all around me",
+                "what do i see",
+                "around me",
+                "survey",
+            )
+        ):
+            return "perception"
+        if any(phrase in normalized for phrase in ("walk", "move", "step", "approach", "go to", "circle", "pace", "around")):
+            return "movement"
+        if any(phrase in normalized for phrase in ("touch", "open", "grab", "take", "pick up", "push", "pull")):
+            return "interaction"
+        if any(phrase in normalized for phrase in ("cast", "attack", "hit", "strike", "kick", "slash", "shoot", "spell")):
+            return "attack_or_spell"
+        return "generic"
+
+    def _build_perception_fallback(self, scene_state: dict[str, Any]) -> str:
+        location = str(scene_state.get("location_name") or "the current area")
+        damaged = [str(v) for v in scene_state.get("damaged_objects", []) if str(v).strip()]
+        altered = [str(v) for v in scene_state.get("altered_environment", []) if str(v).strip()]
+        visible_entities = [str(v) for v in scene_state.get("visible_entities", []) if str(v).strip()]
+        recent = [str(v) for v in scene_state.get("recent_consequences", []) if str(v).strip()]
+        details: list[str] = [f"The scene in {location} stays clearly in view around you."]
+        if damaged:
+            details.append(f"Visible damage includes {', '.join(damaged[-2:])}.")
+        if altered:
+            details.append(f"The environment still shows {', '.join(altered[-2:])}.")
+        if visible_entities:
+            details.append(f"You can see {', '.join(visible_entities[-3:])} in the space with you.")
+        if recent:
+            details.append(f"The latest visible consequence remains: {recent[-1]}.")
+        if len(details) == 1:
+            details.append("No abrupt new change breaks the room, but the surroundings remain readable from your position.")
+        return " ".join(details)
+
+    def _build_movement_fallback(self, scene_state: dict[str, Any]) -> str:
+        location = str(scene_state.get("location_name") or "the area")
+        damaged = [str(v) for v in scene_state.get("damaged_objects", []) if str(v).strip()]
+        altered = [str(v) for v in scene_state.get("altered_environment", []) if str(v).strip()]
+        sentence = [f"You shift position within {location}, changing your angle on the scene."]
+        if damaged:
+            sentence.append(f"From the new viewpoint, {damaged[-1]} stands out more clearly.")
+        if altered:
+            sentence.append(f"{altered[-1].capitalize()} remains evident from this spot.")
+        if not damaged and not altered:
+            sentence.append("Nearby features slide into a slightly different alignment as you move.")
+        return " ".join(sentence)
+
+    def _build_interaction_fallback(self, action: str, scene_state: dict[str, Any]) -> str:
+        target = self._extract_action_target(action)
+        location = str(scene_state.get("location_name") or "the current space")
+        if target:
+            return f"You act directly on {target} in {location}. The interaction produces an immediate, visible response in front of you."
+        return f"You carry out the interaction in {location}. The immediate effect is local and visible where you are."
+
+    def _build_attack_or_spell_fallback(self, action: str, scene_state: dict[str, Any]) -> str:
+        target = self._extract_action_target(action)
+        action_text = action.lower()
+        damaged = [str(v) for v in scene_state.get("damaged_objects", []) if str(v).strip()]
+        recent = [str(v) for v in scene_state.get("recent_consequences", []) if str(v).strip()]
+        attack_label = "fireball" if "fireball" in action_text else "attack"
+        if target and any(target.lower() in entry.lower() for entry in damaged):
+            if "wall" in target.lower():
+                return f"The {attack_label} slams into the already-cracked wall again. Fresh force widens the damage already carved into the stone."
+            return f"The {attack_label} hits {target} again, where prior damage is already visible. Fresh force worsens the marked surface."
+        if target:
+            return f"Your {attack_label} lands on {target} with immediate visible impact in the scene."
+        if damaged:
+            return f"Your {attack_label} lands near {damaged[-1]}, adding fresh visible disruption to the damaged area."
+        if recent:
+            return f"The impact adds to the ongoing scene consequences. {recent[-1].capitalize()}."
+        return f"The {attack_label} lands with immediate visible force, leaving a concrete change in the space around you."
+
+    def _build_dialogue_fallback(self, action: str, scene_state: dict[str, Any]) -> str:
+        spoken = self._extract_dialogue_content(action)
+        visible_entities = [str(v) for v in scene_state.get("visible_entities", []) if str(v).strip()]
+        if spoken:
+            base = f'Your words — "{spoken}" — carry through the current space.'
+        else:
+            base = "Your voice carries through the current space."
+        if visible_entities:
+            return f"{base} {', '.join(visible_entities[-2:])} remain in view as the sound settles."
+        return f"{base} No immediate spoken reply breaks the scene."
+
+    def _build_generic_fallback(self, scene_state: dict[str, Any]) -> str:
+        location = str(scene_state.get("location_name") or "the current space")
+        return (
+            f"You carry out the action in {location}. No major new shift breaks the scene immediately, "
+            "but the surroundings remain visible and grounded around you."
+        )
+
+    def _extract_action_target(self, action: str) -> str:
+        normalized = re.sub(r"\s+", " ", action.strip())
+        lowered = normalized.lower()
+        for token in (" at ", " the ", " to "):
+            if token in lowered:
+                parts = re.split(token, normalized, maxsplit=1, flags=re.IGNORECASE)
+                candidate = parts[-1].strip(" .!?")
+                if candidate and len(candidate) >= 3:
+                    candidate = re.sub(r"\b(?:again|now|please)\b$", "", candidate, flags=re.IGNORECASE).strip(" ,.!?")
+                    candidate = re.sub(r"^(?:the|a|an)\s+", "", candidate, flags=re.IGNORECASE)
+                    return candidate
+        words = [piece for piece in normalized.split() if piece]
+        return " ".join(words[-3:]).strip(" .!?") if words else ""
+
+    def _extract_dialogue_content(self, action: str) -> str:
+        match = re.search(r"['\"]([^'\"]+)['\"]", action)
+        if match:
+            return match.group(1).strip()
+        normalized = re.sub(r"\s+", " ", action.strip())
+        lowered = normalized.lower()
+        for prefix in ("say ", "ask ", "tell ", "shout ", "speak "):
+            if lowered.startswith(prefix):
+                return normalized[len(prefix) :].strip(" .!?")
+        return ""
+
+    def _is_concrete_scene_grounded_output(self, action: str, narrative: str, scene_state: dict[str, Any]) -> bool:
+        text = re.sub(r"\s+", " ", narrative.strip().lower())
+        if len(text) < 24:
+            return False
+        blocked_phrases = (
+            "the action resolves immediately",
+            "the immediate outcome is visible at the point of impact",
+            "your movement changes position right away",
+            "specific surface features and changes become immediately visible",
+        )
+        if any(phrase in text for phrase in blocked_phrases):
+            return False
+        if self._is_action_grounded(action, narrative):
+            return True
+        subtype = self._classify_gameplay_action_subtype(action)
+        concrete_markers = (
+            "wall",
+            "stone",
+            "floor",
+            "room",
+            "chamber",
+            "torch",
+            "dust",
+            "arch",
+            "view",
+            "visible",
+            "scene",
+        )
+        if subtype == "perception" and any(marker in text for marker in concrete_markers):
+            return True
+        scene_terms: list[str] = []
+        for key in ("location_name", "scene_summary", "last_immediate_result"):
+            value = str(scene_state.get(key, "")).strip().lower()
+            if value:
+                scene_terms.extend(re.findall(r"[a-z]{4,}", value))
+        for key in ("damaged_objects", "altered_environment", "visible_entities", "recent_consequences"):
+            for value in scene_state.get(key, []):
+                scene_terms.extend(re.findall(r"[a-z]{4,}", str(value).lower()))
+        return any(term in text for term in scene_terms[:20]) if scene_terms else False
 
     def get_last_prompt_debug_packet(self, campaign_id: str) -> dict[str, object]:
         return dict(self._last_prompt_debug_by_campaign.get(campaign_id, {}))
