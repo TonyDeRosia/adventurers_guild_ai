@@ -456,8 +456,11 @@ class CampaignEngine:
                 f"[turn-routing] provider={selected_provider} model={selected_model} attempted={provider_attempted} "
                 f"fallback={fallback_used} reason={fallback_reason} sanitized={was_sanitized}"
             )
+        suggested_moves_enabled = state.settings.suggested_moves_active()
         narrative, cleanup_applied = self._apply_recommendation_policy(
-            sanitized_narrative, guidance_requested=guidance_requested
+            sanitized_narrative,
+            guidance_requested=guidance_requested,
+            suggested_moves_enabled=suggested_moves_enabled,
         )
         print(f"[narration] recommendation_cleanup_applied={str(cleanup_applied).lower()}")
         self.memory.record_recent(state, f"Narrator: {narrative}")
@@ -557,8 +560,10 @@ class CampaignEngine:
         )
         return any(re.search(pattern, normalized, flags=re.IGNORECASE) for pattern in guidance_patterns)
 
-    def _apply_recommendation_policy(self, narrative: str, guidance_requested: bool) -> tuple[str, bool]:
-        if guidance_requested:
+    def _apply_recommendation_policy(
+        self, narrative: str, guidance_requested: bool, suggested_moves_enabled: bool
+    ) -> tuple[str, bool]:
+        if guidance_requested and suggested_moves_enabled:
             return narrative, False
         cleaned = self._strip_recommendation_segments(narrative)
         if cleaned:
@@ -585,6 +590,10 @@ class CampaignEngine:
             r"(?:^|\s)you\s*should(?:\s*now)?\s+[^.!?\n]+[.!?]",
             r"(?:^|\s)consider\s+[^.!?\n]+[.!?]",
             r"(?:^|\s)a\s*good\s*next\s*step\s*would\s*be\s+[^.!?\n]+[.!?]",
+            r"(?:^|\s)(?:i\s+)?recommend(?:\s+that)?\s+[^.!?\n]+[.!?]",
+            r"(?:^|\s)(?:you\s+)?could\s+[^.!?\n]+[.!?]",
+            r"(?:^|\s)(?:you\s+may\s+want\s+to|try\s+to)\s+[^.!?\n]+[.!?]",
+            r"(?:^|\s)one\s+option\s+is\s+to\s+[^.!?\n]+[.!?]",
         )
         for pattern in sentence_patterns:
             text = re.sub(pattern, " ", text, flags=re.IGNORECASE)

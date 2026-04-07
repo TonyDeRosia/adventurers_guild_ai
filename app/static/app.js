@@ -70,6 +70,7 @@ let campaignSettingsPersisted = null;
 let campaignSettingsDirty = false;
 let campaignSettingsApplying = false;
 let campaignSettingsSlot = '';
+let campaignSettingsApplyTimeoutId = 0;
 const imageProgressState = {
   requestId: 0,
   phase: 'idle',
@@ -159,6 +160,21 @@ function updateCampaignDirtyState() {
   campaignSettingsDirty = !campaignSettingsEqual(campaignSettingsSnapshotFromUi(), campaignSettingsPersisted);
   renderCampaignSettingsStatus();
   if (cancelSettingsButton) cancelSettingsButton.disabled = !campaignSettingsDirty || campaignSettingsApplying;
+}
+
+function queueAutoApplyCampaignSettings() {
+  if (campaignSettingsApplyTimeoutId) {
+    clearTimeout(campaignSettingsApplyTimeoutId);
+  }
+  campaignSettingsApplyTimeoutId = window.setTimeout(async () => {
+    campaignSettingsApplyTimeoutId = 0;
+    if (!campaignSettingsDirty || campaignSettingsApplying) return;
+    try {
+      await applySettings();
+    } catch (error) {
+      console.warn('auto-apply settings failed', error);
+    }
+  }, 150);
 }
 
 function applyCampaignSettingsToUi(snapshot) {
@@ -1352,6 +1368,9 @@ async function sendInput() {
     const sendButton = document.getElementById('send-btn');
     const text = input.value.trim();
     if (!text) return;
+    if (campaignSettingsDirty && !campaignSettingsApplying) {
+      await applySettings();
+    }
     const submittedAt = performance.now();
     turnRequestInFlight = true;
     input.disabled = true;
@@ -1594,6 +1613,7 @@ async function applySettings() {
       body: JSON.stringify({
         image_generation_enabled: campaignImageEnabled,
         campaign_auto_visuals_enabled: campaignAutoVisualsEnabled,
+        suggested_moves_enabled: suggestedMovesEnabled,
         player_suggested_moves_override: suggestedMovesEnabled,
       }),
     });
@@ -1737,6 +1757,7 @@ if (campaignAutoVisualsEnabledInput) {
       autoTiming: campaignAutoVisualTimingInput?.value || 'off',
     });
     updateCampaignDirtyState();
+    queueAutoApplyCampaignSettings();
   };
 }
 if (campaignAutoVisualTimingInput) {
@@ -1747,14 +1768,21 @@ if (campaignAutoVisualTimingInput) {
       autoTiming: campaignAutoVisualTimingInput.value,
     });
     updateCampaignDirtyState();
+    queueAutoApplyCampaignSettings();
   };
 }
 if (suggestedMovesToggleInput) {
-  suggestedMovesToggleInput.onchange = () => updateCampaignDirtyState();
+  suggestedMovesToggleInput.onchange = () => {
+    updateCampaignDirtyState();
+    queueAutoApplyCampaignSettings();
+  };
 }
 const campaignImageEnabledInput = document.getElementById('image-enabled');
 if (campaignImageEnabledInput) {
-  campaignImageEnabledInput.onchange = () => updateCampaignDirtyState();
+  campaignImageEnabledInput.onchange = () => {
+    updateCampaignDirtyState();
+    queueAutoApplyCampaignSettings();
+  };
 }
 if (cancelSettingsButton) {
   cancelSettingsButton.onclick = () => {

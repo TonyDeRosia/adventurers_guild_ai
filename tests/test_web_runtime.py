@@ -205,6 +205,13 @@ class _SuggestedMoveProvider(NarrationModelAdapter):
         return "Fog hugs the road as distant bells ring. Suggested next move: question the nearest guard."
 
 
+class _AdvisoryPhraseProvider(NarrationModelAdapter):
+    provider_name = "ollama"
+
+    def generate(self, prompt: str, system_prompt: str = "", history=None) -> str:
+        return "Rain glitters on the cobblestones. You could follow the footprints into the alley."
+
+
 def test_turn_fallback_is_clean_when_provider_fails(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _FailingProvider()
@@ -235,6 +242,26 @@ def test_recommendations_only_show_when_player_explicitly_requests_guidance(tmp_
 
     guidance_turn = runtime.handle_player_input("what should I do next?")
     assert "Suggested next move:" in guidance_turn["narrative"]
+
+
+def test_recommendations_are_hard_removed_when_campaign_setting_is_disabled(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _SuggestedMoveProvider()
+    runtime.set_campaign_settings({"player_suggested_moves_override": False})
+
+    guidance_turn = runtime.handle_player_input("what should I do next?")
+    assert "Suggested next move:" not in guidance_turn["narrative"]
+    assert guidance_turn["metadata"]["recommendation_cleanup_applied"] is True
+
+
+def test_recommendation_cleanup_removes_generic_advisory_phrasing(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _AdvisoryPhraseProvider()
+    runtime.set_campaign_settings({"player_suggested_moves_override": False})
+
+    out = runtime.handle_player_input("look")
+    assert "You could" not in out["narrative"]
+    assert out["metadata"]["recommendation_cleanup_applied"] is True
 
 
 def test_settings_include_ollama_unavailable_status(tmp_path: Path, monkeypatch) -> None:
