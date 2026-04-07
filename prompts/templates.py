@@ -22,6 +22,11 @@ CONTENT_SETTINGS_TEMPLATE = (
     "character progression, item mechanics, or rules resolution."
 )
 
+WORLD_META_TEMPLATE = (
+    "World name: {world_name}. Theme/genre: {world_theme}. Starting location: {starting_location_name}. "
+    "Desired tone/style: {tone}. Premise: {premise}. Player concept: {player_concept}."
+)
+
 TURN_TEMPLATE = """[Requested Mode]
 {requested_mode}
 
@@ -37,6 +42,7 @@ Important world facts: {world_facts}
 
 [Scene Context]
 Campaign: {campaign_name}
+World: {world_name} ({world_theme})
 Location: {location}
 Action: {action}
 

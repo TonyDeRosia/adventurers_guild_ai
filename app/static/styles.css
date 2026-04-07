@@ -16,6 +16,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter,
 .sidebar h2, .sidebar h3 { margin-top: 0; }
 .panel-block { margin-bottom: 12px; }
 .button-row { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 8px; }
+#selected-save-label { color: var(--muted); margin: 6px 0 10px; font-size: 0.9rem; }
 
 .chat-main { display: flex; flex-direction: column; }
 .chat-header h1 { margin: 0; font-size: 1.15rem; }
@@ -81,9 +82,31 @@ button:hover { border-color: var(--accent); }
   color: var(--muted);
 }
 .save-list { max-height: 45vh; overflow: auto; display: grid; gap: 8px; }
+.save-item { text-align: left; border: 1px solid #2e3d52; background: #132238; }
+.save-item small { display: block; color: var(--muted); margin-top: 4px; }
+.save-item.selected { border-color: #4cc2ff; box-shadow: 0 0 0 1px #4cc2ff inset; background: #18324f; }
 .state-panel { white-space: pre-wrap; max-height: 35vh; overflow: auto; margin: 0; }
 
 .image-preview img { max-width: 100%; border-radius: 8px; }
+.modal.hidden { display: none; }
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 10, 18, 0.7);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+.modal-card {
+  width: min(760px, 100%);
+  background: #0f1a2d;
+  border: 1px solid #2a3f5f;
+  border-radius: 12px;
+  padding: 14px;
+}
+.modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+textarea { border-radius: 8px; border: 1px solid #2e3d52; background: #131e2b; color: var(--text); padding: 10px; width: 100%; }
+.modal-grid label:last-child { grid-column: 1 / -1; }
 
 @media (max-width: 1150px) {
   .app-shell { grid-template-columns: 1fr; }

@@ -34,6 +34,46 @@ def test_campaign_management_create_save_switch_rename_delete(tmp_path: Path, mo
     assert deleted["deleted"] == "slot_aric"
 
 
+def test_create_campaign_persists_world_metadata(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    created = runtime.create_campaign(
+        {
+            "player_name": "Aria",
+            "char_class": "Ranger",
+            "slot": "slot_world",
+            "campaign_name": "Aria in the Ashen Realm",
+            "world_name": "Vel Astren",
+            "world_theme": "dark fantasy",
+            "starting_location_name": "Black Harbor",
+            "campaign_tone": "grim heroic",
+            "premise": "the old gods vanished and the sea is haunted",
+            "player_concept": "exiled ranger searching for her brother",
+        }
+    )
+    assert created["state"]["campaign_name"] == "Aria in the Ashen Realm"
+    assert created["state"]["world_meta"]["world_name"] == "Vel Astren"
+    assert created["state"]["world_meta"]["starting_location_name"] == "Black Harbor"
+
+    runtime.switch_campaign("slot_world")
+    assert runtime.session.state.world_meta.world_theme == "dark fantasy"
+    assert runtime.session.state.locations[runtime.session.state.current_location_id].name == "Black Harbor"
+
+
+def test_campaign_rename_and_delete_require_selection(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    try:
+        runtime.rename_campaign("", "Nope")
+        assert False, "Expected ValueError for empty rename slot"
+    except ValueError as exc:
+        assert "No save selected" in str(exc)
+
+    try:
+        runtime.delete_campaign(" ")
+        assert False, "Expected ValueError for empty delete slot"
+    except ValueError as exc:
+        assert "No save selected" in str(exc)
+
+
 def test_settings_persistence_and_runtime_effects(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
 

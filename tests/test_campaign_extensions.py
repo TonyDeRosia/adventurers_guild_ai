@@ -133,6 +133,8 @@ def test_backward_compatible_load_defaults() -> None:
     assert loaded.combat_effects == {}
     assert loaded.settings.content_settings.tone == "heroic"
     assert loaded.settings.content_settings.maturity_level == "standard"
+    assert loaded.world_meta.world_name == "Moonfall"
+    assert loaded.world_meta.starting_location_name == "Moonfall Town"
 
 
 def test_stats_affect_combat_and_defend_action(monkeypatch) -> None:
@@ -207,6 +209,11 @@ def test_prompt_renderer_includes_content_settings_layer() -> None:
     state.settings.content_settings.tone = "noir"
     state.settings.content_settings.maturity_level = "mature"
     state.settings.content_settings.thematic_flags = ["political_intrigue", "horror", "romance"]
+    state.world_meta.world_name = "Vel Astren"
+    state.world_meta.world_theme = "dark fantasy"
+    state.world_meta.starting_location_name = "Black Harbor"
+    state.world_meta.premise = "The old gods vanished."
+    state.world_meta.player_concept = "Exiled ranger."
 
     prompt = PromptRenderer().build_system_prompt(state)
 
@@ -217,6 +224,9 @@ def test_prompt_renderer_includes_content_settings_layer() -> None:
     assert "maturity_level=mature" in prompt
     assert "political_intrigue, horror, romance" in prompt
     assert "must never alter combat math" in prompt
+    assert "[World Setup]" in prompt
+    assert "Vel Astren" in prompt
+    assert "Black Harbor" in prompt
 
 
 def test_campaign_creation_can_disable_content_settings() -> None:

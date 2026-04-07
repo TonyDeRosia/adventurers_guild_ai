@@ -33,18 +33,34 @@ class GameStateManager:
         campaign_tone: str | None = None,
         maturity_level: str | None = None,
         thematic_flags: list[str] | None = None,
+        campaign_name: str | None = None,
+        world_name: str | None = None,
+        world_theme: str | None = None,
+        starting_location_name: str | None = None,
+        premise: str | None = None,
+        player_concept: str | None = None,
     ) -> CampaignState:
         payload = json.loads(self.sample_campaign_path.read_text(encoding="utf-8"))
         new_payload = deepcopy(payload)
-        new_payload["campaign_id"] = f"{profile}_{player_name.lower().replace(' ', '_')}"
-        new_payload["campaign_name"] = f"{player_name}'s {profile.replace('_', ' ').title()} Campaign"
-        new_payload["player"]["name"] = player_name
-        new_payload["player"]["char_class"] = char_class
+        clean_player_name = player_name.strip() or "Aria"
+        clean_char_class = char_class.strip() or "Ranger"
+        clean_profile = profile.strip() or "classic_fantasy"
+        clean_campaign_name = (campaign_name or "").strip() or f"{clean_player_name}'s {clean_profile.replace('_', ' ').title()} Campaign"
+        clean_world_name = (world_name or "").strip() or "Moonfall"
+        clean_world_theme = (world_theme or "").strip() or clean_profile.replace("_", " ")
+        clean_starting_location = (starting_location_name or "").strip() or "Moonfall Town"
+        clean_premise = (premise or "").strip()
+        clean_player_concept = (player_concept or "").strip()
+
+        new_payload["campaign_id"] = f"{clean_profile}_{clean_player_name.lower().replace(' ', '_')}"
+        new_payload["campaign_name"] = clean_campaign_name
+        new_payload["player"]["name"] = clean_player_name
+        new_payload["player"]["char_class"] = clean_char_class
         new_payload["player"]["inventory"] = ["worn_backpack", "torch", "field_draught"]
-        new_payload["settings"]["profile"] = profile
+        new_payload["settings"]["profile"] = clean_profile
         resolved_mature_enabled = mature_content_enabled if content_settings_enabled else False
         new_payload["settings"]["mature_content_enabled"] = resolved_mature_enabled
-        default_tone = "grim" if profile == "dark_fantasy" else "heroic"
+        default_tone = "grim" if clean_profile == "dark_fantasy" else "heroic"
         resolved_tone = campaign_tone or default_tone
         new_payload["settings"]["narration_tone"] = resolved_tone
         new_payload["settings"]["content_settings"] = {
@@ -58,7 +74,22 @@ class GameStateManager:
                 "maturity_level": "standard",
                 "thematic_flags": [],
             }
-        new_payload["event_log"] = [f"Campaign initialized for {player_name} ({char_class})"]
+        new_payload["event_log"] = [f"Campaign initialized for {clean_player_name} ({clean_char_class})"]
+        new_payload["locations"][new_payload["current_location_id"]]["name"] = clean_starting_location
+        starting_description = (
+            f"{clean_starting_location} in {clean_world_name}, a {clean_world_theme} setting."
+            if not clean_premise
+            else f"{clean_starting_location} in {clean_world_name}. {clean_premise}"
+        )
+        new_payload["locations"][new_payload["current_location_id"]]["description"] = starting_description
+        new_payload["world_meta"] = {
+            "world_name": clean_world_name,
+            "world_theme": clean_world_theme,
+            "starting_location_name": clean_starting_location,
+            "tone": resolved_tone,
+            "premise": clean_premise,
+            "player_concept": clean_player_concept,
+        }
         new_payload["faction_reputation"] = {"town": 0, "guild": 0, "unknown": 0}
         new_payload["quest_outcomes"] = {}
         new_payload["world_events"] = ["campaign_started"]
