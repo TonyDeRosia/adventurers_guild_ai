@@ -24,6 +24,8 @@ const preferredLauncherInput = document.getElementById('preferred-launcher');
 const turnVisualsModeInput = document.getElementById('turn-visuals-mode');
 const manualImagePanel = document.getElementById('manual-image-panel');
 const visualModeSummary = document.getElementById('visual-mode-summary');
+const supportedModelsList = document.getElementById('supported-models-list');
+const activeModelBanner = document.getElementById('active-model-banner');
 
 let currentSceneImage = null;
 let currentSceneImagePrompt = '';
@@ -45,6 +47,7 @@ let setupRunState = {
 };
 let latestDependencyReadiness = null;
 let turnRequestInFlight = false;
+let modelInventoryState = { active_model_id: '', models: [] };
 
 const readinessLabels = {
   model_provider: 'Text Generation Service',
@@ -106,6 +109,73 @@ function syncVisualModeUi(mode) {
   if (visualModeSummary) {
     visualModeSummary.textContent = `Mode: ${visualModeLabel(currentMode)}`;
   }
+}
+
+function installTypeLabel(installType) {
+  return {
+    ollama_pull: 'One-click Ollama pull',
+    guided_or_ollama_pull: 'Try pull, fallback to guided import',
+    guided_import: 'Guided custom import',
+  }[installType] || installType || 'Unknown';
+}
+
+async function refreshSupportedModels(showStatus = false) {
+  const payload = await api('/api/models/supported');
+  modelInventoryState = payload || { active_model_id: '', models: [] };
+  renderSupportedModels(modelInventoryState);
+  if (showStatus) setStatus('Model inventory refreshed.');
+}
+
+function renderSupportedModels(payload) {
+  if (!supportedModelsList || !activeModelBanner) return;
+  const models = Array.isArray(payload?.models) ? payload.models : [];
+  const active = models.find((model) => model.active) || null;
+  activeModelBanner.textContent = `Active model: ${active?.display_name || payload?.active_model_id || 'none'}`;
+  if (!models.length) {
+    supportedModelsList.textContent = 'No supported models configured.';
+    return;
+  }
+  supportedModelsList.innerHTML = models.map((model) => {
+    const installLabel = installTypeLabel(model.install_type);
+    const badge = model.active ? '<span class="ready-badge">Active</span>' : model.installed ? '<span class="ready-badge">Installed</span>' : model.install_type === 'guided_import' ? '<span class="not-ready-badge">Needs import</span>' : '<span class="not-ready-badge">Not installed</span>';
+    const installBtn = model.install_supported
+      ? `<button class="model-action-btn" data-model-action="install" data-model-id="${escapeHtml(model.id)}">${model.installed ? 'Reinstall' : 'Install'}</button>`
+      : `<button class="model-action-btn" data-model-action="guide" data-model-id="${escapeHtml(model.id)}">Import guide</button>`;
+    const activateBtn = model.activate_supported && (model.installed || model.active)
+      ? `<button class="model-action-btn" data-model-action="activate" data-model-id="${escapeHtml(model.id)}" ${model.active ? 'disabled' : ''}>${model.active ? 'Active' : 'Activate'}</button>`
+      : '';
+    const notes = model.mature_or_roleplay_note ? `<div class="model-meta"><strong>Notes:</strong> ${escapeHtml(model.mature_or_roleplay_note)}</div>` : '';
+    return `
+      <div class="supported-model-card">
+        <div class="panel-title-row"><strong>${escapeHtml(model.display_name)}</strong>${badge}</div>
+        <div class="model-meta"><code>${escapeHtml(model.id)}</code> · ${escapeHtml(installLabel)}</div>
+        <div class="model-meta">${escapeHtml(model.description || '')}</div>
+        ${notes}
+        <div class="readiness-action-row">${installBtn}${activateBtn}</div>
+      </div>
+    `;
+  }).join('');
+  supportedModelsList.querySelectorAll('.model-action-btn').forEach((button) => {
+    button.onclick = async () => {
+      const modelId = button.dataset.modelId || '';
+      const action = button.dataset.modelAction || '';
+      if (action === 'install') {
+        setStatus(`Installing ${modelId}...`);
+        const result = await api('/api/models/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model_id: modelId }) });
+        const guided = Array.isArray(result.guided_install_steps) ? ` ${result.guided_install_steps.join(' ')}` : '';
+        setStatus(result.ok ? (result.message || 'Model installed.') : `${result.message || 'Install failed.'}${guided}`, !result.ok);
+      } else if (action === 'activate') {
+        const result = await api('/api/models/activate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model_id: modelId }) });
+        setStatus(result.ok ? (result.message || 'Model activated.') : (result.message || 'Activation failed.'), !result.ok);
+      } else {
+        const result = await api('/api/models/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model_id: modelId }) });
+        const guided = Array.isArray(result.guided_install_steps) ? result.guided_install_steps.join(' ') : 'Guided import required.';
+        setStatus(guided, true);
+      }
+      await refreshSupportedModels(false);
+      await loadSettings();
+    };
+  });
 }
 
 function updateSetupButtonsBusyState() {
@@ -1021,6 +1091,7 @@ async function applySettings() {
       body: JSON.stringify({ image_generation_enabled: campaignImageEnabled }),
     });
     await refreshDependencyReadiness();
+    await refreshSupportedModels(false);
     await refreshComfyuiModelList();
     syncVisualModeUi(turnVisualsMode);
     const modelStatus = settings.settings?.model_status;
@@ -1052,6 +1123,12 @@ async function loadSettings() {
     setStatus(modelStatus.user_message || 'Ollama provider is unavailable.', true);
   }
   renderDependencyReadiness(data.settings?.dependency_readiness || { items: [], setup_guidance: [] });
+  if (data.settings?.supported_models) {
+    modelInventoryState = data.settings.supported_models;
+    renderSupportedModels(modelInventoryState);
+  } else {
+    await refreshSupportedModels(false);
+  }
   await refreshComfyuiModelList();
 }
 
@@ -1089,6 +1166,14 @@ document.getElementById('pick-comfyui-folder').onclick = () => pickFolder('Selec
 document.getElementById('connect-ollama-folder').onclick = connectOllamaFolder;
 document.getElementById('connect-comfyui-folder').onclick = connectComfyuiFolder;
 document.getElementById('install-story-model').onclick = () => runReadinessAction('install_model', { selected_model: document.getElementById('model-name').value.trim() || 'llama3' });
+document.getElementById('refresh-supported-models').onclick = async () => {
+  try {
+    await api('/api/models/refresh', { method: 'POST' });
+    await refreshSupportedModels(true);
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+};
 document.getElementById('start-image-engine-from-setup').onclick = () => runReadinessAction('start_image_engine', {});
 document.getElementById('recheck-readiness').onclick = async () => {
   try {

@@ -116,6 +116,14 @@
             <button id="install-story-model">Install Story Model</button>
           </div>
           <label>Ollama folder path <input id="ollama-path-input" type="text" placeholder="C:\\Users\\you\\AppData\\Local\\Programs\\Ollama" /></label>
+          <div class="model-management">
+            <div class="panel-title-row">
+              <h4>Available Models</h4>
+              <button id="refresh-supported-models">Refresh inventory</button>
+            </div>
+            <div id="active-model-banner" class="setup-summary">Active model: loading...</div>
+            <div id="supported-models-list" class="setup-model-list">Loading supported models...</div>
+          </div>
         </section>
         <section class="panel-block">
           <h4>Visual Pipeline (ComfyUI)</h4>

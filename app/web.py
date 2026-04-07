@@ -50,6 +50,7 @@ from images.prompt_builder import TurnImagePromptBuilder
 from images.workflow_manager import WorkflowManager
 from models.ollama_adapter import OllamaAdapter
 from models.registry import create_model_adapter
+from models.supported_models import get_supported_model, get_supported_models
 
 
 @dataclass
@@ -1710,6 +1711,7 @@ class WebRuntime:
                 "preferred_launcher": self.app_config.image.preferred_launcher,
             },
             "dependency_readiness": self.get_dependency_readiness(),
+            "supported_models": self.get_supported_model_inventory(refresh=False),
         }
 
     def set_global_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -1771,6 +1773,104 @@ class WebRuntime:
         if hasattr(adapter, "list_local_models"):
             return getattr(adapter, "list_local_models")()
         return []
+
+    def _list_installed_ollama_model_names(self) -> set[str]:
+        adapter = OllamaAdapter(
+            model=self.app_config.model.model_name,
+            base_url=self.app_config.model.base_url,
+            timeout_seconds=self.app_config.model.timeout_seconds,
+        )
+        names = adapter.list_local_models()
+        installed: set[str] = set()
+        for name in names:
+            clean = str(name or "").strip()
+            if not clean:
+                continue
+            installed.add(clean)
+            installed.add(clean.split(":", 1)[0])
+        return installed
+
+    def _guided_install_instructions(self, model: dict[str, Any]) -> list[str]:
+        display = str(model.get("display_name", model.get("id", "model")))
+        return [
+            f"{display} requires guided import (not one-click Ollama pull in this build).",
+            "1) Download a compatible GGUF file from the source page.",
+            "2) Create a Modelfile that points to the GGUF file.",
+            "3) Run: ollama create <your-local-name> -f <path-to-Modelfile>",
+            "4) Return here and click Refresh inventory.",
+        ]
+
+    def get_supported_model_inventory(self, refresh: bool = False) -> dict[str, Any]:
+        if refresh:
+            print("[model-registry] refresh inventory requested")
+        installed_names = self._list_installed_ollama_model_names()
+        active_id = self.app_config.model.model_name.strip().lower()
+        active_match_id = active_id
+        entries: list[dict[str, Any]] = []
+        for model in get_supported_models():
+            payload = model.to_dict()
+            ollama_name = str(payload.get("ollama_name", "")).strip()
+            installed = bool(ollama_name and ollama_name in installed_names)
+            if not installed and payload.get("id", "") in installed_names:
+                installed = True
+            if payload.get("id", "") == active_id or (ollama_name and ollama_name == active_id):
+                active_match_id = str(payload.get("id", active_id))
+            payload["installed"] = installed
+            payload["active"] = payload.get("id", "") == active_match_id
+            payload["status"] = "active" if payload["active"] else "installed" if installed else "needs_install"
+            if payload.get("install_type") == "guided_import":
+                payload["install_supported"] = False
+                payload["status"] = "needs_import" if not payload["active"] else payload["status"]
+                payload["guided_install_steps"] = self._guided_install_instructions(payload)
+            elif payload.get("install_type") == "guided_or_ollama_pull":
+                payload["install_supported"] = True
+                payload["guided_install_steps"] = self._guided_install_instructions(payload)
+            entries.append(payload)
+        return {"active_model_id": active_match_id, "models": entries}
+
+    def activate_supported_model(self, model_id: str) -> dict[str, Any]:
+        model = get_supported_model(model_id)
+        if model is None:
+            return {"ok": False, "message": f"Unsupported model id: {model_id}"}
+        if not model.activate_supported:
+            return {"ok": False, "message": f"Model {model.display_name} cannot be activated in this build."}
+        target_name = model.ollama_name or model.id
+        self.app_config.model = ModelRuntimeConfig(
+            provider=model.provider,
+            model_name=target_name,
+            base_url=self.app_config.model.base_url,
+            timeout_seconds=self.app_config.model.timeout_seconds,
+            ollama_path=self.app_config.model.ollama_path,
+        )
+        self.config_store.save(self.app_config)
+        self.engine.model = self._create_model_adapter()
+        status = self.get_model_status()
+        return {
+            "ok": True,
+            "message": f"Active model switched to {model.display_name}.",
+            "active_model_id": model.id,
+            "model_status": status,
+            "inventory": self.get_supported_model_inventory(refresh=False),
+        }
+
+    def install_supported_model(self, model_id: str) -> dict[str, Any]:
+        model = get_supported_model(model_id)
+        if model is None:
+            return {"ok": False, "message": f"Unsupported model id: {model_id}"}
+        if model.install_type == "guided_import":
+            return {
+                "ok": False,
+                "message": f"{model.display_name} requires guided import.",
+                "install_type": model.install_type,
+                "guided_install_steps": self._guided_install_instructions(model.to_dict()),
+            }
+        target = model.ollama_name or model.id
+        result = self.install_story_model(target)
+        result["model_id"] = model.id
+        if not result.get("ok", False) and model.install_type == "guided_or_ollama_pull":
+            result["guided_install_steps"] = self._guided_install_instructions(model.to_dict())
+        result["inventory"] = self.get_supported_model_inventory(refresh=True)
+        return result
 
     def generate_image(self, payload: dict[str, Any]) -> ImageGenerationResult:
         if not self.session.state.settings.image_generation_enabled:
@@ -1904,6 +2004,29 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     @app.get("/api/model/status")
     def model_status() -> dict[str, Any]:
         return {"status": runtime.get_model_status()}
+
+    @app.get("/api/models/supported")
+    def supported_models() -> dict[str, Any]:
+        return runtime.get_supported_model_inventory(refresh=False)
+
+    @app.get("/api/models/active")
+    def active_model() -> dict[str, Any]:
+        inventory = runtime.get_supported_model_inventory(refresh=False)
+        return {"active_model_id": inventory.get("active_model_id", ""), "model_status": runtime.get_model_status()}
+
+    @app.post("/api/models/refresh")
+    def refresh_models() -> dict[str, Any]:
+        return runtime.get_supported_model_inventory(refresh=True)
+
+    @app.post("/api/models/install")
+    def install_supported_model(payload: dict[str, Any]) -> dict[str, Any]:
+        model_id = str(payload.get("model_id", "")).strip().lower()
+        return runtime.install_supported_model(model_id)
+
+    @app.post("/api/models/activate")
+    def activate_supported_model(payload: dict[str, Any]) -> dict[str, Any]:
+        model_id = str(payload.get("model_id", "")).strip().lower()
+        return runtime.activate_supported_model(model_id)
 
     @app.get("/api/providers/readiness")
     def providers_readiness() -> dict[str, Any]:
