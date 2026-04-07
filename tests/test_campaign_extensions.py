@@ -417,3 +417,13 @@ def test_prompt_renderer_includes_character_sheet_guidance_blocks() -> None:
     )
     assert "[Character Sheet Guidance]" in prompt
     assert "Captain Vey" in prompt
+
+
+def test_prompt_renderer_includes_narrative_quality_and_agency_guidance() -> None:
+    state = load_state()
+    system_prompt = PromptRenderer().build_system_prompt(state, requested_mode="play")
+    assert "[Storytelling Quality]" in system_prompt
+    assert "strong tabletop GM" in system_prompt
+    assert "[Player Agency Guardrails]" in system_prompt
+    assert "Never force player actions" in system_prompt
+    assert "[Dialogue Quality]" in system_prompt

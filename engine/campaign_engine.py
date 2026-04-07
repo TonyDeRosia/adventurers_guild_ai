@@ -666,6 +666,7 @@ class CampaignEngine:
                 quality_fallback_used = True
             elif not quality_fallback_used:
                 print("[control-audit] preserved_generated_output=true")
+                print("[narrative-quality] preserved_valid_output=true")
         if quality_fallback_used:
             scene_state["consecutive_repetition_count"] = 0
         elif repetition_candidate:
@@ -1045,7 +1046,15 @@ class CampaignEngine:
     def _contains_blocked_filler(self, action: str, narrative: str) -> bool:
         action_text = action.lower()
         narrative_text = narrative.lower()
-        blocked_pairs = ("the air is thick", "darkness surrounding you", "your minions")
+        blocked_pairs = (
+            "the air is thick",
+            "darkness surrounding you",
+            "your minions",
+            "the air grows thick with anticipation",
+            "tension hangs in the air",
+            "the world seems to hold its breath",
+            "the world holds its breath",
+        )
         return any(phrase in narrative_text and phrase not in action_text for phrase in blocked_pairs)
 
     def _is_action_grounded(self, action: str, narrative: str) -> bool:

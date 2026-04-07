@@ -621,6 +621,17 @@ class _WallProgressionProvider(NarrationModelAdapter):
         return "Your fireball strikes the already-cracked wall, widening the fracture line."
 
 
+class _RichGroundedProvider(NarrationModelAdapter):
+    provider_name = "ollama"
+
+    def generate(self, prompt: str, system_prompt: str = "", history=None) -> str:
+        return (
+            "Your offer lands hard enough to still the nearby table chatter. "
+            "The paladin's jaw tightens, gauntlet creaking on the pommel, while two squires trade a wary glance. "
+            "He does not move for his blade, but his next words come measured: “Name your terms.”"
+        )
+
+
 class _FigureIntroProvider(NarrationModelAdapter):
     provider_name = "ollama"
 
@@ -675,6 +686,17 @@ def test_valid_short_dialogue_is_preserved_without_quality_fallback(tmp_path: Pa
     assert "i hear you" in out["narrative"].lower()
     assert out["metadata"]["quality_fallback_used"] is False
     assert out["metadata"]["quality_invalid_output"] is False
+
+
+def test_richer_grounded_narration_is_preserved_without_fallback(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _RichGroundedProvider()
+    out = runtime.handle_player_input("I offer the paladin a deal.")
+    lowered = out["narrative"].lower()
+    assert "paladin" in lowered
+    assert "squires" in lowered
+    assert "name your terms" in lowered
+    assert out["metadata"]["quality_fallback_used"] is False
 
 
 def test_recommendation_only_output_is_not_replaced_with_engine_template(tmp_path: Path, monkeypatch) -> None:
@@ -1056,6 +1078,17 @@ def test_custom_never_make_decisions_rule_applies_cleanup(tmp_path: Path, monkey
     out = runtime.handle_player_input("wait")
     assert "You decide to" not in out["narrative"]
     assert out["metadata"]["custom_rule_cleanup_applied"] is True
+
+
+def test_system_prompt_contains_narrative_quality_examples_and_handoff_guidance(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    capture = _PromptCaptureProvider()
+    runtime.engine.model = capture
+    runtime.handle_player_input("I enter the guild.")
+    system_prompt = capture.last_system_prompt
+    assert "[Narrative Examples]" in system_prompt
+    assert "I offer the paladin a deal." in system_prompt
+    assert "End on a clean handoff point" in system_prompt
 
 
 def test_settings_include_ollama_unavailable_status(tmp_path: Path, monkeypatch) -> None:
