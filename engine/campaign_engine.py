@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import time
 from difflib import SequenceMatcher
+from typing import Any
 
 from engine.character_sheet import CharacterSheetService
 from engine.content_registry import ContentRegistry
@@ -56,6 +57,13 @@ class CampaignEngine:
         self.retrieval = MemoryRetrievalPipeline()
         self.summary = SummaryGenerator()
         self._last_prompt_debug_by_campaign: dict[str, dict[str, object]] = {}
+        self._scene_state_list_caps: dict[str, int] = {
+            "visible_entities": 8,
+            "damaged_objects": 8,
+            "altered_environment": 8,
+            "active_effects": 6,
+            "recent_consequences": 5,
+        }
 
     def run_turn(self, state: CampaignState, action: str) -> TurnResult:
         state.turn_count += 1
@@ -400,6 +408,7 @@ class CampaignEngine:
         skip_narrator: bool = False,
     ) -> TurnResult:
         turn_started = time.perf_counter()
+        scene_state = self._ensure_scene_state(state)
         self.memory.record_recent(state, f"Player action: {action}")
         for msg in system_messages:
             self.quests.add_event(state, msg)
@@ -425,6 +434,7 @@ class CampaignEngine:
             )
 
         if skip_narrator:
+            self._update_scene_state_from_turn(state, action=action, narrative="", system_messages=system_messages, is_gameplay=False)
             self.state_orchestrator.update_runtime_state(state, action=action, system_messages=system_messages, narrative="")
             self.memory.record_conversation_turn(
                 state,
@@ -473,6 +483,7 @@ class CampaignEngine:
         retrieval_ms = (time.perf_counter() - retrieval_started) * 1000
         prompt_started = time.perf_counter()
         gm_context_text = self.state_orchestrator.build_gm_context(state)
+        scene_state_summary = self._summarize_scene_state_for_prompt(scene_state)
         prompt_packet = self.prompts.build_prompt_packet(
             state,
             action=action,
@@ -482,6 +493,7 @@ class CampaignEngine:
             guidance_requested=guidance_requested,
             npc_guidance=self.personality.build_prompt_guidance(state),
             gm_context=gm_context_text,
+            scene_state_summary=scene_state_summary,
         )
         self._last_prompt_debug_by_campaign[state.campaign_id] = {
             "campaign_id": state.campaign_id,
@@ -490,6 +502,7 @@ class CampaignEngine:
             "action": action,
             "current_location_id": state.current_location_id,
             "location_summary": location_summary,
+            "scene_state_summary": scene_state_summary,
             "gm_context": gm_context_text,
             "system_prompt": prompt_packet.system_prompt,
             "turn_prompt": prompt_packet.turn_prompt,
@@ -548,7 +561,7 @@ class CampaignEngine:
         narration_repetitive = self._is_repetitive_narration(sanitized_narrative, last_narration)
         forced_fallback = was_sanitized
         if forced_fallback or narration_invalid or narration_repetitive:
-            narrative = self._build_grounded_fallback_narration(action)
+            narrative = self._build_scene_aware_fallback(action, scene_state)
             cleanup_applied = False
             custom_rule_cleanup_applied = False
             grounding_cleanup_applied = False
@@ -565,11 +578,11 @@ class CampaignEngine:
             if self._contains_blocked_filler(action, narrative) or (
                 not guidance_requested and not self._is_action_grounded(action, narrative)
             ):
-                narrative = self._build_grounded_fallback_narration(action)
+                narrative = self._build_scene_aware_fallback(action, scene_state)
                 narration_invalid = True
                 quality_fallback_used = True
             if self._is_repetitive_narration(narrative, last_narration):
-                narrative = self._build_grounded_fallback_narration(action)
+                narrative = self._build_scene_aware_fallback(action, scene_state)
                 narration_repetitive = True
                 quality_fallback_used = True
         print(f"[turn-quality] invalid={str(narration_invalid).lower()}")
@@ -579,6 +592,7 @@ class CampaignEngine:
         print(f"[narrator-rules] validation_cleanup_applied={str(custom_rule_cleanup_applied).lower()}")
         print(f"[narration] grounding_cleanup_applied={str(grounding_cleanup_applied).lower()}")
         state.structured_state.runtime.last_narration = narrative
+        self._update_scene_state_from_turn(state, action=action, narrative=narrative, system_messages=system_messages, is_gameplay=True)
         self.memory.record_recent(state, f"Narrator: {narrative}")
         self.state_orchestrator.update_runtime_state(state, action=action, system_messages=system_messages, narrative=narrative)
         self.memory.record_conversation_turn(
@@ -950,6 +964,171 @@ class CampaignEngine:
             )
         )
         return references_action and has_immediate_effect
+
+    def _ensure_scene_state(self, state: CampaignState) -> dict[str, Any]:
+        runtime = state.structured_state.runtime
+        scene_state = runtime.scene_state if isinstance(runtime.scene_state, dict) else {}
+        if not scene_state:
+            print("[scene-state] initialized=true")
+        location = state.locations.get(state.current_location_id)
+        scene_state.setdefault("location_id", state.current_location_id or None)
+        scene_state.setdefault("location_name", location.name if location else None)
+        scene_state.setdefault("scene_summary", "")
+        scene_state.setdefault("visible_entities", [])
+        scene_state.setdefault("damaged_objects", [])
+        scene_state.setdefault("altered_environment", [])
+        scene_state.setdefault("active_effects", [])
+        scene_state.setdefault("recent_consequences", [])
+        scene_state.setdefault("last_player_action", "")
+        scene_state.setdefault("last_immediate_result", "")
+        runtime.scene_state = scene_state
+        return scene_state
+
+    def _summarize_scene_state_for_prompt(self, scene_state: dict[str, Any]) -> str:
+        lines: list[str] = []
+        location_parts = [str(scene_state.get("location_name", "")).strip(), str(scene_state.get("location_id", "")).strip()]
+        location_text = " / ".join(part for part in location_parts if part)
+        if location_text:
+            lines.append(f"- Location: {location_text}")
+        mapping = (
+            ("visible_entities", "Visible entities"),
+            ("damaged_objects", "Damaged objects"),
+            ("altered_environment", "Environment changes"),
+            ("active_effects", "Active visible effects"),
+            ("recent_consequences", "Recent consequences"),
+        )
+        for key, label in mapping:
+            values = [str(v).strip() for v in scene_state.get(key, []) if str(v).strip()]
+            if values:
+                lines.append(f"- {label}: {', '.join(values)}")
+        summary = str(scene_state.get("scene_summary", "")).strip()
+        if summary:
+            lines.append(f"- Scene summary: {summary}")
+        return "none" if not lines else "\n".join(["Current Scene State:"] + lines)
+
+    def _normalize_scene_entry(self, value: str) -> str:
+        return re.sub(r"[^a-z0-9 ]+", "", value.lower()).strip()
+
+    def _merge_scene_consequence(self, scene_state: dict[str, Any], key: str, value: str) -> None:
+        clean_value = re.sub(r"\s+", " ", value.strip())
+        if not clean_value:
+            return
+        normalized = self._normalize_scene_entry(clean_value)
+        entries = [str(v) for v in scene_state.get(key, []) if str(v).strip()]
+        normalized_existing = {self._normalize_scene_entry(entry) for entry in entries}
+        if normalized in normalized_existing:
+            return
+        entries.append(clean_value)
+        cap = self._scene_state_list_caps.get(key, 5)
+        scene_state[key] = entries[-cap:]
+
+    def _extract_consequences_from_narration(self, text: str) -> dict[str, list[str]]:
+        lowered = text.lower()
+        extracted: dict[str, list[str]] = {
+            "damaged_objects": [],
+            "altered_environment": [],
+            "active_effects": [],
+            "recent_consequences": [],
+        }
+        if "wall" in lowered and re.search(r"\b(crack|char|burn|scorch|damage|blacken|fracture)\w*", lowered):
+            extracted["damaged_objects"].append("cracked wall")
+            extracted["altered_environment"].append("scorched stone")
+            extracted["recent_consequences"].append("the wall is visibly damaged")
+        if "door" in lowered and re.search(r"\b(break|splinter|shatter|open)\w*", lowered):
+            extracted["damaged_objects"].append("broken door")
+            extracted["recent_consequences"].append("doorway opened")
+        if "floor" in lowered and re.search(r"\b(frost|ice|frozen|slick)\w*", lowered):
+            extracted["altered_environment"].append("frost-covered floor")
+            extracted["recent_consequences"].append("the floor is slick with frost")
+        if re.search(r"\b(radiant|holy|flare|nova|glow)\w*", lowered):
+            extracted["active_effects"].append("radiant flare")
+        return extracted
+
+    def _extract_consequences_from_action(self, action: str) -> dict[str, list[str]]:
+        lowered = action.lower()
+        extracted: dict[str, list[str]] = {
+            "damaged_objects": [],
+            "altered_environment": [],
+            "active_effects": [],
+            "recent_consequences": [],
+        }
+        if "wall" in lowered and any(token in lowered for token in ("fireball", "attack", "strike", "blast", "hit")):
+            extracted["damaged_objects"].append("cracked wall")
+            extracted["altered_environment"].append("scorched stone")
+            extracted["recent_consequences"].append("the wall is visibly damaged")
+        if "door" in lowered and any(token in lowered for token in ("break", "smash", "attack", "open", "kick")):
+            extracted["damaged_objects"].append("broken door")
+            extracted["recent_consequences"].append("doorway opened")
+        if "floor" in lowered and any(token in lowered for token in ("ice", "frost", "freeze", "blast")):
+            extracted["altered_environment"].append("frost-covered floor")
+            extracted["recent_consequences"].append("the floor is slick with frost")
+        if any(token in lowered for token in ("holy nova", "radiant", "radiance")):
+            extracted["active_effects"].append("radiant flare")
+        return extracted
+
+    def _update_scene_state_from_turn(
+        self,
+        state: CampaignState,
+        *,
+        action: str,
+        narrative: str,
+        system_messages: list[str],
+        is_gameplay: bool,
+    ) -> None:
+        scene_state = self._ensure_scene_state(state)
+        location = state.locations.get(state.current_location_id)
+        scene_state["location_id"] = state.current_location_id or None
+        scene_state["location_name"] = location.name if location else scene_state.get("location_name")
+        scene_state["visible_entities"] = sorted({npc.name for npc in state.npcs.values() if npc.location_id == state.current_location_id})[
+            -self._scene_state_list_caps["visible_entities"] :
+        ]
+        if not is_gameplay:
+            return
+        scene_state["last_player_action"] = action.strip()
+        immediate_sources = [narrative] + system_messages[-2:]
+        merged = " ".join(source for source in immediate_sources if source.strip())
+        extracted = self._extract_consequences_from_narration(merged)
+        action_extracted = self._extract_consequences_from_action(action)
+        for key in extracted.keys():
+            extracted[key].extend(action_extracted[key])
+        for key, values in extracted.items():
+            for value in values:
+                self._merge_scene_consequence(scene_state, key, value)
+        if extracted["recent_consequences"]:
+            scene_state["last_immediate_result"] = extracted["recent_consequences"][-1]
+        elif narrative.strip():
+            scene_state["last_immediate_result"] = re.sub(r"\s+", " ", narrative.strip())[:120]
+        damaged = scene_state.get("damaged_objects", [])
+        altered = scene_state.get("altered_environment", [])
+        effects = scene_state.get("active_effects", [])
+        summary_parts: list[str] = []
+        if damaged:
+            summary_parts.append(f"damage: {', '.join(damaged[-2:])}")
+        if altered:
+            summary_parts.append(f"environment: {', '.join(altered[-2:])}")
+        if effects:
+            summary_parts.append(f"effects: {', '.join(effects[-2:])}")
+        scene_state["scene_summary"] = "; ".join(summary_parts)
+        print("[scene-state] updated=true")
+        print(f"[scene-state] damaged_objects={scene_state.get('damaged_objects', [])}")
+        print(f"[scene-state] altered_environment={scene_state.get('altered_environment', [])}")
+        print(f"[scene-state] recent_consequences_count={len(scene_state.get('recent_consequences', []))}")
+
+    def _build_scene_aware_fallback(self, action: str, scene_state: dict[str, Any]) -> str:
+        base = self._build_grounded_fallback_narration(action)
+        lowered = action.lower()
+        damaged_objects = [str(v).lower() for v in scene_state.get("damaged_objects", [])]
+        altered_environment = [str(v).lower() for v in scene_state.get("altered_environment", [])]
+        if "wall" in lowered and any("wall" in entry for entry in damaged_objects):
+            return f"{base} The already-cracked wall splinters further on impact."
+        if "door" in lowered and any("door" in entry for entry in damaged_objects):
+            return f"{base} The doorway is already broken open, so debris shifts instead of breaking anew."
+        if "floor" in lowered and any("frost" in entry or "ice" in entry for entry in altered_environment):
+            return f"{base} Frost already coats the floor, and the surface stays slick after the impact."
+        recent = [str(v) for v in scene_state.get("recent_consequences", []) if str(v).strip()]
+        if recent:
+            return f"{base} Ongoing consequence: {recent[-1]}."
+        return base
 
     def _build_grounded_fallback_narration(self, action: str) -> str:
         clean_action = re.sub(r"\s+", " ", action.strip())

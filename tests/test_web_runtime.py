@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.web import WebRuntime, create_web_app
+from engine.entities import CampaignState
 from images.base import ImageGenerationResult
 from models.base import NarrationModelAdapter, ProviderUnavailableError
 
@@ -297,6 +298,19 @@ class _UngroundedProvider(NarrationModelAdapter):
         return "Moonlight reflects across still water while distant bells ring."
 
 
+class _WallProgressionProvider(NarrationModelAdapter):
+    provider_name = "ollama"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def generate(self, prompt: str, system_prompt: str = "", history=None) -> str:
+        self.calls += 1
+        if self.calls == 1:
+            return "Your fireball slams into the wall and leaves cracked, scorched stone."
+        return "Your fireball strikes the already-cracked wall, widening the fracture line."
+
+
 def test_turn_fallback_is_clean_when_provider_fails(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _FailingProvider()
@@ -335,6 +349,73 @@ def test_ungrounded_output_is_replaced_with_action_tied_narration(tmp_path: Path
     assert "attack" in lowered
     assert "statue" in lowered
     assert out["metadata"]["quality_fallback_used"] is True
+
+
+def test_legacy_payload_loads_with_default_scene_state(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    payload = runtime.session.state.to_dict()
+    runtime_payload = payload["structured_state"]["runtime"]
+    runtime_payload.pop("scene_state", None)
+    loaded = CampaignState.from_dict(payload)
+    scene_state = loaded.structured_state.runtime.scene_state
+    assert scene_state["damaged_objects"] == []
+    assert scene_state["recent_consequences"] == []
+    assert "location_id" in scene_state
+
+
+def test_scene_state_persists_and_progresses_across_turns(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _WallProgressionProvider()
+    first = runtime.handle_player_input("i cast fireball at the wall")
+    second = runtime.handle_player_input("i cast fireball at the wall again")
+
+    scene_state = runtime.session.state.structured_state.runtime.scene_state
+    assert "cracked wall" in " ".join(scene_state["damaged_objects"]).lower()
+    assert any("wall" in consequence.lower() for consequence in scene_state["recent_consequences"])
+    assert "already-cracked wall" in second["narrative"].lower()
+    assert first["narrative"] != second["narrative"]
+
+
+def test_scene_aware_fallback_reuses_existing_damage_state(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _RefusalProvider()
+    first = runtime.handle_player_input("i cast fireball at the wall")
+    second = runtime.handle_player_input("i cast fireball at the wall again")
+    assert "fireball" in first["narrative"].lower()
+    assert "already-cracked wall" in second["narrative"].lower()
+
+
+def test_scene_state_summary_is_injected_into_prompt(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    capture = _PromptCaptureProvider()
+    runtime.engine.model = capture
+    runtime.handle_player_input("i cast fireball at the wall")
+    runtime.handle_player_input("i cast fireball at the wall again")
+    assert "Current Scene State:" in capture.last_prompt
+    assert "Damaged objects:" in capture.last_prompt
+
+
+def test_scene_state_lists_are_capped_and_deduped(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _RefusalProvider()
+    for _ in range(8):
+        runtime.handle_player_input("i cast fireball at the wall")
+    scene_state = runtime.session.state.structured_state.runtime.scene_state
+    assert len(scene_state["recent_consequences"]) <= 5
+    assert len(scene_state["damaged_objects"]) <= 8
+    assert scene_state["damaged_objects"].count("cracked wall") == 1
+
+
+def test_system_and_structured_turns_do_not_mutate_scene_state(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _RefusalProvider()
+    runtime.handle_player_input("i cast fireball at the wall")
+    before = dict(runtime.session.state.structured_state.runtime.scene_state)
+    runtime.handle_player_input("what are your narrator rules")
+    runtime.handle_player_input("what are my stats")
+    after = runtime.session.state.structured_state.runtime.scene_state
+    assert after["damaged_objects"] == before["damaged_objects"]
+    assert after["recent_consequences"] == before["recent_consequences"]
 
 
 def test_repetitive_output_uses_fallback_on_second_turn(tmp_path: Path, monkeypatch) -> None:
