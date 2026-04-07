@@ -23,7 +23,9 @@ const checkpointFolderInput = document.getElementById('checkpoint-folder-input')
 const checkpointSourceInput = document.getElementById('checkpoint-source');
 const preferredCheckpointInput = document.getElementById('preferred-checkpoint');
 const preferredLauncherInput = document.getElementById('preferred-launcher');
-const turnVisualsModeInput = document.getElementById('turn-visuals-mode');
+const manualImageEnabledInput = document.getElementById('manual-image-enabled');
+const campaignAutoVisualsEnabledInput = document.getElementById('campaign-auto-visuals-enabled');
+const campaignAutoVisualTimingInput = document.getElementById('campaign-auto-visual-timing');
 const suggestedMovesToggleInput = document.getElementById('suggested-moves-toggle');
 const manualImagePanel = document.getElementById('manual-image-panel');
 const visualModeSummary = document.getElementById('visual-mode-summary');
@@ -93,30 +95,28 @@ function actionTitle(actionId) {
   }[actionId] || actionId;
 }
 
-function visualModeLabel(mode) {
-  return {
-    off: 'Off',
-    manual: 'Manual image generation',
-    auto_before_narration: 'Auto image before narration',
-    auto_after_narration: 'Auto image after narration',
-  }[mode] || mode;
+function visualModeLabel({ manualEnabled, autoEnabled, autoTiming }) {
+  const manualText = manualEnabled ? 'manual on' : 'manual off';
+  const autoText = autoEnabled ? `auto ${autoTiming}` : 'auto off';
+  return `${manualText}, ${autoText}`;
 }
 
-function normalizeTurnVisualsMode(mode) {
+function normalizeCampaignAutoVisualTiming(mode) {
   const clean = String(mode || '').trim().toLowerCase();
-  if (clean === 'auto_before') return 'auto_before_narration';
-  if (clean === 'auto_after') return 'auto_after_narration';
-  if (['off', 'manual', 'auto_before_narration', 'auto_after_narration'].includes(clean)) return clean;
-  return 'manual';
+  if (clean === 'auto_before' || clean === 'auto_before_narration') return 'before_narration';
+  if (clean === 'auto_after' || clean === 'auto_after_narration') return 'after_narration';
+  if (['off', 'before_narration', 'after_narration'].includes(clean)) return clean;
+  return 'off';
 }
 
-function syncVisualModeUi(mode) {
-  const currentMode = normalizeTurnVisualsMode(mode || 'manual');
+function syncVisualModeUi({ manualEnabled, autoEnabled, autoTiming }) {
+  const currentTiming = normalizeCampaignAutoVisualTiming(autoTiming || 'off');
   if (manualImagePanel) {
-    manualImagePanel.style.display = currentMode === 'off' ? 'none' : 'grid';
+    manualImagePanel.style.display = manualEnabled ? 'grid' : 'none';
   }
+  if (campaignAutoVisualTimingInput) campaignAutoVisualTimingInput.disabled = !autoEnabled;
   if (visualModeSummary) {
-    visualModeSummary.textContent = `Mode: ${visualModeLabel(currentMode)}`;
+    visualModeSummary.textContent = `Turn visuals: ${visualModeLabel({ manualEnabled, autoEnabled, autoTiming: currentTiming })}`;
   }
 }
 
@@ -726,9 +726,17 @@ async function refreshState() {
     `Quest status: ${JSON.stringify(state.quest_status, null, 2)}`,
   ].join('\n');
   document.getElementById('image-enabled').checked = !!state.settings.image_generation_enabled;
+  if (campaignAutoVisualsEnabledInput) {
+    campaignAutoVisualsEnabledInput.checked = !!state.settings.campaign_auto_visuals_enabled;
+  }
   if (suggestedMovesToggleInput) {
     suggestedMovesToggleInput.checked = !!state.settings.effective_suggested_moves_enabled;
   }
+  syncVisualModeUi({
+    manualEnabled: !!(manualImageEnabledInput?.checked),
+    autoEnabled: !!(campaignAutoVisualsEnabledInput?.checked),
+    autoTiming: campaignAutoVisualTimingInput?.value || 'off',
+  });
   updateSelectedSaveLabel();
 }
 
@@ -1042,6 +1050,10 @@ function currentImageProviderStatus() {
 async function generateImage() {
   let progressId = 0;
   try {
+    if (manualImageEnabledInput && !manualImageEnabledInput.checked) {
+      setImageStatus('Manual image generation is disabled in settings.', true);
+      return;
+    }
     const prompt = imagePromptInput.value.trim();
     if (!prompt) {
       setImageStatus('Enter an image prompt first.');
@@ -1200,7 +1212,9 @@ async function applySettings() {
     const imageProvider = document.getElementById('image-provider').value;
     const campaignImageEnabled = document.getElementById('image-enabled').checked;
     const suggestedMovesEnabled = !!suggestedMovesToggleInput?.checked;
-    const turnVisualsMode = normalizeTurnVisualsMode(turnVisualsModeInput?.value || 'manual');
+    const manualImageEnabled = !!manualImageEnabledInput?.checked;
+    const campaignAutoVisualsEnabled = !!campaignAutoVisualsEnabledInput?.checked;
+    const campaignAutoVisualTiming = normalizeCampaignAutoVisualTiming(campaignAutoVisualTimingInput?.value || 'off');
     const settings = await api('/api/settings/global', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1208,7 +1222,8 @@ async function applySettings() {
         image: {
           provider: imageProvider,
           comfyui_path: comfyuiPathInput?.value.trim() || '',
-          turn_visuals_mode: turnVisualsMode,
+          manual_image_generation_enabled: manualImageEnabled,
+          campaign_auto_visual_timing: campaignAutoVisualTiming,
           checkpoint_source: checkpointSourceInput?.value || 'local',
           checkpoint_folder: checkpointFolderInput?.value.trim() || '',
           preferred_checkpoint: preferredCheckpointInput?.value.trim() || 'DreamShaper',
@@ -1218,12 +1233,16 @@ async function applySettings() {
     });
     await api('/api/settings/campaign', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image_generation_enabled: campaignImageEnabled, player_suggested_moves_override: suggestedMovesEnabled }),
+      body: JSON.stringify({
+        image_generation_enabled: campaignImageEnabled,
+        campaign_auto_visuals_enabled: campaignAutoVisualsEnabled,
+        player_suggested_moves_override: suggestedMovesEnabled,
+      }),
     });
     await refreshDependencyReadiness();
     await refreshSupportedModels(false);
     await refreshComfyuiModelList();
-    syncVisualModeUi(turnVisualsMode);
+    syncVisualModeUi({ manualEnabled: manualImageEnabled, autoEnabled: campaignAutoVisualsEnabled, autoTiming: campaignAutoVisualTiming });
     const modelStatus = settings.settings?.model_status;
     if (modelStatus && modelStatus.provider === 'ollama' && !modelStatus.ready) {
       setStatus(modelStatus.user_message || 'Ollama provider is unavailable.', true);
@@ -1240,14 +1259,25 @@ async function loadSettings() {
   document.getElementById('model-provider').value = data.settings.model.provider;
   document.getElementById('model-name').value = data.settings.model.model_name;
   document.getElementById('image-provider').value = data.settings.image.provider;
-  if (turnVisualsModeInput) turnVisualsModeInput.value = normalizeTurnVisualsMode(data.settings.image.turn_visuals_mode || 'manual');
+  if (manualImageEnabledInput) manualImageEnabledInput.checked = !!data.settings.image.manual_image_generation_enabled;
+  if (campaignAutoVisualTimingInput) {
+    campaignAutoVisualTimingInput.value = normalizeCampaignAutoVisualTiming(data.settings.image.campaign_auto_visual_timing || 'off');
+  }
   if (ollamaPathInput) ollamaPathInput.value = data.settings.model.ollama_path || '';
   if (comfyuiPathInput) comfyuiPathInput.value = data.settings.image.comfyui_path || '';
   if (checkpointFolderInput) checkpointFolderInput.value = data.settings.image.checkpoint_folder || '';
   if (checkpointSourceInput) checkpointSourceInput.value = data.settings.image.checkpoint_source || 'local';
   if (preferredCheckpointInput) preferredCheckpointInput.value = data.settings.image.preferred_checkpoint || 'DreamShaper';
   if (preferredLauncherInput) preferredLauncherInput.value = data.settings.image.preferred_launcher || 'auto';
-  syncVisualModeUi(normalizeTurnVisualsMode(data.settings.image.turn_visuals_mode || 'manual'));
+  const campaignState = await api('/api/campaign/state');
+  if (campaignAutoVisualsEnabledInput) {
+    campaignAutoVisualsEnabledInput.checked = !!campaignState.state.settings.campaign_auto_visuals_enabled;
+  }
+  syncVisualModeUi({
+    manualEnabled: !!(manualImageEnabledInput?.checked),
+    autoEnabled: !!(campaignAutoVisualsEnabledInput?.checked),
+    autoTiming: campaignAutoVisualTimingInput?.value || 'off',
+  });
   const modelStatus = data.settings.model_status;
   if (modelStatus && modelStatus.provider === 'ollama' && !modelStatus.ready) {
     setStatus(modelStatus.user_message || 'Ollama provider is unavailable.', true);
@@ -1312,8 +1342,26 @@ document.getElementById('recheck-readiness').onclick = async () => {
     setStatus(error.message, true);
   }
 };
-if (turnVisualsModeInput) {
-  turnVisualsModeInput.onchange = () => syncVisualModeUi(turnVisualsModeInput.value);
+if (manualImageEnabledInput) {
+  manualImageEnabledInput.onchange = () => syncVisualModeUi({
+    manualEnabled: !!manualImageEnabledInput.checked,
+    autoEnabled: !!(campaignAutoVisualsEnabledInput?.checked),
+    autoTiming: campaignAutoVisualTimingInput?.value || 'off',
+  });
+}
+if (campaignAutoVisualsEnabledInput) {
+  campaignAutoVisualsEnabledInput.onchange = () => syncVisualModeUi({
+    manualEnabled: !!(manualImageEnabledInput?.checked),
+    autoEnabled: !!campaignAutoVisualsEnabledInput.checked,
+    autoTiming: campaignAutoVisualTimingInput?.value || 'off',
+  });
+}
+if (campaignAutoVisualTimingInput) {
+  campaignAutoVisualTimingInput.onchange = () => syncVisualModeUi({
+    manualEnabled: !!(manualImageEnabledInput?.checked),
+    autoEnabled: !!(campaignAutoVisualsEnabledInput?.checked),
+    autoTiming: campaignAutoVisualTimingInput.value,
+  });
 }
 
 Promise.all([refreshMessages(), refreshState(), refreshSaves(), loadSettings(), refreshDependencyReadiness(), refreshSceneVisual()]).catch((error) => setStatus(error.message, true));

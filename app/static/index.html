@@ -172,12 +172,13 @@
         </section>
         <section class="panel-block">
           <h4>Turn Visuals</h4>
-          <label>Mode
-            <select id="turn-visuals-mode">
+          <label><input id="manual-image-enabled" type="checkbox" checked /> Manual image prompt + Generate button enabled</label>
+          <label><input id="campaign-auto-visuals-enabled" type="checkbox" /> Auto-generate scene image each turn</label>
+          <label>Auto scene timing
+            <select id="campaign-auto-visual-timing">
               <option value="off">Off</option>
-              <option value="manual">Manual image generation</option>
-              <option value="auto_before_narration">Auto generate image before narration</option>
-              <option value="auto_after_narration">Auto generate image after narration</option>
+              <option value="before_narration">Before narration</option>
+              <option value="after_narration">After narration</option>
             </select>
           </label>
           <label><input id="suggested-moves-toggle" type="checkbox" checked /> Show narrator suggested next moves</label>

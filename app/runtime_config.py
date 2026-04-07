@@ -22,7 +22,8 @@ class ImageRuntimeConfig:
     base_url: str = "http://localhost:8188"
     enabled: bool = True
     comfyui_path: str = ""
-    turn_visuals_mode: str = "manual"
+    manual_image_generation_enabled: bool = True
+    campaign_auto_visual_timing: str = "off"
     checkpoint_source: str = "local"
     checkpoint_model_page: str = "https://civitai.com/models/4384/dreamshaper"
     checkpoint_folder: str = ""
@@ -39,6 +40,21 @@ class AppRuntimeConfig:
 class RuntimeConfigStore:
     def __init__(self, path: Path) -> None:
         self.path = path
+
+    @staticmethod
+    def _normalize_campaign_auto_visual_timing(value: str | None) -> str:
+        clean = str(value or "").strip().lower()
+        aliases = {
+            "auto_before": "before_narration",
+            "auto_before_narration": "before_narration",
+            "auto_after": "after_narration",
+            "auto_after_narration": "after_narration",
+            "manual": "off",
+        }
+        normalized = aliases.get(clean, clean)
+        if normalized in {"off", "before_narration", "after_narration"}:
+            return normalized
+        return "off"
 
     def load(self) -> AppRuntimeConfig:
         if not self.path.exists():
@@ -70,7 +86,10 @@ class RuntimeConfigStore:
                 base_url=str(image_payload.get("base_url", "http://localhost:8188")),
                 enabled=bool(image_payload.get("enabled", True)),
                 comfyui_path=str(image_payload.get("comfyui_path", "")),
-                turn_visuals_mode=str(image_payload.get("turn_visuals_mode", "manual")),
+                manual_image_generation_enabled=bool(image_payload.get("manual_image_generation_enabled", True)),
+                campaign_auto_visual_timing=self._normalize_campaign_auto_visual_timing(
+                    image_payload.get("campaign_auto_visual_timing", image_payload.get("turn_visuals_mode", "off"))
+                ),
                 checkpoint_source=str(image_payload.get("checkpoint_source", "local")),
                 checkpoint_model_page=str(image_payload.get("checkpoint_model_page", "https://civitai.com/models/4384/dreamshaper")),
                 checkpoint_folder=str(image_payload.get("checkpoint_folder", "")),

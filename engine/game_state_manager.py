@@ -127,6 +127,8 @@ class GameStateManager:
             "thematic_flags": thematic_flags or ["adventure", "mystery"],
         }
         new_payload["settings"]["suggested_moves_enabled"] = bool(suggested_moves_enabled)
+        new_payload["settings"]["image_generation_enabled"] = True
+        new_payload["settings"]["campaign_auto_visuals_enabled"] = False
         new_payload["settings"]["player_suggested_moves_override"] = None
         if not content_settings_enabled:
             new_payload["settings"]["content_settings"] = {
