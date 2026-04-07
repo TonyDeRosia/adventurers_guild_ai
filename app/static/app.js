@@ -50,6 +50,7 @@ let setupRunState = {
 let latestDependencyReadiness = null;
 let turnRequestInFlight = false;
 let modelInventoryState = { active_model_id: '', models: [] };
+let modelInstallState = {};
 const imageProgressState = {
   requestId: 0,
   phase: 'idle',
@@ -126,6 +127,58 @@ function installTypeLabel(installType) {
   }[installType] || installType || 'Unknown';
 }
 
+function isModelInstalling(modelId) {
+  const key = String(modelId || '').toLowerCase();
+  return ['started', 'installing'].includes(modelInstallState[key]?.status || '');
+}
+
+function setModelInstallState(modelId, payload) {
+  const key = String(modelId || '').toLowerCase();
+  modelInstallState[key] = payload || {};
+}
+
+async function pollModelInstallStatus(modelName, modelId = '') {
+  const key = String(modelId || modelName || '').toLowerCase();
+  for (let attempt = 0; attempt < 360; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const status = await api(`/api/models/install-status?model=${encodeURIComponent(modelName)}`);
+    console.log(`[model-install] poll model=${modelName} status=${status.status || 'unknown'} message=${status.message || ''}`);
+    setModelInstallState(key, status);
+    if (status.status === 'installed' || status.status === 'failed') {
+      return status;
+    }
+    if (attempt % 3 === 0 && status.message) {
+      setStatus(status.message, false);
+    }
+  }
+  return { ok: false, status: 'failed', message: `Install polling timed out for ${modelName}.`, model: modelName };
+}
+
+async function startModelInstallFlow({ modelId = '', modelName = '', source = 'settings' }) {
+  const key = String(modelId || modelName).toLowerCase();
+  if (isModelInstalling(key)) {
+    setStatus(`Install already in progress for ${modelId || modelName}.`);
+    return { ok: true, status: 'started', message: 'Install already running.' };
+  }
+  const payload = modelId ? { model_id: modelId } : { model: modelName };
+  const endpoint = modelId ? '/api/models/install' : '/api/setup/install-model';
+  console.log(`[setup-ui] install click source=${source} endpoint=${endpoint} payload=${JSON.stringify(payload)}`);
+  setStatus(`Installing ${modelName || modelId}...`);
+  setModelInstallState(key, { status: 'started', message: `Install started for ${modelName || modelId}.` });
+  await refreshSupportedModels(false);
+  const startResult = await api(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  console.log(`[setup-ui] install response source=${source} status=${startResult.status || 'unknown'} ok=${!!startResult.ok} message=${startResult.message || ''}`);
+  const pollTarget = startResult.model || modelName || modelId;
+  const finalResult = await pollModelInstallStatus(pollTarget, key);
+  setModelInstallState(key, finalResult);
+  await refreshSupportedModels(false);
+  await refreshDependencyReadiness();
+  await loadSettings();
+  const message = finalResult.ok ? (finalResult.message || `Installed ${pollTarget}.`) : (finalResult.next_step ? `${finalResult.message} ${finalResult.next_step}` : (finalResult.message || `Failed to install ${pollTarget}.`));
+  setStatus(message, !finalResult.ok);
+  return finalResult;
+}
+
 async function refreshSupportedModels(showStatus = false) {
   const payload = await api('/api/models/supported');
   modelInventoryState = payload || { active_model_id: '', models: [] };
@@ -145,8 +198,9 @@ function renderSupportedModels(payload) {
   supportedModelsList.innerHTML = models.map((model) => {
     const installLabel = installTypeLabel(model.install_type);
     const badge = model.active ? '<span class="ready-badge">Active</span>' : model.installed ? '<span class="ready-badge">Installed</span>' : model.install_type === 'guided_import' ? '<span class="not-ready-badge">Needs import</span>' : '<span class="not-ready-badge">Not installed</span>';
+    const installBusy = isModelInstalling(model.id);
     const installBtn = model.install_supported
-      ? `<button class="model-action-btn" data-model-action="install" data-model-id="${escapeHtml(model.id)}">${model.installed ? 'Reinstall' : 'Install'}</button>`
+      ? `<button class="model-action-btn" data-model-action="install" data-model-id="${escapeHtml(model.id)}" ${installBusy ? 'disabled' : ''}>${installBusy ? 'Installing...' : (model.installed ? 'Reinstall' : 'Install')}</button>`
       : `<button class="model-action-btn" data-model-action="guide" data-model-id="${escapeHtml(model.id)}">Import guide</button>`;
     const activateBtn = model.activate_supported && (model.installed || model.active)
       ? `<button class="model-action-btn" data-model-action="activate" data-model-id="${escapeHtml(model.id)}" ${model.active ? 'disabled' : ''}>${model.active ? 'Active' : 'Activate'}</button>`
@@ -167,8 +221,9 @@ function renderSupportedModels(payload) {
       const modelId = button.dataset.modelId || '';
       const action = button.dataset.modelAction || '';
       if (action === 'install') {
-        setStatus(`Installing ${modelId}...`);
-        const result = await api('/api/models/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model_id: modelId }) });
+        const model = (modelInventoryState.models || []).find((entry) => entry.id === modelId);
+        const targetName = model?.ollama_name || model?.id || modelId;
+        const result = await startModelInstallFlow({ modelId, modelName: targetName, source: 'supported-models' });
         const guided = Array.isArray(result.guided_install_steps) ? ` ${result.guided_install_steps.join(' ')}` : '';
         setStatus(result.ok ? (result.message || 'Model installed.') : `${result.message || 'Install failed.'}${guided}`, !result.ok);
       } else if (action === 'activate') {
@@ -381,15 +436,9 @@ async function runReadinessAction(actionId, item) {
     }
     if (actionId === 'install_model') {
       const modelName = item.selected_model || document.getElementById('model-name').value.trim() || 'llama3';
-      setStatus(`Installing model ${modelName}... This can take a while.`);
-      console.log(`[setup-action] install-model requested model=${modelName}`);
-      const result = await api('/api/setup/install-model', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: modelName }),
-      });
-      console.log(`[setup-action] install-model ${result.ok ? 'success' : 'failure'} reason=${result.message || 'unknown'} model=${modelName}`);
-      await refreshDependencyReadiness();
-      console.log('[setup-action] readiness refresh triggered');
-      setStatus(result.ok ? (result.message || 'Story model installed. Text generation is ready.') : (result.next_step ? `${result.message} ${result.next_step}` : result.message), !result.ok);
+      console.log(`[setup-ui] install-model click model=${modelName}`);
+      await startModelInstallFlow({ modelName, source: 'setup-panel' });
+      console.log('[setup-ui] install-model flow completed');
       return;
     }
     if (actionId === 'install_image_engine') {

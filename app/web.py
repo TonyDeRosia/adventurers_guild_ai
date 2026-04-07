@@ -86,6 +86,8 @@ class WebRuntime:
         self._history_lock = threading.Lock()
         self._turn_visual_lock = threading.Lock()
         self._active_turn_visual_jobs: set[tuple[str, int, str]] = set()
+        self._model_install_lock = threading.Lock()
+        self._model_install_jobs: dict[str, dict[str, Any]] = {}
         print("[web-runtime] session initialized")
 
     def _load_history_store(self) -> dict[str, list[dict[str, Any]]]:
@@ -575,6 +577,99 @@ class WebRuntime:
             check=False,
         )
 
+    def _run_ollama_pull_with_logs(self, ollama_cli: str, model: str, timeout_seconds: int = 60 * 60) -> dict[str, Any]:
+        command = [ollama_cli, "pull", model]
+        print(f"[ollama-install] run command={' '.join(command)} timeout_seconds={timeout_seconds}")
+        try:
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1,
+            )
+        except OSError as exc:
+            print(f"[ollama-install] popen-fallback reason={exc}")
+            completed = self._run_command_capture(command, timeout_seconds=timeout_seconds)
+            output = (completed.stdout or completed.stderr or "").strip()
+            snippet = output[-500:] if output else ""
+            return {"returncode": completed.returncode, "timed_out": False, "details": snippet, "log_lines": output.splitlines()}
+        log_lines: list[str] = []
+        start_ts = time.time()
+        timed_out = False
+        while True:
+            if process.stdout is None:
+                break
+            line = process.stdout.readline()
+            if line:
+                clean = line.rstrip()
+                log_lines.append(clean)
+                print(f"[ollama-install] stdout model={model} line={clean}")
+            if process.poll() is not None:
+                break
+            if (time.time() - start_ts) > timeout_seconds:
+                timed_out = True
+                process.kill()
+                print(f"[ollama-install] timeout model={model} timeout_seconds={timeout_seconds}")
+                break
+        if process.stdout is not None:
+            remainder = process.stdout.read() or ""
+            for line in remainder.splitlines():
+                clean = line.rstrip()
+                if clean:
+                    log_lines.append(clean)
+                    print(f"[ollama-install] stdout model={model} line={clean}")
+        return_code = process.wait(timeout=5)
+        combined_text = "\n".join(log_lines).strip()
+        snippet = combined_text[-500:] if combined_text else ""
+        return {"returncode": return_code, "timed_out": timed_out, "details": snippet, "log_lines": log_lines}
+
+    def _record_model_install_status(self, model: str, status: dict[str, Any]) -> None:
+        clean_model = model.strip().lower()
+        with self._model_install_lock:
+            self._model_install_jobs[clean_model] = {
+                **status,
+                "model": model,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+
+    def get_model_install_status(self, model_name: str | None = None) -> dict[str, Any]:
+        model = (model_name or self.app_config.model.model_name or "").strip().lower()
+        with self._model_install_lock:
+            current = dict(self._model_install_jobs.get(model, {})) if model else {}
+        if not current:
+            return {"ok": False, "status": "idle", "message": "No install task found.", "model": model}
+        return current
+
+    def _start_model_install(self, model_name: str) -> dict[str, Any]:
+        model = model_name.strip()
+        model_key = model.lower()
+        existing = self.get_model_install_status(model)
+        if existing.get("status") in {"started", "installing"}:
+            print(f"[model-install] duplicate request ignored model={model} existing_status={existing.get('status')}")
+            return {"ok": True, "status": "started", "message": f"Install already in progress for {model}.", "model": model}
+
+        def _runner() -> None:
+            result = self.install_story_model(model)
+            final_status = {
+                "ok": bool(result.get("ok", False)),
+                "status": "installed" if result.get("ok", False) else "failed",
+                "message": str(result.get("message", "Install finished.")),
+                "details": result.get("details", ""),
+                "readiness_refreshed": bool(result.get("readiness_refreshed", False)),
+                "next_step": result.get("next_step"),
+            }
+            print(f"[model-install] completed model={model} status={final_status['status']}")
+            self._record_model_install_status(model, final_status)
+
+        self._record_model_install_status(model, {"ok": True, "status": "started", "message": f"Install queued for {model}."})
+        thread = threading.Thread(target=_runner, daemon=True, name=f"model-install-{model_key}")
+        thread.start()
+        print(f"[model-install] thread-started model={model} thread={thread.name}")
+        return {"ok": True, "status": "started", "message": f"Install started for {model}.", "model": model}
+
     def _refresh_readiness_snapshot(self) -> dict[str, Any]:
         print("[setup-orchestrator] readiness refresh triggered")
         return self.get_dependency_readiness()
@@ -734,50 +829,73 @@ class WebRuntime:
     def install_story_model(self, model_name: str | None = None) -> dict[str, Any]:
         model = (model_name or self.app_config.model.model_name or "llama3").strip()
         print(f"[setup-action] install-model requested model={model or '(empty)'}")
+        print(f"[model-install] requested model={model or '(empty)'}")
         if not model:
             print("[setup-action] install-model failure reason=model name missing")
-            return {"ok": False, "message": "Model name is required."}
+            result = {"ok": False, "status": "failed", "message": "Model name is required.", "model": model}
+            self._record_model_install_status(model or "unknown", result)
+            return result
         ollama_cli = self._find_ollama_cli()
         if not ollama_cli:
             print("[setup-action] install-model failure reason=ollama cli not found")
-            return {
+            result = {
                 "ok": False,
+                "status": "failed",
                 "message": "Ollama is not installed (CLI not found on PATH).",
                 "next_step": "Install Ollama from https://ollama.com/download first.",
+                "model": model,
             }
+            self._record_model_install_status(model, result)
+            return result
         if not self.get_model_status().get("reachable", False):
             print("[setup-action] install-model failure reason=ollama service not reachable")
-            return {
+            result = {
                 "ok": False,
+                "status": "failed",
                 "message": "Ollama is installed but not running.",
                 "next_step": "Start Ollama first, then install the model.",
+                "model": model,
             }
-        try:
-            completed = self._run_command_capture([ollama_cli, "pull", model], timeout_seconds=60 * 60)
-        except subprocess.TimeoutExpired:
+            self._record_model_install_status(model, result)
+            return result
+        self._record_model_install_status(model, {"ok": True, "status": "installing", "message": f"Installing {model}...", "model": model})
+        print(f"[model-install] dispatch method=ollama_pull model={model} cli={ollama_cli}")
+        pull_result = self._run_ollama_pull_with_logs(ollama_cli, model)
+        if pull_result.get("timed_out"):
             print(f"[setup-action] install-model failure reason=timeout model={model}")
-            return {
+            result = {
                 "ok": False,
+                "status": "failed",
                 "message": f"Model install timed out for {model}.",
                 "next_step": f"Run `ollama pull {model}` manually, then click Recheck.",
+                "details": pull_result.get("details", ""),
+                "model": model,
             }
-        output = (completed.stdout or completed.stderr or "").strip()
-        snippet = output[-300:] if output else ""
-        if completed.returncode != 0:
-            print(f"[setup-action] install-model failure reason=exit_{completed.returncode} model={model}")
-            return {
+            self._record_model_install_status(model, result)
+            return result
+        if int(pull_result.get("returncode", 1)) != 0:
+            print(f"[setup-action] install-model failure reason=exit_{pull_result.get('returncode')} model={model}")
+            result = {
                 "ok": False,
+                "status": "failed",
                 "message": f"Failed to install model {model}.",
-                "details": snippet,
+                "details": pull_result.get("details", ""),
                 "next_step": f"Run `ollama pull {model}` manually and retry.",
+                "model": model,
             }
+            self._record_model_install_status(model, result)
+            return result
         print(f"[setup-action] install-model success model={model}")
-        return {
+        result = {
             "ok": True,
+            "status": "installed",
             "message": "Story model installed. Text generation is ready.",
-            "details": snippet,
+            "details": pull_result.get("details", ""),
             "readiness_refreshed": True,
+            "model": model,
         }
+        self._record_model_install_status(model, result)
+        return result
 
     def orchestrate_setup_text_ai(self, model_name: str | None = None) -> dict[str, Any]:
         model = (model_name or self.app_config.model.model_name or "llama3").strip() or "llama3"
@@ -1856,20 +1974,23 @@ class WebRuntime:
     def install_supported_model(self, model_id: str) -> dict[str, Any]:
         model = get_supported_model(model_id)
         if model is None:
-            return {"ok": False, "message": f"Unsupported model id: {model_id}"}
+            return {"ok": False, "status": "failed", "message": f"Unsupported model id: {model_id}", "model": model_id}
         if model.install_type == "guided_import":
             return {
                 "ok": False,
+                "status": "failed",
                 "message": f"{model.display_name} requires guided import.",
+                "model": model.id,
                 "install_type": model.install_type,
                 "guided_install_steps": self._guided_install_instructions(model.to_dict()),
             }
         target = model.ollama_name or model.id
-        result = self.install_story_model(target)
+        print(f"[model-install] supported model request model_id={model.id} resolved_target={target}")
+        result = self._start_model_install(target)
         result["model_id"] = model.id
-        if not result.get("ok", False) and model.install_type == "guided_or_ollama_pull":
+        if (not result.get("ok", False)) and model.install_type == "guided_or_ollama_pull":
             result["guided_install_steps"] = self._guided_install_instructions(model.to_dict())
-        result["inventory"] = self.get_supported_model_inventory(refresh=True)
+        result["inventory"] = self.get_supported_model_inventory(refresh=False)
         return result
 
     def generate_image(self, payload: dict[str, Any]) -> ImageGenerationResult:
@@ -2021,7 +2142,13 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     @app.post("/api/models/install")
     def install_supported_model(payload: dict[str, Any]) -> dict[str, Any]:
         model_id = str(payload.get("model_id", "")).strip().lower()
+        print(f"[model-install] route invoked endpoint=/api/models/install model_id={model_id}")
         return runtime.install_supported_model(model_id)
+
+    @app.get("/api/models/install-status")
+    def install_supported_model_status(model: str = "") -> dict[str, Any]:
+        print(f"[model-install] route invoked endpoint=/api/models/install-status model={model}")
+        return runtime.get_model_install_status(model)
 
     @app.post("/api/models/activate")
     def activate_supported_model(payload: dict[str, Any]) -> dict[str, Any]:
@@ -2046,7 +2173,9 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     def setup_install_model(payload: dict[str, Any]) -> dict[str, Any]:
         model_name = str(payload.get("model", "")).strip() or None
         print(f"[setup-action] route invoked endpoint=/api/setup/install-model model={model_name or runtime.app_config.model.model_name}")
-        return runtime.install_story_model(model_name)
+        target_model = model_name or runtime.app_config.model.model_name
+        print(f"[model-install] setup route payload model={target_model}")
+        return runtime._start_model_install(target_model)
 
     @app.post("/api/setup/install-image-engine")
     def setup_install_image_engine() -> dict[str, Any]:
