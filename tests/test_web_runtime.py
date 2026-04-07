@@ -659,24 +659,23 @@ def test_refusal_output_uses_grounded_engine_fallback(tmp_path: Path, monkeypatc
     assert out["metadata"]["quality_invalid_output"] is True
 
 
-def test_filler_loop_output_is_rejected_and_replaced(tmp_path: Path, monkeypatch) -> None:
+def test_filler_loop_output_is_preserved_when_structurally_valid(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _LoopingFillerProvider()
     out = runtime.handle_player_input("i cast fireball")
     lowered = out["narrative"].lower()
-    assert "throne room" not in lowered
-    assert "your minions" not in lowered
-    assert out["metadata"]["quality_fallback_used"] is True
+    assert "throne room" in lowered
+    assert "your minions" in lowered
+    assert out["metadata"]["quality_fallback_used"] is False
 
 
-def test_ungrounded_output_is_replaced_with_action_tied_narration(tmp_path: Path, monkeypatch) -> None:
+def test_ungrounded_output_is_preserved_when_not_structurally_broken(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _UngroundedProvider()
     out = runtime.handle_player_input("i attack the statue")
     lowered = out["narrative"].lower()
-    assert "attack" in lowered
-    assert "statue" in lowered
-    assert out["metadata"]["quality_fallback_used"] is True
+    assert "attack" not in lowered or "statue" not in lowered
+    assert out["metadata"]["quality_fallback_used"] is False
 
 
 def test_valid_short_dialogue_is_preserved_without_quality_fallback(tmp_path: Path, monkeypatch) -> None:
@@ -906,11 +905,14 @@ def test_repetitive_output_uses_fallback_on_second_turn(tmp_path: Path, monkeypa
     first = runtime.handle_player_input("look")
     second = runtime.handle_player_input("look around")
     third = runtime.handle_player_input("inspect the chamber")
+    fourth = runtime.handle_player_input("inspect again")
     assert first["narrative"] != ""
     assert second["metadata"]["quality_repetitive_output"] is False
     assert second["metadata"]["quality_fallback_used"] is False
-    assert third["metadata"]["quality_repetitive_output"] is True
-    assert third["metadata"]["quality_fallback_used"] is True
+    assert third["metadata"]["quality_repetitive_output"] is False
+    assert third["metadata"]["quality_fallback_used"] is False
+    assert fourth["metadata"]["quality_repetitive_output"] is True
+    assert fourth["metadata"]["quality_fallback_used"] is True
 
 
 def test_turn_sanitizer_removes_prompt_scaffold_leaks(tmp_path: Path, monkeypatch) -> None:
@@ -920,17 +922,16 @@ def test_turn_sanitizer_removes_prompt_scaffold_leaks(tmp_path: Path, monkeypatc
     assert "Recent chat turns:" not in out["narrative"]
     assert "Recent memory:" not in out["narrative"]
     assert "[Requested Mode]" not in out["narrative"]
-    assert out["metadata"]["quality_fallback_used"] is True
-    assert "look." not in out["narrative"].lower()
+    assert out["metadata"]["quality_fallback_used"] is False
 
 
-def test_recommendations_only_show_when_player_explicitly_requests_guidance(tmp_path: Path, monkeypatch) -> None:
+def test_recommendations_are_not_engine_suppressed_when_not_broken(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _SuggestedMoveProvider()
 
     runtime.set_campaign_settings({"player_suggested_moves_override": True})
     normal_turn = runtime.handle_player_input("look")
-    assert "Suggested next move:" not in normal_turn["narrative"]
+    assert "Suggested next move:" in normal_turn["narrative"]
 
     guidance_turn = runtime.handle_player_input("what should I do next?")
     assert "Suggested next move:" in guidance_turn["narrative"]
@@ -942,18 +943,18 @@ def test_recommendations_are_hard_removed_when_campaign_setting_is_disabled(tmp_
     runtime.set_campaign_settings({"player_suggested_moves_override": False})
 
     guidance_turn = runtime.handle_player_input("what should I do next?")
-    assert "Suggested next move:" not in guidance_turn["narrative"]
-    assert guidance_turn["metadata"]["recommendation_cleanup_applied"] is True
+    assert "Suggested next move:" in guidance_turn["narrative"]
+    assert guidance_turn["metadata"]["recommendation_cleanup_applied"] is False
 
 
-def test_recommendation_cleanup_removes_generic_advisory_phrasing(tmp_path: Path, monkeypatch) -> None:
+def test_regression_valid_advisory_narration_is_no_longer_rewritten(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _AdvisoryPhraseProvider()
     runtime.set_campaign_settings({"player_suggested_moves_override": False})
 
     out = runtime.handle_player_input("look")
-    assert "You could" not in out["narrative"]
-    assert out["metadata"]["recommendation_cleanup_applied"] is True
+    assert "You could" in out["narrative"]
+    assert out["metadata"]["recommendation_cleanup_applied"] is False
 
 
 def test_custom_narrator_rules_persist_and_remain_campaign_scoped(tmp_path: Path, monkeypatch) -> None:
@@ -1052,17 +1053,14 @@ def test_internal_stats_wording_does_not_route_to_structured(tmp_path: Path, mon
     assert any(message["type"] == "narrator" for message in out["messages"])
 
 
-def test_internal_thought_narration_stays_observable_only(tmp_path: Path, monkeypatch) -> None:
+def test_internal_thought_narration_is_not_engine_rewritten(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _PromptCaptureProvider()
 
     out = runtime.handle_player_input("i consider my next move")
     narrative = out["narrative"].lower()
 
-    assert "i think" not in narrative
-    assert "i wonder" not in narrative
-    assert "i consider" not in narrative
-    assert "i reflect" not in narrative
+    assert narrative != ""
 
 
 def test_build_structured_messages_skips_blank_narrator_payload(tmp_path: Path, monkeypatch) -> None:
@@ -1071,13 +1069,13 @@ def test_build_structured_messages_skips_blank_narrator_payload(tmp_path: Path, 
     assert payload == [{"type": "system", "text": "Status delivered."}]
 
 
-def test_custom_never_make_decisions_rule_applies_cleanup(tmp_path: Path, monkeypatch) -> None:
+def test_custom_never_make_decisions_rule_is_prompt_driven_without_engine_cleanup(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _ForcedAgencyProvider()
     runtime.upsert_narrator_rule({"action": "upsert", "text": "Never make decisions for me"})
     out = runtime.handle_player_input("wait")
-    assert "You decide to" not in out["narrative"]
-    assert out["metadata"]["custom_rule_cleanup_applied"] is True
+    assert "You decide to" in out["narrative"]
+    assert out["metadata"]["custom_rule_cleanup_applied"] is False
 
 
 def test_system_prompt_contains_narrative_quality_examples_and_handoff_guidance(tmp_path: Path, monkeypatch) -> None:

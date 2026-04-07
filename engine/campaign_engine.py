@@ -606,40 +606,15 @@ class CampaignEngine:
                 f"[turn-routing] provider={selected_provider} model={selected_model} attempted={provider_attempted} "
                 f"fallback={fallback_used} reason={fallback_reason} sanitized={was_sanitized}"
             )
-        suggested_moves_enabled = state.settings.suggested_moves_active()
         action_subtype = self._classify_gameplay_action_subtype(action)
         last_narration = state.structured_state.runtime.last_narration
         consecutive_repetition_count = int(scene_state.get("consecutive_repetition_count", 0) or 0)
-        sanitized_concrete = self._is_concrete_scene_grounded_output(
-            action=action,
-            narrative=sanitized_narrative,
-            scene_state=scene_state,
-        ) or self._is_concrete_scene_grounded_output(
-            action=action,
-            narrative=raw_narrative,
-            scene_state=scene_state,
-        )
         narration_invalid = self._is_invalid_narration_output(sanitized_narrative)
-        if was_sanitized and sanitized_concrete:
-            narration_invalid = False
         repetition_candidate = self._is_repetitive_narration(sanitized_narrative, last_narration)
-        narration_repetitive = repetition_candidate and consecutive_repetition_count >= 1
-        severe_ungrounded = (
-            action_subtype in {"attack_or_spell", "interaction", "movement"}
-            and not guidance_requested
-            and not self._is_action_grounded(action, sanitized_narrative)
-            and not self._is_concrete_scene_grounded_output(action, sanitized_narrative, scene_state)
-        )
-        forced_fallback = was_sanitized and not sanitized_concrete and self._is_invalid_narration_output(sanitized_narrative)
-        if action_subtype == "internal":
-            narrative = self._build_internal_fallback(scene_state)
-            cleanup_applied = False
-            custom_rule_cleanup_applied = False
-            grounding_cleanup_applied = False
-            quality_fallback_used = True
-            narration_invalid = False
-            narration_repetitive = False
-        elif forced_fallback or narration_invalid or narration_repetitive:
+        narration_repetitive = repetition_candidate and consecutive_repetition_count >= 2
+        # Minimal narration control mode:
+        # engine owns structural truth/recovery; narrator rules own narrative behavior.
+        if narration_invalid or narration_repetitive:
             narrative = self._build_scene_aware_fallback(action, scene_state)
             cleanup_applied = False
             custom_rule_cleanup_applied = False
@@ -648,25 +623,13 @@ class CampaignEngine:
         else:
             if action_subtype == "dialogue" and sanitized_narrative.strip():
                 print("[control-audit] fallback_skipped_reason=valid_dialogue")
-            narrative, cleanup_applied = self._apply_recommendation_policy(
-                sanitized_narrative,
-                guidance_requested=guidance_requested,
-                suggested_moves_enabled=suggested_moves_enabled,
-            )
-            narrative, custom_rule_cleanup_applied = self._apply_custom_narrator_rule_validation(state, narrative)
-            narrative, grounding_cleanup_applied = self._apply_grounding_enforcement(state, action, narrative)
+            narrative = sanitized_narrative.strip()
+            cleanup_applied = False
+            custom_rule_cleanup_applied = False
+            grounding_cleanup_applied = False
             quality_fallback_used = False
-            if self._contains_blocked_filler(action, narrative) or severe_ungrounded:
-                narrative = self._build_scene_aware_fallback(action, scene_state)
-                narration_invalid = True
-                quality_fallback_used = True
-            if self._is_repetitive_narration(narrative, last_narration) and consecutive_repetition_count >= 1:
-                narrative = self._build_scene_aware_fallback(action, scene_state)
-                narration_repetitive = True
-                quality_fallback_used = True
-            elif not quality_fallback_used:
-                print("[control-audit] preserved_generated_output=true")
-                print("[narrative-quality] preserved_valid_output=true")
+            print("[control-audit] preserved_generated_output=true")
+            print("[narrative-quality] preserved_valid_output=true")
         if quality_fallback_used:
             scene_state["consecutive_repetition_count"] = 0
         elif repetition_candidate:
@@ -857,8 +820,6 @@ class CampaignEngine:
         text = re.sub(r"(Respond with 2-4 sentences(?: and one suggested next move)?\.?)+", "", text, flags=re.IGNORECASE).strip()
         text = re.sub(r"(Recent chat turns:|Recent memory:|Long-term memory:|Session summaries:|Unresolved plot threads:|Important world facts:).*?(?=(?:\[[^\]]+\])|$)", "", text, flags=re.IGNORECASE).strip()
         text = re.sub(r"\s{2,}", " ", text).strip()
-        if not text:
-            text = "The world holds its breath for a heartbeat, waiting for your next move."
         return text, text != original
 
     def _player_requested_guidance(self, action: str) -> bool:
@@ -1010,38 +971,19 @@ class CampaignEngine:
         refusal_markers = ("i cannot", "i can't", "cannot create", "i won't", "i will not")
         if any(marker in text for marker in refusal_markers):
             return True
-        if len(text) < 8:
+        if len(text) < 3:
             return True
-        if re.search(r"\b(?:wall|stone|floor|room|chamber|torch|arch|dust|gate|road|scene|view)\b", text) and re.search(
-            r"\b(?:remains|flickers|sheds|cracked|visible|stands|opens|echoes)\b", text
-        ):
-            return False
-        degraded_patterns = (
-            "the darkness surrounding you",
-            "your minions",
-            "the throne room",
-            "the air is thick",
-        )
-        return sum(1 for pattern in degraded_patterns if pattern in text) >= 2
+        return False
 
     def _is_repetitive_narration(self, narrative: str, last_narration: str) -> bool:
         current = re.sub(r"\s+", " ", narrative.strip().lower())
         prior = re.sub(r"\s+", " ", str(last_narration or "").strip().lower())
-        repeated_phrases = (
-            "the darkness surrounding you",
-            "your minions",
-            "the throne room",
-            "the air is thick",
-        )
-        if any(phrase in current and phrase in prior for phrase in repeated_phrases):
+        if not current or not prior:
+            return False
+        if current == prior and len(current) > 20:
             return True
-        if current and prior and len(current) > 20 and len(prior) > 20:
-            if current == prior:
-                return True
-            similarity = SequenceMatcher(None, current, prior).ratio()
-            if similarity >= 0.92:
-                return True
-        return False
+        similarity = SequenceMatcher(None, current, prior).ratio()
+        return similarity >= 0.98 and len(current) > 40 and len(prior) > 40
 
     def _contains_blocked_filler(self, action: str, narrative: str) -> bool:
         action_text = action.lower()
