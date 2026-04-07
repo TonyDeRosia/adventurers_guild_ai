@@ -6,6 +6,8 @@ const sceneImageDisplay = document.getElementById('scene-image-display');
 const sceneVisualMeta = document.getElementById('scene-visual-meta');
 const imagePromptInput = document.getElementById('image-prompt-input');
 const imageStatusLine = document.getElementById('image-status-line');
+const sceneImageProgressStrip = document.getElementById('scene-image-progress-strip');
+const sceneImageProgressText = document.getElementById('scene-image-progress-text');
 const statusLine = document.getElementById('status-line');
 const readinessPanel = document.getElementById('dependency-readiness');
 const setupGuidance = document.getElementById('setup-guidance');
@@ -48,6 +50,11 @@ let setupRunState = {
 let latestDependencyReadiness = null;
 let turnRequestInFlight = false;
 let modelInventoryState = { active_model_id: '', models: [] };
+const imageProgressState = {
+  requestId: 0,
+  phase: 'idle',
+  timeoutId: 0,
+};
 
 const readinessLabels = {
   model_provider: 'Text Generation Service',
@@ -467,6 +474,58 @@ function setImageStatus(message, isError = false) {
   imageStatusLine.style.color = isError ? '#fca5a5' : '#cbd5e1';
 }
 
+const imageProgressMessages = {
+  submitting: 'Submitting image request...',
+  accepted: 'Generating scene image...',
+  generating: 'Generating scene image...',
+  finalizing: 'Finalizing visual...',
+  success: 'Scene visual updated',
+  error: 'Image generation failed',
+};
+
+function clearImageProgressTimer() {
+  if (imageProgressState.timeoutId) {
+    window.clearTimeout(imageProgressState.timeoutId);
+    imageProgressState.timeoutId = 0;
+  }
+}
+
+function setImageProgressPhase(phase, message = '') {
+  if (!sceneImageProgressStrip || !sceneImageProgressText) return;
+  clearImageProgressTimer();
+  imageProgressState.phase = phase;
+  if (phase === 'idle') {
+    sceneImageProgressStrip.classList.add('hidden');
+    sceneImageProgressStrip.removeAttribute('data-phase');
+    sceneImageProgressText.textContent = '';
+    return;
+  }
+  sceneImageProgressStrip.classList.remove('hidden');
+  sceneImageProgressStrip.dataset.phase = phase;
+  sceneImageProgressText.textContent = message || imageProgressMessages[phase] || 'Generating scene image...';
+}
+
+function beginImageProgress(phase = 'submitting', message = '') {
+  imageProgressState.requestId += 1;
+  setImageProgressPhase(phase, message);
+  return imageProgressState.requestId;
+}
+
+function updateImageProgress(requestId, phase, message = '') {
+  if (requestId !== imageProgressState.requestId) return;
+  setImageProgressPhase(phase, message);
+}
+
+function settleImageProgress(requestId, ok, message = '') {
+  if (requestId !== imageProgressState.requestId) return;
+  const phase = ok ? 'success' : 'error';
+  setImageProgressPhase(phase, message || imageProgressMessages[phase]);
+  imageProgressState.timeoutId = window.setTimeout(
+    () => setImageProgressPhase('idle'),
+    ok ? 1800 : 4200,
+  );
+}
+
 function escapeHtml(input) {
   return String(input || '')
     .replaceAll('&', '&amp;')
@@ -544,6 +603,9 @@ function setSceneImage(url, caption = '', turn = null) {
     sceneVisualMeta.textContent = `${turnLabel} • ${caption || 'Generated image'}`;
   }
   setImageStatus('Latest generated image loaded in Scene Visual.');
+  if (imageProgressState.phase !== 'idle') {
+    settleImageProgress(imageProgressState.requestId, true, 'Scene visual updated');
+  }
 }
 
 function clearSceneImage(message = 'Scene image will appear here.') {
@@ -573,17 +635,23 @@ async function refreshSceneVisual() {
 }
 
 async function waitForSceneVisualUpdate(previousUpdatedAt = '') {
+  const progressId = beginImageProgress('accepted', 'Generating scene image...');
   const started = Date.now();
   const timeoutMs = 45000;
+  let pollCount = 0;
   while (Date.now() - started < timeoutMs) {
     await new Promise((resolve) => setTimeout(resolve, 1500));
+    pollCount += 1;
+    updateImageProgress(progressId, 'generating', pollCount > 1 ? 'Generating scene image...' : 'Submitting image request...');
     const sceneVisual = await refreshSceneVisual().catch(() => null);
     if (sceneVisual?.updated_at && sceneVisual.updated_at !== previousUpdatedAt) {
       setImageStatus('Scene visual updated.');
+      updateImageProgress(progressId, 'finalizing', 'Finalizing visual...');
       return true;
     }
   }
   setImageStatus('Scene visual generation is taking longer than expected.');
+  settleImageProgress(progressId, false, 'Image generation failed');
   return false;
 }
 
@@ -918,12 +986,14 @@ function currentImageProviderStatus() {
 }
 
 async function generateImage() {
+  let progressId = 0;
   try {
     const prompt = imagePromptInput.value.trim();
     if (!prompt) {
       setImageStatus('Enter an image prompt first.');
       return;
     }
+    progressId = beginImageProgress('submitting', 'Submitting image request...');
     await refreshDependencyReadiness();
     const imageProviderStatus = currentImageProviderStatus();
     if (!imageProviderStatus || imageProviderStatus.status_level !== 'ready') {
@@ -931,11 +1001,14 @@ async function generateImage() {
       const next = imageProviderStatus?.next_action ? ` ${imageProviderStatus.next_action}` : '';
       setImageStatus(`${detail}${next}`, true);
       setStatus('Image generation blocked until ComfyUI is ready.', true);
+      settleImageProgress(progressId, false, 'Image generation failed');
       return;
     }
+    updateImageProgress(progressId, 'accepted', 'Generating scene image...');
     const result = await api('/api/images/generate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workflow_id: 'scene_image', prompt }),
     });
+    updateImageProgress(progressId, 'finalizing', 'Finalizing visual...');
     if (result.scene_visual?.image_url) {
       setSceneImage(result.scene_visual.image_url, result.scene_visual.prompt || prompt, result.scene_visual.turn || null);
     } else if (result.image?.url) {
@@ -947,6 +1020,7 @@ async function generateImage() {
     const detail = String(error.message || 'Image generation failed.').slice(0, 700);
     setImageStatus(detail, true);
     setStatus(error.message, true);
+    if (progressId) settleImageProgress(progressId, false, 'Image generation failed');
   }
 }
 
