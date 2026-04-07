@@ -467,49 +467,15 @@ class CampaignEngine:
             )
 
         action_subtype = self._classify_gameplay_action_subtype(action)
-        # Boundary: the engine resolves social target/context, but narrator rules and prompt guidance own
-        # how mixed social moments are narrated. Only pure dialogue turns should be shortcut into direct
-        # same-turn NPC reply generation.
-        if action_subtype == "dialogue" and self._is_pure_dialogue_action(action):
+        # Boundary: engine provides social structure (participants + continuity); narrator prompt/rules
+        # own prose shape for both pure dialogue and mixed social turns.
+        if action_subtype == "dialogue":
             target_actor = self._resolve_scene_actor_target(action, scene_state)
             if target_actor is not None:
-                npc_record = self._materialize_lightweight_npc(state, scene_state, target_actor)
-                print(f"[npc-dialogue] target={target_actor.get('actor_id', '')}")
-                narrative = self._generate_npc_response(npc_record, action, scene_state)
-                print("[npc-dialogue] response_generated=true")
-                print(f"[npc-dialogue] tone={npc_record.get('tone_default', 'neutral')}")
+                self._materialize_lightweight_npc(state, scene_state, target_actor)
                 target_actor["last_interaction_turn"] = state.turn_count
                 scene_state["last_target_actor_id"] = str(target_actor.get("actor_id", ""))
-                self._update_scene_state_from_turn(state, action=action, narrative=narrative, system_messages=system_messages, is_gameplay=True)
-                self.memory.record_recent(state, f"Narrator: {narrative}")
-                self.state_orchestrator.update_runtime_state(state, action=action, system_messages=system_messages, narrative=narrative)
-                self.memory.record_conversation_turn(
-                    state,
-                    player_input=action,
-                    system_messages=system_messages,
-                    narrator_response=narrative,
-                    requested_mode=requested_mode,
-                )
-                total_ms = (time.perf_counter() - turn_started) * 1000
-                return TurnResult(
-                    narrative=narrative,
-                    system_messages=system_messages,
-                    messages=self._build_structured_messages(system_messages, narrative),
-                    metadata={
-                        "requested_mode": requested_mode,
-                        "provider_attempted": False,
-                        "fallback_used": False,
-                        "fallback_reason": "",
-                        "sanitized_output": False,
-                        "guidance_requested": False,
-                        "recommendation_cleanup_applied": False,
-                        "custom_rule_cleanup_applied": False,
-                        "grounding_cleanup_applied": False,
-                        "turn_count": state.turn_count,
-                        "quality_fallback_used": False,
-                        "timing": {"turn_finalize_ms": round(total_ms, 2)},
-                    },
-                )
+                print(f"[npc-dialogue] target_context={target_actor.get('actor_id', '')}")
 
         location_started = time.perf_counter()
         location_summary = self.world.get_current_location_summary(state)
@@ -1296,21 +1262,6 @@ class CampaignEngine:
             return "attack_or_spell"
         return "generic"
 
-    def _is_pure_dialogue_action(self, action: str) -> bool:
-        normalized = re.sub(r"\s+", " ", action.strip().lower())
-        if not normalized:
-            return False
-        has_dialogue_marker = bool(
-            re.search(r"['\"][^'\"]+['\"]", normalized)
-            or "wait for" in normalized and "reply" in normalized
-            or any(keyword in normalized for keyword in (" say ", " ask ", " tell ", " shout ", " speak "))
-            or normalized.startswith(("say ", "ask ", "tell ", "shout ", "speak "))
-        )
-        if not has_dialogue_marker:
-            return False
-        mixed_action_markers = ("walk", "move", "step", "approach", "go to", "circle", "pace", "around")
-        return not any(marker in normalized for marker in mixed_action_markers)
-
     def _build_internal_fallback(self, scene_state: dict[str, Any]) -> str:
         location = str(scene_state.get("location_name") or "the current area")
         altered = [str(v) for v in scene_state.get("altered_environment", []) if str(v).strip()]
@@ -1506,30 +1457,6 @@ class CampaignEngine:
         if "villager" in lowered or "fright" in lowered:
             return "evasive"
         return "neutral"
-
-    def _generate_npc_response(self, npc_record: dict[str, Any], player_input: str, scene_state: dict[str, Any]) -> str:
-        spoken = self._extract_dialogue_content(player_input)
-        waiting = "wait for" in player_input.lower() and "reply" in player_input.lower()
-        tone = str(npc_record.get("tone_default", "neutral"))
-        role_hint = str(npc_record.get("role_hint", "stranger"))
-        if waiting and npc_record.get("last_dialogue_summary"):
-            line = "“I already answered. Speak plainly if you want more.”"
-        elif "what do you want" in spoken.lower():
-            line = "“A simple answer? I want to know why you followed me.”"
-        elif not spoken:
-            line = "“Say what you came to say.”"
-        elif tone == "sharp":
-            line = f"“Careful. Words like '{spoken[:22]}' can start bloodshed.”"
-        elif tone == "guarded":
-            line = "“Lower your voice. Not every ear here is friendly.”"
-        elif tone == "inquiring":
-            line = "“Interesting. Why ask me that now?”"
-        else:
-            line = "“I hear you. Keep talking.”"
-        npc_record["last_dialogue_turn"] = npc_record.get("last_dialogue_turn", 0) or 0
-        npc_record["last_dialogue_turn"] = int(npc_record["last_dialogue_turn"]) + 1
-        npc_record["last_dialogue_summary"] = line
-        return f"The {role_hint} turns toward you, posture {tone}. {line}"
 
     def _is_concrete_scene_grounded_output(self, action: str, narrative: str, scene_state: dict[str, Any]) -> bool:
         text = re.sub(r"\s+", " ", narrative.strip().lower())
