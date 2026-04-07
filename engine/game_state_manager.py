@@ -225,7 +225,7 @@ class GameStateManager:
             world_flags = {}
             payload["world_flags"] = world_flags
 
-        print("[character-sheets] applying_main_sheet_to_campaign_state=true")
+        print("[character-sheets] applying_main_sheet_to_runtime=true")
         player_payload["name"] = main_sheet.name or player_payload.get("name", "")
         if main_sheet.role.strip():
             player_payload["char_class"] = main_sheet.role.strip()
@@ -259,9 +259,9 @@ class GameStateManager:
         if loaded is not None:
             has_sheets = bool(loaded.character_sheets)
             print(f"[character-sheets] campaign_loaded_with_sheets=count:{len(loaded.character_sheets)}")
-            if has_sheets and not loaded.world_flags.get("main_character_sheet_applied", False):
+            if has_sheets:
                 payload = loaded.to_dict()
-                self._apply_main_character_sheet_to_payload(payload, loaded.character_sheets, source="campaign_load_migration")
+                self._apply_main_character_sheet_to_payload(payload, loaded.character_sheets, source="campaign_load_runtime_sync")
                 return CampaignState.from_dict(payload)
             return loaded
         return self.create_new_campaign(

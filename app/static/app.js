@@ -28,7 +28,6 @@ const campaignAutoVisualsEnabledInput = document.getElementById('campaign-auto-v
 const campaignAutoVisualTimingInput = document.getElementById('campaign-auto-visual-timing');
 const suggestedMovesToggleInput = document.getElementById('suggested-moves-toggle');
 const manualImagePanel = document.getElementById('manual-image-panel');
-const visualModeSummary = document.getElementById('visual-mode-summary');
 const supportedModelsList = document.getElementById('supported-models-list');
 const activeModelBanner = document.getElementById('active-model-banner');
 const campaignSettingsStatus = document.getElementById('campaign-settings-status');
@@ -38,10 +37,12 @@ const characterSheetsList = document.getElementById('character-sheets-list');
 const characterSheetsCount = document.getElementById('character-sheets-count');
 const runtimeCharacterSheetsModal = document.getElementById('runtime-character-sheets-modal');
 const runtimeCharacterSheetsList = document.getElementById('runtime-character-sheets-list');
+const runtimeCharacterSheetDetail = document.getElementById('runtime-character-sheet-detail');
 
 let draftCharacterSheets = [];
 let editingSheetIndex = -1;
 let runtimeCharacterSheets = [];
+let selectedRuntimeSheetId = '';
 
 let currentSceneImage = null;
 let currentSceneImagePrompt = '';
@@ -108,12 +109,6 @@ function actionTitle(actionId) {
     start_image_engine: 'Start Image Engine',
     recheck: 'Recheck Dependencies',
   }[actionId] || actionId;
-}
-
-function visualModeLabel({ manualEnabled, autoEnabled, autoTiming }) {
-  const manualText = manualEnabled ? 'manual on' : 'manual off';
-  const autoText = autoEnabled ? `auto ${autoTiming}` : 'auto off';
-  return `${manualText}, ${autoText}`;
 }
 
 function normalizeCampaignAutoVisualTiming(mode) {
@@ -202,14 +197,10 @@ function ingestPersistedCampaignSettings(snapshot, slot, { forceUi = false } = {
 }
 
 function syncVisualModeUi({ manualEnabled, autoEnabled, autoTiming }) {
-  const currentTiming = normalizeCampaignAutoVisualTiming(autoTiming || 'off');
   if (manualImagePanel) {
     manualImagePanel.style.display = manualEnabled ? 'grid' : 'none';
   }
   if (campaignAutoVisualTimingInput) campaignAutoVisualTimingInput.disabled = !autoEnabled;
-  if (visualModeSummary) {
-    visualModeSummary.textContent = `Turn visuals: ${visualModeLabel({ manualEnabled, autoEnabled, autoTiming: currentTiming })}`;
-  }
 }
 
 function installTypeLabel(installType) {
@@ -740,27 +731,59 @@ function renderCharacterSheetList() {
 }
 
 function renderRuntimeCharacterSheets() {
-  if (!runtimeCharacterSheetsList) return;
+  if (!runtimeCharacterSheetsList || !runtimeCharacterSheetDetail) return;
   if (!runtimeCharacterSheets.length) {
     runtimeCharacterSheetsList.textContent = 'No sheets attached to this campaign.';
+    runtimeCharacterSheetDetail.textContent = 'No character sheet data is attached to this campaign yet.';
+    selectedRuntimeSheetId = '';
     return;
   }
+  const hasSelection = runtimeCharacterSheets.some((sheet) => sheet.id === selectedRuntimeSheetId);
+  if (!hasSelection) {
+    selectedRuntimeSheetId = runtimeCharacterSheets[0].id || '';
+  }
   runtimeCharacterSheetsList.innerHTML = runtimeCharacterSheets.map((sheet) => {
+    const selectedClass = sheet.id === selectedRuntimeSheetId ? 'selected' : '';
     const stats = sheet.stats || {};
-    const classic = sheet.classic_attributes || {};
     return `
-      <article class="runtime-sheet-card">
-        <h4>${escapeHtml(sheet.name || 'Unnamed')} • ${escapeHtml(sheet.sheet_type || 'unknown')}</h4>
-        <dl>
-          <dt>Role / Archetype</dt><dd>${escapeHtml(sheet.role || 'n/a')} / ${escapeHtml(sheet.archetype || 'n/a')}</dd>
-          <dt>Faction</dt><dd>${escapeHtml(sheet.faction || 'n/a')}</dd>
-          <dt>Description</dt><dd>${escapeHtml(sheet.description || 'n/a')}</dd>
-          <dt>Stats</dt><dd>HP ${Number(stats.health ?? 0)} • Energy ${Number(stats.energy_or_mana ?? 0)} • Atk ${Number(stats.attack ?? 0)} • Def ${Number(stats.defense ?? 0)} • Spd ${Number(stats.speed ?? 0)} • Mag ${Number(stats.magic ?? 0)} • Will ${Number(stats.willpower ?? 0)} • Presence ${Number(stats.presence ?? 0)}</dd>
-          <dt>Classic Attributes</dt><dd>STR ${classic.strength ?? 'n/a'} • DEX ${classic.dexterity ?? 'n/a'} • CON ${classic.constitution ?? 'n/a'} • INT ${classic.intelligence ?? 'n/a'} • WIS ${classic.wisdom ?? 'n/a'} • CHA ${classic.charisma ?? 'n/a'}</dd>
-        </dl>
-      </article>
+      <button type="button" class="runtime-sheet-list-item ${selectedClass}" data-sheet-id="${escapeHtml(sheet.id || '')}">
+        <strong>${escapeHtml(sheet.name || 'Unnamed')}</strong>
+        <span>${escapeHtml(sheet.sheet_type || 'unknown')}</span>
+        <small>HP ${Number(stats.health ?? 0)} • Energy ${Number(stats.energy_or_mana ?? 0)}</small>
+      </button>
     `;
   }).join('');
+  runtimeCharacterSheetsList.querySelectorAll('button[data-sheet-id]').forEach((button) => {
+    button.onclick = () => {
+      selectedRuntimeSheetId = button.dataset.sheetId || '';
+      renderRuntimeCharacterSheets();
+    };
+  });
+  const selectedSheet = runtimeCharacterSheets.find((sheet) => sheet.id === selectedRuntimeSheetId) || runtimeCharacterSheets[0];
+  renderRuntimeCharacterSheetDetail(selectedSheet);
+}
+
+function renderRuntimeCharacterSheetDetail(sheet) {
+  if (!runtimeCharacterSheetDetail || !sheet) return;
+  const stats = sheet.stats || {};
+  const classic = sheet.classic_attributes || {};
+  runtimeCharacterSheetDetail.innerHTML = `
+    <article class="runtime-sheet-card">
+      <h4>${escapeHtml(sheet.name || 'Unnamed')} • ${escapeHtml(sheet.sheet_type || 'unknown')}</h4>
+      <dl>
+        <dt>Role / Archetype</dt><dd>${escapeHtml(sheet.role || 'n/a')} / ${escapeHtml(sheet.archetype || 'n/a')}</dd>
+        <dt>Faction</dt><dd>${escapeHtml(sheet.faction || 'n/a')}</dd>
+        <dt>Description</dt><dd>${escapeHtml(sheet.description || 'n/a')}</dd>
+        <dt>Stats</dt><dd>HP ${Number(stats.health ?? 0)} • Energy ${Number(stats.energy_or_mana ?? 0)} • Atk ${Number(stats.attack ?? 0)} • Def ${Number(stats.defense ?? 0)} • Spd ${Number(stats.speed ?? 0)} • Mag ${Number(stats.magic ?? 0)} • Will ${Number(stats.willpower ?? 0)} • Presence ${Number(stats.presence ?? 0)}</dd>
+        <dt>Classic Attributes</dt><dd>STR ${classic.strength ?? 'n/a'} • DEX ${classic.dexterity ?? 'n/a'} • CON ${classic.constitution ?? 'n/a'} • INT ${classic.intelligence ?? 'n/a'} • WIS ${classic.wisdom ?? 'n/a'} • CHA ${classic.charisma ?? 'n/a'}</dd>
+        <dt>Traits</dt><dd>${escapeHtml((sheet.traits || []).join(', ') || 'n/a')}</dd>
+        <dt>Abilities</dt><dd>${escapeHtml((sheet.abilities || []).join(', ') || 'n/a')}</dd>
+        <dt>Equipment</dt><dd>${escapeHtml((sheet.equipment || []).join(', ') || 'n/a')}</dd>
+        <dt>Weaknesses</dt><dd>${escapeHtml((sheet.weaknesses || []).join(', ') || 'n/a')}</dd>
+        <dt>Notes</dt><dd>${escapeHtml(sheet.notes || 'n/a')}</dd>
+      </dl>
+    </article>
+  `;
 }
 
 function openSheetEditor(index = -1) {
@@ -1003,19 +1026,13 @@ async function refreshState() {
   const world = state.world_meta || {};
   runtimeCharacterSheets = Array.isArray(state.character_sheets) ? state.character_sheets : [];
   renderRuntimeCharacterSheets();
-  const worldNameForMeta = hasMeaningfulText(world.world_name) ? world.world_name.trim() : null;
-  campaignMeta.textContent = [
-    state.campaign_name,
-    worldNameForMeta,
-    `Slot ${loadedSlot}`,
-    `Turn ${state.turn_count}`,
-    state.current_location_id,
-  ].filter(Boolean).join(' • ');
+  campaignMeta.textContent = `${state.campaign_name || 'Campaign'} · Turn ${state.turn_count || 0}`;
 
   const panelLines = [];
-  const hasCharacter = hasMeaningfulCharacter(state.player);
+  const playerClass = state.player.class || state.player.role || 'Adventurer';
+  const hasCharacter = hasMeaningfulCharacter({ name: state.player.name, class: playerClass });
   if (hasCharacter) {
-    panelLines.push(`Character: ${state.player.name} (${state.player.class})`);
+    panelLines.push(`Character: ${state.player.name} (${playerClass})`);
   }
 
   if (hasCharacter && Number.isFinite(state.player.hp) && Number.isFinite(state.player.max_hp)) {
@@ -1033,6 +1050,9 @@ async function refreshState() {
 
   if (hasMeaningfulText(world.starting_location_name)) {
     panelLines.push(`Starting location: ${world.starting_location_name.trim()}`);
+  }
+  if (state.current_location_id) {
+    panelLines.push(`Current location: ${state.current_location_id}`);
   }
 
   const tone = hasMeaningfulText(world.tone) ? world.tone.trim() : null;
@@ -1749,7 +1769,7 @@ document.getElementById('open-character-sheets').onclick = () => {
   renderCharacterSheetList();
 };
 document.getElementById('open-runtime-character-sheets').onclick = () => {
-  console.log('[character-sheets] runtime_sheet_view_opened=true');
+  console.log(`[character-sheets] viewer_opened campaign=${selectedCampaignName || loadedSlot || 'unknown'}`);
   renderRuntimeCharacterSheets();
   runtimeCharacterSheetsModal?.classList.remove('hidden');
 };
@@ -1774,3 +1794,8 @@ document.getElementById('character-sheet-save').onclick = () => {
 };
 
 Promise.all([refreshMessages(), refreshState(), refreshSaves(), loadSettings(), refreshDependencyReadiness(), refreshSceneVisual()]).catch((error) => setStatus(error.message, true));
+
+console.log('[character-sheets] runtime_button_rendered=true');
+console.log('[ui] left_panel_resized=true');
+console.log('[ui] header_simplified=true');
+console.log('[ui] turn_visuals_removed=true');
