@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import subprocess
+import time
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -183,8 +187,13 @@ class WebRuntime:
         provider = str(model_status.get("provider", self.app_config.model.provider))
         model_name = str(model_status.get("model", self.app_config.model.model_name))
         model_error = str(model_status.get("error", "")).lower()
+        ollama_cli = self._find_ollama_cli()
+        ollama_installed = bool(ollama_cli)
         ollama_not_running = provider == "ollama" and not bool(model_status.get("reachable", True))
-        ollama_unavailable = ollama_not_running and ("connection refused" not in model_error and "failed to establish a new connection" not in model_error)
+        ollama_unavailable = ollama_not_running and (
+            not ollama_installed
+            or ("connection refused" not in model_error and "failed to establish a new connection" not in model_error)
+        )
         model_provider_item = {
             "provider_type": "model_provider",
             "provider": provider,
@@ -195,6 +204,8 @@ class WebRuntime:
             "user_message": (
                 f"{provider} is reachable."
                 if model_status.get("reachable", True)
+                else "Ollama is not installed (CLI not found on PATH)."
+                if provider == "ollama" and not ollama_installed
                 else "Ollama appears installed but is not running."
                 if ollama_not_running and not ollama_unavailable
                 else "Ollama is unavailable. Install Ollama or verify the configured base URL."
@@ -202,9 +213,18 @@ class WebRuntime:
             "next_action": (
                 "No action needed."
                 if model_status.get("reachable", True)
+                else "Install Ollama from https://ollama.com/download, then click Recheck."
+                if provider == "ollama" and not ollama_installed
                 else "Run: ollama serve"
                 if provider == "ollama"
                 else "Verify provider settings, then click Recheck."
+            ),
+            "actions": (
+                []
+                if model_status.get("reachable", True)
+                else [{"id": "recheck", "label": "Recheck"}]
+                if provider != "ollama" or not ollama_installed
+                else [{"id": "start_ollama", "label": "Start Ollama"}, {"id": "recheck", "label": "Recheck"}]
             ),
         }
         model_item = {
@@ -223,6 +243,11 @@ class WebRuntime:
                 "No action needed."
                 if model_status.get("model_exists", True)
                 else f"Run: ollama pull {model_name}"
+            ),
+            "actions": (
+                [{"id": "recheck", "label": "Recheck"}]
+                if model_status.get("model_exists", True)
+                else [{"id": "install_model", "label": f"Install {model_name}"}, {"id": "recheck", "label": "Recheck"}]
             ),
         }
         image_item = {
@@ -255,6 +280,99 @@ class WebRuntime:
                 "ComfyUI is used when image provider is set to comfyui for image generation requests.",
                 "If providers are unavailable, the app still runs with local narrator fallback mode.",
             ],
+        }
+
+    def _find_ollama_cli(self) -> str | None:
+        if os.name == "nt":
+            return shutil.which("ollama.exe") or shutil.which("ollama")
+        return shutil.which("ollama")
+
+    def start_ollama_service(self) -> dict[str, Any]:
+        if self.app_config.model.provider != "ollama":
+            return {
+                "ok": False,
+                "message": "Model provider is not set to ollama.",
+                "next_step": "Set model provider to ollama, then retry.",
+            }
+        if self.get_model_status().get("reachable", False):
+            return {"ok": True, "message": "Ollama is already running."}
+        ollama_cli = self._find_ollama_cli()
+        if not ollama_cli:
+            return {
+                "ok": False,
+                "message": "Ollama is not installed (CLI not found on PATH).",
+                "next_step": "Install Ollama from https://ollama.com/download, then click Recheck.",
+            }
+        try:
+            if os.name == "nt":
+                subprocess.Popen(
+                    [ollama_cli, "serve"],
+                    creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,  # type: ignore[attr-defined]
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            else:
+                subprocess.Popen(
+                    [ollama_cli, "serve"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+        except OSError as exc:
+            return {
+                "ok": False,
+                "message": f"Could not start Ollama service: {exc}",
+                "next_step": "Run `ollama serve` in your terminal, then click Recheck.",
+            }
+        for _ in range(6):
+            time.sleep(0.5)
+            if self.get_model_status().get("reachable", False):
+                return {"ok": True, "message": "Ollama service started.", "readiness_refreshed": True}
+        return {
+            "ok": False,
+            "message": "Ollama start command was sent, but the service is still not reachable.",
+            "next_step": "Open a terminal and run `ollama serve`, then click Recheck.",
+        }
+
+    def install_story_model(self, model_name: str | None = None) -> dict[str, Any]:
+        model = (model_name or self.app_config.model.model_name or "llama3").strip()
+        if not model:
+            return {"ok": False, "message": "Model name is required."}
+        ollama_cli = self._find_ollama_cli()
+        if not ollama_cli:
+            return {
+                "ok": False,
+                "message": "Ollama is not installed (CLI not found on PATH).",
+                "next_step": "Install Ollama from https://ollama.com/download first.",
+            }
+        try:
+            completed = subprocess.run(
+                [ollama_cli, "pull", model],
+                capture_output=True,
+                text=True,
+                timeout=60 * 60,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return {
+                "ok": False,
+                "message": f"Model install timed out for {model}.",
+                "next_step": f"Run `ollama pull {model}` manually, then click Recheck.",
+            }
+        output = (completed.stdout or completed.stderr or "").strip()
+        snippet = output[-300:] if output else ""
+        if completed.returncode != 0:
+            return {
+                "ok": False,
+                "message": f"Failed to install model {model}.",
+                "details": snippet,
+                "next_step": f"Run `ollama pull {model}` manually and retry.",
+            }
+        return {
+            "ok": True,
+            "message": f"Model {model} installed (or already present).",
+            "details": snippet,
+            "readiness_refreshed": True,
         }
 
     def _create_image_adapter(self) -> ImageGeneratorAdapter:
@@ -617,6 +735,14 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     @app.get("/api/providers/readiness")
     def providers_readiness() -> dict[str, Any]:
         return runtime.get_dependency_readiness()
+
+    @app.post("/api/setup/start-ollama")
+    def setup_start_ollama() -> dict[str, Any]:
+        return runtime.start_ollama_service()
+
+    @app.post("/api/setup/install-model")
+    def setup_install_model(payload: dict[str, Any]) -> dict[str, Any]:
+        return runtime.install_story_model(str(payload.get("model", "")).strip() or None)
 
     @app.post("/api/campaign/input")
     def campaign_input(payload: dict[str, Any]) -> dict[str, Any]:

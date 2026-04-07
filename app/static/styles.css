@@ -91,6 +91,19 @@ button:hover { border-color: var(--accent); }
   background: #1f2937;
   color: #e2e8f0;
 }
+.readiness-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.readiness-action-btn {
+  padding: 4px 8px;
+  border: 1px solid #3a678f;
+  border-radius: 6px;
+  background: #12314d;
+  color: #dbeafe;
+}
 .setup-guidance {
   margin: 0;
   padding-left: 18px;
