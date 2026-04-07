@@ -10,9 +10,11 @@
     <div class="app-shell">
       <aside class="sidebar left-panel">
         <h2>Campaigns & Saves</h2>
+        <p id="selected-save-label">Selected save: autosave</p>
         <div id="save-list" class="save-list"></div>
         <div class="button-row">
-          <button id="load-autosave">Load autosave</button>
+          <button id="load-selected">Load selected</button>
+          <button id="load-autosave">Quick load autosave</button>
           <button id="new-campaign">New campaign</button>
           <button id="save-campaign">Save</button>
           <button id="rename-campaign">Rename</button>
@@ -65,6 +67,27 @@
           <div id="status-line">Ready.</div>
         </section>
       </aside>
+    </div>
+
+    <div id="new-campaign-modal" class="modal hidden">
+      <div class="modal-card">
+        <h3>Forge a New Campaign</h3>
+        <div class="modal-grid">
+          <label>Campaign Name <input id="form-campaign-name" type="text" value="Aria's Classic Fantasy Campaign" /></label>
+          <label>World Name <input id="form-world-name" type="text" value="Moonfall" /></label>
+          <label>World Theme / Genre <input id="form-world-theme" type="text" value="classic fantasy" /></label>
+          <label>Starting Location <input id="form-starting-location" type="text" value="Moonfall Town" /></label>
+          <label>Tone / Style <input id="form-tone" type="text" value="heroic" /></label>
+          <label>Player Name <input id="form-player-name" type="text" value="Aria" /></label>
+          <label>Player Class <input id="form-player-class" type="text" value="Ranger" /></label>
+          <label>Player Concept (optional) <input id="form-player-concept" type="text" placeholder="Exiled ranger seeking redemption" /></label>
+          <label>Premise / World Description (optional) <textarea id="form-premise" rows="3" placeholder="The old gods vanished and the sea is haunted."></textarea></label>
+        </div>
+        <div class="button-row">
+          <button id="create-campaign-confirm">Create campaign</button>
+          <button id="create-campaign-cancel">Cancel</button>
+        </div>
+      </div>
     </div>
 
     <script src="/static/app.js"></script>

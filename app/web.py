@@ -293,6 +293,14 @@ class WebRuntime:
                     "thematic_flags": state.settings.content_settings.thematic_flags,
                 },
             },
+            "world_meta": {
+                "world_name": state.world_meta.world_name,
+                "world_theme": state.world_meta.world_theme,
+                "starting_location_name": state.world_meta.starting_location_name,
+                "tone": state.world_meta.tone,
+                "premise": state.world_meta.premise,
+                "player_concept": state.world_meta.player_concept,
+            },
             "active_slot": self.session.active_slot,
         }
 
@@ -310,6 +318,7 @@ class WebRuntime:
                     "slot": slot,
                     "campaign_id": state.campaign_id,
                     "campaign_name": state.campaign_name,
+                    "world_name": state.world_meta.world_name,
                     "turn_count": state.turn_count,
                     "updated": (self.paths.saves / f"{slot}.json").stat().st_mtime,
                 }
@@ -339,34 +348,40 @@ class WebRuntime:
         return {"slot": slot, "state": self.serialize_state()}
 
     def delete_campaign(self, slot: str) -> dict[str, Any]:
-        if slot == self.session.active_slot:
+        clean_slot = slot.strip()
+        if not clean_slot:
+            raise ValueError("No save selected for deletion.")
+        if clean_slot == self.session.active_slot:
             raise ValueError("Cannot delete the active campaign. Switch first.")
-        path = self.paths.saves / f"{slot}.json"
+        path = self.paths.saves / f"{clean_slot}.json"
         if not path.exists():
-            raise ValueError(f"Save slot '{slot}' not found")
+            raise ValueError(f"Save slot '{clean_slot}' not found")
         path.unlink()
-        self.history_store.pop(slot, None)
+        self.history_store.pop(clean_slot, None)
         self._persist_history_store()
-        return {"deleted": slot}
+        return {"deleted": clean_slot}
 
     def rename_campaign(self, slot: str, new_name: str) -> dict[str, Any]:
-        state = self.state_manager.load(slot)
+        clean_slot = slot.strip()
+        if not clean_slot:
+            raise ValueError("No save selected for rename.")
+        state = self.state_manager.load(clean_slot)
         if state is None:
-            raise ValueError(f"Save slot '{slot}' not found or invalid")
+            raise ValueError(f"Save slot '{clean_slot}' not found or invalid")
         clean = new_name.strip()
         if not clean:
             raise ValueError("new_name cannot be empty")
         state.campaign_name = clean
-        self.state_manager.save(state, slot)
-        if slot == self.session.active_slot:
+        self.state_manager.save(state, clean_slot)
+        if clean_slot == self.session.active_slot:
             self.session.state.campaign_name = clean
-        return {"slot": slot, "campaign_name": clean}
+        return {"slot": clean_slot, "campaign_name": clean}
 
     def create_campaign(self, payload: dict[str, Any]) -> dict[str, Any]:
-        player_name = str(payload.get("player_name", "Aria"))
-        char_class = str(payload.get("char_class", "Ranger"))
-        profile = str(payload.get("profile", "classic_fantasy"))
-        slot = str(payload.get("slot", f"campaign_{len(self.list_saves()) + 1}"))
+        player_name = str(payload.get("player_name", "Aria")).strip() or "Aria"
+        char_class = str(payload.get("char_class", "Ranger")).strip() or "Ranger"
+        profile = str(payload.get("profile", "classic_fantasy")).strip() or "classic_fantasy"
+        slot = str(payload.get("slot", f"campaign_{len(self.list_saves()) + 1}")).strip() or f"campaign_{len(self.list_saves()) + 1}"
         state = self.state_manager.create_new_campaign(
             player_name=player_name,
             char_class=char_class,
@@ -376,6 +391,12 @@ class WebRuntime:
             campaign_tone=str(payload.get("campaign_tone", "heroic")),
             maturity_level=str(payload.get("maturity_level", "standard")),
             thematic_flags=list(payload.get("thematic_flags", ["adventure", "mystery"])),
+            campaign_name=str(payload.get("campaign_name", "")).strip(),
+            world_name=str(payload.get("world_name", "")).strip(),
+            world_theme=str(payload.get("world_theme", "")).strip(),
+            starting_location_name=str(payload.get("starting_location_name", "")).strip(),
+            premise=str(payload.get("premise", "")).strip(),
+            player_concept=str(payload.get("player_concept", "")).strip(),
         )
         self.session = WebSession(state=state, active_slot=slot)
         self.session.message_history = []

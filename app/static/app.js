@@ -6,8 +6,13 @@ const imagePreview = document.getElementById('image-preview');
 const statusLine = document.getElementById('status-line');
 const readinessPanel = document.getElementById('dependency-readiness');
 const setupGuidance = document.getElementById('setup-guidance');
+const selectedSaveLabel = document.getElementById('selected-save-label');
+const newCampaignModal = document.getElementById('new-campaign-modal');
+
 let selectedImageUrl = '';
 let selectedSlot = 'autosave';
+let loadedSlot = 'autosave';
+let selectedCampaignName = 'autosave';
 
 function setStatus(message, isError = false) {
   statusLine.textContent = message;
@@ -19,6 +24,18 @@ function escapeHtml(input) {
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;');
+}
+
+function updateSelectedSaveLabel() {
+  selectedSaveLabel.textContent = `Selected save: ${selectedSlot}${selectedCampaignName ? ` • ${selectedCampaignName}` : ''}`;
+}
+
+function openNewCampaignModal() {
+  newCampaignModal.classList.remove('hidden');
+}
+
+function closeNewCampaignModal() {
+  newCampaignModal.classList.add('hidden');
 }
 
 async function api(path, options = {}) {
@@ -72,35 +89,72 @@ async function refreshMessages() {
 async function refreshState() {
   const data = await api('/api/campaign/state');
   const state = data.state;
+  loadedSlot = state.active_slot || loadedSlot;
   selectedSlot = state.active_slot || selectedSlot;
-  campaignMeta.textContent = `${state.campaign_name} • Slot ${selectedSlot} • Turn ${state.turn_count} • ${state.current_location_id}`;
+  selectedCampaignName = state.campaign_name;
+  const world = state.world_meta || {};
+  campaignMeta.textContent = `${state.campaign_name} • ${world.world_name || 'Moonfall'} • Slot ${loadedSlot} • Turn ${state.turn_count} • ${state.current_location_id}`;
   statePanel.textContent = [
     `Character: ${state.player.name} (${state.player.class})`,
     `HP: ${state.player.hp}/${state.player.max_hp}`,
-    `Active enemy: ${state.active_enemy_id || 'none'}`,
-    `Tone: ${state.settings.narration_tone} | Maturity: ${state.settings.content_settings.maturity_level}`,
+    `World: ${world.world_name || 'Moonfall'} (${world.world_theme || 'classic fantasy'})`,
+    `Starting location: ${world.starting_location_name || state.current_location_id}`,
+    `Tone: ${world.tone || state.settings.narration_tone} | Maturity: ${state.settings.content_settings.maturity_level}`,
+    `Premise: ${world.premise || 'not specified'}`,
+    `Player concept: ${world.player_concept || 'not specified'}`,
     '',
     `Quest status: ${JSON.stringify(state.quest_status, null, 2)}`,
   ].join('\n');
   document.getElementById('image-enabled').checked = !!state.settings.image_generation_enabled;
+  updateSelectedSaveLabel();
+}
+
+async function loadSelectedCampaign() {
+  if (!selectedSlot) {
+    setStatus('Select a save before loading.', true);
+    return;
+  }
+  try {
+    await api('/api/campaign/start', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'load', slot: selectedSlot }),
+    });
+    selectedImageUrl = '';
+    await Promise.all([refreshMessages(), refreshState(), refreshSaves()]);
+    setStatus(`Loaded ${selectedSlot}.`);
+  } catch (error) {
+    setStatus(error.message, true);
+  }
 }
 
 async function refreshSaves() {
   const data = await api('/api/campaigns');
   saveList.innerHTML = '';
-  for (const campaign of data.campaigns || []) {
-    const btn = document.createElement('button');
-    btn.textContent = `${campaign.slot} • ${campaign.campaign_name}`;
-    btn.onclick = async () => {
-      await api('/api/campaign/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'load', slot: campaign.slot }) });
-      selectedSlot = campaign.slot;
-      selectedImageUrl = '';
-      await Promise.all([refreshMessages(), refreshState(), refreshSaves()]);
-      setStatus(`Loaded ${campaign.slot}`);
-    };
-    if (campaign.slot === selectedSlot) btn.style.borderColor = '#38bdf8';
-    saveList.appendChild(btn);
+  const campaigns = data.campaigns || [];
+  if (!campaigns.length) {
+    saveList.textContent = 'No saves found yet.';
+    return;
   }
+  if (!campaigns.some((campaign) => campaign.slot === selectedSlot)) {
+    selectedSlot = loadedSlot;
+  }
+  campaigns.forEach((campaign) => {
+    const btn = document.createElement('button');
+    btn.className = `save-item ${campaign.slot === selectedSlot ? 'selected' : ''}`;
+    btn.innerHTML = `${escapeHtml(campaign.slot)} • ${escapeHtml(campaign.campaign_name)}<small>${escapeHtml(campaign.world_name || 'Unknown world')} • Turn ${campaign.turn_count}</small>`;
+    btn.onclick = () => {
+      selectedSlot = campaign.slot;
+      selectedCampaignName = campaign.campaign_name;
+      updateSelectedSaveLabel();
+      refreshSaves();
+    };
+    btn.ondblclick = () => {
+      selectedSlot = campaign.slot;
+      selectedCampaignName = campaign.campaign_name;
+      loadSelectedCampaign();
+    };
+    saveList.appendChild(btn);
+  });
+  updateSelectedSaveLabel();
 }
 
 function renderDependencyReadiness(payload) {
@@ -170,7 +224,11 @@ async function generateImage() {
 
 async function saveCampaign() {
   try {
-    const slot = prompt('Save slot name:', selectedSlot) || selectedSlot;
+    const slot = (prompt('Save slot name:', selectedSlot) || selectedSlot || '').trim();
+    if (!slot) {
+      setStatus('Save cancelled: slot is required.', true);
+      return;
+    }
     await api('/api/campaign/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slot }) });
     selectedSlot = slot;
     await refreshSaves();
@@ -182,11 +240,15 @@ async function saveCampaign() {
 
 async function renameCampaign() {
   try {
-    const newName = prompt('New campaign display name:');
+    if (!selectedSlot) {
+      setStatus('Select a save before renaming.', true);
+      return;
+    }
+    const newName = prompt(`New campaign name for ${selectedSlot}:`);
     if (!newName) return;
     await api('/api/campaign/rename', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slot: selectedSlot, new_name: newName }) });
     await Promise.all([refreshState(), refreshSaves()]);
-    setStatus('Campaign renamed.');
+    setStatus(`Renamed ${selectedSlot}.`);
   } catch (error) {
     setStatus(error.message, true);
   }
@@ -194,11 +256,56 @@ async function renameCampaign() {
 
 async function deleteCampaign() {
   try {
-    const slot = prompt('Delete slot (must not be active):');
-    if (!slot) return;
-    await api('/api/campaign/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slot }) });
+    if (!selectedSlot) {
+      setStatus('Select a save before deleting.', true);
+      return;
+    }
+    const confirmation = prompt(`Type DELETE to remove '${selectedCampaignName}' (${selectedSlot}). This cannot be undone.`);
+    if (confirmation !== 'DELETE') {
+      setStatus('Delete cancelled.');
+      return;
+    }
+    const deletedSlot = selectedSlot;
+    const deletedName = selectedCampaignName;
+    await api('/api/campaign/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slot: selectedSlot }) });
+    if (selectedSlot === loadedSlot) {
+      selectedSlot = '';
+    }
     await refreshSaves();
-    setStatus(`Deleted ${slot}`);
+    setStatus(`Deleted ${deletedName} (${deletedSlot}).`);
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
+async function createCampaignFromForm() {
+  try {
+    const tone = document.getElementById('form-tone').value.trim() || 'heroic';
+    const playerName = document.getElementById('form-player-name').value.trim() || 'Aria';
+    const playerClass = document.getElementById('form-player-class').value.trim() || 'Ranger';
+    const worldTheme = document.getElementById('form-world-theme').value.trim() || 'classic fantasy';
+    const payload = {
+      mode: 'new',
+      campaign_name: document.getElementById('form-campaign-name').value.trim() || `${playerName}'s Campaign`,
+      world_name: document.getElementById('form-world-name').value.trim() || 'Moonfall',
+      world_theme: worldTheme,
+      starting_location_name: document.getElementById('form-starting-location').value.trim() || 'Moonfall Town',
+      campaign_tone: tone,
+      premise: document.getElementById('form-premise').value.trim(),
+      player_concept: document.getElementById('form-player-concept').value.trim(),
+      player_name: playerName,
+      char_class: playerClass,
+      profile: worldTheme.toLowerCase().includes('dark') ? 'dark_fantasy' : 'classic_fantasy',
+      thematic_flags: worldTheme ? [worldTheme.toLowerCase().replaceAll(' ', '_'), 'adventure'] : ['adventure', 'mystery'],
+    };
+    await api('/api/campaign/start', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    });
+    selectedImageUrl = '';
+    imagePreview.textContent = 'Click an inline image to preview it here.';
+    closeNewCampaignModal();
+    await Promise.all([refreshMessages(), refreshState(), refreshSaves()]);
+    setStatus('New campaign started.');
   } catch (error) {
     setStatus(error.message, true);
   }
@@ -244,27 +351,21 @@ async function loadSettings() {
 
 document.getElementById('send-btn').onclick = sendInput;
 document.getElementById('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendInput(); });
+document.getElementById('load-selected').onclick = loadSelectedCampaign;
 document.getElementById('load-autosave').onclick = async () => {
   try {
     await api('/api/campaign/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'load', slot: 'autosave' }) });
+    selectedSlot = 'autosave';
+    selectedCampaignName = 'autosave';
     selectedImageUrl = '';
     imagePreview.textContent = 'Click an inline image to preview it here.';
     await Promise.all([refreshMessages(), refreshState(), refreshSaves()]);
     setStatus('Autosave loaded.');
   } catch (error) { setStatus(error.message, true); }
 };
-document.getElementById('new-campaign').onclick = async () => {
-  try {
-    await api('/api/campaign/start', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'new', player_name: 'Aria', char_class: 'Ranger', profile: 'classic_fantasy' }),
-    });
-    selectedImageUrl = '';
-    imagePreview.textContent = 'Click an inline image to preview it here.';
-    await Promise.all([refreshMessages(), refreshState(), refreshSaves()]);
-    setStatus('New campaign started.');
-  } catch (error) { setStatus(error.message, true); }
-};
+document.getElementById('new-campaign').onclick = openNewCampaignModal;
+document.getElementById('create-campaign-cancel').onclick = closeNewCampaignModal;
+document.getElementById('create-campaign-confirm').onclick = createCampaignFromForm;
 document.getElementById('gen-image-btn').onclick = generateImage;
 document.getElementById('save-campaign').onclick = saveCampaign;
 document.getElementById('rename-campaign').onclick = renameCampaign;

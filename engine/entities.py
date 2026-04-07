@@ -111,6 +111,18 @@ class CampaignSettings:
 
 
 @dataclass
+class CampaignWorldMeta:
+    """World-building metadata chosen during campaign creation."""
+
+    world_name: str = "Moonfall"
+    world_theme: str = "classic fantasy"
+    starting_location_name: str = "Moonfall Town"
+    tone: str = "heroic"
+    premise: str = ""
+    player_concept: str = ""
+
+
+@dataclass
 class SessionSummary:
     """Compact reusable summary for a campaign milestone."""
 
@@ -178,6 +190,7 @@ class CampaignState:
     important_world_facts: list[str] = field(default_factory=list)
     conversation_turns: list[ConversationTurn] = field(default_factory=list)
     settings: CampaignSettings = field(default_factory=CampaignSettings)
+    world_meta: CampaignWorldMeta = field(default_factory=CampaignWorldMeta)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize campaign state to a dictionary for JSON storage."""
@@ -236,6 +249,7 @@ class CampaignState:
             important_world_facts=[str(v) for v in payload.get("important_world_facts", [])],
             conversation_turns=[ConversationTurn(**v) for v in payload.get("conversation_turns", [])],
             settings=cls._settings_from_payload(payload.get("settings", {})),
+            world_meta=cls._world_meta_from_payload(payload.get("world_meta"), payload),
         )
 
     @staticmethod
@@ -262,3 +276,27 @@ class CampaignState:
 
         settings["content_settings"] = content_settings
         return CampaignSettings(**settings)
+
+    @staticmethod
+    def _world_meta_from_payload(raw_world_meta: dict[str, Any] | None, payload: dict[str, Any]) -> CampaignWorldMeta:
+        """Deserialize world metadata while preserving backward compatibility."""
+
+        current_location = payload.get("locations", {}).get(payload.get("current_location_id", ""), {})
+        fallback_location_name = str(current_location.get("name", "Moonfall Town"))
+        if raw_world_meta is None:
+            return CampaignWorldMeta(
+                world_name="Moonfall",
+                world_theme=str(payload.get("settings", {}).get("profile", "classic_fantasy")).replace("_", " "),
+                starting_location_name=fallback_location_name,
+                tone=str(payload.get("settings", {}).get("narration_tone", "heroic")),
+                premise="",
+                player_concept="",
+            )
+        return CampaignWorldMeta(
+            world_name=str(raw_world_meta.get("world_name", "Moonfall")),
+            world_theme=str(raw_world_meta.get("world_theme", "classic fantasy")),
+            starting_location_name=str(raw_world_meta.get("starting_location_name", fallback_location_name)),
+            tone=str(raw_world_meta.get("tone", payload.get("settings", {}).get("narration_tone", "heroic"))),
+            premise=str(raw_world_meta.get("premise", "")),
+            player_concept=str(raw_world_meta.get("player_concept", "")),
+        )

@@ -12,6 +12,7 @@ from prompts.templates import (
     SYSTEM_ROLE_TEMPLATE,
     SYSTEM_TONE_TEMPLATE,
     TURN_TEMPLATE,
+    WORLD_META_TEMPLATE,
 )
 
 
@@ -38,11 +39,21 @@ class PromptRenderer:
             maturity_level=content_settings.maturity_level,
             thematic_flags=thematic_flags,
         )
+        world_meta = state.world_meta
+        world_layer = WORLD_META_TEMPLATE.format(
+            world_name=world_meta.world_name,
+            world_theme=world_meta.world_theme,
+            starting_location_name=world_meta.starting_location_name,
+            tone=world_meta.tone,
+            premise=world_meta.premise or "none",
+            player_concept=world_meta.player_concept or "none",
+        )
         return (
             f"[System Role]\n{SYSTEM_ROLE_TEMPLATE}\n"
             f"[System Tone]\n{SYSTEM_TONE_TEMPLATE}\n"
             f"[Campaign Tone]\n{campaign_tone}\n"
             f"[Content Settings]\n{content_layer}\n"
+            f"[World Setup]\n{world_layer}\n"
             f"[Requested Mode]\n{requested_mode}"
         )
 
@@ -76,6 +87,8 @@ class PromptRenderer:
             plot_threads=" | ".join(memory.unresolved_plot_threads) if memory.unresolved_plot_threads else "none",
             world_facts=" | ".join(memory.important_world_facts) if memory.important_world_facts else "none",
             campaign_name=state.campaign_name,
+            world_name=state.world_meta.world_name,
+            world_theme=state.world_meta.world_theme,
             location=location_summary,
             action=action,
             player_name=state.player.name,
