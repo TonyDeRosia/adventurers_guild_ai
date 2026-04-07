@@ -23,6 +23,7 @@ let setupRunState = {
   summary: '',
   isError: false,
   steps: [],
+  startupStatus: null,
 };
 
 const readinessLabels = {
@@ -92,6 +93,10 @@ function renderSetupProgress() {
   setupProgress.classList.remove('hidden');
   const stepRows = setupRunState.steps.map((step) => `<li class="setup-step ${escapeHtml(step.state || '')}">${escapeHtml(step.label || step.step || 'step')}: ${escapeHtml(step.message || '')}</li>`).join('');
   const summaryClass = setupRunState.isError ? 'error' : 'success';
+  const startupStatus = setupRunState.startupStatus || null;
+  const startupLog = startupStatus?.log_text
+    ? `<details class="startup-log"><summary>Image engine startup details</summary><pre>${escapeHtml(startupStatus.log_text)}</pre></details>`
+    : '';
   setupProgress.innerHTML = `
     <div class="setup-progress-head">
       ${setupRunState.busy ? '<span class="spinner" aria-hidden="true"></span>' : ''}
@@ -99,6 +104,7 @@ function renderSetupProgress() {
     </div>
     <div class="setup-progress-summary ${summaryClass}">${escapeHtml(setupRunState.summary || (setupRunState.busy ? 'Working...' : ''))}</div>
     ${stepRows ? `<ol class="setup-steps">${stepRows}</ol>` : ''}
+    ${startupLog}
   `;
   updateSetupButtonsBusyState();
 }
@@ -111,6 +117,7 @@ function startSetupRun(actionId, initialSummary, steps = []) {
     summary: initialSummary,
     isError: false,
     steps,
+    startupStatus: null,
   };
   renderSetupProgress();
 }
@@ -302,6 +309,7 @@ async function runReadinessAction(actionId, item) {
         summary: result.ok
           ? 'Image AI is ready.'
           : `Image AI failed to start: ${result.failure_stage_message || result.message || 'unknown failure'}`,
+        startupStatus: result.startup_status || null,
       });
       await refreshDependencyReadiness();
       console.log('[setup-action] readiness refresh triggered');
@@ -312,6 +320,7 @@ async function runReadinessAction(actionId, item) {
           : `Image AI failed to start: ${result.failure_stage_message || result.message || 'unknown failure'}`,
         isError: !result.ok,
         steps: normalizeSetupSteps(result.steps),
+        startupStatus: result.startup_status || null,
       });
       return;
     }
@@ -532,6 +541,12 @@ function renderDependencyReadiness(payload) {
       .join('');
     const statusCode = item.status_code ? `<div>Status: <code>${escapeHtml(toTitle(item.status_code))}</code></div>` : '';
     const fallbackInfo = item.fallback_available ? '<div>Fallback: available</div>' : '';
+    const startupInfo = item.startup_status?.summary
+      ? `<div>Latest startup result: ${escapeHtml(item.startup_status.summary)}</div>`
+      : '';
+    const startupLog = item.startup_status?.log_text
+      ? `<details class="startup-log"><summary>Startup log details</summary><pre>${escapeHtml(item.startup_status.log_text)}</pre></details>`
+      : '';
     el.innerHTML = `
       <strong>${escapeHtml(title)}</strong>
       <div>Provider: <code>${escapeHtml(item.provider)}</code></div>
@@ -539,8 +554,10 @@ function renderDependencyReadiness(payload) {
       ${statusCode}
       ${selectedModel}
       <div>${escapeHtml(item.user_message || '')}</div>
+      ${startupInfo}
       <div>Next step: ${escapeHtml(item.next_action || 'No action needed.')}</div>
       ${fallbackInfo}
+      ${startupLog}
       <div class="readiness-action-row">${actionButtons}${copyButton}</div>
     `;
     const btn = el.querySelector('.copy-cmd-btn');
