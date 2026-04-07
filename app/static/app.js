@@ -52,6 +52,18 @@ async function runReadinessAction(actionId, item) {
       setStatus(result.ok ? (result.message || 'Ollama start request sent.') : (result.next_step ? `${result.message} ${result.next_step}` : result.message), !result.ok);
       return;
     }
+    if (actionId === 'install_ollama') {
+      setStatus('Installing Ollama... This can take a few minutes.');
+      console.log('[setup-action] install-ollama requested');
+      const result = await api('/api/setup/install-ollama', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+      });
+      console.log(`[setup-action] install-ollama ${result.ok ? 'success' : 'failure'} reason=${result.message || 'unknown'}`);
+      await refreshDependencyReadiness();
+      console.log('[setup-action] readiness refresh triggered');
+      setStatus(result.ok ? (result.message || 'Ollama installed.') : (result.next_step ? `${result.message} ${result.next_step}` : result.message), !result.ok);
+      return;
+    }
     if (actionId === 'install_model') {
       const modelName = item.selected_model || document.getElementById('model-name').value.trim() || 'llama3';
       setStatus(`Installing model ${modelName}... This can take a while.`);
