@@ -11,6 +11,8 @@ import tempfile
 import time
 import sys
 import urllib.request
+import zipfile
+import webbrowser
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -161,7 +163,38 @@ class WebRuntime:
         provider = self.app_config.image.provider
         base_url = self.app_config.image.base_url
         if provider == "comfyui":
-            return ComfyUIAdapter(base_url=base_url).check_readiness()
+            base_status = ComfyUIAdapter(base_url=base_url).check_readiness()
+            comfyui_root = self._find_comfyui_root()
+            installed = comfyui_root is not None
+            if base_status.get("reachable", False):
+                return {
+                    **base_status,
+                    "installed": True,
+                    "running": True,
+                    "status_code": "reachable",
+                    "comfyui_path": str(comfyui_root or ""),
+                }
+            if installed:
+                return {
+                    **base_status,
+                    "installed": True,
+                    "running": False,
+                    "status_code": "not_running",
+                    "status_level": "error",
+                    "user_message": "ComfyUI is installed but not running.",
+                    "next_action": "Start Image Engine, then click Recheck.",
+                    "comfyui_path": str(comfyui_root),
+                }
+            return {
+                **base_status,
+                "installed": False,
+                "running": False,
+                "status_code": "not_installed",
+                "status_level": "error",
+                "user_message": "ComfyUI is not installed in the configured local setup path.",
+                "next_action": "Install Image Engine, then click Recheck.",
+                "comfyui_path": "",
+            }
         if provider == "null":
             return {
                 "provider": provider,
@@ -250,7 +283,7 @@ class WebRuntime:
             "actions": (
                 [{"id": "recheck", "label": "Recheck"}]
                 if model_status.get("model_exists", True)
-                else [{"id": "install_model", "label": f"Install {model_name}"}, {"id": "recheck", "label": "Recheck"}]
+                else [{"id": "install_model", "label": "Install Story Model"}, {"id": "recheck", "label": "Recheck"}]
                 if provider == "ollama" and ollama_installed
                 else [{"id": "recheck", "label": "Recheck"}]
             ),
@@ -264,6 +297,9 @@ class WebRuntime:
             "status_level": image_status.get("status_level", "ready"),
             "user_message": str(image_status.get("user_message", "")),
             "next_action": str(image_status.get("next_action", "No action needed.")),
+            "status_code": str(image_status.get("status_code", "")),
+            "fallback_available": True,
+            "actions": self._image_readiness_actions(image_status),
         }
         return {
             "items": [model_provider_item, model_item, image_item],
@@ -274,8 +310,9 @@ class WebRuntime:
                 f"3) Install the story model: ollama pull {self.app_config.model.model_name}",
                 "4) Click Recheck dependencies in the app.",
                 "Image generation setup:",
-                "1) Start ComfyUI when using image provider=comfyui.",
-                "2) Keep image provider set to local if ComfyUI is unavailable.",
+                "1) Install ComfyUI from the in-app Install Image Engine action.",
+                "2) Start ComfyUI from the in-app Start Image Engine action.",
+                "3) Keep image provider set to local if ComfyUI is unavailable.",
                 "Fallback story mode stays available even when providers are missing.",
             ],
             "setup_guidance": [
@@ -286,6 +323,16 @@ class WebRuntime:
                 "If providers are unavailable, the app still runs with local narrator fallback mode.",
             ],
         }
+
+    def _image_readiness_actions(self, image_status: dict[str, Any]) -> list[dict[str, str]]:
+        if self.app_config.image.provider != "comfyui":
+            return [{"id": "recheck", "label": "Recheck"}]
+        status_code = str(image_status.get("status_code", ""))
+        if status_code == "not_installed":
+            return [{"id": "install_image_engine", "label": "Install Image Engine"}, {"id": "recheck", "label": "Recheck"}]
+        if status_code == "not_running":
+            return [{"id": "start_image_engine", "label": "Start Image Engine"}, {"id": "recheck", "label": "Recheck"}]
+        return [{"id": "recheck", "label": "Recheck"}]
 
     def _find_ollama_cli(self) -> str | None:
         if os.name == "nt":
@@ -508,9 +555,147 @@ class WebRuntime:
         print(f"[setup-action] install-model success model={model}")
         return {
             "ok": True,
-            "message": f"Model {model} installed (or already present).",
+            "message": "Story model installed. Text generation is ready.",
             "details": snippet,
             "readiness_refreshed": True,
+        }
+
+    def _default_comfyui_path(self) -> Path:
+        return self.paths.user_data / "tools" / "ComfyUI"
+
+    def _find_comfyui_root(self) -> Path | None:
+        candidates: list[Path] = []
+        configured = str(self.app_config.image.comfyui_path or "").strip()
+        if configured:
+            candidates.append(Path(configured))
+        candidates.append(self._default_comfyui_path())
+        if os.name == "nt":
+            user_profile = os.environ.get("USERPROFILE", "")
+            if user_profile:
+                candidates.append(Path(user_profile) / "ComfyUI_windows_portable" / "ComfyUI")
+                candidates.append(Path(user_profile) / "ComfyUI")
+        for candidate in candidates:
+            if (candidate / "main.py").exists():
+                return candidate
+        return None
+
+    def install_image_engine(self) -> dict[str, Any]:
+        print("[setup-action] install-image-engine requested")
+        if not self._is_windows():
+            reason = "windows-only flow"
+            print(f"[setup-action] install-image-engine failure reason={reason}")
+            return {
+                "ok": False,
+                "message": "Automatic ComfyUI setup is currently supported on Windows only.",
+                "next_step": "Install ComfyUI manually and set image provider to comfyui.",
+            }
+        existing = self._find_comfyui_root()
+        if existing is not None:
+            print(f"[setup-action] install-image-engine success reason=already-installed path={existing}")
+            self.app_config.image.comfyui_path = str(existing)
+            self.config_store.save(self.app_config)
+            return {"ok": True, "message": "ComfyUI is already installed.", "readiness_refreshed": True}
+        target_dir = self._default_comfyui_path()
+        target_dir.parent.mkdir(parents=True, exist_ok=True)
+        archive_path = Path(tempfile.gettempdir()) / "ComfyUI-master.zip"
+        repo_url = "https://github.com/comfyanonymous/ComfyUI/archive/refs/heads/master.zip"
+        print(f"[setup-action] install-image-engine bootstrap-download url={repo_url}")
+        try:
+            with urllib.request.urlopen(repo_url, timeout=60) as response:
+                archive_path.write_bytes(response.read())
+            with zipfile.ZipFile(archive_path, "r") as archive:
+                extract_root = target_dir.parent / "ComfyUI-master"
+                if extract_root.exists():
+                    shutil.rmtree(extract_root, ignore_errors=True)
+                archive.extractall(target_dir.parent)
+            extracted = target_dir.parent / "ComfyUI-master"
+            if target_dir.exists():
+                shutil.rmtree(target_dir, ignore_errors=True)
+            extracted.rename(target_dir)
+        except OSError as exc:
+            print(f"[setup-action] install-image-engine failure reason={exc}")
+            return {
+                "ok": False,
+                "message": "Failed to download or unpack ComfyUI bootstrap files.",
+                "next_step": "Open https://github.com/comfyanonymous/ComfyUI and install manually.",
+            }
+        except zipfile.BadZipFile:
+            print("[setup-action] install-image-engine failure reason=invalid-archive")
+            return {
+                "ok": False,
+                "message": "ComfyUI archive download was invalid.",
+                "next_step": "Retry installation, or install manually from the official repository.",
+            }
+        self.app_config.image.comfyui_path = str(target_dir)
+        self.config_store.save(self.app_config)
+        webbrowser.open("https://github.com/comfyanonymous/ComfyUI")
+        print("[setup-action] install-image-engine success")
+        return {
+            "ok": True,
+            "message": "ComfyUI bootstrap downloaded. Complete dependency setup, then start the engine.",
+            "next_step": "Install Python dependencies in ComfyUI, then click Start Image Engine.",
+            "readiness_refreshed": True,
+        }
+
+    def start_image_engine(self) -> dict[str, Any]:
+        print("[setup-action] start-image-engine requested")
+        if self.app_config.image.provider != "comfyui":
+            print("[setup-action] start-image-engine failure reason=image provider is not comfyui")
+            return {"ok": False, "message": "Image provider is not set to comfyui.", "next_step": "Set image provider to comfyui, then retry."}
+        if self.get_image_status().get("reachable", False):
+            print("[setup-action] start-image-engine success reason=already running")
+            return {"ok": True, "message": "ComfyUI is already running."}
+        comfyui_root = self._find_comfyui_root()
+        if comfyui_root is None:
+            print("[setup-action] start-image-engine failure reason=not-installed")
+            return {"ok": False, "message": "ComfyUI is not installed.", "next_step": "Install Image Engine first."}
+        self.app_config.image.comfyui_path = str(comfyui_root)
+        self.config_store.save(self.app_config)
+        run_script = comfyui_root / "run_nvidia_gpu.bat"
+        fallback_script = comfyui_root / "run_cpu.bat"
+        try:
+            if os.name == "nt" and run_script.exists():
+                subprocess.Popen(
+                    [str(run_script)],
+                    cwd=str(comfyui_root),
+                    creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,  # type: ignore[attr-defined]
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            elif os.name == "nt" and fallback_script.exists():
+                subprocess.Popen(
+                    [str(fallback_script)],
+                    cwd=str(comfyui_root),
+                    creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,  # type: ignore[attr-defined]
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            else:
+                python_exe = shutil.which("python") or shutil.which("py")
+                if not python_exe:
+                    print("[setup-action] start-image-engine failure reason=python-not-found")
+                    return {"ok": False, "message": "Python was not found on PATH.", "next_step": "Install Python and retry, or start ComfyUI manually."}
+                command = [python_exe, "main.py"]
+                subprocess.Popen(
+                    command,
+                    cwd=str(comfyui_root),
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+        except OSError as exc:
+            print(f"[setup-action] start-image-engine failure reason={exc}")
+            return {"ok": False, "message": f"Could not start ComfyUI: {exc}", "next_step": "Start ComfyUI manually, then click Recheck."}
+        for _ in range(8):
+            time.sleep(0.75)
+            if self.get_image_status().get("reachable", False):
+                print("[setup-action] start-image-engine success")
+                return {"ok": True, "message": "ComfyUI started and is reachable.", "readiness_refreshed": True}
+        print("[setup-action] start-image-engine failure reason=not-reachable-after-start")
+        return {
+            "ok": False,
+            "message": "ComfyUI start command was sent, but it is not reachable yet.",
+            "next_step": "Wait for startup to finish, then click Recheck.",
         }
 
     def _create_image_adapter(self) -> ImageGeneratorAdapter:
@@ -713,6 +898,7 @@ class WebRuntime:
                 "provider": self.app_config.image.provider,
                 "base_url": self.app_config.image.base_url,
                 "enabled": self.app_config.image.enabled,
+                "comfyui_path": self.app_config.image.comfyui_path,
             },
             "dependency_readiness": self.get_dependency_readiness(),
         }
@@ -736,6 +922,7 @@ class WebRuntime:
             provider="null" if image_provider == "null" else image_provider,
             base_url=str(image_payload.get("base_url", self.app_config.image.base_url)),
             enabled=bool(image_payload.get("enabled", self.app_config.image.enabled)),
+            comfyui_path=str(image_payload.get("comfyui_path", self.app_config.image.comfyui_path)),
         )
         self.config_store.save(self.app_config)
         self.engine.model = self._create_model_adapter()
@@ -889,6 +1076,16 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
         model_name = str(payload.get("model", "")).strip() or None
         print(f"[setup-action] route invoked endpoint=/api/setup/install-model model={model_name or runtime.app_config.model.model_name}")
         return runtime.install_story_model(model_name)
+
+    @app.post("/api/setup/install-image-engine")
+    def setup_install_image_engine() -> dict[str, Any]:
+        print("[setup-action] route invoked endpoint=/api/setup/install-image-engine")
+        return runtime.install_image_engine()
+
+    @app.post("/api/setup/start-image-engine")
+    def setup_start_image_engine() -> dict[str, Any]:
+        print("[setup-action] route invoked endpoint=/api/setup/start-image-engine")
+        return runtime.start_image_engine()
 
     @app.post("/api/campaign/input")
     def campaign_input(payload: dict[str, Any]) -> dict[str, Any]:
