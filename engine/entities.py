@@ -141,6 +141,7 @@ class CampaignSettings:
     image_generation_enabled: bool = True
     campaign_auto_visuals_enabled: bool = True
     suggested_moves_enabled: bool = False
+    display_mode: str = "story"
     player_suggested_moves_override: bool | None = None
     content_settings: ContentSettings = field(default_factory=ContentSettings)
 
@@ -424,6 +425,8 @@ class CampaignState:
         settings["image_generation_enabled"] = bool(settings.get("image_generation_enabled", True))
         settings["campaign_auto_visuals_enabled"] = bool(settings.get("campaign_auto_visuals_enabled", True))
         settings["suggested_moves_enabled"] = bool(settings.get("suggested_moves_enabled", False))
+        raw_display_mode = str(settings.get("display_mode", "story")).strip().lower()
+        settings["display_mode"] = raw_display_mode if raw_display_mode in {"story", "mud", "rpg"} else "story"
         raw_override = settings.get("player_suggested_moves_override")
         settings["player_suggested_moves_override"] = None if raw_override is None else bool(raw_override)
         return CampaignSettings(**settings)

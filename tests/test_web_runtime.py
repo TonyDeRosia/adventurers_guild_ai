@@ -73,6 +73,7 @@ def test_new_campaign_uses_preferred_visual_and_suggested_move_defaults(tmp_path
     assert created["state"]["settings"]["campaign_auto_visuals_enabled"] is True
     assert created["state"]["settings"]["suggested_moves_enabled"] is False
     assert created["state"]["settings"]["effective_suggested_moves_enabled"] is False
+    assert created["state"]["settings"]["display_mode"] == "story"
 
     global_settings = runtime.get_global_settings()
     assert global_settings["image"]["manual_image_generation_enabled"] is True
@@ -97,6 +98,65 @@ def test_existing_campaign_settings_are_preserved_on_load(tmp_path: Path, monkey
     assert settings["campaign_auto_visuals_enabled"] is False
     assert settings["suggested_moves_enabled"] is True
     assert settings["effective_suggested_moves_enabled"] is True
+
+
+def test_display_mode_persists_after_save_load_and_switch(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    first = runtime.create_campaign({"player_name": "ModeOne", "slot": "slot_story"})
+    assert first["state"]["settings"]["display_mode"] == "story"
+    runtime.save_active_campaign("slot_story")
+
+    runtime.create_campaign({"player_name": "ModeTwo", "slot": "slot_mud", "display_mode": "mud"})
+    runtime.save_active_campaign("slot_mud")
+    assert runtime.serialize_state()["settings"]["display_mode"] == "mud"
+
+    switched = runtime.switch_campaign("slot_story")
+    assert switched["state"]["settings"]["display_mode"] == "story"
+    switched_back = runtime.switch_campaign("slot_mud")
+    assert switched_back["state"]["settings"]["display_mode"] == "mud"
+
+    reloaded = _runtime(tmp_path, monkeypatch)
+    loaded = reloaded.switch_campaign("slot_mud")
+    assert loaded["state"]["settings"]["display_mode"] == "mud"
+
+
+@pytest.mark.parametrize("display_mode", ["mud", "rpg"])
+def test_campaign_creation_accepts_non_story_display_modes(tmp_path: Path, monkeypatch, display_mode: str) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    created = runtime.create_campaign({"player_name": "ModeCheck", "slot": f"slot_{display_mode}", "display_mode": display_mode})
+    assert created["state"]["settings"]["display_mode"] == display_mode
+
+
+def test_campaign_creation_with_character_sheet_loadout_and_display_mode_submits(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    created = runtime.create_campaign(
+        {
+            "player_name": "LoadoutCheck",
+            "slot": "slot_loadout_layout",
+            "display_mode": "rpg",
+            "character_sheets": [
+                {
+                    "id": "sheet_loadout",
+                    "name": "Loadout Hero",
+                    "sheet_type": "main_character",
+                    "role": "Spellblade",
+                    "guaranteed_abilities": [
+                        {"name": "Spark Slash", "type": "ability", "cost_or_resource": "2 energy", "cooldown": "1 turn", "tags": ["starter"]},
+                        {"name": "Ward", "type": "spell", "cost_or_resource": "4 mana", "cooldown": "2 turns"},
+                    ],
+                }
+            ],
+        }
+    )
+    assert created["state"]["settings"]["display_mode"] == "rpg"
+    assert len(created["state"]["spellbook"]) >= 2
+
+
+def test_campaign_state_api_includes_display_mode(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"player_name": "ApiMode", "slot": "slot_api_mode", "display_mode": "mud"})
+    state = runtime.serialize_state()
+    assert state["settings"]["display_mode"] == "mud"
 
 
 def test_custom_campaign_starts_without_sample_npcs_or_quests(tmp_path: Path, monkeypatch) -> None:

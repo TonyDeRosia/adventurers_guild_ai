@@ -49,6 +49,7 @@ class GameStateManager:
         premise: str | None = None,
         player_concept: str | None = None,
         suggested_moves_enabled: bool = False,
+        display_mode: str = "story",
         character_sheets: list[dict[str, object]] | None = None,
         character_sheet_guidance_strength: str = "light",
     ) -> CampaignState:
@@ -131,6 +132,8 @@ class GameStateManager:
             "thematic_flags": thematic_flags or ["adventure", "mystery"],
         }
         new_payload["settings"]["suggested_moves_enabled"] = bool(suggested_moves_enabled)
+        clean_display_mode = str(display_mode or "story").strip().lower()
+        new_payload["settings"]["display_mode"] = clean_display_mode if clean_display_mode in {"story", "mud", "rpg"} else "story"
         new_payload["settings"]["image_generation_enabled"] = True
         new_payload["settings"]["campaign_auto_visuals_enabled"] = True
         new_payload["settings"]["player_suggested_moves_override"] = None
@@ -219,6 +222,7 @@ class GameStateManager:
         print(f"[campaign-create] starting_location={clean_starting_location}")
         print("[campaign-create] seeded_named_npcs=[]")
         print("[campaign-create] seeded_quests=[]")
+        print(f"[campaign-create] display_mode={new_payload['settings']['display_mode']}")
         return CampaignState.from_dict(new_payload)
 
     def _apply_main_character_sheet_to_payload(

@@ -28,6 +28,7 @@
           <div class="chat-header-title">
             <h1>Adventurer Guild AI</h1>
             <p id="campaign-meta">Loading campaign...</p>
+            <p id="campaign-display-mode-indicator" class="campaign-display-mode-indicator">Display Mode: Story Mode</p>
           </div>
         </header>
         <section id="scene-visual-panel" class="scene-visual-panel">
@@ -80,17 +81,25 @@
     <div id="new-campaign-modal" class="modal hidden">
       <div class="modal-card">
         <h3>Forge a New Campaign</h3>
-        <div class="modal-grid">
-          <label>Campaign Name <input id="form-campaign-name" type="text" value="Aria's Classic Fantasy Campaign" /></label>
+        <div class="modal-grid campaign-create-grid">
+          <label class="full-width">Campaign Name <input id="form-campaign-name" type="text" value="Aria's Classic Fantasy Campaign" /></label>
           <label>World Name <input id="form-world-name" type="text" value="Untitled World" /></label>
           <label>World Theme / Genre <input id="form-world-theme" type="text" value="classic fantasy" /></label>
           <label>Starting Location <input id="form-starting-location" type="text" value="Starting Area" /></label>
           <label>Tone / Style <input id="form-tone" type="text" value="heroic" /></label>
-          <label><input id="form-suggested-moves-enabled" type="checkbox" /> Enable suggested next moves by default</label>
           <label>Player Name <input id="form-player-name" type="text" value="Aria" /></label>
           <label>Player Class <input id="form-player-class" type="text" value="Ranger" /></label>
-          <label>Player Concept (optional) <input id="form-player-concept" type="text" placeholder="Exiled ranger seeking redemption" /></label>
-          <label>Premise / World Description (optional) <textarea id="form-premise" rows="3" placeholder="The old gods vanished and the sea is haunted."></textarea></label>
+          <label>Display Mode
+            <select id="form-display-mode">
+              <option value="story" selected>Story Mode</option>
+              <option value="mud">MUD Mode</option>
+              <option value="rpg">RPG Mode</option>
+            </select>
+            <small class="field-help">Story Mode: cinematic narration-focused presentation. MUD Mode: classic text-RPG presentation. RPG Mode: structured RPG-style presentation.</small>
+          </label>
+          <label class="full-width">Player Concept (optional) <input id="form-player-concept" type="text" placeholder="Exiled ranger seeking redemption" /></label>
+          <label class="full-width">Premise / World Description (optional) <textarea id="form-premise" rows="3" placeholder="The old gods vanished and the sea is haunted."></textarea></label>
+          <label class="full-width"><input id="form-suggested-moves-enabled" type="checkbox" /> Enable suggested next moves by default</label>
           <div class="character-sheets-entry">
             <button id="open-character-sheets" type="button">Character Sheets</button>
             <span id="character-sheets-count">No sheets attached</span>
