@@ -85,7 +85,7 @@
           <label>World Theme / Genre <input id="form-world-theme" type="text" value="classic fantasy" /></label>
           <label>Starting Location <input id="form-starting-location" type="text" value="Starting Area" /></label>
           <label>Tone / Style <input id="form-tone" type="text" value="heroic" /></label>
-          <label><input id="form-suggested-moves-enabled" type="checkbox" checked /> Enable suggested next moves by default</label>
+          <label><input id="form-suggested-moves-enabled" type="checkbox" /> Enable suggested next moves by default</label>
           <label>Player Name <input id="form-player-name" type="text" value="Aria" /></label>
           <label>Player Class <input id="form-player-class" type="text" value="Ranger" /></label>
           <label>Player Concept (optional) <input id="form-player-concept" type="text" placeholder="Exiled ranger seeking redemption" /></label>
@@ -265,15 +265,15 @@
         <section class="panel-block">
           <h4>Turn Visuals</h4>
           <label><input id="manual-image-enabled" type="checkbox" checked /> Manual image prompt + Generate button enabled</label>
-          <label><input id="campaign-auto-visuals-enabled" type="checkbox" /> Auto-generate scene image each turn</label>
+          <label><input id="campaign-auto-visuals-enabled" type="checkbox" checked /> Auto-generate scene image each turn</label>
           <label>Auto scene timing
             <select id="campaign-auto-visual-timing">
               <option value="off">Off</option>
               <option value="before_narration">Before narration</option>
-              <option value="after_narration">After narration</option>
+              <option value="after_narration" selected>After narration</option>
             </select>
           </label>
-          <label><input id="suggested-moves-toggle" type="checkbox" checked /> Show narrator suggested next moves</label>
+          <label><input id="suggested-moves-toggle" type="checkbox" /> Show narrator suggested next moves</label>
           <div class="settings-status-row">
             <span id="campaign-settings-status" class="settings-status saved">Saved</span>
             <button id="cancel-settings" type="button">Cancel changes</button>

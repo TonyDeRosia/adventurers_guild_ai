@@ -92,7 +92,7 @@ def _campaign_start_flow(state_manager: GameStateManager):
     profile = "dark_fantasy" if profile_choice == "2" else "classic_fantasy"
     default_tone = "grim" if profile == "dark_fantasy" else "heroic"
     content_settings_enabled = input("Enable custom content settings? [Y/n]: ").strip().lower() != "n"
-    suggested_moves_enabled = input("Enable suggested next moves? [Y/n]: ").strip().lower() != "n"
+    suggested_moves_enabled = input("Enable suggested next moves? [y/N]: ").strip().lower() == "y"
     if content_settings_enabled:
         selected_tone = input(f"Campaign tone [{default_tone}]: ").strip().lower() or default_tone
         maturity_level = input("Maturity level [standard/mature] (default: standard): ").strip().lower() or "standard"

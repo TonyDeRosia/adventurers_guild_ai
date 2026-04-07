@@ -65,6 +65,39 @@ def test_create_campaign_persists_world_metadata(tmp_path: Path, monkeypatch) ->
     assert runtime.session.state.locations[runtime.session.state.current_location_id].name == "Black Harbor"
 
 
+def test_new_campaign_uses_preferred_visual_and_suggested_move_defaults(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    created = runtime.create_campaign({"player_name": "DefaultCheck", "slot": "slot_defaults"})
+
+    assert created["state"]["settings"]["campaign_auto_visuals_enabled"] is True
+    assert created["state"]["settings"]["suggested_moves_enabled"] is False
+    assert created["state"]["settings"]["effective_suggested_moves_enabled"] is False
+
+    global_settings = runtime.get_global_settings()
+    assert global_settings["image"]["manual_image_generation_enabled"] is True
+    assert global_settings["image"]["campaign_auto_visual_timing"] == "after_narration"
+
+
+def test_existing_campaign_settings_are_preserved_on_load(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"player_name": "KeepMe", "slot": "slot_keep"})
+    runtime.set_campaign_settings(
+        {
+            "campaign_auto_visuals_enabled": False,
+            "suggested_moves_enabled": True,
+            "player_suggested_moves_override": True,
+        }
+    )
+    runtime.save_active_campaign("slot_keep")
+
+    reloaded = _runtime(tmp_path, monkeypatch)
+    reloaded.switch_campaign("slot_keep")
+    settings = reloaded.serialize_state()["settings"]
+    assert settings["campaign_auto_visuals_enabled"] is False
+    assert settings["suggested_moves_enabled"] is True
+    assert settings["effective_suggested_moves_enabled"] is True
+
+
 def test_custom_campaign_starts_without_sample_npcs_or_quests(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     created = runtime.create_campaign(

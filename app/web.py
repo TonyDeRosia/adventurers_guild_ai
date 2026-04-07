@@ -1818,7 +1818,7 @@ class WebRuntime:
                 starting_location_name=str(payload.get("starting_location_name", "")).strip(),
                 premise=str(payload.get("premise", "")).strip(),
                 player_concept=str(payload.get("player_concept", "")).strip(),
-                suggested_moves_enabled=bool(payload.get("suggested_moves_enabled", True)),
+                suggested_moves_enabled=bool(payload.get("suggested_moves_enabled", False)),
                 character_sheets=self._coerce_character_sheets(payload.get("character_sheets", [])),
                 character_sheet_guidance_strength=str(payload.get("character_sheet_guidance_strength", "light")),
             )
