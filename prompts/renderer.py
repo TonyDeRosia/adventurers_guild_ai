@@ -89,6 +89,7 @@ class PromptRenderer:
         npc_guidance: list[str] | None = None,
         character_sheet_guidance: list[str] | None = None,
         gm_context: str = "",
+        scene_state_summary: str = "",
     ) -> str:
         recent = " | ".join(state.event_log[-4:]) if state.event_log else "No significant events yet"
         recent_conversation = " | ".join(
@@ -135,6 +136,7 @@ class PromptRenderer:
             world_theme=state.world_meta.world_theme,
             location=location_summary,
             action=action,
+            scene_state=scene_state_summary or "Current Scene State:\n- none",
             player_name=state.player.name,
             char_class=state.player.char_class,
             hp=state.player.hp,
@@ -160,6 +162,7 @@ class PromptRenderer:
         guidance_requested: bool = False,
         npc_guidance: list[str] | None = None,
         gm_context: str = "",
+        scene_state_summary: str = "",
     ) -> PromptPacket:
         sheet_guidance = self.sheet_formatter.build_guidance_blocks(
             state.character_sheets,
@@ -188,5 +191,6 @@ class PromptRenderer:
                 npc_guidance=npc_guidance,
                 character_sheet_guidance=sheet_guidance,
                 gm_context=gm_context_text,
+                scene_state_summary=scene_state_summary,
             ),
         )

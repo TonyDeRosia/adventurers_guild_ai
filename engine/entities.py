@@ -234,6 +234,7 @@ class CampaignRuntimeState:
     faction_changes: dict[str, int] = field(default_factory=dict)
     world_state: dict[str, Any] = field(default_factory=dict)
     scene_visual_state: dict[str, Any] = field(default_factory=dict)
+    scene_state: dict[str, Any] = field(default_factory=dict)
     last_narration: str = ""
 
 
@@ -246,6 +247,22 @@ class CampaignRecentMemoryState:
     recent_dialogue: list[str] = field(default_factory=list)
     recent_discoveries: list[str] = field(default_factory=list)
     running_summary: str = ""
+
+
+@dataclass
+class CampaignSceneState:
+    """Persistent immediate scene continuity for gameplay turns."""
+
+    location_id: str | None = None
+    location_name: str | None = None
+    scene_summary: str = ""
+    visible_entities: list[str] = field(default_factory=list)
+    damaged_objects: list[str] = field(default_factory=list)
+    altered_environment: list[str] = field(default_factory=list)
+    active_effects: list[str] = field(default_factory=list)
+    recent_consequences: list[str] = field(default_factory=list)
+    last_player_action: str = ""
+    last_immediate_result: str = ""
 
 
 @dataclass
@@ -476,6 +493,7 @@ class CampaignState:
                 faction_changes={str(k): int(v) for k, v in raw_runtime.get("faction_changes", {}).items()},
                 world_state=dict(raw_runtime.get("world_state", {})),
                 scene_visual_state=dict(raw_runtime.get("scene_visual_state", {})),
+                scene_state=CampaignState._scene_state_from_payload(raw_runtime.get("scene_state", {}), payload),
                 last_narration=str(raw_runtime.get("last_narration", "")),
             ),
             recent_turn_memory=CampaignRecentMemoryState(
@@ -524,6 +542,7 @@ class CampaignState:
                     "world_flags": dict(payload.get("world_flags", {})),
                     "world_events": [str(v) for v in payload.get("world_events", [])],
                 },
+                scene_state=CampaignState._scene_state_from_payload({}, payload),
                 last_narration="",
             ),
             recent_turn_memory=CampaignRecentMemoryState(
@@ -573,3 +592,24 @@ class CampaignState:
                 }
             )
         return entries
+
+    @staticmethod
+    def _scene_state_from_payload(raw_scene_state: Any, payload: dict[str, Any]) -> dict[str, Any]:
+        state = dict(raw_scene_state) if isinstance(raw_scene_state, dict) else {}
+        current_location_id = str(payload.get("current_location_id", "")).strip()
+        location_payload = payload.get("locations", {}).get(current_location_id, {}) if isinstance(payload.get("locations"), dict) else {}
+        location_name = str(location_payload.get("name", "")).strip() or None
+        return asdict(
+            CampaignSceneState(
+                location_id=str(state.get("location_id", current_location_id)).strip() or None,
+                location_name=str(state.get("location_name", location_name or "")).strip() or location_name,
+                scene_summary=str(state.get("scene_summary", "")),
+                visible_entities=[str(v) for v in state.get("visible_entities", []) if str(v).strip()],
+                damaged_objects=[str(v) for v in state.get("damaged_objects", []) if str(v).strip()],
+                altered_environment=[str(v) for v in state.get("altered_environment", []) if str(v).strip()],
+                active_effects=[str(v) for v in state.get("active_effects", []) if str(v).strip()],
+                recent_consequences=[str(v) for v in state.get("recent_consequences", []) if str(v).strip()],
+                last_player_action=str(state.get("last_player_action", "")),
+                last_immediate_result=str(state.get("last_immediate_result", "")),
+            )
+        )

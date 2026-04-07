@@ -45,6 +45,7 @@ Campaign: {campaign_name}
 World: {world_name} ({world_theme})
 Location: {location}
 Action: {action}
+{scene_state}
 
 [Player State Summary]
 Player: {player_name} ({char_class})

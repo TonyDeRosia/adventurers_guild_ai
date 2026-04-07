@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from engine.entities import CampaignState
+from engine.entities import CampaignSceneState, CampaignState
 
 
 class CampaignStateOrchestrator:
@@ -21,6 +21,20 @@ class CampaignStateOrchestrator:
             structured.canon.character_sheet_ids = [sheet.id for sheet in state.character_sheets if sheet.id]
         if not structured.runtime.current_location_id:
             structured.runtime.current_location_id = state.current_location_id
+        if not isinstance(structured.runtime.scene_state, dict):
+            structured.runtime.scene_state = asdict(CampaignSceneState())
+        scene_state = structured.runtime.scene_state
+        scene_state.setdefault("location_id", state.current_location_id or None)
+        location = state.locations.get(state.current_location_id)
+        scene_state.setdefault("location_name", location.name if location else None)
+        scene_state.setdefault("scene_summary", "")
+        scene_state.setdefault("visible_entities", [])
+        scene_state.setdefault("damaged_objects", [])
+        scene_state.setdefault("altered_environment", [])
+        scene_state.setdefault("active_effects", [])
+        scene_state.setdefault("recent_consequences", [])
+        scene_state.setdefault("last_player_action", "")
+        scene_state.setdefault("last_immediate_result", "")
 
     def update_runtime_state(self, state: CampaignState, *, action: str, system_messages: list[str], narrative: str) -> dict[str, bool]:
         self.ensure_initialized(state)
