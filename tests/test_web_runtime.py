@@ -85,6 +85,23 @@ class _FailingProvider(NarrationModelAdapter):
         raise ProviderUnavailableError("simulated connection failure")
 
 
+class _ScaffoldLeakProvider(NarrationModelAdapter):
+    provider_name = "ollama"
+
+    def generate(self, prompt: str, system_prompt: str = "", history=None) -> str:
+        return """[Requested Mode]
+play
+[Conversation Context]
+Recent chat turns: You: look || Narrator: none
+[Memory Context]
+Recent memory: none
+[Scene Context]
+Location: Moonfall
+[Player State Summary]
+HP: 20/20
+The lantern-light flickers across the gate as unseen footsteps circle your flank."""
+
+
 def test_turn_fallback_is_clean_when_provider_fails(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _FailingProvider()
@@ -93,6 +110,16 @@ def test_turn_fallback_is_clean_when_provider_fails(tmp_path: Path, monkeypatch)
     assert out["metadata"]["fallback_reason"] == "simulated connection failure"
     assert "[Local template narrator]" not in out["narrative"]
     assert "[Requested Mode]" not in out["narrative"]
+
+
+def test_turn_sanitizer_removes_prompt_scaffold_leaks(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _ScaffoldLeakProvider()
+    out = runtime.handle_player_input("look")
+    assert "Recent chat turns:" not in out["narrative"]
+    assert "Recent memory:" not in out["narrative"]
+    assert "[Requested Mode]" not in out["narrative"]
+    assert "lantern-light flickers" in out["narrative"]
 
 
 def test_image_fallback_from_comfyui_to_local_placeholder(tmp_path: Path, monkeypatch) -> None:

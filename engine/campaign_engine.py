@@ -466,31 +466,38 @@ class CampaignEngine:
     def _sanitize_narrative(self, narrative: str) -> tuple[str, bool]:
         text = narrative.strip()
         original = text
-        banned_prefixes = (
-            "[Local template narrator]",
-            "[Requested Mode]",
-            "[Conversation Context]",
-            "[Memory Context]",
-            "[Scene Context]",
-            "[Player State Summary]",
+        banned_markers = (
+            "local template narrator",
+            "requested mode",
+            "conversation context",
+            "memory context",
+            "scene context",
+            "player state summary",
+        )
+        banned_line_prefixes = (
+            "recent chat turns:",
+            "recent memory:",
+            "long-term memory:",
+            "session summaries:",
+            "unresolved plot threads:",
+            "important world facts:",
+            "respond with 2-4 sentences and one suggested next move",
         )
         filtered_lines: list[str] = []
         for line in text.splitlines():
             stripped = line.strip()
             if not stripped:
                 continue
-            if stripped.startswith(banned_prefixes):
+            lowered = re.sub(r"^[\[\]\-\*\s]+", "", stripped.lower())
+            if any(lowered.startswith(marker) for marker in banned_markers):
                 continue
-            if stripped.startswith("Recent chat turns:") or stripped.startswith("Recent memory:"):
-                continue
-            if stripped.startswith("Long-term memory:") or stripped.startswith("Session summaries:"):
-                continue
-            if stripped.startswith("Unresolved plot threads:") or stripped.startswith("Important world facts:"):
+            if any(lowered.startswith(prefix) for prefix in banned_line_prefixes):
                 continue
             filtered_lines.append(stripped)
         text = " ".join(filtered_lines) if filtered_lines else text
-        text = re.sub(r"(\[Local template narrator\]\s*)+", "", text, flags=re.IGNORECASE).strip()
+        text = re.sub(r"\[(?:Local template narrator|Requested Mode|Conversation Context|Memory Context|Scene Context|Player State Summary)\]", "", text, flags=re.IGNORECASE).strip()
         text = re.sub(r"(Respond with 2-4 sentences and one suggested next move\.?)+", "", text, flags=re.IGNORECASE).strip()
+        text = re.sub(r"(Recent chat turns:|Recent memory:|Long-term memory:|Session summaries:|Unresolved plot threads:|Important world facts:).*?(?=(?:\[[^\]]+\])|$)", "", text, flags=re.IGNORECASE).strip()
         text = re.sub(r"\s{2,}", " ", text).strip()
         if not text:
             text = "The world holds its breath for a heartbeat, waiting for your next move."

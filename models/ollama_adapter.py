@@ -7,6 +7,7 @@ Ollama instance is available.
 from __future__ import annotations
 
 import json
+from urllib.error import HTTPError
 from urllib.error import URLError
 from urllib import request
 
@@ -22,6 +23,11 @@ class OllamaAdapter(NarrationModelAdapter):
         self.timeout_seconds = timeout_seconds
 
     def generate(self, prompt: str, system_prompt: str = "", history: list[ChatMessage] | None = None) -> str:
+        target = f"{self.base_url}/api/chat"
+        print(
+            f"[ollama] provider={self.provider_name} model={self.model} base_url={self.base_url} "
+            f"target={target} timeout_seconds={self.timeout_seconds}"
+        )
         messages = []
         if system_prompt.strip():
             messages.append({"role": "system", "content": system_prompt.strip()})
@@ -36,18 +42,37 @@ class OllamaAdapter(NarrationModelAdapter):
             "stream": False,
         }
         req = request.Request(
-            f"{self.base_url}/api/chat",
+            target,
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
         try:
             with request.urlopen(req, timeout=self.timeout_seconds) as response:
                 body = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            reason = f"HTTP {exc.code} {exc.reason}"
+            print(
+                f"[ollama] request_failed provider={self.provider_name} model={self.model} target={target} "
+                f"reason={reason}"
+            )
+            raise ProviderUnavailableError(f"Ollama request to {target} failed: {reason}") from exc
         except URLError as exc:
-            raise ProviderUnavailableError(f"Could not reach local Ollama at {self.base_url}: {exc}") from exc
+            reason = getattr(exc, "reason", exc)
+            print(
+                f"[ollama] request_failed provider={self.provider_name} model={self.model} target={target} "
+                f"reason={reason}"
+            )
+            raise ProviderUnavailableError(f"Could not reach local Ollama at {target}: {reason}") from exc
+        except json.JSONDecodeError as exc:
+            print(
+                f"[ollama] request_failed provider={self.provider_name} model={self.model} target={target} "
+                f"reason=invalid_json_response"
+            )
+            raise ProviderUnavailableError(f"Ollama at {target} returned invalid JSON: {exc}") from exc
         generated = body.get("message", {}).get("content", "").strip()
         if not generated:
             raise ProviderUnavailableError("Ollama returned an empty response")
+        print(f"[ollama] request_succeeded provider={self.provider_name} model={self.model} target={target}")
         return generated
 
     def list_local_models(self) -> list[str]:
