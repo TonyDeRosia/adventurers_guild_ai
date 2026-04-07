@@ -956,6 +956,43 @@ async function waitForSceneVisualUpdate(previousUpdatedAt = '') {
   return false;
 }
 
+const PANEL_PLACEHOLDER_VALUES = new Set([
+  'untitled world',
+  'starting area',
+  'classic fantasy',
+  'heroic',
+  'standard',
+  'not specified',
+]);
+
+function hasMeaningfulText(value) {
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim();
+  if (!normalized) return false;
+  return !PANEL_PLACEHOLDER_VALUES.has(normalized.toLowerCase());
+}
+
+function hasMeaningfulCharacter(player = {}) {
+  const name = (player.name || '').trim().toLowerCase();
+  const charClass = (player.class || '').trim().toLowerCase();
+  if (!name || !charClass) return false;
+  return !(name === 'aria' && charClass === 'ranger');
+}
+
+function formatQuestStatus(questStatus) {
+  if (!questStatus || typeof questStatus !== 'object') return null;
+  const entries = Object.entries(questStatus).filter(([questId, status]) => {
+    if (!questId || typeof status !== 'string') return false;
+    return status.trim().length > 0;
+  });
+  if (!entries.length) return 'No active quests';
+
+  const activeEntries = entries.filter(([, status]) => status.toLowerCase() === 'active');
+  if (!activeEntries.length) return 'No active quests';
+
+  return `Active quests: ${activeEntries.map(([questId]) => questId).join(', ')}`;
+}
+
 async function refreshState() {
   const data = await api('/api/campaign/state');
   const state = data.state;
@@ -966,19 +1003,62 @@ async function refreshState() {
   const world = state.world_meta || {};
   runtimeCharacterSheets = Array.isArray(state.character_sheets) ? state.character_sheets : [];
   renderRuntimeCharacterSheets();
-  campaignMeta.textContent = `${state.campaign_name} • ${world.world_name || 'Untitled World'} • Slot ${loadedSlot} • Turn ${state.turn_count} • ${state.current_location_id}`;
-  statePanel.textContent = [
-    `Character: ${state.player.name} (${state.player.class})`,
-    `HP: ${state.player.hp}/${state.player.max_hp}`,
-    `World: ${world.world_name || 'Untitled World'} (${world.world_theme || 'classic fantasy'})`,
-    `Starting location: ${world.starting_location_name || state.current_location_id}`,
-    `Tone: ${world.tone || state.settings.narration_tone} | Maturity: ${state.settings.content_settings.maturity_level}`,
-    `Suggested moves: ${state.settings.effective_suggested_moves_enabled ? 'on' : 'off'}`,
-    `Premise: ${world.premise || 'not specified'}`,
-    `Player concept: ${world.player_concept || 'not specified'}`,
-    '',
-    `Quest status: ${JSON.stringify(state.quest_status, null, 2)}`,
-  ].join('\n');
+  const worldNameForMeta = hasMeaningfulText(world.world_name) ? world.world_name.trim() : null;
+  campaignMeta.textContent = [
+    state.campaign_name,
+    worldNameForMeta,
+    `Slot ${loadedSlot}`,
+    `Turn ${state.turn_count}`,
+    state.current_location_id,
+  ].filter(Boolean).join(' • ');
+
+  const panelLines = [];
+  const hasCharacter = hasMeaningfulCharacter(state.player);
+  if (hasCharacter) {
+    panelLines.push(`Character: ${state.player.name} (${state.player.class})`);
+  }
+
+  if (hasCharacter && Number.isFinite(state.player.hp) && Number.isFinite(state.player.max_hp)) {
+    panelLines.push(`HP: ${state.player.hp}/${state.player.max_hp}`);
+  }
+
+  const hasWorldName = hasMeaningfulText(world.world_name);
+  const hasWorldTheme = hasMeaningfulText(world.world_theme);
+  if (hasWorldName || hasWorldTheme) {
+    const worldNameLabel = hasWorldName ? world.world_name.trim() : '';
+    const worldThemeLabel = hasWorldTheme ? world.world_theme.trim() : '';
+    const worldSummary = [worldNameLabel, worldThemeLabel ? `(${worldThemeLabel})` : ''].filter(Boolean).join(' ');
+    if (worldSummary) panelLines.push(`World: ${worldSummary}`);
+  }
+
+  if (hasMeaningfulText(world.starting_location_name)) {
+    panelLines.push(`Starting location: ${world.starting_location_name.trim()}`);
+  }
+
+  const tone = hasMeaningfulText(world.tone) ? world.tone.trim() : null;
+  const maturityLevel = hasMeaningfulText(state.settings?.content_settings?.maturity_level)
+    ? state.settings.content_settings.maturity_level.trim()
+    : null;
+  if (tone || maturityLevel) {
+    const toneParts = [];
+    if (tone) toneParts.push(`Tone: ${tone}`);
+    if (maturityLevel) toneParts.push(`Maturity: ${maturityLevel}`);
+    panelLines.push(toneParts.join(' | '));
+  }
+
+  if (hasMeaningfulText(world.premise)) {
+    panelLines.push(`Premise: ${world.premise.trim()}`);
+  }
+  if (hasMeaningfulText(world.player_concept)) {
+    panelLines.push(`Player concept: ${world.player_concept.trim()}`);
+  }
+
+  const questSummary = formatQuestStatus(state.quest_status);
+  if (questSummary) {
+    panelLines.push('', questSummary);
+  }
+
+  statePanel.textContent = panelLines.join('\n');
   ingestPersistedCampaignSettings(
     {
       image_generation_enabled: !!state.settings.image_generation_enabled,
