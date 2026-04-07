@@ -202,6 +202,21 @@ def test_relationship_tier_transitions_and_dialogue_gating() -> None:
     assert not any("safer way than direct combat" in msg.lower() for msg in hostile.system_messages)
 
 
+def test_suggested_move_suppression_removes_alternate_recommendation_labels() -> None:
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+
+    narrative = (
+        "The torchlight flickers over the crypt door.\n"
+        "Your first course of action: inspect the runes before opening it.\n"
+        "Next move: keep your hand near your blade."
+    )
+    cleaned = engine._apply_suggested_move_setting(narrative, suggested_moves_enabled=False)
+
+    assert "first course of action:" not in cleaned.lower()
+    assert "next move:" not in cleaned.lower()
+    assert "torchlight flickers" in cleaned.lower()
+
+
 def test_prompt_renderer_includes_content_settings_layer() -> None:
     state = load_state()
     state.settings.profile = "dark_fantasy"
