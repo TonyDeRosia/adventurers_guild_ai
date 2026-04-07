@@ -556,6 +556,7 @@ class CampaignEngine:
                 f"fallback={fallback_used} reason={fallback_reason} sanitized={was_sanitized}"
             )
         suggested_moves_enabled = state.settings.suggested_moves_active()
+        action_subtype = self._classify_gameplay_action_subtype(action)
         last_narration = state.structured_state.runtime.last_narration
         sanitized_concrete = self._is_concrete_scene_grounded_output(
             action=action,
@@ -571,7 +572,15 @@ class CampaignEngine:
             narration_invalid = False
         narration_repetitive = self._is_repetitive_narration(sanitized_narrative, last_narration)
         forced_fallback = was_sanitized and not sanitized_concrete
-        if forced_fallback or narration_invalid or narration_repetitive:
+        if action_subtype == "internal":
+            narrative = self._build_internal_fallback(scene_state)
+            cleanup_applied = False
+            custom_rule_cleanup_applied = False
+            grounding_cleanup_applied = False
+            quality_fallback_used = True
+            narration_invalid = False
+            narration_repetitive = False
+        elif forced_fallback or narration_invalid or narration_repetitive:
             narrative = self._build_scene_aware_fallback(action, scene_state)
             cleanup_applied = False
             custom_rule_cleanup_applied = False
@@ -650,6 +659,12 @@ class CampaignEngine:
 
     def _classify_turn_intent(self, action: str) -> str:
         normalized = re.sub(r"\s+", " ", action.strip().lower())
+        internal_thought_phrases = (
+            "i think",
+            "i wonder",
+            "i consider",
+            "i reflect",
+        )
         system_keywords = (
             "rules",
             "narrator rules",
@@ -671,6 +686,8 @@ class CampaignEngine:
             "what do i have",
             "equipped",
         )
+        if any(phrase in normalized for phrase in internal_thought_phrases):
+            return "gameplay"
         if any(keyword in normalized for keyword in system_keywords):
             return "system"
         if any(keyword in normalized for keyword in structured_keywords):
@@ -1134,6 +1151,8 @@ class CampaignEngine:
     def _build_scene_aware_fallback(self, action: str, scene_state: dict[str, Any]) -> str:
         subtype = self._classify_gameplay_action_subtype(action)
         print(f"[turn-quality] fallback_subtype={subtype}")
+        if subtype == "internal":
+            return self._build_internal_fallback(scene_state)
         if subtype == "perception":
             return self._build_perception_fallback(scene_state)
         if subtype == "movement":
@@ -1150,6 +1169,8 @@ class CampaignEngine:
         normalized = re.sub(r"\s+", " ", action.strip().lower())
         if not normalized:
             return "generic"
+        if any(phrase in normalized for phrase in ("i think", "i wonder", "i consider", "i reflect")):
+            return "internal"
         if re.search(r"['\"][^'\"]+['\"]", normalized):
             return "dialogue"
         if any(keyword in normalized for keyword in (" say ", " ask ", " tell ", " shout ", " speak ")):
@@ -1178,6 +1199,19 @@ class CampaignEngine:
         if any(phrase in normalized for phrase in ("cast", "attack", "hit", "strike", "kick", "slash", "shoot", "spell")):
             return "attack_or_spell"
         return "generic"
+
+    def _build_internal_fallback(self, scene_state: dict[str, Any]) -> str:
+        location = str(scene_state.get("location_name") or "the current area")
+        altered = [str(v) for v in scene_state.get("altered_environment", []) if str(v).strip()]
+        recent = [str(v) for v in scene_state.get("recent_consequences", []) if str(v).strip()]
+        details = [f"A brief pause settles over you in {location} as the scene continues around you."]
+        if altered:
+            details.append(f"{altered[-1].capitalize()} remains visible at the edge of your attention.")
+        if recent:
+            details.append(f"The latest visible change still holds: {recent[-1]}.")
+        if not altered and not recent:
+            details.append("Your stance stays steady while nearby sounds and movement carry on without interruption.")
+        return " ".join(details)
 
     def _build_perception_fallback(self, scene_state: dict[str, Any]) -> str:
         location = str(scene_state.get("location_name") or "the current area")

@@ -875,6 +875,44 @@ def test_gameplay_turn_still_generates_narrator_output(tmp_path: Path, monkeypat
     assert any(message["type"] == "narrator" for message in out["messages"])
 
 
+def test_internal_thought_turn_is_treated_as_gameplay(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    counting = _CountingProvider()
+    runtime.engine.model = counting
+
+    out = runtime.handle_player_input("i think to myself")
+
+    assert out["metadata"]["requested_mode"] == "play"
+    assert out["narrative"] != ""
+    assert any(message["type"] == "narrator" for message in out["messages"])
+
+
+def test_internal_stats_wording_does_not_route_to_structured(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    counting = _CountingProvider()
+    runtime.engine.model = counting
+
+    out = runtime.handle_player_input("i wonder what my stats are")
+
+    assert out["metadata"]["requested_mode"] == "play"
+    assert out["narrative"] != ""
+    assert counting.calls == 1
+    assert any(message["type"] == "narrator" for message in out["messages"])
+
+
+def test_internal_thought_narration_stays_observable_only(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _PromptCaptureProvider()
+
+    out = runtime.handle_player_input("i consider my next move")
+    narrative = out["narrative"].lower()
+
+    assert "i think" not in narrative
+    assert "i wonder" not in narrative
+    assert "i consider" not in narrative
+    assert "i reflect" not in narrative
+
+
 def test_build_structured_messages_skips_blank_narrator_payload(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     payload = runtime.engine._build_structured_messages(["Status delivered."], "   ")
