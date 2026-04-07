@@ -101,7 +101,7 @@ function normalizeTurnVisualsMode(mode) {
 function syncVisualModeUi(mode) {
   const currentMode = normalizeTurnVisualsMode(mode || 'manual');
   if (manualImagePanel) {
-    manualImagePanel.style.display = currentMode === 'manual' ? 'grid' : 'none';
+    manualImagePanel.style.display = currentMode === 'off' ? 'none' : 'grid';
   }
   if (visualModeSummary) {
     visualModeSummary.textContent = `Mode: ${visualModeLabel(currentMode)}`;

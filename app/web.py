@@ -83,6 +83,8 @@ class WebRuntime:
         self.session.message_history = self._history_for_slot(self.session.active_slot)
         self.image_startup_status: dict[str, Any] = {}
         self._history_lock = threading.Lock()
+        self._turn_visual_lock = threading.Lock()
+        self._active_turn_visual_jobs: set[tuple[str, int, str]] = set()
         print("[web-runtime] session initialized")
 
     def _load_history_store(self) -> dict[str, list[dict[str, Any]]]:
@@ -1577,13 +1579,13 @@ class WebRuntime:
         for message in result.messages:
             self._append_message(message["type"], message["text"], persist=False)
         message_append_ms = (time.perf_counter() - message_append_started) * 1000
-        background_image_queued = False
-        if turn_visuals_mode == "auto_after_narration":
-            background_image_queued = self._run_turn_visual_generation_async(
-                player_action=clean_text,
-                narrator_response=result.narrative,
-                stage="after_narration",
-            )
+        narrator_response = str(result.narrative or "").strip()
+        background_image_queued = self._maybe_queue_auto_turn_visual(
+            mode=turn_visuals_mode,
+            player_action=clean_text,
+            narrator_response=narrator_response,
+            stage="after_narration",
+        )
         save_started = time.perf_counter()
         self._flush_history_store()
         self.save_active_campaign(self.session.active_slot)
@@ -1640,10 +1642,33 @@ class WebRuntime:
             metadata={"workflow_id": result.workflow_id, "result_metadata": result.metadata},
         )
 
+    def _has_meaningful_scene_content(self, narrator_response: str) -> bool:
+        text = " ".join(str(narrator_response or "").split()).strip()
+        if len(text) < 24:
+            return False
+        return bool(re.search(r"[A-Za-z].*[A-Za-z]", text))
+
+    def _maybe_queue_auto_turn_visual(self, *, mode: str, player_action: str, narrator_response: str, stage: str) -> bool:
+        if mode != "auto_after_narration":
+            return False
+        if not self._has_meaningful_scene_content(narrator_response):
+            return False
+        return self._run_turn_visual_generation_async(
+            player_action=player_action,
+            narrator_response=narrator_response,
+            stage=stage,
+        )
+
     def _run_turn_visual_generation_async(self, player_action: str, narrator_response: str, stage: str) -> bool:
         if self.app_config.image.provider != "comfyui" or not self.session.state.settings.image_generation_enabled:
             return False
         slot = self.session.active_slot
+        turn = int(self.session.state.turn_count)
+        job_key = (slot, turn, stage)
+        with self._turn_visual_lock:
+            if job_key in self._active_turn_visual_jobs:
+                return False
+            self._active_turn_visual_jobs.add(job_key)
 
         def _worker() -> None:
             started = time.perf_counter()
@@ -1655,8 +1680,11 @@ class WebRuntime:
                 )
             except Exception as exc:  # pragma: no cover - defensive runtime logging
                 print(f"[turn-timing] async image generation failed stage={stage} slot={slot} error={exc}")
+            finally:
+                with self._turn_visual_lock:
+                    self._active_turn_visual_jobs.discard(job_key)
 
-        threading.Thread(target=_worker, name=f"turn-image-{slot}-{stage}", daemon=True).start()
+        threading.Thread(target=_worker, name=f"turn-image-{slot}-{turn}-{stage}", daemon=True).start()
         return True
 
     def get_global_settings(self) -> dict[str, Any]:
