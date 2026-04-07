@@ -265,6 +265,17 @@ class _ForcedAgencyProvider(NarrationModelAdapter):
         return "You decide to kneel before the altar. Dark light spills across the chamber."
 
 
+class _CountingProvider(NarrationModelAdapter):
+    provider_name = "ollama"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def generate(self, prompt: str, system_prompt: str = "", history=None) -> str:
+        self.calls += 1
+        return "A cold wind curls through the archway."
+
+
 def test_turn_fallback_is_clean_when_provider_fails(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _FailingProvider()
@@ -344,6 +355,54 @@ def test_custom_narrator_rules_are_injected_into_prompt(tmp_path: Path, monkeypa
     runtime.handle_player_input("look around")
     assert "Narrator Rules - Hard" in capture.last_system_prompt
     assert "Never describe my emotions unless I state them" in capture.last_system_prompt
+
+
+def test_narrator_rules_request_returns_system_only_without_narrator_or_model_call(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    counting = _CountingProvider()
+    runtime.engine.model = counting
+    runtime.upsert_narrator_rule({"action": "upsert", "text": "Keep consequences concrete"})
+
+    out = runtime.handle_player_input("what are your narrator rules")
+
+    assert counting.calls == 0
+    assert out["narrative"] == ""
+    assert out["metadata"]["requested_mode"] == "system"
+    assert any(message["text"] == "Narrator rules:" for message in out["messages"])
+    assert any("1. Keep consequences concrete" == message["text"] for message in out["messages"])
+    assert all(message["type"] != "narrator" for message in out["messages"])
+
+
+def test_stats_request_returns_structured_only_without_narrator_or_model_call(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    counting = _CountingProvider()
+    runtime.engine.model = counting
+
+    out = runtime.handle_player_input("what are my stats")
+
+    assert counting.calls == 0
+    assert out["narrative"] == ""
+    assert out["metadata"]["requested_mode"] == "structured_lookup"
+    assert any("HP" in message["text"] for message in out["messages"])
+    assert all(message["type"] != "narrator" for message in out["messages"])
+
+
+def test_gameplay_turn_still_generates_narrator_output(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    counting = _CountingProvider()
+    runtime.engine.model = counting
+
+    out = runtime.handle_player_input("i cast holy nova")
+
+    assert counting.calls == 1
+    assert out["narrative"] != ""
+    assert any(message["type"] == "narrator" for message in out["messages"])
+
+
+def test_build_structured_messages_skips_blank_narrator_payload(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    payload = runtime.engine._build_structured_messages(["Status delivered."], "   ")
+    assert payload == [{"type": "system", "text": "Status delivered."}]
 
 
 def test_custom_never_make_decisions_rule_applies_cleanup(tmp_path: Path, monkeypatch) -> None:

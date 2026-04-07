@@ -62,8 +62,6 @@ class CampaignEngine:
             state.faction_reputation.setdefault(faction, baseline)
         self.quests.refresh_availability(state)
         normalized = action.strip().lower()
-        system_messages: list[str] = []
-        requested_mode = "play"
 
         if normalized in {"exit", "quit"}:
             return TurnResult(
@@ -73,9 +71,27 @@ class CampaignEngine:
                 should_exit=True,
             )
 
-        structured_result = self._maybe_handle_structured_request(state, action, normalized)
-        if structured_result is not None:
-            return structured_result
+        intent = self._classify_turn_intent(action)
+        print(f"[turn-routing] intent={intent}")
+        if intent == "system":
+            return self._finish_turn(
+                state,
+                action,
+                self._build_system_intent_messages(state, normalized),
+                requested_mode="system",
+                skip_narrator=True,
+            )
+        if intent == "structured":
+            return self._finish_turn(
+                state,
+                action,
+                self._build_structured_intent_messages(state, normalized),
+                requested_mode="structured_lookup",
+                skip_narrator=True,
+            )
+
+        system_messages: list[str] = []
+        requested_mode = "play"
 
         if normalized == "look":
             system_messages.append(self.world.get_current_location_summary(state))
@@ -375,7 +391,12 @@ class CampaignEngine:
                 system_messages.append("Thorne accepts the Moonsigil Relic as proof and seals the crypt entrance.")
 
     def _finish_turn(
-        self, state: CampaignState, action: str, system_messages: list[str], requested_mode: str = "play"
+        self,
+        state: CampaignState,
+        action: str,
+        system_messages: list[str],
+        requested_mode: str = "play",
+        skip_narrator: bool = False,
     ) -> TurnResult:
         turn_started = time.perf_counter()
         self.memory.record_recent(state, f"Player action: {action}")
@@ -400,6 +421,38 @@ class CampaignEngine:
                 text=summary,
                 location_id=state.current_location_id,
                 weight=2,
+            )
+
+        if skip_narrator:
+            self.state_orchestrator.update_runtime_state(state, action=action, system_messages=system_messages, narrative="")
+            self.memory.record_conversation_turn(
+                state,
+                player_input=action,
+                system_messages=system_messages,
+                narrator_response="",
+                requested_mode=requested_mode,
+            )
+            total_ms = (time.perf_counter() - turn_started) * 1000
+            timing = {
+                "turn_finalize_ms": round(total_ms, 2),
+            }
+            return TurnResult(
+                narrative="",
+                system_messages=system_messages,
+                messages=self._build_structured_messages(system_messages, ""),
+                metadata={
+                    "requested_mode": requested_mode,
+                    "provider_attempted": False,
+                    "fallback_used": False,
+                    "fallback_reason": "",
+                    "sanitized_output": False,
+                    "guidance_requested": False,
+                    "recommendation_cleanup_applied": False,
+                    "custom_rule_cleanup_applied": False,
+                    "grounding_cleanup_applied": False,
+                    "turn_count": state.turn_count,
+                    "timing": timing,
+                },
             )
 
         location_started = time.perf_counter()
@@ -538,19 +591,73 @@ class CampaignEngine:
             },
         )
 
-    def _maybe_handle_structured_request(self, state: CampaignState, action: str, normalized: str) -> TurnResult | None:
+    def _classify_turn_intent(self, action: str) -> str:
+        normalized = re.sub(r"\s+", " ", action.strip().lower())
+        system_keywords = (
+            "rules",
+            "narrator rules",
+            "your rules",
+            "tell me your rules",
+            "brief the narrator rules",
+            "what are your narrator rules",
+            "system behavior",
+            "explain",
+            "how do you work",
+        )
+        structured_keywords = (
+            "stats",
+            "my stats",
+            "character sheet",
+            "sheet",
+            "inventory",
+            "spellbook",
+            "what do i have",
+            "equipped",
+        )
+        if any(keyword in normalized for keyword in system_keywords):
+            return "system"
+        if any(keyword in normalized for keyword in structured_keywords):
+            return "structured"
+        return "gameplay"
+
+    def _build_system_intent_messages(self, state: CampaignState, normalized: str) -> list[str]:
+        if "rule" in normalized:
+            return self._build_narrator_rules_response(state)
+        return [
+            "System info: I can provide rules, mechanics explanations, and structured status without advancing narration.",
+            "Use a concrete in-world action to continue gameplay narration.",
+        ]
+
+    def _build_narrator_rules_response(self, state: CampaignState) -> list[str]:
+        rules = state.structured_state.canon.custom_narrator_rules
+        if not rules:
+            return ["Narrator rules: none configured for this campaign."]
+        rendered: list[str] = ["Narrator rules:"]
+        for idx, rule in enumerate(rules, start=1):
+            text = str(rule.get("text", "")).strip() if isinstance(rule, dict) else ""
+            if text:
+                rendered.append(f"{idx}. {text}")
+        if len(rendered) == 1:
+            return ["Narrator rules: none configured for this campaign."]
+        return rendered
+
+    def _build_structured_intent_messages(self, state: CampaignState, normalized: str) -> list[str]:
         structured_runtime = state.structured_state.runtime
         inventory_intent = (
             normalized == "inventory"
             or "what is in my inventory" in normalized
             or "show inventory" in normalized
             or "open inventory" in normalized
+            or "what do i have" in normalized
         )
         spellbook_intent = normalized in {"spellbook", "open my spellbook"} or "open my spellbook" in normalized or "show spellbook" in normalized
-        stats_intent = normalized in {"sheet", "stats", "what are my stats"} or "what are my stats" in normalized or "show my stats" in normalized
-        if not any([inventory_intent, spellbook_intent, stats_intent]):
-            return None
-        print("[turn-routing] structured_request_bypass=true")
+        stats_intent = (
+            normalized in {"sheet", "stats", "what are my stats"}
+            or "what are my stats" in normalized
+            or "show my stats" in normalized
+            or "character sheet" in normalized
+            or "equipped" in normalized
+        )
         system_messages: list[str] = []
         if stats_intent:
             system_messages.append(self.character_sheet.summary(state.player))
@@ -571,32 +678,7 @@ class CampaignEngine:
                 system_messages.append(f"Spellbook: {formatted}{suffix}")
             else:
                 system_messages.append("Spellbook: empty.")
-        narrative = "Structured status delivered."
-        self.memory.record_recent(state, f"Player action: {action}")
-        for msg in system_messages:
-            self.memory.record_recent(state, msg)
-            self.quests.add_event(state, msg)
-            self._capture_important_memory(state, msg)
-        self.state_orchestrator.update_runtime_state(state, action=action, system_messages=system_messages, narrative=narrative)
-        self.memory.record_conversation_turn(
-            state,
-            player_input=action,
-            system_messages=system_messages,
-            narrator_response=narrative,
-            requested_mode="structured_lookup",
-        )
-        return TurnResult(
-            narrative=narrative,
-            system_messages=system_messages,
-            messages=self._build_structured_messages(system_messages, narrative),
-            metadata={
-                "requested_mode": "structured_lookup",
-                "sanitized_output": False,
-                "provider_attempted": False,
-                "fallback_used": False,
-                "guidance_requested": False,
-            },
-        )
+        return system_messages
 
     def _sanitize_narrative(self, narrative: str) -> tuple[str, bool]:
         text = narrative.strip()
@@ -797,7 +879,8 @@ class CampaignEngine:
 
     def _build_structured_messages(self, system_messages: list[str], narrative: str) -> list[dict[str, str]]:
         payload = [{"type": self._classify_message_type(message), "text": message} for message in system_messages]
-        payload.append({"type": "narrator", "text": narrative})
+        if narrative.strip():
+            payload.append({"type": "narrator", "text": narrative})
         return payload
 
     def _classify_message_type(self, message: str) -> str:
