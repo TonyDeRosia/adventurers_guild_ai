@@ -238,7 +238,7 @@ def test_dependency_readiness_ollama_offline(tmp_path: Path, monkeypatch) -> Non
     model_provider = readiness["items"][0]
     assert model_provider["provider_type"] == "model_provider"
     assert model_provider["reachable"] is False
-    assert "Start Ollama" in model_provider["next_action"]
+    assert "ollama serve" in model_provider["next_action"]
 
 
 def test_dependency_readiness_ollama_online_model_missing(tmp_path: Path, monkeypatch) -> None:

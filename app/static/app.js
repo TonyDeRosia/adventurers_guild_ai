@@ -13,6 +13,34 @@ let selectedImageUrl = '';
 let selectedSlot = 'autosave';
 let loadedSlot = 'autosave';
 let selectedCampaignName = 'autosave';
+let deletingCampaign = false;
+let lastCampaigns = [];
+
+const readinessLabels = {
+  model_provider: 'Text Generation Service',
+  selected_model: 'Story Model',
+  image_provider: 'Image Generation Service',
+};
+
+function commandFromAction(actionText) {
+  const clean = String(actionText || '').trim();
+  if (clean.startsWith('Run: ')) return clean.slice(5).trim();
+  if (clean.includes('ollama serve')) return 'ollama serve';
+  if (clean.includes('ollama pull')) {
+    const match = clean.match(/ollama pull\s+([\w.:-]+)/);
+    return match ? `ollama pull ${match[1]}` : 'ollama pull llama3';
+  }
+  return '';
+}
+
+async function copyCommand(command) {
+  try {
+    await navigator.clipboard.writeText(command);
+    setStatus(`Copied command: ${command}`);
+  } catch (error) {
+    setStatus(`Copy failed. Command: ${command}`, true);
+  }
+}
 
 function setStatus(message, isError = false) {
   statusLine.textContent = message;
@@ -27,6 +55,10 @@ function escapeHtml(input) {
 }
 
 function updateSelectedSaveLabel() {
+  if (!selectedSlot) {
+    selectedSaveLabel.textContent = 'Selected save: none';
+    return;
+  }
   selectedSaveLabel.textContent = `Selected save: ${selectedSlot}${selectedCampaignName ? ` • ${selectedCampaignName}` : ''}`;
 }
 
@@ -130,7 +162,11 @@ async function refreshSaves() {
   const data = await api('/api/campaigns');
   saveList.innerHTML = '';
   const campaigns = data.campaigns || [];
+  lastCampaigns = campaigns;
   if (!campaigns.length) {
+    selectedSlot = '';
+    selectedCampaignName = '';
+    updateSelectedSaveLabel();
     saveList.textContent = 'No saves found yet.';
     return;
   }
@@ -159,24 +195,45 @@ async function refreshSaves() {
 
 function renderDependencyReadiness(payload) {
   readinessPanel.innerHTML = '';
+  const summary = document.createElement('div');
+  summary.className = 'readiness-summary';
+  const byType = Object.fromEntries((payload.items || []).map((item) => [item.provider_type, item]));
+  summary.innerHTML = `
+    <div>Text generation: ${byType.model_provider?.status_level === 'ready' ? 'ready' : 'not ready'}</div>
+    <div>Story model: ${byType.selected_model?.status_level === 'ready' ? 'installed' : 'not installed'}</div>
+    <div>Image generation: ${byType.image_provider?.status_level === 'ready' ? 'ready' : 'not ready'}</div>
+    <div>Fallback story mode: available</div>
+  `;
+  readinessPanel.appendChild(summary);
+
   for (const item of payload.items || []) {
     const el = document.createElement('div');
     el.className = 'readiness-item';
     const ready = item.status_level === 'ready';
     const badgeClass = ready ? 'ready-badge' : 'not-ready-badge';
+    const title = readinessLabels[item.provider_type] || item.provider_type;
     const selectedModel = item.selected_model ? `<div>Selected model: <code>${escapeHtml(item.selected_model)}</code></div>` : '';
+    const command = commandFromAction(item.next_action);
+    const copyButton = command ? `<button class="copy-cmd-btn" data-command="${escapeHtml(command)}">Copy command</button>` : '';
     el.innerHTML = `
-      <strong>${escapeHtml(item.provider_type)} • ${escapeHtml(item.provider)}</strong>
+      <strong>${escapeHtml(title)}</strong>
+      <div>Provider: <code>${escapeHtml(item.provider)}</code></div>
       <div class="${badgeClass}">${ready ? 'Ready' : 'Not ready'}</div>
       ${selectedModel}
       <div>${escapeHtml(item.user_message || '')}</div>
       <div>Next step: ${escapeHtml(item.next_action || 'No action needed.')}</div>
+      ${copyButton}
     `;
+    const btn = el.querySelector('.copy-cmd-btn');
+    if (btn && command) {
+      btn.onclick = () => copyCommand(command);
+    }
     readinessPanel.appendChild(el);
   }
 
   setupGuidance.innerHTML = '';
-  for (const line of payload.setup_guidance || []) {
+  const setupLines = payload.setup_checklist || payload.setup_guidance || [];
+  for (const line of setupLines) {
     const li = document.createElement('li');
     li.textContent = line;
     setupGuidance.appendChild(li);
@@ -256,8 +313,16 @@ async function renameCampaign() {
 
 async function deleteCampaign() {
   try {
+    if (deletingCampaign) {
+      setStatus('Delete already in progress.');
+      return;
+    }
     if (!selectedSlot) {
-      setStatus('Select a save before deleting.', true);
+      setStatus('No save is selected for deletion.', true);
+      return;
+    }
+    if (selectedSlot === loadedSlot) {
+      setStatus('Cannot delete the active save. Load another save first.', true);
       return;
     }
     const confirmation = prompt(`Type DELETE to remove '${selectedCampaignName}' (${selectedSlot}). This cannot be undone.`);
@@ -265,16 +330,21 @@ async function deleteCampaign() {
       setStatus('Delete cancelled.');
       return;
     }
+    deletingCampaign = true;
     const deletedSlot = selectedSlot;
     const deletedName = selectedCampaignName;
     await api('/api/campaign/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slot: selectedSlot }) });
-    if (selectedSlot === loadedSlot) {
-      selectedSlot = '';
-    }
+    const remaining = lastCampaigns.filter((campaign) => campaign.slot !== deletedSlot);
+    const nextChoice = remaining.find((campaign) => campaign.slot === loadedSlot) || remaining[0] || null;
+    selectedSlot = nextChoice ? nextChoice.slot : '';
+    selectedCampaignName = nextChoice ? nextChoice.campaign_name : '';
+    updateSelectedSaveLabel();
     await refreshSaves();
     setStatus(`Deleted ${deletedName} (${deletedSlot}).`);
   } catch (error) {
     setStatus(error.message, true);
+  } finally {
+    deletingCampaign = false;
   }
 }
 
