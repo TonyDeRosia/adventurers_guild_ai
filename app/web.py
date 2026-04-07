@@ -1694,7 +1694,20 @@ class WebRuntime:
         request_received_at = datetime.now(timezone.utc).isoformat()
         model_status = self.get_model_status()
         auto_enabled = bool(self.session.state.settings.campaign_auto_visuals_enabled)
+        image_generation_enabled = bool(self.session.state.settings.image_generation_enabled)
+        suggested_moves_enabled = bool(self.session.state.settings.suggested_moves_active())
         auto_timing = self._normalize_campaign_auto_visual_timing(self.app_config.image.campaign_auto_visual_timing)
+        auto_provider_ready = self.app_config.image.provider == "comfyui" and image_generation_enabled
+        print(
+            "[campaign-settings] loaded for turn "
+            f"campaign={self.session.active_slot} suggested_moves={str(suggested_moves_enabled).lower()} "
+            f"auto_visuals={str(auto_enabled).lower()} timing={auto_timing} image_generation={str(image_generation_enabled).lower()}"
+        )
+        print(
+            "[campaign-settings] turn pipeline using persisted settings "
+            f"campaign={self.session.active_slot} suggested_moves={str(suggested_moves_enabled).lower()} "
+            f"auto_visuals={str(auto_enabled).lower()} timing={auto_timing} auto_provider_ready={str(auto_provider_ready).lower()}"
+        )
         print(f"[turn-visual] manual_enabled={self.app_config.image.manual_image_generation_enabled}")
         print(f"[turn-visual] auto_enabled={auto_enabled}")
         print(f"[turn-visual] auto_timing={auto_timing}")
@@ -1704,11 +1717,13 @@ class WebRuntime:
         self._append_message("player", clean_text, persist=False)
         message_append_ms = 0.0
         auto_before_ms = 0.0
-        if auto_enabled and auto_timing == "before_narration":
+        if auto_enabled and auto_timing == "before_narration" and auto_provider_ready:
             print("[turn-visual] auto_image_triggered timing=before_narration")
             auto_before_started = time.perf_counter()
             self._run_turn_visual_generation(player_action=clean_text, narrator_response="", stage="before_narration", source="auto_before")
             auto_before_ms = (time.perf_counter() - auto_before_started) * 1000
+        elif auto_enabled and auto_timing == "before_narration" and not auto_provider_ready:
+            print("[turn-visual] auto_image_skipped reason=image_provider_not_ready")
 
         engine_started = time.perf_counter()
         result = self.engine.run_turn(self.session.state, clean_text)
@@ -1948,6 +1963,16 @@ class WebRuntime:
     def set_campaign_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
         state = self.session.state
         settings = state.settings
+        requested = {
+            "campaign": self.session.active_slot,
+            "image_generation_enabled": bool(payload.get("image_generation_enabled", settings.image_generation_enabled)),
+            "campaign_auto_visuals_enabled": bool(
+                payload.get("campaign_auto_visuals_enabled", settings.campaign_auto_visuals_enabled)
+            ),
+            "suggested_moves_enabled": bool(payload.get("suggested_moves_enabled", settings.suggested_moves_enabled)),
+            "player_suggested_moves_override": payload.get("player_suggested_moves_override", settings.player_suggested_moves_override),
+        }
+        print(f"[campaign-settings] apply requested {json.dumps(requested)}")
         settings.profile = str(payload.get("profile", settings.profile))
         settings.narration_tone = str(payload.get("narration_tone", settings.narration_tone))
         settings.mature_content_enabled = bool(payload.get("mature_content_enabled", settings.mature_content_enabled))
@@ -1965,7 +1990,14 @@ class WebRuntime:
             thematic_flags=list(content.get("thematic_flags", settings.content_settings.thematic_flags)),
         )
         self.save_active_campaign(self.session.active_slot)
-        return self.serialize_state()["settings"]
+        serialized = self.serialize_state()["settings"]
+        print(
+            "[campaign-settings] apply succeeded "
+            f"campaign={self.session.active_slot} suggested_moves={str(serialized['effective_suggested_moves_enabled']).lower()} "
+            f"auto_visuals={str(serialized['campaign_auto_visuals_enabled']).lower()} "
+            f"image_generation={str(serialized['image_generation_enabled']).lower()}"
+        )
+        return serialized
 
     def list_available_local_models(self) -> list[str]:
         adapter = self._create_model_adapter()

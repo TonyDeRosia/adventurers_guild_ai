@@ -23,6 +23,19 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter,
 }
 .panel-block { margin-bottom: 12px; }
 .button-row { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 8px; }
+.settings-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.settings-status {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.settings-status.saved { color: #86efac; }
+.settings-status.unsaved { color: #fde68a; }
+.settings-status.applying { color: #7dd3fc; }
 #selected-save-label { color: var(--muted); margin: 6px 0 10px; font-size: 0.9rem; }
 
 .chat-main { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
