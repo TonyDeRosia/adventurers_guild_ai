@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
+import tempfile
 import time
 import sys
+import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -213,7 +216,7 @@ class WebRuntime:
             "next_action": (
                 "No action needed."
                 if model_status.get("reachable", True)
-                else "Install Ollama from https://ollama.com/download, then click Recheck."
+                else "Install Ollama, then click Recheck."
                 if provider == "ollama" and not ollama_installed
                 else "Run: ollama serve"
                 if provider == "ollama"
@@ -222,8 +225,8 @@ class WebRuntime:
             "actions": (
                 []
                 if model_status.get("reachable", True)
-                else [{"id": "recheck", "label": "Recheck"}]
-                if provider != "ollama" or not ollama_installed
+                else [{"id": "install_ollama", "label": "Install Ollama"}, {"id": "recheck", "label": "Recheck"}]
+                if provider == "ollama" and not ollama_installed
                 else [{"id": "start_ollama", "label": "Start Ollama"}, {"id": "recheck", "label": "Recheck"}]
             ),
         }
@@ -248,6 +251,8 @@ class WebRuntime:
                 [{"id": "recheck", "label": "Recheck"}]
                 if model_status.get("model_exists", True)
                 else [{"id": "install_model", "label": f"Install {model_name}"}, {"id": "recheck", "label": "Recheck"}]
+                if provider == "ollama" and ollama_installed
+                else [{"id": "recheck", "label": "Recheck"}]
             ),
         }
         image_item = {
@@ -286,6 +291,119 @@ class WebRuntime:
         if os.name == "nt":
             return shutil.which("ollama.exe") or shutil.which("ollama")
         return shutil.which("ollama")
+
+    def _is_windows(self) -> bool:
+        return os.name == "nt"
+
+    def _resolve_ollama_windows_installer_url(self) -> str:
+        download_page = "https://ollama.com/download"
+        with urllib.request.urlopen(download_page, timeout=20) as response:
+            html = response.read().decode("utf-8", errors="ignore")
+        matches = re.findall(r'href="([^"]+OllamaSetup\.exe[^"]*)"', html, flags=re.IGNORECASE)
+        if matches:
+            candidate = matches[0]
+            if candidate.startswith("http://") or candidate.startswith("https://"):
+                return candidate
+            return f"https://ollama.com{candidate}"
+        return "https://ollama.com/download/OllamaSetup.exe"
+
+    def install_ollama(self) -> dict[str, Any]:
+        print("[setup-action] install-ollama requested")
+        if not self._is_windows():
+            reason = "windows-only flow"
+            print(f"[setup-action] install-ollama failure reason={reason}")
+            return {
+                "ok": False,
+                "message": "Automatic Ollama install is currently supported on Windows only.",
+                "next_step": "Install Ollama manually from https://ollama.com/download.",
+            }
+
+        existing_cli = self._find_ollama_cli()
+        if existing_cli:
+            print(f"[setup-action] install-ollama success reason=already-installed cli={existing_cli}")
+            started = self.start_ollama_service()
+            return {
+                "ok": True,
+                "message": "Ollama is already installed.",
+                "next_step": started.get("message", "Run `ollama serve` if it is not running."),
+                "readiness_refreshed": True,
+            }
+
+        try:
+            installer_url = self._resolve_ollama_windows_installer_url()
+        except OSError as exc:
+            print(f"[setup-action] install-ollama failure reason=resolve-url error={exc}")
+            return {
+                "ok": False,
+                "message": "Could not resolve the official Ollama installer URL.",
+                "next_step": "Open https://ollama.com/download and install manually.",
+            }
+
+        print(f"[setup-action] downloading installer url={installer_url}")
+        installer_path = Path(tempfile.gettempdir()) / "OllamaSetup.exe"
+        try:
+            with urllib.request.urlopen(installer_url, timeout=60) as response:
+                installer_path.write_bytes(response.read())
+        except OSError as exc:
+            print(f"[setup-action] install-ollama failure reason=download error={exc}")
+            return {
+                "ok": False,
+                "message": "Failed to download the Ollama installer.",
+                "next_step": "Check your network connection and retry.",
+            }
+        print(f"[setup-action] installer saved path={installer_path}")
+
+        try:
+            process = subprocess.Popen([str(installer_path)])
+            print("[setup-action] installer launched")
+            process.wait(timeout=20 * 60)
+        except PermissionError:
+            reason = "permission denied"
+            print(f"[setup-action] install-ollama failure reason={reason}")
+            return {
+                "ok": False,
+                "message": "Installation requires admin privileges. Please run installer manually.",
+                "next_step": f"Run {installer_path} as Administrator.",
+            }
+        except subprocess.TimeoutExpired:
+            print("[setup-action] install-ollama failure reason=installer-timeout")
+            return {
+                "ok": False,
+                "message": "Installer did not complete within the expected time.",
+                "next_step": f"Finish installation manually from {installer_path}.",
+            }
+        except OSError as exc:
+            print(f"[setup-action] install-ollama failure reason={exc}")
+            return {
+                "ok": False,
+                "message": "Could not launch the Ollama installer.",
+                "next_step": f"Run {installer_path} manually.",
+            }
+
+        ollama_cli = self._find_ollama_cli()
+        if not ollama_cli:
+            print("[setup-action] install-ollama failure reason=cli-not-found-after-install")
+            return {
+                "ok": False,
+                "message": "Installer finished but Ollama CLI is still not detected.",
+                "next_step": "Restart the app or terminal and click Recheck.",
+            }
+
+        start_result = self.start_ollama_service()
+        if start_result.get("ok"):
+            print("[setup-action] install-ollama success")
+            return {
+                "ok": True,
+                "message": "Ollama installed and service started.",
+                "readiness_refreshed": True,
+            }
+        print(f"[setup-action] install-ollama failure reason={start_result.get('message', 'service-start-failed')}")
+        return {
+            "ok": False,
+            "message": "Ollama installed, but service did not start automatically.",
+            "next_step": start_result.get("next_step", "Run `ollama serve`, then click Recheck."),
+            "readiness_refreshed": True,
+        }
 
     def start_ollama_service(self) -> dict[str, Any]:
         print("[setup-action] start-ollama requested")
@@ -354,6 +472,13 @@ class WebRuntime:
                 "ok": False,
                 "message": "Ollama is not installed (CLI not found on PATH).",
                 "next_step": "Install Ollama from https://ollama.com/download first.",
+            }
+        if not self.get_model_status().get("reachable", False):
+            print("[setup-action] install-model failure reason=ollama service not reachable")
+            return {
+                "ok": False,
+                "message": "Ollama is installed but not running.",
+                "next_step": "Start Ollama first, then install the model.",
             }
         try:
             completed = subprocess.run(
@@ -753,6 +878,11 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     def setup_start_ollama() -> dict[str, Any]:
         print("[setup-action] route invoked endpoint=/api/setup/start-ollama")
         return runtime.start_ollama_service()
+
+    @app.post("/api/setup/install-ollama")
+    def setup_install_ollama() -> dict[str, Any]:
+        print("[setup-action] route invoked endpoint=/api/setup/install-ollama")
+        return runtime.install_ollama()
 
     @app.post("/api/setup/install-model")
     def setup_install_model(payload: dict[str, Any]) -> dict[str, Any]:

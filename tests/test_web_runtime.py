@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 
@@ -365,17 +366,22 @@ def test_setup_endpoints_invoke_backend_actions(tmp_path: Path, monkeypatch, cap
     client = TestClient(app)
 
     monkeypatch.setattr(runtime, "start_ollama_service", lambda: {"ok": True, "message": "started"})
+    monkeypatch.setattr(runtime, "install_ollama", lambda: {"ok": True, "message": "installed ollama"})
     monkeypatch.setattr(runtime, "install_story_model", lambda model_name=None: {"ok": True, "message": f"installed {model_name}"})
 
     start_response = client.post("/api/setup/start-ollama", json={})
+    install_ollama_response = client.post("/api/setup/install-ollama", json={})
     install_response = client.post("/api/setup/install-model", json={"model": "llama3"})
     captured = capsys.readouterr()
 
     assert start_response.status_code == 200
+    assert install_ollama_response.status_code == 200
     assert install_response.status_code == 200
     assert start_response.json()["ok"] is True
+    assert install_ollama_response.json()["ok"] is True
     assert install_response.json()["ok"] is True
     assert "[setup-action] route invoked endpoint=/api/setup/start-ollama" in captured.out
+    assert "[setup-action] route invoked endpoint=/api/setup/install-ollama" in captured.out
     assert "[setup-action] route invoked endpoint=/api/setup/install-model model=llama3" in captured.out
 
 
@@ -400,7 +406,7 @@ def test_dependency_readiness_reports_missing_ollama_install(tmp_path: Path, mon
     readiness = runtime.get_dependency_readiness()
     provider_item = readiness["items"][0]
     assert "not installed" in provider_item["user_message"].lower()
-    assert provider_item["actions"] == [{"id": "recheck", "label": "Recheck"}]
+    assert provider_item["actions"][0]["id"] == "install_ollama"
 
 
 def test_start_ollama_reports_missing_cli(tmp_path: Path, monkeypatch) -> None:
@@ -416,6 +422,8 @@ def test_install_story_model_runs_pull_and_returns_success(tmp_path: Path, monke
     runtime = _runtime(tmp_path, monkeypatch)
     monkeypatch.setattr("shutil.which", lambda name: "/bin/ollama")
 
+    monkeypatch.setattr(runtime, "get_model_status", lambda: {"reachable": True})
+
     def _fake_run(*args, **kwargs):
         return subprocess.CompletedProcess(args=["ollama", "pull", "llama3"], returncode=0, stdout="pulled", stderr="")
 
@@ -423,3 +431,43 @@ def test_install_story_model_runs_pull_and_returns_success(tmp_path: Path, monke
     result = runtime.install_story_model("llama3")
     assert result["ok"] is True
     assert "installed" in result["message"].lower()
+
+
+def test_install_story_model_requires_running_ollama(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    monkeypatch.setattr("shutil.which", lambda name: "/bin/ollama")
+    monkeypatch.setattr(runtime, "get_model_status", lambda: {"reachable": False})
+    result = runtime.install_story_model("llama3")
+    assert result["ok"] is False
+    assert "not running" in result["message"].lower()
+
+
+def test_install_ollama_windows_flow_logs(tmp_path: Path, monkeypatch, capsys) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.model.provider = "ollama"
+    monkeypatch.setattr(runtime, "_is_windows", lambda: True)
+    states = iter([None, "C:/Ollama/ollama.exe"])
+    monkeypatch.setattr(runtime, "_find_ollama_cli", lambda: next(states))
+    monkeypatch.setattr(runtime, "_resolve_ollama_windows_installer_url", lambda: "https://ollama.com/download/OllamaSetup.exe")
+
+    class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return b"fake-exe"
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda *args, **kwargs: _Resp())
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: SimpleNamespace(wait=lambda timeout=None: 0))
+    monkeypatch.setattr(runtime, "start_ollama_service", lambda: {"ok": True, "message": "started"})
+
+    result = runtime.install_ollama()
+    captured = capsys.readouterr()
+    assert result["ok"] is True
+    assert "[setup-action] install-ollama requested" in captured.out
+    assert "[setup-action] downloading installer url=https://ollama.com/download/OllamaSetup.exe" in captured.out
+    assert "[setup-action] installer launched" in captured.out
+    assert "[setup-action] install-ollama success" in captured.out
