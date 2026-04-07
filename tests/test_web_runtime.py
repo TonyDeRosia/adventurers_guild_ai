@@ -827,26 +827,26 @@ def test_narrated_figure_registers_scene_actor_and_visible_count(tmp_path: Path,
     assert any("hooded figure" in item.lower() for item in scene_state["visible_entities"])
 
 
-def test_dialogue_pronoun_targets_registered_actor_and_gets_reply(tmp_path: Path, monkeypatch) -> None:
+def test_dialogue_pronoun_targets_registered_actor_without_direct_reply_shortcut(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _FigureIntroProvider()
     runtime.handle_player_input("look")
+    runtime.engine.model = _ShortDialogueProvider()
     out = runtime.handle_player_input("i say 'what do you want?' to them")
     lowered = out["narrative"].lower()
     scene_state = runtime.session.state.structured_state.runtime.scene_state
-    assert "turns toward you" in lowered
-    assert "why you followed me" in lowered or "i hear you" in lowered
+    assert "i hear you" in lowered
     assert scene_state["last_target_actor_id"]
 
 
-def test_wait_for_reply_with_visible_actor_generates_progress(tmp_path: Path, monkeypatch) -> None:
+def test_wait_for_reply_with_visible_actor_stays_on_main_narration_path(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _FigureIntroProvider()
     runtime.handle_player_input("look")
+    runtime.engine.model = _ShortDialogueProvider()
     out = runtime.handle_player_input("I wait for their reply")
     lowered = out["narrative"].lower()
-    assert "turns toward you" in lowered
-    assert "air is thick" not in lowered
+    assert "i hear you" in lowered
 
 
 def test_mixed_social_turn_is_not_collapsed_to_short_npc_reply(tmp_path: Path, monkeypatch) -> None:
@@ -874,12 +874,24 @@ def test_mixed_social_turn_preserves_full_scene_shape_with_target_context(tmp_pa
     assert "keep your voice down" in lowered
 
 
+def test_targeted_dialogue_uses_model_output_instead_of_direct_reply_shortcut(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _FigureIntroProvider()
+    runtime.handle_player_input("look")
+    counting = _CountingProvider()
+    runtime.engine.model = counting
+    out = runtime.handle_player_input("i say hello to them")
+    assert counting.calls == 1
+    assert "cold wind curls through the archway" in out["narrative"].lower()
+    assert runtime.session.state.structured_state.runtime.scene_state["last_target_actor_id"]
+
+
 def test_mixed_social_change_keeps_structured_and_dialogue_paths_intact(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _ShortDialogueProvider()
     runtime.handle_player_input("look")
     pure_dialogue = runtime.handle_player_input('i say "hello there"')
-    assert "turns toward you" in pure_dialogue["narrative"].lower() or "i hear you" in pure_dialogue["narrative"].lower()
+    assert "i hear you" in pure_dialogue["narrative"].lower()
     structured = runtime.handle_player_input("what are my stats")
     assert structured["metadata"]["requested_mode"] == "structured_lookup"
 
