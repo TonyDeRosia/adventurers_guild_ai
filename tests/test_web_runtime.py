@@ -175,3 +175,105 @@ def test_image_fallback_from_comfyui_to_local_placeholder(tmp_path: Path, monkey
     assert result.success is True
     assert result.metadata.get("fallback_adapter") == "local_placeholder"
     assert result.result_path and result.result_path.endswith(".svg")
+
+
+def test_dependency_readiness_ollama_offline(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.model.provider = "ollama"
+    runtime.app_config.model.model_name = "llama3"
+    monkeypatch.setattr(
+        "models.ollama_adapter.OllamaAdapter.check_readiness",
+        lambda self: {
+            "provider": "ollama",
+            "model": self.model,
+            "base_url": self.base_url,
+            "reachable": False,
+            "model_exists": False,
+            "ready": False,
+            "user_message": "Ollama is not running. Start Ollama to use this model provider.",
+            "fallback_reason": "offline",
+        },
+    )
+    readiness = runtime.get_dependency_readiness()
+    model_provider = readiness["items"][0]
+    assert model_provider["provider_type"] == "model_provider"
+    assert model_provider["reachable"] is False
+    assert "Start Ollama" in model_provider["next_action"]
+
+
+def test_dependency_readiness_ollama_online_model_missing(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.model.provider = "ollama"
+    runtime.app_config.model.model_name = "llama3"
+    monkeypatch.setattr(
+        "models.ollama_adapter.OllamaAdapter.check_readiness",
+        lambda self: {
+            "provider": "ollama",
+            "model": self.model,
+            "base_url": self.base_url,
+            "reachable": True,
+            "model_exists": False,
+            "ready": False,
+            "user_message": "Model llama3 is not installed in Ollama. Run: ollama pull llama3",
+            "fallback_reason": "missing model",
+        },
+    )
+    readiness = runtime.get_dependency_readiness()
+    model_item = readiness["items"][1]
+    assert model_item["provider_type"] == "selected_model"
+    assert model_item["model_exists"] is False
+    assert "ollama pull llama3" in model_item["next_action"]
+
+
+def test_dependency_readiness_ollama_online_model_present(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.model.provider = "ollama"
+    monkeypatch.setattr(
+        "models.ollama_adapter.OllamaAdapter.check_readiness",
+        lambda self: {
+            "provider": "ollama",
+            "model": self.model,
+            "base_url": self.base_url,
+            "reachable": True,
+            "model_exists": True,
+            "ready": True,
+            "user_message": "Ollama is ready with model llama3.",
+            "fallback_reason": "",
+        },
+    )
+    readiness = runtime.get_dependency_readiness()
+    assert readiness["items"][0]["status_level"] == "ready"
+    assert readiness["items"][1]["status_level"] == "ready"
+
+
+def test_dependency_readiness_comfyui_offline(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    monkeypatch.setattr(
+        "images.comfyui_adapter.ComfyUIAdapter.check_readiness",
+        lambda self: {
+            "provider": "comfyui",
+            "base_url": self.base_url,
+            "reachable": False,
+            "ready": False,
+            "status_level": "error",
+            "user_message": "ComfyUI is not reachable at the configured address.",
+            "next_action": "Start ComfyUI, then click Recheck.",
+            "error": "connection refused",
+        },
+    )
+    readiness = runtime.get_dependency_readiness()
+    image_item = readiness["items"][2]
+    assert image_item["provider_type"] == "image_provider"
+    assert image_item["reachable"] is False
+    assert "Start ComfyUI" in image_item["next_action"]
+
+
+def test_dependency_readiness_does_not_pollute_story_messages(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    _ = runtime.get_dependency_readiness()
+    messages_before = len(runtime.session.message_history)
+    runtime.handle_player_input("look")
+    messages_after = [message["text"] for message in runtime.session.message_history]
+    assert len(messages_after) > messages_before
+    assert not any("Start Ollama" in text or "ComfyUI" in text for text in messages_after)
