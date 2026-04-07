@@ -36,6 +36,25 @@ class NPCPersonalitySystem:
         for field, value in defaults.items():
             if hasattr(npc.dynamic_state, field):
                 setattr(npc.dynamic_state, field, int(getattr(npc.dynamic_state, field) or value))
+        if not npc.personality_archetype:
+            npc.personality_archetype = str(profile.get("base_archetype", "") or "") or None
+        if npc.personality_nodes is None:
+            nodes = profile.get("personality_nodes", {})
+            if isinstance(nodes, dict):
+                npc.personality_nodes = NPC.PersonalityNodes(
+                    role=str(nodes.get("role", "")),
+                    temperament=str(nodes.get("temperament", "")),
+                    morals=str(nodes.get("morals", "")),
+                    social_style=str(nodes.get("social_style", "")),
+                    fears=[str(v) for v in nodes.get("fears", [])],
+                    desires=[str(v) for v in nodes.get("desires", [])],
+                    loyalties=[str(v) for v in nodes.get("loyalties", [])],
+                    secrets=[str(v) for v in nodes.get("secrets", [])],
+                    aggression=str(nodes.get("aggression", "")),
+                    speech_style=str(nodes.get("speech_style", profile.get("speech_style", "plain"))),
+                    decision_bias=str(nodes.get("decision_bias", "")),
+                    faction_alignment=str(nodes.get("faction_alignment", "")),
+                )
 
     def record_memory(
         self,
@@ -61,6 +80,7 @@ class NPCPersonalitySystem:
             )
         )
         npc.memory_log = npc.memory_log[-30:]
+        npc.dynamic_state.memory_tags = list(dict.fromkeys((npc.dynamic_state.memory_tags + (tags or []))[-12:]))
 
     def apply_state_delta(self, state: CampaignState, npc_id: str, delta: dict[str, int]) -> None:
         npc = state.npcs[npc_id]
@@ -117,7 +137,12 @@ class NPCPersonalitySystem:
         if scene == "quest_offer" and quest_openness < -5:
             tone = "skeptical"
 
-        speech_style = str(profile.get("speech_style", "plain"))
+        speech_style = (
+            npc.personality_nodes.speech_style
+            if npc.personality_nodes and npc.personality_nodes.speech_style
+            else str(profile.get("speech_style", "plain"))
+        )
+        npc.dynamic_state.current_mood = tone
         return PersonalityEvaluation(
             tone=tone,
             willingness_to_share=max(-100, min(100, willingness)),
@@ -126,6 +151,43 @@ class NPCPersonalitySystem:
             quest_openness=max(-100, min(100, quest_openness)),
             speech_style=speech_style,
         )
+
+    def build_prompt_guidance(self, state: CampaignState) -> list[str]:
+        guidance: list[str] = []
+        for npc_id, npc in state.npcs.items():
+            if npc.location_id != state.current_location_id:
+                continue
+            self.initialize_npc(state, npc_id)
+            mood = npc.dynamic_state.current_mood or "neutral"
+            memory_tags = ", ".join(npc.dynamic_state.memory_tags[-4:]) if npc.dynamic_state.memory_tags else "none"
+            node_summary = self._node_summary(npc)
+            guidance.append(
+                f"{npc.name}: archetype={npc.personality_archetype or 'none'}; nodes={node_summary}; "
+                f"state(trust={npc.dynamic_state.trust_toward_player}, fear={npc.dynamic_state.fear_toward_player}, "
+                f"suspicion={npc.dynamic_state.suspicion}, anger={npc.dynamic_state.anger}, attraction={npc.dynamic_state.attraction}, mood={mood}); "
+                f"recent_memory_tags={memory_tags}."
+            )
+        return guidance
+
+    def _node_summary(self, npc: NPC) -> str:
+        if npc.personality_nodes is None:
+            return "fallback-freeform"
+        nodes = npc.personality_nodes
+        segments = [
+            f"role={nodes.role or 'unspecified'}",
+            f"temperament={nodes.temperament or 'unspecified'}",
+            f"morals={nodes.morals or 'unspecified'}",
+            f"social_style={nodes.social_style or 'unspecified'}",
+            f"aggression={nodes.aggression or 'unspecified'}",
+            f"speech_style={nodes.speech_style or 'plain'}",
+            f"decision_bias={nodes.decision_bias or 'balanced'}",
+            f"faction_alignment={nodes.faction_alignment or 'none'}",
+            f"fears={','.join(nodes.fears) if nodes.fears else 'none'}",
+            f"desires={','.join(nodes.desires) if nodes.desires else 'none'}",
+            f"loyalties={','.join(nodes.loyalties) if nodes.loyalties else 'none'}",
+            f"secrets={','.join(nodes.secrets[:2]) if nodes.secrets else 'none'}",
+        ]
+        return "; ".join(segments)
 
     def _apply_evolution_rules(
         self, state: CampaignState, npc_id: str, event_type: str, payload: dict[str, Any]

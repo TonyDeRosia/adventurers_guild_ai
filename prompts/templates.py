@@ -54,5 +54,6 @@ Active quest count: {active_quest_count}
 World flags: {world_flags}
 Recent events: {recent_events}
 
-Respond with 2-4 sentences and one suggested next move.
+{suggested_move_instruction}
+{npc_personality_guidance}
 """

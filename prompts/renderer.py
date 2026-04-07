@@ -64,6 +64,8 @@ class PromptRenderer:
         location_summary: str,
         memory: RetrievedMemory,
         requested_mode: str = "play",
+        suggested_moves_enabled: bool = True,
+        npc_guidance: list[str] | None = None,
     ) -> str:
         recent = " | ".join(state.event_log[-4:]) if state.event_log else "No significant events yet"
         recent_conversation = " | ".join(
@@ -78,6 +80,16 @@ class PromptRenderer:
             if npc.location_id == state.current_location_id
         ]
         npc_context = " | ".join(nearby_npcs) if nearby_npcs else "none"
+        suggested_move_instruction = (
+            "Respond with 2-4 sentences and one suggested next move."
+            if suggested_moves_enabled
+            else "Respond with 2-4 sentences. Do not include any suggested next move line."
+        )
+        npc_personality_guidance = (
+            "[NPC Personality Guidance]\n" + " | ".join(npc_guidance)
+            if npc_guidance
+            else "[NPC Personality Guidance]\nnone"
+        )
         return TURN_TEMPLATE.format(
             requested_mode=requested_mode,
             recent_conversation=recent_conversation or "none",
@@ -99,6 +111,8 @@ class PromptRenderer:
             active_quest_count=active_quest_count,
             world_flags=flags,
             recent_events=f"{recent} | Nearby NPC context: {npc_context}",
+            suggested_move_instruction=suggested_move_instruction,
+            npc_personality_guidance=npc_personality_guidance,
         )
 
     def build_prompt_packet(
@@ -109,6 +123,8 @@ class PromptRenderer:
         location_summary: str,
         memory: RetrievedMemory,
         requested_mode: str = "play",
+        suggested_moves_enabled: bool = True,
+        npc_guidance: list[str] | None = None,
     ) -> PromptPacket:
         return PromptPacket(
             system_prompt=self.build_system_prompt(state, requested_mode=requested_mode),
@@ -118,5 +134,7 @@ class PromptRenderer:
                 location_summary=location_summary,
                 memory=memory,
                 requested_mode=requested_mode,
+                suggested_moves_enabled=suggested_moves_enabled,
+                npc_guidance=npc_guidance,
             ),
         )
