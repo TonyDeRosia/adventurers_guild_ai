@@ -57,6 +57,29 @@ button:hover { border-color: var(--accent); }
   min-height: 120px;
   background: var(--panel-soft);
 }
+.readiness-panel {
+  border: 1px solid #2a3f5f;
+  border-radius: 8px;
+  padding: 8px;
+  min-height: 120px;
+  background: var(--panel-soft);
+  display: grid;
+  gap: 8px;
+}
+.readiness-item {
+  border: 1px solid #344c6d;
+  border-radius: 8px;
+  padding: 8px;
+  background: #0f1a2d;
+}
+.readiness-item strong { display: block; margin-bottom: 4px; }
+.ready-badge { color: #86efac; }
+.not-ready-badge { color: #fca5a5; }
+.setup-guidance {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
 .save-list { max-height: 45vh; overflow: auto; display: grid; gap: 8px; }
 .state-panel { white-space: pre-wrap; max-height: 35vh; overflow: auto; margin: 0; }
 

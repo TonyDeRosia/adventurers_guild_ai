@@ -150,6 +150,89 @@ class WebRuntime:
         )
         return status
 
+    def get_image_status(self) -> dict[str, Any]:
+        provider = self.app_config.image.provider
+        base_url = self.app_config.image.base_url
+        if provider == "comfyui":
+            return ComfyUIAdapter(base_url=base_url).check_readiness()
+        if provider == "null":
+            return {
+                "provider": provider,
+                "base_url": base_url,
+                "reachable": False,
+                "ready": False,
+                "status_level": "info",
+                "user_message": "Image provider is disabled.",
+                "next_action": "Set image provider to local or comfyui, then click Recheck.",
+                "error": "",
+            }
+        return {
+            "provider": provider,
+            "base_url": base_url,
+            "reachable": True,
+            "ready": True,
+            "status_level": "ready",
+            "user_message": f"{provider} image provider is ready.",
+            "next_action": "No action needed.",
+            "error": "",
+        }
+
+    def get_dependency_readiness(self) -> dict[str, Any]:
+        model_status = self.get_model_status()
+        image_status = self.get_image_status()
+        model_provider_item = {
+            "provider_type": "model_provider",
+            "provider": model_status.get("provider", self.app_config.model.provider),
+            "reachable": bool(model_status.get("reachable", True)),
+            "selected_model": model_status.get("model", self.app_config.model.model_name),
+            "model_exists": bool(model_status.get("model_exists", True)),
+            "status_level": "ready" if model_status.get("reachable", True) else "error",
+            "user_message": (
+                f"{model_status.get('provider', 'Model provider')} is reachable."
+                if model_status.get("reachable", True)
+                else "Ollama is not running."
+            ),
+            "next_action": "No action needed." if model_status.get("reachable", True) else "Start Ollama, then click Recheck.",
+        }
+        model_item = {
+            "provider_type": "selected_model",
+            "provider": model_status.get("provider", self.app_config.model.provider),
+            "reachable": bool(model_status.get("reachable", True)),
+            "selected_model": model_status.get("model", self.app_config.model.model_name),
+            "model_exists": bool(model_status.get("model_exists", True)),
+            "status_level": "ready" if model_status.get("model_exists", True) else "error",
+            "user_message": (
+                f"Model {model_status.get('model', self.app_config.model.model_name)} is installed."
+                if model_status.get("model_exists", True)
+                else f"Model {model_status.get('model', self.app_config.model.model_name)} is not installed."
+            ),
+            "next_action": (
+                "No action needed."
+                if model_status.get("model_exists", True)
+                else f"Run: ollama pull {model_status.get('model', self.app_config.model.model_name)}"
+            ),
+        }
+        image_item = {
+            "provider_type": "image_provider",
+            "provider": image_status.get("provider", self.app_config.image.provider),
+            "reachable": bool(image_status.get("reachable", True)),
+            "selected_model": "",
+            "model_exists": True,
+            "status_level": image_status.get("status_level", "ready"),
+            "user_message": str(image_status.get("user_message", "")),
+            "next_action": str(image_status.get("next_action", "No action needed.")),
+        }
+        return {
+            "items": [model_provider_item, model_item, image_item],
+            "setup_guidance": [
+                "Ollama is used for story narration when model provider is set to ollama.",
+                "Start Ollama before playing: ollama serve",
+                f"Install a missing model with: ollama pull {self.app_config.model.model_name}",
+                "ComfyUI is used when image provider is set to comfyui for image generation requests.",
+                "If providers are unavailable, the app still runs with local narrator fallback mode.",
+            ],
+        }
+
     def _create_image_adapter(self) -> ImageGeneratorAdapter:
         cfg = self.app_config.image
         if not cfg.enabled:
@@ -330,6 +413,7 @@ class WebRuntime:
                 "base_url": self.app_config.image.base_url,
                 "enabled": self.app_config.image.enabled,
             },
+            "dependency_readiness": self.get_dependency_readiness(),
         }
 
     def set_global_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -484,6 +568,10 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     @app.get("/api/model/status")
     def model_status() -> dict[str, Any]:
         return {"status": runtime.get_model_status()}
+
+    @app.get("/api/providers/readiness")
+    def providers_readiness() -> dict[str, Any]:
+        return runtime.get_dependency_readiness()
 
     @app.post("/api/campaign/input")
     def campaign_input(payload: dict[str, Any]) -> dict[str, Any]:

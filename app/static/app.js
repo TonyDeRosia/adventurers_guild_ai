@@ -4,6 +4,8 @@ const statePanel = document.getElementById('state-panel');
 const saveList = document.getElementById('save-list');
 const imagePreview = document.getElementById('image-preview');
 const statusLine = document.getElementById('status-line');
+const readinessPanel = document.getElementById('dependency-readiness');
+const setupGuidance = document.getElementById('setup-guidance');
 let selectedImageUrl = '';
 let selectedSlot = 'autosave';
 
@@ -101,6 +103,37 @@ async function refreshSaves() {
   }
 }
 
+function renderDependencyReadiness(payload) {
+  readinessPanel.innerHTML = '';
+  for (const item of payload.items || []) {
+    const el = document.createElement('div');
+    el.className = 'readiness-item';
+    const ready = item.status_level === 'ready';
+    const badgeClass = ready ? 'ready-badge' : 'not-ready-badge';
+    const selectedModel = item.selected_model ? `<div>Selected model: <code>${escapeHtml(item.selected_model)}</code></div>` : '';
+    el.innerHTML = `
+      <strong>${escapeHtml(item.provider_type)} • ${escapeHtml(item.provider)}</strong>
+      <div class="${badgeClass}">${ready ? 'Ready' : 'Not ready'}</div>
+      ${selectedModel}
+      <div>${escapeHtml(item.user_message || '')}</div>
+      <div>Next step: ${escapeHtml(item.next_action || 'No action needed.')}</div>
+    `;
+    readinessPanel.appendChild(el);
+  }
+
+  setupGuidance.innerHTML = '';
+  for (const line of payload.setup_guidance || []) {
+    const li = document.createElement('li');
+    li.textContent = line;
+    setupGuidance.appendChild(li);
+  }
+}
+
+async function refreshDependencyReadiness() {
+  const payload = await api('/api/providers/readiness');
+  renderDependencyReadiness(payload);
+}
+
 async function sendInput() {
   try {
     const input = document.getElementById('chat-input');
@@ -185,6 +218,7 @@ async function applySettings() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image_generation_enabled: campaignImageEnabled }),
     });
+    await refreshDependencyReadiness();
     const modelStatus = settings.settings?.model_status;
     if (modelStatus && modelStatus.provider === 'ollama' && !modelStatus.ready) {
       setStatus(modelStatus.user_message || 'Ollama provider is unavailable.', true);
@@ -205,6 +239,7 @@ async function loadSettings() {
   if (modelStatus && modelStatus.provider === 'ollama' && !modelStatus.ready) {
     setStatus(modelStatus.user_message || 'Ollama provider is unavailable.', true);
   }
+  renderDependencyReadiness(data.settings?.dependency_readiness || { items: [], setup_guidance: [] });
 }
 
 document.getElementById('send-btn').onclick = sendInput;
@@ -235,5 +270,13 @@ document.getElementById('save-campaign').onclick = saveCampaign;
 document.getElementById('rename-campaign').onclick = renameCampaign;
 document.getElementById('delete-campaign').onclick = deleteCampaign;
 document.getElementById('save-settings').onclick = applySettings;
+document.getElementById('recheck-readiness').onclick = async () => {
+  try {
+    await refreshDependencyReadiness();
+    setStatus('Dependency readiness refreshed.');
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+};
 
-Promise.all([refreshMessages(), refreshState(), refreshSaves(), loadSettings()]).catch((error) => setStatus(error.message, true));
+Promise.all([refreshMessages(), refreshState(), refreshSaves(), loadSettings(), refreshDependencyReadiness()]).catch((error) => setStatus(error.message, true));
