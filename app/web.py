@@ -116,16 +116,19 @@ class WebRuntime:
         self.scene_visual_store_path.parent.mkdir(parents=True, exist_ok=True)
         self.scene_visual_store_path.write_text(json.dumps(self.scene_visual_store, indent=2), encoding="utf-8")
 
-    def _normalize_turn_visuals_mode(self, value: str | None) -> str:
+    def _normalize_campaign_auto_visual_timing(self, value: str | None) -> str:
         clean = str(value or "").strip().lower()
         aliases = {
-            "auto_after": "auto_after_narration",
-            "auto_before": "auto_before_narration",
+            "auto_after": "after_narration",
+            "auto_after_narration": "after_narration",
+            "auto_before": "before_narration",
+            "auto_before_narration": "before_narration",
+            "manual": "off",
         }
         normalized = aliases.get(clean, clean)
-        if normalized in {"off", "manual", "auto_after_narration", "auto_before_narration"}:
+        if normalized in {"off", "before_narration", "after_narration"}:
             return normalized
-        return "manual"
+        return "off"
 
     def _set_scene_visual(
         self,
@@ -1553,6 +1556,7 @@ class WebRuntime:
                 "narration_tone": state.settings.narration_tone,
                 "mature_content_enabled": state.settings.mature_content_enabled,
                 "image_generation_enabled": state.settings.image_generation_enabled,
+                "campaign_auto_visuals_enabled": state.settings.campaign_auto_visuals_enabled,
                 "suggested_moves_enabled": state.settings.suggested_moves_enabled,
                 "player_suggested_moves_override": state.settings.player_suggested_moves_override,
                 "effective_suggested_moves_enabled": state.settings.suggested_moves_active(),
@@ -1689,16 +1693,21 @@ class WebRuntime:
         request_started = time.perf_counter()
         request_received_at = datetime.now(timezone.utc).isoformat()
         model_status = self.get_model_status()
-        turn_visuals_mode = self._normalize_turn_visuals_mode(self.app_config.image.turn_visuals_mode)
+        auto_enabled = bool(self.session.state.settings.campaign_auto_visuals_enabled)
+        auto_timing = self._normalize_campaign_auto_visual_timing(self.app_config.image.campaign_auto_visual_timing)
+        print(f"[turn-visual] manual_enabled={self.app_config.image.manual_image_generation_enabled}")
+        print(f"[turn-visual] auto_enabled={auto_enabled}")
+        print(f"[turn-visual] auto_timing={auto_timing}")
         validation_started = time.perf_counter()
         clean_text = text.strip()
         validation_ms = (time.perf_counter() - validation_started) * 1000
         self._append_message("player", clean_text, persist=False)
         message_append_ms = 0.0
         auto_before_ms = 0.0
-        if turn_visuals_mode == "auto_before_narration":
+        if auto_enabled and auto_timing == "before_narration":
+            print("[turn-visual] auto_image_triggered timing=before_narration")
             auto_before_started = time.perf_counter()
-            self._run_turn_visual_generation(player_action=clean_text, narrator_response="", stage="before_narration")
+            self._run_turn_visual_generation(player_action=clean_text, narrator_response="", stage="before_narration", source="auto_before")
             auto_before_ms = (time.perf_counter() - auto_before_started) * 1000
 
         engine_started = time.perf_counter()
@@ -1710,7 +1719,8 @@ class WebRuntime:
         message_append_ms = (time.perf_counter() - message_append_started) * 1000
         narrator_response = self._extract_narrator_response(result)
         background_image_queued = self._maybe_queue_auto_turn_visual(
-            mode=turn_visuals_mode,
+            auto_enabled=auto_enabled,
+            auto_timing=auto_timing,
             player_action=clean_text,
             narrator_response=narrator_response,
             stage="after_narration",
@@ -1740,9 +1750,9 @@ class WebRuntime:
             "state": self.serialize_state(),
         }
 
-    def _run_turn_visual_generation(self, player_action: str, narrator_response: str, stage: str) -> None:
+    def _run_turn_visual_generation(self, player_action: str, narrator_response: str, stage: str, source: str = "automatic") -> None:
         self._request_scene_visual_generation(
-            source="automatic",
+            source=source,
             stage=stage,
             player_action=player_action,
             narrator_response=narrator_response,
@@ -1754,22 +1764,27 @@ class WebRuntime:
             return False
         return bool(re.search(r"[A-Za-z].*[A-Za-z]", text))
 
-    def _maybe_queue_auto_turn_visual(self, *, mode: str, player_action: str, narrator_response: str, stage: str) -> bool:
-        print(f"[turn-visual] mode={mode}")
+    def _maybe_queue_auto_turn_visual(
+        self, *, auto_enabled: bool, auto_timing: str, player_action: str, narrator_response: str, stage: str
+    ) -> bool:
         narrator_turn_detected = bool(narrator_response.strip())
         print(f"[turn-visual] narrator_turn_detected={narrator_turn_detected}")
-        if mode != "auto_after_narration":
-            print(f"[turn-visual] auto_image_skipped reason=mode_{mode}")
+        if not auto_enabled:
+            print("[turn-visual] auto_image_skipped reason=auto_disabled")
+            return False
+        if auto_timing != "after_narration":
+            print(f"[turn-visual] auto_image_skipped reason=timing_{auto_timing}")
             return False
         if not self._has_meaningful_scene_content(narrator_response):
             print("[turn-visual] auto_image_skipped reason=no_meaningful_narration")
             return False
+        print("[turn-visual] auto_image_triggered timing=after_narration")
         triggered = self._run_turn_visual_generation_async(
             player_action=player_action,
             narrator_response=narrator_response,
             stage=stage,
+            source="auto_after",
         )
-        print(f"[turn-visual] auto_image_triggered={triggered}")
         return triggered
 
     def _extract_narrator_response(self, result: TurnResult) -> str:
@@ -1792,14 +1807,14 @@ class WebRuntime:
         narrator_response: str,
         prompt_override: str | None = None,
     ) -> dict[str, Any]:
-        log_source = "auto" if source == "automatic" else source
+        log_source = "auto" if source in {"automatic", "auto_before", "auto_after"} else source
         prompt = str(prompt_override or "").strip() or self.turn_image_prompts.build(
             self.session.state,
             player_action=player_action,
             narrator_response=narrator_response,
         )
         prompt_preview = " ".join(prompt.split())[:160]
-        print(f"[turn-visual] auto_prompt_preview={prompt_preview}")
+        print(f"[turn-visual] prompt_preview={prompt_preview}")
         request_payload = {
             "workflow_id": "scene_image",
             "prompt": prompt,
@@ -1826,7 +1841,7 @@ class WebRuntime:
         print(f"[turn-visual] image_request_completed source={log_source}")
         return {"ok": True, "result": result, "prompt": prompt, "image_url": public_image_url}
 
-    def _run_turn_visual_generation_async(self, player_action: str, narrator_response: str, stage: str) -> bool:
+    def _run_turn_visual_generation_async(self, player_action: str, narrator_response: str, stage: str, source: str) -> bool:
         if self.app_config.image.provider != "comfyui" or not self.session.state.settings.image_generation_enabled:
             print("[turn-visual] auto_image_skipped reason=image_provider_not_ready")
             return False
@@ -1841,7 +1856,7 @@ class WebRuntime:
         def _worker() -> None:
             started = time.perf_counter()
             try:
-                self._run_turn_visual_generation(player_action=player_action, narrator_response=narrator_response, stage=stage)
+                self._run_turn_visual_generation(player_action=player_action, narrator_response=narrator_response, stage=stage, source=source)
                 elapsed_ms = (time.perf_counter() - started) * 1000
                 print(
                     f"[turn-timing] {json.dumps({'async_image_stage': stage, 'slot': slot, 'image_generation_ms': round(elapsed_ms, 2)})}"
@@ -1870,7 +1885,10 @@ class WebRuntime:
                 "base_url": self.app_config.image.base_url,
                 "enabled": self.app_config.image.enabled,
                 "comfyui_path": self.app_config.image.comfyui_path,
-                "turn_visuals_mode": self._normalize_turn_visuals_mode(self.app_config.image.turn_visuals_mode),
+                "manual_image_generation_enabled": self.app_config.image.manual_image_generation_enabled,
+                "campaign_auto_visual_timing": self._normalize_campaign_auto_visual_timing(
+                    self.app_config.image.campaign_auto_visual_timing
+                ),
                 "checkpoint_source": self.app_config.image.checkpoint_source,
                 "checkpoint_model_page": self.app_config.image.checkpoint_model_page,
                 "checkpoint_folder": self.app_config.image.checkpoint_folder,
@@ -1902,7 +1920,15 @@ class WebRuntime:
             base_url=str(image_payload.get("base_url", self.app_config.image.base_url)),
             enabled=bool(image_payload.get("enabled", self.app_config.image.enabled)),
             comfyui_path=str(image_payload.get("comfyui_path", self.app_config.image.comfyui_path)),
-            turn_visuals_mode=self._normalize_turn_visuals_mode(image_payload.get("turn_visuals_mode", self.app_config.image.turn_visuals_mode)),
+            manual_image_generation_enabled=bool(
+                image_payload.get("manual_image_generation_enabled", self.app_config.image.manual_image_generation_enabled)
+            ),
+            campaign_auto_visual_timing=self._normalize_campaign_auto_visual_timing(
+                image_payload.get(
+                    "campaign_auto_visual_timing",
+                    image_payload.get("turn_visuals_mode", self.app_config.image.campaign_auto_visual_timing),
+                )
+            ),
             checkpoint_source=str(image_payload.get("checkpoint_source", self.app_config.image.checkpoint_source)),
             checkpoint_model_page=str(image_payload.get("checkpoint_model_page", self.app_config.image.checkpoint_model_page)),
             checkpoint_folder=str(image_payload.get("checkpoint_folder", self.app_config.image.checkpoint_folder)),
@@ -1926,6 +1952,9 @@ class WebRuntime:
         settings.narration_tone = str(payload.get("narration_tone", settings.narration_tone))
         settings.mature_content_enabled = bool(payload.get("mature_content_enabled", settings.mature_content_enabled))
         settings.image_generation_enabled = bool(payload.get("image_generation_enabled", settings.image_generation_enabled))
+        settings.campaign_auto_visuals_enabled = bool(
+            payload.get("campaign_auto_visuals_enabled", settings.campaign_auto_visuals_enabled)
+        )
         settings.suggested_moves_enabled = bool(payload.get("suggested_moves_enabled", settings.suggested_moves_enabled))
         raw_override = payload.get("player_suggested_moves_override", settings.player_suggested_moves_override)
         settings.player_suggested_moves_override = None if raw_override is None else bool(raw_override)
@@ -2325,6 +2354,15 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
 
     @app.post("/api/images/generate")
     def image_generate(payload: dict[str, Any]) -> dict[str, Any]:
+        if not runtime.app_config.image.manual_image_generation_enabled:
+            return JSONResponse(
+                status_code=HTTPStatus.BAD_REQUEST,
+                content={
+                    "ok": False,
+                    "error": "Manual image generation is disabled in global settings.",
+                    "workflow_id": str(payload.get("workflow_id", "scene_image")),
+                },
+            )
         print("[image-pipeline] request started")
         shared_result = runtime._request_scene_visual_generation(
             source="manual",

@@ -272,8 +272,8 @@ def test_image_generation_requires_comfyui_readiness(tmp_path: Path, monkeypatch
 
 def test_auto_after_visual_updates_scene_panel_without_image_chat_message(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
-    runtime.set_global_settings({"image": {"provider": "comfyui", "turn_visuals_mode": "auto_after_narration"}})
-    runtime.set_campaign_settings({"image_generation_enabled": True})
+    runtime.set_global_settings({"image": {"provider": "comfyui", "campaign_auto_visual_timing": "after_narration"}})
+    runtime.set_campaign_settings({"image_generation_enabled": True, "campaign_auto_visuals_enabled": True})
     monkeypatch.setattr(runtime, "get_image_status", lambda: {"ready": True})
     output_file = runtime.generated_image_dir / "turn_visual.png"
     output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -302,10 +302,10 @@ def test_auto_after_visual_updates_scene_panel_without_image_chat_message(tmp_pa
     assert scene_visual["source"] == "automatic"
 
 
-def test_turn_visual_mode_aliases_normalize_to_supported_values(tmp_path: Path, monkeypatch) -> None:
+def test_campaign_auto_visual_timing_aliases_normalize_to_supported_values(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
-    settings = runtime.set_global_settings({"image": {"turn_visuals_mode": "auto_after"}})
-    assert settings["image"]["turn_visuals_mode"] == "auto_after_narration"
+    settings = runtime.set_global_settings({"image": {"campaign_auto_visual_timing": "auto_after"}})
+    assert settings["image"]["campaign_auto_visual_timing"] == "after_narration"
 
 
 def test_auto_after_turn_visual_only_queues_for_meaningful_narration(tmp_path: Path, monkeypatch) -> None:
@@ -314,11 +314,12 @@ def test_auto_after_turn_visual_only_queues_for_meaningful_narration(tmp_path: P
     monkeypatch.setattr(
         runtime,
         "_run_turn_visual_generation_async",
-        lambda player_action, narrator_response, stage: queued.append((player_action, narrator_response, stage)) or True,
+        lambda player_action, narrator_response, stage, source: queued.append((player_action, narrator_response, stage, source)) or True,
     )
 
     not_queued = runtime._maybe_queue_auto_turn_visual(
-        mode="auto_after_narration",
+        auto_enabled=True,
+        auto_timing="after_narration",
         player_action="look around",
         narrator_response="...",
         stage="after_narration",
@@ -327,7 +328,8 @@ def test_auto_after_turn_visual_only_queues_for_meaningful_narration(tmp_path: P
     assert queued == []
 
     queued_ok = runtime._maybe_queue_auto_turn_visual(
-        mode="auto_after_narration",
+        auto_enabled=True,
+        auto_timing="after_narration",
         player_action="look around",
         narrator_response="The torchlight reveals wet stone arches and a narrow bridge over dark water.",
         stage="after_narration",
@@ -338,12 +340,12 @@ def test_auto_after_turn_visual_only_queues_for_meaningful_narration(tmp_path: P
 
 def test_auto_turn_visual_async_dedupes_same_slot_turn_and_stage(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
-    runtime.set_global_settings({"image": {"provider": "comfyui", "turn_visuals_mode": "auto_after_narration"}})
-    runtime.set_campaign_settings({"image_generation_enabled": True})
+    runtime.set_global_settings({"image": {"provider": "comfyui", "campaign_auto_visual_timing": "after_narration"}})
+    runtime.set_campaign_settings({"image_generation_enabled": True, "campaign_auto_visuals_enabled": True})
     monkeypatch.setattr(runtime, "_run_turn_visual_generation", lambda *args, **kwargs: time.sleep(0.1))
 
-    first = runtime._run_turn_visual_generation_async("inspect", "A vivid chamber blooms with blue witchlight.", "after_narration")
-    second = runtime._run_turn_visual_generation_async("inspect", "A vivid chamber blooms with blue witchlight.", "after_narration")
+    first = runtime._run_turn_visual_generation_async("inspect", "A vivid chamber blooms with blue witchlight.", "after_narration", "auto_after")
+    second = runtime._run_turn_visual_generation_async("inspect", "A vivid chamber blooms with blue witchlight.", "after_narration", "auto_after")
 
     assert first is True
     assert second is False

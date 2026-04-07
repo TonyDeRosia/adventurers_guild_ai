@@ -174,7 +174,7 @@
     "profile": "classic_fantasy",
     "mature_content_enabled": false,
     "narration_tone": "heroic",
-    "image_generation_enabled": false,
+    "image_generation_enabled": true,
     "content_settings": {
       "tone": "heroic",
       "maturity_level": "standard",
@@ -182,7 +182,8 @@
         "adventure",
         "mystery"
       ]
-    }
+    },
+    "campaign_auto_visuals_enabled": false
   },
   "faction_reputation": {
     "town": 0,

@@ -127,7 +127,8 @@ class CampaignSettings:
     profile: str = "classic_fantasy"
     mature_content_enabled: bool = False
     narration_tone: str = "heroic"
-    image_generation_enabled: bool = False
+    image_generation_enabled: bool = True
+    campaign_auto_visuals_enabled: bool = False
     suggested_moves_enabled: bool = True
     player_suggested_moves_override: bool | None = None
     content_settings: ContentSettings = field(default_factory=ContentSettings)
@@ -323,6 +324,8 @@ class CampaignState:
             )
 
         settings["content_settings"] = content_settings
+        settings["image_generation_enabled"] = bool(settings.get("image_generation_enabled", True))
+        settings["campaign_auto_visuals_enabled"] = bool(settings.get("campaign_auto_visuals_enabled", False))
         settings["suggested_moves_enabled"] = bool(settings.get("suggested_moves_enabled", True))
         raw_override = settings.get("player_suggested_moves_override")
         settings["player_suggested_moves_override"] = None if raw_override is None else bool(raw_override)
