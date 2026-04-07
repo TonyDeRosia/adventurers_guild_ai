@@ -16,6 +16,13 @@ const setupModal = document.getElementById('setup-modal');
 const ollamaPathInput = document.getElementById('ollama-path-input');
 const comfyuiPathInput = document.getElementById('comfyui-path-input');
 const comfyuiModelsList = document.getElementById('comfyui-models-list');
+const checkpointFolderInput = document.getElementById('checkpoint-folder-input');
+const checkpointSourceInput = document.getElementById('checkpoint-source');
+const preferredCheckpointInput = document.getElementById('preferred-checkpoint');
+const preferredLauncherInput = document.getElementById('preferred-launcher');
+const turnVisualsModeInput = document.getElementById('turn-visuals-mode');
+const manualImagePanel = document.getElementById('manual-image-panel');
+const visualModeSummary = document.getElementById('visual-mode-summary');
 
 let selectedImageUrl = '';
 let selectedSlot = 'autosave';
@@ -67,6 +74,25 @@ function actionTitle(actionId) {
     start_image_engine: 'Start Image Engine',
     recheck: 'Recheck Dependencies',
   }[actionId] || actionId;
+}
+
+function visualModeLabel(mode) {
+  return {
+    off: 'Off',
+    manual: 'Manual image generation',
+    auto_before: 'Auto image before narration',
+    auto_after: 'Auto image after narration',
+  }[mode] || mode;
+}
+
+function syncVisualModeUi(mode) {
+  const currentMode = mode || 'manual';
+  if (manualImagePanel) {
+    manualImagePanel.style.display = currentMode === 'manual' ? 'grid' : 'none';
+  }
+  if (visualModeSummary) {
+    visualModeSummary.textContent = `Mode: ${visualModeLabel(currentMode)}`;
+  }
 }
 
 function updateSetupButtonsBusyState() {
@@ -587,7 +613,7 @@ async function refreshComfyuiModelList() {
       comfyuiModelsList.textContent = 'No curated ComfyUI models configured yet.';
       return;
     }
-    comfyuiModelsList.innerHTML = items.map((item) => `
+    const rows = items.map((item) => `
       <div class="model-row">
         <strong>${escapeHtml(item.label)}</strong>
         <div>Status: <span class="${item.present ? 'ready-badge' : 'not-ready-badge'}">${item.present ? 'Installed' : 'Not installed'}</span></div>
@@ -595,6 +621,8 @@ async function refreshComfyuiModelList() {
         <div><a href="${escapeHtml(item.download_url)}" target="_blank" rel="noopener noreferrer">Open download page</a></div>
       </div>
     `).join('');
+    const launcher = payload.launcher_mode ? `<div class="model-row"><strong>Launcher mode</strong><div><code>${escapeHtml(payload.launcher_mode)}</code> (GPU-first preferred)</div></div>` : '';
+    comfyuiModelsList.innerHTML = `${launcher}${rows}`;
   } catch (error) {
     comfyuiModelsList.textContent = `Could not load model guidance: ${error.message}`;
   }
@@ -893,15 +921,29 @@ async function applySettings() {
     const modelName = document.getElementById('model-name').value.trim() || 'llama3';
     const imageProvider = document.getElementById('image-provider').value;
     const campaignImageEnabled = document.getElementById('image-enabled').checked;
+    const turnVisualsMode = turnVisualsModeInput?.value || 'manual';
     const settings = await api('/api/settings/global', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: { provider: modelProvider, model_name: modelName }, image: { provider: imageProvider } }),
+      body: JSON.stringify({
+        model: { provider: modelProvider, model_name: modelName, ollama_path: ollamaPathInput?.value.trim() || '' },
+        image: {
+          provider: imageProvider,
+          comfyui_path: comfyuiPathInput?.value.trim() || '',
+          turn_visuals_mode: turnVisualsMode,
+          checkpoint_source: checkpointSourceInput?.value || 'local',
+          checkpoint_folder: checkpointFolderInput?.value.trim() || '',
+          preferred_checkpoint: preferredCheckpointInput?.value.trim() || 'DreamShaper',
+          preferred_launcher: preferredLauncherInput?.value || 'auto',
+        },
+      }),
     });
     await api('/api/settings/campaign', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image_generation_enabled: campaignImageEnabled }),
     });
     await refreshDependencyReadiness();
+    await refreshComfyuiModelList();
+    syncVisualModeUi(turnVisualsMode);
     const modelStatus = settings.settings?.model_status;
     if (modelStatus && modelStatus.provider === 'ollama' && !modelStatus.ready) {
       setStatus(modelStatus.user_message || 'Ollama provider is unavailable.', true);
@@ -918,8 +960,14 @@ async function loadSettings() {
   document.getElementById('model-provider').value = data.settings.model.provider;
   document.getElementById('model-name').value = data.settings.model.model_name;
   document.getElementById('image-provider').value = data.settings.image.provider;
+  if (turnVisualsModeInput) turnVisualsModeInput.value = data.settings.image.turn_visuals_mode || 'manual';
   if (ollamaPathInput) ollamaPathInput.value = data.settings.model.ollama_path || '';
   if (comfyuiPathInput) comfyuiPathInput.value = data.settings.image.comfyui_path || '';
+  if (checkpointFolderInput) checkpointFolderInput.value = data.settings.image.checkpoint_folder || '';
+  if (checkpointSourceInput) checkpointSourceInput.value = data.settings.image.checkpoint_source || 'local';
+  if (preferredCheckpointInput) preferredCheckpointInput.value = data.settings.image.preferred_checkpoint || 'DreamShaper';
+  if (preferredLauncherInput) preferredLauncherInput.value = data.settings.image.preferred_launcher || 'auto';
+  syncVisualModeUi(data.settings.image.turn_visuals_mode || 'manual');
   const modelStatus = data.settings.model_status;
   if (modelStatus && modelStatus.provider === 'ollama' && !modelStatus.ready) {
     setStatus(modelStatus.user_message || 'Ollama provider is unavailable.', true);
@@ -945,23 +993,19 @@ document.getElementById('load-autosave').onclick = async () => {
 document.getElementById('new-campaign').onclick = openNewCampaignModal;
 document.getElementById('create-campaign-cancel').onclick = closeNewCampaignModal;
 document.getElementById('create-campaign-confirm').onclick = createCampaignFromForm;
-document.getElementById('gen-image-btn').onclick = () => {
-  imagePromptInput.focus();
-  setImageStatus('Enter an image prompt, then click "Generate Image with ComfyUI".');
-};
 document.getElementById('image-generate-submit').onclick = generateImage;
 document.getElementById('save-campaign').onclick = saveCampaign;
 document.getElementById('rename-campaign').onclick = renameCampaign;
 document.getElementById('delete-campaign').onclick = deleteCampaign;
-document.getElementById('save-settings').onclick = applySettings;
+document.getElementById('apply-settings').onclick = applySettings;
 document.getElementById('open-setup-modal').onclick = openSetupModal;
-document.getElementById('open-setup-modal-secondary').onclick = openSetupModal;
 document.getElementById('close-setup-modal').onclick = closeSetupModal;
 document.getElementById('setup-text-ai').onclick = () => runReadinessAction('setup_text_ai', {});
 document.getElementById('setup-image-ai').onclick = () => runReadinessAction('setup_image_ai', {});
 document.getElementById('setup-everything').onclick = () => runReadinessAction('setup_everything', {});
 document.getElementById('download-ollama').onclick = () => openOfficialDownload('https://ollama.com/download');
 document.getElementById('download-comfyui').onclick = () => openOfficialDownload('https://github.com/comfyanonymous/ComfyUI');
+document.getElementById('open-checkpoint-page').onclick = () => openOfficialDownload('https://civitai.com/models/4384/dreamshaper');
 document.getElementById('pick-ollama-folder').onclick = () => pickFolder('Select Ollama install folder', ollamaPathInput);
 document.getElementById('pick-comfyui-folder').onclick = () => pickFolder('Select ComfyUI folder', comfyuiPathInput);
 document.getElementById('connect-ollama-folder').onclick = connectOllamaFolder;
@@ -975,5 +1019,8 @@ document.getElementById('recheck-readiness').onclick = async () => {
     setStatus(error.message, true);
   }
 };
+if (turnVisualsModeInput) {
+  turnVisualsModeInput.onchange = () => syncVisualModeUi(turnVisualsModeInput.value);
+}
 
 Promise.all([refreshMessages(), refreshState(), refreshSaves(), loadSettings(), refreshDependencyReadiness()]).catch((error) => setStatus(error.message, true));

@@ -22,6 +22,12 @@ class ImageRuntimeConfig:
     base_url: str = "http://localhost:8188"
     enabled: bool = True
     comfyui_path: str = ""
+    turn_visuals_mode: str = "manual"
+    checkpoint_source: str = "local"
+    checkpoint_model_page: str = "https://civitai.com/models/4384/dreamshaper"
+    checkpoint_folder: str = ""
+    preferred_checkpoint: str = "DreamShaper"
+    preferred_launcher: str = "auto"
 
 
 @dataclass
@@ -64,6 +70,12 @@ class RuntimeConfigStore:
                 base_url=str(image_payload.get("base_url", "http://localhost:8188")),
                 enabled=bool(image_payload.get("enabled", True)),
                 comfyui_path=str(image_payload.get("comfyui_path", "")),
+                turn_visuals_mode=str(image_payload.get("turn_visuals_mode", "manual")),
+                checkpoint_source=str(image_payload.get("checkpoint_source", "local")),
+                checkpoint_model_page=str(image_payload.get("checkpoint_model_page", "https://civitai.com/models/4384/dreamshaper")),
+                checkpoint_folder=str(image_payload.get("checkpoint_folder", "")),
+                preferred_checkpoint=str(image_payload.get("preferred_checkpoint", "DreamShaper")),
+                preferred_launcher=str(image_payload.get("preferred_launcher", "auto")),
             ),
         )
 
