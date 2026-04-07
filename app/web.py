@@ -180,36 +180,49 @@ class WebRuntime:
     def get_dependency_readiness(self) -> dict[str, Any]:
         model_status = self.get_model_status()
         image_status = self.get_image_status()
+        provider = str(model_status.get("provider", self.app_config.model.provider))
+        model_name = str(model_status.get("model", self.app_config.model.model_name))
+        model_error = str(model_status.get("error", "")).lower()
+        ollama_not_running = provider == "ollama" and not bool(model_status.get("reachable", True))
+        ollama_unavailable = ollama_not_running and ("connection refused" not in model_error and "failed to establish a new connection" not in model_error)
         model_provider_item = {
             "provider_type": "model_provider",
-            "provider": model_status.get("provider", self.app_config.model.provider),
+            "provider": provider,
             "reachable": bool(model_status.get("reachable", True)),
-            "selected_model": model_status.get("model", self.app_config.model.model_name),
+            "selected_model": model_name,
             "model_exists": bool(model_status.get("model_exists", True)),
             "status_level": "ready" if model_status.get("reachable", True) else "error",
             "user_message": (
-                f"{model_status.get('provider', 'Model provider')} is reachable."
+                f"{provider} is reachable."
                 if model_status.get("reachable", True)
-                else "Ollama is not running."
+                else "Ollama appears installed but is not running."
+                if ollama_not_running and not ollama_unavailable
+                else "Ollama is unavailable. Install Ollama or verify the configured base URL."
             ),
-            "next_action": "No action needed." if model_status.get("reachable", True) else "Start Ollama, then click Recheck.",
+            "next_action": (
+                "No action needed."
+                if model_status.get("reachable", True)
+                else "Run: ollama serve"
+                if provider == "ollama"
+                else "Verify provider settings, then click Recheck."
+            ),
         }
         model_item = {
             "provider_type": "selected_model",
-            "provider": model_status.get("provider", self.app_config.model.provider),
+            "provider": provider,
             "reachable": bool(model_status.get("reachable", True)),
-            "selected_model": model_status.get("model", self.app_config.model.model_name),
+            "selected_model": model_name,
             "model_exists": bool(model_status.get("model_exists", True)),
             "status_level": "ready" if model_status.get("model_exists", True) else "error",
             "user_message": (
-                f"Model {model_status.get('model', self.app_config.model.model_name)} is installed."
+                f"Model {model_name} is installed."
                 if model_status.get("model_exists", True)
-                else f"Model {model_status.get('model', self.app_config.model.model_name)} is not installed."
+                else f"Model {model_name} is not installed."
             ),
             "next_action": (
                 "No action needed."
                 if model_status.get("model_exists", True)
-                else f"Run: ollama pull {model_status.get('model', self.app_config.model.model_name)}"
+                else f"Run: ollama pull {model_name}"
             ),
         }
         image_item = {
@@ -224,6 +237,17 @@ class WebRuntime:
         }
         return {
             "items": [model_provider_item, model_item, image_item],
+            "setup_checklist": [
+                "Text generation setup:",
+                "1) Install Ollama (https://ollama.com/download).",
+                "2) Start the Ollama service: ollama serve",
+                f"3) Install the story model: ollama pull {self.app_config.model.model_name}",
+                "4) Click Recheck dependencies in the app.",
+                "Image generation setup:",
+                "1) Start ComfyUI when using image provider=comfyui.",
+                "2) Keep image provider set to local if ComfyUI is unavailable.",
+                "Fallback story mode stays available even when providers are missing.",
+            ],
             "setup_guidance": [
                 "Ollama is used for story narration when model provider is set to ollama.",
                 "Start Ollama before playing: ollama serve",
