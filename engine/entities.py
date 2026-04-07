@@ -142,9 +142,9 @@ class CampaignSettings:
 class CampaignWorldMeta:
     """World-building metadata chosen during campaign creation."""
 
-    world_name: str = "Moonfall"
+    world_name: str = "Untitled World"
     world_theme: str = "classic fantasy"
-    starting_location_name: str = "Moonfall Town"
+    starting_location_name: str = "Starting Area"
     tone: str = "heroic"
     premise: str = ""
     player_concept: str = ""
@@ -333,10 +333,10 @@ class CampaignState:
         """Deserialize world metadata while preserving backward compatibility."""
 
         current_location = payload.get("locations", {}).get(payload.get("current_location_id", ""), {})
-        fallback_location_name = str(current_location.get("name", "Moonfall Town"))
+        fallback_location_name = str(current_location.get("name", "Starting Area"))
         if raw_world_meta is None:
             return CampaignWorldMeta(
-                world_name="Moonfall",
+                world_name="Untitled World",
                 world_theme=str(payload.get("settings", {}).get("profile", "classic_fantasy")).replace("_", " "),
                 starting_location_name=fallback_location_name,
                 tone=str(payload.get("settings", {}).get("narration_tone", "heroic")),
@@ -344,7 +344,7 @@ class CampaignState:
                 player_concept="",
             )
         return CampaignWorldMeta(
-            world_name=str(raw_world_meta.get("world_name", "Moonfall")),
+            world_name=str(raw_world_meta.get("world_name", "Untitled World")),
             world_theme=str(raw_world_meta.get("world_theme", "classic fantasy")),
             starting_location_name=str(raw_world_meta.get("starting_location_name", fallback_location_name)),
             tone=str(raw_world_meta.get("tone", payload.get("settings", {}).get("narration_tone", "heroic"))),

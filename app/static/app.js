@@ -712,11 +712,11 @@ async function refreshState() {
   selectedSlot = state.active_slot || selectedSlot;
   selectedCampaignName = state.campaign_name;
   const world = state.world_meta || {};
-  campaignMeta.textContent = `${state.campaign_name} • ${world.world_name || 'Moonfall'} • Slot ${loadedSlot} • Turn ${state.turn_count} • ${state.current_location_id}`;
+  campaignMeta.textContent = `${state.campaign_name} • ${world.world_name || 'Untitled World'} • Slot ${loadedSlot} • Turn ${state.turn_count} • ${state.current_location_id}`;
   statePanel.textContent = [
     `Character: ${state.player.name} (${state.player.class})`,
     `HP: ${state.player.hp}/${state.player.max_hp}`,
-    `World: ${world.world_name || 'Moonfall'} (${world.world_theme || 'classic fantasy'})`,
+    `World: ${world.world_name || 'Untitled World'} (${world.world_theme || 'classic fantasy'})`,
     `Starting location: ${world.starting_location_name || state.current_location_id}`,
     `Tone: ${world.tone || state.settings.narration_tone} | Maturity: ${state.settings.content_settings.maturity_level}`,
     `Suggested moves: ${state.settings.effective_suggested_moves_enabled ? 'on' : 'off'}`,
@@ -1169,9 +1169,9 @@ async function createCampaignFromForm() {
     const payload = {
       mode: 'new',
       campaign_name: document.getElementById('form-campaign-name').value.trim() || `${playerName}'s Campaign`,
-      world_name: document.getElementById('form-world-name').value.trim() || 'Moonfall',
+      world_name: document.getElementById('form-world-name').value.trim() || 'Untitled World',
       world_theme: worldTheme,
-      starting_location_name: document.getElementById('form-starting-location').value.trim() || 'Moonfall Town',
+      starting_location_name: document.getElementById('form-starting-location').value.trim() || 'Starting Area',
       campaign_tone: tone,
       premise: document.getElementById('form-premise').value.trim(),
       player_concept: document.getElementById('form-player-concept').value.trim(),

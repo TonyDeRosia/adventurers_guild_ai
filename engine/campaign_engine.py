@@ -261,20 +261,19 @@ class CampaignEngine:
                     )
 
         elif normalized.startswith("rest"):
-            if state.current_location_id != "moonfall_town":
-                system_messages.append("You can only safely rest in Moonfall Town.")
+            if state.active_enemy_id is not None and (state.active_enemy_hp or 0) > 0:
+                system_messages.append("You cannot rest while an active threat is engaged.")
             else:
                 state.player.hp = state.player.max_hp
-                system_messages.append("You rest at the inn and recover to full health.")
+                system_messages.append("You take a safe rest and recover to full health.")
 
         elif normalized == "status":
-            quest_status = state.quests["q_catacomb_blight"].status
-            relation = state.npcs["elder_thorne"].relationships.get(state.player.id, 0)
+            active_quest_count = sum(1 for quest in state.quests.values() if quest.status == "active")
+            nearby_npcs = sum(1 for npc in state.npcs.values() if npc.location_id == state.current_location_id)
             enemy_hp = state.active_enemy_hp if state.active_enemy_hp is not None else 0
-            trust = "yes" if state.world_flags.get("thorne_trusts_player", False) else "no"
             system_messages.append(
-                f"Quest: {quest_status}. Elder Thorne relation: {relation}. "
-                f"Trust flag: {trust}. Active enemy HP: {enemy_hp}. Player HP: {state.player.hp}/{state.player.max_hp}. "
+                f"Active quests: {active_quest_count}. Nearby NPCs: {nearby_npcs}. "
+                f"Active enemy HP: {enemy_hp}. Player HP: {state.player.hp}/{state.player.max_hp}. "
                 f"Rep town/guild/unknown: {state.faction_reputation.get('town', 0)}/"
                 f"{state.faction_reputation.get('guild', 0)}/{state.faction_reputation.get('unknown', 0)}."
             )
@@ -311,7 +310,7 @@ class CampaignEngine:
                 system_messages.append(f"The {enemy.name} blocks your path (HP {state.active_enemy_hp}).")
 
     def _post_talk_consequences(self, state: CampaignState, npc_id: str, system_messages: list[str]) -> None:
-        if npc_id == "elder_thorne" and state.quests["q_catacomb_blight"].status == "completed":
+        if npc_id == "elder_thorne" and state.quests.get("q_catacomb_blight") and state.quests["q_catacomb_blight"].status == "completed":
             if state.world_flags.get("catacombs_cleared_violently"):
                 system_messages.append("Thorne marks your report: 'Hard steel, but effective. Moonfall is safer.'")
             if state.quest_outcomes.get("q_catacomb_blight") == "dialogue":
@@ -324,7 +323,7 @@ class CampaignEngine:
                 system_messages.append("'Moonfall stands with you as one of our own,' Thorne says.")
 
         if npc_id == "warden_elira" and "moonlantern" in state.player.inventory:
-            if state.quests["q_moonlantern_oath"].status in {"active", "completed"}:
+            if state.quests.get("q_moonlantern_oath") and state.quests["q_moonlantern_oath"].status in {"active", "completed"}:
                 state.player.inventory.remove("moonlantern")
                 state.world_flags["moonlantern_returned"] = True
                 self.quests.set_outcome(state, "q_moonlantern_oath", "item")
@@ -348,7 +347,7 @@ class CampaignEngine:
                 system_messages.append("You return the Moonlantern. Elira rewards you with a Ranger's Charm.")
 
         if npc_id == "elder_thorne" and "moonsigil_relic" in state.player.inventory:
-            if state.quests["q_catacomb_blight"].status == "active":
+            if state.quests.get("q_catacomb_blight") and state.quests["q_catacomb_blight"].status == "active":
                 state.player.inventory.remove("moonsigil_relic")
                 self.quests.set_outcome(state, "q_catacomb_blight", "item")
                 state.world_flags["catacombs_cleared"] = True
@@ -667,30 +666,36 @@ class CampaignEngine:
         state.active_enemy_hp = None
         state.world_flags["catacombs_cleared"] = True
         state.world_flags["catacombs_cleared_violently"] = outcome == "combat"
-        self.quests.set_outcome(state, "q_catacomb_blight", outcome)
+        if "q_catacomb_blight" in state.quests:
+            self.quests.set_outcome(state, "q_catacomb_blight", outcome)
         state.faction_reputation["guild"] = state.faction_reputation.get("guild", 0) + 3
         state.faction_reputation["town"] = state.faction_reputation.get("town", 0) + 2
         state.world_events.append(f"catacombs_cleared_{outcome}")
-        self.personality.apply_event(
-            state,
-            "elder_thorne",
-            event_type="quest_completed",
-            payload={
-                "summary": f"Catacombs resolved via {outcome}",
-                "world_event_id": f"catacombs_cleared_{outcome}",
-                "impact": {
-                    "trust_toward_player": 5 if outcome != "combat" else 2,
-                    "fear_toward_player": 2 if outcome == "combat" else -2,
-                    "hope": 4,
-                    "anger": 2 if outcome == "combat" else -2,
+        if "elder_thorne" in state.npcs:
+            self.personality.apply_event(
+                state,
+                "elder_thorne",
+                event_type="quest_completed",
+                payload={
+                    "summary": f"Catacombs resolved via {outcome}",
+                    "world_event_id": f"catacombs_cleared_{outcome}",
+                    "impact": {
+                        "trust_toward_player": 5 if outcome != "combat" else 2,
+                        "fear_toward_player": 2 if outcome == "combat" else -2,
+                        "hope": 4,
+                        "anger": 2 if outcome == "combat" else -2,
+                    },
+                    "tags": ["quest", outcome],
                 },
-                "tags": ["quest", outcome],
-            },
-        )
+            )
         state.world_flags["catacombs_echo_silenced"] = True
         for reward_item in enemy.reward.items:
             self.inventory.add_item(state.player, reward_item)
             system_messages.append(f"You recover {reward_item.replace('_', ' ').title()} from the chamber.")
-        if state.quests["q_moonlantern_oath"].status == "active" and "moonlantern" not in state.player.inventory:
+        if (
+            state.quests.get("q_moonlantern_oath")
+            and state.quests["q_moonlantern_oath"].status == "active"
+            and "moonlantern" not in state.player.inventory
+        ):
             self.inventory.add_item(state.player, "moonlantern")
             system_messages.append("Among the bones, you also find Elira's missing Moonlantern.")

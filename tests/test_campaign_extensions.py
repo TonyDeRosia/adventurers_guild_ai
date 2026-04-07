@@ -133,7 +133,7 @@ def test_backward_compatible_load_defaults() -> None:
     assert loaded.combat_effects == {}
     assert loaded.settings.content_settings.tone == "heroic"
     assert loaded.settings.content_settings.maturity_level == "standard"
-    assert loaded.world_meta.world_name == "Moonfall"
+    assert loaded.world_meta.world_name == "Untitled World"
     assert loaded.world_meta.starting_location_name == "Moonfall Town"
 
 

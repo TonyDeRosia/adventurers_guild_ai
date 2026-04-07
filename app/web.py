@@ -1650,27 +1650,33 @@ class WebRuntime:
         return {"slot": clean_slot, "campaign_name": clean}
 
     def create_campaign(self, payload: dict[str, Any]) -> dict[str, Any]:
+        mode = str(payload.get("mode", "custom")).strip().lower() or "custom"
         player_name = str(payload.get("player_name", "Aria")).strip() or "Aria"
         char_class = str(payload.get("char_class", "Ranger")).strip() or "Ranger"
         profile = str(payload.get("profile", "classic_fantasy")).strip() or "classic_fantasy"
         slot = str(payload.get("slot", f"campaign_{len(self.list_saves()) + 1}")).strip() or f"campaign_{len(self.list_saves()) + 1}"
-        state = self.state_manager.create_new_campaign(
-            player_name=player_name,
-            char_class=char_class,
-            profile=profile,
-            mature_content_enabled=bool(payload.get("mature_content_enabled", False)),
-            content_settings_enabled=bool(payload.get("content_settings_enabled", True)),
-            campaign_tone=str(payload.get("campaign_tone", "heroic")),
-            maturity_level=str(payload.get("maturity_level", "standard")),
-            thematic_flags=list(payload.get("thematic_flags", ["adventure", "mystery"])),
-            campaign_name=str(payload.get("campaign_name", "")).strip(),
-            world_name=str(payload.get("world_name", "")).strip(),
-            world_theme=str(payload.get("world_theme", "")).strip(),
-            starting_location_name=str(payload.get("starting_location_name", "")).strip(),
-            premise=str(payload.get("premise", "")).strip(),
-            player_concept=str(payload.get("player_concept", "")).strip(),
-            suggested_moves_enabled=bool(payload.get("suggested_moves_enabled", True)),
-        )
+        if mode in {"premade", "sample"}:
+            state = self.state_manager.new_from_sample()
+            print("[campaign-create] mode=premade")
+            print("[campaign-create] using_sample_template=True")
+        else:
+            state = self.state_manager.create_new_campaign(
+                player_name=player_name,
+                char_class=char_class,
+                profile=profile,
+                mature_content_enabled=bool(payload.get("mature_content_enabled", False)),
+                content_settings_enabled=bool(payload.get("content_settings_enabled", True)),
+                campaign_tone=str(payload.get("campaign_tone", "heroic")),
+                maturity_level=str(payload.get("maturity_level", "standard")),
+                thematic_flags=list(payload.get("thematic_flags", ["adventure", "mystery"])),
+                campaign_name=str(payload.get("campaign_name", "")).strip(),
+                world_name=str(payload.get("world_name", "")).strip(),
+                world_theme=str(payload.get("world_theme", "")).strip(),
+                starting_location_name=str(payload.get("starting_location_name", "")).strip(),
+                premise=str(payload.get("premise", "")).strip(),
+                player_concept=str(payload.get("player_concept", "")).strip(),
+                suggested_moves_enabled=bool(payload.get("suggested_moves_enabled", True)),
+            )
         self.session = WebSession(state=state, active_slot=slot)
         self.session.message_history = []
         self.scene_visual_store.pop(slot, None)
