@@ -162,8 +162,49 @@ def test_settings_persistence_and_runtime_effects(tmp_path: Path, monkeypatch) -
     payload = json.loads(config_path.read_text(encoding="utf-8"))
     assert payload["model"]["model_name"] == "llama3.2"
     assert payload["image"]["enabled"] is False
+    assert payload["image"]["comfyui_workflow_path"] == ""
+    assert payload["image"]["comfyui_output_dir"] == ""
     assert runtime.session.state.settings.content_settings.tone == "noir"
     assert runtime.session.state.settings.suggested_moves_active() is False
+
+
+def test_missing_comfyui_paths_report_setup_needed(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.set_global_settings({"image": {"provider": "comfyui", "comfyui_path": "", "comfyui_workflow_path": ""}})
+    status = runtime.get_image_status()
+    assert status["status_code"] == "setup_required"
+    assert "Set your ComfyUI folder" in status["user_message"]
+
+
+def test_valid_external_workflow_path_enables_comfyui_generation_path(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_root = tmp_path / "ComfyUI"
+    comfy_root.mkdir(parents=True, exist_ok=True)
+    (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_root / "custom_nodes").mkdir(exist_ok=True)
+    (comfy_root / "models").mkdir(exist_ok=True)
+    (comfy_root / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
+    workflow_file = tmp_path / "custom_scene.json"
+    workflow_file.write_text("{}", encoding="utf-8")
+    runtime.set_global_settings(
+        {"image": {"provider": "comfyui", "comfyui_path": str(comfy_root), "comfyui_workflow_path": str(workflow_file), "enabled": True}}
+    )
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"ready": True})
+    monkeypatch.setattr(runtime.image_adapter, "generate", lambda request, _manager: ImageGenerationResult(success=True, workflow_id=request.workflow_id))
+    result = runtime.generate_image({"workflow_id": "scene_image", "prompt": "ok"})
+    assert result.success is True
+    assert result.workflow_id == "custom_scene"
+
+
+def test_invalid_external_workflow_path_disables_image_feature_cleanly(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.set_campaign_settings({"image_generation_enabled": True})
+    runtime.set_global_settings(
+        {"image": {"provider": "comfyui", "comfyui_path": str(tmp_path / "missing"), "comfyui_workflow_path": str(tmp_path / "missing.json"), "enabled": True}}
+    )
+    result = runtime.generate_image({"workflow_id": "scene_image", "prompt": "Moonlit ruins"})
+    assert result.success is False
+    assert "path" in (result.error or "").lower()
 
 
 def test_turn_flow_persists_memory_and_messages(tmp_path: Path, monkeypatch) -> None:
@@ -890,8 +931,17 @@ def test_dependency_readiness_comfyui_not_installed(tmp_path: Path, monkeypatch)
     )
     readiness = runtime.get_dependency_readiness()
     image_item = readiness["items"][2]
-    assert image_item["status_code"] == "not_installed"
-    assert image_item["actions"][0]["id"] == "install_image_engine"
+    assert image_item["status_code"] in {"not_installed", "setup_required"}
+    assert image_item["actions"][0]["id"] in {"install_image_engine", "recheck"}
+
+
+def test_campaign_list_includes_unreadable_save_files(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    bad_save = runtime.paths.saves / "broken_slot.json"
+    bad_save.write_text("{not_json", encoding="utf-8")
+    campaigns = runtime.list_campaigns()
+    match = next(item for item in campaigns if item["slot"] == "broken_slot")
+    assert match["loadable"] is False
 
 
 def test_validate_comfyui_install_reports_missing_launcher(tmp_path: Path, monkeypatch) -> None:

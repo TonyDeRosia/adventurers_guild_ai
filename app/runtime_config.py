@@ -22,6 +22,8 @@ class ImageRuntimeConfig:
     base_url: str = "http://localhost:8188"
     enabled: bool = True
     comfyui_path: str = ""
+    comfyui_workflow_path: str = ""
+    comfyui_output_dir: str = ""
     manual_image_generation_enabled: bool = True
     campaign_auto_visual_timing: str = "after_narration"
     checkpoint_source: str = "local"
@@ -86,6 +88,8 @@ class RuntimeConfigStore:
                 base_url=str(image_payload.get("base_url", "http://localhost:8188")),
                 enabled=bool(image_payload.get("enabled", True)),
                 comfyui_path=str(image_payload.get("comfyui_path", "")),
+                comfyui_workflow_path=str(image_payload.get("comfyui_workflow_path", "")),
+                comfyui_output_dir=str(image_payload.get("comfyui_output_dir", "")),
                 manual_image_generation_enabled=bool(image_payload.get("manual_image_generation_enabled", True)),
                 campaign_auto_visual_timing=self._normalize_campaign_auto_visual_timing(
                     image_payload.get("campaign_auto_visual_timing", image_payload.get("turn_visuals_mode", "after_narration"))
