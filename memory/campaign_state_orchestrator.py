@@ -35,6 +35,9 @@ class CampaignStateOrchestrator:
         scene_state.setdefault("recent_consequences", [])
         scene_state.setdefault("last_player_action", "")
         scene_state.setdefault("last_immediate_result", "")
+        scene_state.setdefault("scene_actors", [])
+        scene_state.setdefault("lightweight_npcs", [])
+        scene_state.setdefault("last_target_actor_id", "")
 
     def update_runtime_state(self, state: CampaignState, *, action: str, system_messages: list[str], narrative: str) -> dict[str, bool]:
         self.ensure_initialized(state)
@@ -123,6 +126,14 @@ class CampaignStateOrchestrator:
             for entry in structured.runtime.npc_relationships.values()
             if str(entry.get("location_id", "")) == state.current_location_id
         ]
+        scene_actor_npcs = [
+            actor
+            for actor in structured.runtime.scene_state.get("scene_actors", [])
+            if isinstance(actor, dict)
+            and bool(actor.get("visible", True))
+            and str(actor.get("location_id", state.current_location_id)) == state.current_location_id
+        ]
+        nearby_npc_count = len(nearby_npcs) + len(scene_actor_npcs)
         active_quests = [qid for qid, status in structured.runtime.quest_state.items() if status == "active"]
         print(f"[gm-context-audit] campaign={state.campaign_id}")
         print(f"[gm-context-audit] world_name={state.world_meta.world_name}")
@@ -134,7 +145,7 @@ class CampaignStateOrchestrator:
         print(f"[gm-context-audit] inventory_state_items={len(structured.runtime.inventory_state.get('items', []))}")
         print(f"[gm-context-audit] spellbook_entries={len(structured.runtime.spellbook)}")
         print(f"[gm-context-audit] active_quests={len(active_quests)}")
-        print(f"[gm-context-audit] npc_count={len(nearby_npcs)}")
+        print(f"[gm-context-audit] npc_count={nearby_npc_count}")
         print(f"[gm-context-audit] minion_count={len(structured.runtime.party_state.get('minions', []))}")
         print(f"[gm-context-audit] recent_turn_actions={len(structured.recent_turn_memory.last_major_actions)}")
         print(f"[gm-context-audit] custom_narrator_rules={len(structured.canon.custom_narrator_rules)}")
@@ -145,7 +156,7 @@ class CampaignStateOrchestrator:
             f"Runtime: {{'player_core': {structured.runtime.player_core}, 'inventory': {structured.runtime.inventory}, "
             f"'inventory_state': {structured.runtime.inventory_state}, 'equipment': {structured.runtime.equipment}, 'spellbook': {structured.runtime.spellbook}, "
             f"'abilities_learned': {structured.runtime.abilities_learned}, 'current_location_id': '{structured.runtime.current_location_id}', "
-            f"'active_quests': {active_quests}, 'nearby_npcs': {nearby_npcs}, "
+            f"'active_quests': {active_quests}, 'nearby_npcs': {nearby_npcs}, 'scene_actors': {scene_actor_npcs}, "
             f"'party_state': {structured.runtime.party_state}, 'status_effects': {structured.runtime.status_effects}, "
             f"'faction_changes': {structured.runtime.faction_changes}, 'world_state': {structured.runtime.world_state}, "
             f"'scene_visual_state': {structured.runtime.scene_visual_state}}}\n"
