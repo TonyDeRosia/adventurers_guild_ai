@@ -15,6 +15,12 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter,
 .app-shell { display: grid; grid-template-columns: 280px 1fr 320px; height: 100vh; max-height: 100vh; gap: 12px; padding: 12px; overflow: hidden; }
 .sidebar, .chat-main { background: var(--panel); border-radius: 12px; padding: 12px; border: 1px solid #243654; }
 .sidebar h2, .sidebar h3 { margin-top: 0; }
+.panel-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
 .panel-block { margin-bottom: 12px; }
 .button-row { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 8px; }
 #selected-save-label { color: var(--muted); margin: 6px 0 10px; font-size: 0.9rem; }
@@ -172,6 +178,14 @@ button:disabled {
   padding-left: 18px;
   color: var(--muted);
 }
+.setup-summary {
+  border: 1px solid #2a3f5f;
+  border-radius: 8px;
+  padding: 8px;
+  background: #0f1a2d;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
 .save-list { max-height: 45vh; overflow: auto; display: grid; gap: 8px; }
 .save-item { text-align: left; border: 1px solid #2e3d52; background: #132238; }
 .save-item small { display: block; color: var(--muted); margin-top: 4px; }
@@ -204,10 +218,35 @@ button:disabled {
 }
 .modal-card {
   width: min(760px, 100%);
+  max-height: 90vh;
+  overflow: auto;
   background: #0f1a2d;
   border: 1px solid #2a3f5f;
   border-radius: 12px;
   padding: 14px;
+}
+.setup-modal-card {
+  width: min(860px, 100%);
+}
+.setup-intro { color: var(--muted); margin-top: 0; }
+.setup-main-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.setup-model-list {
+  border: 1px solid #2a3f5f;
+  border-radius: 8px;
+  padding: 8px;
+  background: #0f1a2d;
+  display: grid;
+  gap: 8px;
+}
+.model-row {
+  border: 1px solid #344c6d;
+  border-radius: 8px;
+  padding: 8px;
 }
 .modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
 textarea { border-radius: 8px; border: 1px solid #2e3d52; background: #131e2b; color: var(--text); padding: 10px; width: 100%; }

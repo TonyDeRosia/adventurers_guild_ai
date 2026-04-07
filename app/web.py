@@ -341,9 +341,115 @@ class WebRuntime:
         return [{"id": "recheck", "label": "Recheck"}]
 
     def _find_ollama_cli(self) -> str | None:
+        configured = str(self.app_config.model.ollama_path or "").strip()
+        if configured:
+            configured_path = Path(configured)
+            candidates: list[Path] = []
+            if configured_path.is_file():
+                candidates.append(configured_path)
+            else:
+                candidates.extend(
+                    [
+                        configured_path / "ollama.exe",
+                        configured_path / "ollama",
+                        configured_path / "bin" / "ollama.exe",
+                        configured_path / "bin" / "ollama",
+                    ]
+                )
+            for candidate in candidates:
+                if candidate.exists():
+                    return str(candidate)
         if os.name == "nt":
             return shutil.which("ollama.exe") or shutil.which("ollama")
         return shutil.which("ollama")
+
+    def pick_folder(self, title: str, initial_path: str = "") -> dict[str, Any]:
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+        except Exception as exc:
+            return {"ok": False, "message": "Folder picker is unavailable in this environment.", "error": str(exc)}
+        try:
+            root = tk.Tk()
+            root.withdraw()
+            selected = filedialog.askdirectory(title=title, initialdir=initial_path or str(self.paths.user_data))
+            root.destroy()
+        except Exception as exc:
+            return {"ok": False, "message": "Folder picker could not be opened.", "error": str(exc)}
+        if not selected:
+            return {"ok": False, "message": "No folder selected."}
+        return {"ok": True, "path": selected}
+
+    def connect_ollama_path(self, selected_path: str) -> dict[str, Any]:
+        candidate = Path(str(selected_path or "").strip())
+        if not candidate.exists():
+            return {"ok": False, "message": "Selected Ollama folder does not exist."}
+        self.app_config.model.ollama_path = str(candidate)
+        cli = self._find_ollama_cli()
+        if not cli:
+            return {
+                "ok": False,
+                "message": "Could not find ollama executable in the selected folder.",
+                "next_step": "Pick the folder that contains ollama.exe (or bin/ollama).",
+            }
+        self.config_store.save(self.app_config)
+        model_status = self.get_model_status()
+        return {
+            "ok": True,
+            "message": "Ollama path saved and connected.",
+            "cli_path": cli,
+            "status": model_status,
+        }
+
+    def connect_comfyui_path(self, selected_path: str) -> dict[str, Any]:
+        candidate = Path(str(selected_path or "").strip())
+        if not candidate.exists():
+            return {"ok": False, "message": "Selected ComfyUI folder does not exist."}
+        validation = self.validate_comfyui_install(candidate)
+        if not validation.get("valid", False):
+            missing = ", ".join(validation.get("missing_files", []))
+            return {
+                "ok": False,
+                "message": f"ComfyUI folder is missing required files: {missing}.",
+                "validation": validation,
+            }
+        self.app_config.image.comfyui_path = str(candidate)
+        self.config_store.save(self.app_config)
+        return {
+            "ok": True,
+            "message": "ComfyUI folder saved and connected.",
+            "validation": validation,
+        }
+
+    def get_comfyui_model_status(self) -> dict[str, Any]:
+        comfyui_root = self._find_comfyui_root()
+        models_dir = comfyui_root / "models" if comfyui_root else None
+        curated = [
+            {
+                "id": "sd15_checkpoint",
+                "label": "Stable Diffusion v1.5 Checkpoint",
+                "target_subdir": "checkpoints",
+                "expected_files": ["v1-5-pruned-emaonly.safetensors", "sd15.safetensors"],
+                "download_url": "https://huggingface.co/runwayml/stable-diffusion-v1-5",
+            },
+            {
+                "id": "vae",
+                "label": "SD VAE (optional quality boost)",
+                "target_subdir": "vae",
+                "expected_files": ["vae-ft-mse-840000-ema-pruned.safetensors"],
+                "download_url": "https://huggingface.co/stabilityai/sd-vae-ft-mse-original",
+            },
+        ]
+        for item in curated:
+            target_dir = (models_dir / item["target_subdir"]) if models_dir else None
+            present = False
+            if target_dir and target_dir.exists():
+                files = {p.name.lower() for p in target_dir.iterdir() if p.is_file()}
+                expected = {name.lower() for name in item["expected_files"]}
+                present = bool(files.intersection(expected))
+            item["present"] = present
+            item["target_path"] = str((models_dir / item["target_subdir"]) if models_dir else "")
+        return {"comfyui_path": str(comfyui_root or ""), "items": curated}
 
     def _is_windows(self) -> bool:
         return os.name == "nt"
@@ -1373,6 +1479,7 @@ class WebRuntime:
                 "model_name": self.app_config.model.model_name,
                 "base_url": self.app_config.model.base_url,
                 "timeout_seconds": self.app_config.model.timeout_seconds,
+                "ollama_path": self.app_config.model.ollama_path,
             },
             "model_status": self.get_model_status(),
             "image": {
@@ -1398,6 +1505,7 @@ class WebRuntime:
             model_name=str(model_payload.get("model_name", self.app_config.model.model_name)),
             base_url=str(model_payload.get("base_url", self.app_config.model.base_url)),
             timeout_seconds=int(model_payload.get("timeout_seconds", self.app_config.model.timeout_seconds)),
+            ollama_path=str(model_payload.get("ollama_path", self.app_config.model.ollama_path)),
         )
         self.app_config.image = ImageRuntimeConfig(
             provider="null" if image_provider == "null" else image_provider,
@@ -1592,6 +1700,26 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
         model_name = str(payload.get("model", "")).strip() or None
         print(f"[setup-action] route invoked endpoint=/api/setup/orchestrate-everything model={model_name or runtime.app_config.model.model_name}")
         return runtime.orchestrate_setup_everything(model_name)
+
+    @app.post("/api/setup/pick-folder")
+    def setup_pick_folder(payload: dict[str, Any]) -> dict[str, Any]:
+        title = str(payload.get("title", "Select folder"))
+        initial_path = str(payload.get("initial_path", ""))
+        return runtime.pick_folder(title=title, initial_path=initial_path)
+
+    @app.post("/api/setup/connect-ollama-path")
+    def setup_connect_ollama_path(payload: dict[str, Any]) -> dict[str, Any]:
+        selected_path = str(payload.get("path", ""))
+        return runtime.connect_ollama_path(selected_path)
+
+    @app.post("/api/setup/connect-comfyui-path")
+    def setup_connect_comfyui_path(payload: dict[str, Any]) -> dict[str, Any]:
+        selected_path = str(payload.get("path", ""))
+        return runtime.connect_comfyui_path(selected_path)
+
+    @app.get("/api/setup/comfyui-models")
+    def setup_comfyui_models() -> dict[str, Any]:
+        return runtime.get_comfyui_model_status()
 
     @app.post("/api/campaign/input")
     def campaign_input(payload: dict[str, Any]) -> dict[str, Any]:

@@ -9,8 +9,13 @@ const statusLine = document.getElementById('status-line');
 const readinessPanel = document.getElementById('dependency-readiness');
 const setupGuidance = document.getElementById('setup-guidance');
 const setupProgress = document.getElementById('setup-progress');
+const setupSummary = document.getElementById('setup-summary');
 const selectedSaveLabel = document.getElementById('selected-save-label');
 const newCampaignModal = document.getElementById('new-campaign-modal');
+const setupModal = document.getElementById('setup-modal');
+const ollamaPathInput = document.getElementById('ollama-path-input');
+const comfyuiPathInput = document.getElementById('comfyui-path-input');
+const comfyuiModelsList = document.getElementById('comfyui-models-list');
 
 let selectedImageUrl = '';
 let selectedSlot = 'autosave';
@@ -376,6 +381,14 @@ function closeNewCampaignModal() {
   newCampaignModal.classList.add('hidden');
 }
 
+function openSetupModal() {
+  setupModal.classList.remove('hidden');
+}
+
+function closeSetupModal() {
+  setupModal.classList.add('hidden');
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, options);
   const data = await response.json().catch(() => ({ error: 'Invalid server response' }));
@@ -500,6 +513,88 @@ async function refreshSaves() {
   updateSelectedSaveLabel();
 }
 
+async function pickFolder(title, inputElement) {
+  try {
+    const result = await api('/api/setup/pick-folder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, initial_path: inputElement.value.trim() }),
+    });
+    if (!result.ok) {
+      setStatus(result.message || 'Folder selection failed.', true);
+      return;
+    }
+    inputElement.value = result.path || '';
+    setStatus(`Selected folder: ${result.path}`);
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
+async function connectOllamaFolder() {
+  try {
+    const path = ollamaPathInput.value.trim();
+    if (!path) {
+      setStatus('Pick or enter an Ollama folder path first.', true);
+      return;
+    }
+    const result = await api('/api/setup/connect-ollama-path', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    });
+    setStatus(result.message || 'Ollama folder connected.', !result.ok);
+    await Promise.all([loadSettings(), refreshDependencyReadiness()]);
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
+async function connectComfyuiFolder() {
+  try {
+    const path = comfyuiPathInput.value.trim();
+    if (!path) {
+      setStatus('Pick or enter a ComfyUI folder path first.', true);
+      return;
+    }
+    const result = await api('/api/setup/connect-comfyui-path', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    });
+    setStatus(result.message || 'ComfyUI folder connected.', !result.ok);
+    await Promise.all([loadSettings(), refreshDependencyReadiness(), refreshComfyuiModelList()]);
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
+function openOfficialDownload(url) {
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+async function refreshComfyuiModelList() {
+  if (!comfyuiModelsList) return;
+  try {
+    const payload = await api('/api/setup/comfyui-models');
+    const items = payload.items || [];
+    if (!items.length) {
+      comfyuiModelsList.textContent = 'No curated ComfyUI models configured yet.';
+      return;
+    }
+    comfyuiModelsList.innerHTML = items.map((item) => `
+      <div class="model-row">
+        <strong>${escapeHtml(item.label)}</strong>
+        <div>Status: <span class="${item.present ? 'ready-badge' : 'not-ready-badge'}">${item.present ? 'Installed' : 'Not installed'}</span></div>
+        <div>Target folder: <code>${escapeHtml(item.target_path || '(connect ComfyUI first)')}</code></div>
+        <div><a href="${escapeHtml(item.download_url)}" target="_blank" rel="noopener noreferrer">Open download page</a></div>
+      </div>
+    `).join('');
+  } catch (error) {
+    comfyuiModelsList.textContent = `Could not load model guidance: ${error.message}`;
+  }
+}
+
 function renderDependencyReadiness(payload) {
   latestDependencyReadiness = payload;
   readinessPanel.innerHTML = '';
@@ -514,8 +609,8 @@ function renderDependencyReadiness(payload) {
   const textReady = byType.model_provider?.status_level === 'ready' && byType.selected_model?.status_level === 'ready';
   const imageReady = byType.image_provider?.status_level === 'ready';
   summary.innerHTML = `
-    <div><strong>Text AI Setup:</strong> ${textReady ? 'ready' : 'failed / waiting for readiness'}</div>
-    <div><strong>Image AI Setup:</strong> ${imageReady ? 'ready' : 'failed / waiting for readiness'}</div>
+    <div><strong>Text AI Setup:</strong> ${textReady ? 'Ready' : 'Needs setup'}</div>
+    <div><strong>Image AI Setup:</strong> ${imageReady ? 'Ready' : 'Needs setup'}</div>
     <div>Fallback story mode: available</div>
     <div>Fallback image mode: local placeholder available</div>
     <div class="readiness-action-row">
@@ -527,6 +622,13 @@ function renderDependencyReadiness(payload) {
   });
   updateSetupButtonsBusyState();
   readinessPanel.appendChild(summary);
+  if (setupSummary) {
+    setupSummary.innerHTML = `
+      <div>Text AI: <span class="${textReady ? 'ready-badge' : 'not-ready-badge'}">${textReady ? 'Ready' : 'Not ready'}</span></div>
+      <div>Image AI: <span class="${imageReady ? 'ready-badge' : 'not-ready-badge'}">${imageReady ? 'Ready' : 'Not ready'}</span></div>
+      <div>Use <strong>AI Setup</strong> to install/connect dependencies.</div>
+    `;
+  }
 
   const sections = [
     { id: 'text', title: 'Text AI Setup', types: ['model_provider', 'selected_model'] },
@@ -550,7 +652,7 @@ function renderDependencyReadiness(payload) {
     const actionButtons = (item.actions || [])
       .map((action) => `<button class="readiness-action-btn" data-action="${escapeHtml(action.id)}">${escapeHtml(action.label)}</button>`)
       .join('');
-    const statusCode = item.status_code ? `<div>Status: <code>${escapeHtml(toTitle(item.status_code))}</code></div>` : '';
+    const statusCode = item.status_code ? `<div>Status: <code>${escapeHtml(toTitle(item.status_code))}</code></div>` : '<div>Status: <code>connected</code></div>';
     const fallbackInfo = item.fallback_available ? '<div>Fallback: available</div>' : '';
     const startupInfo = item.startup_status?.summary
       ? `<div>Latest startup result: ${escapeHtml(item.startup_status.summary)}</div>`
@@ -810,11 +912,14 @@ async function loadSettings() {
   document.getElementById('model-provider').value = data.settings.model.provider;
   document.getElementById('model-name').value = data.settings.model.model_name;
   document.getElementById('image-provider').value = data.settings.image.provider;
+  if (ollamaPathInput) ollamaPathInput.value = data.settings.model.ollama_path || '';
+  if (comfyuiPathInput) comfyuiPathInput.value = data.settings.image.comfyui_path || '';
   const modelStatus = data.settings.model_status;
   if (modelStatus && modelStatus.provider === 'ollama' && !modelStatus.ready) {
     setStatus(modelStatus.user_message || 'Ollama provider is unavailable.', true);
   }
   renderDependencyReadiness(data.settings?.dependency_readiness || { items: [], setup_guidance: [] });
+  await refreshComfyuiModelList();
 }
 
 document.getElementById('send-btn').onclick = sendInput;
@@ -843,9 +948,20 @@ document.getElementById('save-campaign').onclick = saveCampaign;
 document.getElementById('rename-campaign').onclick = renameCampaign;
 document.getElementById('delete-campaign').onclick = deleteCampaign;
 document.getElementById('save-settings').onclick = applySettings;
+document.getElementById('open-setup-modal').onclick = openSetupModal;
+document.getElementById('open-setup-modal-secondary').onclick = openSetupModal;
+document.getElementById('close-setup-modal').onclick = closeSetupModal;
 document.getElementById('setup-text-ai').onclick = () => runReadinessAction('setup_text_ai', {});
 document.getElementById('setup-image-ai').onclick = () => runReadinessAction('setup_image_ai', {});
 document.getElementById('setup-everything').onclick = () => runReadinessAction('setup_everything', {});
+document.getElementById('download-ollama').onclick = () => openOfficialDownload('https://ollama.com/download');
+document.getElementById('download-comfyui').onclick = () => openOfficialDownload('https://github.com/comfyanonymous/ComfyUI');
+document.getElementById('pick-ollama-folder').onclick = () => pickFolder('Select Ollama install folder', ollamaPathInput);
+document.getElementById('pick-comfyui-folder').onclick = () => pickFolder('Select ComfyUI folder', comfyuiPathInput);
+document.getElementById('connect-ollama-folder').onclick = connectOllamaFolder;
+document.getElementById('connect-comfyui-folder').onclick = connectComfyuiFolder;
+document.getElementById('install-story-model').onclick = () => runReadinessAction('install_model', { selected_model: document.getElementById('model-name').value.trim() || 'llama3' });
+document.getElementById('start-image-engine-from-setup').onclick = () => runReadinessAction('start_image_engine', {});
 document.getElementById('recheck-readiness').onclick = async () => {
   try {
     await runReadinessAction('recheck', {});

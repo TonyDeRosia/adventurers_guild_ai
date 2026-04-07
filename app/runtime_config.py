@@ -13,6 +13,7 @@ class ModelRuntimeConfig:
     model_name: str = "llama3"
     base_url: str = "http://localhost:11434"
     timeout_seconds: int = 45
+    ollama_path: str = ""
 
 
 @dataclass
@@ -56,6 +57,7 @@ class RuntimeConfigStore:
                 model_name=str(model_payload.get("model_name", "llama3")),
                 base_url=str(model_payload.get("base_url", "http://localhost:11434")),
                 timeout_seconds=int(model_payload.get("timeout_seconds", 45)),
+                ollama_path=str(model_payload.get("ollama_path", "")),
             ),
             image=ImageRuntimeConfig(
                 provider=str(image_payload.get("provider", "local")),

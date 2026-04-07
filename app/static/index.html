@@ -36,7 +36,10 @@
       </main>
 
       <aside class="sidebar right-panel">
-        <h2>Adventure Panel</h2>
+        <div class="panel-title-row">
+          <h2>Adventure Panel</h2>
+          <button id="open-setup-modal">AI Setup</button>
+        </div>
         <section class="panel-block">
           <h3>Settings</h3>
           <label>Model Provider <select id="model-provider"><option value="null">null</option><option value="ollama">ollama</option></select></label>
@@ -46,19 +49,11 @@
           <button id="save-settings">Apply settings</button>
         </section>
         <section class="panel-block">
-          <h3>Setup & Readiness</h3>
-          <div id="setup-progress" class="setup-progress" aria-live="polite"></div>
+          <h3>Quick AI Status</h3>
+          <div id="setup-summary" class="setup-summary">Checking providers...</div>
           <div class="button-row">
-            <button id="setup-text-ai">Set Up Text AI</button>
-            <button id="setup-image-ai">Set Up Image AI</button>
-            <button id="setup-everything">Set Up Everything</button>
+            <button id="open-setup-modal-secondary">Open Setup Center</button>
           </div>
-          <div id="dependency-readiness" class="readiness-panel">Checking providers...</div>
-          <button id="recheck-readiness">Recheck dependencies</button>
-        </section>
-        <section class="panel-block">
-          <h3>Setup Help</h3>
-          <ul id="setup-guidance" class="setup-guidance"></ul>
         </section>
         <section class="panel-block">
           <h3>Character / Quests / Inventory</h3>
@@ -99,6 +94,51 @@
           <button id="create-campaign-confirm">Create campaign</button>
           <button id="create-campaign-cancel">Cancel</button>
         </div>
+      </div>
+    </div>
+
+    <div id="setup-modal" class="modal hidden">
+      <div class="modal-card setup-modal-card">
+        <div class="panel-title-row">
+          <h3>AI Setup & Connections</h3>
+          <button id="close-setup-modal">Close Setup</button>
+        </div>
+        <p class="setup-intro">Use this setup center to install dependencies, connect folders, and prepare models without crowding gameplay tools.</p>
+        <div id="setup-progress" class="setup-progress" aria-live="polite"></div>
+        <div class="setup-main-actions">
+          <button id="setup-text-ai">Set Up Text AI</button>
+          <button id="setup-image-ai">Set Up Image AI</button>
+          <button id="setup-everything">Set Up Everything</button>
+          <button id="recheck-readiness">Recheck dependencies</button>
+        </div>
+        <div id="dependency-readiness" class="readiness-panel">Checking providers...</div>
+        <section class="panel-block">
+          <h4>Text AI (Story narration)</h4>
+          <p>Ollama powers local story generation. Install Ollama, connect it, and install your story model.</p>
+          <div class="button-row">
+            <button id="download-ollama">Download Ollama</button>
+            <button id="pick-ollama-folder">Select Ollama Folder</button>
+            <button id="connect-ollama-folder">Connect Ollama Folder</button>
+            <button id="install-story-model">Install Story Model</button>
+          </div>
+          <label>Ollama folder path <input id="ollama-path-input" type="text" placeholder="C:\\Users\\you\\AppData\\Local\\Programs\\Ollama" /></label>
+        </section>
+        <section class="panel-block">
+          <h4>Image AI (ComfyUI)</h4>
+          <p>ComfyUI powers local image generation. Download it, connect the folder, then start the engine.</p>
+          <div class="button-row">
+            <button id="download-comfyui">Download ComfyUI</button>
+            <button id="pick-comfyui-folder">Select ComfyUI Folder</button>
+            <button id="connect-comfyui-folder">Connect ComfyUI Folder</button>
+            <button id="start-image-engine-from-setup">Start ComfyUI</button>
+          </div>
+          <label>ComfyUI folder path <input id="comfyui-path-input" type="text" placeholder="C:\\tools\\ComfyUI" /></label>
+          <div id="comfyui-models-list" class="setup-model-list">Loading curated model guidance...</div>
+        </section>
+        <section class="panel-block">
+          <h4>Setup Guidance</h4>
+          <ul id="setup-guidance" class="setup-guidance"></ul>
+        </section>
       </div>
     </div>
 
