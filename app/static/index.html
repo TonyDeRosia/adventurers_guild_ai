@@ -254,14 +254,32 @@
           <label><input id="image-enabled" type="checkbox" checked /> Campaign image generation enabled</label>
           <div class="button-row">
             <button id="download-comfyui">Download ComfyUI</button>
-            <button id="pick-comfyui-folder">Select ComfyUI Folder</button>
-            <button id="connect-comfyui-folder">Connect ComfyUI Folder</button>
             <button id="start-image-engine-from-setup">Start ComfyUI</button>
           </div>
-          <label>ComfyUI folder path <input id="comfyui-path-input" type="text" placeholder="/path/to/ComfyUI" /></label>
-          <label>ComfyUI workflow JSON <input id="comfyui-workflow-path-input" type="text" placeholder="/path/to/workflow.json" /></label>
-          <label>ComfyUI output folder (optional) <input id="comfyui-output-dir-input" type="text" placeholder="/path/to/comfy/output" /></label>
-          <label>Checkpoint folder <input id="checkpoint-folder-input" type="text" placeholder="/path/to/ComfyUI/models/checkpoints" /></label>
+          <label>ComfyUI folder path</label>
+          <div class="path-picker-row">
+            <input id="comfyui-path-input" type="text" placeholder="/path/to/ComfyUI" />
+            <button id="pick-comfyui-folder" type="button">Browse Folder</button>
+          </div>
+          <div id="comfyui-path-validation" class="field-validation">ComfyUI folder: not checked.</div>
+          <label>ComfyUI workflow JSON</label>
+          <div class="path-picker-row">
+            <input id="comfyui-workflow-path-input" type="text" placeholder="/path/to/workflow.json" />
+            <button id="pick-comfyui-workflow-file" type="button">Browse File</button>
+          </div>
+          <div id="comfyui-workflow-validation" class="field-validation">Workflow JSON: not checked.</div>
+          <label>ComfyUI output folder (optional)</label>
+          <div class="path-picker-row">
+            <input id="comfyui-output-dir-input" type="text" placeholder="/path/to/comfy/output" />
+            <button id="pick-comfyui-output-folder" type="button">Browse Folder</button>
+          </div>
+          <div id="comfyui-output-validation" class="field-validation">Output folder: optional, not checked.</div>
+          <label>Checkpoint folder</label>
+          <div class="path-picker-row">
+            <input id="checkpoint-folder-input" type="text" placeholder="/path/to/ComfyUI/models/checkpoints" />
+            <button id="pick-checkpoint-folder" type="button">Browse Folder</button>
+          </div>
+          <div id="checkpoint-folder-validation" class="field-validation">Checkpoint folder: not checked.</div>
           <label>Checkpoint source
             <select id="checkpoint-source">
               <option value="local">Local Folder</option>
@@ -281,6 +299,7 @@
           </label>
           <div class="button-row">
             <button id="open-checkpoint-page">Open official model page</button>
+            <button id="apply-visual-pipeline-settings">Apply Visual Pipeline Settings</button>
             <button id="apply-settings">Apply settings</button>
           </div>
           <div id="path-config-status" class="setup-summary">Path validation will appear after loading settings.</div>
