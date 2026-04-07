@@ -15,8 +15,6 @@ const setupProgress = document.getElementById('setup-progress');
 const setupSummary = document.getElementById('setup-summary');
 const selectedSaveLabel = document.getElementById('selected-save-label');
 const selectedCampaignSummary = document.getElementById('selected-campaign-summary');
-const displayModeModal = document.getElementById('display-mode-modal');
-const displayModeModalSlot = document.getElementById('display-mode-modal-slot');
 const newCampaignModal = document.getElementById('new-campaign-modal');
 const setupModal = document.getElementById('setup-modal');
 const ollamaPathInput = document.getElementById('ollama-path-input');
@@ -810,8 +808,6 @@ function openNewCampaignModal() {
   renderCharacterSheetList();
   document.getElementById('character-sheets-manager')?.classList.add('hidden');
   document.getElementById('character-sheet-editor')?.classList.add('hidden');
-  const displayModeInput = document.getElementById('form-display-mode');
-  if (displayModeInput) displayModeInput.value = 'story';
   newCampaignModal.classList.remove('hidden');
 }
 
@@ -1589,7 +1585,13 @@ async function refreshSaves() {
   campaigns.forEach((campaign) => {
     const btn = document.createElement('button');
     btn.className = `save-item ${campaign.slot === selectedSlot ? 'selected' : ''}`;
-    btn.innerHTML = `<strong>${escapeHtml(campaign.slot)}</strong><small>${escapeHtml(campaign.campaign_name || campaign.slot)}</small><small>${escapeHtml(campaign.world_name || 'Unknown world')} · Turn ${campaign.turn_count} · ${displayModeLabel(campaign.display_mode || 'story')}</small>`;
+    btn.innerHTML = `
+      <span class="save-item-head">
+        <strong>${escapeHtml(campaign.campaign_name || campaign.slot)}</strong>
+        <small>${escapeHtml(campaign.slot)}</small>
+      </span>
+      <small>${escapeHtml(campaign.world_name || 'Unknown world')} · Turn ${campaign.turn_count} · ${displayModeLabel(campaign.display_mode || 'story')}</small>
+    `;
     if (campaign.loadable === false) {
       btn.classList.add('warning');
       btn.title = 'This save file exists but could not be parsed.';
@@ -1609,60 +1611,6 @@ async function refreshSaves() {
   });
   updateSelectedSaveLabel();
   renderSelectedCampaignSummary();
-}
-
-function openDisplayModeModal() {
-  if (!displayModeModal || !displayModeModalSlot) return;
-  if (!selectedSlot) {
-    setStatus('Select a save before changing display mode.', true);
-    return;
-  }
-  const selectedCampaign = lastCampaigns.find((campaign) => campaign.slot === selectedSlot);
-  if (!selectedCampaign) {
-    setStatus('Selected save is unavailable.', true);
-    return;
-  }
-  displayModeModalSlot.textContent = `Selected save: ${selectedCampaign.campaign_name || selectedSlot}`;
-  displayModeModal.classList.remove('hidden');
-}
-
-function closeDisplayModeModal() {
-  if (!displayModeModal) return;
-  displayModeModal.classList.add('hidden');
-}
-
-async function applySelectedCampaignDisplayMode(mode) {
-  const cleanMode = normalizeDisplayMode(mode);
-  console.log(`[campaign-panel] display_mode_change_requested mode=${cleanMode}`);
-  try {
-    if (!selectedSlot) {
-      setStatus('Select a save before changing display mode.', true);
-      return;
-    }
-    if (selectedSlot !== loadedSlot) {
-      await api('/api/campaign/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'load', slot: selectedSlot }),
-      });
-      clearSceneImage();
-    }
-    await api('/api/settings/campaign', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ display_mode: cleanMode }),
-    });
-    campaignSettingsPersisted = {
-      ...(campaignSettingsPersisted || {}),
-      display_mode: cleanMode,
-    };
-    console.log(`[campaign-panel] display_mode_change_applied mode=${cleanMode}`);
-    closeDisplayModeModal();
-    await Promise.all([refreshState(), refreshSaves(), refreshMessages(), refreshSceneVisual()]);
-    setStatus(`Display Mode set to ${displayModeLabel(cleanMode)}.`);
-  } catch (error) {
-    setStatus(error.message, true);
-  }
 }
 
 async function pickFolder(title, inputElement) {
@@ -2074,7 +2022,6 @@ async function createCampaignFromForm() {
     const playerName = document.getElementById('form-player-name').value.trim() || 'Aria';
     const playerClass = document.getElementById('form-player-class').value.trim() || 'Ranger';
     const worldTheme = document.getElementById('form-world-theme').value.trim() || 'classic fantasy';
-    const displayMode = normalizeDisplayMode(document.getElementById('form-display-mode')?.value || 'story');
     const payload = {
       mode: 'new',
       campaign_name: document.getElementById('form-campaign-name').value.trim() || `${playerName}'s Campaign`,
@@ -2088,7 +2035,7 @@ async function createCampaignFromForm() {
       char_class: playerClass,
       profile: worldTheme.toLowerCase().includes('dark') ? 'dark_fantasy' : 'classic_fantasy',
       thematic_flags: worldTheme ? [worldTheme.toLowerCase().replaceAll(' ', '_'), 'adventure'] : ['adventure', 'mystery'],
-      display_mode: displayMode,
+      display_mode: 'story',
       suggested_moves_enabled: !!document.getElementById('form-suggested-moves-enabled')?.checked,
       character_sheets: draftCharacterSheets,
       character_sheet_guidance_strength: document.getElementById('form-character-sheet-guidance-strength')?.value || 'light',
@@ -2323,11 +2270,6 @@ document.getElementById('image-generate-submit').onclick = generateImage;
 document.getElementById('save-campaign').onclick = saveCampaign;
 document.getElementById('rename-campaign').onclick = renameCampaign;
 document.getElementById('delete-campaign').onclick = deleteCampaign;
-document.getElementById('open-display-mode-modal').onclick = openDisplayModeModal;
-document.getElementById('close-display-mode-modal').onclick = closeDisplayModeModal;
-document.querySelectorAll('.display-mode-option').forEach((button) => {
-  button.onclick = () => applySelectedCampaignDisplayMode(button.dataset.displayMode || 'story');
-});
 document.getElementById('apply-settings').onclick = applySettings;
 document.getElementById('open-setup-modal').onclick = openSetupModal;
 document.getElementById('close-setup-modal').onclick = closeSetupModal;

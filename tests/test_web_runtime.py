@@ -277,15 +277,17 @@ def test_runtime_character_sheet_browser_uses_dedicated_create_modal_markup() ->
     assert "No character sheets attached yet." in app_js
 
 
-def test_campaign_panel_removes_quick_load_autosave_and_adds_display_mode_controls() -> None:
+def test_campaign_panel_removes_quick_load_autosave_and_hides_display_mode_controls() -> None:
     index_html = Path("app/static/index.html").read_text(encoding="utf-8")
     app_js = Path("app/static/app.js").read_text(encoding="utf-8")
     assert "Quick load autosave" not in index_html
-    assert 'id="open-display-mode-modal"' in index_html
+    assert 'id="open-display-mode-modal"' not in index_html
+    assert 'id="display-mode-modal"' not in index_html
     assert 'id="selected-campaign-summary"' in index_html
+    assert "display_mode: 'story'" in app_js
     assert "renderSelectedCampaignSummary" in app_js
-    assert "display_mode_change_requested" in app_js
-    assert "display_mode_change_applied" in app_js
+    assert "display_mode_change_requested" not in app_js
+    assert "display_mode_change_applied" not in app_js
 
 
 def test_custom_campaign_starts_without_sample_npcs_or_quests(tmp_path: Path, monkeypatch) -> None:
