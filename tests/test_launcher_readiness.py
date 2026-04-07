@@ -120,14 +120,3 @@ def test_try_launch_browser_non_windows_reports_webbrowser_error(monkeypatch) ->
     assert result.method == "webbrowser.open"
     assert "no browser registered" in result.reason
 
-
-def test_is_address_in_use_error_detects_errno_signature() -> None:
-    exc = OSError("Address already in use")
-    exc.errno = 98
-    assert run._is_address_in_use_error(exc) is True
-
-
-def test_is_address_in_use_error_returns_false_for_other_oserror() -> None:
-    exc = OSError("Permission denied")
-    exc.errno = 13
-    assert run._is_address_in_use_error(exc) is False

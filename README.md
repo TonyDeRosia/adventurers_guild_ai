@@ -8,7 +8,7 @@ Adventurer's Guild AI is a local-first fantasy campaign application with a brows
 2. The script checks for Python (`py -3` first, then `python`).
 3. The script installs dependencies from `requirements.txt`.
 4. The script runs `python run.py`.
-5. `run.py` starts the backend once, waits for `/health`, and opens the browser UI.
+5. `run.py` is the only runtime owner: it starts the backend once, waits for `/health`, and opens the browser UI.
 
 If startup fails, keep the console open and read the printed error details.
 
@@ -18,6 +18,7 @@ If startup fails, keep the console open and read the printed error details.
 - Terminal mode remains available only for fallback/debug usage.
 - If port `8000` is already in use, `run.py` prints a clear error and exits.
 - If browser auto-open fails, the launcher prints the manual URL.
+- `app/web.py` is not a user launcher and is not part of the normal source startup path.
 
 ## Packaging and build workflows (developer-only)
 
@@ -34,6 +35,10 @@ These scripts are for packaging/distribution work and are **not** part of normal
 - Optional release handoff package:
   ```bat
   release\create_release_package.bat
+  ```
+- Optional developer environment setup helper (not required for normal source run):
+  ```bat
+  tools\setup_dev_env.bat
   ```
 
 ## Where user data is stored
