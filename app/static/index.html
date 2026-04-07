@@ -25,13 +25,12 @@
       <main class="chat-main">
         <header class="chat-header">
           <h1>Adventurer Guild AI</h1>
-          <p id="campaign-meta">Loading campaign...</p>  
+          <p id="campaign-meta">Loading campaign...</p>
         </header>
         <section id="chat-thread" class="chat-thread"></section>
         <footer class="input-bar">
           <input id="chat-input" type="text" placeholder="Enter your action (look, talk elder_thorne, attack...)" />
           <button id="send-btn">Send</button>
-          <button id="gen-image-btn">Generate Image</button>
         </footer>
       </main>
 
@@ -41,36 +40,27 @@
           <button id="open-setup-modal">AI Setup</button>
         </div>
         <section class="panel-block">
-          <h3>Settings</h3>
-          <label>Model Provider <select id="model-provider"><option value="null">null</option><option value="ollama">ollama</option></select></label>
-          <label>Model Name <input id="model-name" type="text" value="llama3" /></label>
-          <label>Image Provider <select id="image-provider"><option value="local">local</option><option value="comfyui">comfyui</option><option value="null">null</option></select></label>
-          <label><input id="image-enabled" type="checkbox" checked /> Campaign image generation enabled</label>
-          <button id="save-settings">Apply settings</button>
-        </section>
-        <section class="panel-block">
-          <h3>Quick AI Status</h3>
-          <div id="setup-summary" class="setup-summary">Checking providers...</div>
-          <div class="button-row">
-            <button id="open-setup-modal-secondary">Open Setup Center</button>
-          </div>
-        </section>
-        <section class="panel-block">
           <h3>Character / Quests / Inventory</h3>
           <pre id="state-panel" class="state-panel"></pre>
         </section>
         <section class="panel-block">
+          <h3>Turn Visuals</h3>
+          <div id="visual-mode-summary" class="setup-summary">Mode: Manual image generation</div>
+        </section>
+        <section class="panel-block">
           <h3>Image Preview</h3>
           <div id="image-preview" class="image-preview">Click an inline image to preview it here.</div>
-          <div class="image-generation-panel">
-            <label for="image-prompt-input">Image Prompt (ComfyUI)</label>
-            <textarea id="image-prompt-input" rows="3" placeholder="Describe the scene you want to generate."></textarea>
-            <button id="image-generate-submit">Generate Image with ComfyUI</button>
-            <div id="image-status-line" class="image-status-line">Image generation ready state will appear here.</div>
-          </div>
+        </section>
+        <section id="manual-image-panel" class="panel-block image-generation-panel">
+          <h3>Manual Image Prompt</h3>
+          <label for="image-prompt-input">Image Prompt (ComfyUI)</label>
+          <textarea id="image-prompt-input" rows="3" placeholder="Describe the scene you want to generate."></textarea>
+          <button id="image-generate-submit">Generate Image with ComfyUI</button>
+          <div id="image-status-line" class="image-status-line">Image generation ready state will appear here.</div>
         </section>
         <section class="panel-block">
           <h3>Status</h3>
+          <div id="setup-summary" class="setup-summary">Checking providers...</div>
           <div id="status-line">Ready.</div>
         </section>
       </aside>
@@ -113,8 +103,9 @@
         </div>
         <div id="dependency-readiness" class="readiness-panel">Checking providers...</div>
         <section class="panel-block">
-          <h4>Text AI (Story narration)</h4>
-          <p>Ollama powers local story generation. Install Ollama, connect it, and install your story model.</p>
+          <h4>Story Pipeline (Ollama)</h4>
+          <label>Model Provider <select id="model-provider"><option value="null">null</option><option value="ollama">ollama</option></select></label>
+          <label>Model Name <input id="model-name" type="text" value="llama3" /></label>
           <div class="button-row">
             <button id="download-ollama">Download Ollama</button>
             <button id="pick-ollama-folder">Select Ollama Folder</button>
@@ -124,8 +115,9 @@
           <label>Ollama folder path <input id="ollama-path-input" type="text" placeholder="C:\\Users\\you\\AppData\\Local\\Programs\\Ollama" /></label>
         </section>
         <section class="panel-block">
-          <h4>Image AI (ComfyUI)</h4>
-          <p>ComfyUI powers local image generation. Download it, connect the folder, then start the engine.</p>
+          <h4>Visual Pipeline (ComfyUI)</h4>
+          <label>Image Provider <select id="image-provider"><option value="local">local</option><option value="comfyui">comfyui</option><option value="null">null</option></select></label>
+          <label><input id="image-enabled" type="checkbox" checked /> Campaign image generation enabled</label>
           <div class="button-row">
             <button id="download-comfyui">Download ComfyUI</button>
             <button id="pick-comfyui-folder">Select ComfyUI Folder</button>
@@ -133,7 +125,40 @@
             <button id="start-image-engine-from-setup">Start ComfyUI</button>
           </div>
           <label>ComfyUI folder path <input id="comfyui-path-input" type="text" placeholder="C:\\tools\\ComfyUI" /></label>
+          <label>Checkpoint folder <input id="checkpoint-folder-input" type="text" placeholder="C:\\tools\\ComfyUI\\models\\checkpoints" /></label>
+          <label>Checkpoint source
+            <select id="checkpoint-source">
+              <option value="local">Local Folder</option>
+              <option value="civitai">Civitai</option>
+              <option value="huggingface">Hugging Face</option>
+            </select>
+          </label>
+          <label>Preferred checkpoint <input id="preferred-checkpoint" type="text" value="DreamShaper" /></label>
+          <label>Launcher preference
+            <select id="preferred-launcher">
+              <option value="auto">Auto (GPU first)</option>
+              <option value="nvidia_gpu">NVIDIA GPU</option>
+              <option value="gpu">Generic GPU</option>
+              <option value="amd_gpu">AMD GPU</option>
+              <option value="cpu">CPU fallback</option>
+            </select>
+          </label>
+          <div class="button-row">
+            <button id="open-checkpoint-page">Open official model page</button>
+            <button id="apply-settings">Apply setup settings</button>
+          </div>
           <div id="comfyui-models-list" class="setup-model-list">Loading curated model guidance...</div>
+        </section>
+        <section class="panel-block">
+          <h4>Turn Visuals</h4>
+          <label>Mode
+            <select id="turn-visuals-mode">
+              <option value="off">Off</option>
+              <option value="manual">Manual image generation</option>
+              <option value="auto_before">Auto generate image before narration</option>
+              <option value="auto_after">Auto generate image after narration</option>
+            </select>
+          </label>
         </section>
         <section class="panel-block">
           <h4>Setup Guidance</h4>

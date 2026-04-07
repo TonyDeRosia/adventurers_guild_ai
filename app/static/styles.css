@@ -52,7 +52,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter,
 .msg small { display: block; color: var(--muted); margin-bottom: 4px; }
 .msg img { margin-top: 8px; max-width: 100%; border-radius: 8px; border: 1px solid #33506e; cursor: pointer; }
 
-.input-bar { margin-top: 10px; display: grid; grid-template-columns: 1fr auto auto; gap: 8px; }
+.input-bar { margin-top: 10px; display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 .input-bar { flex-shrink: 0; }
 input, button { border-radius: 8px; border: 1px solid #2e3d52; background: #131e2b; color: var(--text); padding: 10px; }
 select, label { display: block; width: 100%; margin-bottom: 8px; color: var(--muted); font-size: 0.9rem; }
@@ -186,19 +186,15 @@ button:disabled {
   color: var(--muted);
   font-size: 0.9rem;
 }
-.save-list { max-height: 45vh; overflow: auto; display: grid; gap: 8px; }
+.save-list { overflow: auto; display: grid; gap: 8px; flex: 1; min-height: 0; }
 .save-item { text-align: left; border: 1px solid #2e3d52; background: #132238; }
 .save-item small { display: block; color: var(--muted); margin-top: 4px; }
 .save-item.selected { border-color: #4cc2ff; box-shadow: 0 0 0 1px #4cc2ff inset; background: #18324f; }
-.state-panel { white-space: pre-wrap; max-height: 35vh; overflow: auto; margin: 0; }
-.left-panel, .right-panel { min-height: 0; overflow-y: auto; }
+.state-panel { white-space: pre-wrap; overflow: auto; margin: 0; max-height: 32vh; }
+.left-panel, .right-panel { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
 
 .image-preview img { max-width: 100%; border-radius: 8px; }
-.image-generation-panel {
-  margin-top: 10px;
-  display: grid;
-  gap: 8px;
-}
+.image-generation-panel { display: grid; gap: 8px; }
 .image-status-line {
   border: 1px solid #2a3f5f;
   border-radius: 8px;
@@ -253,7 +249,7 @@ textarea { border-radius: 8px; border: 1px solid #2e3d52; background: #131e2b; c
 .modal-grid label:last-child { grid-column: 1 / -1; }
 
 @media (max-width: 1150px) {
-  body { overflow: auto; }
+  body { overflow: hidden; }
   .app-shell { grid-template-columns: 1fr; height: auto; min-height: 100dvh; overflow: visible; }
   .left-panel, .right-panel { min-height: auto; }
 }

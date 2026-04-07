@@ -45,6 +45,7 @@ from engine.game_state_manager import GameStateManager
 from images.base import ImageGenerationRequest, ImageGenerationResult, ImageGeneratorAdapter, NullImageAdapter
 from images.comfyui_adapter import ComfyUIAdapter
 from images.local_adapter import LocalPlaceholderImageAdapter
+from images.prompt_builder import TurnImagePromptBuilder
 from images.workflow_manager import WorkflowManager
 from models.ollama_adapter import OllamaAdapter
 from models.registry import create_model_adapter
@@ -68,6 +69,7 @@ class WebRuntime:
         self.app_config: AppRuntimeConfig = self.config_store.load()
         self.workflow_manager = WorkflowManager(self.paths.workflows)
         self.generated_image_dir = self.paths.generated_images
+        self.turn_image_prompts = TurnImagePromptBuilder()
         self.history_store_path = self.paths.campaign_memory / "web_message_history.json"
         self.history_store = self._load_history_store()
 
@@ -175,6 +177,7 @@ class WebRuntime:
                     "running": True,
                     "status_code": "reachable",
                     "comfyui_path": str(comfyui_root or ""),
+                    "launcher_mode": self._determine_launcher_mode(comfyui_root),
                 }
             if installed:
                 return {
@@ -186,6 +189,7 @@ class WebRuntime:
                     "user_message": "ComfyUI is installed but not running.",
                     "next_action": "Start Image Engine, then click Recheck.",
                     "comfyui_path": str(comfyui_root),
+                    "launcher_mode": self._determine_launcher_mode(comfyui_root),
                 }
             return {
                 **base_status,
@@ -196,6 +200,7 @@ class WebRuntime:
                 "user_message": "ComfyUI is not installed in the configured local setup path.",
                 "next_action": "Install Image Engine, then click Recheck.",
                 "comfyui_path": "",
+                "launcher_mode": "none",
             }
         if provider == "null":
             return {
@@ -423,7 +428,7 @@ class WebRuntime:
 
     def get_comfyui_model_status(self) -> dict[str, Any]:
         comfyui_root = self._find_comfyui_root()
-        models_dir = comfyui_root / "models" if comfyui_root else None
+        checkpoint_root = self._resolve_checkpoint_folder(comfyui_root)
         curated = [
             {
                 "id": "sd15_checkpoint",
@@ -439,17 +444,52 @@ class WebRuntime:
                 "expected_files": ["vae-ft-mse-840000-ema-pruned.safetensors"],
                 "download_url": "https://huggingface.co/stabilityai/sd-vae-ft-mse-original",
             },
+            {
+                "id": "dreamshaper_checkpoint",
+                "label": "DreamShaper Checkpoint (preferred)",
+                "target_subdir": "checkpoints",
+                "expected_files": ["dreamshaper.safetensors", "dreamshaper_8.safetensors", "dreamshaperxl.safetensors"],
+                "download_url": "https://civitai.com/models/4384/dreamshaper",
+            },
         ]
         for item in curated:
-            target_dir = (models_dir / item["target_subdir"]) if models_dir else None
+            target_dir = checkpoint_root if item["target_subdir"] == "checkpoints" else (comfyui_root / "models" / item["target_subdir"] if comfyui_root else None)
             present = False
             if target_dir and target_dir.exists():
                 files = {p.name.lower() for p in target_dir.iterdir() if p.is_file()}
                 expected = {name.lower() for name in item["expected_files"]}
                 present = bool(files.intersection(expected))
             item["present"] = present
-            item["target_path"] = str((models_dir / item["target_subdir"]) if models_dir else "")
-        return {"comfyui_path": str(comfyui_root or ""), "items": curated}
+            item["target_path"] = str(target_dir or "")
+        return {
+            "comfyui_path": str(comfyui_root or ""),
+            "checkpoint_folder": str(checkpoint_root or ""),
+            "preferred_checkpoint": self.app_config.image.preferred_checkpoint,
+            "launcher_mode": self._determine_launcher_mode(comfyui_root),
+            "items": curated,
+        }
+
+    def _resolve_checkpoint_folder(self, comfyui_root: Path | None = None) -> Path | None:
+        if self.app_config.image.checkpoint_folder:
+            return Path(self.app_config.image.checkpoint_folder)
+        if comfyui_root:
+            return comfyui_root / "models" / "checkpoints"
+        return None
+
+    def _determine_launcher_mode(self, comfyui_root: Path | None = None) -> str:
+        root = comfyui_root or self._find_comfyui_root()
+        if not root:
+            return "none"
+        launchers = [
+            ("nvidia_gpu", "run_nvidia_gpu.bat"),
+            ("gpu", "run_gpu.bat"),
+            ("amd_gpu", "run_amd_gpu.bat"),
+            ("cpu", "run_cpu.bat"),
+        ]
+        for mode, script in launchers:
+            if (root / script).exists():
+                return mode
+        return "python_main"
 
     def _is_windows(self) -> bool:
         return os.name == "nt"
@@ -1069,15 +1109,19 @@ class WebRuntime:
                         {"step": "verify-install", "state": "failed", "message": f"Missing: {missing}"},
                     ],
                 }
-        run_script = comfyui_root / "run_nvidia_gpu.bat"
-        fallback_script = comfyui_root / "run_cpu.bat"
-        if not fallback_script.exists():
+        nvidia_script = comfyui_root / "run_nvidia_gpu.bat"
+        generic_gpu_script = comfyui_root / "run_gpu.bat"
+        amd_gpu_script = comfyui_root / "run_amd_gpu.bat"
+        cpu_script = comfyui_root / "run_cpu.bat"
+        if not cpu_script.exists():
             print("[setup-orchestrator] setup-image step=repair-launcher")
             self._write_comfyui_cpu_launcher(comfyui_root)
-            fallback_script = comfyui_root / "run_cpu.bat"
+            cpu_script = comfyui_root / "run_cpu.bat"
             validation = self.validate_comfyui_install(comfyui_root)
-        launcher = run_script if run_script.exists() else fallback_script if fallback_script.exists() else comfyui_root / "main.py"
-        if os.name == "nt" and not run_script.exists() and not fallback_script.exists():
+        launcher_order = [nvidia_script, generic_gpu_script, amd_gpu_script, cpu_script]
+        launcher_script = next((script for script in launcher_order if script.exists()), comfyui_root / "main.py")
+        launcher = launcher_script
+        if os.name == "nt" and launcher_script == comfyui_root / "main.py":
             print("[setup-action] start-image-engine failure reason=launcher-script-missing")
             print("[setup-orchestrator] setup-image failure stage=launch-engine")
             return {
@@ -1096,28 +1140,15 @@ class WebRuntime:
         print("[setup-orchestrator] setup-image step=launch-engine")
         process: subprocess.Popen[str] | None = None
         try:
-            if os.name == "nt" and run_script.exists():
-                self._append_image_startup_log(startup_log_lines, f"Launching script: {run_script.name}")
+            if os.name == "nt" and launcher_script.exists() and launcher_script.suffix == ".bat":
+                self._append_image_startup_log(startup_log_lines, f"Launching script: {launcher_script.name}")
                 with startup_log_file.open("w", encoding="utf-8") as handle:
                     handle.write("")
                 process = subprocess.Popen(
                     [
                         "cmd.exe",
                         "/c",
-                        f"\"{run_script}\" 1>>\"{startup_log_file}\" 2>&1",
-                    ],
-                    cwd=str(comfyui_root),
-                    creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,  # type: ignore[attr-defined]
-                )
-            elif os.name == "nt" and fallback_script.exists():
-                self._append_image_startup_log(startup_log_lines, f"Launching script: {fallback_script.name}")
-                with startup_log_file.open("w", encoding="utf-8") as handle:
-                    handle.write("")
-                process = subprocess.Popen(
-                    [
-                        "cmd.exe",
-                        "/c",
-                        f"\"{fallback_script}\" 1>>\"{startup_log_file}\" 2>&1",
+                        f"\"{launcher_script}\" 1>>\"{startup_log_file}\" 2>&1",
                     ],
                     cwd=str(comfyui_root),
                     creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,  # type: ignore[attr-defined]
@@ -1458,10 +1489,15 @@ class WebRuntime:
 
     def handle_player_input(self, text: str) -> dict[str, Any]:
         model_status = self.get_model_status()
+        turn_visuals_mode = self.app_config.image.turn_visuals_mode
         self._append_message("player", text)
+        if turn_visuals_mode == "auto_before":
+            self._run_turn_visual_generation(player_action=text, stage="before")
         result = self.engine.run_turn(self.session.state, text)
         for message in result.messages:
             self._append_message(message["type"], message["text"])
+        if turn_visuals_mode == "auto_after":
+            self._run_turn_visual_generation(player_action=text, stage="after")
         self.save_active_campaign(self.session.active_slot)
         return {
             "narrative": result.narrative,
@@ -1471,6 +1507,29 @@ class WebRuntime:
             "metadata": {**(result.metadata or {}), "model_status": model_status},
             "state": self.serialize_state(),
         }
+
+    def _run_turn_visual_generation(self, player_action: str, stage: str) -> None:
+        if self.app_config.image.provider != "comfyui" or not self.session.state.settings.image_generation_enabled:
+            return
+        if not bool(self.get_image_status().get("ready", False)):
+            return
+        prompt = self.turn_image_prompts.build(self.session.state, player_action=player_action)
+        request_payload = {
+            "workflow_id": "scene_image",
+            "prompt": prompt,
+            "parameters": {"checkpoint": self.app_config.image.preferred_checkpoint},
+        }
+        result = self.generate_image(request_payload)
+        if not result.success:
+            return
+        public_image_url = self.public_image_path(result.result_path)
+        if not public_image_url:
+            return
+        self._append_message(
+            "image",
+            f"Turn visual ({stage} narration): {player_action}",
+            image={"url": public_image_url, "metadata": result.metadata, "workflow_id": result.workflow_id},
+        )
 
     def get_global_settings(self) -> dict[str, Any]:
         return {
@@ -1487,6 +1546,12 @@ class WebRuntime:
                 "base_url": self.app_config.image.base_url,
                 "enabled": self.app_config.image.enabled,
                 "comfyui_path": self.app_config.image.comfyui_path,
+                "turn_visuals_mode": self.app_config.image.turn_visuals_mode,
+                "checkpoint_source": self.app_config.image.checkpoint_source,
+                "checkpoint_model_page": self.app_config.image.checkpoint_model_page,
+                "checkpoint_folder": self.app_config.image.checkpoint_folder,
+                "preferred_checkpoint": self.app_config.image.preferred_checkpoint,
+                "preferred_launcher": self.app_config.image.preferred_launcher,
             },
             "dependency_readiness": self.get_dependency_readiness(),
         }
@@ -1512,6 +1577,12 @@ class WebRuntime:
             base_url=str(image_payload.get("base_url", self.app_config.image.base_url)),
             enabled=bool(image_payload.get("enabled", self.app_config.image.enabled)),
             comfyui_path=str(image_payload.get("comfyui_path", self.app_config.image.comfyui_path)),
+            turn_visuals_mode=str(image_payload.get("turn_visuals_mode", self.app_config.image.turn_visuals_mode)),
+            checkpoint_source=str(image_payload.get("checkpoint_source", self.app_config.image.checkpoint_source)),
+            checkpoint_model_page=str(image_payload.get("checkpoint_model_page", self.app_config.image.checkpoint_model_page)),
+            checkpoint_folder=str(image_payload.get("checkpoint_folder", self.app_config.image.checkpoint_folder)),
+            preferred_checkpoint=str(image_payload.get("preferred_checkpoint", self.app_config.image.preferred_checkpoint)),
+            preferred_launcher=str(image_payload.get("preferred_launcher", self.app_config.image.preferred_launcher)),
         )
         self.config_store.save(self.app_config)
         self.engine.model = self._create_model_adapter()
@@ -1561,11 +1632,14 @@ class WebRuntime:
                         "next_action": image_status.get("next_action", ""),
                     },
                 )
+        parameters = dict(payload.get("parameters", {}))
+        if self.app_config.image.preferred_checkpoint and "checkpoint" not in parameters:
+            parameters["checkpoint"] = self.app_config.image.preferred_checkpoint
         request = ImageGenerationRequest(
             workflow_id=str(payload.get("workflow_id", "scene_image")),
             prompt=str(payload.get("prompt", "")),
             negative_prompt=str(payload.get("negative_prompt", "")),
-            parameters=dict(payload.get("parameters", {})),
+            parameters=parameters,
         )
         result = self.image_adapter.generate(request, self.workflow_manager)
         return result
