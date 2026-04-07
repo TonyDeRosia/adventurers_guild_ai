@@ -276,14 +276,18 @@ async function runReadinessAction(actionId, item) {
     if (actionId === 'start_image_engine') {
       startSetupRun(actionId, 'Starting Image AI...', [
         { step: 'detect-install-path', label: 'Check install path', state: 'running', message: 'Checking install path...' },
-        { step: 'launch-engine', label: 'Launch ComfyUI', state: 'pending', message: 'Waiting to launch engine...' },
+        { step: 'verify-install', label: 'Verifying install', state: 'pending', message: 'Checking required ComfyUI files...' },
+        { step: 'repair-launcher', label: 'Repairing launcher', state: 'pending', message: 'Repairing missing launcher if required...' },
+        { step: 'launch-engine', label: 'Starting engine', state: 'pending', message: 'Waiting to launch engine...' },
         { step: 'wait-for-readiness', label: 'Wait for response', state: 'pending', message: 'Waiting for engine response...' },
       ]);
       updateSetupRun({
         summary: 'Starting Image AI... Checking install path...',
         steps: [
           { step: 'detect-install-path', label: 'Check install path', state: 'running', message: 'Checking install path...' },
-          { step: 'launch-engine', label: 'Launch ComfyUI', state: 'pending', message: 'Waiting to launch engine...' },
+          { step: 'verify-install', label: 'Verifying install', state: 'pending', message: 'Checking required ComfyUI files...' },
+          { step: 'repair-launcher', label: 'Repairing launcher', state: 'pending', message: 'Repairing missing launcher if required...' },
+          { step: 'launch-engine', label: 'Starting engine', state: 'pending', message: 'Waiting to launch engine...' },
           { step: 'wait-for-readiness', label: 'Wait for response', state: 'pending', message: 'Waiting for engine response...' },
         ],
       });

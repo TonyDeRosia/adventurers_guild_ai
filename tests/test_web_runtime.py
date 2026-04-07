@@ -422,6 +422,67 @@ def test_dependency_readiness_comfyui_not_installed(tmp_path: Path, monkeypatch)
     assert image_item["actions"][0]["id"] == "install_image_engine"
 
 
+def test_validate_comfyui_install_reports_missing_launcher(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
+    comfy_dir.mkdir(parents=True, exist_ok=True)
+    (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
+    (comfy_dir / "models").mkdir(exist_ok=True)
+
+    validation = runtime.validate_comfyui_install(comfy_dir)
+    assert validation["ok"] is False
+    assert "run_cpu.bat|run_nvidia_gpu.bat" in validation["missing_files"]
+
+
+def test_install_image_engine_repairs_missing_launcher(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    monkeypatch.setattr(runtime, "_is_windows", lambda: True)
+    monkeypatch.setattr("webbrowser.open", lambda *_args, **_kwargs: True)
+
+    def _fake_download(target_dir: Path) -> tuple[bool, str]:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        (target_dir / "main.py").write_text("print('ok')", encoding="utf-8")
+        (target_dir / "custom_nodes").mkdir(exist_ok=True)
+        (target_dir / "models").mkdir(exist_ok=True)
+        return True, "ok"
+
+    monkeypatch.setattr(runtime, "_download_and_extract_comfyui", _fake_download)
+    result = runtime.install_image_engine()
+    assert result["ok"] is True
+    comfy_dir = Path(runtime.app_config.image.comfyui_path)
+    assert (comfy_dir / "run_cpu.bat").exists()
+
+
+def test_start_image_engine_repairs_launcher_before_failing(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    comfy_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
+    comfy_dir.mkdir(parents=True, exist_ok=True)
+    (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
+    (comfy_dir / "models").mkdir(exist_ok=True)
+    runtime.app_config.image.comfyui_path = str(comfy_dir)
+
+    monkeypatch.setattr(runtime, "_find_comfyui_root", lambda: comfy_dir)
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": False})
+    monkeypatch.setattr("shutil.which", lambda _name: "python")
+
+    launch_calls = {"count": 0}
+
+    def _fake_popen(*_args, **_kwargs):
+        launch_calls["count"] += 1
+        raise OSError("simulated launch failure")
+
+    monkeypatch.setattr("subprocess.Popen", _fake_popen)
+    result = runtime.start_image_engine()
+    assert (comfy_dir / "run_cpu.bat").exists()
+    assert launch_calls["count"] == 1
+    assert result["ok"] is False
+    assert result["failure_stage"] == "launch-engine"
+
+
 def test_dependency_readiness_reports_missing_ollama_install(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.app_config.model.provider = "ollama"
