@@ -3,6 +3,8 @@ const campaignMeta = document.getElementById('campaign-meta');
 const statePanel = document.getElementById('state-panel');
 const saveList = document.getElementById('save-list');
 const imagePreview = document.getElementById('image-preview');
+const imagePromptInput = document.getElementById('image-prompt-input');
+const imageStatusLine = document.getElementById('image-status-line');
 const statusLine = document.getElementById('status-line');
 const readinessPanel = document.getElementById('dependency-readiness');
 const setupGuidance = document.getElementById('setup-guidance');
@@ -25,6 +27,7 @@ let setupRunState = {
   steps: [],
   startupStatus: null,
 };
+let latestDependencyReadiness = null;
 
 const readinessLabels = {
   model_provider: 'Text Generation Service',
@@ -344,6 +347,12 @@ function setStatus(message, isError = false) {
   statusLine.style.color = isError ? '#fca5a5' : '#cbd5e1';
 }
 
+function setImageStatus(message, isError = false) {
+  if (!imageStatusLine) return;
+  imageStatusLine.textContent = message;
+  imageStatusLine.style.color = isError ? '#fca5a5' : '#cbd5e1';
+}
+
 function escapeHtml(input) {
   return String(input || '')
     .replaceAll('&', '&amp;')
@@ -404,6 +413,7 @@ function setImagePreview(url, caption = '') {
   text.textContent = caption || 'Generated image preview';
   imagePreview.appendChild(img);
   imagePreview.appendChild(text);
+  setImageStatus('Latest generated image loaded in preview.');
 }
 
 async function refreshMessages() {
@@ -491,6 +501,7 @@ async function refreshSaves() {
 }
 
 function renderDependencyReadiness(payload) {
+  latestDependencyReadiness = payload;
   readinessPanel.innerHTML = '';
   const byType = Object.fromEntries((payload.items || []).map((item) => [item.provider_type, item]));
   const primaryActions = payload.primary_actions || [
@@ -580,6 +591,19 @@ function renderDependencyReadiness(payload) {
     li.textContent = line;
     setupGuidance.appendChild(li);
   }
+  const imageProviderItem = (payload.items || []).find((item) => item.provider_type === 'image_provider');
+  if (!imageProviderItem) {
+    setImageStatus('Image provider status is unavailable. Click Recheck dependencies.', true);
+    return;
+  }
+  if (imageProviderItem.status_level === 'ready') {
+    setImageStatus(imageProviderItem.user_message || 'Image generation service is ready.');
+  } else {
+    setImageStatus(
+      `${imageProviderItem.user_message || 'Image generation service is not ready.'} ${imageProviderItem.next_action || ''}`.trim(),
+      true,
+    );
+  }
 }
 
 async function refreshDependencyReadiness() {
@@ -606,17 +630,36 @@ async function sendInput() {
   }
 }
 
+function currentImageProviderStatus() {
+  if (!latestDependencyReadiness?.items) return null;
+  return latestDependencyReadiness.items.find((item) => item.provider_type === 'image_provider') || null;
+}
+
 async function generateImage() {
   try {
-    const input = document.getElementById('chat-input').value.trim() || 'Fantasy tavern interior';
+    const prompt = imagePromptInput.value.trim();
+    if (!prompt) {
+      setImageStatus('Enter an image prompt first.');
+      return;
+    }
+    await refreshDependencyReadiness();
+    const imageProviderStatus = currentImageProviderStatus();
+    if (!imageProviderStatus || imageProviderStatus.status_level !== 'ready') {
+      const detail = imageProviderStatus?.user_message || 'Image generation service is not ready.';
+      const next = imageProviderStatus?.next_action ? ` ${imageProviderStatus.next_action}` : '';
+      setImageStatus(`${detail}${next}`, true);
+      setStatus('Image generation blocked until ComfyUI is ready.', true);
+      return;
+    }
     const result = await api('/api/images/generate', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workflow_id: 'scene_image', prompt: input }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workflow_id: 'scene_image', prompt }),
     });
     if (result.result_path) selectedImageUrl = '';
     await refreshMessages();
-    setStatus(result.metadata?.fallback_reason ? `Image generated via fallback (${result.metadata.fallback_reason}).` : 'Image generated.');
+    setImageStatus('Image generated successfully via ComfyUI.');
+    setStatus('Image generated.');
   } catch (error) {
-    imagePreview.textContent = error.message;
+    setImageStatus(error.message, true);
     setStatus(error.message, true);
   }
 }
@@ -791,7 +834,11 @@ document.getElementById('load-autosave').onclick = async () => {
 document.getElementById('new-campaign').onclick = openNewCampaignModal;
 document.getElementById('create-campaign-cancel').onclick = closeNewCampaignModal;
 document.getElementById('create-campaign-confirm').onclick = createCampaignFromForm;
-document.getElementById('gen-image-btn').onclick = generateImage;
+document.getElementById('gen-image-btn').onclick = () => {
+  imagePromptInput.focus();
+  setImageStatus('Enter an image prompt, then click "Generate Image with ComfyUI".');
+};
+document.getElementById('image-generate-submit').onclick = generateImage;
 document.getElementById('save-campaign').onclick = saveCampaign;
 document.getElementById('rename-campaign').onclick = renameCampaign;
 document.getElementById('delete-campaign').onclick = deleteCampaign;

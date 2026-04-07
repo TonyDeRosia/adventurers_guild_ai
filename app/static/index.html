@@ -67,6 +67,12 @@
         <section class="panel-block">
           <h3>Image Preview</h3>
           <div id="image-preview" class="image-preview">Click an inline image to preview it here.</div>
+          <div class="image-generation-panel">
+            <label for="image-prompt-input">Image Prompt (ComfyUI)</label>
+            <textarea id="image-prompt-input" rows="3" placeholder="Describe the scene you want to generate."></textarea>
+            <button id="image-generate-submit">Generate Image with ComfyUI</button>
+            <div id="image-status-line" class="image-status-line">Image generation ready state will appear here.</div>
+          </div>
         </section>
         <section class="panel-block">
           <h3>Status</h3>

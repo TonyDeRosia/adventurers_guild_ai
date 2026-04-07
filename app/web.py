@@ -1440,6 +1440,19 @@ class WebRuntime:
     def generate_image(self, payload: dict[str, Any]) -> ImageGenerationResult:
         if not self.session.state.settings.image_generation_enabled:
             return ImageGenerationResult(success=False, workflow_id=str(payload.get("workflow_id", "scene_image")), error="Image generation is disabled for this campaign.")
+        if self.app_config.image.provider == "comfyui":
+            image_status = self.get_image_status()
+            if not bool(image_status.get("ready", False)):
+                return ImageGenerationResult(
+                    success=False,
+                    workflow_id=str(payload.get("workflow_id", "scene_image")),
+                    error=str(image_status.get("user_message", "ComfyUI is not ready.")),
+                    metadata={
+                        "provider": "comfyui",
+                        "status_code": image_status.get("status_code", ""),
+                        "next_action": image_status.get("next_action", ""),
+                    },
+                )
         request = ImageGenerationRequest(
             workflow_id=str(payload.get("workflow_id", "scene_image")),
             prompt=str(payload.get("prompt", "")),
@@ -1447,11 +1460,6 @@ class WebRuntime:
             parameters=dict(payload.get("parameters", {})),
         )
         result = self.image_adapter.generate(request, self.workflow_manager)
-        if not result.success and self.app_config.image.provider == "comfyui":
-            fallback = LocalPlaceholderImageAdapter(self.generated_image_dir)
-            result = fallback.generate(request, self.workflow_manager)
-            result.metadata["fallback_reason"] = "ComfyUI unavailable"
-            result.metadata["fallback_adapter"] = "local_placeholder"
         return result
 
     def public_image_path(self, result_path: str | None) -> str | None:

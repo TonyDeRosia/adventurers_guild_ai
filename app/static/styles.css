@@ -12,7 +12,7 @@
 html, body { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter, system-ui, sans-serif; overflow: hidden; }
 
-.app-shell { display: grid; grid-template-columns: 280px 1fr 320px; height: 100dvh; gap: 12px; padding: 12px; overflow: hidden; }
+.app-shell { display: grid; grid-template-columns: 280px 1fr 320px; height: 100vh; max-height: 100vh; gap: 12px; padding: 12px; overflow: hidden; }
 .sidebar, .chat-main { background: var(--panel); border-radius: 12px; padding: 12px; border: 1px solid #243654; }
 .sidebar h2, .sidebar h3 { margin-top: 0; }
 .panel-block { margin-bottom: 12px; }
@@ -47,6 +47,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter,
 .msg img { margin-top: 8px; max-width: 100%; border-radius: 8px; border: 1px solid #33506e; cursor: pointer; }
 
 .input-bar { margin-top: 10px; display: grid; grid-template-columns: 1fr auto auto; gap: 8px; }
+.input-bar { flex-shrink: 0; }
 input, button { border-radius: 8px; border: 1px solid #2e3d52; background: #131e2b; color: var(--text); padding: 10px; }
 select, label { display: block; width: 100%; margin-bottom: 8px; color: var(--muted); font-size: 0.9rem; }
 select { border-radius: 8px; border: 1px solid #2e3d52; background: #131e2b; color: var(--text); padding: 8px; margin-top: 4px; }
@@ -179,6 +180,19 @@ button:disabled {
 .left-panel, .right-panel { min-height: 0; overflow-y: auto; }
 
 .image-preview img { max-width: 100%; border-radius: 8px; }
+.image-generation-panel {
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+.image-status-line {
+  border: 1px solid #2a3f5f;
+  border-radius: 8px;
+  padding: 8px;
+  background: #0f1a2d;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
 .modal.hidden { display: none; }
 .modal {
   position: fixed;
