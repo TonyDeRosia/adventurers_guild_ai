@@ -530,7 +530,7 @@ class CampaignEngine:
         if suggested_moves_enabled:
             return narrative
         cleaned = re.sub(
-            r"\n?\s*(?:[-*]\s*)?(?:suggested|recommended)\s*(?:next)?\s*move[s]?\s*:\s*.*$",
+            r"\n?\s*(?:[-*]\s*)?(?:(?:suggested|recommended)\s*(?:next)?\s*move[s]?|next\s*move|your\s*first\s*course\s*of\s*action)\s*:\s*.*$",
             "",
             narrative,
             flags=re.IGNORECASE | re.MULTILINE,
