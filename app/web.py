@@ -1896,7 +1896,20 @@ class WebRuntime:
             updated = save_path.stat().st_mtime if save_path.exists() else time.time()
             try:
                 payload = json.loads(save_path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError, ValueError):
+                if not isinstance(payload, dict):
+                    raise TypeError("save payload root must be a JSON object")
+                world_meta = payload.get("world_meta", {})
+                if not isinstance(world_meta, dict):
+                    world_meta = {}
+                settings_payload = payload.get("settings", {})
+                if not isinstance(settings_payload, dict):
+                    settings_payload = {}
+                raw_display_mode = str(settings_payload.get("display_mode", "story")).strip().lower()
+                try:
+                    turn_count = int(payload.get("turn_count", 0))
+                except (TypeError, ValueError):
+                    turn_count = 0
+            except (json.JSONDecodeError, OSError, ValueError, TypeError):
                 campaigns.append(
                     {
                         "slot": slot,
@@ -1909,16 +1922,13 @@ class WebRuntime:
                     }
                 )
                 continue
-            world_meta = payload.get("world_meta", {}) if isinstance(payload, dict) else {}
-            settings_payload = payload.get("settings", {}) if isinstance(payload, dict) else {}
-            raw_display_mode = str(settings_payload.get("display_mode", "story")).strip().lower()
             campaigns.append(
                 {
                     "slot": slot,
                     "campaign_id": str(payload.get("campaign_id", "")),
                     "campaign_name": str(payload.get("campaign_name", slot)),
                     "world_name": str(world_meta.get("world_name", "Unknown world")),
-                    "turn_count": int(payload.get("turn_count", 0)),
+                    "turn_count": turn_count,
                     "display_mode": raw_display_mode if raw_display_mode in {"story", "mud", "rpg"} else "story",
                     "updated": updated,
                     "loadable": True,
