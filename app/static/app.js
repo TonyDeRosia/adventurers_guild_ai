@@ -39,6 +39,38 @@ function commandFromAction(actionText) {
 
 async function runReadinessAction(actionId, item) {
   try {
+    if (actionId === 'setup_text_ai') {
+      const modelName = document.getElementById('model-name').value.trim() || item.selected_model || 'llama3';
+      setStatus('Set Up Text AI: installing / starting / waiting for readiness...');
+      const result = await api('/api/setup/orchestrate-text', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: modelName }),
+      });
+      await refreshDependencyReadiness();
+      console.log('[setup-action] readiness refresh triggered');
+      setStatus(result.summary || result.message || (result.ok ? 'Text AI ready.' : 'Text AI setup failed.'), !result.ok);
+      return;
+    }
+    if (actionId === 'setup_image_ai') {
+      setStatus('Set Up Image AI: installing / starting / waiting for readiness...');
+      const result = await api('/api/setup/orchestrate-image', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+      });
+      await refreshDependencyReadiness();
+      console.log('[setup-action] readiness refresh triggered');
+      setStatus(result.summary || result.message || (result.ok ? 'Image AI ready.' : 'Image AI setup failed.'), !result.ok);
+      return;
+    }
+    if (actionId === 'setup_everything') {
+      const modelName = document.getElementById('model-name').value.trim() || item.selected_model || 'llama3';
+      setStatus('Set Up Everything: installing, starting, waiting for readiness...');
+      const result = await api('/api/setup/orchestrate-everything', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: modelName }),
+      });
+      await refreshDependencyReadiness();
+      console.log('[setup-action] readiness refresh triggered');
+      setStatus(result.summary || result.message || (result.ok ? 'Text AI ready. Image AI ready.' : 'Setup Everything failed.'), !result.ok);
+      return;
+    }
     if (actionId === 'recheck') {
       await refreshDependencyReadiness();
       setStatus('Dependency readiness refreshed.');
@@ -272,14 +304,27 @@ async function refreshSaves() {
 function renderDependencyReadiness(payload) {
   readinessPanel.innerHTML = '';
   const byType = Object.fromEntries((payload.items || []).map((item) => [item.provider_type, item]));
+  const primaryActions = payload.primary_actions || [
+    { id: 'setup_text_ai', label: 'Set Up Text AI' },
+    { id: 'setup_image_ai', label: 'Set Up Image AI' },
+    { id: 'setup_everything', label: 'Set Up Everything' },
+  ];
   const summary = document.createElement('div');
   summary.className = 'readiness-summary';
+  const textReady = byType.model_provider?.status_level === 'ready' && byType.selected_model?.status_level === 'ready';
+  const imageReady = byType.image_provider?.status_level === 'ready';
   summary.innerHTML = `
-    <div><strong>Text AI Setup:</strong> ${byType.model_provider?.status_level === 'ready' && byType.selected_model?.status_level === 'ready' ? 'ready' : 'needs setup'}</div>
-    <div><strong>Image AI Setup:</strong> ${byType.image_provider?.status_level === 'ready' ? 'ready' : 'needs setup'}</div>
+    <div><strong>Text AI Setup:</strong> ${textReady ? 'ready' : 'failed / waiting for readiness'}</div>
+    <div><strong>Image AI Setup:</strong> ${imageReady ? 'ready' : 'failed / waiting for readiness'}</div>
     <div>Fallback story mode: available</div>
     <div>Fallback image mode: local placeholder available</div>
+    <div class="readiness-action-row">
+      ${primaryActions.map((action) => `<button class="readiness-action-btn primary-action-btn" data-action="${escapeHtml(action.id)}">${escapeHtml(action.label)}</button>`).join('')}
+    </div>
   `;
+  summary.querySelectorAll('.primary-action-btn').forEach((button) => {
+    button.onclick = () => runReadinessAction(button.dataset.action, byType.selected_model || {});
+  });
   readinessPanel.appendChild(summary);
 
   const sections = [
@@ -552,6 +597,9 @@ document.getElementById('save-campaign').onclick = saveCampaign;
 document.getElementById('rename-campaign').onclick = renameCampaign;
 document.getElementById('delete-campaign').onclick = deleteCampaign;
 document.getElementById('save-settings').onclick = applySettings;
+document.getElementById('setup-text-ai').onclick = () => runReadinessAction('setup_text_ai', {});
+document.getElementById('setup-image-ai').onclick = () => runReadinessAction('setup_image_ai', {});
+document.getElementById('setup-everything').onclick = () => runReadinessAction('setup_everything', {});
 document.getElementById('recheck-readiness').onclick = async () => {
   try {
     await refreshDependencyReadiness();
