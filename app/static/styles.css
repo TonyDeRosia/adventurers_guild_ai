@@ -115,6 +115,45 @@ button:hover { border-color: var(--accent); }
   background: #12314d;
   color: #dbeafe;
 }
+.setup-progress {
+  border: 1px solid #344c6d;
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 8px;
+  background: #101d33;
+  display: grid;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+.setup-progress.hidden { display: none; }
+.setup-progress .setup-progress-head { display: flex; align-items: center; gap: 8px; }
+.setup-progress .spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid #375b83;
+  border-top-color: #9ad9ff;
+  animation: spin 1s linear infinite;
+}
+.setup-progress .setup-progress-summary.error { color: #fca5a5; }
+.setup-progress .setup-progress-summary.success { color: #86efac; }
+.setup-progress .setup-steps {
+  margin: 0;
+  padding-left: 16px;
+  display: grid;
+  gap: 4px;
+}
+.setup-progress .setup-step.ready { color: #86efac; }
+.setup-progress .setup-step.running { color: #fde68a; }
+.setup-progress .setup-step.failed { color: #fca5a5; }
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 .setup-guidance {
   margin: 0;
   padding-left: 18px;
