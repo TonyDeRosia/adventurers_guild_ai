@@ -1910,6 +1910,8 @@ class WebRuntime:
                 )
                 continue
             world_meta = payload.get("world_meta", {}) if isinstance(payload, dict) else {}
+            settings_payload = payload.get("settings", {}) if isinstance(payload, dict) else {}
+            raw_display_mode = str(settings_payload.get("display_mode", "story")).strip().lower()
             campaigns.append(
                 {
                     "slot": slot,
@@ -1917,6 +1919,7 @@ class WebRuntime:
                     "campaign_name": str(payload.get("campaign_name", slot)),
                     "world_name": str(world_meta.get("world_name", "Unknown world")),
                     "turn_count": int(payload.get("turn_count", 0)),
+                    "display_mode": raw_display_mode if raw_display_mode in {"story", "mud", "rpg"} else "story",
                     "updated": updated,
                     "loadable": True,
                 }
@@ -2601,6 +2604,9 @@ class WebRuntime:
             payload.get("campaign_auto_visuals_enabled", settings.campaign_auto_visuals_enabled)
         )
         settings.suggested_moves_enabled = bool(payload.get("suggested_moves_enabled", settings.suggested_moves_enabled))
+        requested_display_mode = str(payload.get("display_mode", settings.display_mode)).strip().lower()
+        if requested_display_mode in {"story", "mud", "rpg"}:
+            settings.display_mode = requested_display_mode
         raw_override = payload.get("player_suggested_moves_override", settings.player_suggested_moves_override)
         settings.player_suggested_moves_override = None if raw_override is None else bool(raw_override)
         content = payload.get("content_settings", {})

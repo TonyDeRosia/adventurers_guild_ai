@@ -120,6 +120,31 @@ def test_display_mode_persists_after_save_load_and_switch(tmp_path: Path, monkey
     assert loaded["state"]["settings"]["display_mode"] == "mud"
 
 
+def test_display_mode_can_be_changed_from_campaign_settings_and_persists(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"player_name": "ModeSwap", "slot": "slot_mode_swap", "display_mode": "story"})
+    updated = runtime.set_campaign_settings({"display_mode": "rpg"})
+    assert updated["display_mode"] == "rpg"
+    runtime.save_active_campaign("slot_mode_swap")
+
+    reloaded = _runtime(tmp_path, monkeypatch)
+    switched = reloaded.switch_campaign("slot_mode_swap")
+    assert switched["state"]["settings"]["display_mode"] == "rpg"
+
+
+def test_campaign_listing_includes_display_mode_for_selected_campaign_summary(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"player_name": "ListStory", "slot": "slot_story_list", "display_mode": "story"})
+    runtime.save_active_campaign("slot_story_list")
+    runtime.create_campaign({"player_name": "ListMud", "slot": "slot_mud_list", "display_mode": "mud"})
+    runtime.save_active_campaign("slot_mud_list")
+
+    campaigns = runtime.list_campaigns()
+    by_slot = {entry["slot"]: entry for entry in campaigns}
+    assert by_slot["slot_story_list"]["display_mode"] == "story"
+    assert by_slot["slot_mud_list"]["display_mode"] == "mud"
+
+
 @pytest.mark.parametrize("display_mode", ["mud", "rpg"])
 def test_campaign_creation_accepts_non_story_display_modes(tmp_path: Path, monkeypatch, display_mode: str) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
@@ -236,6 +261,17 @@ def test_runtime_character_sheet_browser_uses_dedicated_create_modal_markup() ->
     assert 'id="runtime-character-sheet-create-modal"' in index_html
     assert 'id="runtime-character-sheet-create-panel"' not in index_html
     assert "No character sheets attached yet." in app_js
+
+
+def test_campaign_panel_removes_quick_load_autosave_and_adds_display_mode_controls() -> None:
+    index_html = Path("app/static/index.html").read_text(encoding="utf-8")
+    app_js = Path("app/static/app.js").read_text(encoding="utf-8")
+    assert "Quick load autosave" not in index_html
+    assert 'id="open-display-mode-modal"' in index_html
+    assert 'id="selected-campaign-summary"' in index_html
+    assert "renderSelectedCampaignSummary" in app_js
+    assert "display_mode_change_requested" in app_js
+    assert "display_mode_change_applied" in app_js
 
 
 def test_custom_campaign_starts_without_sample_npcs_or_quests(tmp_path: Path, monkeypatch) -> None:
