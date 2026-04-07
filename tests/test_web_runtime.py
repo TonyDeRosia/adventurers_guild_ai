@@ -207,6 +207,78 @@ def test_invalid_external_workflow_path_disables_image_feature_cleanly(tmp_path:
     assert "path" in (result.error or "").lower()
 
 
+def test_visual_pipeline_apply_rejects_invalid_workflow_path(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_root = tmp_path / "ComfyUI"
+    comfy_root.mkdir(parents=True, exist_ok=True)
+    (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_root / "custom_nodes").mkdir(exist_ok=True)
+    (comfy_root / "models").mkdir(exist_ok=True)
+    (comfy_root / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
+    checkpoints = comfy_root / "models" / "checkpoints"
+    checkpoints.mkdir(parents=True, exist_ok=True)
+
+    original_workflow = runtime.app_config.image.comfyui_workflow_path
+    result = runtime.apply_visual_pipeline_settings(
+        {
+            "comfyui_path": str(comfy_root),
+            "comfyui_workflow_path": str(tmp_path / "missing.txt"),
+            "comfyui_output_dir": "",
+            "checkpoint_folder": str(checkpoints),
+        }
+    )
+    assert result["ok"] is False
+    assert result["error_field"] == "comfyui_workflow_path"
+    assert runtime.app_config.image.comfyui_workflow_path == original_workflow
+
+
+def test_visual_pipeline_apply_saves_and_reloads_runtime(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_root = tmp_path / "ComfyUI"
+    comfy_root.mkdir(parents=True, exist_ok=True)
+    (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_root / "custom_nodes").mkdir(exist_ok=True)
+    (comfy_root / "models").mkdir(exist_ok=True)
+    (comfy_root / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
+    workflow = tmp_path / "scene.json"
+    workflow.write_text("{}", encoding="utf-8")
+    checkpoints = comfy_root / "models" / "checkpoints"
+    checkpoints.mkdir(parents=True, exist_ok=True)
+
+    result = runtime.apply_visual_pipeline_settings(
+        {
+            "comfyui_path": str(comfy_root),
+            "comfyui_workflow_path": str(workflow),
+            "comfyui_output_dir": "",
+            "checkpoint_folder": str(checkpoints),
+        }
+    )
+    assert result["ok"] is True
+    assert runtime.app_config.image.comfyui_workflow_path == str(workflow)
+    assert result["path_config"]["image"]["pipeline_ready"] is True
+
+    reloaded = _runtime(tmp_path, monkeypatch)
+    assert reloaded.app_config.image.comfyui_workflow_path == str(workflow)
+
+
+def test_start_image_engine_reports_missing_workflow_before_startup(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    comfy_root = tmp_path / "ComfyUI"
+    comfy_root.mkdir(parents=True, exist_ok=True)
+    (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_root / "custom_nodes").mkdir(exist_ok=True)
+    (comfy_root / "models").mkdir(exist_ok=True)
+    (comfy_root / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
+    runtime.app_config.image.comfyui_path = str(comfy_root)
+    runtime.app_config.image.comfyui_workflow_path = ""
+    runtime.app_config.image.checkpoint_folder = str(comfy_root / "models" / "checkpoints")
+
+    result = runtime.start_image_engine()
+    assert result["ok"] is False
+    assert result["message"] == "Workflow JSON is not configured."
+
+
 def test_turn_flow_persists_memory_and_messages(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
 
@@ -888,7 +960,18 @@ def test_dependency_readiness_ollama_online_model_present(tmp_path: Path, monkey
 def test_dependency_readiness_comfyui_offline(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.app_config.image.provider = "comfyui"
-    monkeypatch.setattr(runtime, "_find_comfyui_root", lambda: Path("/fake/ComfyUI"))
+    comfy_dir = tmp_path / "ComfyUI"
+    comfy_dir.mkdir(parents=True, exist_ok=True)
+    (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
+    (comfy_dir / "models" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (comfy_dir / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
+    workflow = tmp_path / "scene.json"
+    workflow.write_text("{}", encoding="utf-8")
+    runtime.app_config.image.comfyui_path = str(comfy_dir)
+    runtime.app_config.image.comfyui_workflow_path = str(workflow)
+    runtime.app_config.image.checkpoint_folder = str(comfy_dir / "models" / "checkpoints")
+    monkeypatch.setattr(runtime, "_find_comfyui_root", lambda: comfy_dir)
     monkeypatch.setattr(
         "images.comfyui_adapter.ComfyUIAdapter.check_readiness",
         lambda self: {
@@ -1002,6 +1085,57 @@ def test_setup_endpoints_invoke_backend_actions(tmp_path: Path, monkeypatch, cap
     assert "[setup-action] route invoked endpoint=/api/setup/orchestrate-everything model=llama3" in captured.out
 
 
+def test_visual_pipeline_endpoints_apply_and_validate(tmp_path: Path, monkeypatch) -> None:
+    try:
+        from fastapi.testclient import TestClient
+    except RuntimeError as exc:
+        pytest.skip(str(exc))
+    runtime = _runtime(tmp_path, monkeypatch)
+    app = create_web_app(runtime, runtime.root / "app" / "static")
+    client = TestClient(app)
+
+    comfy_root = tmp_path / "ComfyUI"
+    comfy_root.mkdir(parents=True, exist_ok=True)
+    (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_root / "custom_nodes").mkdir(exist_ok=True)
+    (comfy_root / "models").mkdir(exist_ok=True)
+    (comfy_root / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
+    workflow = tmp_path / "scene.json"
+    workflow.write_text("{}", encoding="utf-8")
+    checkpoints = comfy_root / "models" / "checkpoints"
+    checkpoints.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "comfyui_path": str(comfy_root),
+        "comfyui_workflow_path": str(workflow),
+        "comfyui_output_dir": "",
+        "checkpoint_folder": str(checkpoints),
+    }
+
+    validate_response = client.post("/api/settings/visual-pipeline/validate", json=payload)
+    apply_response = client.post("/api/settings/visual-pipeline", json=payload)
+
+    assert validate_response.status_code == 200
+    assert validate_response.json()["path_config"]["image"]["pipeline_ready"] is True
+    assert apply_response.status_code == 200
+    assert apply_response.json()["ok"] is True
+
+
+def test_pick_file_endpoint_returns_selected_path(tmp_path: Path, monkeypatch) -> None:
+    try:
+        from fastapi.testclient import TestClient
+    except RuntimeError as exc:
+        pytest.skip(str(exc))
+    runtime = _runtime(tmp_path, monkeypatch)
+    app = create_web_app(runtime, runtime.root / "app" / "static")
+    client = TestClient(app)
+    monkeypatch.setattr(runtime, "pick_file", lambda title, initial_path="", filters=None: {"ok": True, "path": "/tmp/workflow.json"})
+
+    response = client.post("/api/setup/pick-file", json={"title": "Select workflow", "filters": [".json"]})
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert response.json()["path"].endswith("workflow.json")
+
+
 def test_dependency_readiness_comfyui_not_installed(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.app_config.image.provider = "comfyui"
@@ -1067,6 +1201,12 @@ def test_start_image_engine_repairs_launcher_before_failing(tmp_path: Path, monk
     (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
     (comfy_dir / "models").mkdir(exist_ok=True)
     runtime.app_config.image.comfyui_path = str(comfy_dir)
+    workflow = tmp_path / "scene.json"
+    workflow.write_text("{}", encoding="utf-8")
+    checkpoint_dir = comfy_dir / "models" / "checkpoints"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    runtime.app_config.image.comfyui_workflow_path = str(workflow)
+    runtime.app_config.image.checkpoint_folder = str(checkpoint_dir)
 
     monkeypatch.setattr(runtime, "_find_comfyui_root", lambda: comfy_dir)
     monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": False})
@@ -1094,7 +1234,12 @@ def test_start_image_engine_detects_early_exit_and_exposes_startup_log(tmp_path:
     (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
     (comfy_dir / "run_cpu.bat").write_text("@echo off\r\npython main.py\r\n", encoding="utf-8")
     (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
-    (comfy_dir / "models").mkdir(exist_ok=True)
+    (comfy_dir / "models" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    workflow = tmp_path / "scene.json"
+    workflow.write_text("{}", encoding="utf-8")
+    runtime.app_config.image.comfyui_path = str(comfy_dir)
+    runtime.app_config.image.comfyui_workflow_path = str(workflow)
+    runtime.app_config.image.checkpoint_folder = str(comfy_dir / "models" / "checkpoints")
 
     monkeypatch.setattr(runtime, "_find_comfyui_root", lambda: comfy_dir)
     monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": False})

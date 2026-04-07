@@ -273,6 +273,20 @@ class WebRuntime:
                     "next_action": "Set your workflow JSON file in AI Setup, then click Recheck.",
                     "error": reason,
                 }
+            if not bool(image_paths["checkpoint_dir"]["valid"]):
+                reason = "missing_checkpoint_folder" if not image_paths["checkpoint_dir"]["configured"] else "invalid_checkpoint_folder"
+                print(f"[path-config] image_features_disabled reason={reason}")
+                return {
+                    "provider": "comfyui",
+                    "base_url": base_url,
+                    "reachable": False,
+                    "ready": False,
+                    "status_code": "checkpoint_required",
+                    "status_level": "error",
+                    "user_message": str(image_paths["checkpoint_dir"]["message"]),
+                    "next_action": "Set your checkpoint folder in AI Setup, then click Recheck.",
+                    "error": reason,
+                }
             base_status = ComfyUIAdapter(base_url=base_url).check_readiness()
             comfyui_root = self._find_comfyui_root()
             installed = comfyui_root is not None
@@ -445,7 +459,7 @@ class WebRuntime:
         if self.app_config.image.provider != "comfyui":
             return [{"id": "recheck", "label": "Recheck"}]
         status_code = str(image_status.get("status_code", ""))
-        if status_code in {"setup_required", "workflow_required"}:
+        if status_code in {"setup_required", "workflow_required", "checkpoint_required"}:
             return [{"id": "recheck", "label": "Recheck"}]
         if status_code == "not_installed":
             return [{"id": "install_image_engine", "label": "Install Image Engine"}, {"id": "recheck", "label": "Recheck"}]
@@ -491,6 +505,29 @@ class WebRuntime:
             return {"ok": False, "message": "Folder picker could not be opened.", "error": str(exc)}
         if not selected:
             return {"ok": False, "message": "No folder selected."}
+        return {"ok": True, "path": selected}
+
+    def pick_file(self, title: str, initial_path: str = "", filters: list[str] | None = None) -> dict[str, Any]:
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+        except Exception as exc:
+            return {"ok": False, "message": "File picker is unavailable in this environment.", "error": str(exc)}
+        filter_list = filters or [".json"]
+        file_types = [("Allowed files", " ".join(f"*{suffix}" for suffix in filter_list)), ("All files", "*.*")]
+        try:
+            root = tk.Tk()
+            root.withdraw()
+            selected = filedialog.askopenfilename(
+                title=title,
+                initialdir=(str(Path(initial_path).parent) if initial_path else str(self.paths.user_data)),
+                filetypes=file_types,
+            )
+            root.destroy()
+        except Exception as exc:
+            return {"ok": False, "message": "File picker could not be opened.", "error": str(exc)}
+        if not selected:
+            return {"ok": False, "message": "No file selected."}
         return {"ok": True, "path": selected}
 
     def connect_ollama_path(self, selected_path: str) -> dict[str, Any]:
@@ -1249,11 +1286,97 @@ class WebRuntime:
             return {"configured": True, "valid": False, "path": raw, "message": "Output folder does not exist and cannot be created."}
         return {"configured": True, "valid": True, "path": str(candidate), "resolved_path": str(candidate), "message": "Output folder is valid."}
 
+    def _validate_checkpoint_dir_config(self, configured_path: str, comfyui_path: str = "") -> dict[str, Any]:
+        raw = str(configured_path or "").strip()
+        if not raw:
+            comfy_root = Path(str(comfyui_path or "").strip()) if str(comfyui_path or "").strip() else None
+            inferred = (comfy_root / "models" / "checkpoints") if comfy_root else None
+            if inferred and inferred.exists() and inferred.is_dir():
+                return {
+                    "configured": False,
+                    "valid": True,
+                    "path": "",
+                    "resolved_path": str(inferred),
+                    "message": "Using ComfyUI default checkpoints folder.",
+                }
+            return {"configured": False, "valid": False, "path": "", "message": "Checkpoint folder is required."}
+        candidate = Path(raw)
+        if not candidate.exists() or not candidate.is_dir():
+            return {"configured": True, "valid": False, "path": raw, "message": "Folder not found."}
+        return {"configured": True, "valid": True, "path": str(candidate), "resolved_path": str(candidate), "message": "Checkpoint folder is valid."}
+
     def get_path_configuration_status(self) -> dict[str, Any]:
         comfyui_root = self._validate_comfyui_root_config(self.app_config.image.comfyui_path)
         workflow_path = self._validate_workflow_path_config(self.app_config.image.comfyui_workflow_path)
         output_dir = self._validate_output_dir_config(self.app_config.image.comfyui_output_dir)
-        return {"image": {"comfyui_root": comfyui_root, "workflow_path": workflow_path, "output_dir": output_dir}}
+        checkpoint_dir = self._validate_checkpoint_dir_config(
+            self.app_config.image.checkpoint_folder,
+            self.app_config.image.comfyui_path,
+        )
+        pipeline_ready = bool(comfyui_root["valid"] and workflow_path["valid"] and checkpoint_dir["valid"] and output_dir["valid"])
+        return {
+            "image": {
+                "comfyui_root": comfyui_root,
+                "workflow_path": workflow_path,
+                "checkpoint_dir": checkpoint_dir,
+                "output_dir": output_dir,
+                "pipeline_ready": pipeline_ready,
+            }
+        }
+
+    def validate_visual_pipeline_config(self, payload: dict[str, Any]) -> dict[str, Any]:
+        comfyui_path = str(payload.get("comfyui_path", "")).strip()
+        workflow_path = str(payload.get("comfyui_workflow_path", "")).strip()
+        output_dir = str(payload.get("comfyui_output_dir", "")).strip()
+        checkpoint_folder = str(payload.get("checkpoint_folder", "")).strip()
+        print("[path-config] apply_requested")
+        status = {
+            "image": {
+                "comfyui_root": self._validate_comfyui_root_config(comfyui_path),
+                "workflow_path": self._validate_workflow_path_config(workflow_path),
+                "output_dir": self._validate_output_dir_config(output_dir),
+                "checkpoint_dir": self._validate_checkpoint_dir_config(checkpoint_folder, comfyui_path),
+            }
+        }
+        image_status = status["image"]
+        image_status["pipeline_ready"] = bool(
+            image_status["comfyui_root"]["valid"]
+            and image_status["workflow_path"]["valid"]
+            and image_status["output_dir"]["valid"]
+            and image_status["checkpoint_dir"]["valid"]
+        )
+        return status
+
+    def apply_visual_pipeline_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
+        path_config = self.validate_visual_pipeline_config(payload)
+        image_status = path_config["image"]
+        field_map = {
+            "comfyui_root": "comfyui_path",
+            "workflow_path": "comfyui_workflow_path",
+            "checkpoint_dir": "checkpoint_folder",
+            "output_dir": "comfyui_output_dir",
+        }
+        invalid_key = next((key for key, item in image_status.items() if isinstance(item, dict) and not item.get("valid", False)), None)
+        if invalid_key:
+            reason = image_status[invalid_key].get("message", "invalid")
+            print(f"[path-config] apply_failed field={field_map.get(invalid_key, invalid_key)} reason={reason}")
+            return {
+                "ok": False,
+                "message": f"Visual pipeline settings are invalid: {reason}",
+                "error_field": field_map.get(invalid_key, invalid_key),
+                "path_config": path_config,
+            }
+        self.app_config.image.comfyui_path = str(payload.get("comfyui_path", self.app_config.image.comfyui_path)).strip()
+        self.app_config.image.comfyui_workflow_path = str(
+            payload.get("comfyui_workflow_path", self.app_config.image.comfyui_workflow_path)
+        ).strip()
+        self.app_config.image.comfyui_output_dir = str(payload.get("comfyui_output_dir", self.app_config.image.comfyui_output_dir)).strip()
+        self.app_config.image.checkpoint_folder = str(payload.get("checkpoint_folder", self.app_config.image.checkpoint_folder)).strip()
+        self.config_store.save(self.app_config)
+        self.image_adapter = self._create_image_adapter()
+        print("[path-config] apply_succeeded")
+        print("[path-config] runtime_config_reloaded")
+        return {"ok": True, "message": "Visual pipeline settings applied.", "path_config": self.get_path_configuration_status()}
 
     def install_image_engine(self) -> dict[str, Any]:
         print("[setup-action] install-image-engine requested")
@@ -1323,6 +1446,25 @@ class WebRuntime:
                 "failure_stage": "provider-check",
                 "failure_stage_message": "image provider is not comfyui",
                 "steps": [{"step": "provider-check", "state": "failed", "message": "Image provider is not set to comfyui."}],
+            }
+        path_config = self.get_path_configuration_status().get("image", {})
+        if not bool(path_config.get("workflow_path", {}).get("configured")):
+            return {
+                "ok": False,
+                "message": "Workflow JSON is not configured.",
+                "next_step": "Set workflow JSON in Visual Pipeline settings and click Apply Visual Pipeline Settings.",
+                "failure_stage": "path-check",
+                "failure_stage_message": "workflow json missing",
+                "steps": [{"step": "path-check", "state": "failed", "message": "Workflow JSON is not configured."}],
+            }
+        if not bool(path_config.get("workflow_path", {}).get("valid")):
+            return {
+                "ok": False,
+                "message": "Workflow JSON path is invalid.",
+                "next_step": "Choose a valid workflow .json file and apply settings.",
+                "failure_stage": "path-check",
+                "failure_stage_message": "workflow json invalid",
+                "steps": [{"step": "path-check", "state": "failed", "message": "Configured workflow file does not exist."}],
             }
         if self.get_image_status().get("reachable", False):
             print("[setup-action] start-image-engine success reason=already running")
@@ -2679,6 +2821,14 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
         initial_path = str(payload.get("initial_path", ""))
         return runtime.pick_folder(title=title, initial_path=initial_path)
 
+    @app.post("/api/setup/pick-file")
+    def setup_pick_file(payload: dict[str, Any]) -> dict[str, Any]:
+        title = str(payload.get("title", "Select file"))
+        initial_path = str(payload.get("initial_path", ""))
+        filters = payload.get("filters", [".json"])
+        safe_filters = [str(item) for item in filters if str(item).startswith(".")] if isinstance(filters, list) else [".json"]
+        return runtime.pick_file(title=title, initial_path=initial_path, filters=safe_filters or [".json"])
+
     @app.post("/api/setup/connect-ollama-path")
     def setup_connect_ollama_path(payload: dict[str, Any]) -> dict[str, Any]:
         selected_path = str(payload.get("path", ""))
@@ -2735,6 +2885,14 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     @app.post("/api/settings/global")
     def settings_global_update(payload: dict[str, Any]) -> dict[str, Any]:
         return {"settings": runtime.set_global_settings(payload)}
+
+    @app.post("/api/settings/visual-pipeline/validate")
+    def settings_visual_pipeline_validate(payload: dict[str, Any]) -> dict[str, Any]:
+        return {"ok": True, "path_config": runtime.validate_visual_pipeline_config(payload)}
+
+    @app.post("/api/settings/visual-pipeline")
+    def settings_visual_pipeline_update(payload: dict[str, Any]) -> dict[str, Any]:
+        return runtime.apply_visual_pipeline_settings(payload)
 
     @app.post("/api/settings/campaign")
     def settings_campaign_update(payload: dict[str, Any]) -> dict[str, Any]:

@@ -179,6 +179,21 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter,
 .input-bar { flex-shrink: 0; }
 input, button { border-radius: 8px; border: 1px solid #2e3d52; background: #131e2b; color: var(--text); padding: 10px; }
 select, label { display: block; width: 100%; margin-bottom: 8px; color: var(--muted); font-size: 0.9rem; }
+.path-picker-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.field-validation {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.field-validation.valid { color: #86efac; }
+.field-validation.invalid { color: #fca5a5; }
+.field-validation.optional { color: #cbd5e1; }
 select { border-radius: 8px; border: 1px solid #2e3d52; background: #131e2b; color: var(--text); padding: 8px; margin-top: 4px; }
 button { cursor: pointer; }
 button:hover { border-color: var(--accent); }

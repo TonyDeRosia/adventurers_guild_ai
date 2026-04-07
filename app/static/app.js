@@ -21,6 +21,10 @@ const comfyuiWorkflowPathInput = document.getElementById('comfyui-workflow-path-
 const comfyuiOutputDirInput = document.getElementById('comfyui-output-dir-input');
 const comfyuiModelsList = document.getElementById('comfyui-models-list');
 const pathConfigStatus = document.getElementById('path-config-status');
+const comfyuiPathValidation = document.getElementById('comfyui-path-validation');
+const workflowPathValidation = document.getElementById('comfyui-workflow-validation');
+const outputPathValidation = document.getElementById('comfyui-output-validation');
+const checkpointPathValidation = document.getElementById('checkpoint-folder-validation');
 const checkpointFolderInput = document.getElementById('checkpoint-folder-input');
 const checkpointSourceInput = document.getElementById('checkpoint-source');
 const preferredCheckpointInput = document.getElementById('preferred-checkpoint');
@@ -77,6 +81,12 @@ let latestDependencyReadiness = null;
 let turnRequestInFlight = false;
 let modelInventoryState = { active_model_id: '', models: [] };
 let modelInstallState = {};
+let appliedVisualPipelinePaths = {
+  comfyui_path: '',
+  comfyui_workflow_path: '',
+  comfyui_output_dir: '',
+  checkpoint_folder: '',
+};
 let campaignSettingsPersisted = null;
 let campaignSettingsDirty = false;
 let campaignSettingsApplying = false;
@@ -1323,7 +1333,27 @@ async function pickFolder(title, inputElement) {
       return;
     }
     inputElement.value = result.path || '';
+    console.log(`[path-config] draft_updated field=${inputElement.id}`);
     setStatus(`Selected folder: ${result.path}`);
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
+async function pickFile(title, inputElement, filters = ['.json']) {
+  try {
+    const result = await api('/api/setup/pick-file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, initial_path: inputElement.value.trim(), filters }),
+    });
+    if (!result.ok) {
+      setStatus(result.message || 'File selection failed.', true);
+      return;
+    }
+    inputElement.value = result.path || '';
+    console.log(`[path-config] draft_updated field=${inputElement.id}`);
+    setStatus(`Selected file: ${result.path}`);
   } catch (error) {
     setStatus(error.message, true);
   }
@@ -1729,6 +1759,45 @@ async function createCampaignFromForm() {
   }
 }
 
+function visualPipelineDraftFromUi() {
+  return {
+    comfyui_path: comfyuiPathInput?.value.trim() || '',
+    comfyui_workflow_path: comfyuiWorkflowPathInput?.value.trim() || '',
+    comfyui_output_dir: comfyuiOutputDirInput?.value.trim() || '',
+    checkpoint_folder: checkpointFolderInput?.value.trim() || '',
+  };
+}
+
+async function applyVisualPipelineSettings() {
+  console.log('[path-config] apply_requested');
+  const button = document.getElementById('apply-visual-pipeline-settings');
+  if (button) button.disabled = true;
+  try {
+    const payload = visualPipelineDraftFromUi();
+    const response = await api('/api/settings/visual-pipeline', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    renderPathConfigStatus(response.path_config);
+    if (!response.ok) {
+      const reason = response.error_field || 'unknown';
+      console.log(`[path-config] apply_failed field=${reason} reason=validation_failed`);
+      setStatus(response.message || 'Visual pipeline settings are invalid.', true);
+      return;
+    }
+    appliedVisualPipelinePaths = { ...payload };
+    console.log('[path-config] apply_succeeded');
+    setStatus(response.message || 'Visual pipeline settings applied.');
+    await Promise.all([refreshDependencyReadiness(), refreshComfyuiModelList()]);
+  } catch (error) {
+    console.log('[path-config] apply_failed field=unknown reason=request_failed');
+    setStatus(error.message, true);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 async function applySettings() {
   try {
     campaignSettingsApplying = true;
@@ -1750,13 +1819,13 @@ async function applySettings() {
         model: { provider: modelProvider, model_name: modelName, ollama_path: ollamaPathInput?.value.trim() || '' },
         image: {
           provider: imageProvider,
-          comfyui_path: comfyuiPathInput?.value.trim() || '',
-          comfyui_workflow_path: comfyuiWorkflowPathInput?.value.trim() || '',
-          comfyui_output_dir: comfyuiOutputDirInput?.value.trim() || '',
+          comfyui_path: appliedVisualPipelinePaths.comfyui_path || '',
+          comfyui_workflow_path: appliedVisualPipelinePaths.comfyui_workflow_path || '',
+          comfyui_output_dir: appliedVisualPipelinePaths.comfyui_output_dir || '',
           manual_image_generation_enabled: manualImageEnabled,
           campaign_auto_visual_timing: campaignAutoVisualTiming,
           checkpoint_source: checkpointSourceInput?.value || 'local',
-          checkpoint_folder: checkpointFolderInput?.value.trim() || '',
+          checkpoint_folder: appliedVisualPipelinePaths.checkpoint_folder || '',
           preferred_checkpoint: preferredCheckpointInput?.value.trim() || 'DreamShaper',
           preferred_launcher: preferredLauncherInput?.value || 'auto',
         },
@@ -1809,12 +1878,39 @@ function renderPathConfigStatus(config) {
   const comfy = imageConfig.comfyui_root || {};
   const workflow = imageConfig.workflow_path || {};
   const output = imageConfig.output_dir || {};
+  const checkpoint = imageConfig.checkpoint_dir || {};
+  const pipelineReady = !!imageConfig.pipeline_ready;
+  const lineFor = (field, item, { optional = false } = {}) => {
+    let status = 'Missing';
+    if (item?.valid) status = 'Valid';
+    else if (optional && !item?.configured) status = 'Optional, not set';
+    else if (!item?.configured) status = 'Missing';
+    return `${field}: ${status}${item?.message ? ` (${item.message})` : ''}`;
+  };
+  const updateFieldValidation = (el, item, { optional = false } = {}) => {
+    if (!el) return;
+    el.classList.remove('valid', 'invalid', 'optional');
+    if (item?.valid) el.classList.add('valid');
+    else if (optional && !item?.configured) el.classList.add('optional');
+    else el.classList.add('invalid');
+    el.textContent = lineFor(el.dataset.fieldLabel || '', item, { optional });
+  };
+  if (comfyuiPathValidation) comfyuiPathValidation.dataset.fieldLabel = 'ComfyUI folder';
+  if (workflowPathValidation) workflowPathValidation.dataset.fieldLabel = 'Workflow JSON';
+  if (outputPathValidation) outputPathValidation.dataset.fieldLabel = 'Output folder';
+  if (checkpointPathValidation) checkpointPathValidation.dataset.fieldLabel = 'Checkpoint folder';
+  updateFieldValidation(comfyuiPathValidation, comfy);
+  updateFieldValidation(workflowPathValidation, workflow);
+  updateFieldValidation(outputPathValidation, output, { optional: true });
+  updateFieldValidation(checkpointPathValidation, checkpoint);
   const entries = [
     `ComfyUI folder: ${comfy.valid ? 'valid' : (comfy.configured ? 'invalid' : 'not configured')}`,
     `Workflow file: ${workflow.valid ? 'valid' : (workflow.configured ? 'invalid' : 'not configured')}`,
-    `Output folder: ${output.valid ? 'valid' : 'invalid'}`,
+    `Checkpoint folder: ${checkpoint.valid ? 'valid' : (checkpoint.configured ? 'invalid' : 'not configured')}`,
+    `Output folder: ${output.valid ? 'valid' : (output.configured ? 'invalid' : 'optional')}`,
+    `Image pipeline: ${pipelineReady ? 'ready' : 'not ready'}`,
   ];
-  const details = [comfy.message, workflow.message, output.message].filter(Boolean).join(' | ');
+  const details = [comfy.message, workflow.message, checkpoint.message, output.message].filter(Boolean).join(' | ');
   pathConfigStatus.textContent = `${entries.join(' • ')}${details ? ` — ${details}` : ''}`;
 }
 
@@ -1833,6 +1929,12 @@ async function loadSettings() {
   if (comfyuiWorkflowPathInput) comfyuiWorkflowPathInput.value = data.settings.image.comfyui_workflow_path || '';
   if (comfyuiOutputDirInput) comfyuiOutputDirInput.value = data.settings.image.comfyui_output_dir || '';
   if (checkpointFolderInput) checkpointFolderInput.value = data.settings.image.checkpoint_folder || '';
+  appliedVisualPipelinePaths = {
+    comfyui_path: data.settings.image.comfyui_path || '',
+    comfyui_workflow_path: data.settings.image.comfyui_workflow_path || '',
+    comfyui_output_dir: data.settings.image.comfyui_output_dir || '',
+    checkpoint_folder: data.settings.image.checkpoint_folder || '',
+  };
   if (checkpointSourceInput) checkpointSourceInput.value = data.settings.image.checkpoint_source || 'local';
   if (preferredCheckpointInput) preferredCheckpointInput.value = data.settings.image.preferred_checkpoint || 'DreamShaper';
   if (preferredLauncherInput) preferredLauncherInput.value = data.settings.image.preferred_launcher || 'auto';
@@ -1896,8 +1998,11 @@ document.getElementById('download-comfyui').onclick = () => openOfficialDownload
 document.getElementById('open-checkpoint-page').onclick = () => openOfficialDownload('https://civitai.com/models/4384/dreamshaper');
 document.getElementById('pick-ollama-folder').onclick = () => pickFolder('Select Ollama install folder', ollamaPathInput);
 document.getElementById('pick-comfyui-folder').onclick = () => pickFolder('Select ComfyUI folder', comfyuiPathInput);
+document.getElementById('pick-comfyui-workflow-file').onclick = () => pickFile('Select ComfyUI workflow JSON', comfyuiWorkflowPathInput, ['.json']);
+document.getElementById('pick-comfyui-output-folder').onclick = () => pickFolder('Select ComfyUI output folder', comfyuiOutputDirInput);
+document.getElementById('pick-checkpoint-folder').onclick = () => pickFolder('Select checkpoint folder', checkpointFolderInput);
 document.getElementById('connect-ollama-folder').onclick = connectOllamaFolder;
-document.getElementById('connect-comfyui-folder').onclick = connectComfyuiFolder;
+document.getElementById('apply-visual-pipeline-settings').onclick = applyVisualPipelineSettings;
 document.getElementById('install-story-model').onclick = () => runReadinessAction('install_model', { selected_model: document.getElementById('model-name').value.trim() || 'llama3' });
 document.getElementById('refresh-supported-models').onclick = async () => {
   try {
@@ -1933,6 +2038,15 @@ if (campaignAutoVisualsEnabledInput) {
     queueAutoApplyCampaignSettings();
   };
 }
+[
+  { field: 'comfyui_path', element: comfyuiPathInput },
+  { field: 'workflow_path', element: comfyuiWorkflowPathInput },
+  { field: 'output_dir', element: comfyuiOutputDirInput },
+  { field: 'checkpoint_folder', element: checkpointFolderInput },
+].forEach(({ field, element }) => {
+  if (!element) return;
+  element.addEventListener('input', () => console.log(`[path-config] draft_updated field=${field}`));
+});
 if (campaignAutoVisualTimingInput) {
   campaignAutoVisualTimingInput.onchange = () => {
     syncVisualModeUi({
