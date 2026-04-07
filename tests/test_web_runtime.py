@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from app.web import WebRuntime
+from models.base import NarrationModelAdapter, ProviderUnavailableError
 
 
 def _runtime(tmp_path: Path, monkeypatch) -> WebRuntime:
@@ -69,6 +70,29 @@ def test_turn_flow_persists_memory_and_messages(tmp_path: Path, monkeypatch) -> 
     runtime.save_active_campaign("slot_memory")
     runtime.switch_campaign("slot_memory")
     assert runtime.session.state.conversation_turns[-1].player_input == "summarize"
+
+
+def test_runtime_does_not_add_session_boilerplate_messages(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    texts = [message["text"] for message in runtime.session.message_history]
+    assert "Web session initialized. GUI mode is active." not in texts
+
+
+class _FailingProvider(NarrationModelAdapter):
+    provider_name = "ollama"
+
+    def generate(self, prompt: str, system_prompt: str = "", history=None) -> str:
+        raise ProviderUnavailableError("simulated connection failure")
+
+
+def test_turn_fallback_is_clean_when_provider_fails(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _FailingProvider()
+    out = runtime.handle_player_input("look")
+    assert out["metadata"]["fallback_used"] is True
+    assert out["metadata"]["fallback_reason"] == "simulated connection failure"
+    assert "[Local template narrator]" not in out["narrative"]
+    assert "[Requested Mode]" not in out["narrative"]
 
 
 def test_image_fallback_from_comfyui_to_local_placeholder(tmp_path: Path, monkeypatch) -> None:

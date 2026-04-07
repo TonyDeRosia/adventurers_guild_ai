@@ -65,7 +65,7 @@ class WebRuntime:
         default_slot = "autosave" if self.state_manager.can_load("autosave") else "campaign_1"
         self.session = WebSession(state=self._load_or_create(default_slot), active_slot=default_slot)
         self.session.message_history = self._history_for_slot(self.session.active_slot)
-        self._append_message("system", "Web session initialized. GUI mode is active.")
+        print("[web-runtime] session initialized")
 
     def _load_history_store(self) -> dict[str, list[dict[str, Any]]]:
         if not self.history_store_path.exists():
@@ -219,7 +219,7 @@ class WebRuntime:
             raise ValueError(f"Save slot '{slot}' is corrupted and could not be loaded")
         self.session = WebSession(state=loaded, active_slot=slot)
         self.session.message_history = self._history_for_slot(slot)
-        self._append_message("system", f"Switched to campaign slot '{slot}'.")
+        print(f"[web-runtime] switched campaign slot={slot}")
         return {"slot": slot, "state": self.serialize_state()}
 
     def delete_campaign(self, slot: str) -> dict[str, Any]:
@@ -263,7 +263,7 @@ class WebRuntime:
         )
         self.session = WebSession(state=state, active_slot=slot)
         self.session.message_history = []
-        self._append_message("system", f"Started new campaign for {player_name} in slot '{slot}'.")
+        print(f"[web-runtime] created campaign slot={slot} player={player_name}")
         self.save_active_campaign(slot)
         return {"slot": slot, "state": self.serialize_state()}
 
@@ -320,7 +320,10 @@ class WebRuntime:
         self.config_store.save(self.app_config)
         self.engine.model = self._create_model_adapter()
         self.image_adapter = self._create_image_adapter()
-        self._append_message("system", "Global runtime settings updated.")
+        print(
+            f"[settings] model_provider={self.app_config.model.provider} model={self.app_config.model.model_name} "
+            f"image_provider={self.app_config.image.provider}"
+        )
         return self.get_global_settings()
 
     def set_campaign_settings(self, payload: dict[str, Any]) -> dict[str, Any]:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 
 from engine.character_sheet import CharacterSheetService
 from engine.content_registry import ContentRegistry
@@ -18,7 +19,7 @@ from memory.retrieval import MemoryRetrievalPipeline, RetrievalRequest
 from memory.summary import SummaryGenerator
 from memory.world_state import WorldStateTracker
 from models.base import ChatMessage, NarrationModelAdapter
-from models.base import NullNarrationAdapter
+from models.base import NullNarrationAdapter, ProviderUnavailableError
 from prompts.renderer import PromptRenderer
 from rules.combat import CombatEngine
 
@@ -410,10 +411,34 @@ class CampaignEngine:
             requested_mode=requested_mode,
         )
         history = self._build_model_history(state)
-        narrative = self.model.generate(prompt_packet.turn_prompt, prompt_packet.system_prompt, history=history)
-        if not narrative.strip() or narrative.lower().startswith("[ollama unavailable]"):
-            system_messages.append("Primary model provider unavailable; using local fallback narrator for this turn.")
-            narrative = NullNarrationAdapter().generate(prompt_packet.turn_prompt, prompt_packet.system_prompt, history=history)
+        selected_provider = self.model.provider_name
+        selected_model = getattr(self.model, "model", getattr(self.model, "model_path", "n/a"))
+        provider_attempted = True
+        fallback_used = False
+        fallback_reason = ""
+        raw_narrative = ""
+        try:
+            raw_narrative = self.model.generate(prompt_packet.turn_prompt, prompt_packet.system_prompt, history=history)
+            if not raw_narrative.strip():
+                raise ProviderUnavailableError("Provider returned empty text")
+        except ProviderUnavailableError as exc:
+            fallback_reason = str(exc)
+            if selected_provider in {"null", "local_template"}:
+                raise
+            fallback_used = True
+            raw_narrative = NullNarrationAdapter().generate(prompt_packet.turn_prompt, prompt_packet.system_prompt, history=history)
+        sanitized_narrative, was_sanitized = self._sanitize_narrative(raw_narrative)
+        if not fallback_used:
+            print(
+                f"[turn-routing] provider={selected_provider} model={selected_model} attempted={provider_attempted} "
+                f"fallback={fallback_used} reason=none sanitized={was_sanitized}"
+            )
+        else:
+            print(
+                f"[turn-routing] provider={selected_provider} model={selected_model} attempted={provider_attempted} "
+                f"fallback={fallback_used} reason={fallback_reason} sanitized={was_sanitized}"
+            )
+        narrative = sanitized_narrative
         self.memory.record_recent(state, f"Narrator: {narrative}")
         self.memory.record_conversation_turn(
             state,
@@ -428,10 +453,48 @@ class CampaignEngine:
             messages=self._build_structured_messages(system_messages, narrative),
             metadata={
                 "requested_mode": requested_mode,
-                "model_provider": self.model.provider_name,
+                "model_provider": selected_provider,
+                "model_name": selected_model,
+                "provider_attempted": provider_attempted,
+                "fallback_used": fallback_used,
+                "fallback_reason": fallback_reason,
+                "sanitized_output": was_sanitized,
                 "turn_count": state.turn_count,
             },
         )
+
+    def _sanitize_narrative(self, narrative: str) -> tuple[str, bool]:
+        text = narrative.strip()
+        original = text
+        banned_prefixes = (
+            "[Local template narrator]",
+            "[Requested Mode]",
+            "[Conversation Context]",
+            "[Memory Context]",
+            "[Scene Context]",
+            "[Player State Summary]",
+        )
+        filtered_lines: list[str] = []
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith(banned_prefixes):
+                continue
+            if stripped.startswith("Recent chat turns:") or stripped.startswith("Recent memory:"):
+                continue
+            if stripped.startswith("Long-term memory:") or stripped.startswith("Session summaries:"):
+                continue
+            if stripped.startswith("Unresolved plot threads:") or stripped.startswith("Important world facts:"):
+                continue
+            filtered_lines.append(stripped)
+        text = " ".join(filtered_lines) if filtered_lines else text
+        text = re.sub(r"(\[Local template narrator\]\s*)+", "", text, flags=re.IGNORECASE).strip()
+        text = re.sub(r"(Respond with 2-4 sentences and one suggested next move\.?)+", "", text, flags=re.IGNORECASE).strip()
+        text = re.sub(r"\s{2,}", " ", text).strip()
+        if not text:
+            text = "The world holds its breath for a heartbeat, waiting for your next move."
+        return text, text != original
 
     def _build_model_history(self, state: CampaignState) -> list[ChatMessage]:
         history: list[ChatMessage] = []
