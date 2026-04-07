@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from copy import deepcopy
 from pathlib import Path
 
 from engine.entities import CampaignState
@@ -21,6 +20,15 @@ class GameStateManager:
 
     def new_from_sample(self) -> CampaignState:
         payload = json.loads(self.sample_campaign_path.read_text(encoding="utf-8"))
+        if not payload.get("world_meta"):
+            payload["world_meta"] = {
+                "world_name": "Moonfall",
+                "world_theme": "classic fantasy",
+                "starting_location_name": "Moonfall Town",
+                "tone": payload.get("settings", {}).get("narration_tone", "heroic"),
+                "premise": "",
+                "player_concept": "",
+            }
         return CampaignState.from_dict(payload)
 
     def create_new_campaign(
@@ -41,15 +49,64 @@ class GameStateManager:
         player_concept: str | None = None,
         suggested_moves_enabled: bool = True,
     ) -> CampaignState:
-        payload = json.loads(self.sample_campaign_path.read_text(encoding="utf-8"))
-        new_payload = deepcopy(payload)
+        new_payload: dict[str, object] = {
+            "campaign_id": "",
+            "campaign_name": "",
+            "turn_count": 0,
+            "current_location_id": "starting_location",
+            "player": {
+                "id": "player_1",
+                "name": "",
+                "char_class": "",
+                "level": 1,
+                "hp": 20,
+                "max_hp": 20,
+                "armor_class": 12,
+                "attack_bonus": 3,
+                "strength": 2,
+                "agility": 2,
+                "intellect": 2,
+                "vitality": 2,
+                "inventory": [],
+                "xp": 0,
+                "equipped_item_id": None,
+            },
+            "npcs": {},
+            "locations": {
+                "starting_location": {
+                    "id": "starting_location",
+                    "name": "",
+                    "description": "",
+                    "connections": [],
+                }
+            },
+            "quests": {},
+            "world_flags": {},
+            "faction_reputation": {"town": 0, "guild": 0, "unknown": 0},
+            "quest_outcomes": {},
+            "world_events": [],
+            "combat_effects": {},
+            "active_enemy_id": None,
+            "active_enemy_hp": None,
+            "active_dialogue_npc_id": None,
+            "active_dialogue_node_id": None,
+            "event_log": [],
+            "recent_memory": [],
+            "long_term_memory": [],
+            "session_summaries": [],
+            "unresolved_plot_threads": [],
+            "important_world_facts": [],
+            "conversation_turns": [],
+            "settings": {},
+            "world_meta": {},
+        }
         clean_player_name = player_name.strip() or "Aria"
         clean_char_class = char_class.strip() or "Ranger"
         clean_profile = profile.strip() or "classic_fantasy"
         clean_campaign_name = (campaign_name or "").strip() or f"{clean_player_name}'s {clean_profile.replace('_', ' ').title()} Campaign"
-        clean_world_name = (world_name or "").strip() or "Moonfall"
+        clean_world_name = (world_name or "").strip() or "Untitled World"
         clean_world_theme = (world_theme or "").strip() or clean_profile.replace("_", " ")
-        clean_starting_location = (starting_location_name or "").strip() or "Moonfall Town"
+        clean_starting_location = (starting_location_name or "").strip() or "Starting Area"
         clean_premise = (premise or "").strip()
         clean_player_concept = (player_concept or "").strip()
 
@@ -77,7 +134,10 @@ class GameStateManager:
                 "maturity_level": "standard",
                 "thematic_flags": [],
             }
-        new_payload["event_log"] = [f"Campaign initialized for {clean_player_name} ({clean_char_class})"]
+        new_payload["event_log"] = [
+            f"Campaign initialized for {clean_player_name} ({clean_char_class})",
+            f"World setup: {clean_world_name} / {clean_world_theme} / {clean_starting_location}",
+        ]
         new_payload["locations"][new_payload["current_location_id"]]["name"] = clean_starting_location
         starting_description = (
             f"{clean_starting_location} in {clean_world_name}, a {clean_world_theme} setting."
@@ -93,10 +153,13 @@ class GameStateManager:
             "premise": clean_premise,
             "player_concept": clean_player_concept,
         }
-        new_payload["faction_reputation"] = {"town": 0, "guild": 0, "unknown": 0}
-        new_payload["quest_outcomes"] = {}
         new_payload["world_events"] = ["campaign_started"]
-        new_payload["combat_effects"] = {}
+        print("[campaign-create] mode=custom")
+        print("[campaign-create] using_sample_template=False")
+        print(f"[campaign-create] world_name={clean_world_name}")
+        print(f"[campaign-create] starting_location={clean_starting_location}")
+        print("[campaign-create] seeded_named_npcs=[]")
+        print("[campaign-create] seeded_quests=[]")
         return CampaignState.from_dict(new_payload)
 
     def save(self, state: CampaignState, slot: str = "autosave") -> Path:

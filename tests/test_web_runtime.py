@@ -65,6 +65,30 @@ def test_create_campaign_persists_world_metadata(tmp_path: Path, monkeypatch) ->
     assert runtime.session.state.locations[runtime.session.state.current_location_id].name == "Black Harbor"
 
 
+def test_custom_campaign_starts_without_sample_npcs_or_quests(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    created = runtime.create_campaign(
+        {
+            "mode": "custom",
+            "player_name": "Nova",
+            "char_class": "Mage",
+            "slot": "slot_clean",
+            "world_name": "Starreach",
+            "starting_location_name": "Glass Docks",
+        }
+    )
+    assert created["state"]["world_meta"]["world_name"] == "Starreach"
+    assert runtime.session.state.npcs == {}
+    assert runtime.session.state.quests == {}
+
+
+def test_premade_campaign_mode_explicitly_loads_sample(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    created = runtime.create_campaign({"mode": "premade", "slot": "slot_premade"})
+    assert created["state"]["world_meta"]["world_name"] == "Moonfall"
+    assert "elder_thorne" in runtime.session.state.npcs
+
+
 def test_campaign_rename_and_delete_require_selection(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     try:
