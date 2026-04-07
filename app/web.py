@@ -1290,7 +1290,7 @@ class WebRuntime:
         if not cfg.enabled:
             return NullImageAdapter()
         if cfg.provider == "comfyui":
-            return ComfyUIAdapter(base_url=cfg.base_url)
+            return ComfyUIAdapter(base_url=cfg.base_url, output_dir=self.generated_image_dir)
         if cfg.provider == "local" and self.workflow_manager.list_templates():
             return LocalPlaceholderImageAdapter(self.generated_image_dir)
         return NullImageAdapter()
@@ -1770,6 +1770,7 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
 
     @app.post("/api/images/generate")
     def image_generate(payload: dict[str, Any]) -> dict[str, Any]:
+        print("[image-pipeline] request started")
         result = runtime.generate_image(payload)
         if result.success:
             public_image_url = runtime.public_image_path(result.result_path)
@@ -1778,7 +1779,11 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
                 payload.get("prompt", "Image generated"),
                 image={"url": public_image_url, "metadata": result.metadata, "workflow_id": result.workflow_id},
             )
+            print("[image-pipeline] image display updated")
         if not result.success:
+            reason = result.metadata.get("error_category", "unknown") if isinstance(result.metadata, dict) else "unknown"
+            status_code = result.metadata.get("status_code", 400) if isinstance(result.metadata, dict) else 400
+            print(f"[image-pipeline] request failed status={status_code} reason={reason}")
             return JSONResponse(status_code=HTTPStatus.BAD_REQUEST, content=result.to_dict())
         return result.to_dict()
 
