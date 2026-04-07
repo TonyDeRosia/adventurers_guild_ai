@@ -37,7 +37,8 @@ class CampaignStateOrchestrator:
         }
         runtime.inventory = list(state.player.inventory)
         runtime.equipment = {"equipped_item_id": state.player.equipped_item_id}
-        runtime.spellbook = sorted({*runtime.spellbook})
+        runtime.inventory_state = self._build_inventory_state(state)
+        runtime.spellbook = self._normalize_spellbook(runtime.spellbook)
         runtime.abilities_learned = sorted(set(runtime.abilities_learned + self._infer_abilities_from_messages(system_messages)))
         runtime.current_location_id = state.current_location_id
         runtime.discovered_locations = sorted(set(runtime.discovered_locations + list(state.locations.keys()) + [state.current_location_id]))
@@ -93,6 +94,7 @@ class CampaignStateOrchestrator:
             f"spellbook={str(updates['spellbook']).lower()} "
             f"quests={str(updates['quests']).lower()}"
         )
+        print(f"[spellbook] current_entry_count={len(runtime.spellbook)}")
         return updates
 
     def set_scene_visual_state(self, state: CampaignState, payload: dict[str, object] | None) -> None:
@@ -120,7 +122,7 @@ class CampaignStateOrchestrator:
             "Treat the structured campaign state below as source-of-truth over stylistic improvisation.\n"
             f"Canon: {asdict(structured.canon)}\n"
             f"Runtime: {{'player_core': {structured.runtime.player_core}, 'inventory': {structured.runtime.inventory}, "
-            f"'equipment': {structured.runtime.equipment}, 'spellbook': {structured.runtime.spellbook}, "
+            f"'inventory_state': {structured.runtime.inventory_state}, 'equipment': {structured.runtime.equipment}, 'spellbook': {structured.runtime.spellbook}, "
             f"'abilities_learned': {structured.runtime.abilities_learned}, 'current_location_id': '{structured.runtime.current_location_id}', "
             f"'active_quests': {active_quests}, 'nearby_npcs': {nearby_npcs}, "
             f"'party_state': {structured.runtime.party_state}, 'status_effects': {structured.runtime.status_effects}, "
@@ -145,3 +147,79 @@ class CampaignStateOrchestrator:
             if "ranger's charm" in lowered:
                 abilities.append("rangers_charm_attunement")
         return abilities
+
+    def _build_inventory_state(self, state: CampaignState) -> dict[str, object]:
+        categories: dict[str, list[str]] = {
+            "items": [],
+            "weapons": [],
+            "armor": [],
+            "consumables": [],
+            "key_items": [],
+        }
+        for item_id in state.player.inventory:
+            label = str(item_id)
+            lowered = label.lower()
+            if any(token in lowered for token in ["sword", "blade", "bow", "axe", "staff"]):
+                categories["weapons"].append(label)
+            elif any(token in lowered for token in ["armor", "shield", "helm", "mail"]):
+                categories["armor"].append(label)
+            elif any(token in lowered for token in ["draught", "potion", "elixir"]):
+                categories["consumables"].append(label)
+            elif any(token in lowered for token in ["key", "sigil", "relic", "lantern"]):
+                categories["key_items"].append(label)
+            else:
+                categories["items"].append(label)
+        return {
+            **categories,
+            "currency": {"gold": 0, "silver": 0, "copper": 0},
+            "equipped": {"equipped_item_id": state.player.equipped_item_id},
+        }
+
+    def _normalize_spellbook(self, raw_entries: list[dict[str, object]] | list[object]) -> list[dict[str, object]]:
+        normalized: list[dict[str, object]] = []
+        seen: set[str] = set()
+        for index, entry in enumerate(raw_entries):
+            if isinstance(entry, dict):
+                name = str(entry.get("name", "")).strip()
+                if not name:
+                    continue
+                ability_type = str(entry.get("type", "ability")).strip().lower()
+                if ability_type not in {"spell", "skill", "ability", "passive"}:
+                    ability_type = "ability"
+                dedupe_key = f"{ability_type}:{name.lower()}"
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+                normalized.append(
+                    {
+                        "id": str(entry.get("id", "")).strip() or f"sb_{index}_{name.lower().replace(' ', '_')}",
+                        "name": name,
+                        "type": ability_type,
+                        "description": str(entry.get("description", "")).strip(),
+                        "cost_or_resource": str(entry.get("cost_or_resource", "")).strip(),
+                        "cooldown": str(entry.get("cooldown", "")).strip(),
+                        "tags": [str(tag).strip() for tag in entry.get("tags", []) if str(tag).strip()],
+                        "notes": str(entry.get("notes", "")).strip(),
+                    }
+                )
+            else:
+                name = str(entry).strip()
+                if not name:
+                    continue
+                dedupe_key = f"ability:{name.lower()}"
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+                normalized.append(
+                    {
+                        "id": f"sb_{index}_{name.lower().replace(' ', '_')}",
+                        "name": name,
+                        "type": "ability",
+                        "description": "",
+                        "cost_or_resource": "",
+                        "cooldown": "",
+                        "tags": [],
+                        "notes": "",
+                    }
+                )
+        return normalized

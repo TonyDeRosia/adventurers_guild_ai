@@ -1,6 +1,5 @@
 const chatThread = document.getElementById('chat-thread');
 const campaignMeta = document.getElementById('campaign-meta');
-const statePanel = document.getElementById('state-panel');
 const saveList = document.getElementById('save-list');
 const sceneImageDisplay = document.getElementById('scene-image-display');
 const sceneVisualMeta = document.getElementById('scene-visual-meta');
@@ -38,11 +37,17 @@ const characterSheetsCount = document.getElementById('character-sheets-count');
 const runtimeCharacterSheetsModal = document.getElementById('runtime-character-sheets-modal');
 const runtimeCharacterSheetsList = document.getElementById('runtime-character-sheets-list');
 const runtimeCharacterSheetDetail = document.getElementById('runtime-character-sheet-detail');
+const runtimeInventoryModal = document.getElementById('runtime-inventory-modal');
+const runtimeInventoryDetail = document.getElementById('runtime-inventory-detail');
+const runtimeSpellbookModal = document.getElementById('runtime-spellbook-modal');
+const runtimeSpellbookList = document.getElementById('runtime-spellbook-list');
 
 let draftCharacterSheets = [];
 let editingSheetIndex = -1;
 let runtimeCharacterSheets = [];
 let selectedRuntimeSheetId = '';
+let runtimeInventoryState = {};
+let runtimeSpellbookEntries = [];
 
 let currentSceneImage = null;
 let currentSceneImagePrompt = '';
@@ -715,6 +720,34 @@ function parseCsv(input) {
   return String(input || '').split(',').map((v) => v.trim()).filter(Boolean);
 }
 
+function addGuaranteedAbilityEditorRow(entry = {}) {
+  const container = document.getElementById('sheet-guaranteed-abilities');
+  if (!container) return;
+  const row = document.createElement('div');
+  row.className = 'sheet-ability-entry';
+  row.innerHTML = `
+    <label>Name <input data-ga-field="name" type="text" value="${escapeHtml(entry.name || '')}" /></label>
+    <label>Type
+      <select data-ga-field="type">
+        <option value="spell">Spell</option>
+        <option value="skill">Skill</option>
+        <option value="ability">Ability</option>
+        <option value="passive">Passive</option>
+      </select>
+    </label>
+    <label>Description <input data-ga-field="description" type="text" value="${escapeHtml(entry.description || '')}" /></label>
+    <label>Cost / Resource <input data-ga-field="cost_or_resource" type="text" value="${escapeHtml(entry.cost_or_resource || '')}" /></label>
+    <label>Cooldown <input data-ga-field="cooldown" type="text" value="${escapeHtml(entry.cooldown || '')}" /></label>
+    <label>Tags (comma separated) <input data-ga-field="tags" type="text" value="${escapeHtml((entry.tags || []).join(', '))}" /></label>
+    <label>Notes <textarea data-ga-field="notes" rows="2">${escapeHtml(entry.notes || '')}</textarea></label>
+    <div class="button-row"><button type="button" data-ga-remove="true">Remove</button></div>
+  `;
+  const typeSelect = row.querySelector('select[data-ga-field="type"]');
+  if (typeSelect) typeSelect.value = entry.type || 'ability';
+  row.querySelector('button[data-ga-remove="true"]')?.addEventListener('click', () => row.remove());
+  container.appendChild(row);
+}
+
 function renderCharacterSheetList() {
   if (!characterSheetsList || !characterSheetsCount) return;
   if (!draftCharacterSheets.length) {
@@ -783,6 +816,7 @@ function renderRuntimeCharacterSheetDetail(sheet) {
   if (!runtimeCharacterSheetDetail || !sheet) return;
   const stats = sheet.stats || {};
   const classic = sheet.classic_attributes || {};
+  const guaranteed = Array.isArray(sheet.guaranteed_abilities) ? sheet.guaranteed_abilities : [];
   runtimeCharacterSheetDetail.innerHTML = `
     <article class="runtime-sheet-card">
       <h4>${escapeHtml(sheet.name || 'Unnamed')} • ${escapeHtml(sheet.sheet_type || 'unknown')}</h4>
@@ -794,6 +828,7 @@ function renderRuntimeCharacterSheetDetail(sheet) {
         <dt>Classic Attributes</dt><dd>STR ${classic.strength ?? 'n/a'} • DEX ${classic.dexterity ?? 'n/a'} • CON ${classic.constitution ?? 'n/a'} • INT ${classic.intelligence ?? 'n/a'} • WIS ${classic.wisdom ?? 'n/a'} • CHA ${classic.charisma ?? 'n/a'}</dd>
         <dt>Traits</dt><dd>${escapeHtml((sheet.traits || []).join(', ') || 'n/a')}</dd>
         <dt>Abilities</dt><dd>${escapeHtml((sheet.abilities || []).join(', ') || 'n/a')}</dd>
+        <dt>Guaranteed Loadout</dt><dd>${escapeHtml(guaranteed.map((entry) => `${entry.type || 'ability'}:${entry.name || 'Unnamed'}`).join(', ') || 'n/a')}</dd>
         <dt>Equipment</dt><dd>${escapeHtml((sheet.equipment || []).join(', ') || 'n/a')}</dd>
         <dt>Weaknesses</dt><dd>${escapeHtml((sheet.weaknesses || []).join(', ') || 'n/a')}</dd>
         <dt>Notes</dt><dd>${escapeHtml(sheet.notes || 'n/a')}</dd>
@@ -843,6 +878,14 @@ function openSheetEditor(index = -1) {
   document.getElementById('sheet-morale').value = existing?.state?.morale ?? '';
   document.getElementById('sheet-bond').value = existing?.state?.bond_to_player ?? '';
   document.getElementById('sheet-guidance-strength').value = existing?.guidance_strength || 'light';
+  const guaranteedContainer = document.getElementById('sheet-guaranteed-abilities');
+  if (guaranteedContainer) guaranteedContainer.innerHTML = '';
+  const guaranteedEntries = Array.isArray(existing?.guaranteed_abilities) ? existing.guaranteed_abilities : [];
+  if (guaranteedEntries.length) {
+    guaranteedEntries.forEach((entry) => addGuaranteedAbilityEditorRow(entry));
+  } else {
+    addGuaranteedAbilityEditorRow();
+  }
   editor.classList.remove('hidden');
 }
 
@@ -853,6 +896,18 @@ function buildSheetFromEditor() {
     if (value === '') return null;
     return Number(value);
   };
+  const guaranteedAbilities = Array.from(document.querySelectorAll('#sheet-guaranteed-abilities .sheet-ability-entry')).map((row) => {
+    const valueFor = (field) => (row.querySelector(`[data-ga-field="${field}"]`)?.value || '').trim();
+    return {
+      name: valueFor('name'),
+      type: valueFor('type') || 'ability',
+      description: valueFor('description'),
+      cost_or_resource: valueFor('cost_or_resource'),
+      cooldown: valueFor('cooldown'),
+      tags: parseCsv(valueFor('tags')),
+      notes: valueFor('notes'),
+    };
+  }).filter((entry) => entry.name);
   return {
     id: editingSheetIndex >= 0 ? draftCharacterSheets[editingSheetIndex].id : sheetId,
     name: document.getElementById('sheet-name').value.trim() || 'Unnamed',
@@ -875,6 +930,7 @@ function buildSheetFromEditor() {
     classic_attributes: {},
     traits: parseCsv(document.getElementById('sheet-traits').value),
     abilities: parseCsv(document.getElementById('sheet-abilities').value),
+    guaranteed_abilities: guaranteedAbilities,
     equipment: parseCsv(document.getElementById('sheet-equipment').value),
     weaknesses: parseCsv(document.getElementById('sheet-weaknesses').value),
     temperament: document.getElementById('sheet-temperament').value.trim(),
@@ -934,10 +990,7 @@ function setSceneImage(url, caption = '', turn = null) {
   const img = document.createElement('img');
   img.src = url;
   img.alt = caption || 'Generated scene image';
-  const text = document.createElement('div');
-  text.textContent = caption || 'Generated scene image';
   sceneImageDisplay.appendChild(img);
-  sceneImageDisplay.appendChild(text);
   if (sceneVisualMeta) {
     const turnLabel = turn ? `Turn ${turn}` : 'Scene visual updated';
     sceneVisualMeta.textContent = `${turnLabel} • ${caption || 'Generated image'}`;
@@ -1032,6 +1085,95 @@ function formatQuestStatus(questStatus) {
   return `Active quests: ${activeEntries.map(([questId]) => questId).join(', ')}`;
 }
 
+function normalizeSpellbookEntry(entry = {}) {
+  return {
+    id: entry.id || '',
+    name: entry.name || '',
+    type: ['spell', 'skill', 'ability', 'passive'].includes(entry.type) ? entry.type : 'ability',
+    description: entry.description || '',
+    cost_or_resource: entry.cost_or_resource || '',
+    cooldown: entry.cooldown || '',
+    tags: Array.isArray(entry.tags) ? entry.tags : [],
+    notes: entry.notes || '',
+  };
+}
+
+function renderInventoryViewer() {
+  if (!runtimeInventoryDetail) return;
+  const state = runtimeInventoryState || {};
+  const groups = ['items', 'weapons', 'armor', 'consumables', 'key_items'];
+  runtimeInventoryDetail.innerHTML = groups.map((group) => {
+    const entries = Array.isArray(state[group]) ? state[group] : [];
+    return `<div class="spellbook-group"><strong>${escapeHtml(group.replace('_', ' ').toUpperCase())}</strong><div>${escapeHtml(entries.join(', ') || 'None')}</div></div>`;
+  }).join('') + `
+    <div class="spellbook-group"><strong>CURRENCY</strong><div>${escapeHtml(JSON.stringify(state.currency || { gold: 0, silver: 0, copper: 0 }))}</div></div>
+    <div class="spellbook-group"><strong>EQUIPPED</strong><div>${escapeHtml(JSON.stringify(state.equipped || {}))}</div></div>
+  `;
+}
+
+function renderSpellbookViewer() {
+  if (!runtimeSpellbookList) return;
+  const grouped = { spell: [], skill: [], ability: [], passive: [] };
+  runtimeSpellbookEntries.forEach((entry) => {
+    const clean = normalizeSpellbookEntry(entry);
+    grouped[clean.type].push(clean);
+  });
+  runtimeSpellbookList.innerHTML = ['spell', 'skill', 'ability', 'passive'].map((type) => {
+    const entries = grouped[type];
+    const rows = entries.length ? entries.map((entry) => `
+      <div class="spellbook-entry">
+        <strong>${escapeHtml(entry.name)}</strong> <small>(${escapeHtml(type)})</small>
+        <div>${escapeHtml(entry.description || 'No description')}</div>
+        <div>Cost: ${escapeHtml(entry.cost_or_resource || '-')} • Cooldown: ${escapeHtml(entry.cooldown || '-')}</div>
+        <div>Tags: ${escapeHtml((entry.tags || []).join(', ') || '-')}</div>
+        <div>Notes: ${escapeHtml(entry.notes || '-')}</div>
+        <div class="button-row compact-row">
+          <button type="button" data-spellbook-edit="${escapeHtml(entry.id)}">Edit</button>
+          <button type="button" data-spellbook-delete="${escapeHtml(entry.id)}">Delete</button>
+        </div>
+      </div>
+    `).join('') : '<div>None</div>';
+    return `<div class="spellbook-group"><h4>${escapeHtml(type[0].toUpperCase() + type.slice(1))}s</h4>${rows}</div>`;
+  }).join('');
+  runtimeSpellbookList.querySelectorAll('button[data-spellbook-edit]').forEach((button) => {
+    button.onclick = () => {
+      const entry = runtimeSpellbookEntries.find((candidate) => candidate.id === button.dataset.spellbookEdit);
+      if (!entry) return;
+      document.getElementById('spellbook-entry-id').value = entry.id;
+      document.getElementById('spellbook-entry-name').value = entry.name;
+      document.getElementById('spellbook-entry-type').value = entry.type;
+      document.getElementById('spellbook-entry-description').value = entry.description;
+      document.getElementById('spellbook-entry-cost').value = entry.cost_or_resource;
+      document.getElementById('spellbook-entry-cooldown').value = entry.cooldown;
+      document.getElementById('spellbook-entry-tags').value = (entry.tags || []).join(', ');
+      document.getElementById('spellbook-entry-notes').value = entry.notes;
+    };
+  });
+  runtimeSpellbookList.querySelectorAll('button[data-spellbook-delete]').forEach((button) => {
+    button.onclick = async () => {
+      await api('/api/campaign/spellbook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', id: button.dataset.spellbookDelete }),
+      });
+      await refreshSpellbook();
+      renderSpellbookViewer();
+    };
+  });
+}
+
+async function refreshInventory() {
+  const payload = await api('/api/campaign/inventory');
+  runtimeInventoryState = payload.inventory || {};
+  renderInventoryViewer();
+}
+
+async function refreshSpellbook() {
+  const payload = await api('/api/campaign/spellbook');
+  runtimeSpellbookEntries = Array.isArray(payload.spellbook) ? payload.spellbook.map(normalizeSpellbookEntry) : [];
+  renderSpellbookViewer();
+}
+
 async function refreshState() {
   const data = await api('/api/campaign/state');
   const state = data.state;
@@ -1041,60 +1183,12 @@ async function refreshState() {
   selectedCampaignName = state.campaign_name;
   const world = state.world_meta || {};
   runtimeCharacterSheets = Array.isArray(state.character_sheets) ? state.character_sheets : [];
+  runtimeInventoryState = state.inventory_state || runtimeInventoryState || {};
+  runtimeSpellbookEntries = Array.isArray(state.spellbook) ? state.spellbook.map(normalizeSpellbookEntry) : [];
   renderRuntimeCharacterSheets();
+  renderInventoryViewer();
+  renderSpellbookViewer();
   campaignMeta.textContent = `${state.campaign_name || 'Campaign'} · Turn ${state.turn_count || 0}`;
-
-  const panelLines = [];
-  const playerClass = state.player.class || state.player.role || 'Adventurer';
-  const hasCharacter = hasMeaningfulCharacter({ name: state.player.name, class: playerClass });
-  if (hasCharacter) {
-    panelLines.push(`Character: ${state.player.name} (${playerClass})`);
-  }
-
-  if (hasCharacter && Number.isFinite(state.player.hp) && Number.isFinite(state.player.max_hp)) {
-    panelLines.push(`HP: ${state.player.hp}/${state.player.max_hp}`);
-  }
-
-  const hasWorldName = hasMeaningfulText(world.world_name);
-  const hasWorldTheme = hasMeaningfulText(world.world_theme);
-  if (hasWorldName || hasWorldTheme) {
-    const worldNameLabel = hasWorldName ? world.world_name.trim() : '';
-    const worldThemeLabel = hasWorldTheme ? world.world_theme.trim() : '';
-    const worldSummary = [worldNameLabel, worldThemeLabel ? `(${worldThemeLabel})` : ''].filter(Boolean).join(' ');
-    if (worldSummary) panelLines.push(`World: ${worldSummary}`);
-  }
-
-  if (hasMeaningfulText(world.starting_location_name)) {
-    panelLines.push(`Starting location: ${world.starting_location_name.trim()}`);
-  }
-  if (state.current_location_id) {
-    panelLines.push(`Current location: ${state.current_location_id}`);
-  }
-
-  const tone = hasMeaningfulText(world.tone) ? world.tone.trim() : null;
-  const maturityLevel = hasMeaningfulText(state.settings?.content_settings?.maturity_level)
-    ? state.settings.content_settings.maturity_level.trim()
-    : null;
-  if (tone || maturityLevel) {
-    const toneParts = [];
-    if (tone) toneParts.push(`Tone: ${tone}`);
-    if (maturityLevel) toneParts.push(`Maturity: ${maturityLevel}`);
-    panelLines.push(toneParts.join(' | '));
-  }
-
-  if (hasMeaningfulText(world.premise)) {
-    panelLines.push(`Premise: ${world.premise.trim()}`);
-  }
-  if (hasMeaningfulText(world.player_concept)) {
-    panelLines.push(`Player concept: ${world.player_concept.trim()}`);
-  }
-
-  const questSummary = formatQuestStatus(state.quest_status);
-  if (questSummary) {
-    panelLines.push('', questSummary);
-  }
-
-  statePanel.textContent = panelLines.join('\n');
   ingestPersistedCampaignSettings(
     {
       image_generation_enabled: !!state.settings.image_generation_enabled,
@@ -1801,6 +1895,22 @@ document.getElementById('open-runtime-character-sheets').onclick = () => {
   renderRuntimeCharacterSheets();
   runtimeCharacterSheetsModal?.classList.remove('hidden');
 };
+document.getElementById('open-runtime-inventory').onclick = async () => {
+  console.log('[inventory] runtime_button_rendered=true');
+  await refreshInventory();
+  runtimeInventoryModal?.classList.remove('hidden');
+};
+document.getElementById('close-runtime-inventory').onclick = () => {
+  runtimeInventoryModal?.classList.add('hidden');
+};
+document.getElementById('open-runtime-spellbook').onclick = async () => {
+  console.log('[spellbook] runtime_button_rendered=true');
+  await refreshSpellbook();
+  runtimeSpellbookModal?.classList.remove('hidden');
+};
+document.getElementById('close-runtime-spellbook').onclick = () => {
+  runtimeSpellbookModal?.classList.add('hidden');
+};
 document.getElementById('close-runtime-character-sheets').onclick = () => {
   runtimeCharacterSheetsModal?.classList.add('hidden');
 };
@@ -1820,10 +1930,42 @@ document.getElementById('character-sheet-save').onclick = () => {
   document.getElementById('character-sheet-editor')?.classList.add('hidden');
   renderCharacterSheetList();
 };
+document.getElementById('sheet-add-guaranteed-ability').onclick = () => addGuaranteedAbilityEditorRow();
+document.getElementById('spellbook-entry-clear').onclick = () => {
+  document.getElementById('spellbook-entry-id').value = '';
+  document.getElementById('spellbook-entry-name').value = '';
+  document.getElementById('spellbook-entry-type').value = 'spell';
+  document.getElementById('spellbook-entry-description').value = '';
+  document.getElementById('spellbook-entry-cost').value = '';
+  document.getElementById('spellbook-entry-cooldown').value = '';
+  document.getElementById('spellbook-entry-tags').value = '';
+  document.getElementById('spellbook-entry-notes').value = '';
+};
+document.getElementById('spellbook-entry-save').onclick = async () => {
+  await api('/api/campaign/spellbook', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'upsert',
+      id: document.getElementById('spellbook-entry-id').value.trim(),
+      name: document.getElementById('spellbook-entry-name').value.trim(),
+      type: document.getElementById('spellbook-entry-type').value,
+      description: document.getElementById('spellbook-entry-description').value.trim(),
+      cost_or_resource: document.getElementById('spellbook-entry-cost').value.trim(),
+      cooldown: document.getElementById('spellbook-entry-cooldown').value.trim(),
+      tags: parseCsv(document.getElementById('spellbook-entry-tags').value),
+      notes: document.getElementById('spellbook-entry-notes').value.trim(),
+    }),
+  });
+  await refreshSpellbook();
+};
 
 Promise.all([refreshMessages(), refreshState(), refreshSaves(), loadSettings(), refreshDependencyReadiness(), refreshSceneVisual()]).catch((error) => setStatus(error.message, true));
 
 console.log('[character-sheets] runtime_button_rendered=true');
+console.log('[inventory] runtime_button_rendered=true');
+console.log('[spellbook] runtime_button_rendered=true');
 console.log('[ui] left_panel_resized=true');
 console.log('[ui] header_simplified=true');
 console.log('[ui] turn_visuals_removed=true');
+console.log('[ui] duplicate_scene_visual_text_removed=true');

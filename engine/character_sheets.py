@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 SheetType = Literal["main_character", "npc_or_mob", "party_member", "minion_or_summon"]
 GuidanceStrength = Literal["light", "strong"]
+AbilityType = Literal["spell", "skill", "ability", "passive"]
 
 
 @dataclass
@@ -43,6 +44,33 @@ class CharacterSheetState:
 
 
 @dataclass
+class CharacterSheetAbilityEntry:
+    name: str
+    type: AbilityType = "ability"
+    description: str = ""
+    cost_or_resource: str = ""
+    cooldown: str = ""
+    tags: list[str] = field(default_factory=list)
+    notes: str = ""
+
+    @classmethod
+    def from_payload(cls, payload: dict[str, Any]) -> "CharacterSheetAbilityEntry":
+        raw_type = str(payload.get("type", "ability")).strip().lower()
+        ability_type: AbilityType = (
+            raw_type if raw_type in {"spell", "skill", "ability", "passive"} else "ability"
+        )
+        return cls(
+            name=str(payload.get("name", "")).strip() or "Unnamed Ability",
+            type=ability_type,
+            description=str(payload.get("description", "")).strip(),
+            cost_or_resource=str(payload.get("cost_or_resource", "")).strip(),
+            cooldown=str(payload.get("cooldown", "")).strip(),
+            tags=[str(tag).strip() for tag in payload.get("tags", []) if str(tag).strip()],
+            notes=str(payload.get("notes", "")).strip(),
+        )
+
+
+@dataclass
 class CharacterSheet:
     # Layer 1: identity and role
     id: str
@@ -61,6 +89,7 @@ class CharacterSheet:
     # Layer 3: narrative and behavior anchors
     traits: list[str] = field(default_factory=list)
     abilities: list[str] = field(default_factory=list)
+    guaranteed_abilities: list[CharacterSheetAbilityEntry] = field(default_factory=list)
     equipment: list[str] = field(default_factory=list)
     weaknesses: list[str] = field(default_factory=list)
     temperament: str = ""
@@ -96,6 +125,11 @@ class CharacterSheet:
             classic_attributes=classic,
             traits=[str(v) for v in payload.get("traits", []) if str(v).strip()],
             abilities=[str(v) for v in payload.get("abilities", []) if str(v).strip()],
+            guaranteed_abilities=[
+                CharacterSheetAbilityEntry.from_payload(entry)
+                for entry in payload.get("guaranteed_abilities", [])
+                if isinstance(entry, dict)
+            ],
             equipment=[str(v) for v in payload.get("equipment", []) if str(v).strip()],
             weaknesses=[str(v) for v in payload.get("weaknesses", []) if str(v).strip()],
             temperament=str(payload.get("temperament", "")),
@@ -127,6 +161,11 @@ class CharacterSheetPromptFormatter:
             ]
             if sheet.abilities:
                 anchors.append(f"abilities={', '.join(sheet.abilities[:4])}")
+            if sheet.guaranteed_abilities:
+                anchors.append(
+                    "guaranteed_loadout="
+                    + ", ".join(f"{entry.type}:{entry.name}" for entry in sheet.guaranteed_abilities[:6])
+                )
             if sheet.weaknesses:
                 anchors.append(f"weaknesses={', '.join(sheet.weaknesses[:3])}")
             if sheet.state.current_condition:

@@ -50,6 +50,7 @@
           <input id="chat-input" type="text" placeholder="Enter your action (look, talk <npc_id>, move <location_id>...)" />
           <button id="send-btn">Send</button>
         </footer>
+        <div id="status-line" class="scene-visual-meta">Ready.</div>
       </main>
 
       <aside class="sidebar right-panel">
@@ -58,11 +59,12 @@
           <button id="open-setup-modal">AI Setup</button>
         </div>
         <section class="panel-block">
-          <h3>Character / Quests / Inventory</h3>
+          <h3>Runtime Tools</h3>
           <div class="button-row compact-row">
             <button id="open-runtime-character-sheets" type="button">Character Sheets</button>
+            <button id="open-runtime-inventory" type="button">Inventory</button>
+            <button id="open-runtime-spellbook" type="button">Spellbook</button>
           </div>
-          <pre id="state-panel" class="state-panel"></pre>
         </section>
         <section id="manual-image-panel" class="panel-block image-generation-panel">
           <h3>Manual Image Prompt</h3>
@@ -70,11 +72,6 @@
           <textarea id="image-prompt-input" rows="3" placeholder="Describe the scene you want to generate."></textarea>
           <button id="image-generate-submit">Generate Image with ComfyUI</button>
           <div id="image-status-line" class="image-status-line">Image generation ready state will appear here.</div>
-        </section>
-        <section class="panel-block">
-          <h3>Status</h3>
-          <div id="setup-summary" class="setup-summary">Checking providers...</div>
-          <div id="status-line">Ready.</div>
         </section>
       </aside>
     </div>
@@ -116,6 +113,11 @@
                 <section><h6>Basic</h6><label>Name <input id="sheet-name" type="text" /></label><label>Type <select id="sheet-type"><option value="main_character">Main Character</option><option value="npc_or_mob">NPC/Mob</option><option value="party_member">Party Member</option><option value="minion_or_summon">Minion/Summon</option></select></label><label>Role <input id="sheet-role" type="text" /></label><label>Archetype <input id="sheet-archetype" type="text" /></label><label>Level or Rank <input id="sheet-level-rank" type="text" /></label><label>Faction <input id="sheet-faction" type="text" /></label><label>Description <textarea id="sheet-description" rows="2"></textarea></label></section>
                 <section><h6>Personality</h6><label>Traits (comma separated) <input id="sheet-traits" type="text" /></label><label>Temperament <input id="sheet-temperament" type="text" /></label><label>Loyalty <input id="sheet-loyalty" type="text" /></label><label>Fear <input id="sheet-fear" type="text" /></label><label>Desire <input id="sheet-desire" type="text" /></label><label>Social Style <input id="sheet-social-style" type="text" /></label><label>Speech Style <input id="sheet-speech-style" type="text" /></label></section>
                 <section><h6>Combat / Power</h6><label>Abilities (comma separated) <input id="sheet-abilities" type="text" /></label><label>Equipment (comma separated) <input id="sheet-equipment" type="text" /></label><label>Weaknesses (comma separated) <input id="sheet-weaknesses" type="text" /></label><label>Health <input id="sheet-health" type="number" value="10" /></label><label>Energy or Mana <input id="sheet-energy" type="number" value="10" /></label><label>Attack <input id="sheet-attack" type="number" value="10" /></label><label>Defense <input id="sheet-defense" type="number" value="10" /></label><label>Speed <input id="sheet-speed" type="number" value="10" /></label><label>Magic <input id="sheet-magic" type="number" value="10" /></label><label>Willpower <input id="sheet-willpower" type="number" value="10" /></label><label>Presence <input id="sheet-presence" type="number" value="10" /></label></section>
+                <section>
+                  <h6>Guaranteed Loadout (Spells / Skills / Abilities / Passives)</h6>
+                  <div id="sheet-guaranteed-abilities" class="sheet-ability-list"></div>
+                  <button id="sheet-add-guaranteed-ability" type="button">Add Loadout Entry</button>
+                </section>
                 <section><h6>Notes</h6><label>Notes <textarea id="sheet-notes" rows="3"></textarea></label><label>Current Condition <input id="sheet-current-condition" type="text" /></label><label>Trust <input id="sheet-trust" type="number" /></label><label>Suspicion <input id="sheet-suspicion" type="number" /></label><label>Anger <input id="sheet-anger" type="number" /></label><label>Fear State <input id="sheet-fear-state" type="number" /></label><label>Morale <input id="sheet-morale" type="number" /></label><label>Bond to Player <input id="sheet-bond" type="number" /></label><label>Guidance Strength <select id="sheet-guidance-strength"><option value="light">Light</option><option value="strong">Strong</option></select></label></section>
               </div>
               <div class="button-row">
@@ -128,6 +130,45 @@
         <div class="button-row">
           <button id="create-campaign-confirm">Create campaign</button>
           <button id="create-campaign-cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="runtime-inventory-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="panel-title-row">
+          <h3>Inventory</h3>
+          <button id="close-runtime-inventory" type="button">Close</button>
+        </div>
+        <div id="runtime-inventory-detail" class="runtime-sheet-detail">Loading inventory...</div>
+      </div>
+    </div>
+
+    <div id="runtime-spellbook-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="panel-title-row">
+          <h3>Spellbook</h3>
+          <button id="close-runtime-spellbook" type="button">Close</button>
+        </div>
+        <div id="runtime-spellbook-list" class="runtime-sheet-detail">No spellbook entries.</div>
+        <h4>Edit Spellbook Entry</h4>
+        <div class="modal-grid">
+          <input id="spellbook-entry-id" type="hidden" />
+          <label>Name <input id="spellbook-entry-name" type="text" /></label>
+          <label>Type
+            <select id="spellbook-entry-type">
+              <option value="spell">Spell</option><option value="skill">Skill</option><option value="ability">Ability</option><option value="passive">Passive</option>
+            </select>
+          </label>
+          <label>Description <textarea id="spellbook-entry-description" rows="2"></textarea></label>
+          <label>Cost / Resource <input id="spellbook-entry-cost" type="text" /></label>
+          <label>Cooldown <input id="spellbook-entry-cooldown" type="text" /></label>
+          <label>Tags (comma separated) <input id="spellbook-entry-tags" type="text" /></label>
+          <label>Notes <textarea id="spellbook-entry-notes" rows="2"></textarea></label>
+        </div>
+        <div class="button-row">
+          <button id="spellbook-entry-save" type="button">Save Entry</button>
+          <button id="spellbook-entry-clear" type="button">Clear Form</button>
         </div>
       </div>
     </div>
