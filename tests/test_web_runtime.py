@@ -771,3 +771,42 @@ def test_install_ollama_windows_flow_logs(tmp_path: Path, monkeypatch, capsys) -
     assert "[setup-action] downloading installer url=https://ollama.com/download/OllamaSetup.exe" in captured.out
     assert "[setup-action] installer launched" in captured.out
     assert "[setup-action] install-ollama success" in captured.out
+
+def test_create_campaign_with_character_sheets_persists_and_restores(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    payload = {
+        "player_name": "Kael",
+        "char_class": "Summoner",
+        "slot": "slot_sheets",
+        "character_sheet_guidance_strength": "strong",
+        "character_sheets": [
+            {
+                "id": "mc_1",
+                "name": "Kael",
+                "sheet_type": "main_character",
+                "role": "leader",
+                "archetype": "stormbound tactician",
+                "level_or_rank": "5",
+                "faction": "Guild",
+                "description": "Carries a living rune blade.",
+                "stats": {"health": 14, "energy_or_mana": 20, "attack": 11, "defense": 9, "speed": 10, "magic": 15, "willpower": 13, "presence": 12},
+                "traits": ["curious", "focused"],
+                "abilities": ["storm sigil", "binding chain"],
+                "equipment": ["rune blade"],
+                "weaknesses": ["pride"],
+                "temperament": "measured",
+                "loyalty": "guild",
+                "social_style": "direct",
+                "speech_style": "precise",
+                "state": {"morale": 8, "bond_to_player": 10, "current_condition": "steady"},
+            }
+        ],
+    }
+    created = runtime.create_campaign(payload)
+    assert created["state"]["character_sheet_guidance_strength"] == "strong"
+    assert len(created["state"]["character_sheets"]) == 1
+    assert created["state"]["character_sheets"][0]["sheet_type"] == "main_character"
+
+    runtime.switch_campaign("slot_sheets")
+    assert runtime.session.state.character_sheet_guidance_strength == "strong"
+    assert runtime.session.state.character_sheets[0].name == "Kael"

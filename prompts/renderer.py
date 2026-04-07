@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from engine.character_sheets import CharacterSheetPromptFormatter
 from engine.entities import CampaignState
 from memory.retrieval import RetrievedMemory
 from prompts.templates import (
@@ -23,6 +24,9 @@ class PromptPacket:
 
 
 class PromptRenderer:
+    def __init__(self) -> None:
+        self.sheet_formatter = CharacterSheetPromptFormatter()
+
     """Converts current state + player action into model-ready prompts."""
 
     def build_system_prompt(self, state: CampaignState, requested_mode: str = "play") -> str:
@@ -66,6 +70,7 @@ class PromptRenderer:
         requested_mode: str = "play",
         suggested_moves_enabled: bool = True,
         npc_guidance: list[str] | None = None,
+        character_sheet_guidance: list[str] | None = None,
     ) -> str:
         recent = " | ".join(state.event_log[-4:]) if state.event_log else "No significant events yet"
         recent_conversation = " | ".join(
@@ -90,6 +95,11 @@ class PromptRenderer:
             if npc_guidance
             else "[NPC Personality Guidance]\nnone"
         )
+        sheet_guidance_text = (
+            "[Character Sheet Guidance]\n" + " | ".join(character_sheet_guidance)
+            if character_sheet_guidance
+            else "[Character Sheet Guidance]\nnone"
+        )
         return TURN_TEMPLATE.format(
             requested_mode=requested_mode,
             recent_conversation=recent_conversation or "none",
@@ -113,6 +123,7 @@ class PromptRenderer:
             recent_events=f"{recent} | Nearby NPC context: {npc_context}",
             suggested_move_instruction=suggested_move_instruction,
             npc_personality_guidance=npc_personality_guidance,
+            character_sheet_guidance=sheet_guidance_text,
         )
 
     def build_prompt_packet(
@@ -126,6 +137,10 @@ class PromptRenderer:
         suggested_moves_enabled: bool = True,
         npc_guidance: list[str] | None = None,
     ) -> PromptPacket:
+        sheet_guidance = self.sheet_formatter.build_guidance_blocks(
+            state.character_sheets,
+            campaign_strength=state.character_sheet_guidance_strength,
+        )
         return PromptPacket(
             system_prompt=self.build_system_prompt(state, requested_mode=requested_mode),
             turn_prompt=self.build_turn_prompt(
@@ -136,5 +151,6 @@ class PromptRenderer:
                 requested_mode=requested_mode,
                 suggested_moves_enabled=suggested_moves_enabled,
                 npc_guidance=npc_guidance,
+                character_sheet_guidance=sheet_guidance,
             ),
         )

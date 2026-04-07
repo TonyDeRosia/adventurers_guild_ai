@@ -329,3 +329,35 @@ def test_summary_persistence_and_save_load_compatibility_for_memory(tmp_path: Pa
     assert loaded.session_summaries
     assert loaded.recent_memory
     assert isinstance(loaded.long_term_memory, list)
+
+def test_prompt_renderer_includes_character_sheet_guidance_blocks() -> None:
+    state = load_state()
+    state.character_sheet_guidance_strength = "strong"
+    state.character_sheets = [
+        __import__('engine.character_sheets', fromlist=['CharacterSheet']).CharacterSheet.from_payload(
+            {
+                "id": "npc_1",
+                "name": "Captain Vey",
+                "sheet_type": "npc_or_mob",
+                "role": "city watch captain",
+                "archetype": "stern protector",
+                "level_or_rank": "elite",
+                "temperament": "controlled",
+                "loyalty": "city council",
+                "social_style": "formal",
+                "speech_style": "clipped",
+                "abilities": ["shield wall"],
+                "weaknesses": ["rigid protocol"],
+            }
+        )
+    ]
+
+    prompt = PromptRenderer().build_turn_prompt(
+        state,
+        action="talk captain",
+        location_summary="Moonfall gate",
+        memory=MemoryRetrievalPipeline().retrieve(state, RetrievalRequest(location_id=state.current_location_id, active_quest_ids=[], current_npc_id=None, recent_actions=[], important_world_state=[])),
+        character_sheet_guidance=["[NPC/Mob Guidance] Captain Vey: strength=strong; role=city watch captain"],
+    )
+    assert "[Character Sheet Guidance]" in prompt
+    assert "Captain Vey" in prompt

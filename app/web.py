@@ -1574,6 +1574,35 @@ class WebRuntime:
                 "premise": state.world_meta.premise,
                 "player_concept": state.world_meta.player_concept,
             },
+            "character_sheet_guidance_strength": state.character_sheet_guidance_strength,
+            "character_sheets": [
+                {
+                    "id": sheet.id,
+                    "name": sheet.name,
+                    "sheet_type": sheet.sheet_type,
+                    "role": sheet.role,
+                    "archetype": sheet.archetype,
+                    "level_or_rank": sheet.level_or_rank,
+                    "faction": sheet.faction,
+                    "description": sheet.description,
+                    "stats": sheet.stats.__dict__,
+                    "classic_attributes": sheet.classic_attributes.__dict__,
+                    "traits": sheet.traits,
+                    "abilities": sheet.abilities,
+                    "equipment": sheet.equipment,
+                    "weaknesses": sheet.weaknesses,
+                    "temperament": sheet.temperament,
+                    "loyalty": sheet.loyalty,
+                    "fear": sheet.fear,
+                    "desire": sheet.desire,
+                    "social_style": sheet.social_style,
+                    "speech_style": sheet.speech_style,
+                    "notes": sheet.notes,
+                    "state": sheet.state.__dict__,
+                    "guidance_strength": sheet.guidance_strength,
+                }
+                for sheet in state.character_sheets
+            ],
             "active_slot": self.session.active_slot,
         }
 
@@ -1653,6 +1682,15 @@ class WebRuntime:
             self.session.state.campaign_name = clean
         return {"slot": clean_slot, "campaign_name": clean}
 
+    def _coerce_character_sheets(self, raw_sheets: Any) -> list[dict[str, Any]]:
+        if not isinstance(raw_sheets, list):
+            return []
+        clean: list[dict[str, Any]] = []
+        for entry in raw_sheets:
+            if isinstance(entry, dict):
+                clean.append(entry)
+        return clean
+
     def create_campaign(self, payload: dict[str, Any]) -> dict[str, Any]:
         mode = str(payload.get("mode", "custom")).strip().lower() or "custom"
         player_name = str(payload.get("player_name", "Aria")).strip() or "Aria"
@@ -1680,6 +1718,8 @@ class WebRuntime:
                 premise=str(payload.get("premise", "")).strip(),
                 player_concept=str(payload.get("player_concept", "")).strip(),
                 suggested_moves_enabled=bool(payload.get("suggested_moves_enabled", True)),
+                character_sheets=self._coerce_character_sheets(payload.get("character_sheets", [])),
+                character_sheet_guidance_strength=str(payload.get("character_sheet_guidance_strength", "light")),
             )
         self.session = WebSession(state=state, active_slot=slot)
         self.session.message_history = []

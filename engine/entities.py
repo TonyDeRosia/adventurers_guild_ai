@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from engine.character_sheets import CharacterSheet, GuidanceStrength
+
 
 @dataclass
 class Character:
@@ -220,6 +222,8 @@ class CampaignState:
     conversation_turns: list[ConversationTurn] = field(default_factory=list)
     settings: CampaignSettings = field(default_factory=CampaignSettings)
     world_meta: CampaignWorldMeta = field(default_factory=CampaignWorldMeta)
+    character_sheets: list[CharacterSheet] = field(default_factory=list)
+    character_sheet_guidance_strength: GuidanceStrength = "light"
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize campaign state to a dictionary for JSON storage."""
@@ -299,7 +303,16 @@ class CampaignState:
             conversation_turns=[ConversationTurn(**v) for v in payload.get("conversation_turns", [])],
             settings=cls._settings_from_payload(payload.get("settings", {})),
             world_meta=cls._world_meta_from_payload(payload.get("world_meta"), payload),
+            character_sheets=[CharacterSheet.from_payload(entry) for entry in payload.get("character_sheets", []) if isinstance(entry, dict)],
+            character_sheet_guidance_strength=cls._sheet_strength_from_payload(payload.get("character_sheet_guidance_strength", "light")),
         )
+
+    @staticmethod
+    def _sheet_strength_from_payload(raw_strength: Any) -> GuidanceStrength:
+        strength = str(raw_strength or "light").strip().lower()
+        if strength not in {"light", "strong"}:
+            return "light"
+        return strength  # type: ignore[return-value]
 
     @staticmethod
     def _settings_from_payload(raw_settings: dict[str, Any]) -> CampaignSettings:

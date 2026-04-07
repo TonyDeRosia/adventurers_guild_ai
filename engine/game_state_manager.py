@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from engine.character_sheets import CharacterSheet
 from engine.entities import CampaignState
 from engine.save_manager import SaveManager
 
@@ -48,6 +49,8 @@ class GameStateManager:
         premise: str | None = None,
         player_concept: str | None = None,
         suggested_moves_enabled: bool = True,
+        character_sheets: list[dict[str, object]] | None = None,
+        character_sheet_guidance_strength: str = "light",
     ) -> CampaignState:
         new_payload: dict[str, object] = {
             "campaign_id": "",
@@ -155,6 +158,40 @@ class GameStateManager:
             "premise": clean_premise,
             "player_concept": clean_player_concept,
         }
+        new_payload["character_sheets"] = []
+        for raw_sheet in character_sheets or []:
+            if not isinstance(raw_sheet, dict):
+                continue
+            sheet = CharacterSheet.from_payload(raw_sheet)
+            new_payload["character_sheets"].append(
+                {
+                    "id": sheet.id,
+                    "name": sheet.name,
+                    "sheet_type": sheet.sheet_type,
+                    "role": sheet.role,
+                    "archetype": sheet.archetype,
+                    "level_or_rank": sheet.level_or_rank,
+                    "faction": sheet.faction,
+                    "description": sheet.description,
+                    "stats": sheet.stats.__dict__,
+                    "classic_attributes": sheet.classic_attributes.__dict__,
+                    "traits": list(sheet.traits),
+                    "abilities": list(sheet.abilities),
+                    "equipment": list(sheet.equipment),
+                    "weaknesses": list(sheet.weaknesses),
+                    "temperament": sheet.temperament,
+                    "loyalty": sheet.loyalty,
+                    "fear": sheet.fear,
+                    "desire": sheet.desire,
+                    "social_style": sheet.social_style,
+                    "speech_style": sheet.speech_style,
+                    "notes": sheet.notes,
+                    "state": sheet.state.__dict__,
+                    "guidance_strength": sheet.guidance_strength,
+                }
+            )
+        strength = str(character_sheet_guidance_strength or "light").strip().lower()
+        new_payload["character_sheet_guidance_strength"] = strength if strength in {"light", "strong"} else "light"
         new_payload["world_events"] = ["campaign_started"]
         print("[campaign-create] mode=custom")
         print("[campaign-create] using_sample_template=False")

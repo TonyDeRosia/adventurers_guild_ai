@@ -92,6 +92,37 @@
           <label>Player Class <input id="form-player-class" type="text" value="Ranger" /></label>
           <label>Player Concept (optional) <input id="form-player-concept" type="text" placeholder="Exiled ranger seeking redemption" /></label>
           <label>Premise / World Description (optional) <textarea id="form-premise" rows="3" placeholder="The old gods vanished and the sea is haunted."></textarea></label>
+          <div class="character-sheets-entry">
+            <button id="open-character-sheets" type="button">Character Sheets</button>
+            <span id="character-sheets-count">No sheets attached</span>
+          </div>
+          <label>Sheet Guidance Strength
+            <select id="form-character-sheet-guidance-strength">
+              <option value="light">Light guidance</option>
+              <option value="strong">Strong guidance</option>
+            </select>
+          </label>
+          <div id="character-sheets-manager" class="character-sheets-manager hidden">
+            <h4>Character Sheets Manager</h4>
+            <div id="character-sheets-list" class="character-sheets-list">No sheets yet.</div>
+            <div class="button-row">
+              <button id="character-sheet-create" type="button">Create Sheet</button>
+              <button id="character-sheet-close" type="button">Close</button>
+            </div>
+            <div id="character-sheet-editor" class="character-sheet-editor hidden">
+              <h5 id="character-sheet-editor-title">New Sheet</h5>
+              <div class="sheet-sections">
+                <section><h6>Basic</h6><label>Name <input id="sheet-name" type="text" /></label><label>Type <select id="sheet-type"><option value="main_character">Main Character</option><option value="npc_or_mob">NPC/Mob</option><option value="party_member">Party Member</option><option value="minion_or_summon">Minion/Summon</option></select></label><label>Role <input id="sheet-role" type="text" /></label><label>Archetype <input id="sheet-archetype" type="text" /></label><label>Level or Rank <input id="sheet-level-rank" type="text" /></label><label>Faction <input id="sheet-faction" type="text" /></label><label>Description <textarea id="sheet-description" rows="2"></textarea></label></section>
+                <section><h6>Personality</h6><label>Traits (comma separated) <input id="sheet-traits" type="text" /></label><label>Temperament <input id="sheet-temperament" type="text" /></label><label>Loyalty <input id="sheet-loyalty" type="text" /></label><label>Fear <input id="sheet-fear" type="text" /></label><label>Desire <input id="sheet-desire" type="text" /></label><label>Social Style <input id="sheet-social-style" type="text" /></label><label>Speech Style <input id="sheet-speech-style" type="text" /></label></section>
+                <section><h6>Combat / Power</h6><label>Abilities (comma separated) <input id="sheet-abilities" type="text" /></label><label>Equipment (comma separated) <input id="sheet-equipment" type="text" /></label><label>Weaknesses (comma separated) <input id="sheet-weaknesses" type="text" /></label><label>Health <input id="sheet-health" type="number" value="10" /></label><label>Energy or Mana <input id="sheet-energy" type="number" value="10" /></label><label>Attack <input id="sheet-attack" type="number" value="10" /></label><label>Defense <input id="sheet-defense" type="number" value="10" /></label><label>Speed <input id="sheet-speed" type="number" value="10" /></label><label>Magic <input id="sheet-magic" type="number" value="10" /></label><label>Willpower <input id="sheet-willpower" type="number" value="10" /></label><label>Presence <input id="sheet-presence" type="number" value="10" /></label></section>
+                <section><h6>Notes</h6><label>Notes <textarea id="sheet-notes" rows="3"></textarea></label><label>Current Condition <input id="sheet-current-condition" type="text" /></label><label>Trust <input id="sheet-trust" type="number" /></label><label>Suspicion <input id="sheet-suspicion" type="number" /></label><label>Anger <input id="sheet-anger" type="number" /></label><label>Fear State <input id="sheet-fear-state" type="number" /></label><label>Morale <input id="sheet-morale" type="number" /></label><label>Bond to Player <input id="sheet-bond" type="number" /></label><label>Guidance Strength <select id="sheet-guidance-strength"><option value="light">Light</option><option value="strong">Strong</option></select></label></section>
+              </div>
+              <div class="button-row">
+                <button id="character-sheet-save" type="button">Save Sheet</button>
+                <button id="character-sheet-cancel" type="button">Cancel Edit</button>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="button-row">
           <button id="create-campaign-confirm">Create campaign</button>

@@ -56,4 +56,5 @@ Recent events: {recent_events}
 
 {suggested_move_instruction}
 {npc_personality_guidance}
+{character_sheet_guidance}
 """

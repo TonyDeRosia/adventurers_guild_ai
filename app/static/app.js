@@ -33,6 +33,12 @@ const supportedModelsList = document.getElementById('supported-models-list');
 const activeModelBanner = document.getElementById('active-model-banner');
 const campaignSettingsStatus = document.getElementById('campaign-settings-status');
 const cancelSettingsButton = document.getElementById('cancel-settings');
+const characterSheetsManager = document.getElementById('character-sheets-manager');
+const characterSheetsList = document.getElementById('character-sheets-list');
+const characterSheetsCount = document.getElementById('character-sheets-count');
+
+let draftCharacterSheets = [];
+let editingSheetIndex = -1;
 
 let currentSceneImage = null;
 let currentSceneImagePrompt = '';
@@ -675,6 +681,11 @@ function updateSelectedSaveLabel() {
 }
 
 function openNewCampaignModal() {
+  draftCharacterSheets = [];
+  editingSheetIndex = -1;
+  renderCharacterSheetList();
+  document.getElementById('character-sheets-manager')?.classList.add('hidden');
+  document.getElementById('character-sheet-editor')?.classList.add('hidden');
   newCampaignModal.classList.remove('hidden');
 }
 
@@ -688,6 +699,136 @@ function openSetupModal() {
 
 function closeSetupModal() {
   setupModal.classList.add('hidden');
+}
+
+function parseCsv(input) {
+  return String(input || '').split(',').map((v) => v.trim()).filter(Boolean);
+}
+
+function renderCharacterSheetList() {
+  if (!characterSheetsList || !characterSheetsCount) return;
+  if (!draftCharacterSheets.length) {
+    characterSheetsList.textContent = 'No sheets yet.';
+    characterSheetsCount.textContent = 'No sheets attached';
+    return;
+  }
+  characterSheetsCount.textContent = `${draftCharacterSheets.length} sheet(s) attached`;
+  characterSheetsList.innerHTML = draftCharacterSheets.map((sheet, index) => `
+    <div class="character-sheet-item">
+      <span><strong>${escapeHtml(sheet.name || 'Unnamed')}</strong> • ${escapeHtml(sheet.sheet_type)}</span>
+      <span>
+        <button type="button" data-sheet-edit="${index}">Edit</button>
+        <button type="button" data-sheet-delete="${index}">Delete</button>
+      </span>
+    </div>
+  `).join('');
+  characterSheetsList.querySelectorAll('button[data-sheet-edit]').forEach((btn) => {
+    btn.onclick = () => openSheetEditor(Number(btn.dataset.sheetEdit || -1));
+  });
+  characterSheetsList.querySelectorAll('button[data-sheet-delete]').forEach((btn) => {
+    btn.onclick = () => {
+      const idx = Number(btn.dataset.sheetDelete || -1);
+      if (idx >= 0) {
+        draftCharacterSheets.splice(idx, 1);
+        renderCharacterSheetList();
+      }
+    };
+  });
+}
+
+function openSheetEditor(index = -1) {
+  const editor = document.getElementById('character-sheet-editor');
+  const title = document.getElementById('character-sheet-editor-title');
+  if (!editor || !title) return;
+  editingSheetIndex = index;
+  const existing = index >= 0 ? draftCharacterSheets[index] : null;
+  title.textContent = existing ? 'Edit Sheet' : 'New Sheet';
+  document.getElementById('sheet-name').value = existing?.name || '';
+  document.getElementById('sheet-type').value = existing?.sheet_type || 'main_character';
+  document.getElementById('sheet-role').value = existing?.role || '';
+  document.getElementById('sheet-archetype').value = existing?.archetype || '';
+  document.getElementById('sheet-level-rank').value = existing?.level_or_rank || '';
+  document.getElementById('sheet-faction').value = existing?.faction || '';
+  document.getElementById('sheet-description').value = existing?.description || '';
+  document.getElementById('sheet-traits').value = (existing?.traits || []).join(', ');
+  document.getElementById('sheet-temperament').value = existing?.temperament || '';
+  document.getElementById('sheet-loyalty').value = existing?.loyalty || '';
+  document.getElementById('sheet-fear').value = existing?.fear || '';
+  document.getElementById('sheet-desire').value = existing?.desire || '';
+  document.getElementById('sheet-social-style').value = existing?.social_style || '';
+  document.getElementById('sheet-speech-style').value = existing?.speech_style || '';
+  document.getElementById('sheet-abilities').value = (existing?.abilities || []).join(', ');
+  document.getElementById('sheet-equipment').value = (existing?.equipment || []).join(', ');
+  document.getElementById('sheet-weaknesses').value = (existing?.weaknesses || []).join(', ');
+  document.getElementById('sheet-health').value = existing?.stats?.health ?? 10;
+  document.getElementById('sheet-energy').value = existing?.stats?.energy_or_mana ?? 10;
+  document.getElementById('sheet-attack').value = existing?.stats?.attack ?? 10;
+  document.getElementById('sheet-defense').value = existing?.stats?.defense ?? 10;
+  document.getElementById('sheet-speed').value = existing?.stats?.speed ?? 10;
+  document.getElementById('sheet-magic').value = existing?.stats?.magic ?? 10;
+  document.getElementById('sheet-willpower').value = existing?.stats?.willpower ?? 10;
+  document.getElementById('sheet-presence').value = existing?.stats?.presence ?? 10;
+  document.getElementById('sheet-notes').value = existing?.notes || '';
+  document.getElementById('sheet-current-condition').value = existing?.state?.current_condition || '';
+  document.getElementById('sheet-trust').value = existing?.state?.trust ?? '';
+  document.getElementById('sheet-suspicion').value = existing?.state?.suspicion ?? '';
+  document.getElementById('sheet-anger').value = existing?.state?.anger ?? '';
+  document.getElementById('sheet-fear-state').value = existing?.state?.fear_state ?? '';
+  document.getElementById('sheet-morale').value = existing?.state?.morale ?? '';
+  document.getElementById('sheet-bond').value = existing?.state?.bond_to_player ?? '';
+  document.getElementById('sheet-guidance-strength').value = existing?.guidance_strength || 'light';
+  editor.classList.remove('hidden');
+}
+
+function buildSheetFromEditor() {
+  const sheetId = `sheet_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+  const numberOrNull = (id) => {
+    const value = document.getElementById(id).value;
+    if (value === '') return null;
+    return Number(value);
+  };
+  return {
+    id: editingSheetIndex >= 0 ? draftCharacterSheets[editingSheetIndex].id : sheetId,
+    name: document.getElementById('sheet-name').value.trim() || 'Unnamed',
+    sheet_type: document.getElementById('sheet-type').value,
+    role: document.getElementById('sheet-role').value.trim(),
+    archetype: document.getElementById('sheet-archetype').value.trim(),
+    level_or_rank: document.getElementById('sheet-level-rank').value.trim(),
+    faction: document.getElementById('sheet-faction').value.trim(),
+    description: document.getElementById('sheet-description').value.trim(),
+    stats: {
+      health: Number(document.getElementById('sheet-health').value || 10),
+      energy_or_mana: Number(document.getElementById('sheet-energy').value || 10),
+      attack: Number(document.getElementById('sheet-attack').value || 10),
+      defense: Number(document.getElementById('sheet-defense').value || 10),
+      speed: Number(document.getElementById('sheet-speed').value || 10),
+      magic: Number(document.getElementById('sheet-magic').value || 10),
+      willpower: Number(document.getElementById('sheet-willpower').value || 10),
+      presence: Number(document.getElementById('sheet-presence').value || 10),
+    },
+    classic_attributes: {},
+    traits: parseCsv(document.getElementById('sheet-traits').value),
+    abilities: parseCsv(document.getElementById('sheet-abilities').value),
+    equipment: parseCsv(document.getElementById('sheet-equipment').value),
+    weaknesses: parseCsv(document.getElementById('sheet-weaknesses').value),
+    temperament: document.getElementById('sheet-temperament').value.trim(),
+    loyalty: document.getElementById('sheet-loyalty').value.trim(),
+    fear: document.getElementById('sheet-fear').value.trim(),
+    desire: document.getElementById('sheet-desire').value.trim(),
+    social_style: document.getElementById('sheet-social-style').value.trim(),
+    speech_style: document.getElementById('sheet-speech-style').value.trim(),
+    notes: document.getElementById('sheet-notes').value.trim(),
+    state: {
+      trust: numberOrNull('sheet-trust'),
+      suspicion: numberOrNull('sheet-suspicion'),
+      anger: numberOrNull('sheet-anger'),
+      fear_state: numberOrNull('sheet-fear-state'),
+      morale: numberOrNull('sheet-morale'),
+      bond_to_player: numberOrNull('sheet-bond'),
+      current_condition: document.getElementById('sheet-current-condition').value.trim(),
+    },
+    guidance_strength: document.getElementById('sheet-guidance-strength').value || 'light',
+  };
 }
 
 async function api(path, options = {}) {
@@ -1273,6 +1414,8 @@ async function createCampaignFromForm() {
       profile: worldTheme.toLowerCase().includes('dark') ? 'dark_fantasy' : 'classic_fantasy',
       thematic_flags: worldTheme ? [worldTheme.toLowerCase().replaceAll(' ', '_'), 'adventure'] : ['adventure', 'mystery'],
       suggested_moves_enabled: !!document.getElementById('form-suggested-moves-enabled')?.checked,
+      character_sheets: draftCharacterSheets,
+      character_sheet_guidance_strength: document.getElementById('form-character-sheet-guidance-strength')?.value || 'light',
     };
     await api('/api/campaign/start', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
@@ -1491,5 +1634,26 @@ if (cancelSettingsButton) {
     setStatus('Reverted unsaved campaign settings.');
   };
 }
+
+document.getElementById('open-character-sheets').onclick = () => {
+  characterSheetsManager?.classList.remove('hidden');
+  renderCharacterSheetList();
+};
+document.getElementById('character-sheet-close').onclick = () => {
+  characterSheetsManager?.classList.add('hidden');
+};
+document.getElementById('character-sheet-create').onclick = () => openSheetEditor(-1);
+document.getElementById('character-sheet-cancel').onclick = () => {
+  editingSheetIndex = -1;
+  document.getElementById('character-sheet-editor')?.classList.add('hidden');
+};
+document.getElementById('character-sheet-save').onclick = () => {
+  const built = buildSheetFromEditor();
+  if (editingSheetIndex >= 0) draftCharacterSheets[editingSheetIndex] = built;
+  else draftCharacterSheets.push(built);
+  editingSheetIndex = -1;
+  document.getElementById('character-sheet-editor')?.classList.add('hidden');
+  renderCharacterSheetList();
+};
 
 Promise.all([refreshMessages(), refreshState(), refreshSaves(), loadSettings(), refreshDependencyReadiness(), refreshSceneVisual()]).catch((error) => setStatus(error.message, true));
