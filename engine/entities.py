@@ -202,6 +202,59 @@ class ConversationTurn:
 
 
 @dataclass
+class CampaignCanonState:
+    """Static or semi-static campaign canon facts."""
+
+    campaign_premise: str = ""
+    world_rules: list[str] = field(default_factory=list)
+    lore: list[str] = field(default_factory=list)
+    character_sheet_ids: list[str] = field(default_factory=list)
+    faction_setup: dict[str, int] = field(default_factory=dict)
+    item_definitions_version: str = "default"
+    spell_definitions_version: str = "default"
+
+
+@dataclass
+class CampaignRuntimeState:
+    """Dynamic campaign runtime state that must remain campaign-scoped."""
+
+    player_core: dict[str, Any] = field(default_factory=dict)
+    inventory: list[str] = field(default_factory=list)
+    equipment: dict[str, str | None] = field(default_factory=dict)
+    spellbook: list[str] = field(default_factory=list)
+    abilities_learned: list[str] = field(default_factory=list)
+    current_location_id: str = ""
+    discovered_locations: list[str] = field(default_factory=list)
+    quest_state: dict[str, str] = field(default_factory=dict)
+    npc_relationships: dict[str, dict[str, Any]] = field(default_factory=dict)
+    party_state: dict[str, Any] = field(default_factory=dict)
+    status_effects: list[str] = field(default_factory=list)
+    faction_changes: dict[str, int] = field(default_factory=dict)
+    world_state: dict[str, Any] = field(default_factory=dict)
+    scene_visual_state: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class CampaignRecentMemoryState:
+    """Recent campaign turn memory and summaries."""
+
+    last_major_actions: list[str] = field(default_factory=list)
+    last_major_consequences: list[str] = field(default_factory=list)
+    recent_dialogue: list[str] = field(default_factory=list)
+    recent_discoveries: list[str] = field(default_factory=list)
+    running_summary: str = ""
+
+
+@dataclass
+class CampaignStructuredState:
+    """Campaign-scoped canonical + runtime + recent memory structures."""
+
+    canon: CampaignCanonState = field(default_factory=CampaignCanonState)
+    runtime: CampaignRuntimeState = field(default_factory=CampaignRuntimeState)
+    recent_turn_memory: CampaignRecentMemoryState = field(default_factory=CampaignRecentMemoryState)
+
+
+@dataclass
 class CampaignState:
     """Top-level persistent campaign state."""
 
@@ -233,6 +286,7 @@ class CampaignState:
     world_meta: CampaignWorldMeta = field(default_factory=CampaignWorldMeta)
     character_sheets: list[CharacterSheet] = field(default_factory=list)
     character_sheet_guidance_strength: GuidanceStrength = "light"
+    structured_state: CampaignStructuredState = field(default_factory=CampaignStructuredState)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize campaign state to a dictionary for JSON storage."""
@@ -314,6 +368,7 @@ class CampaignState:
             world_meta=cls._world_meta_from_payload(payload.get("world_meta"), payload),
             character_sheets=[CharacterSheet.from_payload(entry) for entry in payload.get("character_sheets", []) if isinstance(entry, dict)],
             character_sheet_guidance_strength=cls._sheet_strength_from_payload(payload.get("character_sheet_guidance_strength", "light")),
+            structured_state=cls._structured_state_from_payload(payload.get("structured_state"), payload),
         )
 
     @staticmethod
@@ -375,4 +430,90 @@ class CampaignState:
             tone=str(raw_world_meta.get("tone", payload.get("settings", {}).get("narration_tone", "heroic"))),
             premise=str(raw_world_meta.get("premise", "")),
             player_concept=str(raw_world_meta.get("player_concept", "")),
+        )
+
+    @staticmethod
+    def _structured_state_from_payload(raw_structured: dict[str, Any] | None, payload: dict[str, Any]) -> CampaignStructuredState:
+        if not isinstance(raw_structured, dict):
+            return CampaignState._build_structured_state_from_legacy_payload(payload)
+        raw_canon = raw_structured.get("canon", {})
+        raw_runtime = raw_structured.get("runtime", {})
+        raw_recent = raw_structured.get("recent_turn_memory", {})
+        return CampaignStructuredState(
+            canon=CampaignCanonState(
+                campaign_premise=str(raw_canon.get("campaign_premise", "")),
+                world_rules=[str(v) for v in raw_canon.get("world_rules", [])],
+                lore=[str(v) for v in raw_canon.get("lore", [])],
+                character_sheet_ids=[str(v) for v in raw_canon.get("character_sheet_ids", [])],
+                faction_setup={str(k): int(v) for k, v in raw_canon.get("faction_setup", {}).items()},
+                item_definitions_version=str(raw_canon.get("item_definitions_version", "default")),
+                spell_definitions_version=str(raw_canon.get("spell_definitions_version", "default")),
+            ),
+            runtime=CampaignRuntimeState(
+                player_core=dict(raw_runtime.get("player_core", {})),
+                inventory=[str(v) for v in raw_runtime.get("inventory", [])],
+                equipment={str(k): (None if v is None else str(v)) for k, v in raw_runtime.get("equipment", {}).items()},
+                spellbook=[str(v) for v in raw_runtime.get("spellbook", [])],
+                abilities_learned=[str(v) for v in raw_runtime.get("abilities_learned", [])],
+                current_location_id=str(raw_runtime.get("current_location_id", "")),
+                discovered_locations=[str(v) for v in raw_runtime.get("discovered_locations", [])],
+                quest_state={str(k): str(v) for k, v in raw_runtime.get("quest_state", {}).items()},
+                npc_relationships={str(k): dict(v) for k, v in raw_runtime.get("npc_relationships", {}).items()},
+                party_state=dict(raw_runtime.get("party_state", {})),
+                status_effects=[str(v) for v in raw_runtime.get("status_effects", [])],
+                faction_changes={str(k): int(v) for k, v in raw_runtime.get("faction_changes", {}).items()},
+                world_state=dict(raw_runtime.get("world_state", {})),
+                scene_visual_state=dict(raw_runtime.get("scene_visual_state", {})),
+            ),
+            recent_turn_memory=CampaignRecentMemoryState(
+                last_major_actions=[str(v) for v in raw_recent.get("last_major_actions", [])],
+                last_major_consequences=[str(v) for v in raw_recent.get("last_major_consequences", [])],
+                recent_dialogue=[str(v) for v in raw_recent.get("recent_dialogue", [])],
+                recent_discoveries=[str(v) for v in raw_recent.get("recent_discoveries", [])],
+                running_summary=str(raw_recent.get("running_summary", "")),
+            ),
+        )
+
+    @staticmethod
+    def _build_structured_state_from_legacy_payload(payload: dict[str, Any]) -> CampaignStructuredState:
+        world_meta = payload.get("world_meta", {})
+        character_sheets = payload.get("character_sheets", [])
+        locations = payload.get("locations", {})
+        discovered_locations = [str(key) for key in locations.keys()]
+        return CampaignStructuredState(
+            canon=CampaignCanonState(
+                campaign_premise=str(world_meta.get("premise", "")),
+                character_sheet_ids=[
+                    str(sheet.get("id", ""))
+                    for sheet in character_sheets
+                    if isinstance(sheet, dict) and str(sheet.get("id", "")).strip()
+                ],
+                faction_setup={str(k): int(v) for k, v in payload.get("faction_reputation", {}).items()},
+            ),
+            runtime=CampaignRuntimeState(
+                player_core=dict(payload.get("player", {})),
+                inventory=[str(v) for v in payload.get("player", {}).get("inventory", [])],
+                equipment={"equipped_item_id": payload.get("player", {}).get("equipped_item_id")},
+                current_location_id=str(payload.get("current_location_id", "")),
+                discovered_locations=discovered_locations,
+                quest_state={str(k): str(v.get("status", "active")) for k, v in payload.get("quests", {}).items()},
+                npc_relationships={
+                    str(k): {
+                        "disposition": int(v.get("disposition", 0)),
+                        "relationship_tier": str(v.get("relationship_tier", "neutral")),
+                    }
+                    for k, v in payload.get("npcs", {}).items()
+                    if isinstance(v, dict)
+                },
+                faction_changes={str(k): int(v) for k, v in payload.get("faction_reputation", {}).items()},
+                world_state={
+                    "world_flags": dict(payload.get("world_flags", {})),
+                    "world_events": [str(v) for v in payload.get("world_events", [])],
+                },
+            ),
+            recent_turn_memory=CampaignRecentMemoryState(
+                last_major_actions=[str(v) for v in payload.get("recent_memory", [])[-6:]],
+                last_major_consequences=[str(v) for v in payload.get("event_log", [])[-6:]],
+                running_summary=str(payload.get("session_summaries", [{}])[-1].get("summary", "")) if payload.get("session_summaries") else "",
+            ),
         )

@@ -145,6 +145,29 @@ def test_turn_flow_persists_memory_and_messages(tmp_path: Path, monkeypatch) -> 
     assert runtime.session.state.conversation_turns[-1].player_input == "summarize"
 
 
+def test_history_and_scene_visual_are_campaign_namespaced(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"player_name": "Mira", "slot": "slot_iso"})
+    runtime.handle_player_input("look")
+    runtime._set_scene_visual(
+        slot="slot_iso",
+        image_url="/generated/a.png",
+        prompt="scene a",
+        source="test",
+        stage="after_narration",
+        turn=1,
+    )
+    first_key = runtime._campaign_namespace("slot_iso")
+    assert first_key in runtime.history_store
+    assert first_key in runtime.scene_visual_store
+
+    runtime.create_campaign({"player_name": "Aric", "slot": "slot_iso"})
+    runtime.handle_player_input("status")
+    second_key = runtime._campaign_namespace("slot_iso")
+    assert second_key in runtime.history_store
+    assert second_key != first_key
+
+
 def test_runtime_does_not_add_session_boilerplate_messages(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     texts = [message["text"] for message in runtime.session.message_history]

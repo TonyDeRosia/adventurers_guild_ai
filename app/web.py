@@ -90,6 +90,11 @@ class WebRuntime:
         self._model_install_jobs: dict[str, dict[str, Any]] = {}
         print("[web-runtime] session initialized")
 
+    def _campaign_namespace(self, slot: str, state: CampaignState | None = None) -> str:
+        scoped_state = state or self.session.state
+        campaign_id = str(scoped_state.campaign_id or "").strip() or "unknown_campaign"
+        return f"{slot}::{campaign_id}"
+
     def _load_history_store(self) -> dict[str, list[dict[str, Any]]]:
         if not self.history_store_path.exists():
             return {}
@@ -141,7 +146,8 @@ class WebRuntime:
         turn: int,
         metadata: dict[str, Any] | None = None,
     ) -> None:
-        self.scene_visual_store[slot] = {
+        namespace = self._campaign_namespace(slot)
+        self.scene_visual_store[namespace] = {
             "image_url": image_url,
             "prompt": prompt,
             "source": source,
@@ -151,14 +157,21 @@ class WebRuntime:
             "metadata": metadata or {},
         }
         self._persist_scene_visual_store()
+        self.engine.state_orchestrator.set_scene_visual_state(self.session.state, self.scene_visual_store[namespace])
 
     def _scene_visual_for_slot(self, slot: str | None = None) -> dict[str, Any] | None:
         target_slot = str(slot or self.session.active_slot)
-        payload = self.scene_visual_store.get(target_slot)
+        namespace = self._campaign_namespace(target_slot)
+        payload = self.scene_visual_store.get(namespace)
+        if payload is None:
+            payload = self.scene_visual_store.get(target_slot)
         return payload if isinstance(payload, dict) else None
 
     def _history_for_slot(self, slot: str) -> list[dict[str, Any]]:
-        existing = self.history_store.get(slot)
+        namespace = self._campaign_namespace(slot)
+        existing = self.history_store.get(namespace)
+        if not isinstance(existing, list):
+            existing = self.history_store.get(slot)
         if isinstance(existing, list) and existing:
             return existing
         replayed: list[dict[str, Any]] = []
@@ -167,7 +180,7 @@ class WebRuntime:
             replayed.extend(self._message(self._normalize_message_type("system", msg), msg) for msg in turn.system_messages)
             if turn.narrator_response:
                 replayed.append(self._message("narrator", turn.narrator_response))
-        self.history_store[slot] = replayed
+        self.history_store[namespace] = replayed
         return replayed
 
     def _load_or_create(self, slot: str) -> CampaignState:
@@ -1519,13 +1532,13 @@ class WebRuntime:
         entry = self._message(message_type, text, **extra)
         with self._history_lock:
             self.session.message_history.append(entry)
-            self.history_store[self.session.active_slot] = self.session.message_history
+            self.history_store[self._campaign_namespace(self.session.active_slot)] = self.session.message_history
             if persist:
                 self._persist_history_store()
 
     def _flush_history_store(self) -> None:
         with self._history_lock:
-            self.history_store[self.session.active_slot] = self.session.message_history
+            self.history_store[self._campaign_namespace(self.session.active_slot)] = self.session.message_history
             self._persist_history_store()
 
     def _normalize_message_type(self, message_type: str, text: str) -> str:
@@ -1649,7 +1662,7 @@ class WebRuntime:
         self.state_manager.save(self.session.state, target_slot)
         if target_slot != self.session.active_slot:
             with self._history_lock:
-                self.history_store[target_slot] = list(self.session.message_history)
+                self.history_store[self._campaign_namespace(target_slot)] = list(self.session.message_history)
             self.session.active_slot = target_slot
             self._flush_history_store()
         return {"slot": target_slot, "state": self.serialize_state()}
@@ -1662,6 +1675,7 @@ class WebRuntime:
             raise ValueError(f"Save slot '{slot}' is corrupted and could not be loaded")
         self.session = WebSession(state=loaded, active_slot=slot)
         self.session.message_history = self._history_for_slot(slot)
+        self.engine.state_orchestrator.set_scene_visual_state(self.session.state, self._scene_visual_for_slot(slot))
         print(f"[web-runtime] switched campaign slot={slot}")
         return {"slot": slot, "state": self.serialize_state()}
 
@@ -1676,8 +1690,10 @@ class WebRuntime:
             raise ValueError(f"Save slot '{clean_slot}' not found")
         path.unlink()
         self.history_store.pop(clean_slot, None)
+        self.history_store.pop(self._campaign_namespace(clean_slot), None)
         self._persist_history_store()
         self.scene_visual_store.pop(clean_slot, None)
+        self.scene_visual_store.pop(self._campaign_namespace(clean_slot), None)
         self._persist_scene_visual_store()
         return {"deleted": clean_slot}
 
@@ -1739,6 +1755,7 @@ class WebRuntime:
         self.session = WebSession(state=state, active_slot=slot)
         self.session.message_history = []
         self.scene_visual_store.pop(slot, None)
+        self.scene_visual_store.pop(self._campaign_namespace(slot), None)
         self._persist_scene_visual_store()
         print(f"[web-runtime] created campaign slot={slot} player={player_name}")
         self.save_active_campaign(slot)

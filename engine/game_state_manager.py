@@ -102,6 +102,7 @@ class GameStateManager:
             "conversation_turns": [],
             "settings": {},
             "world_meta": {},
+            "structured_state": {},
         }
         clean_player_name = player_name.strip() or "Aria"
         clean_char_class = char_class.strip() or "Ranger"

@@ -13,6 +13,7 @@ from engine.dialogue_service import DialogueService
 from engine.entities import CampaignState
 from engine.inventory import InventoryService
 from memory.campaign_memory import CampaignMemory
+from memory.campaign_state_orchestrator import CampaignStateOrchestrator
 from memory.npc_memory import NPCMemoryTracker
 from memory.npc_personality import NPCPersonalitySystem
 from memory.quest_tracker import QuestTracker
@@ -50,6 +51,7 @@ class CampaignEngine:
         self.character_sheet = CharacterSheetService()
         self.dialogue = DialogueService(self.content, self.quests, self.npc_memory)
         self.memory = CampaignMemory()
+        self.state_orchestrator = CampaignStateOrchestrator()
         self.retrieval = MemoryRetrievalPipeline()
         self.summary = SummaryGenerator()
 
@@ -419,6 +421,7 @@ class CampaignEngine:
             requested_mode=requested_mode,
             guidance_requested=guidance_requested,
             npc_guidance=self.personality.build_prompt_guidance(state),
+            gm_context=self.state_orchestrator.build_gm_context(state),
         )
         prompt_build_ms = (time.perf_counter() - prompt_started) * 1000
         history_started = time.perf_counter()
@@ -458,6 +461,7 @@ class CampaignEngine:
         )
         print(f"[narration] recommendation_cleanup_applied={str(cleanup_applied).lower()}")
         self.memory.record_recent(state, f"Narrator: {narrative}")
+        self.state_orchestrator.update_runtime_state(state, action=action, system_messages=system_messages, narrative=narrative)
         self.memory.record_conversation_turn(
             state,
             player_input=action,
