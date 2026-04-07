@@ -202,17 +202,16 @@ def test_turn_sanitizer_removes_prompt_scaffold_leaks(tmp_path: Path, monkeypatc
     assert "lantern-light flickers" in out["narrative"]
 
 
-def test_suggested_move_toggle_controls_narrator_suffix(tmp_path: Path, monkeypatch) -> None:
+def test_recommendations_only_show_when_player_explicitly_requests_guidance(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _SuggestedMoveProvider()
 
-    runtime.set_campaign_settings({"player_suggested_moves_override": False})
-    off_out = runtime.handle_player_input("look")
-    assert "Suggested next move:" not in off_out["narrative"]
-
     runtime.set_campaign_settings({"player_suggested_moves_override": True})
-    on_out = runtime.handle_player_input("look")
-    assert "Suggested next move:" in on_out["narrative"]
+    normal_turn = runtime.handle_player_input("look")
+    assert "Suggested next move:" not in normal_turn["narrative"]
+
+    guidance_turn = runtime.handle_player_input("what should I do next?")
+    assert "Suggested next move:" in guidance_turn["narrative"]
 
 
 def test_settings_include_ollama_unavailable_status(tmp_path: Path, monkeypatch) -> None:

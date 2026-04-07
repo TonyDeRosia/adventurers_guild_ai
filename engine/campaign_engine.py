@@ -407,6 +407,8 @@ class CampaignEngine:
             important_world_state=[flag.lower() for flag, enabled in state.world_flags.items() if enabled],
         )
         memory_context = self.retrieval.retrieve(state, retrieval_request)
+        guidance_requested = self._player_requested_guidance(action)
+        print(f"[narration] guidance_requested={str(guidance_requested).lower()}")
         retrieval_ms = (time.perf_counter() - retrieval_started) * 1000
         prompt_started = time.perf_counter()
         prompt_packet = self.prompts.build_prompt_packet(
@@ -415,7 +417,7 @@ class CampaignEngine:
             location_summary=location_summary,
             memory=memory_context,
             requested_mode=requested_mode,
-            suggested_moves_enabled=state.settings.suggested_moves_active(),
+            guidance_requested=guidance_requested,
             npc_guidance=self.personality.build_prompt_guidance(state),
         )
         prompt_build_ms = (time.perf_counter() - prompt_started) * 1000
@@ -451,7 +453,10 @@ class CampaignEngine:
                 f"[turn-routing] provider={selected_provider} model={selected_model} attempted={provider_attempted} "
                 f"fallback={fallback_used} reason={fallback_reason} sanitized={was_sanitized}"
             )
-        narrative = self._apply_suggested_move_setting(sanitized_narrative, state.settings.suggested_moves_active())
+        narrative, cleanup_applied = self._apply_recommendation_policy(
+            sanitized_narrative, guidance_requested=guidance_requested
+        )
+        print(f"[narration] recommendation_cleanup_applied={str(cleanup_applied).lower()}")
         self.memory.record_recent(state, f"Narrator: {narrative}")
         self.memory.record_conversation_turn(
             state,
@@ -481,6 +486,8 @@ class CampaignEngine:
                 "fallback_used": fallback_used,
                 "fallback_reason": fallback_reason,
                 "sanitized_output": was_sanitized,
+                "guidance_requested": guidance_requested,
+                "recommendation_cleanup_applied": cleanup_applied,
                 "turn_count": state.turn_count,
                 "timing": timing,
             },
@@ -526,18 +533,61 @@ class CampaignEngine:
             text = "The world holds its breath for a heartbeat, waiting for your next move."
         return text, text != original
 
-    def _apply_suggested_move_setting(self, narrative: str, suggested_moves_enabled: bool) -> str:
-        if suggested_moves_enabled:
-            return narrative
-        cleaned = re.sub(
-            r"\n?\s*(?:[-*]\s*)?(?:(?:suggested|recommended)\s*(?:next)?\s*move[s]?|next\s*move|your\s*first\s*course\s*of\s*action)\s*:\s*.*$",
-            "",
-            narrative,
-            flags=re.IGNORECASE | re.MULTILINE,
-        ).strip()
+    def _player_requested_guidance(self, action: str) -> bool:
+        normalized = re.sub(r"\s+", " ", action.strip().lower())
+        if not normalized:
+            return False
+        guidance_patterns = (
+            r"\bwhat should i do next\b",
+            r"\bnext move\b",
+            r"\bsuggestion(?:s)?\b",
+            r"\brecommend(?:ed|ation|ations)?\b",
+            r"\badvice\b",
+            r"\bhint(?:s)?\b",
+            r"\bwhat are my options\b",
+            r"\boptions\b",
+            r"\bgive me (?:some )?ideas\b",
+            r"\bideas\b",
+            r"\bwhat can i do\b",
+            r"\bhelp me choose\b",
+        )
+        return any(re.search(pattern, normalized, flags=re.IGNORECASE) for pattern in guidance_patterns)
+
+    def _apply_recommendation_policy(self, narrative: str, guidance_requested: bool) -> tuple[str, bool]:
+        if guidance_requested:
+            return narrative, False
+        cleaned = self._strip_recommendation_segments(narrative)
         if cleaned:
-            return cleaned
-        return "The world holds its breath for a heartbeat, waiting for your next move."
+            return cleaned, cleaned != narrative.strip()
+        return "The world holds its breath for a heartbeat, waiting for your next move.", True
+
+    def _strip_recommendation_segments(self, narrative: str) -> str:
+        text = narrative.strip()
+        line_patterns = (
+            r"^\s*(?:[-*]\s*)?(?:suggested|recommended)\s*(?:next)?\s*move[s]?\s*:\s*.*$",
+            r"^\s*(?:[-*]\s*)?next\s*move\s*:\s*.*$",
+            r"^\s*(?:[-*]\s*)?your\s*first\s*course\s*of\s*action\s*:?\s*.*$",
+            r"^\s*(?:[-*]\s*)?you\s*should(?:\s*now)?\b.*$",
+            r"^\s*(?:[-*]\s*)?consider\b.*$",
+            r"^\s*(?:[-*]\s*)?a\s*good\s*next\s*step\s*would\s*be\b.*$",
+        )
+        for pattern in line_patterns:
+            text = re.sub(pattern, "", text, flags=re.IGNORECASE | re.MULTILINE)
+
+        sentence_patterns = (
+            r"(?:^|\s)(?:suggested|recommended)\s*(?:next)?\s*move\s*:\s*[^.!?\n]+[.!?]?",
+            r"(?:^|\s)next\s*move\s*:\s*[^.!?\n]+[.!?]?",
+            r"(?:^|\s)your\s*first\s*course\s*of\s*action\s*:?\s*[^.!?\n]+[.!?]?",
+            r"(?:^|\s)you\s*should(?:\s*now)?\s+[^.!?\n]+[.!?]",
+            r"(?:^|\s)consider\s+[^.!?\n]+[.!?]",
+            r"(?:^|\s)a\s*good\s*next\s*step\s*would\s*be\s+[^.!?\n]+[.!?]",
+        )
+        for pattern in sentence_patterns:
+            text = re.sub(pattern, " ", text, flags=re.IGNORECASE)
+
+        text = "\n".join(line.rstrip() for line in text.splitlines() if line.strip())
+        text = re.sub(r"\s{2,}", " ", text).strip()
+        return text
 
     def _build_model_history(self, state: CampaignState) -> list[ChatMessage]:
         history: list[ChatMessage] = []

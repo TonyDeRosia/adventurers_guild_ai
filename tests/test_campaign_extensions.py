@@ -202,7 +202,7 @@ def test_relationship_tier_transitions_and_dialogue_gating() -> None:
     assert not any("safer way than direct combat" in msg.lower() for msg in hostile.system_messages)
 
 
-def test_suggested_move_suppression_removes_alternate_recommendation_labels() -> None:
+def test_recommendation_cleanup_removes_alternate_recommendation_labels() -> None:
     engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
 
     narrative = (
@@ -210,11 +210,20 @@ def test_suggested_move_suppression_removes_alternate_recommendation_labels() ->
         "Your first course of action: inspect the runes before opening it.\n"
         "Next move: keep your hand near your blade."
     )
-    cleaned = engine._apply_suggested_move_setting(narrative, suggested_moves_enabled=False)
+    cleaned = engine._strip_recommendation_segments(narrative)
 
     assert "first course of action:" not in cleaned.lower()
     assert "next move:" not in cleaned.lower()
     assert "torchlight flickers" in cleaned.lower()
+
+
+def test_guidance_request_detection_matches_common_advice_phrases() -> None:
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+    assert engine._player_requested_guidance("What should I do next?") is True
+    assert engine._player_requested_guidance("Any suggestions?") is True
+    assert engine._player_requested_guidance("Recommend a next move.") is True
+    assert engine._player_requested_guidance("What are my options here?") is True
+    assert engine._player_requested_guidance("I attack the ghoul.") is False
 
 
 def test_prompt_renderer_includes_content_settings_layer() -> None:
