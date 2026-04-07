@@ -110,14 +110,14 @@ def _try_launch_browser(url: str) -> BrowserLaunchResult:
 
 def _launch_browser_when_ready(host: str, port: int) -> None:
     browser_url = f"http://{_browser_host(host)}:{port}"
-    print(f"[startup] Waiting for health at {browser_url}/health ...")
+    print(f"[startup] Waiting for readiness at {browser_url}/health ...")
     ready, reason = _wait_for_web_health(browser_url)
     if not ready:
-        print(f"[startup] Browser auto-open skipped: {reason}")
+        print(f"[startup] Health check failed before browser launch: {reason}")
         print(f"[startup] Open this URL manually: {browser_url}")
         return
-    print("[startup] Health ready.")
-    print(f"[startup] Opening browser: {browser_url}")
+    print(f"[startup] Health ready at {browser_url}/health")
+    print(f"[startup] Attempting browser launch: {browser_url}")
     result = _try_launch_browser(browser_url)
     if result.success:
         print(f"[startup] Opened browser via {result.method}: {browser_url}")
@@ -134,24 +134,9 @@ def _is_port_available(host: str, port: int) -> tuple[bool, str]:
         except OSError as exc:
             return False, str(exc)
     return True, ""
-
-
-
-
-def _is_address_in_use_error(exc: OSError) -> bool:
-    message = str(exc).lower()
-    winerror = getattr(exc, "winerror", None)
-    errno = getattr(exc, "errno", None)
-    return (
-        winerror == 10048
-        or errno in {98, 10048}
-        or "address already in use" in message
-        or "only one usage of each socket address" in message
-    )
-
 def main() -> int:
     _print_banner()
-    print("Initializing systems...")
+    print("[startup] Initializing systems...")
 
     try:
         args = _parse_args()
@@ -190,7 +175,7 @@ def main() -> int:
             )
             opener_thread.start()
 
-            print(f"[startup] Starting backend at http://{args.host}:{args.port} ...")
+            print(f"[startup] Starting backend (uvicorn) at http://{args.host}:{args.port} ...")
             uvicorn.run(app, host=args.host, port=args.port, log_level="info")
             return 0
 
@@ -200,11 +185,11 @@ def main() -> int:
         terminal_main()
         return 0
     except KeyboardInterrupt:
-        print("\nShutdown requested. Goodbye.")
+        print("\n[startup] Shutdown requested. Goodbye.")
         return 0
     except Exception as exc:  # pragma: no cover - defensive UX fallback
-        print("\nThe game could not be started.")
-        print(f"Error: {exc}")
+        print("\n[startup] Startup failed. The game could not be started.")
+        print(f"[startup] Error: {exc}")
         print("\nDebug trace:")
         print(traceback.format_exc())
         if os.name == "nt":
