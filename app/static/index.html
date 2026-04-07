@@ -19,6 +19,7 @@
           <button id="save-campaign">Save</button>
           <button id="rename-campaign">Rename</button>
           <button id="delete-campaign">Delete selected</button>
+          <button id="open-narrator-rules" type="button">Narrator Rules</button>
         </div>
       </aside>
 
@@ -188,6 +189,26 @@
             <h4>Sheet Details</h4>
             <div id="runtime-character-sheet-detail" class="runtime-sheet-detail">Select a sheet to view details.</div>
           </section>
+        </div>
+      </div>
+    </div>
+
+    <div id="narrator-rules-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="panel-title-row">
+          <h3>Narrator Rules</h3>
+          <button id="close-narrator-rules" type="button">Close</button>
+        </div>
+        <p class="setup-intro">Campaign-specific narrator constraints that are injected every turn.</p>
+        <div id="narrator-rules-list" class="runtime-sheet-detail">No custom narrator rules yet.</div>
+        <div class="modal-grid">
+          <input id="narrator-rule-edit-id" type="hidden" />
+          <label>Add / Edit Rule <textarea id="narrator-rule-input" rows="3" placeholder="Never make decisions for me"></textarea></label>
+        </div>
+        <div class="button-row">
+          <button id="narrator-rule-save" type="button">Save Rule</button>
+          <button id="narrator-rule-clear" type="button">Clear Editor</button>
+          <button id="narrator-rules-save-campaign" type="button">Save Rules to Campaign</button>
         </div>
       </div>
     </div>
