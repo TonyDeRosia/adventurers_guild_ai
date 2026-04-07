@@ -36,6 +36,7 @@ from images.base import ImageGenerationRequest, ImageGenerationResult, ImageGene
 from images.comfyui_adapter import ComfyUIAdapter
 from images.local_adapter import LocalPlaceholderImageAdapter
 from images.workflow_manager import WorkflowManager
+from models.ollama_adapter import OllamaAdapter
 from models.registry import create_model_adapter
 
 
@@ -116,6 +117,38 @@ class WebRuntime:
             base_url=self.app_config.model.base_url,
             timeout_seconds=self.app_config.model.timeout_seconds,
         )
+
+    def get_model_status(self) -> dict[str, Any]:
+        provider = self.app_config.model.provider
+        model_name = self.app_config.model.model_name
+        base_url = self.app_config.model.base_url
+        if provider != "ollama":
+            print(
+                f"[model-status] provider={provider} model={model_name} base_url={base_url} "
+                "readiness_result=not_required model_check_result=not_required"
+            )
+            return {
+                "provider": provider,
+                "model": model_name,
+                "base_url": base_url,
+                "reachable": True,
+                "model_exists": True,
+                "ready": True,
+                "user_message": f"{provider} provider is ready.",
+                "fallback_reason": "",
+            }
+
+        adapter = OllamaAdapter(
+            model=model_name,
+            base_url=base_url,
+            timeout_seconds=self.app_config.model.timeout_seconds,
+        )
+        status = adapter.check_readiness()
+        print(
+            f"[model-status] provider={provider} model={model_name} base_url={base_url} "
+            f"readiness_result={status['reachable']} model_check_result={status['model_exists']}"
+        )
+        return status
 
     def _create_image_adapter(self) -> ImageGeneratorAdapter:
         cfg = self.app_config.image
@@ -268,6 +301,7 @@ class WebRuntime:
         return {"slot": slot, "state": self.serialize_state()}
 
     def handle_player_input(self, text: str) -> dict[str, Any]:
+        model_status = self.get_model_status()
         self._append_message("player", text)
         result = self.engine.run_turn(self.session.state, text)
         for message in result.messages:
@@ -278,7 +312,7 @@ class WebRuntime:
             "system_messages": result.system_messages,
             "messages": result.messages,
             "should_exit": result.should_exit,
-            "metadata": result.metadata or {},
+            "metadata": {**(result.metadata or {}), "model_status": model_status},
             "state": self.serialize_state(),
         }
 
@@ -290,6 +324,7 @@ class WebRuntime:
                 "base_url": self.app_config.model.base_url,
                 "timeout_seconds": self.app_config.model.timeout_seconds,
             },
+            "model_status": self.get_model_status(),
             "image": {
                 "provider": self.app_config.image.provider,
                 "base_url": self.app_config.image.base_url,
@@ -320,9 +355,10 @@ class WebRuntime:
         self.config_store.save(self.app_config)
         self.engine.model = self._create_model_adapter()
         self.image_adapter = self._create_image_adapter()
+        model_status = self.get_model_status()
         print(
             f"[settings] model_provider={self.app_config.model.provider} model={self.app_config.model.model_name} "
-            f"image_provider={self.app_config.image.provider}"
+            f"image_provider={self.app_config.image.provider} model_ready={model_status.get('ready')}"
         )
         return self.get_global_settings()
 
@@ -444,6 +480,10 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     @app.get("/api/model/options")
     def model_options() -> dict[str, Any]:
         return {"models": runtime.list_available_local_models()}
+
+    @app.get("/api/model/status")
+    def model_status() -> dict[str, Any]:
+        return {"status": runtime.get_model_status()}
 
     @app.post("/api/campaign/input")
     def campaign_input(payload: dict[str, Any]) -> dict[str, Any]:

@@ -122,6 +122,50 @@ def test_turn_sanitizer_removes_prompt_scaffold_leaks(tmp_path: Path, monkeypatc
     assert "lantern-light flickers" in out["narrative"]
 
 
+def test_settings_include_ollama_unavailable_status(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+
+    monkeypatch.setattr(
+        "models.ollama_adapter.OllamaAdapter.check_readiness",
+        lambda self: {
+            "provider": "ollama",
+            "model": self.model,
+            "base_url": self.base_url,
+            "reachable": False,
+            "model_exists": False,
+            "ready": False,
+            "user_message": "Ollama is not running. Start Ollama to use this model provider.",
+            "fallback_reason": "offline",
+        },
+    )
+    settings = runtime.set_global_settings({"model": {"provider": "ollama", "model_name": "llama3"}})
+    assert settings["model_status"]["ready"] is False
+    assert settings["model_status"]["user_message"] == "Ollama is not running. Start Ollama to use this model provider."
+
+
+def test_turn_metadata_surfaces_model_status(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _FailingProvider()
+    runtime.app_config.model.provider = "ollama"
+    runtime.app_config.model.model_name = "llama3"
+    monkeypatch.setattr(
+        "models.ollama_adapter.OllamaAdapter.check_readiness",
+        lambda self: {
+            "provider": "ollama",
+            "model": self.model,
+            "base_url": self.base_url,
+            "reachable": False,
+            "model_exists": False,
+            "ready": False,
+            "user_message": "Ollama is not running. Start Ollama to use this model provider.",
+            "fallback_reason": "offline",
+        },
+    )
+    out = runtime.handle_player_input("look")
+    assert out["metadata"]["model_status"]["ready"] is False
+    assert out["metadata"]["model_status"]["provider"] == "ollama"
+
+
 def test_image_fallback_from_comfyui_to_local_placeholder(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.set_campaign_settings({"image_generation_enabled": True})
