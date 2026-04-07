@@ -10,7 +10,7 @@ import json
 from urllib.error import URLError
 from urllib import request
 
-from models.base import ChatMessage, NarrationModelAdapter
+from models.base import ChatMessage, NarrationModelAdapter, ProviderUnavailableError
 
 
 class OllamaAdapter(NarrationModelAdapter):
@@ -44,8 +44,11 @@ class OllamaAdapter(NarrationModelAdapter):
             with request.urlopen(req, timeout=self.timeout_seconds) as response:
                 body = json.loads(response.read().decode("utf-8"))
         except URLError as exc:
-            return f"[Ollama unavailable] Could not reach local Ollama at {self.base_url}: {exc}"
-        return body.get("message", {}).get("content", "").strip()
+            raise ProviderUnavailableError(f"Could not reach local Ollama at {self.base_url}: {exc}") from exc
+        generated = body.get("message", {}).get("content", "").strip()
+        if not generated:
+            raise ProviderUnavailableError("Ollama returned an empty response")
+        return generated
 
     def list_local_models(self) -> list[str]:
         req = request.Request(f"{self.base_url}/api/tags")

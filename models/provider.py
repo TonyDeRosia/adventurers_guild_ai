@@ -27,9 +27,15 @@ class LocalTemplateProvider:
     provider_name = "local_template"
 
     def narrate(self, request: NarrationRequest) -> str:
-        scene = request.scene_context.replace("\n", " ")
+        action = "act"
+        location = "the current scene"
+        for line in request.scene_context.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("Action:"):
+                action = stripped.split(":", 1)[1].strip() or action
+            if stripped.startswith("Location:"):
+                location = stripped.split(":", 1)[1].strip() or location
         return (
-            "[Local template narrator] "
-            f"{scene[:150]} ... "
-            "You steady your breath and prepare your next move."
+            f"You commit to {action}, and the air shifts around you in {location}. "
+            "The moment opens into your next decision."
         )

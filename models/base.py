@@ -24,6 +24,10 @@ class NarrationModelAdapter(ABC):
         """Generate a narration string from prompt context."""
 
 
+class ProviderUnavailableError(RuntimeError):
+    """Raised when a configured provider cannot fulfill a generation request."""
+
+
 class NullNarrationAdapter(NarrationModelAdapter):
     """Fallback adapter that avoids external dependencies."""
 
