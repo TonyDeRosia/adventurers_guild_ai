@@ -106,10 +106,15 @@ async function sendInput() {
     const input = document.getElementById('chat-input');
     const text = input.value.trim();
     if (!text) return;
-    await api('/api/campaign/input', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+    const turn = await api('/api/campaign/input', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
     input.value = '';
     await Promise.all([refreshMessages(), refreshState(), refreshSaves()]);
-    setStatus('Turn processed.');
+    const modelStatus = turn.metadata?.model_status;
+    if (modelStatus && modelStatus.provider === 'ollama' && !modelStatus.ready) {
+      setStatus(modelStatus.user_message || 'Ollama provider is unavailable.', true);
+    } else {
+      setStatus('Turn processed.');
+    }
   } catch (error) {
     setStatus(error.message, true);
   }
@@ -172,7 +177,7 @@ async function applySettings() {
     const modelName = document.getElementById('model-name').value.trim() || 'llama3';
     const imageProvider = document.getElementById('image-provider').value;
     const campaignImageEnabled = document.getElementById('image-enabled').checked;
-    await api('/api/settings/global', {
+    const settings = await api('/api/settings/global', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: { provider: modelProvider, model_name: modelName }, image: { provider: imageProvider } }),
     });
@@ -180,7 +185,12 @@ async function applySettings() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image_generation_enabled: campaignImageEnabled }),
     });
-    setStatus('Settings applied.');
+    const modelStatus = settings.settings?.model_status;
+    if (modelStatus && modelStatus.provider === 'ollama' && !modelStatus.ready) {
+      setStatus(modelStatus.user_message || 'Ollama provider is unavailable.', true);
+    } else {
+      setStatus('Settings applied.');
+    }
   } catch (error) {
     setStatus(error.message, true);
   }
@@ -191,6 +201,10 @@ async function loadSettings() {
   document.getElementById('model-provider').value = data.settings.model.provider;
   document.getElementById('model-name').value = data.settings.model.model_name;
   document.getElementById('image-provider').value = data.settings.image.provider;
+  const modelStatus = data.settings.model_status;
+  if (modelStatus && modelStatus.provider === 'ollama' && !modelStatus.ready) {
+    setStatus(modelStatus.user_message || 'Ollama provider is unavailable.', true);
+  }
 }
 
 document.getElementById('send-btn').onclick = sendInput;
