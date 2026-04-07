@@ -44,6 +44,7 @@ let setupRunState = {
   startupStatus: null,
 };
 let latestDependencyReadiness = null;
+let turnRequestInFlight = false;
 
 const readinessLabels = {
   model_provider: 'Text Generation Service',
@@ -771,13 +772,30 @@ async function refreshDependencyReadiness() {
 }
 
 async function sendInput() {
+  if (turnRequestInFlight) return;
   try {
     const input = document.getElementById('chat-input');
+    const sendButton = document.getElementById('send-btn');
     const text = input.value.trim();
     if (!text) return;
-    const turn = await api('/api/campaign/input', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+    const submittedAt = performance.now();
+    turnRequestInFlight = true;
+    input.disabled = true;
+    sendButton.disabled = true;
+    renderMessage({ type: 'player', text, timestamp: new Date().toISOString() });
+    renderMessage({ type: 'system', text: 'Resolving turn…', timestamp: new Date().toISOString() });
+    setStatus('Processing action...');
     input.value = '';
-    await Promise.all([refreshMessages(), refreshState(), refreshSaves()]);
+    console.log(`[turn-timing] frontend_submit_ms=0.00 submitted_at=${new Date().toISOString()}`);
+    const turn = await api('/api/campaign/input', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+    const responseAt = performance.now();
+    const roundTripMs = responseAt - submittedAt;
+    const backendTiming = turn.metadata?.timing || {};
+    const firstVisibleMs = roundTripMs - (backendTiming.save_ms || 0);
+    console.log(`[turn-timing] frontend_round_trip_ms=${roundTripMs.toFixed(2)} first_visible_estimate_ms=${Math.max(firstVisibleMs, 0).toFixed(2)}`);
+    input.value = '';
+    await Promise.all([refreshMessages(), refreshState()]);
+    refreshSaves().catch((error) => console.warn('save list refresh failed', error));
     const modelStatus = turn.metadata?.model_status;
     if (modelStatus && modelStatus.provider === 'ollama' && !modelStatus.ready) {
       setStatus(modelStatus.user_message || 'Ollama provider is unavailable.', true);
@@ -786,6 +804,13 @@ async function sendInput() {
     }
   } catch (error) {
     setStatus(error.message, true);
+  } finally {
+    const input = document.getElementById('chat-input');
+    const sendButton = document.getElementById('send-btn');
+    input.disabled = false;
+    sendButton.disabled = false;
+    turnRequestInFlight = false;
+    input.focus();
   }
 }
 
