@@ -130,6 +130,7 @@ function actionTitle(actionId) {
     install_image_engine: 'Install Image Engine',
     start_image_engine: 'Start Image Engine',
     recheck: 'Recheck Dependencies',
+    test_image_pipeline: 'Test Image Pipeline',
   }[actionId] || actionId;
 }
 
@@ -362,12 +363,13 @@ function renderSupportedModels(payload) {
 }
 
 function updateSetupButtonsBusyState() {
-  const managedButtons = document.querySelectorAll('#setup-text-ai, #setup-image-ai, #setup-everything, #recheck-readiness, .readiness-action-btn');
+  const managedButtons = document.querySelectorAll('#setup-text-ai, #setup-image-ai, #setup-everything, #recheck-readiness, #test-image-pipeline-from-setup, .readiness-action-btn');
   managedButtons.forEach((button) => {
     const actionId = button.dataset.action || (button.id === 'setup-text-ai' ? 'setup_text_ai'
       : button.id === 'setup-image-ai' ? 'setup_image_ai'
       : button.id === 'setup-everything' ? 'setup_everything'
       : button.id === 'recheck-readiness' ? 'recheck'
+      : button.id === 'test-image-pipeline-from-setup' ? 'test_image_pipeline'
       : '');
     if (!actionId) return;
     if (!setupRunState.busy) {
@@ -529,6 +531,32 @@ async function runReadinessAction(actionId, item) {
       await refreshDependencyReadiness();
       setStatus('Dependency readiness refreshed.');
       finishSetupRun({ summary: 'Dependency readiness refreshed.', isError: false, steps: [{ step: 'recheck', label: 'Recheck dependencies', state: 'ready', message: 'Latest readiness loaded.' }] });
+      return;
+    }
+
+    if (actionId === 'test_image_pipeline') {
+      startSetupRun(actionId, 'Running end-to-end image pipeline test...', [
+        { step: 'comfyui_reachable', label: 'ComfyUI reachable', state: 'running', message: 'Checking ComfyUI endpoint...' },
+        { step: 'workflow_load', label: 'Workflow load', state: 'pending', message: 'Validating workflow JSON...' },
+        { step: 'checkpoint_available', label: 'Checkpoint check', state: 'pending', message: 'Checking available checkpoints...' },
+        { step: 'prompt_submission', label: 'Prompt submit', state: 'pending', message: 'Submitting test prompt...' },
+        { step: 'history_output', label: 'History output', state: 'pending', message: 'Waiting for generated image...' },
+      ]);
+      setStatus('Testing image pipeline...');
+      const result = await api('/api/setup/test-image-pipeline', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: 'test fantasy portrait' }),
+      });
+      const finalSteps = normalizeSetupSteps(setupRunState.steps.map((step) => ({
+        ...step,
+        state: result.success ? 'ready' : (step.step === result.failing_step ? 'error' : (step.state === 'running' ? 'pending' : step.state)),
+        message: result.success ? 'Passed' : (step.step === result.failing_step ? (result.message || 'Failed') : step.message),
+      })));
+      finishSetupRun({
+        summary: result.message || (result.success ? 'Image pipeline test passed.' : 'Image pipeline test failed.'),
+        isError: !result.success,
+        steps: finalSteps,
+      });
+      setStatus(result.message || (result.success ? 'Image pipeline test passed.' : 'Image pipeline test failed.'), !result.success);
       return;
     }
     if (actionId === 'start_ollama') {
@@ -2013,6 +2041,7 @@ document.getElementById('refresh-supported-models').onclick = async () => {
   }
 };
 document.getElementById('start-image-engine-from-setup').onclick = () => runReadinessAction('start_image_engine', {});
+document.getElementById('test-image-pipeline-from-setup').onclick = () => runReadinessAction('test_image_pipeline', {});
 document.getElementById('recheck-readiness').onclick = async () => {
   try {
     await runReadinessAction('recheck', {});

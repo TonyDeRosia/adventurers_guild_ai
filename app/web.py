@@ -1938,9 +1938,11 @@ class WebRuntime:
         loaded = self.state_manager.load(slot)
         if loaded is None:
             raise ValueError(f"Save slot '{slot}' is corrupted and could not be loaded")
+        self._seed_scene_state(loaded)
         self.session = WebSession(state=loaded, active_slot=slot)
         self.session.message_history = self._history_for_slot(slot)
         self.engine.state_orchestrator.set_scene_visual_state(self.session.state, self._scene_visual_for_slot(slot))
+        print(f"[narrator-rules] loaded=true count={len(self.session.state.structured_state.canon.custom_narrator_rules)}")
         print(f"[web-runtime] switched campaign slot={slot}")
         return {"slot": slot, "state": self.serialize_state()}
 
@@ -2047,6 +2049,7 @@ class WebRuntime:
         canon = self.session.state.structured_state.canon
         if not isinstance(canon.custom_narrator_rules, list):
             canon.custom_narrator_rules = []
+        print(f"[narrator-rules] loaded=true count={len(canon.custom_narrator_rules)}")
         return canon.custom_narrator_rules
 
     def upsert_narrator_rule(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -2077,6 +2080,7 @@ class WebRuntime:
                 canon.custom_narrator_rules.append({"id": entry_id, "text": text})
             print(f"[narrator-rules] rule_added campaign={self.session.active_slot} count={len(canon.custom_narrator_rules)}")
         self.save_active_campaign(self.session.active_slot)
+        print(f"[narrator-rules] persisted=true count={len(canon.custom_narrator_rules)}")
         return {"rules": canon.custom_narrator_rules}
 
     def get_narrator_debug_packet(self) -> dict[str, Any]:
@@ -2088,6 +2092,114 @@ class WebRuntime:
             "packet": self.engine.get_last_prompt_debug_packet(state.campaign_id),
         }
 
+
+    def _build_seed_scene_summary(self, state: CampaignState, location_name: str) -> str:
+        world_name = str(state.world_meta.world_name or "").strip()
+        world_theme = str(state.world_meta.world_theme or "").strip()
+        premise = str(state.world_meta.premise or "").strip()
+        parts = [f"You begin at {location_name or 'the starting area'}."]
+        if world_name:
+            parts.append(f"World: {world_name}.")
+        if world_theme:
+            parts.append(f"Theme: {world_theme}.")
+        if premise:
+            parts.append(premise[:160])
+        return " ".join(part for part in parts if part).strip()
+
+    def _seed_scene_state(self, state: CampaignState) -> None:
+        runtime = state.structured_state.runtime
+        scene_state = dict(runtime.scene_state) if isinstance(runtime.scene_state, dict) else {}
+        location = state.locations.get(state.current_location_id)
+        location_id = str(state.current_location_id or "").strip() or None
+        location_name = str(location.name if location else state.world_meta.starting_location_name or "").strip() or None
+        visible_entities = [
+            npc.name
+            for npc in state.npcs.values()
+            if npc.location_id == state.current_location_id and str(npc.name).strip()
+        ]
+        seeded_summary = str(scene_state.get("scene_summary", "")).strip() or self._build_seed_scene_summary(state, location_name or "the starting area")
+        scene_state["location_id"] = location_id
+        scene_state["location_name"] = location_name
+        scene_state["scene_summary"] = seeded_summary
+        scene_state["visible_entities"] = [str(v).strip() for v in scene_state.get("visible_entities", visible_entities) if str(v).strip()]
+        scene_state.setdefault("altered_environment", [])
+        scene_state.setdefault("damaged_objects", [])
+        scene_state.setdefault("active_effects", [])
+        scene_state.setdefault("recent_consequences", [])
+        scene_state.setdefault("last_player_action", "")
+        scene_state.setdefault("last_immediate_result", "")
+        runtime.scene_state = scene_state
+        print("[scene-state] initialized=true")
+        print(f"[scene-state] seeded_location={location_id or location_name or 'unknown'}")
+        print(f"[scene-state] seeded_summary={seeded_summary}")
+
+    def test_image_pipeline(self, prompt: str = "test fantasy portrait") -> dict[str, Any]:
+        print("[image-test] requested")
+
+        def fail(step: str, message: str) -> dict[str, Any]:
+            print(f"[image-test] success=false reason={step}")
+            return {"success": False, "failing_step": step, "message": message}
+
+        if not self.app_config.image.enabled or self.app_config.image.provider == "null":
+            return fail("image_generation_disabled", "Image generation is disabled in global settings.")
+        if not self.session.state.settings.image_generation_enabled:
+            return fail("campaign_image_generation_disabled", "Image generation is disabled for this campaign.")
+        if self.app_config.image.provider != "comfyui":
+            return fail("provider_not_comfyui", "Test Image Pipeline requires image provider set to comfyui.")
+
+        path_status = self.get_path_configuration_status().get("image", {})
+        for key, step in (("comfyui_root", "comfyui_root"), ("workflow_path", "workflow_path"), ("checkpoint_dir", "checkpoint_dir")):
+            section = path_status.get(key, {})
+            if not bool(section.get("valid", False)):
+                return fail(step, str(section.get("message", "Image pipeline path is not configured.")))
+
+        adapter = ComfyUIAdapter(base_url=self.app_config.image.base_url, output_dir=self.generated_image_dir)
+
+        print("[image-test] step=comfyui_reachable")
+        readiness = adapter.check_readiness()
+        if not bool(readiness.get("ready", False)):
+            return fail("comfyui_reachable", str(readiness.get("user_message", "ComfyUI is not reachable.")))
+
+        workflow_path = Path(str(self.app_config.image.comfyui_workflow_path).strip())
+        print("[image-test] step=workflow_load")
+        try:
+            json.loads(workflow_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            return fail("workflow_load", f"Workflow file could not be loaded: {exc}")
+
+        print("[image-test] step=checkpoint_available")
+        checkpoints = adapter._list_checkpoints() if hasattr(adapter, "_list_checkpoints") else []
+        if not checkpoints:
+            return fail("checkpoint_available", "No checkpoints are available in ComfyUI.")
+        preferred = str(self.app_config.image.preferred_checkpoint or "").strip()
+        if preferred and preferred.lower() not in {item.lower() for item in checkpoints}:
+            return fail("checkpoint_available", f"Preferred checkpoint '{preferred}' is not available in ComfyUI.")
+
+        print("[image-test] step=prompt_submission")
+        request = ImageGenerationRequest(
+            workflow_id=workflow_path.stem or "scene_image",
+            prompt=prompt,
+            negative_prompt="",
+            parameters=({"checkpoint": preferred} if preferred else {}),
+        )
+        result = adapter.generate(request, WorkflowManager(workflow_path.parent))
+        if not result.success:
+            error_text = str(result.error or "Image pipeline test failed.")
+            failing_step = "prompt_submission"
+            if "history" in error_text.lower() or "output" in error_text.lower():
+                failing_step = "history_output"
+            return fail(failing_step, error_text)
+
+        print("[image-test] step=history_output")
+        print("[image-test] success=true")
+        return {
+            "success": True,
+            "failing_step": "",
+            "message": "Image pipeline test completed successfully.",
+            "workflow_id": result.workflow_id,
+            "prompt_id": result.prompt_id,
+            "result_path": result.result_path,
+        }
     def create_campaign(self, payload: dict[str, Any]) -> dict[str, Any]:
         mode = str(payload.get("mode", "custom")).strip().lower() or "custom"
         player_name = str(payload.get("player_name", "Aria")).strip() or "Aria"
@@ -2118,6 +2230,7 @@ class WebRuntime:
                 character_sheets=self._coerce_character_sheets(payload.get("character_sheets", [])),
                 character_sheet_guidance_strength=str(payload.get("character_sheet_guidance_strength", "light")),
             )
+        self._seed_scene_state(state)
         self.session = WebSession(state=state, active_slot=slot)
         self.session.message_history = []
         self.scene_visual_store.pop(slot, None)
@@ -2787,6 +2900,13 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
         target_model = model_name or runtime.app_config.model.model_name
         print(f"[model-install] setup route payload model={target_model}")
         return runtime._start_model_install(target_model)
+
+
+    @app.post("/api/setup/test-image-pipeline")
+    def setup_test_image_pipeline(payload: dict[str, Any]) -> dict[str, Any]:
+        prompt = str(payload.get("prompt", "test fantasy portrait")).strip() or "test fantasy portrait"
+        print("[setup-action] route invoked endpoint=/api/setup/test-image-pipeline")
+        return runtime.test_image_pipeline(prompt=prompt)
 
     @app.post("/api/setup/install-image-engine")
     def setup_install_image_engine() -> dict[str, Any]:

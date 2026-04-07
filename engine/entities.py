@@ -599,12 +599,31 @@ class CampaignState:
         current_location_id = str(payload.get("current_location_id", "")).strip()
         location_payload = payload.get("locations", {}).get(current_location_id, {}) if isinstance(payload.get("locations"), dict) else {}
         location_name = str(location_payload.get("name", "")).strip() or None
+        world_meta = payload.get("world_meta", {}) if isinstance(payload.get("world_meta"), dict) else {}
+        world_name = str(world_meta.get("world_name", "")).strip()
+        world_theme = str(world_meta.get("world_theme", "")).strip()
+        premise = str(world_meta.get("premise", "")).strip()
+        visible_entities = [
+            str(entry.get("name", "")).strip()
+            for entry in (payload.get("npcs", {}).values() if isinstance(payload.get("npcs"), dict) else [])
+            if isinstance(entry, dict) and str(entry.get("location_id", "")).strip() == current_location_id and str(entry.get("name", "")).strip()
+        ]
+        seeded_summary = str(state.get("scene_summary", "")).strip()
+        if not seeded_summary:
+            summary_parts = [f"You are at {location_name or 'the current area'}."]
+            if world_name:
+                summary_parts.append(f"World: {world_name}.")
+            if world_theme:
+                summary_parts.append(f"Theme: {world_theme}.")
+            if premise:
+                summary_parts.append(premise[:160])
+            seeded_summary = " ".join(summary_parts)
         return asdict(
             CampaignSceneState(
                 location_id=str(state.get("location_id", current_location_id)).strip() or None,
                 location_name=str(state.get("location_name", location_name or "")).strip() or location_name,
-                scene_summary=str(state.get("scene_summary", "")),
-                visible_entities=[str(v) for v in state.get("visible_entities", []) if str(v).strip()],
+                scene_summary=seeded_summary,
+                visible_entities=[str(v) for v in state.get("visible_entities", visible_entities) if str(v).strip()],
                 damaged_objects=[str(v) for v in state.get("damaged_objects", []) if str(v).strip()],
                 altered_environment=[str(v) for v in state.get("altered_environment", []) if str(v).strip()],
                 active_effects=[str(v) for v in state.get("active_effects", []) if str(v).strip()],
