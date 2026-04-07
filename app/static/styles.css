@@ -450,7 +450,6 @@ textarea { border-radius: 8px; border: 1px solid #2e3d52; background: #131e2b; c
 .sheet-ability-actions { grid-column: 1 / -1; }
 .sheet-ability-entry .button-row { margin: 0; }
 .sheet-ability-actions button { width: auto; justify-self: start; }
-#sheet-add-guaranteed-ability { margin-top: 8px; }
 .spellbook-group { margin-bottom: 10px; }
 .spellbook-entry {
   border: 1px solid #344c6d;
@@ -553,6 +552,35 @@ textarea { border-radius: 8px; border: 1px solid #2e3d52; background: #131e2b; c
   .runtime-sheet-create-grid,
   .runtime-sheet-create-grid section {
     grid-template-columns: 1fr;
+  }
+}
+
+#character-sheet-editor #sheet-guaranteed-abilities .sheet-ability-entry {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+}
+#character-sheet-editor #sheet-guaranteed-abilities .sheet-ability-entry label {
+  margin: 0;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+#character-sheet-editor #sheet-guaranteed-abilities .sheet-ability-entry .sheet-ability-full,
+#character-sheet-editor #sheet-guaranteed-abilities .sheet-ability-entry .sheet-ability-actions {
+  grid-column: 1 / -1;
+}
+#sheet-add-guaranteed-ability {
+  margin-top: 14px;
+  align-self: start;
+}
+#character-sheet-editor #sheet-guaranteed-abilities .sheet-ability-actions {
+  margin-top: 2px;
+}
+
+@media (max-width: 980px) {
+  #character-sheet-editor #sheet-guaranteed-abilities .sheet-ability-entry {
+    grid-template-columns: 1fr;
+    gap: 8px;
   }
 }
 .runtime-sheet-list-item {
