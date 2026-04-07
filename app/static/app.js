@@ -31,6 +31,8 @@ const manualImagePanel = document.getElementById('manual-image-panel');
 const visualModeSummary = document.getElementById('visual-mode-summary');
 const supportedModelsList = document.getElementById('supported-models-list');
 const activeModelBanner = document.getElementById('active-model-banner');
+const campaignSettingsStatus = document.getElementById('campaign-settings-status');
+const cancelSettingsButton = document.getElementById('cancel-settings');
 
 let currentSceneImage = null;
 let currentSceneImagePrompt = '';
@@ -54,6 +56,10 @@ let latestDependencyReadiness = null;
 let turnRequestInFlight = false;
 let modelInventoryState = { active_model_id: '', models: [] };
 let modelInstallState = {};
+let campaignSettingsPersisted = null;
+let campaignSettingsDirty = false;
+let campaignSettingsApplying = false;
+let campaignSettingsSlot = '';
 const imageProgressState = {
   requestId: 0,
   phase: 'idle',
@@ -107,6 +113,83 @@ function normalizeCampaignAutoVisualTiming(mode) {
   if (clean === 'auto_after' || clean === 'auto_after_narration') return 'after_narration';
   if (['off', 'before_narration', 'after_narration'].includes(clean)) return clean;
   return 'off';
+}
+
+function campaignSettingsSnapshotFromUi() {
+  return {
+    image_generation_enabled: !!document.getElementById('image-enabled')?.checked,
+    campaign_auto_visuals_enabled: !!campaignAutoVisualsEnabledInput?.checked,
+    suggested_moves_enabled: !!suggestedMovesToggleInput?.checked,
+    campaign_auto_visual_timing: normalizeCampaignAutoVisualTiming(campaignAutoVisualTimingInput?.value || 'off'),
+  };
+}
+
+function campaignSettingsEqual(left, right) {
+  if (!left || !right) return false;
+  return (
+    !!left.image_generation_enabled === !!right.image_generation_enabled
+    && !!left.campaign_auto_visuals_enabled === !!right.campaign_auto_visuals_enabled
+    && !!left.suggested_moves_enabled === !!right.suggested_moves_enabled
+    && normalizeCampaignAutoVisualTiming(left.campaign_auto_visual_timing) === normalizeCampaignAutoVisualTiming(right.campaign_auto_visual_timing)
+  );
+}
+
+function renderCampaignSettingsStatus() {
+  if (!campaignSettingsStatus) return;
+  campaignSettingsStatus.classList.remove('saved', 'unsaved', 'applying');
+  if (campaignSettingsApplying) {
+    campaignSettingsStatus.textContent = 'Applying...';
+    campaignSettingsStatus.classList.add('applying');
+    return;
+  }
+  if (campaignSettingsDirty) {
+    campaignSettingsStatus.textContent = 'Unsaved changes';
+    campaignSettingsStatus.classList.add('unsaved');
+    return;
+  }
+  campaignSettingsStatus.textContent = 'Saved';
+  campaignSettingsStatus.classList.add('saved');
+}
+
+function updateCampaignDirtyState() {
+  campaignSettingsDirty = !campaignSettingsEqual(campaignSettingsSnapshotFromUi(), campaignSettingsPersisted);
+  renderCampaignSettingsStatus();
+  if (cancelSettingsButton) cancelSettingsButton.disabled = !campaignSettingsDirty || campaignSettingsApplying;
+}
+
+function applyCampaignSettingsToUi(snapshot) {
+  if (!snapshot) return;
+  document.getElementById('image-enabled').checked = !!snapshot.image_generation_enabled;
+  if (campaignAutoVisualsEnabledInput) {
+    campaignAutoVisualsEnabledInput.checked = !!snapshot.campaign_auto_visuals_enabled;
+  }
+  if (suggestedMovesToggleInput) {
+    suggestedMovesToggleInput.checked = !!snapshot.suggested_moves_enabled;
+  }
+  if (campaignAutoVisualTimingInput) {
+    campaignAutoVisualTimingInput.value = normalizeCampaignAutoVisualTiming(snapshot.campaign_auto_visual_timing || 'off');
+  }
+  syncVisualModeUi({
+    manualEnabled: !!(manualImageEnabledInput?.checked),
+    autoEnabled: !!(campaignAutoVisualsEnabledInput?.checked),
+    autoTiming: campaignAutoVisualTimingInput?.value || 'off',
+  });
+}
+
+function ingestPersistedCampaignSettings(snapshot, slot, { forceUi = false } = {}) {
+  const normalized = {
+    image_generation_enabled: !!snapshot.image_generation_enabled,
+    campaign_auto_visuals_enabled: !!snapshot.campaign_auto_visuals_enabled,
+    suggested_moves_enabled: !!snapshot.suggested_moves_enabled,
+    campaign_auto_visual_timing: normalizeCampaignAutoVisualTiming(snapshot.campaign_auto_visual_timing || 'off'),
+  };
+  const slotChanged = campaignSettingsSlot && slot && campaignSettingsSlot !== slot;
+  campaignSettingsPersisted = normalized;
+  campaignSettingsSlot = slot || campaignSettingsSlot || loadedSlot || 'autosave';
+  if (slotChanged || forceUi || !campaignSettingsDirty) {
+    applyCampaignSettingsToUi(normalized);
+  }
+  updateCampaignDirtyState();
 }
 
 function syncVisualModeUi({ manualEnabled, autoEnabled, autoTiming }) {
@@ -708,6 +791,7 @@ async function waitForSceneVisualUpdate(previousUpdatedAt = '') {
 async function refreshState() {
   const data = await api('/api/campaign/state');
   const state = data.state;
+  const incomingSlot = state.active_slot || loadedSlot;
   loadedSlot = state.active_slot || loadedSlot;
   selectedSlot = state.active_slot || selectedSlot;
   selectedCampaignName = state.campaign_name;
@@ -725,18 +809,15 @@ async function refreshState() {
     '',
     `Quest status: ${JSON.stringify(state.quest_status, null, 2)}`,
   ].join('\n');
-  document.getElementById('image-enabled').checked = !!state.settings.image_generation_enabled;
-  if (campaignAutoVisualsEnabledInput) {
-    campaignAutoVisualsEnabledInput.checked = !!state.settings.campaign_auto_visuals_enabled;
-  }
-  if (suggestedMovesToggleInput) {
-    suggestedMovesToggleInput.checked = !!state.settings.effective_suggested_moves_enabled;
-  }
-  syncVisualModeUi({
-    manualEnabled: !!(manualImageEnabledInput?.checked),
-    autoEnabled: !!(campaignAutoVisualsEnabledInput?.checked),
-    autoTiming: campaignAutoVisualTimingInput?.value || 'off',
-  });
+  ingestPersistedCampaignSettings(
+    {
+      image_generation_enabled: !!state.settings.image_generation_enabled,
+      campaign_auto_visuals_enabled: !!state.settings.campaign_auto_visuals_enabled,
+      suggested_moves_enabled: !!state.settings.effective_suggested_moves_enabled,
+      campaign_auto_visual_timing: campaignSettingsPersisted?.campaign_auto_visual_timing || campaignAutoVisualTimingInput?.value || 'off',
+    },
+    incomingSlot,
+  );
   updateSelectedSaveLabel();
 }
 
@@ -1207,6 +1288,11 @@ async function createCampaignFromForm() {
 
 async function applySettings() {
   try {
+    campaignSettingsApplying = true;
+    renderCampaignSettingsStatus();
+    if (cancelSettingsButton) cancelSettingsButton.disabled = true;
+    const applyButton = document.getElementById('apply-settings');
+    if (applyButton) applyButton.disabled = true;
     const modelProvider = document.getElementById('model-provider').value;
     const modelName = document.getElementById('model-name').value.trim() || 'llama3';
     const imageProvider = document.getElementById('image-provider').value;
@@ -1231,7 +1317,7 @@ async function applySettings() {
         },
       }),
     });
-    await api('/api/settings/campaign', {
+    const campaignSettings = await api('/api/settings/campaign', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         image_generation_enabled: campaignImageEnabled,
@@ -1243,6 +1329,16 @@ async function applySettings() {
     await refreshSupportedModels(false);
     await refreshComfyuiModelList();
     syncVisualModeUi({ manualEnabled: manualImageEnabled, autoEnabled: campaignAutoVisualsEnabled, autoTiming: campaignAutoVisualTiming });
+    ingestPersistedCampaignSettings(
+      {
+        image_generation_enabled: !!campaignSettings.settings?.image_generation_enabled,
+        campaign_auto_visuals_enabled: !!campaignSettings.settings?.campaign_auto_visuals_enabled,
+        suggested_moves_enabled: !!campaignSettings.settings?.effective_suggested_moves_enabled,
+        campaign_auto_visual_timing: campaignAutoVisualTiming,
+      },
+      loadedSlot,
+      { forceUi: true },
+    );
     const modelStatus = settings.settings?.model_status;
     if (modelStatus && modelStatus.provider === 'ollama' && !modelStatus.ready) {
       setStatus(modelStatus.user_message || 'Ollama provider is unavailable.', true);
@@ -1251,6 +1347,12 @@ async function applySettings() {
     }
   } catch (error) {
     setStatus(error.message, true);
+  } finally {
+    campaignSettingsApplying = false;
+    renderCampaignSettingsStatus();
+    updateCampaignDirtyState();
+    const applyButton = document.getElementById('apply-settings');
+    if (applyButton) applyButton.disabled = false;
   }
 }
 
@@ -1260,8 +1362,9 @@ async function loadSettings() {
   document.getElementById('model-name').value = data.settings.model.model_name;
   document.getElementById('image-provider').value = data.settings.image.provider;
   if (manualImageEnabledInput) manualImageEnabledInput.checked = !!data.settings.image.manual_image_generation_enabled;
+  const loadedTiming = normalizeCampaignAutoVisualTiming(data.settings.image.campaign_auto_visual_timing || 'off');
   if (campaignAutoVisualTimingInput) {
-    campaignAutoVisualTimingInput.value = normalizeCampaignAutoVisualTiming(data.settings.image.campaign_auto_visual_timing || 'off');
+    campaignAutoVisualTimingInput.value = loadedTiming;
   }
   if (ollamaPathInput) ollamaPathInput.value = data.settings.model.ollama_path || '';
   if (comfyuiPathInput) comfyuiPathInput.value = data.settings.image.comfyui_path || '';
@@ -1269,10 +1372,15 @@ async function loadSettings() {
   if (checkpointSourceInput) checkpointSourceInput.value = data.settings.image.checkpoint_source || 'local';
   if (preferredCheckpointInput) preferredCheckpointInput.value = data.settings.image.preferred_checkpoint || 'DreamShaper';
   if (preferredLauncherInput) preferredLauncherInput.value = data.settings.image.preferred_launcher || 'auto';
-  const campaignState = await api('/api/campaign/state');
-  if (campaignAutoVisualsEnabledInput) {
-    campaignAutoVisualsEnabledInput.checked = !!campaignState.state.settings.campaign_auto_visuals_enabled;
-  }
+  ingestPersistedCampaignSettings(
+    {
+      image_generation_enabled: campaignSettingsPersisted?.image_generation_enabled ?? document.getElementById('image-enabled').checked,
+      campaign_auto_visuals_enabled: campaignSettingsPersisted?.campaign_auto_visuals_enabled ?? !!campaignAutoVisualsEnabledInput?.checked,
+      suggested_moves_enabled: campaignSettingsPersisted?.suggested_moves_enabled ?? !!suggestedMovesToggleInput?.checked,
+      campaign_auto_visual_timing: loadedTiming,
+    },
+    loadedSlot,
+  );
   syncVisualModeUi({
     manualEnabled: !!(manualImageEnabledInput?.checked),
     autoEnabled: !!(campaignAutoVisualsEnabledInput?.checked),
@@ -1350,18 +1458,38 @@ if (manualImageEnabledInput) {
   });
 }
 if (campaignAutoVisualsEnabledInput) {
-  campaignAutoVisualsEnabledInput.onchange = () => syncVisualModeUi({
-    manualEnabled: !!(manualImageEnabledInput?.checked),
-    autoEnabled: !!campaignAutoVisualsEnabledInput.checked,
-    autoTiming: campaignAutoVisualTimingInput?.value || 'off',
-  });
+  campaignAutoVisualsEnabledInput.onchange = () => {
+    syncVisualModeUi({
+      manualEnabled: !!(manualImageEnabledInput?.checked),
+      autoEnabled: !!campaignAutoVisualsEnabledInput.checked,
+      autoTiming: campaignAutoVisualTimingInput?.value || 'off',
+    });
+    updateCampaignDirtyState();
+  };
 }
 if (campaignAutoVisualTimingInput) {
-  campaignAutoVisualTimingInput.onchange = () => syncVisualModeUi({
-    manualEnabled: !!(manualImageEnabledInput?.checked),
-    autoEnabled: !!(campaignAutoVisualsEnabledInput?.checked),
-    autoTiming: campaignAutoVisualTimingInput.value,
-  });
+  campaignAutoVisualTimingInput.onchange = () => {
+    syncVisualModeUi({
+      manualEnabled: !!(manualImageEnabledInput?.checked),
+      autoEnabled: !!(campaignAutoVisualsEnabledInput?.checked),
+      autoTiming: campaignAutoVisualTimingInput.value,
+    });
+    updateCampaignDirtyState();
+  };
+}
+if (suggestedMovesToggleInput) {
+  suggestedMovesToggleInput.onchange = () => updateCampaignDirtyState();
+}
+const campaignImageEnabledInput = document.getElementById('image-enabled');
+if (campaignImageEnabledInput) {
+  campaignImageEnabledInput.onchange = () => updateCampaignDirtyState();
+}
+if (cancelSettingsButton) {
+  cancelSettingsButton.onclick = () => {
+    applyCampaignSettingsToUi(campaignSettingsPersisted);
+    updateCampaignDirtyState();
+    setStatus('Reverted unsaved campaign settings.');
+  };
 }
 
 Promise.all([refreshMessages(), refreshState(), refreshSaves(), loadSettings(), refreshDependencyReadiness(), refreshSceneVisual()]).catch((error) => setStatus(error.message, true));

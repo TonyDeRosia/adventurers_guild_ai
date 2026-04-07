@@ -529,7 +529,12 @@ class CampaignEngine:
     def _apply_suggested_move_setting(self, narrative: str, suggested_moves_enabled: bool) -> str:
         if suggested_moves_enabled:
             return narrative
-        cleaned = re.sub(r"\n?\s*suggested next move:.*$", "", narrative, flags=re.IGNORECASE).strip()
+        cleaned = re.sub(
+            r"\n?\s*(?:[-*]\s*)?(?:suggested|recommended)\s*(?:next)?\s*move[s]?\s*:\s*.*$",
+            "",
+            narrative,
+            flags=re.IGNORECASE | re.MULTILINE,
+        ).strip()
         if cleaned:
             return cleaned
         return "The world holds its breath for a heartbeat, waiting for your next move."
