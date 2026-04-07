@@ -24,8 +24,10 @@
 
       <main class="chat-main">
         <header class="chat-header">
-          <h1>Adventurer Guild AI</h1>
-          <p id="campaign-meta">Loading campaign...</p>
+          <div class="chat-header-title">
+            <h1>Adventurer Guild AI</h1>
+            <p id="campaign-meta">Loading campaign...</p>
+          </div>
         </header>
         <section id="scene-visual-panel" class="scene-visual-panel">
           <div class="scene-visual-header">
@@ -61,10 +63,6 @@
             <button id="open-runtime-character-sheets" type="button">Character Sheets</button>
           </div>
           <pre id="state-panel" class="state-panel"></pre>
-        </section>
-        <section class="panel-block">
-          <h3>Turn Visuals</h3>
-          <div id="visual-mode-summary" class="setup-summary">Mode: Manual image generation</div>
         </section>
         <section id="manual-image-panel" class="panel-block image-generation-panel">
           <h3>Manual Image Prompt</h3>
@@ -135,12 +133,21 @@
     </div>
 
     <div id="runtime-character-sheets-modal" class="modal hidden">
-      <div class="modal-card">
+      <div class="modal-card runtime-sheets-modal-card">
         <div class="panel-title-row">
           <h3>Attached Character Sheets</h3>
           <button id="close-runtime-character-sheets" type="button">Close</button>
         </div>
-        <div id="runtime-character-sheets-list" class="character-sheets-list">No sheets attached to this campaign.</div>
+        <div class="runtime-sheets-layout">
+          <aside>
+            <h4>Sheets</h4>
+            <div id="runtime-character-sheets-list" class="character-sheets-list">No sheets attached to this campaign.</div>
+          </aside>
+          <section>
+            <h4>Sheet Details</h4>
+            <div id="runtime-character-sheet-detail" class="runtime-sheet-detail">Select a sheet to view details.</div>
+          </section>
+        </div>
       </div>
     </div>
 
