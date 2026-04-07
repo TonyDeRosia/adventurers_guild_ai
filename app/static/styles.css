@@ -461,8 +461,47 @@ textarea { border-radius: 8px; border: 1px solid #2e3d52; background: #131e2b; c
 .compact-row { margin-bottom: 8px; }
 .runtime-sheet-card { border: 1px solid #344c6d; border-radius: 8px; padding: 10px; margin-bottom: 8px; }
 .runtime-sheet-card h4 { margin: 0 0 6px; }
-.runtime-sheet-card dl { margin: 0; display: grid; grid-template-columns: 170px 1fr; row-gap: 4px; column-gap: 10px; }
+.runtime-sheet-card dl { margin: 0; }
 .runtime-sheet-card dt { color: var(--muted); }
+.runtime-sheet-create-panel {
+  border: 1px solid #344c6d;
+  border-radius: 8px;
+  background: #122036;
+  padding: 8px;
+  margin-bottom: 8px;
+  display: grid;
+  gap: 8px;
+}
+.runtime-sheet-section {
+  border-top: 1px solid #2a3f5f;
+  margin-top: 8px;
+  padding-top: 8px;
+}
+.runtime-sheet-section h5 {
+  margin: 0 0 6px;
+  color: #9fd2ff;
+}
+.runtime-sheet-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+}
+.runtime-sheet-grid div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px dashed #2a3f5f;
+  padding: 2px 0;
+}
+.runtime-sheet-grid span {
+  color: var(--muted);
+}
+.runtime-sheet-list {
+  margin: 0;
+  padding-left: 18px;
+}
+.runtime-sheet-list li { margin-bottom: 2px; }
+.runtime-sheet-muted { color: var(--muted); font-style: italic; }
 .runtime-sheets-modal-card {
   width: min(940px, 100%);
 }
@@ -482,7 +521,8 @@ textarea { border-radius: 8px; border: 1px solid #2e3d52; background: #131e2b; c
 @media (max-width: 760px) {
   .modal-grid,
   .sheet-sections,
-  .sheet-ability-entry {
+  .sheet-ability-entry,
+  .runtime-sheet-grid {
     grid-template-columns: 1fr;
   }
 }

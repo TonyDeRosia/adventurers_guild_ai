@@ -191,7 +191,39 @@
         </div>
         <div class="runtime-sheets-layout">
           <aside>
-            <h4>Sheets</h4>
+            <div class="panel-title-row">
+              <h4>Sheets</h4>
+              <button id="runtime-character-sheet-create-toggle" type="button">Create Character Sheet</button>
+            </div>
+            <div id="runtime-character-sheet-create-panel" class="runtime-sheet-create-panel hidden">
+              <label>Name <input id="runtime-sheet-create-name" type="text" placeholder="New companion" /></label>
+              <label>Sheet Type
+                <select id="runtime-sheet-create-type">
+                  <option value="npc_or_mob">NPC / Mob</option>
+                  <option value="party_member">Party Member</option>
+                  <option value="main_character">Main Character</option>
+                  <option value="minion_or_summon">Minion / Summon</option>
+                </select>
+              </label>
+              <label>Role
+                <select id="runtime-sheet-create-role">
+                  <option value="main_character">main_character</option>
+                  <option value="companion">companion</option>
+                  <option value="party_member">party_member</option>
+                  <option value="npc_ally">npc_ally</option>
+                  <option value="custom">custom</option>
+                </select>
+              </label>
+              <label id="runtime-sheet-create-custom-role-wrap" class="hidden">Custom Role
+                <input id="runtime-sheet-create-custom-role" type="text" placeholder="shield bearer" />
+              </label>
+              <label>Archetype <input id="runtime-sheet-create-archetype" type="text" placeholder="Scout" /></label>
+              <label>Description <textarea id="runtime-sheet-create-description" rows="2" placeholder="Helpful notes"></textarea></label>
+              <div class="button-row">
+                <button id="runtime-character-sheet-create-save" type="button">Create</button>
+                <button id="runtime-character-sheet-create-cancel" type="button">Cancel</button>
+              </div>
+            </div>
             <div id="runtime-character-sheets-list" class="character-sheets-list">No sheets attached to this campaign.</div>
           </aside>
           <section>

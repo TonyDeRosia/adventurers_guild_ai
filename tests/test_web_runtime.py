@@ -159,6 +159,48 @@ def test_campaign_state_api_includes_display_mode(tmp_path: Path, monkeypatch) -
     assert state["settings"]["display_mode"] == "mud"
 
 
+def test_character_sheet_can_be_created_after_campaign_start_and_serialized(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"player_name": "SheetMaker", "slot": "slot_runtime_sheet"})
+
+    created = runtime.upsert_character_sheet(
+        {
+            "action": "create",
+            "name": "Iris",
+            "sheet_type": "party_member",
+            "role": "companion",
+            "archetype": "Scout",
+            "description": "Fast moving ally",
+        }
+    )
+    assert created["created_id"]
+    assert len(created["character_sheets"]) == 1
+    assert created["character_sheets"][0]["name"] == "Iris"
+    assert runtime.serialize_state()["character_sheets"][0]["role"] == "companion"
+
+
+def test_character_sheet_creation_persists_and_remains_campaign_scoped(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"player_name": "ScopeA", "slot": "slot_scope_a"})
+    first = runtime.upsert_character_sheet({"action": "create", "name": "Echo", "role": "npc_ally"})
+    second = runtime.upsert_character_sheet({"action": "create", "name": "Echo", "role": "npc_ally"})
+    assert first["created_id"] != second["created_id"]
+    runtime.save_active_campaign("slot_scope_a")
+
+    runtime.create_campaign({"player_name": "ScopeB", "slot": "slot_scope_b"})
+    assert runtime.serialize_state()["character_sheets"] == []
+    runtime.save_active_campaign("slot_scope_b")
+
+    runtime.switch_campaign("slot_scope_a")
+    assert len(runtime.serialize_state()["character_sheets"]) == 2
+
+    reloaded = _runtime(tmp_path, monkeypatch)
+    reloaded.switch_campaign("slot_scope_a")
+    assert len(reloaded.serialize_state()["character_sheets"]) == 2
+    reloaded.switch_campaign("slot_scope_b")
+    assert reloaded.serialize_state()["character_sheets"] == []
+
+
 def test_custom_campaign_starts_without_sample_npcs_or_quests(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     created = runtime.create_campaign(

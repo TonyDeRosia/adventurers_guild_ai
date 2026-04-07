@@ -45,6 +45,17 @@ const characterSheetsCount = document.getElementById('character-sheets-count');
 const runtimeCharacterSheetsModal = document.getElementById('runtime-character-sheets-modal');
 const runtimeCharacterSheetsList = document.getElementById('runtime-character-sheets-list');
 const runtimeCharacterSheetDetail = document.getElementById('runtime-character-sheet-detail');
+const runtimeCharacterSheetCreateToggle = document.getElementById('runtime-character-sheet-create-toggle');
+const runtimeCharacterSheetCreatePanel = document.getElementById('runtime-character-sheet-create-panel');
+const runtimeSheetCreateName = document.getElementById('runtime-sheet-create-name');
+const runtimeSheetCreateType = document.getElementById('runtime-sheet-create-type');
+const runtimeSheetCreateRole = document.getElementById('runtime-sheet-create-role');
+const runtimeSheetCreateCustomRoleWrap = document.getElementById('runtime-sheet-create-custom-role-wrap');
+const runtimeSheetCreateCustomRole = document.getElementById('runtime-sheet-create-custom-role');
+const runtimeSheetCreateArchetype = document.getElementById('runtime-sheet-create-archetype');
+const runtimeSheetCreateDescription = document.getElementById('runtime-sheet-create-description');
+const runtimeCharacterSheetCreateSave = document.getElementById('runtime-character-sheet-create-save');
+const runtimeCharacterSheetCreateCancel = document.getElementById('runtime-character-sheet-create-cancel');
 const runtimeInventoryModal = document.getElementById('runtime-inventory-modal');
 const runtimeInventoryDetail = document.getElementById('runtime-inventory-detail');
 const runtimeSpellbookModal = document.getElementById('runtime-spellbook-modal');
@@ -865,6 +876,7 @@ function renderRuntimeCharacterSheets() {
   runtimeCharacterSheetsList.querySelectorAll('button[data-sheet-id]').forEach((button) => {
     button.onclick = () => {
       selectedRuntimeSheetId = button.dataset.sheetId || '';
+      console.log(`[character-sheets] selected=${selectedRuntimeSheetId || 'none'}`);
       renderRuntimeCharacterSheets();
     };
   });
@@ -877,24 +889,104 @@ function renderRuntimeCharacterSheetDetail(sheet) {
   const stats = sheet.stats || {};
   const classic = sheet.classic_attributes || {};
   const guaranteed = Array.isArray(sheet.guaranteed_abilities) ? sheet.guaranteed_abilities : [];
+  const listMarkup = (entries, emptyText = 'None') => {
+    const clean = Array.isArray(entries) ? entries.filter((entry) => String(entry || '').trim()) : [];
+    if (!clean.length) return `<p class="runtime-sheet-muted">${escapeHtml(emptyText)}</p>`;
+    return `<ul class="runtime-sheet-list">${clean.map((entry) => `<li>${escapeHtml(entry)}</li>`).join('')}</ul>`;
+  };
+  const guaranteedMarkup = guaranteed.length
+    ? `<ul class="runtime-sheet-list">${guaranteed.map((entry) => `<li>${escapeHtml(`${entry.type || 'ability'}: ${entry.name || 'Unnamed'}`)}</li>`).join('')}</ul>`
+    : '<p class="runtime-sheet-muted">No guaranteed abilities.</p>';
+  const baseDetails = [
+    ['Role', sheet.role],
+    ['Archetype', sheet.archetype],
+    ['Faction', sheet.faction],
+    ['Level / Rank', sheet.level_or_rank],
+    ['Description', sheet.description],
+    ['Condition', sheet.state?.current_condition],
+    ['Notes', sheet.notes],
+  ].filter(([, value]) => String(value || '').trim());
   runtimeCharacterSheetDetail.innerHTML = `
     <article class="runtime-sheet-card">
       <h4>${escapeHtml(sheet.name || 'Unnamed')} • ${escapeHtml(sheet.sheet_type || 'unknown')}</h4>
-      <dl>
-        <dt>Role / Archetype</dt><dd>${escapeHtml(sheet.role || 'n/a')} / ${escapeHtml(sheet.archetype || 'n/a')}</dd>
-        <dt>Faction</dt><dd>${escapeHtml(sheet.faction || 'n/a')}</dd>
-        <dt>Description</dt><dd>${escapeHtml(sheet.description || 'n/a')}</dd>
-        <dt>Stats</dt><dd>HP ${Number(stats.health ?? 0)} • Energy ${Number(stats.energy_or_mana ?? 0)} • Atk ${Number(stats.attack ?? 0)} • Def ${Number(stats.defense ?? 0)} • Spd ${Number(stats.speed ?? 0)} • Mag ${Number(stats.magic ?? 0)} • Will ${Number(stats.willpower ?? 0)} • Presence ${Number(stats.presence ?? 0)}</dd>
-        <dt>Classic Attributes</dt><dd>STR ${classic.strength ?? 'n/a'} • DEX ${classic.dexterity ?? 'n/a'} • CON ${classic.constitution ?? 'n/a'} • INT ${classic.intelligence ?? 'n/a'} • WIS ${classic.wisdom ?? 'n/a'} • CHA ${classic.charisma ?? 'n/a'}</dd>
-        <dt>Traits</dt><dd>${escapeHtml((sheet.traits || []).join(', ') || 'n/a')}</dd>
-        <dt>Abilities</dt><dd>${escapeHtml((sheet.abilities || []).join(', ') || 'n/a')}</dd>
-        <dt>Guaranteed Loadout</dt><dd>${escapeHtml(guaranteed.map((entry) => `${entry.type || 'ability'}:${entry.name || 'Unnamed'}`).join(', ') || 'n/a')}</dd>
-        <dt>Equipment</dt><dd>${escapeHtml((sheet.equipment || []).join(', ') || 'n/a')}</dd>
-        <dt>Weaknesses</dt><dd>${escapeHtml((sheet.weaknesses || []).join(', ') || 'n/a')}</dd>
-        <dt>Notes</dt><dd>${escapeHtml(sheet.notes || 'n/a')}</dd>
-      </dl>
+      <section class="runtime-sheet-section">
+        <h5>Profile</h5>
+        ${baseDetails.length ? `<dl>${baseDetails.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(String(value))}</dd>`).join('')}</dl>` : '<p class="runtime-sheet-muted">No profile metadata.</p>'}
+      </section>
+      <section class="runtime-sheet-section">
+        <h5>Stats</h5>
+        <div class="runtime-sheet-grid">
+          <div><span>HP</span><strong>${Number(stats.health ?? 0)}</strong></div>
+          <div><span>Energy</span><strong>${Number(stats.energy_or_mana ?? 0)}</strong></div>
+          <div><span>Attack</span><strong>${Number(stats.attack ?? 0)}</strong></div>
+          <div><span>Defense</span><strong>${Number(stats.defense ?? 0)}</strong></div>
+          <div><span>Speed</span><strong>${Number(stats.speed ?? 0)}</strong></div>
+          <div><span>Magic</span><strong>${Number(stats.magic ?? 0)}</strong></div>
+          <div><span>Willpower</span><strong>${Number(stats.willpower ?? 0)}</strong></div>
+          <div><span>Presence</span><strong>${Number(stats.presence ?? 0)}</strong></div>
+        </div>
+      </section>
+      <section class="runtime-sheet-section">
+        <h5>Attributes</h5>
+        <div class="runtime-sheet-grid">
+          <div><span>STR</span><strong>${classic.strength ?? '—'}</strong></div>
+          <div><span>DEX</span><strong>${classic.dexterity ?? '—'}</strong></div>
+          <div><span>CON</span><strong>${classic.constitution ?? '—'}</strong></div>
+          <div><span>INT</span><strong>${classic.intelligence ?? '—'}</strong></div>
+          <div><span>WIS</span><strong>${classic.wisdom ?? '—'}</strong></div>
+          <div><span>CHA</span><strong>${classic.charisma ?? '—'}</strong></div>
+        </div>
+      </section>
+      <section class="runtime-sheet-section">
+        <h5>Traits & Loadout</h5>
+        <p><strong>Traits</strong></p>${listMarkup(sheet.traits, 'No traits listed.')}
+        <p><strong>Abilities</strong></p>${listMarkup(sheet.abilities, 'No abilities listed.')}
+        <p><strong>Guaranteed Abilities</strong></p>${guaranteedMarkup}
+        <p><strong>Equipment</strong></p>${listMarkup(sheet.equipment, 'No equipment listed.')}
+        <p><strong>Weaknesses</strong></p>${listMarkup(sheet.weaknesses, 'No weaknesses listed.')}
+      </section>
     </article>
   `;
+}
+
+function resetRuntimeSheetCreateForm() {
+  if (runtimeSheetCreateName) runtimeSheetCreateName.value = '';
+  if (runtimeSheetCreateType) runtimeSheetCreateType.value = 'npc_or_mob';
+  if (runtimeSheetCreateRole) runtimeSheetCreateRole.value = 'companion';
+  if (runtimeSheetCreateCustomRole) runtimeSheetCreateCustomRole.value = '';
+  if (runtimeSheetCreateArchetype) runtimeSheetCreateArchetype.value = '';
+  if (runtimeSheetCreateDescription) runtimeSheetCreateDescription.value = '';
+  runtimeSheetCreateCustomRoleWrap?.classList.add('hidden');
+}
+
+function currentRuntimeSheetRole() {
+  const selectedRole = (runtimeSheetCreateRole?.value || '').trim();
+  if (selectedRole === 'custom') return (runtimeSheetCreateCustomRole?.value || '').trim();
+  return selectedRole;
+}
+
+async function createRuntimeCharacterSheet() {
+  const role = currentRuntimeSheetRole() || 'companion';
+  console.log(`[character-sheets] create_requested role=${role}`);
+  const result = await api('/api/campaign/character-sheets', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'create',
+      name: runtimeSheetCreateName?.value?.trim() || '',
+      sheet_type: runtimeSheetCreateType?.value || 'npc_or_mob',
+      role,
+      archetype: runtimeSheetCreateArchetype?.value?.trim() || '',
+      description: runtimeSheetCreateDescription?.value?.trim() || '',
+    }),
+  });
+  runtimeCharacterSheets = Array.isArray(result.character_sheets) ? result.character_sheets : runtimeCharacterSheets;
+  selectedRuntimeSheetId = result.created_id || selectedRuntimeSheetId;
+  console.log(`[character-sheets] created id=${result.created_id || 'unknown'} total=${runtimeCharacterSheets.length}`);
+  console.log(`[character-sheets] selected=${selectedRuntimeSheetId || 'none'}`);
+  renderRuntimeCharacterSheets();
+  runtimeCharacterSheetCreatePanel?.classList.add('hidden');
+  resetRuntimeSheetCreateForm();
 }
 
 function openSheetEditor(index = -1) {
@@ -2136,6 +2228,8 @@ document.getElementById('open-character-sheets').onclick = () => {
 document.getElementById('open-runtime-character-sheets').onclick = () => {
   console.log(`[character-sheets] viewer_opened campaign=${selectedCampaignName || loadedSlot || 'unknown'}`);
   renderRuntimeCharacterSheets();
+  runtimeCharacterSheetCreatePanel?.classList.add('hidden');
+  resetRuntimeSheetCreateForm();
   runtimeCharacterSheetsModal?.classList.remove('hidden');
 };
 document.getElementById('open-runtime-inventory').onclick = async () => {
@@ -2200,6 +2294,22 @@ document.getElementById('narrator-rules-save-campaign').onclick = async () => {
 document.getElementById('close-runtime-character-sheets').onclick = () => {
   runtimeCharacterSheetsModal?.classList.add('hidden');
 };
+runtimeCharacterSheetCreateToggle?.addEventListener('click', () => {
+  runtimeCharacterSheetCreatePanel?.classList.toggle('hidden');
+  if (!runtimeCharacterSheetCreatePanel?.classList.contains('hidden')) runtimeSheetCreateName?.focus();
+});
+runtimeSheetCreateRole?.addEventListener('change', () => {
+  const isCustom = runtimeSheetCreateRole.value === 'custom';
+  runtimeSheetCreateCustomRoleWrap?.classList.toggle('hidden', !isCustom);
+  if (isCustom) runtimeSheetCreateCustomRole?.focus();
+});
+runtimeCharacterSheetCreateCancel?.addEventListener('click', () => {
+  runtimeCharacterSheetCreatePanel?.classList.add('hidden');
+  resetRuntimeSheetCreateForm();
+});
+runtimeCharacterSheetCreateSave?.addEventListener('click', async () => {
+  await createRuntimeCharacterSheet();
+});
 document.getElementById('character-sheet-close').onclick = () => {
   characterSheetsManager?.classList.add('hidden');
 };

@@ -41,6 +41,7 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency in some te
 from app.pathing import initialize_user_data_paths, project_root, static_dir
 from app.runtime_config import AppRuntimeConfig, ImageRuntimeConfig, ModelRuntimeConfig, RuntimeConfigStore
 from engine.campaign_engine import CampaignEngine, TurnResult
+from engine.character_sheets import CharacterSheet
 from engine.entities import CampaignSettings, CampaignState
 from engine.game_state_manager import GameStateManager
 from images.base import ImageGenerationRequest, ImageGenerationResult, ImageGeneratorAdapter, NullImageAdapter
@@ -2056,6 +2057,43 @@ class WebRuntime:
         print(f"[narrator-rules] loaded=true count={len(canon.custom_narrator_rules)}")
         return canon.custom_narrator_rules
 
+    def upsert_character_sheet(self, payload: dict[str, Any]) -> dict[str, Any]:
+        action = str(payload.get("action", "create")).strip().lower()
+        sheets = list(self.session.state.character_sheets)
+        role = str(payload.get("role", "")).strip() or "unspecified"
+        print(f"[character-sheets] create_requested role={role}")
+
+        created_id = ""
+        if action == "delete":
+            target_id = str(payload.get("id", "")).strip()
+            sheets = [sheet for sheet in sheets if sheet.id != target_id]
+        else:
+            base_id = str(payload.get("id", "")).strip() or f"sheet_{int(time.time() * 1000)}"
+            taken_ids = {sheet.id for sheet in sheets}
+            candidate_id = base_id
+            dedupe_index = 1
+            while candidate_id in taken_ids:
+                candidate_id = f"{base_id}_{dedupe_index}"
+                dedupe_index += 1
+            sheet_payload = {
+                "id": candidate_id,
+                "name": str(payload.get("name", "")).strip() or "Unnamed",
+                "sheet_type": str(payload.get("sheet_type", "npc_or_mob")).strip() or "npc_or_mob",
+                "role": role,
+                "archetype": str(payload.get("archetype", "")).strip(),
+                "description": str(payload.get("description", "")).strip(),
+            }
+            sheets.append(CharacterSheet.from_payload(sheet_payload))
+            created_id = candidate_id
+
+        self.session.state.character_sheets = sheets
+        self.save_active_campaign(self.session.active_slot)
+        print(f"[character-sheets] created id={created_id or 'none'} total={len(sheets)}")
+        return {
+            "character_sheets": self.serialize_state().get("character_sheets", []),
+            "created_id": created_id,
+        }
+
     def upsert_narrator_rule(self, payload: dict[str, Any]) -> dict[str, Any]:
         canon = self.session.state.structured_state.canon
         if not isinstance(canon.custom_narrator_rules, list):
@@ -2827,6 +2865,13 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     def campaign_spellbook_update(payload: dict[str, Any]) -> dict[str, Any]:
         try:
             return runtime.upsert_spellbook_entry(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.post("/api/campaign/character-sheets")
+    def campaign_character_sheets_update(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return runtime.upsert_character_sheet(payload)
         except ValueError as exc:
             raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(exc)) from exc
 
