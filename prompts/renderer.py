@@ -10,6 +10,10 @@ from memory.retrieval import RetrievedMemory
 from prompts.templates import (
     CAMPAIGN_TONE_TEMPLATE,
     CONTENT_SETTINGS_TEMPLATE,
+    DIALOGUE_QUALITY_TEMPLATE,
+    NARRATIVE_EXAMPLES_TEMPLATE,
+    PLAYER_AGENCY_TEMPLATE,
+    STORY_QUALITY_TEMPLATE,
     SYSTEM_ROLE_TEMPLATE,
     SYSTEM_TONE_TEMPLATE,
     TURN_TEMPLATE,
@@ -68,9 +72,14 @@ class PromptRenderer:
             [f"- {rule}" for rule in self.built_in_narrator_rules]
             + ([f"- {rule}" for rule in custom_rules] if custom_rules else ["- none"])
         )
+        print("[narrative-quality] strengthened_prompt=true")
         return (
             f"[System Role]\n{SYSTEM_ROLE_TEMPLATE}\n"
             f"[System Tone]\n{SYSTEM_TONE_TEMPLATE}\n"
+            f"[Storytelling Quality]\n{STORY_QUALITY_TEMPLATE}\n"
+            f"[Player Agency Guardrails]\n{PLAYER_AGENCY_TEMPLATE}\n"
+            f"[Dialogue Quality]\n{DIALOGUE_QUALITY_TEMPLATE}\n"
+            f"[Narrative Examples]\n{NARRATIVE_EXAMPLES_TEMPLATE}\n"
             f"[Narrator Rules - Hard]\n{narrator_rules_layer}\n"
             f"[Campaign Tone]\n{campaign_tone}\n"
             f"[Content Settings]\n{content_layer}\n"
@@ -105,7 +114,8 @@ class PromptRenderer:
         ]
         npc_context = " | ".join(nearby_npcs) if nearby_npcs else "none"
         suggested_move_instruction = (
-            "Respond with 2-4 immersive sentences focused on scene and consequences. "
+            "Respond with compact but substantial narration (usually 1-3 short paragraphs) focused on immediate scene framing, "
+            "specific reactions, concrete consequences, and a clean handoff. "
             "Do not suggest actions, next steps, or recommended moves unless the player explicitly asked for guidance. "
             + (
                 "In this turn, the player explicitly asked for guidance, so you may include clear options or recommendations."
