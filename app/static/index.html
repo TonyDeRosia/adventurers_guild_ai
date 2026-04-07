@@ -23,7 +23,6 @@
           <button id="save-campaign">Save</button>
           <button id="rename-campaign">Rename</button>
           <button id="delete-campaign">Delete selected</button>
-          <button id="open-display-mode-modal" type="button">Display Mode</button>
           <button id="open-narrator-rules" type="button">Narrator Rules</button>
         </div>
       </aside>
@@ -94,14 +93,6 @@
           <label>Tone / Style <input id="form-tone" type="text" value="heroic" /></label>
           <label>Player Name <input id="form-player-name" type="text" value="Aria" /></label>
           <label>Player Class <input id="form-player-class" type="text" value="Ranger" /></label>
-          <label>Display Mode
-            <select id="form-display-mode">
-              <option value="story" selected>Story Mode</option>
-              <option value="mud">MUD Mode</option>
-              <option value="rpg">RPG Mode</option>
-            </select>
-            <small class="field-help">Story Mode: cinematic narration-focused presentation. MUD Mode: classic text-RPG presentation. RPG Mode: structured RPG-style presentation.</small>
-          </label>
           <label class="full-width">Player Concept (optional) <input id="form-player-concept" type="text" placeholder="Exiled ranger seeking redemption" /></label>
           <label class="full-width">Premise / World Description (optional) <textarea id="form-premise" rows="3" placeholder="The old gods vanished and the sea is haunted."></textarea></label>
           <label class="full-width"><input id="form-suggested-moves-enabled" type="checkbox" /> Enable suggested next moves by default</label>
@@ -156,19 +147,6 @@
           <button id="close-runtime-inventory" type="button">Close</button>
         </div>
         <div id="runtime-inventory-detail" class="runtime-sheet-detail">Loading inventory...</div>
-      </div>
-    </div>
-
-    <div id="display-mode-modal" class="modal hidden">
-      <div class="modal-card compact-modal-card">
-        <h3>Set Display Mode</h3>
-        <p id="display-mode-modal-slot" class="scene-visual-meta">Selected save: autosave</p>
-        <div class="button-row">
-          <button class="display-mode-option" type="button" data-display-mode="story">Story</button>
-          <button class="display-mode-option" type="button" data-display-mode="mud">MUD</button>
-          <button class="display-mode-option" type="button" data-display-mode="rpg">RPG</button>
-          <button id="close-display-mode-modal" type="button">Cancel</button>
-        </div>
       </div>
     </div>
 

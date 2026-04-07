@@ -219,7 +219,7 @@ button:hover { border-color: var(--accent); }
 .save-list, .state-panel {
   border: 1px solid #2a3f5f;
   border-radius: 8px;
-  padding: 8px;
+  padding: 6px;
   min-height: 120px;
   background: var(--panel-soft);
 }
@@ -371,10 +371,45 @@ button:disabled {
   background: #12314d;
   color: #dbeafe;
 }
-.save-list { overflow: auto; display: grid; gap: 8px; flex: 1; min-height: 0; }
-.save-item { text-align: left; border: 1px solid #2e3d52; background: #132238; padding: 6px 8px; }
-.save-item small { display: block; color: var(--muted); margin-top: 4px; }
-.save-item.selected { border-color: #4cc2ff; box-shadow: 0 0 0 1px #4cc2ff inset; background: #18324f; }
+.save-list {
+  overflow-y: auto;
+  display: grid;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-height: 0;
+  max-height: 300px;
+}
+.save-item {
+  text-align: left;
+  border: 1px solid #2f4665;
+  background: #112033;
+  padding: 8px 10px;
+  min-height: 64px;
+  display: grid;
+  gap: 4px;
+}
+.save-item-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.save-item strong {
+  font-size: 0.95rem;
+  line-height: 1.2;
+}
+.save-item small {
+  display: block;
+  color: var(--muted);
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+.save-item:hover {
+  background: #152b43;
+  border-color: #3a678f;
+}
+.save-item.selected { border-color: #4cc2ff; box-shadow: 0 0 0 1px rgba(76, 194, 255, 0.5) inset; background: #17314a; }
 .save-item.warning { border-color: #a8873a; }
 .state-panel { white-space: pre-wrap; overflow: auto; margin: 0; max-height: 32vh; }
 .left-panel, .right-panel { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
