@@ -234,6 +234,7 @@ class CampaignRuntimeState:
     faction_changes: dict[str, int] = field(default_factory=dict)
     world_state: dict[str, Any] = field(default_factory=dict)
     scene_visual_state: dict[str, Any] = field(default_factory=dict)
+    last_narration: str = ""
 
 
 @dataclass
@@ -475,6 +476,7 @@ class CampaignState:
                 faction_changes={str(k): int(v) for k, v in raw_runtime.get("faction_changes", {}).items()},
                 world_state=dict(raw_runtime.get("world_state", {})),
                 scene_visual_state=dict(raw_runtime.get("scene_visual_state", {})),
+                last_narration=str(raw_runtime.get("last_narration", "")),
             ),
             recent_turn_memory=CampaignRecentMemoryState(
                 last_major_actions=[str(v) for v in raw_recent.get("last_major_actions", [])],
@@ -522,6 +524,7 @@ class CampaignState:
                     "world_flags": dict(payload.get("world_flags", {})),
                     "world_events": [str(v) for v in payload.get("world_events", [])],
                 },
+                last_narration="",
             ),
             recent_turn_memory=CampaignRecentMemoryState(
                 last_major_actions=[str(v) for v in payload.get("recent_memory", [])[-6:]],

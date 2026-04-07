@@ -276,6 +276,27 @@ class _CountingProvider(NarrationModelAdapter):
         return "A cold wind curls through the archway."
 
 
+class _RefusalProvider(NarrationModelAdapter):
+    provider_name = "ollama"
+
+    def generate(self, prompt: str, system_prompt: str = "", history=None) -> str:
+        return "I cannot create that scene."
+
+
+class _LoopingFillerProvider(NarrationModelAdapter):
+    provider_name = "ollama"
+
+    def generate(self, prompt: str, system_prompt: str = "", history=None) -> str:
+        return "The throne room trembles and the darkness surrounding you deepens as your minions close in."
+
+
+class _UngroundedProvider(NarrationModelAdapter):
+    provider_name = "ollama"
+
+    def generate(self, prompt: str, system_prompt: str = "", history=None) -> str:
+        return "Moonlight reflects across still water while distant bells ring."
+
+
 def test_turn_fallback_is_clean_when_provider_fails(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _FailingProvider()
@@ -286,6 +307,46 @@ def test_turn_fallback_is_clean_when_provider_fails(tmp_path: Path, monkeypatch)
     assert "[Requested Mode]" not in out["narrative"]
 
 
+def test_refusal_output_uses_grounded_engine_fallback(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _RefusalProvider()
+    out = runtime.handle_player_input("i cast fireball at the wall")
+    assert "i cannot" not in out["narrative"].lower()
+    assert "fireball" in out["narrative"].lower()
+    assert out["metadata"]["quality_fallback_used"] is True
+    assert out["metadata"]["quality_invalid_output"] is True
+
+
+def test_filler_loop_output_is_rejected_and_replaced(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _LoopingFillerProvider()
+    out = runtime.handle_player_input("i cast fireball")
+    lowered = out["narrative"].lower()
+    assert "throne room" not in lowered
+    assert "your minions" not in lowered
+    assert out["metadata"]["quality_fallback_used"] is True
+
+
+def test_ungrounded_output_is_replaced_with_action_tied_narration(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _UngroundedProvider()
+    out = runtime.handle_player_input("i attack the statue")
+    lowered = out["narrative"].lower()
+    assert "attack" in lowered
+    assert "statue" in lowered
+    assert out["metadata"]["quality_fallback_used"] is True
+
+
+def test_repetitive_output_uses_fallback_on_second_turn(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _CountingProvider()
+    first = runtime.handle_player_input("i attack the goblin")
+    second = runtime.handle_player_input("i attack the goblin again")
+    assert first["narrative"] != ""
+    assert second["metadata"]["quality_repetitive_output"] is True
+    assert second["metadata"]["quality_fallback_used"] is True
+
+
 def test_turn_sanitizer_removes_prompt_scaffold_leaks(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _ScaffoldLeakProvider()
@@ -293,7 +354,8 @@ def test_turn_sanitizer_removes_prompt_scaffold_leaks(tmp_path: Path, monkeypatc
     assert "Recent chat turns:" not in out["narrative"]
     assert "Recent memory:" not in out["narrative"]
     assert "[Requested Mode]" not in out["narrative"]
-    assert "lantern-light flickers" in out["narrative"]
+    assert out["metadata"]["quality_fallback_used"] is True
+    assert "look." in out["narrative"].lower()
 
 
 def test_recommendations_only_show_when_player_explicitly_requests_guidance(tmp_path: Path, monkeypatch) -> None:
