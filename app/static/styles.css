@@ -221,6 +221,31 @@ button:disabled {
   color: var(--muted);
   font-size: 0.9rem;
 }
+.model-management {
+  margin-top: 10px;
+  border-top: 1px solid #2a3f5f;
+  padding-top: 10px;
+}
+.supported-model-card {
+  border: 1px solid #344c6d;
+  border-radius: 8px;
+  background: #0f1a2d;
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.model-meta {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.model-action-btn {
+  padding: 4px 8px;
+  border: 1px solid #3a678f;
+  border-radius: 6px;
+  background: #12314d;
+  color: #dbeafe;
+}
 .save-list { overflow: auto; display: grid; gap: 8px; flex: 1; min-height: 0; }
 .save-item { text-align: left; border: 1px solid #2e3d52; background: #132238; }
 .save-item small { display: block; color: var(--muted); margin-top: 4px; }
