@@ -6,6 +6,7 @@ const imagePreview = document.getElementById('image-preview');
 const statusLine = document.getElementById('status-line');
 const readinessPanel = document.getElementById('dependency-readiness');
 const setupGuidance = document.getElementById('setup-guidance');
+const setupProgress = document.getElementById('setup-progress');
 const selectedSaveLabel = document.getElementById('selected-save-label');
 const newCampaignModal = document.getElementById('new-campaign-modal');
 
@@ -15,6 +16,14 @@ let loadedSlot = 'autosave';
 let selectedCampaignName = 'autosave';
 let deletingCampaign = false;
 let lastCampaigns = [];
+let setupRunState = {
+  busy: false,
+  actionId: '',
+  title: '',
+  summary: '',
+  isError: false,
+  steps: [],
+};
 
 const readinessLabels = {
   model_provider: 'Text Generation Service',
@@ -37,43 +46,182 @@ function commandFromAction(actionText) {
   return '';
 }
 
+function actionTitle(actionId) {
+  return {
+    setup_text_ai: 'Set Up Text AI',
+    setup_image_ai: 'Set Up Image AI',
+    setup_everything: 'Set Up Everything',
+    start_ollama: 'Start Ollama',
+    install_ollama: 'Install Ollama',
+    install_model: 'Install Story Model',
+    install_image_engine: 'Install Image Engine',
+    start_image_engine: 'Start Image Engine',
+    recheck: 'Recheck Dependencies',
+  }[actionId] || actionId;
+}
+
+function updateSetupButtonsBusyState() {
+  const managedButtons = document.querySelectorAll('#setup-text-ai, #setup-image-ai, #setup-everything, #recheck-readiness, .readiness-action-btn');
+  managedButtons.forEach((button) => {
+    const actionId = button.dataset.action || (button.id === 'setup-text-ai' ? 'setup_text_ai'
+      : button.id === 'setup-image-ai' ? 'setup_image_ai'
+      : button.id === 'setup-everything' ? 'setup_everything'
+      : button.id === 'recheck-readiness' ? 'recheck'
+      : '');
+    if (!actionId) return;
+    if (!setupRunState.busy) {
+      button.disabled = false;
+      return;
+    }
+    if (actionId === 'recheck') {
+      button.disabled = true;
+      return;
+    }
+    button.disabled = true;
+  });
+}
+
+function renderSetupProgress() {
+  if (!setupProgress) return;
+  const hasState = setupRunState.busy || setupRunState.summary || setupRunState.steps.length;
+  if (!hasState) {
+    setupProgress.classList.add('hidden');
+    setupProgress.innerHTML = '';
+    return;
+  }
+  setupProgress.classList.remove('hidden');
+  const stepRows = setupRunState.steps.map((step) => `<li class="setup-step ${escapeHtml(step.state || '')}">${escapeHtml(step.label || step.step || 'step')}: ${escapeHtml(step.message || '')}</li>`).join('');
+  const summaryClass = setupRunState.isError ? 'error' : 'success';
+  setupProgress.innerHTML = `
+    <div class="setup-progress-head">
+      ${setupRunState.busy ? '<span class="spinner" aria-hidden="true"></span>' : ''}
+      <strong>${escapeHtml(setupRunState.title || 'Setup status')}</strong>
+    </div>
+    <div class="setup-progress-summary ${summaryClass}">${escapeHtml(setupRunState.summary || (setupRunState.busy ? 'Working...' : ''))}</div>
+    ${stepRows ? `<ol class="setup-steps">${stepRows}</ol>` : ''}
+  `;
+  updateSetupButtonsBusyState();
+}
+
+function startSetupRun(actionId, initialSummary, steps = []) {
+  setupRunState = {
+    busy: true,
+    actionId,
+    title: actionTitle(actionId),
+    summary: initialSummary,
+    isError: false,
+    steps,
+  };
+  renderSetupProgress();
+}
+
+function updateSetupRun(update) {
+  setupRunState = { ...setupRunState, ...update };
+  renderSetupProgress();
+}
+
+function finishSetupRun({ summary, isError = false, steps = [] }) {
+  setupRunState = {
+    ...setupRunState,
+    busy: false,
+    summary: summary || setupRunState.summary,
+    isError,
+    steps: steps.length ? steps : setupRunState.steps,
+  };
+  renderSetupProgress();
+}
+
+function normalizeSetupSteps(steps = []) {
+  return (steps || []).map((step) => ({
+    step: step.step || 'step',
+    label: toTitle(step.step || 'step'),
+    state: step.state || 'ready',
+    message: step.message || '',
+  }));
+}
+
 async function runReadinessAction(actionId, item) {
+  if (setupRunState.busy) {
+    setStatus('Another setup action is still running. Please wait.');
+    return;
+  }
   try {
     if (actionId === 'setup_text_ai') {
       const modelName = document.getElementById('model-name').value.trim() || item.selected_model || 'llama3';
+      startSetupRun(actionId, `Preparing Text AI setup for model ${modelName}...`, [
+        { step: 'provider-check', label: 'Provider check', state: 'running', message: 'Verifying model provider and model target...' },
+      ]);
       setStatus('Set Up Text AI: installing / starting / waiting for readiness...');
       const result = await api('/api/setup/orchestrate-text', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: modelName }),
       });
+      updateSetupRun({
+        steps: normalizeSetupSteps(result.steps),
+        summary: result.summary || result.message || (result.ok ? 'Text AI is ready.' : 'Text AI setup failed.'),
+      });
       await refreshDependencyReadiness();
       console.log('[setup-action] readiness refresh triggered');
       setStatus(result.summary || result.message || (result.ok ? 'Text AI ready.' : 'Text AI setup failed.'), !result.ok);
+      finishSetupRun({
+        summary: result.summary || result.message || (result.ok ? 'Text AI is ready.' : 'Text AI setup failed.'),
+        isError: !result.ok,
+        steps: normalizeSetupSteps(result.steps),
+      });
       return;
     }
     if (actionId === 'setup_image_ai') {
+      startSetupRun(actionId, 'Starting Image AI setup...', [
+        { step: 'detect-install-path', label: 'Detect install path', state: 'running', message: 'Checking ComfyUI install path...' },
+      ]);
       setStatus('Set Up Image AI: installing / starting / waiting for readiness...');
       const result = await api('/api/setup/orchestrate-image', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
       });
+      updateSetupRun({
+        steps: normalizeSetupSteps(result.steps),
+        summary: result.summary || result.message || (result.ok ? 'Image AI is ready.' : 'Image AI setup failed.'),
+      });
       await refreshDependencyReadiness();
       console.log('[setup-action] readiness refresh triggered');
       setStatus(result.summary || result.message || (result.ok ? 'Image AI ready.' : 'Image AI setup failed.'), !result.ok);
+      finishSetupRun({
+        summary: result.summary || result.message || (result.ok ? 'Image AI is ready.' : 'Image AI setup failed.'),
+        isError: !result.ok,
+        steps: normalizeSetupSteps(result.steps),
+      });
       return;
     }
     if (actionId === 'setup_everything') {
       const modelName = document.getElementById('model-name').value.trim() || item.selected_model || 'llama3';
+      startSetupRun(actionId, 'Starting full setup (Text AI + Image AI)...', [
+        { step: 'setup-text-ai', label: 'Text AI setup', state: 'running', message: `Preparing model ${modelName}...` },
+      ]);
       setStatus('Set Up Everything: installing, starting, waiting for readiness...');
       const result = await api('/api/setup/orchestrate-everything', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: modelName }),
       });
+      const combinedSteps = [...normalizeSetupSteps(result.text?.steps), ...normalizeSetupSteps(result.image?.steps)];
+      updateSetupRun({
+        steps: combinedSteps,
+        summary: result.summary || result.message || (result.ok ? 'Text AI ready. Image AI ready.' : 'Setup Everything failed.'),
+      });
       await refreshDependencyReadiness();
       console.log('[setup-action] readiness refresh triggered');
       setStatus(result.summary || result.message || (result.ok ? 'Text AI ready. Image AI ready.' : 'Setup Everything failed.'), !result.ok);
+      finishSetupRun({
+        summary: result.summary || result.message || (result.ok ? 'Text AI ready. Image AI ready.' : 'Setup Everything failed.'),
+        isError: !result.ok,
+        steps: combinedSteps,
+      });
       return;
     }
     if (actionId === 'recheck') {
+      startSetupRun(actionId, 'Refreshing dependency readiness...', [
+        { step: 'recheck', label: 'Recheck dependencies', state: 'running', message: 'Requesting latest dependency state...' },
+      ]);
       await refreshDependencyReadiness();
       setStatus('Dependency readiness refreshed.');
+      finishSetupRun({ summary: 'Dependency readiness refreshed.', isError: false, steps: [{ step: 'recheck', label: 'Recheck dependencies', state: 'ready', message: 'Latest readiness loaded.' }] });
       return;
     }
     if (actionId === 'start_ollama') {
@@ -126,18 +274,46 @@ async function runReadinessAction(actionId, item) {
       return;
     }
     if (actionId === 'start_image_engine') {
+      startSetupRun(actionId, 'Starting Image AI...', [
+        { step: 'detect-install-path', label: 'Check install path', state: 'running', message: 'Checking install path...' },
+        { step: 'launch-engine', label: 'Launch ComfyUI', state: 'pending', message: 'Waiting to launch engine...' },
+        { step: 'wait-for-readiness', label: 'Wait for response', state: 'pending', message: 'Waiting for engine response...' },
+      ]);
+      updateSetupRun({
+        summary: 'Starting Image AI... Checking install path...',
+        steps: [
+          { step: 'detect-install-path', label: 'Check install path', state: 'running', message: 'Checking install path...' },
+          { step: 'launch-engine', label: 'Launch ComfyUI', state: 'pending', message: 'Waiting to launch engine...' },
+          { step: 'wait-for-readiness', label: 'Wait for response', state: 'pending', message: 'Waiting for engine response...' },
+        ],
+      });
       setStatus('Starting ComfyUI...');
       console.log('[setup-action] start-image-engine requested');
       const result = await api('/api/setup/start-image-engine', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
       });
       console.log(`[setup-action] start-image-engine ${result.ok ? 'success' : 'failure'} reason=${result.message || 'unknown'}`);
+      updateSetupRun({
+        steps: normalizeSetupSteps(result.steps),
+        summary: result.ok
+          ? 'Image AI is ready.'
+          : `Image AI failed to start: ${result.failure_stage_message || result.message || 'unknown failure'}`,
+      });
       await refreshDependencyReadiness();
       console.log('[setup-action] readiness refresh triggered');
       setStatus(result.ok ? (result.message || 'ComfyUI started.') : (result.next_step ? `${result.message} ${result.next_step}` : result.message), !result.ok);
+      finishSetupRun({
+        summary: result.ok
+          ? 'Image AI is ready.'
+          : `Image AI failed to start: ${result.failure_stage_message || result.message || 'unknown failure'}`,
+        isError: !result.ok,
+        steps: normalizeSetupSteps(result.steps),
+      });
+      return;
     }
   } catch (error) {
     setStatus(error.message, true);
+    finishSetupRun({ summary: `Setup failed: ${error.message}`, isError: true });
   }
 }
 
@@ -325,6 +501,7 @@ function renderDependencyReadiness(payload) {
   summary.querySelectorAll('.primary-action-btn').forEach((button) => {
     button.onclick = () => runReadinessAction(button.dataset.action, byType.selected_model || {});
   });
+  updateSetupButtonsBusyState();
   readinessPanel.appendChild(summary);
 
   const sections = [
@@ -369,6 +546,7 @@ function renderDependencyReadiness(payload) {
     el.querySelectorAll('.readiness-action-btn').forEach((button) => {
       button.onclick = () => runReadinessAction(button.dataset.action, item);
     });
+    updateSetupButtonsBusyState();
       section.appendChild(el);
     }
     readinessPanel.appendChild(section);
@@ -602,8 +780,7 @@ document.getElementById('setup-image-ai').onclick = () => runReadinessAction('se
 document.getElementById('setup-everything').onclick = () => runReadinessAction('setup_everything', {});
 document.getElementById('recheck-readiness').onclick = async () => {
   try {
-    await refreshDependencyReadiness();
-    setStatus('Dependency readiness refreshed.');
+    await runReadinessAction('recheck', {});
   } catch (error) {
     setStatus(error.message, true);
   }

@@ -787,18 +787,54 @@ class WebRuntime:
         print("[setup-action] start-image-engine requested")
         if self.app_config.image.provider != "comfyui":
             print("[setup-action] start-image-engine failure reason=image provider is not comfyui")
-            return {"ok": False, "message": "Image provider is not set to comfyui.", "next_step": "Set image provider to comfyui, then retry."}
+            return {
+                "ok": False,
+                "message": "Image provider is not set to comfyui.",
+                "next_step": "Set image provider to comfyui, then retry.",
+                "failure_stage": "provider-check",
+                "failure_stage_message": "image provider is not comfyui",
+                "steps": [{"step": "provider-check", "state": "failed", "message": "Image provider is not set to comfyui."}],
+            }
         if self.get_image_status().get("reachable", False):
             print("[setup-action] start-image-engine success reason=already running")
-            return {"ok": True, "message": "ComfyUI is already running."}
+            return {
+                "ok": True,
+                "message": "ComfyUI is already running.",
+                "steps": [{"step": "wait-for-readiness", "state": "ready", "message": "Engine is already reachable."}],
+            }
+        print("[setup-orchestrator] setup-image step=detect-install-path")
         comfyui_root = self._find_comfyui_root()
         if comfyui_root is None:
-            print("[setup-action] start-image-engine failure reason=not-installed")
-            return {"ok": False, "message": "ComfyUI is not installed.", "next_step": "Install Image Engine first."}
+            print("[setup-action] start-image-engine failure reason=install-path-missing")
+            print("[setup-orchestrator] setup-image failure stage=detect-install-path")
+            return {
+                "ok": False,
+                "message": "ComfyUI install path was not found.",
+                "next_step": "Install Image Engine first.",
+                "failure_stage": "detect-install-path",
+                "failure_stage_message": "install path missing",
+                "steps": [{"step": "detect-install-path", "state": "failed", "message": "ComfyUI install path was not found."}],
+            }
         self.app_config.image.comfyui_path = str(comfyui_root)
         self.config_store.save(self.app_config)
         run_script = comfyui_root / "run_nvidia_gpu.bat"
         fallback_script = comfyui_root / "run_cpu.bat"
+        launcher = run_script if run_script.exists() else fallback_script if fallback_script.exists() else comfyui_root / "main.py"
+        if os.name == "nt" and not run_script.exists() and not fallback_script.exists():
+            print("[setup-action] start-image-engine failure reason=launcher-script-missing")
+            print("[setup-orchestrator] setup-image failure stage=launch-engine")
+            return {
+                "ok": False,
+                "message": "ComfyUI launcher script was not found (run_nvidia_gpu.bat / run_cpu.bat).",
+                "next_step": "Restore ComfyUI launcher scripts or start ComfyUI manually, then click Recheck.",
+                "failure_stage": "launch-engine",
+                "failure_stage_message": "launcher script missing",
+                "steps": [
+                    {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
+                    {"step": "launch-engine", "state": "failed", "message": "Launcher script missing."},
+                ],
+            }
+        print("[setup-orchestrator] setup-image step=launch-engine")
         try:
             if os.name == "nt" and run_script.exists():
                 subprocess.Popen(
@@ -820,7 +856,18 @@ class WebRuntime:
                 python_exe = shutil.which("python") or shutil.which("py")
                 if not python_exe:
                     print("[setup-action] start-image-engine failure reason=python-not-found")
-                    return {"ok": False, "message": "Python was not found on PATH.", "next_step": "Install Python and retry, or start ComfyUI manually."}
+                    print("[setup-orchestrator] setup-image failure stage=launch-engine")
+                    return {
+                        "ok": False,
+                        "message": "Python was not found on PATH.",
+                        "next_step": "Install Python and retry, or start ComfyUI manually.",
+                        "failure_stage": "launch-engine",
+                        "failure_stage_message": "process launch failed",
+                        "steps": [
+                            {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
+                            {"step": "launch-engine", "state": "failed", "message": "Python executable not found on PATH."},
+                        ],
+                    }
                 command = [python_exe, "main.py"]
                 subprocess.Popen(
                     command,
@@ -831,17 +878,47 @@ class WebRuntime:
                 )
         except OSError as exc:
             print(f"[setup-action] start-image-engine failure reason={exc}")
-            return {"ok": False, "message": f"Could not start ComfyUI: {exc}", "next_step": "Start ComfyUI manually, then click Recheck."}
+            print("[setup-orchestrator] setup-image failure stage=launch-engine")
+            return {
+                "ok": False,
+                "message": f"Could not start ComfyUI: {exc}",
+                "next_step": "Start ComfyUI manually, then click Recheck.",
+                "failure_stage": "launch-engine",
+                "failure_stage_message": "process launch failed",
+                "steps": [
+                    {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
+                    {"step": "launch-engine", "state": "failed", "message": f"Process launch failed: {exc}"},
+                ],
+            }
+        print(f"[setup-action] start-image-engine launch command={launcher}")
+        print("[setup-orchestrator] setup-image step=wait-for-readiness")
         for _ in range(8):
             time.sleep(0.75)
             if self.get_image_status().get("reachable", False):
                 print("[setup-action] start-image-engine success")
-                return {"ok": True, "message": "ComfyUI started and is reachable.", "readiness_refreshed": True}
-        print("[setup-action] start-image-engine failure reason=not-reachable-after-start")
+                return {
+                    "ok": True,
+                    "message": "ComfyUI started and is reachable.",
+                    "readiness_refreshed": True,
+                    "steps": [
+                        {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
+                        {"step": "launch-engine", "state": "ready", "message": "ComfyUI launch command sent."},
+                        {"step": "wait-for-readiness", "state": "ready", "message": "ComfyUI responded to readiness probe."},
+                    ],
+                }
+        print("[setup-action] start-image-engine failure reason=timeout-waiting-for-comfyui")
+        print("[setup-orchestrator] setup-image failure stage=wait-for-readiness")
         return {
             "ok": False,
-            "message": "ComfyUI start command was sent, but it is not reachable yet.",
+            "message": "ComfyUI launch command was sent, but readiness timed out.",
             "next_step": "Wait for startup to finish, then click Recheck.",
+            "failure_stage": "wait-for-readiness",
+            "failure_stage_message": "timeout waiting for ComfyUI",
+            "steps": [
+                {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
+                {"step": "launch-engine", "state": "ready", "message": "ComfyUI launch command sent."},
+                {"step": "wait-for-readiness", "state": "failed", "message": "Process launched but readiness check failed before timeout window closed."},
+            ],
         }
 
     def _create_image_adapter(self) -> ImageGeneratorAdapter:
