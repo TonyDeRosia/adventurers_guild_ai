@@ -607,6 +607,13 @@ class _WallProgressionProvider(NarrationModelAdapter):
         return "Your fireball strikes the already-cracked wall, widening the fracture line."
 
 
+class _FigureIntroProvider(NarrationModelAdapter):
+    provider_name = "ollama"
+
+    def generate(self, prompt: str, system_prompt: str = "", history=None) -> str:
+        return "A hooded figure lingers beside the broken arch and watches you."
+
+
 def test_turn_fallback_is_clean_when_provider_fails(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _FailingProvider()
@@ -727,6 +734,58 @@ def test_dialogue_fallback_does_not_invent_npc_reply(tmp_path: Path, monkeypatch
     lowered = out["narrative"].lower()
     assert "show yourself" in lowered
     assert "no immediate spoken reply" in lowered or "voice carries" in lowered
+
+
+def test_narrated_figure_registers_scene_actor_and_visible_count(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _FigureIntroProvider()
+    runtime.handle_player_input("look")
+    scene_state = runtime.session.state.structured_state.runtime.scene_state
+    assert any("hooded figure" in actor.get("short_label", "") for actor in scene_state["scene_actors"])
+    assert len(scene_state["visible_entities"]) >= 1
+    assert any("hooded figure" in item.lower() for item in scene_state["visible_entities"])
+
+
+def test_dialogue_pronoun_targets_registered_actor_and_gets_reply(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _FigureIntroProvider()
+    runtime.handle_player_input("look")
+    out = runtime.handle_player_input("i say 'what do you want?' to them")
+    lowered = out["narrative"].lower()
+    scene_state = runtime.session.state.structured_state.runtime.scene_state
+    assert "turns toward you" in lowered
+    assert "why you followed me" in lowered or "i hear you" in lowered
+    assert scene_state["last_target_actor_id"]
+
+
+def test_wait_for_reply_with_visible_actor_generates_progress(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _FigureIntroProvider()
+    runtime.handle_player_input("look")
+    out = runtime.handle_player_input("I wait for their reply")
+    lowered = out["narrative"].lower()
+    assert "turns toward you" in lowered
+    assert "air is thick" not in lowered
+
+
+def test_lightweight_npc_scene_state_persists_and_stays_campaign_scoped(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _FigureIntroProvider()
+    runtime.create_campaign({"slot": "slot_npc_scope_a"})
+    runtime.handle_player_input("look")
+    runtime.handle_player_input("i say 'hello' to them")
+    runtime.save_active_campaign("slot_npc_scope_a")
+
+    runtime.create_campaign({"slot": "slot_npc_scope_b"})
+    scene_b = runtime.session.state.structured_state.runtime.scene_state
+    assert scene_b.get("lightweight_npcs", []) == []
+    runtime.save_active_campaign("slot_npc_scope_b")
+
+    reloaded = _runtime(tmp_path, monkeypatch)
+    reloaded.switch_campaign("slot_npc_scope_a")
+    scene_a = reloaded.session.state.structured_state.runtime.scene_state
+    assert len(scene_a.get("lightweight_npcs", [])) >= 1
+    assert reloaded.serialize_state()["character_sheets"] == []
 
 
 def test_sanitized_grounded_output_is_kept_without_quality_fallback(tmp_path: Path, monkeypatch) -> None:

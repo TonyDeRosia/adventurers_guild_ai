@@ -264,6 +264,9 @@ class CampaignSceneState:
     recent_consequences: list[str] = field(default_factory=list)
     last_player_action: str = ""
     last_immediate_result: str = ""
+    scene_actors: list[dict[str, Any]] = field(default_factory=list)
+    lightweight_npcs: list[dict[str, Any]] = field(default_factory=list)
+    last_target_actor_id: str = ""
 
 
 @dataclass
@@ -633,5 +636,8 @@ class CampaignState:
                 recent_consequences=[str(v) for v in state.get("recent_consequences", []) if str(v).strip()],
                 last_player_action=str(state.get("last_player_action", "")),
                 last_immediate_result=str(state.get("last_immediate_result", "")),
+                scene_actors=[dict(v) for v in state.get("scene_actors", []) if isinstance(v, dict)],
+                lightweight_npcs=[dict(v) for v in state.get("lightweight_npcs", []) if isinstance(v, dict)],
+                last_target_actor_id=str(state.get("last_target_actor_id", "")),
             )
         )

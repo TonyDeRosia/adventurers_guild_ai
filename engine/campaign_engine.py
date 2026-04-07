@@ -466,6 +466,48 @@ class CampaignEngine:
                 },
             )
 
+        action_subtype = self._classify_gameplay_action_subtype(action)
+        if action_subtype == "dialogue":
+            target_actor = self._resolve_scene_actor_target(action, scene_state)
+            if target_actor is not None:
+                npc_record = self._materialize_lightweight_npc(state, scene_state, target_actor)
+                print(f"[npc-dialogue] target={target_actor.get('actor_id', '')}")
+                narrative = self._generate_npc_response(npc_record, action, scene_state)
+                print("[npc-dialogue] response_generated=true")
+                print(f"[npc-dialogue] tone={npc_record.get('tone_default', 'neutral')}")
+                target_actor["last_interaction_turn"] = state.turn_count
+                scene_state["last_target_actor_id"] = str(target_actor.get("actor_id", ""))
+                self._update_scene_state_from_turn(state, action=action, narrative=narrative, system_messages=system_messages, is_gameplay=True)
+                self.memory.record_recent(state, f"Narrator: {narrative}")
+                self.state_orchestrator.update_runtime_state(state, action=action, system_messages=system_messages, narrative=narrative)
+                self.memory.record_conversation_turn(
+                    state,
+                    player_input=action,
+                    system_messages=system_messages,
+                    narrator_response=narrative,
+                    requested_mode=requested_mode,
+                )
+                total_ms = (time.perf_counter() - turn_started) * 1000
+                return TurnResult(
+                    narrative=narrative,
+                    system_messages=system_messages,
+                    messages=self._build_structured_messages(system_messages, narrative),
+                    metadata={
+                        "requested_mode": requested_mode,
+                        "provider_attempted": False,
+                        "fallback_used": False,
+                        "fallback_reason": "",
+                        "sanitized_output": False,
+                        "guidance_requested": False,
+                        "recommendation_cleanup_applied": False,
+                        "custom_rule_cleanup_applied": False,
+                        "grounding_cleanup_applied": False,
+                        "turn_count": state.turn_count,
+                        "quality_fallback_used": False,
+                        "timing": {"turn_finalize_ms": round(total_ms, 2)},
+                    },
+                )
+
         location_started = time.perf_counter()
         location_summary = self.world.get_current_location_summary(state)
         location_ms = (time.perf_counter() - location_started) * 1000
@@ -514,6 +556,15 @@ class CampaignEngine:
                         npc
                         for npc in state.structured_state.runtime.npc_relationships.values()
                         if str(npc.get("location_id", "")) == state.current_location_id
+                    ]
+                )
+                + len(
+                    [
+                        actor
+                        for actor in scene_state.get("scene_actors", [])
+                        if isinstance(actor, dict)
+                        and bool(actor.get("visible", True))
+                        and str(actor.get("location_id", state.current_location_id)) == state.current_location_id
                     ]
                 ),
                 "minion_count": len(state.structured_state.runtime.party_state.get("minions", [])),
@@ -1015,6 +1066,9 @@ class CampaignEngine:
         scene_state.setdefault("recent_consequences", [])
         scene_state.setdefault("last_player_action", "")
         scene_state.setdefault("last_immediate_result", "")
+        scene_state.setdefault("scene_actors", [])
+        scene_state.setdefault("lightweight_npcs", [])
+        scene_state.setdefault("last_target_actor_id", "")
         runtime.scene_state = scene_state
         return scene_state
 
@@ -1100,6 +1154,57 @@ class CampaignEngine:
             extracted["active_effects"].append("radiant flare")
         return extracted
 
+    def _extract_scene_actor_labels(self, text: str) -> list[str]:
+        lowered = text.lower()
+        labels: list[str] = []
+        patterns = (
+            "mysterious figure",
+            "hooded figure",
+            "stranger",
+            "guard",
+            "merchant",
+            "woman in a cloak",
+            "figure",
+        )
+        for pattern in patterns:
+            if pattern in lowered:
+                labels.append(pattern)
+        return labels
+
+    def _register_scene_actor(self, state: CampaignState, scene_state: dict[str, Any], label: str) -> dict[str, Any]:
+        clean_label = re.sub(r"\s+", " ", label.strip().lower())
+        existing = next(
+            (
+                actor
+                for actor in scene_state.get("scene_actors", [])
+                if isinstance(actor, dict) and (
+                    str(actor.get("short_label", "")).lower() == clean_label
+                    or str(actor.get("display_name", "")).lower() == clean_label
+                )
+            ),
+            None,
+        )
+        if existing is not None:
+            existing["visible"] = True
+            return existing
+        actor_id = f"scene_actor_{state.current_location_id}_{len(scene_state.get('scene_actors', [])) + 1}"
+        actor = {
+            "actor_id": actor_id,
+            "display_name": clean_label.title(),
+            "short_label": clean_label,
+            "entity_type": "npc" if any(word in clean_label for word in ("guard", "merchant", "stranger", "figure", "woman")) else "unknown",
+            "visible": True,
+            "introduced_turn": state.turn_count,
+            "last_interaction_turn": 0,
+            "tags": [token for token in clean_label.split() if token not in {"the", "a", "an", "in"}],
+            "provisional": True,
+            "location_id": state.current_location_id,
+        }
+        scene_state.setdefault("scene_actors", []).append(actor)
+        print(f"[scene-actors] registered id={actor_id}")
+        self._materialize_lightweight_npc(state, scene_state, actor)
+        return actor
+
     def _update_scene_state_from_turn(
         self,
         state: CampaignState,
@@ -1111,14 +1216,34 @@ class CampaignEngine:
     ) -> None:
         scene_state = self._ensure_scene_state(state)
         location = state.locations.get(state.current_location_id)
+        prior_location_id = str(scene_state.get("location_id") or "")
+        if prior_location_id and prior_location_id != state.current_location_id:
+            scene_state["scene_actors"] = []
+            scene_state["lightweight_npcs"] = []
+            scene_state["last_target_actor_id"] = ""
         scene_state["location_id"] = state.current_location_id or None
         scene_state["location_name"] = location.name if location else scene_state.get("location_name")
-        scene_state["visible_entities"] = sorted({npc.name for npc in state.npcs.values() if npc.location_id == state.current_location_id})[
-            -self._scene_state_list_caps["visible_entities"] :
-        ]
+        scene_actors = [actor for actor in scene_state.get("scene_actors", []) if isinstance(actor, dict)]
+        for actor in scene_actors:
+            if str(actor.get("location_id", state.current_location_id)) != state.current_location_id:
+                actor["visible"] = False
+        visible_actor_names = [str(actor.get("display_name", "")).strip() for actor in scene_actors if bool(actor.get("visible", True))]
+        npc_names = [npc.name for npc in state.npcs.values() if npc.location_id == state.current_location_id]
+        scene_state["visible_entities"] = sorted({*npc_names, *visible_actor_names})[-self._scene_state_list_caps["visible_entities"] :]
+        print(f"[scene-actors] visible_count={len([name for name in scene_state['visible_entities'] if name])}")
         if not is_gameplay:
             return
         scene_state["last_player_action"] = action.strip()
+        for source in [narrative, *system_messages[-2:]]:
+            for label in self._extract_scene_actor_labels(source):
+                self._register_scene_actor(state, scene_state, label)
+        visible_actor_names = [
+            str(actor.get("display_name", "")).strip()
+            for actor in scene_state.get("scene_actors", [])
+            if isinstance(actor, dict) and bool(actor.get("visible", True))
+        ]
+        scene_state["visible_entities"] = sorted({*npc_names, *visible_actor_names})[-self._scene_state_list_caps["visible_entities"] :]
+        print(f"[scene-actors] visible_count={len([name for name in scene_state['visible_entities'] if name])}")
         immediate_sources = [narrative] + system_messages[-2:]
         merged = " ".join(source for source in immediate_sources if source.strip())
         extracted = self._extract_consequences_from_narration(merged)
@@ -1172,6 +1297,8 @@ class CampaignEngine:
         if any(phrase in normalized for phrase in ("i think", "i wonder", "i consider", "i reflect")):
             return "internal"
         if re.search(r"['\"][^'\"]+['\"]", normalized):
+            return "dialogue"
+        if "wait for" in normalized and "reply" in normalized:
             return "dialogue"
         if any(keyword in normalized for keyword in (" say ", " ask ", " tell ", " shout ", " speak ")):
             return "dialogue"
@@ -1312,6 +1439,113 @@ class CampaignEngine:
             if lowered.startswith(prefix):
                 return normalized[len(prefix) :].strip(" .!?")
         return ""
+
+    def _resolve_scene_actor_target(self, action: str, scene_state: dict[str, Any]) -> dict[str, Any] | None:
+        actors = [actor for actor in scene_state.get("scene_actors", []) if isinstance(actor, dict) and bool(actor.get("visible", True))]
+        if not actors:
+            return None
+        if len(actors) == 1:
+            actor = actors[0]
+            print(f"[scene-actors] target_resolved={actor.get('actor_id', '')}")
+            return actor
+        lowered = action.lower()
+        generic_refs = ("them", "the figure", "the stranger", "him", "her", "that person", "that figure")
+        for actor in actors:
+            labels = [
+                str(actor.get("display_name", "")).lower(),
+                str(actor.get("short_label", "")).lower(),
+                *[str(tag).lower() for tag in actor.get("tags", []) if str(tag).strip()],
+            ]
+            if any(label and label in lowered for label in labels):
+                print(f"[scene-actors] target_resolved={actor.get('actor_id', '')}")
+                return actor
+        if any(ref in lowered for ref in generic_refs):
+            sorted_actors = sorted(
+                actors,
+                key=lambda actor: (int(actor.get("last_interaction_turn", -1)), int(actor.get("introduced_turn", -1)), str(actor.get("actor_id", ""))),
+            )
+            actor = sorted_actors[-1]
+            print(f"[scene-actors] target_resolved={actor.get('actor_id', '')}")
+            return actor
+        sorted_actors = sorted(
+            actors,
+            key=lambda actor: (int(actor.get("last_interaction_turn", -1)), int(actor.get("introduced_turn", -1)), str(actor.get("actor_id", ""))),
+        )
+        actor = sorted_actors[-1]
+        print(f"[scene-actors] target_resolved={actor.get('actor_id', '')}")
+        return actor
+
+    def _materialize_lightweight_npc(self, state: CampaignState, scene_state: dict[str, Any], actor: dict[str, Any]) -> dict[str, Any]:
+        linked_actor_id = str(actor.get("actor_id", ""))
+        existing = next(
+            (npc for npc in scene_state.get("lightweight_npcs", []) if isinstance(npc, dict) and str(npc.get("linked_actor_id", "")) == linked_actor_id),
+            None,
+        )
+        if existing:
+            return existing
+        role_hint = str(actor.get("short_label") or actor.get("display_name") or "stranger").lower()
+        personality_seed = self._infer_personality_seed(role_hint)
+        tone_default = {
+            "hostile": "sharp",
+            "evasive": "guarded",
+            "cautious": "reserved",
+            "curious": "inquiring",
+            "deferential": "respectful",
+        }.get(personality_seed, "neutral")
+        npc_id = f"npc_lite_{state.turn_count}_{linked_actor_id or 'scene'}"
+        npc_record = {
+            "npc_id": npc_id,
+            "linked_actor_id": linked_actor_id,
+            "display_name": actor.get("display_name", "figure"),
+            "role_hint": role_hint,
+            "tone_default": tone_default,
+            "personality_seed": personality_seed,
+            "attitude_to_player": "unknown",
+            "willingness_to_talk": 1,
+            "last_dialogue_turn": 0,
+            "last_dialogue_summary": "",
+        }
+        scene_state.setdefault("lightweight_npcs", []).append(npc_record)
+        print(f"[npc-lite] materialized id={npc_id} tone={tone_default}")
+        return npc_record
+
+    def _infer_personality_seed(self, role_hint: str) -> str:
+        lowered = role_hint.lower()
+        if "hostile" in lowered or "enemy" in lowered or "bandit" in lowered:
+            return "hostile"
+        if "guard" in lowered:
+            return "deferential"
+        if "merchant" in lowered:
+            return "neutral"
+        if "hooded" in lowered or "stranger" in lowered or "figure" in lowered:
+            return "cautious"
+        if "villager" in lowered or "fright" in lowered:
+            return "evasive"
+        return "neutral"
+
+    def _generate_npc_response(self, npc_record: dict[str, Any], player_input: str, scene_state: dict[str, Any]) -> str:
+        spoken = self._extract_dialogue_content(player_input)
+        waiting = "wait for" in player_input.lower() and "reply" in player_input.lower()
+        tone = str(npc_record.get("tone_default", "neutral"))
+        role_hint = str(npc_record.get("role_hint", "stranger"))
+        if waiting and npc_record.get("last_dialogue_summary"):
+            line = "“I already answered. Speak plainly if you want more.”"
+        elif "what do you want" in spoken.lower():
+            line = "“A simple answer? I want to know why you followed me.”"
+        elif not spoken:
+            line = "“Say what you came to say.”"
+        elif tone == "sharp":
+            line = f"“Careful. Words like '{spoken[:22]}' can start bloodshed.”"
+        elif tone == "guarded":
+            line = "“Lower your voice. Not every ear here is friendly.”"
+        elif tone == "inquiring":
+            line = "“Interesting. Why ask me that now?”"
+        else:
+            line = "“I hear you. Keep talking.”"
+        npc_record["last_dialogue_turn"] = npc_record.get("last_dialogue_turn", 0) or 0
+        npc_record["last_dialogue_turn"] = int(npc_record["last_dialogue_turn"]) + 1
+        npc_record["last_dialogue_summary"] = line
+        return f"The {role_hint} turns toward you, posture {tone}. {line}"
 
     def _is_concrete_scene_grounded_output(self, action: str, narrative: str, scene_state: dict[str, Any]) -> bool:
         text = re.sub(r"\s+", " ", narrative.strip().lower())
