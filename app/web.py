@@ -1780,6 +1780,7 @@ class WebRuntime:
             f"campaign={self.session.active_slot} suggested_moves={str(suggested_moves_enabled).lower()} "
             f"auto_visuals={str(auto_enabled).lower()} timing={auto_timing} auto_provider_ready={str(auto_provider_ready).lower()}"
         )
+        print(f"[settings] runtime_auto_visuals={str(auto_enabled).lower()}")
         print(f"[turn-visual] manual_enabled={self.app_config.image.manual_image_generation_enabled}")
         print(f"[turn-visual] auto_enabled={auto_enabled}")
         print(f"[turn-visual] auto_timing={auto_timing}")
@@ -1790,7 +1791,7 @@ class WebRuntime:
         message_append_ms = 0.0
         auto_before_ms = 0.0
         if auto_enabled and auto_timing == "before_narration" and auto_provider_ready:
-            print("[turn-visual] auto_image_triggered timing=before_narration")
+            print("[turn-visual] auto_image_triggered=true timing=before_narration")
             auto_before_started = time.perf_counter()
             self._run_turn_visual_generation(player_action=clean_text, narrator_response="", stage="before_narration", source="auto_before")
             auto_before_ms = (time.perf_counter() - auto_before_started) * 1000
@@ -1865,7 +1866,7 @@ class WebRuntime:
         if not self._has_meaningful_scene_content(narrator_response):
             print("[turn-visual] auto_image_skipped reason=no_meaningful_narration")
             return False
-        print("[turn-visual] auto_image_triggered timing=after_narration")
+        print("[turn-visual] auto_image_triggered=true timing=after_narration")
         triggered = self._run_turn_visual_generation_async(
             player_action=player_action,
             narrator_response=narrator_response,
@@ -2062,6 +2063,8 @@ class WebRuntime:
             thematic_flags=list(content.get("thematic_flags", settings.content_settings.thematic_flags)),
         )
         self.save_active_campaign(self.session.active_slot)
+        print(f"[settings] persisted_auto_visuals={str(settings.campaign_auto_visuals_enabled).lower()}")
+        print(f"[settings] runtime_auto_visuals={str(self.session.state.settings.campaign_auto_visuals_enabled).lower()}")
         serialized = self.serialize_state()["settings"]
         print(
             "[campaign-settings] apply succeeded "
