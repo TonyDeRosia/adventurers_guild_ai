@@ -392,7 +392,12 @@ function closeSetupModal() {
 async function api(path, options = {}) {
   const response = await fetch(path, options);
   const data = await response.json().catch(() => ({ error: 'Invalid server response' }));
-  if (!response.ok) throw new Error(data.error || `Request failed for ${path}`);
+  if (!response.ok) {
+    const detail = data.error || data.message || data.detail || data.reason || '';
+    const nested = data.metadata?.error_body || '';
+    const composed = [detail, nested].filter(Boolean).join(' ').trim();
+    throw new Error(composed || `Request failed for ${path}`);
+  }
   return data;
 }
 
@@ -761,7 +766,8 @@ async function generateImage() {
     setImageStatus('Image generated successfully via ComfyUI.');
     setStatus('Image generated.');
   } catch (error) {
-    setImageStatus(error.message, true);
+    const detail = String(error.message || 'Image generation failed.').slice(0, 700);
+    setImageStatus(detail, true);
     setStatus(error.message, true);
   }
 }
