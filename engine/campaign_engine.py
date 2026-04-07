@@ -54,6 +54,7 @@ class CampaignEngine:
         self.state_orchestrator = CampaignStateOrchestrator()
         self.retrieval = MemoryRetrievalPipeline()
         self.summary = SummaryGenerator()
+        self._last_prompt_debug_by_campaign: dict[str, dict[str, object]] = {}
 
     def run_turn(self, state: CampaignState, action: str) -> TurnResult:
         state.turn_count += 1
@@ -71,6 +72,10 @@ class CampaignEngine:
                 messages=[{"type": "narrator", "text": "Your adventure pauses here."}],
                 should_exit=True,
             )
+
+        structured_result = self._maybe_handle_structured_request(state, action, normalized)
+        if structured_result is not None:
+            return structured_result
 
         if normalized == "look":
             system_messages.append(self.world.get_current_location_summary(state))
@@ -413,6 +418,7 @@ class CampaignEngine:
         print(f"[narration] guidance_requested={str(guidance_requested).lower()}")
         retrieval_ms = (time.perf_counter() - retrieval_started) * 1000
         prompt_started = time.perf_counter()
+        gm_context_text = self.state_orchestrator.build_gm_context(state)
         prompt_packet = self.prompts.build_prompt_packet(
             state,
             action=action,
@@ -421,8 +427,34 @@ class CampaignEngine:
             requested_mode=requested_mode,
             guidance_requested=guidance_requested,
             npc_guidance=self.personality.build_prompt_guidance(state),
-            gm_context=self.state_orchestrator.build_gm_context(state),
+            gm_context=gm_context_text,
         )
+        self._last_prompt_debug_by_campaign[state.campaign_id] = {
+            "campaign_id": state.campaign_id,
+            "turn_count": state.turn_count,
+            "requested_mode": requested_mode,
+            "action": action,
+            "current_location_id": state.current_location_id,
+            "location_summary": location_summary,
+            "gm_context": gm_context_text,
+            "system_prompt": prompt_packet.system_prompt,
+            "turn_prompt": prompt_packet.turn_prompt,
+            "structured_runtime_snapshot": {
+                "inventory_count": len(state.structured_state.runtime.inventory),
+                "spellbook_count": len(state.structured_state.runtime.spellbook),
+                "npc_count": len(
+                    [
+                        npc
+                        for npc in state.structured_state.runtime.npc_relationships.values()
+                        if str(npc.get("location_id", "")) == state.current_location_id
+                    ]
+                ),
+                "minion_count": len(state.structured_state.runtime.party_state.get("minions", [])),
+                "active_quest_count": len(
+                    [quest for quest, status in state.structured_state.runtime.quest_state.items() if status == "active"]
+                ),
+            },
+        }
         prompt_build_ms = (time.perf_counter() - prompt_started) * 1000
         history_started = time.perf_counter()
         history = self._build_model_history(state)
@@ -463,8 +495,10 @@ class CampaignEngine:
             suggested_moves_enabled=suggested_moves_enabled,
         )
         narrative, custom_rule_cleanup_applied = self._apply_custom_narrator_rule_validation(state, narrative)
+        narrative, grounding_cleanup_applied = self._apply_grounding_enforcement(state, action, narrative)
         print(f"[narration] recommendation_cleanup_applied={str(cleanup_applied).lower()}")
         print(f"[narrator-rules] validation_cleanup_applied={str(custom_rule_cleanup_applied).lower()}")
+        print(f"[narration] grounding_cleanup_applied={str(grounding_cleanup_applied).lower()}")
         self.memory.record_recent(state, f"Narrator: {narrative}")
         self.state_orchestrator.update_runtime_state(state, action=action, system_messages=system_messages, narrative=narrative)
         self.memory.record_conversation_turn(
@@ -498,8 +532,69 @@ class CampaignEngine:
                 "guidance_requested": guidance_requested,
                 "recommendation_cleanup_applied": cleanup_applied,
                 "custom_rule_cleanup_applied": custom_rule_cleanup_applied,
+                "grounding_cleanup_applied": grounding_cleanup_applied,
                 "turn_count": state.turn_count,
                 "timing": timing,
+            },
+        )
+
+    def _maybe_handle_structured_request(self, state: CampaignState, action: str, normalized: str) -> TurnResult | None:
+        structured_runtime = state.structured_state.runtime
+        inventory_intent = (
+            normalized == "inventory"
+            or "what is in my inventory" in normalized
+            or "show inventory" in normalized
+            or "open inventory" in normalized
+        )
+        spellbook_intent = normalized in {"spellbook", "open my spellbook"} or "open my spellbook" in normalized or "show spellbook" in normalized
+        stats_intent = normalized in {"sheet", "stats", "what are my stats"} or "what are my stats" in normalized or "show my stats" in normalized
+        if not any([inventory_intent, spellbook_intent, stats_intent]):
+            return None
+        print("[turn-routing] structured_request_bypass=true")
+        system_messages: list[str] = []
+        if stats_intent:
+            system_messages.append(self.character_sheet.summary(state.player))
+        if inventory_intent:
+            if not structured_runtime.inventory_state:
+                self.state_orchestrator.update_runtime_state(
+                    state,
+                    action="inventory_sync",
+                    system_messages=[],
+                    narrative="",
+                )
+            system_messages.append(self.inventory.describe_inventory(state.player))
+        if spellbook_intent:
+            spells = structured_runtime.spellbook
+            if spells:
+                formatted = ", ".join(f"{entry.get('name', 'Unknown')} ({entry.get('type', 'ability')})" for entry in spells[:12])
+                suffix = "..." if len(spells) > 12 else ""
+                system_messages.append(f"Spellbook: {formatted}{suffix}")
+            else:
+                system_messages.append("Spellbook: empty.")
+        narrative = "Structured status delivered."
+        self.memory.record_recent(state, f"Player action: {action}")
+        for msg in system_messages:
+            self.memory.record_recent(state, msg)
+            self.quests.add_event(state, msg)
+            self._capture_important_memory(state, msg)
+        self.state_orchestrator.update_runtime_state(state, action=action, system_messages=system_messages, narrative=narrative)
+        self.memory.record_conversation_turn(
+            state,
+            player_input=action,
+            system_messages=system_messages,
+            narrator_response=narrative,
+            requested_mode="structured_lookup",
+        )
+        return TurnResult(
+            narrative=narrative,
+            system_messages=system_messages,
+            messages=self._build_structured_messages(system_messages, narrative),
+            metadata={
+                "requested_mode": "structured_lookup",
+                "sanitized_output": False,
+                "provider_attempted": False,
+                "fallback_used": False,
+                "guidance_requested": False,
             },
         )
 
@@ -633,6 +728,63 @@ class CampaignEngine:
             cleaned = "The air stills, awaiting your command."
             applied = True
         return cleaned, applied
+
+    def _apply_grounding_enforcement(self, state: CampaignState, action: str, narrative: str) -> tuple[str, bool]:
+        original = narrative.strip()
+        text = original
+        location = state.locations.get(state.current_location_id)
+        location_text = f"{state.current_location_id} {location.name if location else ''} {location.description if location else ''} {state.world_meta.world_theme} {state.world_meta.premise}".lower()
+        action_word_count = len([piece for piece in action.split() if piece.strip()])
+        sentence_chunks = re.split(r"(?<=[.!?])\s+", text)
+        filtered: list[str] = []
+        unsupported_environment_terms = {
+            "forest": ["forest", "woods", "grove"],
+            "temple": ["temple", "sanctum", "shrine"],
+            "desert": ["desert", "dune", "oasis"],
+            "ocean": ["ocean", "sea", "coast", "shore"],
+        }
+        removed_count = 0
+        for sentence in sentence_chunks:
+            trimmed = sentence.strip()
+            if not trimmed:
+                continue
+            lowered = trimmed.lower()
+            if re.search(r"\b(?:you feel|you think|you realize|you decide|you know)\b", lowered):
+                removed_count += 1
+                continue
+            if re.search(r"\b(?:your power is growing|your power grows|you are becoming stronger|you grow stronger)\b", lowered):
+                removed_count += 1
+                continue
+            if re.search(r"\b(?:fate|destiny|in time you will|you are destined|your future)\b", lowered):
+                removed_count += 1
+                continue
+            if re.search(r"\b(?:hours later|days later|weeks later|months later|after a long journey|time passes)\b", lowered):
+                if action_word_count <= 8:
+                    removed_count += 1
+                    continue
+            if re.search(r"\b(?:you arrive at|you enter|you step into)\b", lowered) and not action.lower().strip().startswith("move "):
+                removed_count += 1
+                continue
+            environment_unsupported = False
+            for terms in unsupported_environment_terms.values():
+                if any(term in lowered for term in terms) and not any(term in location_text for term in terms):
+                    environment_unsupported = True
+                    break
+            if environment_unsupported:
+                removed_count += 1
+                continue
+            filtered.append(trimmed)
+        cleaned = " ".join(filtered).strip()
+        cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+        if not cleaned:
+            cleaned = "The scene holds steady at your current location, awaiting your next command."
+        applied = cleaned != original
+        if applied:
+            print(f"[narration-enforcement] removed_unsupported_segments={removed_count}")
+        return cleaned, applied
+
+    def get_last_prompt_debug_packet(self, campaign_id: str) -> dict[str, object]:
+        return dict(self._last_prompt_debug_by_campaign.get(campaign_id, {}))
 
     def _build_model_history(self, state: CampaignState) -> list[ChatMessage]:
         history: list[ChatMessage] = []

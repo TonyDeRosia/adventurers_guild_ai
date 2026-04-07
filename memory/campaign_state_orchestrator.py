@@ -103,20 +103,27 @@ class CampaignStateOrchestrator:
     def build_gm_context(self, state: CampaignState) -> str:
         self.ensure_initialized(state)
         structured = state.structured_state
+        main_sheet = next((sheet for sheet in state.character_sheets if sheet.sheet_type == "main_character"), None)
         nearby_npcs = [
             entry
             for entry in structured.runtime.npc_relationships.values()
             if str(entry.get("location_id", "")) == state.current_location_id
         ]
         active_quests = [qid for qid, status in structured.runtime.quest_state.items() if status == "active"]
-        print(
-            "[gm-context] assembled "
-            f"campaign={state.campaign_id} location={structured.runtime.current_location_id} "
-            f"npc_count={len(nearby_npcs)} minion_count={len(structured.runtime.party_state.get('minions', []))} "
-            f"quest_count={len(active_quests)}"
-        )
-        print(f"[gm-context] using_character_sheets={str(bool(state.character_sheets)).lower()}")
-        print(f"[gm-context] using_recent_memory_entries={len(structured.recent_turn_memory.last_major_actions)}")
+        print(f"[gm-context-audit] campaign={state.campaign_id}")
+        print(f"[gm-context-audit] world_name={state.world_meta.world_name}")
+        print(f"[gm-context-audit] premise_present={str(bool(structured.canon.campaign_premise.strip())).lower()}")
+        print(f"[gm-context-audit] location={structured.runtime.current_location_id}")
+        print(f"[gm-context-audit] player_core_present={str(bool(structured.runtime.player_core)).lower()}")
+        print(f"[gm-context-audit] main_sheet_present={str(main_sheet is not None).lower()}")
+        print(f"[gm-context-audit] inventory_items={len(structured.runtime.inventory)}")
+        print(f"[gm-context-audit] inventory_state_items={len(structured.runtime.inventory_state.get('items', []))}")
+        print(f"[gm-context-audit] spellbook_entries={len(structured.runtime.spellbook)}")
+        print(f"[gm-context-audit] active_quests={len(active_quests)}")
+        print(f"[gm-context-audit] npc_count={len(nearby_npcs)}")
+        print(f"[gm-context-audit] minion_count={len(structured.runtime.party_state.get('minions', []))}")
+        print(f"[gm-context-audit] recent_turn_actions={len(structured.recent_turn_memory.last_major_actions)}")
+        print(f"[gm-context-audit] custom_narrator_rules={len(structured.canon.custom_narrator_rules)}")
         return (
             "[Authoritative Campaign State]\n"
             "Treat the structured campaign state below as source-of-truth over stylistic improvisation.\n"

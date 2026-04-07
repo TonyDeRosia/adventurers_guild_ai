@@ -1829,6 +1829,15 @@ class WebRuntime:
         self.save_active_campaign(self.session.active_slot)
         return {"rules": canon.custom_narrator_rules}
 
+    def get_narrator_debug_packet(self) -> dict[str, Any]:
+        state = self.session.state
+        return {
+            "campaign_slot": self.session.active_slot,
+            "campaign_id": state.campaign_id,
+            "turn_count": state.turn_count,
+            "packet": self.engine.get_last_prompt_debug_packet(state.campaign_id),
+        }
+
     def create_campaign(self, payload: dict[str, Any]) -> dict[str, Any]:
         mode = str(payload.get("mode", "custom")).strip().lower() or "custom"
         player_name = str(payload.get("player_name", "Aria")).strip() or "Aria"
@@ -2412,6 +2421,10 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     @app.get("/api/campaign/narrator-rules")
     def campaign_narrator_rules() -> dict[str, Any]:
         return {"rules": runtime.get_narrator_rules()}
+
+    @app.get("/api/campaign/debug/narrator-packet")
+    def campaign_narrator_packet() -> dict[str, Any]:
+        return runtime.get_narrator_debug_packet()
 
     @app.post("/api/campaign/spellbook")
     def campaign_spellbook_update(payload: dict[str, Any]) -> dict[str, Any]:
