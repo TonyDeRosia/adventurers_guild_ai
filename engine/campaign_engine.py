@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import re
 import time
+from difflib import SequenceMatcher
 
 from engine.character_sheet import CharacterSheetService
 from engine.content_registry import ContentRegistry
@@ -542,16 +543,42 @@ class CampaignEngine:
                 f"fallback={fallback_used} reason={fallback_reason} sanitized={was_sanitized}"
             )
         suggested_moves_enabled = state.settings.suggested_moves_active()
-        narrative, cleanup_applied = self._apply_recommendation_policy(
-            sanitized_narrative,
-            guidance_requested=guidance_requested,
-            suggested_moves_enabled=suggested_moves_enabled,
-        )
-        narrative, custom_rule_cleanup_applied = self._apply_custom_narrator_rule_validation(state, narrative)
-        narrative, grounding_cleanup_applied = self._apply_grounding_enforcement(state, action, narrative)
+        last_narration = state.structured_state.runtime.last_narration
+        narration_invalid = self._is_invalid_narration_output(sanitized_narrative)
+        narration_repetitive = self._is_repetitive_narration(sanitized_narrative, last_narration)
+        forced_fallback = was_sanitized
+        if forced_fallback or narration_invalid or narration_repetitive:
+            narrative = self._build_grounded_fallback_narration(action)
+            cleanup_applied = False
+            custom_rule_cleanup_applied = False
+            grounding_cleanup_applied = False
+            quality_fallback_used = True
+        else:
+            narrative, cleanup_applied = self._apply_recommendation_policy(
+                sanitized_narrative,
+                guidance_requested=guidance_requested,
+                suggested_moves_enabled=suggested_moves_enabled,
+            )
+            narrative, custom_rule_cleanup_applied = self._apply_custom_narrator_rule_validation(state, narrative)
+            narrative, grounding_cleanup_applied = self._apply_grounding_enforcement(state, action, narrative)
+            quality_fallback_used = False
+            if self._contains_blocked_filler(action, narrative) or (
+                not guidance_requested and not self._is_action_grounded(action, narrative)
+            ):
+                narrative = self._build_grounded_fallback_narration(action)
+                narration_invalid = True
+                quality_fallback_used = True
+            if self._is_repetitive_narration(narrative, last_narration):
+                narrative = self._build_grounded_fallback_narration(action)
+                narration_repetitive = True
+                quality_fallback_used = True
+        print(f"[turn-quality] invalid={str(narration_invalid).lower()}")
+        print(f"[turn-quality] repetitive={str(narration_repetitive).lower()}")
+        print(f"[turn-quality] fallback_used={str(quality_fallback_used).lower()}")
         print(f"[narration] recommendation_cleanup_applied={str(cleanup_applied).lower()}")
         print(f"[narrator-rules] validation_cleanup_applied={str(custom_rule_cleanup_applied).lower()}")
         print(f"[narration] grounding_cleanup_applied={str(grounding_cleanup_applied).lower()}")
+        state.structured_state.runtime.last_narration = narrative
         self.memory.record_recent(state, f"Narrator: {narrative}")
         self.state_orchestrator.update_runtime_state(state, action=action, system_messages=system_messages, narrative=narrative)
         self.memory.record_conversation_turn(
@@ -586,6 +613,9 @@ class CampaignEngine:
                 "recommendation_cleanup_applied": cleanup_applied,
                 "custom_rule_cleanup_applied": custom_rule_cleanup_applied,
                 "grounding_cleanup_applied": grounding_cleanup_applied,
+                "quality_invalid_output": narration_invalid,
+                "quality_repetitive_output": narration_repetitive,
+                "quality_fallback_used": quality_fallback_used,
                 "turn_count": state.turn_count,
                 "timing": timing,
             },
@@ -864,6 +894,86 @@ class CampaignEngine:
         if applied:
             print(f"[narration-enforcement] removed_unsupported_segments={removed_count}")
         return cleaned, applied
+
+    def _is_invalid_narration_output(self, narrative: str) -> bool:
+        text = re.sub(r"\s+", " ", narrative.strip().lower())
+        if len(text) < 24:
+            return True
+        refusal_markers = ("i cannot", "i can't", "cannot create")
+        if any(marker in text for marker in refusal_markers):
+            return True
+        degraded_patterns = (
+            "the darkness surrounding you",
+            "your minions",
+            "the throne room",
+            "the air is thick",
+        )
+        return sum(1 for pattern in degraded_patterns if pattern in text) >= 2
+
+    def _is_repetitive_narration(self, narrative: str, last_narration: str) -> bool:
+        current = re.sub(r"\s+", " ", narrative.strip().lower())
+        prior = re.sub(r"\s+", " ", str(last_narration or "").strip().lower())
+        repeated_phrases = (
+            "the darkness surrounding you",
+            "your minions",
+            "the throne room",
+            "the air is thick",
+        )
+        if any(phrase in current and phrase in prior for phrase in repeated_phrases):
+            return True
+        if current and prior and len(current) > 20 and len(prior) > 20:
+            if current in prior or prior in current:
+                return True
+            similarity = SequenceMatcher(None, current, prior).ratio()
+            if similarity >= 0.82:
+                return True
+        return False
+
+    def _contains_blocked_filler(self, action: str, narrative: str) -> bool:
+        action_text = action.lower()
+        narrative_text = narrative.lower()
+        blocked_pairs = ("the air is thick", "darkness surrounding you", "your minions")
+        return any(phrase in narrative_text and phrase not in action_text for phrase in blocked_pairs)
+
+    def _is_action_grounded(self, action: str, narrative: str) -> bool:
+        action_tokens = {
+            token
+            for token in re.findall(r"[a-z]+", action.lower())
+            if len(token) >= 4 and token not in {"with", "into", "from", "that", "this", "then", "cast"}
+        }
+        narrative_text = narrative.lower()
+        references_action = any(token in narrative_text for token in action_tokens) if action_tokens else bool(narrative_text)
+        has_immediate_effect = bool(
+            re.search(
+                r"\b(strikes|hits|lands|burns|cracks|shatters|reveals|opens|closes|moves|falls|breaks|radiates|echoes|splits|stops|ignites)\b",
+                narrative_text,
+            )
+        )
+        return references_action and has_immediate_effect
+
+    def _build_grounded_fallback_narration(self, action: str) -> str:
+        clean_action = re.sub(r"\s+", " ", action.strip())
+        lowered = clean_action.lower()
+        if lowered.startswith("i "):
+            clean_action = clean_action[2:].strip()
+        first_sentence = clean_action[:1].upper() + clean_action[1:] if clean_action else "Your action resolves."
+        if not first_sentence.endswith((".", "!", "?")):
+            first_sentence += "."
+        effect_sentence = "The action resolves immediately, producing a direct physical effect."
+        outcome_sentence = "The immediate outcome is visible at the point of impact."
+        if "cast" in lowered or "spell" in lowered:
+            effect_sentence = "Energy discharges at once and connects with the target area."
+            outcome_sentence = "The impact leaves clear heat, force, or light where it lands."
+        elif any(word in lowered for word in ("attack", "strike", "stab", "slash", "shoot")):
+            effect_sentence = "The hit lands immediately with visible force."
+            outcome_sentence = "The target shows a clear, immediate reaction to the blow."
+        elif any(word in lowered for word in ("look", "inspect", "examine", "search")):
+            effect_sentence = "Your focus locks onto nearby details without delay."
+            outcome_sentence = "Specific surface features and changes become immediately visible."
+        elif any(word in lowered for word in ("move", "run", "walk", "step", "go")):
+            effect_sentence = "Your movement changes position right away."
+            outcome_sentence = "The new position creates an immediate, observable change in viewpoint."
+        return f"{first_sentence} {effect_sentence} {outcome_sentence}"
 
     def get_last_prompt_debug_packet(self, campaign_id: str) -> dict[str, object]:
         return dict(self._last_prompt_debug_by_campaign.get(campaign_id, {}))
