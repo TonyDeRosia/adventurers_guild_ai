@@ -42,20 +42,26 @@ async function runReadinessAction(actionId, item) {
     }
     if (actionId === 'start_ollama') {
       setStatus('Starting Ollama...');
+      console.log('[setup-action] start-ollama requested');
       const result = await api('/api/setup/start-ollama', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
       });
+      console.log(`[setup-action] start-ollama ${result.ok ? 'success' : 'failure'} reason=${result.message || 'unknown'}`);
       await refreshDependencyReadiness();
+      console.log('[setup-action] readiness refresh triggered');
       setStatus(result.ok ? (result.message || 'Ollama start request sent.') : (result.next_step ? `${result.message} ${result.next_step}` : result.message), !result.ok);
       return;
     }
     if (actionId === 'install_model') {
       const modelName = item.selected_model || document.getElementById('model-name').value.trim() || 'llama3';
       setStatus(`Installing model ${modelName}... This can take a while.`);
+      console.log(`[setup-action] install-model requested model=${modelName}`);
       const result = await api('/api/setup/install-model', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: modelName }),
       });
+      console.log(`[setup-action] install-model ${result.ok ? 'success' : 'failure'} reason=${result.message || 'unknown'} model=${modelName}`);
       await refreshDependencyReadiness();
+      console.log('[setup-action] readiness refresh triggered');
       setStatus(result.ok ? (result.message || `Installed ${modelName}.`) : (result.next_step ? `${result.message} ${result.next_step}` : result.message), !result.ok);
     }
   } catch (error) {
@@ -378,7 +384,10 @@ async function deleteCampaign() {
     deletingCampaign = true;
     const deletedSlot = selectedSlot;
     const deletedName = selectedCampaign.campaign_name;
-    await api('/api/campaign/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slot: selectedSlot }) });
+    selectedSlot = '';
+    selectedCampaignName = '';
+    updateSelectedSaveLabel();
+    await api('/api/campaign/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slot: deletedSlot }) });
     const remaining = lastCampaigns.filter((campaign) => campaign.slot !== deletedSlot);
     lastCampaigns = remaining;
     const nextChoice = remaining.find((campaign) => campaign.slot === loadedSlot) || remaining[0] || null;
