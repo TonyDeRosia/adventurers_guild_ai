@@ -165,6 +165,17 @@ class PromptRenderer:
             state.character_sheets,
             campaign_strength=state.character_sheet_guidance_strength,
         )
+        gm_context_text = gm_context or ""
+        gm_context_lower = gm_context_text.lower()
+        print(f"[gm-context-audit] prompt_injection_campaign={str('campaign' in gm_context_lower).lower()}")
+        print(f"[gm-context-audit] prompt_injection_world={str('world_state' in gm_context_lower).lower()}")
+        print(f"[gm-context-audit] prompt_injection_player_core={str('player_core' in gm_context_lower).lower()}")
+        print(f"[gm-context-audit] prompt_injection_inventory={str('inventory_state' in gm_context_lower).lower()}")
+        print(f"[gm-context-audit] prompt_injection_spellbook={str('spellbook' in gm_context_lower).lower()}")
+        print(f"[gm-context-audit] prompt_injection_npc_state={str('nearby_npcs' in gm_context_lower).lower()}")
+        print(f"[gm-context-audit] prompt_injection_minions={str('minions' in gm_context_lower).lower()}")
+        print(f"[gm-context-audit] prompt_injection_recent_memory={str('recent turn memory' in gm_context_lower).lower()}")
+        print(f"[gm-context-audit] prompt_injection_custom_rules={str('custom_narrator_rules' in gm_context_lower).lower()}")
         return PromptPacket(
             system_prompt=self.build_system_prompt(state, requested_mode=requested_mode),
             turn_prompt=self.build_turn_prompt(
@@ -176,6 +187,6 @@ class PromptRenderer:
                 guidance_requested=guidance_requested,
                 npc_guidance=npc_guidance,
                 character_sheet_guidance=sheet_guidance,
-                gm_context=gm_context,
+                gm_context=gm_context_text,
             ),
         )
