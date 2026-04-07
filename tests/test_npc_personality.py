@@ -97,3 +97,16 @@ def test_legacy_save_defaults_dynamic_state() -> None:
     loaded = CampaignState.from_dict(legacy)
     assert loaded.npcs["elder_thorne"].dynamic_state.trust_toward_player == 0
     assert loaded.npcs["elder_thorne"].memory_log == []
+
+
+def test_node_based_personality_guidance_is_available_for_prompting() -> None:
+    state = load_state()
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+
+    guidance = engine.personality.build_prompt_guidance(state)
+
+    assert guidance
+    elder_line = next((line for line in guidance if line.startswith("Elder Thorne:")), "")
+    assert "role=Town elder" in elder_line
+    assert "temperament=stoic and duty-bound" in elder_line
+    assert "state(trust=" in elder_line

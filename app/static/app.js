@@ -24,6 +24,7 @@ const checkpointSourceInput = document.getElementById('checkpoint-source');
 const preferredCheckpointInput = document.getElementById('preferred-checkpoint');
 const preferredLauncherInput = document.getElementById('preferred-launcher');
 const turnVisualsModeInput = document.getElementById('turn-visuals-mode');
+const suggestedMovesToggleInput = document.getElementById('suggested-moves-toggle');
 const manualImagePanel = document.getElementById('manual-image-panel');
 const visualModeSummary = document.getElementById('visual-mode-summary');
 const supportedModelsList = document.getElementById('supported-models-list');
@@ -718,12 +719,16 @@ async function refreshState() {
     `World: ${world.world_name || 'Moonfall'} (${world.world_theme || 'classic fantasy'})`,
     `Starting location: ${world.starting_location_name || state.current_location_id}`,
     `Tone: ${world.tone || state.settings.narration_tone} | Maturity: ${state.settings.content_settings.maturity_level}`,
+    `Suggested moves: ${state.settings.effective_suggested_moves_enabled ? 'on' : 'off'}`,
     `Premise: ${world.premise || 'not specified'}`,
     `Player concept: ${world.player_concept || 'not specified'}`,
     '',
     `Quest status: ${JSON.stringify(state.quest_status, null, 2)}`,
   ].join('\n');
   document.getElementById('image-enabled').checked = !!state.settings.image_generation_enabled;
+  if (suggestedMovesToggleInput) {
+    suggestedMovesToggleInput.checked = !!state.settings.effective_suggested_moves_enabled;
+  }
   updateSelectedSaveLabel();
 }
 
@@ -1174,6 +1179,7 @@ async function createCampaignFromForm() {
       char_class: playerClass,
       profile: worldTheme.toLowerCase().includes('dark') ? 'dark_fantasy' : 'classic_fantasy',
       thematic_flags: worldTheme ? [worldTheme.toLowerCase().replaceAll(' ', '_'), 'adventure'] : ['adventure', 'mystery'],
+      suggested_moves_enabled: !!document.getElementById('form-suggested-moves-enabled')?.checked,
     };
     await api('/api/campaign/start', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
@@ -1193,6 +1199,7 @@ async function applySettings() {
     const modelName = document.getElementById('model-name').value.trim() || 'llama3';
     const imageProvider = document.getElementById('image-provider').value;
     const campaignImageEnabled = document.getElementById('image-enabled').checked;
+    const suggestedMovesEnabled = !!suggestedMovesToggleInput?.checked;
     const turnVisualsMode = normalizeTurnVisualsMode(turnVisualsModeInput?.value || 'manual');
     const settings = await api('/api/settings/global', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1211,7 +1218,7 @@ async function applySettings() {
     });
     await api('/api/settings/campaign', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image_generation_enabled: campaignImageEnabled }),
+      body: JSON.stringify({ image_generation_enabled: campaignImageEnabled, player_suggested_moves_override: suggestedMovesEnabled }),
     });
     await refreshDependencyReadiness();
     await refreshSupportedModels(false);

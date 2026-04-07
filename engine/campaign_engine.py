@@ -416,6 +416,8 @@ class CampaignEngine:
             location_summary=location_summary,
             memory=memory_context,
             requested_mode=requested_mode,
+            suggested_moves_enabled=state.settings.suggested_moves_active(),
+            npc_guidance=self.personality.build_prompt_guidance(state),
         )
         prompt_build_ms = (time.perf_counter() - prompt_started) * 1000
         history_started = time.perf_counter()
@@ -450,7 +452,7 @@ class CampaignEngine:
                 f"[turn-routing] provider={selected_provider} model={selected_model} attempted={provider_attempted} "
                 f"fallback={fallback_used} reason={fallback_reason} sanitized={was_sanitized}"
             )
-        narrative = sanitized_narrative
+        narrative = self._apply_suggested_move_setting(sanitized_narrative, state.settings.suggested_moves_active())
         self.memory.record_recent(state, f"Narrator: {narrative}")
         self.memory.record_conversation_turn(
             state,
@@ -503,7 +505,7 @@ class CampaignEngine:
             "session summaries:",
             "unresolved plot threads:",
             "important world facts:",
-            "respond with 2-4 sentences and one suggested next move",
+            "respond with 2-4 sentences",
         )
         filtered_lines: list[str] = []
         for line in text.splitlines():
@@ -518,12 +520,20 @@ class CampaignEngine:
             filtered_lines.append(stripped)
         text = " ".join(filtered_lines) if filtered_lines else text
         text = re.sub(r"\[(?:Local template narrator|Requested Mode|Conversation Context|Memory Context|Scene Context|Player State Summary)\]", "", text, flags=re.IGNORECASE).strip()
-        text = re.sub(r"(Respond with 2-4 sentences and one suggested next move\.?)+", "", text, flags=re.IGNORECASE).strip()
+        text = re.sub(r"(Respond with 2-4 sentences(?: and one suggested next move)?\.?)+", "", text, flags=re.IGNORECASE).strip()
         text = re.sub(r"(Recent chat turns:|Recent memory:|Long-term memory:|Session summaries:|Unresolved plot threads:|Important world facts:).*?(?=(?:\[[^\]]+\])|$)", "", text, flags=re.IGNORECASE).strip()
         text = re.sub(r"\s{2,}", " ", text).strip()
         if not text:
             text = "The world holds its breath for a heartbeat, waiting for your next move."
         return text, text != original
+
+    def _apply_suggested_move_setting(self, narrative: str, suggested_moves_enabled: bool) -> str:
+        if suggested_moves_enabled:
+            return narrative
+        cleaned = re.sub(r"\n?\s*suggested next move:.*$", "", narrative, flags=re.IGNORECASE).strip()
+        if cleaned:
+            return cleaned
+        return "The world holds its breath for a heartbeat, waiting for your next move."
 
     def _build_model_history(self, state: CampaignState) -> list[ChatMessage]:
         history: list[ChatMessage] = []

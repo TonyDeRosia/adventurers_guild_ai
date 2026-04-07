@@ -39,6 +39,7 @@ class GameStateManager:
         starting_location_name: str | None = None,
         premise: str | None = None,
         player_concept: str | None = None,
+        suggested_moves_enabled: bool = True,
     ) -> CampaignState:
         payload = json.loads(self.sample_campaign_path.read_text(encoding="utf-8"))
         new_payload = deepcopy(payload)
@@ -68,6 +69,8 @@ class GameStateManager:
             "maturity_level": maturity_level or ("mature" if resolved_mature_enabled else "standard"),
             "thematic_flags": thematic_flags or ["adventure", "mystery"],
         }
+        new_payload["settings"]["suggested_moves_enabled"] = bool(suggested_moves_enabled)
+        new_payload["settings"]["player_suggested_moves_override"] = None
         if not content_settings_enabled:
             new_payload["settings"]["content_settings"] = {
                 "tone": resolved_tone,

@@ -94,6 +94,8 @@ def test_settings_persistence_and_runtime_effects(tmp_path: Path, monkeypatch) -
             "narration_tone": "grim",
             "mature_content_enabled": True,
             "image_generation_enabled": False,
+            "suggested_moves_enabled": False,
+            "player_suggested_moves_override": False,
             "content_settings": {"tone": "noir", "maturity_level": "mature", "thematic_flags": ["horror"]},
         }
     )
@@ -103,6 +105,7 @@ def test_settings_persistence_and_runtime_effects(tmp_path: Path, monkeypatch) -
     assert payload["model"]["model_name"] == "llama3.2"
     assert payload["image"]["enabled"] is False
     assert runtime.session.state.settings.content_settings.tone == "noir"
+    assert runtime.session.state.settings.suggested_moves_active() is False
 
 
 def test_turn_flow_persists_memory_and_messages(tmp_path: Path, monkeypatch) -> None:
@@ -148,6 +151,13 @@ HP: 20/20
 The lantern-light flickers across the gate as unseen footsteps circle your flank."""
 
 
+class _SuggestedMoveProvider(NarrationModelAdapter):
+    provider_name = "ollama"
+
+    def generate(self, prompt: str, system_prompt: str = "", history=None) -> str:
+        return "Fog hugs the road as distant bells ring. Suggested next move: question the nearest guard."
+
+
 def test_turn_fallback_is_clean_when_provider_fails(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _FailingProvider()
@@ -166,6 +176,19 @@ def test_turn_sanitizer_removes_prompt_scaffold_leaks(tmp_path: Path, monkeypatc
     assert "Recent memory:" not in out["narrative"]
     assert "[Requested Mode]" not in out["narrative"]
     assert "lantern-light flickers" in out["narrative"]
+
+
+def test_suggested_move_toggle_controls_narrator_suffix(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _SuggestedMoveProvider()
+
+    runtime.set_campaign_settings({"player_suggested_moves_override": False})
+    off_out = runtime.handle_player_input("look")
+    assert "Suggested next move:" not in off_out["narrative"]
+
+    runtime.set_campaign_settings({"player_suggested_moves_override": True})
+    on_out = runtime.handle_player_input("look")
+    assert "Suggested next move:" in on_out["narrative"]
 
 
 def test_settings_include_ollama_unavailable_status(tmp_path: Path, monkeypatch) -> None:

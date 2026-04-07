@@ -2,6 +2,21 @@
   "profiles": {
     "elder_thorne": {
       "id": "elder_thorne",
+      "base_archetype": "stoic_guardian",
+      "personality_nodes": {
+        "role": "Town elder",
+        "temperament": "stoic and duty-bound",
+        "morals": "protect civilians first",
+        "social_style": "formal mentor",
+        "fears": ["village collapse", "reckless violence"],
+        "desires": ["stable town", "trustworthy champions"],
+        "loyalties": ["moonfall_town", "oathbound_watch"],
+        "secrets": ["keeps forbidden catacomb map sealed"],
+        "aggression": "low unless town threatened",
+        "speech_style": "formal and deliberate",
+        "decision_bias": "risk-averse protector",
+        "faction_alignment": "town/guild"
+      },
       "identity": {
         "role": "Town elder",
         "background": "Veteran steward of Moonfall's catacomb ward"
@@ -71,6 +86,21 @@
     },
     "warden_elira": {
       "id": "warden_elira",
+      "base_archetype": "vigilant_ranger",
+      "personality_nodes": {
+        "role": "Forest warden",
+        "temperament": "vigilant but empathetic",
+        "morals": "oaths and balance over politics",
+        "social_style": "guarded ally",
+        "fears": ["corruption in wilds", "broken oaths"],
+        "desires": ["safe trails", "reliable allies"],
+        "loyalties": ["ranger_orders", "moonfall_borderlands"],
+        "secrets": ["knows an unmarked smuggler trail"],
+        "aggression": "measured",
+        "speech_style": "concise and observant",
+        "decision_bias": "evidence-first",
+        "faction_alignment": "town/rangers"
+      },
       "identity": {
         "role": "Forest warden",
         "background": "Ranger captain guarding shrine lanes"

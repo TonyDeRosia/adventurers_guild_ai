@@ -1553,6 +1553,9 @@ class WebRuntime:
                 "narration_tone": state.settings.narration_tone,
                 "mature_content_enabled": state.settings.mature_content_enabled,
                 "image_generation_enabled": state.settings.image_generation_enabled,
+                "suggested_moves_enabled": state.settings.suggested_moves_enabled,
+                "player_suggested_moves_override": state.settings.player_suggested_moves_override,
+                "effective_suggested_moves_enabled": state.settings.suggested_moves_active(),
                 "content_settings": {
                     "tone": state.settings.content_settings.tone,
                     "maturity_level": state.settings.content_settings.maturity_level,
@@ -1666,6 +1669,7 @@ class WebRuntime:
             starting_location_name=str(payload.get("starting_location_name", "")).strip(),
             premise=str(payload.get("premise", "")).strip(),
             player_concept=str(payload.get("player_concept", "")).strip(),
+            suggested_moves_enabled=bool(payload.get("suggested_moves_enabled", True)),
         )
         self.session = WebSession(state=state, active_slot=slot)
         self.session.message_history = []
@@ -1916,6 +1920,9 @@ class WebRuntime:
         settings.narration_tone = str(payload.get("narration_tone", settings.narration_tone))
         settings.mature_content_enabled = bool(payload.get("mature_content_enabled", settings.mature_content_enabled))
         settings.image_generation_enabled = bool(payload.get("image_generation_enabled", settings.image_generation_enabled))
+        settings.suggested_moves_enabled = bool(payload.get("suggested_moves_enabled", settings.suggested_moves_enabled))
+        raw_override = payload.get("player_suggested_moves_override", settings.player_suggested_moves_override)
+        settings.player_suggested_moves_override = None if raw_override is None else bool(raw_override)
         content = payload.get("content_settings", {})
         settings.content_settings = CampaignSettings.ContentSettings(
             tone=str(content.get("tone", settings.content_settings.tone)),

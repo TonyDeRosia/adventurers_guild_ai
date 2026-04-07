@@ -36,6 +36,21 @@ class NPC:
     """Represents a non-player character and relationship state."""
 
     @dataclass
+    class PersonalityNodes:
+        role: str = ""
+        temperament: str = ""
+        morals: str = ""
+        social_style: str = ""
+        fears: list[str] = field(default_factory=list)
+        desires: list[str] = field(default_factory=list)
+        loyalties: list[str] = field(default_factory=list)
+        secrets: list[str] = field(default_factory=list)
+        aggression: str = ""
+        speech_style: str = ""
+        decision_bias: str = ""
+        faction_alignment: str = ""
+
+    @dataclass
     class DynamicState:
         trust_toward_player: int = 0
         fear_toward_player: int = 0
@@ -44,6 +59,10 @@ class NPC:
         anger: int = 0
         loyalty: int = 0
         instability: int = 0
+        suspicion: int = 0
+        attraction: int = 0
+        current_mood: str = "neutral"
+        memory_tags: list[str] = field(default_factory=list)
 
     @dataclass
     class MemoryEntry:
@@ -63,6 +82,8 @@ class NPC:
     notes: list[str] = field(default_factory=list)
     relationships: dict[str, int] = field(default_factory=dict)
     profile_id: str | None = None
+    personality_archetype: str | None = None
+    personality_nodes: PersonalityNodes | None = None
     dynamic_state: DynamicState = field(default_factory=DynamicState)
     memory_log: list[MemoryEntry] = field(default_factory=list)
     unlocked_behaviors: list[str] = field(default_factory=list)
@@ -107,7 +128,14 @@ class CampaignSettings:
     mature_content_enabled: bool = False
     narration_tone: str = "heroic"
     image_generation_enabled: bool = False
+    suggested_moves_enabled: bool = True
+    player_suggested_moves_override: bool | None = None
     content_settings: ContentSettings = field(default_factory=ContentSettings)
+
+    def suggested_moves_active(self) -> bool:
+        if self.player_suggested_moves_override is None:
+            return self.suggested_moves_enabled
+        return bool(self.player_suggested_moves_override)
 
 
 @dataclass
@@ -208,9 +236,29 @@ class CampaignState:
         for key, raw in payload["npcs"].items():
             dynamic_state = NPC.DynamicState(**raw.get("dynamic_state", {}))
             memory_log = [NPC.MemoryEntry(**entry) for entry in raw.get("memory_log", [])]
+            personality_nodes_raw = raw.get("personality_nodes")
+            personality_nodes = (
+                NPC.PersonalityNodes(
+                    role=str(personality_nodes_raw.get("role", "")),
+                    temperament=str(personality_nodes_raw.get("temperament", "")),
+                    morals=str(personality_nodes_raw.get("morals", "")),
+                    social_style=str(personality_nodes_raw.get("social_style", "")),
+                    fears=[str(v) for v in personality_nodes_raw.get("fears", [])],
+                    desires=[str(v) for v in personality_nodes_raw.get("desires", [])],
+                    loyalties=[str(v) for v in personality_nodes_raw.get("loyalties", [])],
+                    secrets=[str(v) for v in personality_nodes_raw.get("secrets", [])],
+                    aggression=str(personality_nodes_raw.get("aggression", "")),
+                    speech_style=str(personality_nodes_raw.get("speech_style", "")),
+                    decision_bias=str(personality_nodes_raw.get("decision_bias", "")),
+                    faction_alignment=str(personality_nodes_raw.get("faction_alignment", "")),
+                )
+                if isinstance(personality_nodes_raw, dict)
+                else None
+            )
             npc_payload = dict(raw)
             npc_payload["dynamic_state"] = dynamic_state
             npc_payload["memory_log"] = memory_log
+            npc_payload["personality_nodes"] = personality_nodes
             npcs[key] = NPC(**npc_payload)
         for npc in npcs.values():
             if not npc.relationship_tier:
@@ -275,6 +323,9 @@ class CampaignState:
             )
 
         settings["content_settings"] = content_settings
+        settings["suggested_moves_enabled"] = bool(settings.get("suggested_moves_enabled", True))
+        raw_override = settings.get("player_suggested_moves_override")
+        settings["player_suggested_moves_override"] = None if raw_override is None else bool(raw_override)
         return CampaignSettings(**settings)
 
     @staticmethod
