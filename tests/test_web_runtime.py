@@ -210,15 +210,15 @@ def test_turn_metadata_surfaces_model_status(tmp_path: Path, monkeypatch) -> Non
     assert out["metadata"]["model_status"]["provider"] == "ollama"
 
 
-def test_image_fallback_from_comfyui_to_local_placeholder(tmp_path: Path, monkeypatch) -> None:
+def test_image_generation_requires_comfyui_readiness(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.set_campaign_settings({"image_generation_enabled": True})
     runtime.set_global_settings({"image": {"provider": "comfyui", "base_url": "http://127.0.0.1:9", "enabled": True}})
 
     result = runtime.generate_image({"workflow_id": "scene_image", "prompt": "Moonlit ruins"})
-    assert result.success is True
-    assert result.metadata.get("fallback_adapter") == "local_placeholder"
-    assert result.result_path and result.result_path.endswith(".svg")
+    assert result.success is False
+    assert "comfyui" in (result.error or "").lower()
+    assert result.metadata.get("provider") == "comfyui"
 
 
 def test_dependency_readiness_ollama_offline(tmp_path: Path, monkeypatch) -> None:
