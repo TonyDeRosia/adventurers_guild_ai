@@ -187,6 +187,7 @@ class WebRuntime:
         if self.state_manager.can_load(slot):
             loaded = self.state_manager.load(slot)
             if loaded is not None:
+                print(f"[campaign-load] display_mode={loaded.settings.display_mode}")
                 return loaded
         return self.state_manager.create_new_campaign(
             player_name="Aria",
@@ -1819,6 +1820,7 @@ class WebRuntime:
                 "image_generation_enabled": state.settings.image_generation_enabled,
                 "campaign_auto_visuals_enabled": state.settings.campaign_auto_visuals_enabled,
                 "suggested_moves_enabled": state.settings.suggested_moves_enabled,
+                "display_mode": state.settings.display_mode,
                 "player_suggested_moves_override": state.settings.player_suggested_moves_override,
                 "effective_suggested_moves_enabled": state.settings.suggested_moves_active(),
                 "content_settings": {
@@ -1943,6 +1945,8 @@ class WebRuntime:
         self.session.message_history = self._history_for_slot(slot)
         self.engine.state_orchestrator.set_scene_visual_state(self.session.state, self._scene_visual_for_slot(slot))
         print(f"[narrator-rules] loaded=true count={len(self.session.state.structured_state.canon.custom_narrator_rules)}")
+        print(f"[campaign-load] display_mode={self.session.state.settings.display_mode}")
+        print(f"[campaign-switch] display_mode={self.session.state.settings.display_mode}")
         print(f"[web-runtime] switched campaign slot={slot}")
         return {"slot": slot, "state": self.serialize_state()}
 
@@ -2205,6 +2209,7 @@ class WebRuntime:
         player_name = str(payload.get("player_name", "Aria")).strip() or "Aria"
         char_class = str(payload.get("char_class", "Ranger")).strip() or "Ranger"
         profile = str(payload.get("profile", "classic_fantasy")).strip() or "classic_fantasy"
+        display_mode = str(payload.get("display_mode", "story")).strip().lower() or "story"
         slot = str(payload.get("slot", f"campaign_{len(self.list_saves()) + 1}")).strip() or f"campaign_{len(self.list_saves()) + 1}"
         if mode in {"premade", "sample"}:
             state = self.state_manager.new_from_sample()
@@ -2227,6 +2232,7 @@ class WebRuntime:
                 premise=str(payload.get("premise", "")).strip(),
                 player_concept=str(payload.get("player_concept", "")).strip(),
                 suggested_moves_enabled=bool(payload.get("suggested_moves_enabled", False)),
+                display_mode=display_mode,
                 character_sheets=self._coerce_character_sheets(payload.get("character_sheets", [])),
                 character_sheet_guidance_strength=str(payload.get("character_sheet_guidance_strength", "light")),
             )
@@ -2236,6 +2242,7 @@ class WebRuntime:
         self.scene_visual_store.pop(slot, None)
         self.scene_visual_store.pop(self._campaign_namespace(slot), None)
         self._persist_scene_visual_store()
+        print(f"[campaign-create] display_mode={self.session.state.settings.display_mode}")
         print(f"[web-runtime] created campaign slot={slot} player={player_name}")
         self.save_active_campaign(slot)
         return {"slot": slot, "state": self.serialize_state()}

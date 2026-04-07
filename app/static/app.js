@@ -1,5 +1,6 @@
 const chatThread = document.getElementById('chat-thread');
 const campaignMeta = document.getElementById('campaign-meta');
+const campaignDisplayModeIndicator = document.getElementById('campaign-display-mode-indicator');
 const saveList = document.getElementById('save-list');
 const sceneImageDisplay = document.getElementById('scene-image-display');
 const sceneVisualMeta = document.getElementById('scene-visual-meta');
@@ -745,6 +746,8 @@ function openNewCampaignModal() {
   renderCharacterSheetList();
   document.getElementById('character-sheets-manager')?.classList.add('hidden');
   document.getElementById('character-sheet-editor')?.classList.add('hidden');
+  const displayModeInput = document.getElementById('form-display-mode');
+  if (displayModeInput) displayModeInput.value = 'story';
   newCampaignModal.classList.remove('hidden');
 }
 
@@ -764,14 +767,27 @@ function parseCsv(input) {
   return String(input || '').split(',').map((v) => v.trim()).filter(Boolean);
 }
 
+function normalizeDisplayMode(mode) {
+  const clean = String(mode || '').trim().toLowerCase();
+  return ['story', 'mud', 'rpg'].includes(clean) ? clean : 'story';
+}
+
+function displayModeLabel(mode) {
+  return {
+    story: 'Story Mode',
+    mud: 'MUD Mode',
+    rpg: 'RPG Mode',
+  }[normalizeDisplayMode(mode)];
+}
+
 function addGuaranteedAbilityEditorRow(entry = {}) {
   const container = document.getElementById('sheet-guaranteed-abilities');
   if (!container) return;
   const row = document.createElement('div');
   row.className = 'sheet-ability-entry';
   row.innerHTML = `
-    <label>Name <input data-ga-field="name" type="text" value="${escapeHtml(entry.name || '')}" /></label>
-    <label>Type
+    <label class="sheet-ability-half">Name <input data-ga-field="name" type="text" value="${escapeHtml(entry.name || '')}" /></label>
+    <label class="sheet-ability-half">Type
       <select data-ga-field="type">
         <option value="spell">Spell</option>
         <option value="skill">Skill</option>
@@ -779,12 +795,12 @@ function addGuaranteedAbilityEditorRow(entry = {}) {
         <option value="passive">Passive</option>
       </select>
     </label>
-    <label>Description <input data-ga-field="description" type="text" value="${escapeHtml(entry.description || '')}" /></label>
-    <label>Cost / Resource <input data-ga-field="cost_or_resource" type="text" value="${escapeHtml(entry.cost_or_resource || '')}" /></label>
-    <label>Cooldown <input data-ga-field="cooldown" type="text" value="${escapeHtml(entry.cooldown || '')}" /></label>
-    <label>Tags (comma separated) <input data-ga-field="tags" type="text" value="${escapeHtml((entry.tags || []).join(', '))}" /></label>
-    <label>Notes <textarea data-ga-field="notes" rows="2">${escapeHtml(entry.notes || '')}</textarea></label>
-    <div class="button-row"><button type="button" data-ga-remove="true">Remove</button></div>
+    <label class="sheet-ability-half">Description <input data-ga-field="description" type="text" value="${escapeHtml(entry.description || '')}" /></label>
+    <label class="sheet-ability-half">Cost / Resource <input data-ga-field="cost_or_resource" type="text" value="${escapeHtml(entry.cost_or_resource || '')}" /></label>
+    <label class="sheet-ability-half">Cooldown <input data-ga-field="cooldown" type="text" value="${escapeHtml(entry.cooldown || '')}" /></label>
+    <label class="sheet-ability-half">Tags (comma separated) <input data-ga-field="tags" type="text" value="${escapeHtml((entry.tags || []).join(', '))}" /></label>
+    <label class="sheet-ability-full">Notes <textarea data-ga-field="notes" rows="2">${escapeHtml(entry.notes || '')}</textarea></label>
+    <div class="button-row sheet-ability-actions"><button type="button" data-ga-remove="true">Remove</button></div>
   `;
   const typeSelect = row.querySelector('select[data-ga-field="type"]');
   if (typeSelect) typeSelect.value = entry.type || 'ability';
@@ -1281,6 +1297,9 @@ async function refreshState() {
   renderSpellbookViewer();
   renderNarratorRules();
   campaignMeta.textContent = `${state.campaign_name || 'Campaign'} · Turn ${state.turn_count || 0}`;
+  if (campaignDisplayModeIndicator) {
+    campaignDisplayModeIndicator.textContent = `Display Mode: ${displayModeLabel(state.settings?.display_mode || 'story')}`;
+  }
   ingestPersistedCampaignSettings(
     {
       image_generation_enabled: !!state.settings.image_generation_enabled,
@@ -1758,6 +1777,7 @@ async function createCampaignFromForm() {
     const playerName = document.getElementById('form-player-name').value.trim() || 'Aria';
     const playerClass = document.getElementById('form-player-class').value.trim() || 'Ranger';
     const worldTheme = document.getElementById('form-world-theme').value.trim() || 'classic fantasy';
+    const displayMode = normalizeDisplayMode(document.getElementById('form-display-mode')?.value || 'story');
     const payload = {
       mode: 'new',
       campaign_name: document.getElementById('form-campaign-name').value.trim() || `${playerName}'s Campaign`,
@@ -1771,6 +1791,7 @@ async function createCampaignFromForm() {
       char_class: playerClass,
       profile: worldTheme.toLowerCase().includes('dark') ? 'dark_fantasy' : 'classic_fantasy',
       thematic_flags: worldTheme ? [worldTheme.toLowerCase().replaceAll(' ', '_'), 'adventure'] : ['adventure', 'mystery'],
+      display_mode: displayMode,
       suggested_moves_enabled: !!document.getElementById('form-suggested-moves-enabled')?.checked,
       character_sheets: draftCharacterSheets,
       character_sheet_guidance_strength: document.getElementById('form-character-sheet-guidance-strength')?.value || 'light',

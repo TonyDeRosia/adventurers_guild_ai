@@ -43,6 +43,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter,
 .chat-header { display: flex; justify-content: flex-start; align-items: center; margin-bottom: 8px; }
 .chat-header-title h1 { margin: 0; font-size: 1.05rem; }
 .chat-header-title p { margin: 2px 0 0; color: var(--muted); font-size: 0.82rem; }
+.campaign-display-mode-indicator { margin-top: 4px; color: #b9c8dd; font-size: 0.8rem; }
 
 .chat-thread {
   flex: 1;
@@ -413,9 +414,13 @@ button:disabled {
   border-radius: 8px;
   padding: 8px;
 }
-.modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+.modal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
 textarea { border-radius: 8px; border: 1px solid #2e3d52; background: #131e2b; color: var(--text); padding: 10px; width: 100%; }
-.modal-grid label:last-child { grid-column: 1 / -1; }
+.modal-grid label { display: grid; gap: 4px; align-content: start; }
+.modal-grid .full-width { grid-column: 1 / -1; }
+.field-help { color: var(--muted); font-size: 0.78rem; line-height: 1.3; }
+.campaign-create-grid .character-sheets-entry,
+.campaign-create-grid .character-sheets-manager { grid-column: 1 / -1; }
 
 @media (max-width: 1150px) {
   body { overflow: hidden; }
@@ -432,17 +437,20 @@ textarea { border-radius: 8px; border: 1px solid #2e3d52; background: #131e2b; c
 .sheet-sections section { border: 1px solid #3b3b54; border-radius: 6px; padding: 8px; }
 .sheet-sections section h6 { margin: 0 0 6px; }
 .sheet-sections label { display: block; margin-bottom: 6px; }
-.sheet-ability-list { display: grid; gap: 8px; margin-bottom: 8px; }
+.sheet-ability-list { display: grid; gap: 10px; margin-bottom: 10px; }
 .sheet-ability-entry {
   border: 1px solid #344c6d;
   border-radius: 8px;
-  padding: 8px;
+  padding: 10px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px 10px;
+  gap: 8px 12px;
 }
-.sheet-ability-entry label:last-of-type { grid-column: 1 / -1; }
-.sheet-ability-entry .button-row { grid-column: 1 / -1; margin: 0; }
+.sheet-ability-full,
+.sheet-ability-actions { grid-column: 1 / -1; }
+.sheet-ability-entry .button-row { margin: 0; }
+.sheet-ability-actions button { width: auto; justify-self: start; }
+#sheet-add-guaranteed-ability { margin-top: 8px; }
 .spellbook-group { margin-bottom: 10px; }
 .spellbook-entry {
   border: 1px solid #344c6d;
@@ -469,6 +477,14 @@ textarea { border-radius: 8px; border: 1px solid #2e3d52; background: #131e2b; c
   padding: 8px;
   min-height: 220px;
   background: #0e1729;
+}
+
+@media (max-width: 760px) {
+  .modal-grid,
+  .sheet-sections,
+  .sheet-ability-entry {
+    grid-template-columns: 1fr;
+  }
 }
 .runtime-sheet-list-item {
   width: 100%;
