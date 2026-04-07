@@ -11,14 +11,19 @@
       <aside class="sidebar left-panel">
         <h2>Campaigns & Saves</h2>
         <p id="selected-save-label">Selected save: autosave</p>
+        <div id="selected-campaign-summary" class="selected-campaign-summary">
+          <strong>autosave</strong>
+          <small>Unknown world · Turn 0</small>
+          <small>Display Mode: Story Mode</small>
+        </div>
         <div id="save-list" class="save-list"></div>
         <div class="button-row">
           <button id="load-selected">Load selected</button>
-          <button id="load-autosave">Quick load autosave</button>
           <button id="new-campaign">New campaign</button>
           <button id="save-campaign">Save</button>
           <button id="rename-campaign">Rename</button>
           <button id="delete-campaign">Delete selected</button>
+          <button id="open-display-mode-modal" type="button">Display Mode</button>
           <button id="open-narrator-rules" type="button">Narrator Rules</button>
         </div>
       </aside>
@@ -151,6 +156,19 @@
           <button id="close-runtime-inventory" type="button">Close</button>
         </div>
         <div id="runtime-inventory-detail" class="runtime-sheet-detail">Loading inventory...</div>
+      </div>
+    </div>
+
+    <div id="display-mode-modal" class="modal hidden">
+      <div class="modal-card compact-modal-card">
+        <h3>Set Display Mode</h3>
+        <p id="display-mode-modal-slot" class="scene-visual-meta">Selected save: autosave</p>
+        <div class="button-row">
+          <button class="display-mode-option" type="button" data-display-mode="story">Story</button>
+          <button class="display-mode-option" type="button" data-display-mode="mud">MUD</button>
+          <button class="display-mode-option" type="button" data-display-mode="rpg">RPG</button>
+          <button id="close-display-mode-modal" type="button">Cancel</button>
+        </div>
       </div>
     </div>
 

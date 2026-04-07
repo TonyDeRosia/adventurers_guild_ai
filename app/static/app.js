@@ -14,6 +14,9 @@ const setupGuidance = document.getElementById('setup-guidance');
 const setupProgress = document.getElementById('setup-progress');
 const setupSummary = document.getElementById('setup-summary');
 const selectedSaveLabel = document.getElementById('selected-save-label');
+const selectedCampaignSummary = document.getElementById('selected-campaign-summary');
+const displayModeModal = document.getElementById('display-mode-modal');
+const displayModeModalSlot = document.getElementById('display-mode-modal-slot');
 const newCampaignModal = document.getElementById('new-campaign-modal');
 const setupModal = document.getElementById('setup-modal');
 const ollamaPathInput = document.getElementById('ollama-path-input');
@@ -267,6 +270,7 @@ function ingestPersistedCampaignSettings(snapshot, slot, { forceUi = false } = {
     campaign_auto_visuals_enabled: !!snapshot.campaign_auto_visuals_enabled,
     suggested_moves_enabled: !!snapshot.suggested_moves_enabled,
     campaign_auto_visual_timing: normalizeCampaignAutoVisualTiming(snapshot.campaign_auto_visual_timing || 'off'),
+    display_mode: normalizeDisplayMode(snapshot.display_mode || 'story'),
   };
   const slotChanged = campaignSettingsSlot && slot && campaignSettingsSlot !== slot;
   campaignSettingsPersisted = normalized;
@@ -780,6 +784,24 @@ function updateSelectedSaveLabel() {
     return;
   }
   selectedSaveLabel.textContent = `Selected save: ${selectedSlot}${selectedCampaignName ? ` • ${selectedCampaignName}` : ''}`;
+}
+
+function renderSelectedCampaignSummary() {
+  if (!selectedCampaignSummary) return;
+  const selectedCampaign = lastCampaigns.find((campaign) => campaign.slot === selectedSlot);
+  if (!selectedCampaign) {
+    selectedCampaignSummary.innerHTML = '<strong>No save selected</strong><small>Select a campaign to view details.</small>';
+    return;
+  }
+  const mode = normalizeDisplayMode(
+    selectedCampaign.display_mode
+    || (selectedCampaign.slot === loadedSlot ? campaignSettingsPersisted?.display_mode : 'story'),
+  );
+  selectedCampaignSummary.innerHTML = `
+    <strong>${escapeHtml(selectedCampaign.campaign_name || selectedCampaign.slot)}</strong>
+    <small>${escapeHtml(selectedCampaign.world_name || 'Unknown world')} · Turn ${Number(selectedCampaign.turn_count || 0)}</small>
+    <small>Display Mode: ${displayModeLabel(mode)}</small>
+  `;
 }
 
 function openNewCampaignModal() {
@@ -1523,10 +1545,12 @@ async function refreshState() {
       campaign_auto_visuals_enabled: !!state.settings.campaign_auto_visuals_enabled,
       suggested_moves_enabled: !!state.settings.effective_suggested_moves_enabled,
       campaign_auto_visual_timing: campaignSettingsPersisted?.campaign_auto_visual_timing || campaignAutoVisualTimingInput?.value || 'off',
+      display_mode: normalizeDisplayMode(state.settings?.display_mode || 'story'),
     },
     incomingSlot,
   );
   updateSelectedSaveLabel();
+  renderSelectedCampaignSummary();
 }
 
 async function loadSelectedCampaign() {
@@ -1555,6 +1579,7 @@ async function refreshSaves() {
     selectedSlot = '';
     selectedCampaignName = '';
     updateSelectedSaveLabel();
+    renderSelectedCampaignSummary();
     saveList.textContent = 'No saves found yet.';
     return;
   }
@@ -1564,7 +1589,7 @@ async function refreshSaves() {
   campaigns.forEach((campaign) => {
     const btn = document.createElement('button');
     btn.className = `save-item ${campaign.slot === selectedSlot ? 'selected' : ''}`;
-    btn.innerHTML = `${escapeHtml(campaign.slot)} • ${escapeHtml(campaign.campaign_name)}<small>${escapeHtml(campaign.world_name || 'Unknown world')} • Turn ${campaign.turn_count}</small>`;
+    btn.innerHTML = `${escapeHtml(campaign.campaign_name)}<small>${escapeHtml(campaign.world_name || 'Unknown world')} · Turn ${campaign.turn_count} · ${displayModeLabel(campaign.display_mode || 'story')}</small>`;
     if (campaign.loadable === false) {
       btn.classList.add('warning');
       btn.title = 'This save file exists but could not be parsed.';
@@ -1583,6 +1608,61 @@ async function refreshSaves() {
     saveList.appendChild(btn);
   });
   updateSelectedSaveLabel();
+  renderSelectedCampaignSummary();
+}
+
+function openDisplayModeModal() {
+  if (!displayModeModal || !displayModeModalSlot) return;
+  if (!selectedSlot) {
+    setStatus('Select a save before changing display mode.', true);
+    return;
+  }
+  const selectedCampaign = lastCampaigns.find((campaign) => campaign.slot === selectedSlot);
+  if (!selectedCampaign) {
+    setStatus('Selected save is unavailable.', true);
+    return;
+  }
+  displayModeModalSlot.textContent = `Selected save: ${selectedCampaign.campaign_name || selectedSlot}`;
+  displayModeModal.classList.remove('hidden');
+}
+
+function closeDisplayModeModal() {
+  if (!displayModeModal) return;
+  displayModeModal.classList.add('hidden');
+}
+
+async function applySelectedCampaignDisplayMode(mode) {
+  const cleanMode = normalizeDisplayMode(mode);
+  console.log(`[campaign-panel] display_mode_change_requested mode=${cleanMode}`);
+  try {
+    if (!selectedSlot) {
+      setStatus('Select a save before changing display mode.', true);
+      return;
+    }
+    if (selectedSlot !== loadedSlot) {
+      await api('/api/campaign/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'load', slot: selectedSlot }),
+      });
+      clearSceneImage();
+    }
+    await api('/api/settings/campaign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ display_mode: cleanMode }),
+    });
+    campaignSettingsPersisted = {
+      ...(campaignSettingsPersisted || {}),
+      display_mode: cleanMode,
+    };
+    console.log(`[campaign-panel] display_mode_change_applied mode=${cleanMode}`);
+    closeDisplayModeModal();
+    await Promise.all([refreshState(), refreshSaves(), refreshMessages(), refreshSceneVisual()]);
+    setStatus(`Display Mode set to ${displayModeLabel(cleanMode)}.`);
+  } catch (error) {
+    setStatus(error.message, true);
+  }
 }
 
 async function pickFolder(title, inputElement) {
@@ -2236,16 +2316,6 @@ async function loadSettings() {
 document.getElementById('send-btn').onclick = sendInput;
 document.getElementById('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendInput(); });
 document.getElementById('load-selected').onclick = loadSelectedCampaign;
-document.getElementById('load-autosave').onclick = async () => {
-  try {
-    await api('/api/campaign/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'load', slot: 'autosave' }) });
-    selectedSlot = 'autosave';
-    selectedCampaignName = 'autosave';
-    clearSceneImage();
-    await Promise.all([refreshMessages(), refreshState(), refreshSaves(), refreshSceneVisual()]);
-    setStatus('Autosave loaded.');
-  } catch (error) { setStatus(error.message, true); }
-};
 document.getElementById('new-campaign').onclick = openNewCampaignModal;
 document.getElementById('create-campaign-cancel').onclick = closeNewCampaignModal;
 document.getElementById('create-campaign-confirm').onclick = createCampaignFromForm;
@@ -2253,6 +2323,11 @@ document.getElementById('image-generate-submit').onclick = generateImage;
 document.getElementById('save-campaign').onclick = saveCampaign;
 document.getElementById('rename-campaign').onclick = renameCampaign;
 document.getElementById('delete-campaign').onclick = deleteCampaign;
+document.getElementById('open-display-mode-modal').onclick = openDisplayModeModal;
+document.getElementById('close-display-mode-modal').onclick = closeDisplayModeModal;
+document.querySelectorAll('.display-mode-option').forEach((button) => {
+  button.onclick = () => applySelectedCampaignDisplayMode(button.dataset.displayMode || 'story');
+});
 document.getElementById('apply-settings').onclick = applySettings;
 document.getElementById('open-setup-modal').onclick = openSetupModal;
 document.getElementById('close-setup-modal').onclick = closeSetupModal;
