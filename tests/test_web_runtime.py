@@ -1444,3 +1444,117 @@ def test_create_campaign_without_character_sheets_keeps_defaults(tmp_path: Path,
     assert created["state"]["player"]["hp"] == 20
     assert created["state"]["player"]["max_hp"] == 20
     assert created["state"]["player"]["class"] == "Ranger"
+
+def test_image_pipeline_test_action_succeeds_when_configured(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_root = tmp_path / "ComfyUI"
+    comfy_root.mkdir(parents=True, exist_ok=True)
+    (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_root / "custom_nodes").mkdir(exist_ok=True)
+    (comfy_root / "models" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (comfy_root / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
+    workflow = tmp_path / "scene.json"
+    workflow.write_text("{}", encoding="utf-8")
+
+    runtime.set_global_settings(
+        {
+            "image": {
+                "provider": "comfyui",
+                "enabled": True,
+                "comfyui_path": str(comfy_root),
+                "comfyui_workflow_path": str(workflow),
+                "checkpoint_folder": str(comfy_root / "models" / "checkpoints"),
+                "preferred_checkpoint": "",
+            }
+        }
+    )
+    monkeypatch.setattr("images.comfyui_adapter.ComfyUIAdapter.check_readiness", lambda self: {"ready": True, "user_message": "ready"})
+    monkeypatch.setattr("images.comfyui_adapter.ComfyUIAdapter._list_checkpoints", lambda self: ["dreamshaper.safetensors"])
+    monkeypatch.setattr(
+        "images.comfyui_adapter.ComfyUIAdapter.generate",
+        lambda self, request, _manager: ImageGenerationResult(success=True, workflow_id=request.workflow_id, prompt_id="pid", result_path="/tmp/out.png"),
+    )
+
+    result = runtime.test_image_pipeline()
+    assert result["success"] is True
+    assert result["failing_step"] == ""
+
+
+def test_image_pipeline_test_action_fails_when_workflow_path_missing(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_root = tmp_path / "ComfyUI"
+    comfy_root.mkdir(parents=True, exist_ok=True)
+    (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_root / "custom_nodes").mkdir(exist_ok=True)
+    (comfy_root / "models" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (comfy_root / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
+
+    runtime.set_global_settings(
+        {
+            "image": {
+                "provider": "comfyui",
+                "enabled": True,
+                "comfyui_path": str(comfy_root),
+                "comfyui_workflow_path": str(tmp_path / "missing.json"),
+                "checkpoint_folder": str(comfy_root / "models" / "checkpoints"),
+                "preferred_checkpoint": "",
+            }
+        }
+    )
+
+    result = runtime.test_image_pipeline()
+    assert result["success"] is False
+    assert result["failing_step"] == "workflow_path"
+
+
+def test_new_campaign_seeds_scene_state(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    created = runtime.create_campaign(
+        {
+            "slot": "slot_seed",
+            "world_name": "Vel Astren",
+            "world_theme": "dark fantasy",
+            "starting_location_name": "Black Harbor",
+            "premise": "The sea is haunted.",
+        }
+    )
+    scene_state = runtime.session.state.structured_state.runtime.scene_state
+    assert scene_state["location_name"] == "Black Harbor"
+    assert "Vel Astren" in scene_state["scene_summary"]
+    assert scene_state["altered_environment"] == []
+    assert scene_state["damaged_objects"] == []
+
+
+def test_scene_state_survives_save_and_load(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_scene_persist", "starting_location_name": "Glass Docks"})
+    before = dict(runtime.session.state.structured_state.runtime.scene_state)
+    runtime.save_active_campaign("slot_scene_persist")
+
+    reloaded = _runtime(tmp_path, monkeypatch)
+    reloaded.switch_campaign("slot_scene_persist")
+    after = reloaded.session.state.structured_state.runtime.scene_state
+    assert after["location_name"] == before["location_name"]
+    assert after["scene_summary"] == before["scene_summary"]
+
+
+def test_narrator_rules_persist_after_restart_and_switch_isolated(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"player_name": "Mira", "slot": "slot_rules_a"})
+    runtime.upsert_narrator_rule({"action": "upsert", "text": "Rule A tone"})
+    runtime.save_active_campaign("slot_rules_a")
+
+    runtime.create_campaign({"player_name": "Aric", "slot": "slot_rules_b"})
+    runtime.save_active_campaign("slot_rules_b")
+
+    reloaded = _runtime(tmp_path, monkeypatch)
+    capture = _PromptCaptureProvider()
+    reloaded.engine.model = capture
+
+    reloaded.switch_campaign("slot_rules_a")
+    reloaded.handle_player_input("look")
+    assert "Rule A tone" in capture.last_system_prompt
+
+    reloaded.switch_campaign("slot_rules_b")
+    reloaded.handle_player_input("look")
+    assert "Rule A tone" not in capture.last_system_prompt
