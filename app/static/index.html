@@ -34,6 +34,15 @@
           </div>
           <div id="scene-image-display" class="scene-image-display">Scene image will appear here.</div>
         </section>
+        <section id="scene-image-progress-strip" class="scene-image-progress-strip hidden" aria-live="polite" aria-atomic="true">
+          <div class="scene-image-progress-head">
+            <span id="scene-image-progress-dot" class="scene-image-progress-dot" aria-hidden="true"></span>
+            <span id="scene-image-progress-text">Generating scene image...</span>
+          </div>
+          <div class="scene-image-progress-track" role="progressbar" aria-label="Scene image generation progress">
+            <div id="scene-image-progress-fill" class="scene-image-progress-fill"></div>
+          </div>
+        </section>
         <section id="chat-thread" class="chat-thread"></section>
         <footer class="input-bar">
           <input id="chat-input" type="text" placeholder="Enter your action (look, talk elder_thorne, attack...)" />

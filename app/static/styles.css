@@ -59,6 +59,69 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter,
   background: #0f1a2d;
   margin-bottom: 10px;
 }
+.scene-image-progress-strip {
+  border: 1px solid #2f4666;
+  border-radius: 8px;
+  background: #0f1a2d;
+  padding: 8px 10px;
+  margin: 0 0 10px;
+  display: grid;
+  gap: 6px;
+}
+.scene-image-progress-strip.hidden {
+  display: none;
+}
+.scene-image-progress-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: #cbd5e1;
+}
+.scene-image-progress-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #4cc2ff;
+}
+.scene-image-progress-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: #1a2b43;
+  overflow: hidden;
+}
+.scene-image-progress-fill {
+  width: 36%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #4cc2ff 0%, #7dd3fc 100%);
+  transform: translateX(-120%);
+}
+.scene-image-progress-strip[data-phase="submitting"] .scene-image-progress-fill,
+.scene-image-progress-strip[data-phase="accepted"] .scene-image-progress-fill,
+.scene-image-progress-strip[data-phase="generating"] .scene-image-progress-fill,
+.scene-image-progress-strip[data-phase="finalizing"] .scene-image-progress-fill {
+  animation: progressPulse 1.15s ease-in-out infinite;
+}
+.scene-image-progress-strip[data-phase="success"] .scene-image-progress-dot {
+  background: #86efac;
+}
+.scene-image-progress-strip[data-phase="success"] .scene-image-progress-fill {
+  width: 100%;
+  transform: translateX(0);
+  animation: none;
+  background: linear-gradient(90deg, #34d399 0%, #86efac 100%);
+}
+.scene-image-progress-strip[data-phase="error"] .scene-image-progress-dot {
+  background: #fca5a5;
+}
+.scene-image-progress-strip[data-phase="error"] .scene-image-progress-fill {
+  width: 100%;
+  transform: translateX(0);
+  animation: none;
+  background: linear-gradient(90deg, #ef4444 0%, #fca5a5 100%);
+}
 .scene-visual-header {
   display: flex;
   justify-content: space-between;
@@ -207,6 +270,10 @@ button:disabled {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+@keyframes progressPulse {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
 }
 .setup-guidance {
   margin: 0;
