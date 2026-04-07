@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.web import WebRuntime, create_web_app
+from images.base import ImageGenerationResult
 from models.base import NarrationModelAdapter, ProviderUnavailableError
 
 
@@ -219,6 +220,44 @@ def test_image_generation_requires_comfyui_readiness(tmp_path: Path, monkeypatch
     assert result.success is False
     assert "comfyui" in (result.error or "").lower()
     assert result.metadata.get("provider") == "comfyui"
+
+
+def test_auto_after_visual_updates_scene_panel_without_image_chat_message(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.set_global_settings({"image": {"provider": "comfyui", "turn_visuals_mode": "auto_after_narration"}})
+    runtime.set_campaign_settings({"image_generation_enabled": True})
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"ready": True})
+    output_file = runtime.generated_image_dir / "turn_visual.png"
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.write_bytes(b"fake")
+    monkeypatch.setattr(
+        runtime,
+        "generate_image",
+        lambda payload: ImageGenerationResult(
+            success=True,
+            workflow_id="scene_image",
+            result_path=str(output_file),
+            metadata={"image": {"filename": "turn_visual.png", "type": "output"}},
+        ),
+    )
+
+    runtime._run_turn_visual_generation(
+        player_action="inspect the rune",
+        narrator_response="Blue sparks arc across the old stone and illuminate hidden glyphs.",
+        stage="after_narration",
+    )
+
+    assert not any(message.get("type") == "image" for message in runtime.session.message_history)
+    scene_visual = runtime._scene_visual_for_slot()
+    assert scene_visual is not None
+    assert scene_visual["image_url"].endswith("/generated/turn_visual.png")
+    assert scene_visual["source"] == "automatic"
+
+
+def test_turn_visual_mode_aliases_normalize_to_supported_values(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    settings = runtime.set_global_settings({"image": {"turn_visuals_mode": "auto_after"}})
+    assert settings["image"]["turn_visuals_mode"] == "auto_after_narration"
 
 
 def test_dependency_readiness_ollama_offline(tmp_path: Path, monkeypatch) -> None:

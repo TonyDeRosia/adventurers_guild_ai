@@ -85,13 +85,21 @@ function visualModeLabel(mode) {
   return {
     off: 'Off',
     manual: 'Manual image generation',
-    auto_before: 'Auto image before narration',
-    auto_after: 'Auto image after narration',
+    auto_before_narration: 'Auto image before narration',
+    auto_after_narration: 'Auto image after narration',
   }[mode] || mode;
 }
 
+function normalizeTurnVisualsMode(mode) {
+  const clean = String(mode || '').trim().toLowerCase();
+  if (clean === 'auto_before') return 'auto_before_narration';
+  if (clean === 'auto_after') return 'auto_after_narration';
+  if (['off', 'manual', 'auto_before_narration', 'auto_after_narration'].includes(clean)) return clean;
+  return 'manual';
+}
+
 function syncVisualModeUi(mode) {
-  const currentMode = mode || 'manual';
+  const currentMode = normalizeTurnVisualsMode(mode || 'manual');
   if (manualImagePanel) {
     manualImagePanel.style.display = currentMode === 'manual' ? 'grid' : 'none';
   }
@@ -433,17 +441,13 @@ async function api(path, options = {}) {
 }
 
 function renderMessage(msg) {
+  if (msg.type === 'image') {
+    msg = { ...msg, type: 'system', text: msg.text || 'Scene visual updated.' };
+  }
   const el = document.createElement('div');
   el.className = `msg msg-${msg.type}`;
   const ts = new Date(msg.timestamp).toLocaleTimeString();
   el.innerHTML = `<small>${labelForType(msg.type)} • ${ts}</small>${escapeHtml(msg.text || '')}`;
-  if (msg.image && msg.image.url) {
-    const img = document.createElement('img');
-    img.src = msg.image.url;
-    img.alt = 'generated';
-    img.onclick = () => setSceneImage(msg.image.url, msg.text || 'Generated image');
-    el.appendChild(img);
-  }
   chatThread.appendChild(el);
   chatThread.scrollTop = chatThread.scrollHeight;
 }
@@ -485,13 +489,32 @@ async function refreshMessages() {
   chatThread.innerHTML = '';
   const messages = data.messages || [];
   messages.forEach(renderMessage);
-  const lastImage = [...messages].reverse().find((message) => message.image && message.image.url);
-  if (lastImage) {
-    const turnMatch = (lastImage.text || '').match(/turn\s+(\d+)/i);
-    setSceneImage(lastImage.image.url, lastImage.text || 'Generated image', turnMatch ? Number(turnMatch[1]) : null);
-  } else {
-    clearSceneImage();
+}
+
+async function refreshSceneVisual() {
+  const data = await api('/api/campaign/scene-visual');
+  const sceneVisual = data.scene_visual;
+  if (sceneVisual?.image_url) {
+    setSceneImage(sceneVisual.image_url, sceneVisual.prompt || 'Generated scene image', sceneVisual.turn || null);
+    return sceneVisual;
   }
+  clearSceneImage();
+  return null;
+}
+
+async function waitForSceneVisualUpdate(previousUpdatedAt = '') {
+  const started = Date.now();
+  const timeoutMs = 45000;
+  while (Date.now() - started < timeoutMs) {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const sceneVisual = await refreshSceneVisual().catch(() => null);
+    if (sceneVisual?.updated_at && sceneVisual.updated_at !== previousUpdatedAt) {
+      setImageStatus('Scene visual updated.');
+      return true;
+    }
+  }
+  setImageStatus('Scene visual generation is taking longer than expected.');
+  return false;
 }
 
 async function refreshState() {
@@ -527,7 +550,7 @@ async function loadSelectedCampaign() {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'load', slot: selectedSlot }),
     });
     clearSceneImage();
-    await Promise.all([refreshMessages(), refreshState(), refreshSaves()]);
+    await Promise.all([refreshMessages(), refreshState(), refreshSaves(), refreshSceneVisual()]);
     setStatus(`Loaded ${selectedSlot}.`);
   } catch (error) {
     setStatus(error.message, true);
@@ -794,7 +817,12 @@ async function sendInput() {
     const firstVisibleMs = roundTripMs - (backendTiming.save_ms || 0);
     console.log(`[turn-timing] frontend_round_trip_ms=${roundTripMs.toFixed(2)} first_visible_estimate_ms=${Math.max(firstVisibleMs, 0).toFixed(2)}`);
     input.value = '';
+    const previousVisual = await refreshSceneVisual().catch(() => null);
     await Promise.all([refreshMessages(), refreshState()]);
+    if (backendTiming.auto_after_image_queued) {
+      setImageStatus('Generating scene image...');
+      waitForSceneVisualUpdate(previousVisual?.updated_at || '').catch(() => {});
+    }
     refreshSaves().catch((error) => console.warn('save list refresh failed', error));
     const modelStatus = turn.metadata?.model_status;
     if (modelStatus && modelStatus.provider === 'ollama' && !modelStatus.ready) {
@@ -838,8 +866,11 @@ async function generateImage() {
     const result = await api('/api/images/generate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workflow_id: 'scene_image', prompt }),
     });
-    if (result.image?.url) setSceneImage(result.image.url, prompt);
-    await refreshMessages();
+    if (result.scene_visual?.image_url) {
+      setSceneImage(result.scene_visual.image_url, result.scene_visual.prompt || prompt, result.scene_visual.turn || null);
+    } else if (result.image?.url) {
+      setSceneImage(result.image.url, prompt);
+    }
     setImageStatus('Image generated successfully via ComfyUI.');
     setStatus('Image generated.');
   } catch (error) {
@@ -956,7 +987,7 @@ async function createCampaignFromForm() {
     });
     clearSceneImage();
     closeNewCampaignModal();
-    await Promise.all([refreshMessages(), refreshState(), refreshSaves()]);
+    await Promise.all([refreshMessages(), refreshState(), refreshSaves(), refreshSceneVisual()]);
     setStatus('New campaign started.');
   } catch (error) {
     setStatus(error.message, true);
@@ -969,7 +1000,7 @@ async function applySettings() {
     const modelName = document.getElementById('model-name').value.trim() || 'llama3';
     const imageProvider = document.getElementById('image-provider').value;
     const campaignImageEnabled = document.getElementById('image-enabled').checked;
-    const turnVisualsMode = turnVisualsModeInput?.value || 'manual';
+    const turnVisualsMode = normalizeTurnVisualsMode(turnVisualsModeInput?.value || 'manual');
     const settings = await api('/api/settings/global', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1008,14 +1039,14 @@ async function loadSettings() {
   document.getElementById('model-provider').value = data.settings.model.provider;
   document.getElementById('model-name').value = data.settings.model.model_name;
   document.getElementById('image-provider').value = data.settings.image.provider;
-  if (turnVisualsModeInput) turnVisualsModeInput.value = data.settings.image.turn_visuals_mode || 'manual';
+  if (turnVisualsModeInput) turnVisualsModeInput.value = normalizeTurnVisualsMode(data.settings.image.turn_visuals_mode || 'manual');
   if (ollamaPathInput) ollamaPathInput.value = data.settings.model.ollama_path || '';
   if (comfyuiPathInput) comfyuiPathInput.value = data.settings.image.comfyui_path || '';
   if (checkpointFolderInput) checkpointFolderInput.value = data.settings.image.checkpoint_folder || '';
   if (checkpointSourceInput) checkpointSourceInput.value = data.settings.image.checkpoint_source || 'local';
   if (preferredCheckpointInput) preferredCheckpointInput.value = data.settings.image.preferred_checkpoint || 'DreamShaper';
   if (preferredLauncherInput) preferredLauncherInput.value = data.settings.image.preferred_launcher || 'auto';
-  syncVisualModeUi(data.settings.image.turn_visuals_mode || 'manual');
+  syncVisualModeUi(normalizeTurnVisualsMode(data.settings.image.turn_visuals_mode || 'manual'));
   const modelStatus = data.settings.model_status;
   if (modelStatus && modelStatus.provider === 'ollama' && !modelStatus.ready) {
     setStatus(modelStatus.user_message || 'Ollama provider is unavailable.', true);
@@ -1033,7 +1064,7 @@ document.getElementById('load-autosave').onclick = async () => {
     selectedSlot = 'autosave';
     selectedCampaignName = 'autosave';
     clearSceneImage();
-    await Promise.all([refreshMessages(), refreshState(), refreshSaves()]);
+    await Promise.all([refreshMessages(), refreshState(), refreshSaves(), refreshSceneVisual()]);
     setStatus('Autosave loaded.');
   } catch (error) { setStatus(error.message, true); }
 };
@@ -1070,4 +1101,4 @@ if (turnVisualsModeInput) {
   turnVisualsModeInput.onchange = () => syncVisualModeUi(turnVisualsModeInput.value);
 }
 
-Promise.all([refreshMessages(), refreshState(), refreshSaves(), loadSettings(), refreshDependencyReadiness()]).catch((error) => setStatus(error.message, true));
+Promise.all([refreshMessages(), refreshState(), refreshSaves(), loadSettings(), refreshDependencyReadiness(), refreshSceneVisual()]).catch((error) => setStatus(error.message, true));

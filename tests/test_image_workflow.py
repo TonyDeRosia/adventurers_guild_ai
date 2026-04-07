@@ -1,7 +1,10 @@
 from pathlib import Path
 
 from images.base import ImageGenerationRequest
+from images.prompt_builder import TurnImagePromptBuilder
 from images.workflow_manager import WorkflowManager
+from engine.game_state_manager import GameStateManager
+from app.pathing import initialize_user_data_paths
 
 
 def test_scene_workflow_builds_valid_comfy_graph() -> None:
@@ -52,3 +55,25 @@ def test_scene_workflow_without_output_node_fails() -> None:
         assert 'output node' in str(exc).lower()
     else:
         raise AssertionError('Expected ValueError for incomplete workflow')
+
+
+def test_turn_prompt_builder_uses_visual_focus_from_narration(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("ADVENTURER_GUILD_AI_USER_DATA_DIR", str(tmp_path / "user_data"))
+    paths = initialize_user_data_paths()
+    state = GameStateManager(paths.content_data, paths.saves, paths.user_data).create_new_campaign(
+        player_name="Aria",
+        char_class="Ranger",
+        profile="classic_fantasy",
+        mature_content_enabled=False,
+        content_settings_enabled=True,
+    )
+    builder = TurnImagePromptBuilder()
+
+    prompt = builder.build(
+        state,
+        player_action="draw bow",
+        narrator_response="A pale moonbeam cuts through the fog while shadows gather around the ruined gate.",
+    )
+
+    assert "scene focus: A pale moonbeam cuts through the fog while shadows gather around the ruined gate" in prompt
+    assert "action: draw bow" in prompt

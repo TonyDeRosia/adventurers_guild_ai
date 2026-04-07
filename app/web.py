@@ -73,6 +73,8 @@ class WebRuntime:
         self.turn_image_prompts = TurnImagePromptBuilder()
         self.history_store_path = self.paths.campaign_memory / "web_message_history.json"
         self.history_store = self._load_history_store()
+        self.scene_visual_store_path = self.paths.campaign_memory / "scene_visual_store.json"
+        self.scene_visual_store = self._load_scene_visual_store()
 
         self.engine = CampaignEngine(self._create_model_adapter(), data_dir=self.paths.content_data)
         self.image_adapter = self._create_image_adapter()
@@ -95,6 +97,57 @@ class WebRuntime:
     def _persist_history_store(self) -> None:
         self.history_store_path.parent.mkdir(parents=True, exist_ok=True)
         self.history_store_path.write_text(json.dumps(self.history_store, indent=2), encoding="utf-8")
+
+    def _load_scene_visual_store(self) -> dict[str, dict[str, Any]]:
+        if not self.scene_visual_store_path.exists():
+            return {}
+        try:
+            payload = json.loads(self.scene_visual_store_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError, ValueError):
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _persist_scene_visual_store(self) -> None:
+        self.scene_visual_store_path.parent.mkdir(parents=True, exist_ok=True)
+        self.scene_visual_store_path.write_text(json.dumps(self.scene_visual_store, indent=2), encoding="utf-8")
+
+    def _normalize_turn_visuals_mode(self, value: str | None) -> str:
+        clean = str(value or "").strip().lower()
+        aliases = {
+            "auto_after": "auto_after_narration",
+            "auto_before": "auto_before_narration",
+        }
+        normalized = aliases.get(clean, clean)
+        if normalized in {"off", "manual", "auto_after_narration", "auto_before_narration"}:
+            return normalized
+        return "manual"
+
+    def _set_scene_visual(
+        self,
+        *,
+        slot: str,
+        image_url: str,
+        prompt: str,
+        source: str,
+        stage: str,
+        turn: int,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        self.scene_visual_store[slot] = {
+            "image_url": image_url,
+            "prompt": prompt,
+            "source": source,
+            "stage": stage,
+            "turn": turn,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "metadata": metadata or {},
+        }
+        self._persist_scene_visual_store()
+
+    def _scene_visual_for_slot(self, slot: str | None = None) -> dict[str, Any] | None:
+        target_slot = str(slot or self.session.active_slot)
+        payload = self.scene_visual_store.get(target_slot)
+        return payload if isinstance(payload, dict) else None
 
     def _history_for_slot(self, slot: str) -> list[dict[str, Any]]:
         existing = self.history_store.get(slot)
@@ -1452,6 +1505,8 @@ class WebRuntime:
         path.unlink()
         self.history_store.pop(clean_slot, None)
         self._persist_history_store()
+        self.scene_visual_store.pop(clean_slot, None)
+        self._persist_scene_visual_store()
         return {"deleted": clean_slot}
 
     def rename_campaign(self, slot: str, new_name: str) -> dict[str, Any]:
@@ -1493,6 +1548,8 @@ class WebRuntime:
         )
         self.session = WebSession(state=state, active_slot=slot)
         self.session.message_history = []
+        self.scene_visual_store.pop(slot, None)
+        self._persist_scene_visual_store()
         print(f"[web-runtime] created campaign slot={slot} player={player_name}")
         self.save_active_campaign(slot)
         return {"slot": slot, "state": self.serialize_state()}
@@ -1501,16 +1558,16 @@ class WebRuntime:
         request_started = time.perf_counter()
         request_received_at = datetime.now(timezone.utc).isoformat()
         model_status = self.get_model_status()
-        turn_visuals_mode = self.app_config.image.turn_visuals_mode
+        turn_visuals_mode = self._normalize_turn_visuals_mode(self.app_config.image.turn_visuals_mode)
         validation_started = time.perf_counter()
         clean_text = text.strip()
         validation_ms = (time.perf_counter() - validation_started) * 1000
         self._append_message("player", clean_text, persist=False)
         message_append_ms = 0.0
         auto_before_ms = 0.0
-        if turn_visuals_mode == "auto_before":
+        if turn_visuals_mode == "auto_before_narration":
             auto_before_started = time.perf_counter()
-            self._run_turn_visual_generation(player_action=clean_text, stage="before")
+            self._run_turn_visual_generation(player_action=clean_text, narrator_response="", stage="before_narration")
             auto_before_ms = (time.perf_counter() - auto_before_started) * 1000
 
         engine_started = time.perf_counter()
@@ -1521,8 +1578,12 @@ class WebRuntime:
             self._append_message(message["type"], message["text"], persist=False)
         message_append_ms = (time.perf_counter() - message_append_started) * 1000
         background_image_queued = False
-        if turn_visuals_mode == "auto_after":
-            background_image_queued = self._run_turn_visual_generation_async(player_action=clean_text, stage="after")
+        if turn_visuals_mode == "auto_after_narration":
+            background_image_queued = self._run_turn_visual_generation_async(
+                player_action=clean_text,
+                narrator_response=result.narrative,
+                stage="after_narration",
+            )
         save_started = time.perf_counter()
         self._flush_history_store()
         self.save_active_campaign(self.session.active_slot)
@@ -1548,12 +1609,16 @@ class WebRuntime:
             "state": self.serialize_state(),
         }
 
-    def _run_turn_visual_generation(self, player_action: str, stage: str) -> None:
+    def _run_turn_visual_generation(self, player_action: str, narrator_response: str, stage: str) -> None:
         if self.app_config.image.provider != "comfyui" or not self.session.state.settings.image_generation_enabled:
             return
         if not bool(self.get_image_status().get("ready", False)):
             return
-        prompt = self.turn_image_prompts.build(self.session.state, player_action=player_action)
+        prompt = self.turn_image_prompts.build(
+            self.session.state,
+            player_action=player_action,
+            narrator_response=narrator_response,
+        )
         request_payload = {
             "workflow_id": "scene_image",
             "prompt": prompt,
@@ -1565,13 +1630,17 @@ class WebRuntime:
         public_image_url = self.public_image_path(result.result_path)
         if not public_image_url:
             return
-        self._append_message(
-            "image",
-            f"Turn visual ({stage} narration): {player_action}",
-            image={"url": public_image_url, "metadata": result.metadata, "workflow_id": result.workflow_id},
+        self._set_scene_visual(
+            slot=self.session.active_slot,
+            image_url=public_image_url,
+            prompt=prompt,
+            source="automatic",
+            stage=stage,
+            turn=self.session.state.turn_count,
+            metadata={"workflow_id": result.workflow_id, "result_metadata": result.metadata},
         )
 
-    def _run_turn_visual_generation_async(self, player_action: str, stage: str) -> bool:
+    def _run_turn_visual_generation_async(self, player_action: str, narrator_response: str, stage: str) -> bool:
         if self.app_config.image.provider != "comfyui" or not self.session.state.settings.image_generation_enabled:
             return False
         slot = self.session.active_slot
@@ -1579,7 +1648,7 @@ class WebRuntime:
         def _worker() -> None:
             started = time.perf_counter()
             try:
-                self._run_turn_visual_generation(player_action=player_action, stage=stage)
+                self._run_turn_visual_generation(player_action=player_action, narrator_response=narrator_response, stage=stage)
                 elapsed_ms = (time.perf_counter() - started) * 1000
                 print(
                     f"[turn-timing] {json.dumps({'async_image_stage': stage, 'slot': slot, 'image_generation_ms': round(elapsed_ms, 2)})}"
@@ -1605,7 +1674,7 @@ class WebRuntime:
                 "base_url": self.app_config.image.base_url,
                 "enabled": self.app_config.image.enabled,
                 "comfyui_path": self.app_config.image.comfyui_path,
-                "turn_visuals_mode": self.app_config.image.turn_visuals_mode,
+                "turn_visuals_mode": self._normalize_turn_visuals_mode(self.app_config.image.turn_visuals_mode),
                 "checkpoint_source": self.app_config.image.checkpoint_source,
                 "checkpoint_model_page": self.app_config.image.checkpoint_model_page,
                 "checkpoint_folder": self.app_config.image.checkpoint_folder,
@@ -1636,7 +1705,7 @@ class WebRuntime:
             base_url=str(image_payload.get("base_url", self.app_config.image.base_url)),
             enabled=bool(image_payload.get("enabled", self.app_config.image.enabled)),
             comfyui_path=str(image_payload.get("comfyui_path", self.app_config.image.comfyui_path)),
-            turn_visuals_mode=str(image_payload.get("turn_visuals_mode", self.app_config.image.turn_visuals_mode)),
+            turn_visuals_mode=self._normalize_turn_visuals_mode(image_payload.get("turn_visuals_mode", self.app_config.image.turn_visuals_mode)),
             checkpoint_source=str(image_payload.get("checkpoint_source", self.app_config.image.checkpoint_source)),
             checkpoint_model_page=str(image_payload.get("checkpoint_model_page", self.app_config.image.checkpoint_model_page)),
             checkpoint_folder=str(image_payload.get("checkpoint_folder", self.app_config.image.checkpoint_folder)),
@@ -1783,6 +1852,10 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     def campaign_messages(limit: int = 200) -> dict[str, Any]:
         safe_limit = max(limit, 1)
         return {"messages": runtime.session.message_history[-safe_limit:]}
+
+    @app.get("/api/campaign/scene-visual")
+    def campaign_scene_visual() -> dict[str, Any]:
+        return {"scene_visual": runtime._scene_visual_for_slot()}
 
     @app.get("/api/campaign/saves")
     def campaign_saves() -> dict[str, Any]:
@@ -1936,11 +2009,16 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
                 "type": image_meta.get("type", "output"),
                 "url": public_image_url,
             }
-            runtime._append_message(
-                "image",
-                payload.get("prompt", "Image generated"),
-                image={"url": public_image_url, "metadata": result.metadata, "workflow_id": result.workflow_id},
+            runtime._set_scene_visual(
+                slot=runtime.session.active_slot,
+                image_url=public_image_url,
+                prompt=str(payload.get("prompt", "")),
+                source="manual",
+                stage="manual",
+                turn=runtime.session.state.turn_count,
+                metadata={"workflow_id": result.workflow_id, "result_metadata": result.metadata},
             )
+            response_payload["scene_visual"] = runtime._scene_visual_for_slot()
             print("[image-pipeline] image display updated")
         if not result.success:
             reason = result.metadata.get("error_category", "unknown") if isinstance(result.metadata, dict) else "unknown"
