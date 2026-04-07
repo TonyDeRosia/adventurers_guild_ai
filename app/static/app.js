@@ -46,14 +46,45 @@ const runtimeCharacterSheetsModal = document.getElementById('runtime-character-s
 const runtimeCharacterSheetsList = document.getElementById('runtime-character-sheets-list');
 const runtimeCharacterSheetDetail = document.getElementById('runtime-character-sheet-detail');
 const runtimeCharacterSheetCreateToggle = document.getElementById('runtime-character-sheet-create-toggle');
-const runtimeCharacterSheetCreatePanel = document.getElementById('runtime-character-sheet-create-panel');
+const runtimeCharacterSheetCreateModal = document.getElementById('runtime-character-sheet-create-modal');
+const closeRuntimeCharacterSheetCreate = document.getElementById('close-runtime-character-sheet-create');
 const runtimeSheetCreateName = document.getElementById('runtime-sheet-create-name');
 const runtimeSheetCreateType = document.getElementById('runtime-sheet-create-type');
 const runtimeSheetCreateRole = document.getElementById('runtime-sheet-create-role');
 const runtimeSheetCreateCustomRoleWrap = document.getElementById('runtime-sheet-create-custom-role-wrap');
 const runtimeSheetCreateCustomRole = document.getElementById('runtime-sheet-create-custom-role');
 const runtimeSheetCreateArchetype = document.getElementById('runtime-sheet-create-archetype');
+const runtimeSheetCreateLevelRank = document.getElementById('runtime-sheet-create-level-rank');
+const runtimeSheetCreateFaction = document.getElementById('runtime-sheet-create-faction');
 const runtimeSheetCreateDescription = document.getElementById('runtime-sheet-create-description');
+const runtimeSheetCreateTraits = document.getElementById('runtime-sheet-create-traits');
+const runtimeSheetCreateTemperament = document.getElementById('runtime-sheet-create-temperament');
+const runtimeSheetCreateLoyalty = document.getElementById('runtime-sheet-create-loyalty');
+const runtimeSheetCreateFear = document.getElementById('runtime-sheet-create-fear');
+const runtimeSheetCreateDesire = document.getElementById('runtime-sheet-create-desire');
+const runtimeSheetCreateSocialStyle = document.getElementById('runtime-sheet-create-social-style');
+const runtimeSheetCreateSpeechStyle = document.getElementById('runtime-sheet-create-speech-style');
+const runtimeSheetCreateAbilities = document.getElementById('runtime-sheet-create-abilities');
+const runtimeSheetCreateEquipment = document.getElementById('runtime-sheet-create-equipment');
+const runtimeSheetCreateWeaknesses = document.getElementById('runtime-sheet-create-weaknesses');
+const runtimeSheetCreateHealth = document.getElementById('runtime-sheet-create-health');
+const runtimeSheetCreateEnergy = document.getElementById('runtime-sheet-create-energy');
+const runtimeSheetCreateAttack = document.getElementById('runtime-sheet-create-attack');
+const runtimeSheetCreateDefense = document.getElementById('runtime-sheet-create-defense');
+const runtimeSheetCreateSpeed = document.getElementById('runtime-sheet-create-speed');
+const runtimeSheetCreateMagic = document.getElementById('runtime-sheet-create-magic');
+const runtimeSheetCreateWillpower = document.getElementById('runtime-sheet-create-willpower');
+const runtimeSheetCreatePresence = document.getElementById('runtime-sheet-create-presence');
+const runtimeSheetCreateNotes = document.getElementById('runtime-sheet-create-notes');
+const runtimeSheetCreateCurrentCondition = document.getElementById('runtime-sheet-create-current-condition');
+const runtimeSheetCreateTrust = document.getElementById('runtime-sheet-create-trust');
+const runtimeSheetCreateSuspicion = document.getElementById('runtime-sheet-create-suspicion');
+const runtimeSheetCreateAnger = document.getElementById('runtime-sheet-create-anger');
+const runtimeSheetCreateFearState = document.getElementById('runtime-sheet-create-fear-state');
+const runtimeSheetCreateMorale = document.getElementById('runtime-sheet-create-morale');
+const runtimeSheetCreateBond = document.getElementById('runtime-sheet-create-bond');
+const runtimeSheetCreateGuidanceStrength = document.getElementById('runtime-sheet-create-guidance-strength');
+const runtimeSheetAddGuaranteedAbility = document.getElementById('runtime-sheet-add-guaranteed-ability');
 const runtimeCharacterSheetCreateSave = document.getElementById('runtime-character-sheet-create-save');
 const runtimeCharacterSheetCreateCancel = document.getElementById('runtime-character-sheet-create-cancel');
 const runtimeInventoryModal = document.getElementById('runtime-inventory-modal');
@@ -791,31 +822,32 @@ function displayModeLabel(mode) {
   }[normalizeDisplayMode(mode)];
 }
 
-function addGuaranteedAbilityEditorRow(entry = {}) {
-  const container = document.getElementById('sheet-guaranteed-abilities');
+function addGuaranteedAbilityEditorRow(entry = {}, options = {}) {
+  const { containerId = 'sheet-guaranteed-abilities', fieldPrefix = 'ga' } = options;
+  const container = document.getElementById(containerId);
   if (!container) return;
   const row = document.createElement('div');
   row.className = 'sheet-ability-entry';
   row.innerHTML = `
-    <label class="sheet-ability-half">Name <input data-ga-field="name" type="text" value="${escapeHtml(entry.name || '')}" /></label>
+    <label class="sheet-ability-half">Name <input data-${fieldPrefix}-field="name" type="text" value="${escapeHtml(entry.name || '')}" /></label>
     <label class="sheet-ability-half">Type
-      <select data-ga-field="type">
+      <select data-${fieldPrefix}-field="type">
         <option value="spell">Spell</option>
         <option value="skill">Skill</option>
         <option value="ability">Ability</option>
         <option value="passive">Passive</option>
       </select>
     </label>
-    <label class="sheet-ability-half">Description <input data-ga-field="description" type="text" value="${escapeHtml(entry.description || '')}" /></label>
-    <label class="sheet-ability-half">Cost / Resource <input data-ga-field="cost_or_resource" type="text" value="${escapeHtml(entry.cost_or_resource || '')}" /></label>
-    <label class="sheet-ability-half">Cooldown <input data-ga-field="cooldown" type="text" value="${escapeHtml(entry.cooldown || '')}" /></label>
-    <label class="sheet-ability-half">Tags (comma separated) <input data-ga-field="tags" type="text" value="${escapeHtml((entry.tags || []).join(', '))}" /></label>
-    <label class="sheet-ability-full">Notes <textarea data-ga-field="notes" rows="2">${escapeHtml(entry.notes || '')}</textarea></label>
-    <div class="button-row sheet-ability-actions"><button type="button" data-ga-remove="true">Remove</button></div>
+    <label class="sheet-ability-half">Description <input data-${fieldPrefix}-field="description" type="text" value="${escapeHtml(entry.description || '')}" /></label>
+    <label class="sheet-ability-half">Cost / Resource <input data-${fieldPrefix}-field="cost_or_resource" type="text" value="${escapeHtml(entry.cost_or_resource || '')}" /></label>
+    <label class="sheet-ability-half">Cooldown <input data-${fieldPrefix}-field="cooldown" type="text" value="${escapeHtml(entry.cooldown || '')}" /></label>
+    <label class="sheet-ability-half">Tags (comma separated) <input data-${fieldPrefix}-field="tags" type="text" value="${escapeHtml((entry.tags || []).join(', '))}" /></label>
+    <label class="sheet-ability-full">Notes <textarea data-${fieldPrefix}-field="notes" rows="2">${escapeHtml(entry.notes || '')}</textarea></label>
+    <div class="button-row sheet-ability-actions"><button type="button" data-${fieldPrefix}-remove="true">Remove</button></div>
   `;
-  const typeSelect = row.querySelector('select[data-ga-field="type"]');
+  const typeSelect = row.querySelector(`select[data-${fieldPrefix}-field="type"]`);
   if (typeSelect) typeSelect.value = entry.type || 'ability';
-  row.querySelector('button[data-ga-remove="true"]')?.addEventListener('click', () => row.remove());
+  row.querySelector(`button[data-${fieldPrefix}-remove="true"]`)?.addEventListener('click', () => row.remove());
   container.appendChild(row);
 }
 
@@ -853,8 +885,18 @@ function renderCharacterSheetList() {
 function renderRuntimeCharacterSheets() {
   if (!runtimeCharacterSheetsList || !runtimeCharacterSheetDetail) return;
   if (!runtimeCharacterSheets.length) {
-    runtimeCharacterSheetsList.textContent = 'No sheets attached to this campaign.';
-    runtimeCharacterSheetDetail.textContent = 'No character sheet data is attached to this campaign yet.';
+    runtimeCharacterSheetsList.innerHTML = `
+      <div class="runtime-sheets-empty-state">
+        <p>No character sheets attached yet.</p>
+        <button type="button" id="runtime-character-sheet-empty-create">Create Character Sheet</button>
+      </div>
+    `;
+    runtimeCharacterSheetsList.querySelector('#runtime-character-sheet-empty-create')?.addEventListener('click', () => {
+      runtimeCharacterSheetCreateModal?.classList.remove('hidden');
+      console.log('[character-sheets] create_modal_opened=true');
+      runtimeSheetCreateName?.focus();
+    });
+    runtimeCharacterSheetDetail.textContent = 'Create a character sheet to view details here.';
     selectedRuntimeSheetId = '';
     return;
   }
@@ -955,7 +997,39 @@ function resetRuntimeSheetCreateForm() {
   if (runtimeSheetCreateRole) runtimeSheetCreateRole.value = 'companion';
   if (runtimeSheetCreateCustomRole) runtimeSheetCreateCustomRole.value = '';
   if (runtimeSheetCreateArchetype) runtimeSheetCreateArchetype.value = '';
+  if (runtimeSheetCreateLevelRank) runtimeSheetCreateLevelRank.value = '';
+  if (runtimeSheetCreateFaction) runtimeSheetCreateFaction.value = '';
   if (runtimeSheetCreateDescription) runtimeSheetCreateDescription.value = '';
+  if (runtimeSheetCreateTraits) runtimeSheetCreateTraits.value = '';
+  if (runtimeSheetCreateTemperament) runtimeSheetCreateTemperament.value = '';
+  if (runtimeSheetCreateLoyalty) runtimeSheetCreateLoyalty.value = '';
+  if (runtimeSheetCreateFear) runtimeSheetCreateFear.value = '';
+  if (runtimeSheetCreateDesire) runtimeSheetCreateDesire.value = '';
+  if (runtimeSheetCreateSocialStyle) runtimeSheetCreateSocialStyle.value = '';
+  if (runtimeSheetCreateSpeechStyle) runtimeSheetCreateSpeechStyle.value = '';
+  if (runtimeSheetCreateAbilities) runtimeSheetCreateAbilities.value = '';
+  if (runtimeSheetCreateEquipment) runtimeSheetCreateEquipment.value = '';
+  if (runtimeSheetCreateWeaknesses) runtimeSheetCreateWeaknesses.value = '';
+  if (runtimeSheetCreateHealth) runtimeSheetCreateHealth.value = '10';
+  if (runtimeSheetCreateEnergy) runtimeSheetCreateEnergy.value = '10';
+  if (runtimeSheetCreateAttack) runtimeSheetCreateAttack.value = '10';
+  if (runtimeSheetCreateDefense) runtimeSheetCreateDefense.value = '10';
+  if (runtimeSheetCreateSpeed) runtimeSheetCreateSpeed.value = '10';
+  if (runtimeSheetCreateMagic) runtimeSheetCreateMagic.value = '10';
+  if (runtimeSheetCreateWillpower) runtimeSheetCreateWillpower.value = '10';
+  if (runtimeSheetCreatePresence) runtimeSheetCreatePresence.value = '10';
+  if (runtimeSheetCreateNotes) runtimeSheetCreateNotes.value = '';
+  if (runtimeSheetCreateCurrentCondition) runtimeSheetCreateCurrentCondition.value = '';
+  if (runtimeSheetCreateTrust) runtimeSheetCreateTrust.value = '';
+  if (runtimeSheetCreateSuspicion) runtimeSheetCreateSuspicion.value = '';
+  if (runtimeSheetCreateAnger) runtimeSheetCreateAnger.value = '';
+  if (runtimeSheetCreateFearState) runtimeSheetCreateFearState.value = '';
+  if (runtimeSheetCreateMorale) runtimeSheetCreateMorale.value = '';
+  if (runtimeSheetCreateBond) runtimeSheetCreateBond.value = '';
+  if (runtimeSheetCreateGuidanceStrength) runtimeSheetCreateGuidanceStrength.value = 'light';
+  const guaranteedContainer = document.getElementById('runtime-sheet-guaranteed-abilities');
+  if (guaranteedContainer) guaranteedContainer.innerHTML = '';
+  addGuaranteedAbilityEditorRow({}, { containerId: 'runtime-sheet-guaranteed-abilities', fieldPrefix: 'rga' });
   runtimeSheetCreateCustomRoleWrap?.classList.add('hidden');
 }
 
@@ -966,6 +1040,23 @@ function currentRuntimeSheetRole() {
 }
 
 async function createRuntimeCharacterSheet() {
+  const numberOrNull = (input) => {
+    const value = input?.value ?? '';
+    if (value === '') return null;
+    return Number(value);
+  };
+  const guaranteedAbilities = Array.from(document.querySelectorAll('#runtime-sheet-guaranteed-abilities .sheet-ability-entry')).map((row) => {
+    const valueFor = (field) => (row.querySelector(`[data-rga-field="${field}"]`)?.value || '').trim();
+    return {
+      name: valueFor('name'),
+      type: valueFor('type') || 'ability',
+      description: valueFor('description'),
+      cost_or_resource: valueFor('cost_or_resource'),
+      cooldown: valueFor('cooldown'),
+      tags: parseCsv(valueFor('tags')),
+      notes: valueFor('notes'),
+    };
+  }).filter((entry) => entry.name);
   const role = currentRuntimeSheetRole() || 'companion';
   console.log(`[character-sheets] create_requested role=${role}`);
   const result = await api('/api/campaign/character-sheets', {
@@ -977,7 +1068,41 @@ async function createRuntimeCharacterSheet() {
       sheet_type: runtimeSheetCreateType?.value || 'npc_or_mob',
       role,
       archetype: runtimeSheetCreateArchetype?.value?.trim() || '',
+      level_or_rank: runtimeSheetCreateLevelRank?.value?.trim() || '',
+      faction: runtimeSheetCreateFaction?.value?.trim() || '',
       description: runtimeSheetCreateDescription?.value?.trim() || '',
+      traits: parseCsv(runtimeSheetCreateTraits?.value || ''),
+      temperament: runtimeSheetCreateTemperament?.value?.trim() || '',
+      loyalty: runtimeSheetCreateLoyalty?.value?.trim() || '',
+      fear: runtimeSheetCreateFear?.value?.trim() || '',
+      desire: runtimeSheetCreateDesire?.value?.trim() || '',
+      social_style: runtimeSheetCreateSocialStyle?.value?.trim() || '',
+      speech_style: runtimeSheetCreateSpeechStyle?.value?.trim() || '',
+      abilities: parseCsv(runtimeSheetCreateAbilities?.value || ''),
+      guaranteed_abilities: guaranteedAbilities,
+      equipment: parseCsv(runtimeSheetCreateEquipment?.value || ''),
+      weaknesses: parseCsv(runtimeSheetCreateWeaknesses?.value || ''),
+      notes: runtimeSheetCreateNotes?.value?.trim() || '',
+      state: {
+        trust: numberOrNull(runtimeSheetCreateTrust),
+        suspicion: numberOrNull(runtimeSheetCreateSuspicion),
+        anger: numberOrNull(runtimeSheetCreateAnger),
+        fear_state: numberOrNull(runtimeSheetCreateFearState),
+        morale: numberOrNull(runtimeSheetCreateMorale),
+        bond_to_player: numberOrNull(runtimeSheetCreateBond),
+        current_condition: runtimeSheetCreateCurrentCondition?.value?.trim() || '',
+      },
+      guidance_strength: runtimeSheetCreateGuidanceStrength?.value || 'light',
+      stats: {
+        health: Number(runtimeSheetCreateHealth?.value || 10),
+        energy_or_mana: Number(runtimeSheetCreateEnergy?.value || 10),
+        attack: Number(runtimeSheetCreateAttack?.value || 10),
+        defense: Number(runtimeSheetCreateDefense?.value || 10),
+        speed: Number(runtimeSheetCreateSpeed?.value || 10),
+        magic: Number(runtimeSheetCreateMagic?.value || 10),
+        willpower: Number(runtimeSheetCreateWillpower?.value || 10),
+        presence: Number(runtimeSheetCreatePresence?.value || 10),
+      },
     }),
   });
   runtimeCharacterSheets = Array.isArray(result.character_sheets) ? result.character_sheets : runtimeCharacterSheets;
@@ -985,7 +1110,7 @@ async function createRuntimeCharacterSheet() {
   console.log(`[character-sheets] created id=${result.created_id || 'unknown'} total=${runtimeCharacterSheets.length}`);
   console.log(`[character-sheets] selected=${selectedRuntimeSheetId || 'none'}`);
   renderRuntimeCharacterSheets();
-  runtimeCharacterSheetCreatePanel?.classList.add('hidden');
+  runtimeCharacterSheetCreateModal?.classList.add('hidden');
   resetRuntimeSheetCreateForm();
 }
 
@@ -2228,7 +2353,7 @@ document.getElementById('open-character-sheets').onclick = () => {
 document.getElementById('open-runtime-character-sheets').onclick = () => {
   console.log(`[character-sheets] viewer_opened campaign=${selectedCampaignName || loadedSlot || 'unknown'}`);
   renderRuntimeCharacterSheets();
-  runtimeCharacterSheetCreatePanel?.classList.add('hidden');
+  runtimeCharacterSheetCreateModal?.classList.add('hidden');
   resetRuntimeSheetCreateForm();
   runtimeCharacterSheetsModal?.classList.remove('hidden');
 };
@@ -2293,10 +2418,12 @@ document.getElementById('narrator-rules-save-campaign').onclick = async () => {
 };
 document.getElementById('close-runtime-character-sheets').onclick = () => {
   runtimeCharacterSheetsModal?.classList.add('hidden');
+  runtimeCharacterSheetCreateModal?.classList.add('hidden');
 };
 runtimeCharacterSheetCreateToggle?.addEventListener('click', () => {
-  runtimeCharacterSheetCreatePanel?.classList.toggle('hidden');
-  if (!runtimeCharacterSheetCreatePanel?.classList.contains('hidden')) runtimeSheetCreateName?.focus();
+  runtimeCharacterSheetCreateModal?.classList.remove('hidden');
+  console.log('[character-sheets] create_modal_opened=true');
+  runtimeSheetCreateName?.focus();
 });
 runtimeSheetCreateRole?.addEventListener('change', () => {
   const isCustom = runtimeSheetCreateRole.value === 'custom';
@@ -2304,11 +2431,20 @@ runtimeSheetCreateRole?.addEventListener('change', () => {
   if (isCustom) runtimeSheetCreateCustomRole?.focus();
 });
 runtimeCharacterSheetCreateCancel?.addEventListener('click', () => {
-  runtimeCharacterSheetCreatePanel?.classList.add('hidden');
+  runtimeCharacterSheetCreateModal?.classList.add('hidden');
+  console.log('[character-sheets] create_modal_closed=true');
+  resetRuntimeSheetCreateForm();
+});
+closeRuntimeCharacterSheetCreate?.addEventListener('click', () => {
+  runtimeCharacterSheetCreateModal?.classList.add('hidden');
+  console.log('[character-sheets] create_modal_closed=true');
   resetRuntimeSheetCreateForm();
 });
 runtimeCharacterSheetCreateSave?.addEventListener('click', async () => {
   await createRuntimeCharacterSheet();
+});
+runtimeSheetAddGuaranteedAbility?.addEventListener('click', () => {
+  addGuaranteedAbilityEditorRow({}, { containerId: 'runtime-sheet-guaranteed-abilities', fieldPrefix: 'rga' });
 });
 document.getElementById('character-sheet-close').onclick = () => {
   characterSheetsManager?.classList.add('hidden');

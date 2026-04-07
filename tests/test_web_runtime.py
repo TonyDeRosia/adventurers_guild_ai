@@ -201,6 +201,43 @@ def test_character_sheet_creation_persists_and_remains_campaign_scoped(tmp_path:
     assert reloaded.serialize_state()["character_sheets"] == []
 
 
+def test_runtime_character_sheet_creation_supports_full_payload_and_created_id_selection(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"player_name": "FullSheet", "slot": "slot_full_sheet"})
+
+    created = runtime.upsert_character_sheet(
+        {
+            "action": "create",
+            "name": "Kestrel",
+            "sheet_type": "party_member",
+            "role": "companion",
+            "archetype": "Blade Dancer",
+            "description": "Fast striker",
+            "traits": ["quick", "curious"],
+            "guaranteed_abilities": [
+                {"name": "Arc Flash", "type": "spell", "cost_or_resource": "2 mana", "notes": "starter"},
+            ],
+            "notes": "Always scouting ahead",
+            "state": {"current_condition": "Ready"},
+        }
+    )
+    created_id = created["created_id"]
+    assert created_id
+    assert any(sheet["id"] == created_id for sheet in created["character_sheets"])
+    saved_sheet = next(sheet for sheet in created["character_sheets"] if sheet["id"] == created_id)
+    assert saved_sheet["guaranteed_abilities"][0]["name"] == "Arc Flash"
+    assert saved_sheet["notes"] == "Always scouting ahead"
+
+
+def test_runtime_character_sheet_browser_uses_dedicated_create_modal_markup() -> None:
+    index_html = Path("app/static/index.html").read_text(encoding="utf-8")
+    app_js = Path("app/static/app.js").read_text(encoding="utf-8")
+    assert 'id="runtime-character-sheet-create-toggle"' in index_html
+    assert 'id="runtime-character-sheet-create-modal"' in index_html
+    assert 'id="runtime-character-sheet-create-panel"' not in index_html
+    assert "No character sheets attached yet." in app_js
+
+
 def test_custom_campaign_starts_without_sample_npcs_or_quests(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     created = runtime.create_campaign(
