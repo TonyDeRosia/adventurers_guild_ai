@@ -8,6 +8,8 @@
   "image": {
     "provider": "local",
     "base_url": "http://localhost:8188",
-    "enabled": true
+    "enabled": true,
+    "manual_image_generation_enabled": true,
+    "campaign_auto_visual_timing": "after_narration"
   }
 }

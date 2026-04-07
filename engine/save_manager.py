@@ -44,6 +44,20 @@ class SaveManager:
         path = self._save_path(slot)
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
+            raw_settings = payload.get("settings", {}) if isinstance(payload, dict) else {}
+            if not isinstance(raw_settings, dict):
+                raw_settings = {}
+            missing_fields: list[str] = []
+            if "campaign_auto_visuals_enabled" not in raw_settings:
+                missing_fields.append("campaign_auto_visuals_enabled")
+            if "suggested_moves_enabled" not in raw_settings:
+                missing_fields.append("suggested_moves_enabled")
+            print(f"[settings-defaults] existing_campaign_preserved=true campaign={slot}")
+            if missing_fields:
+                print(
+                    "[settings-defaults] existing_campaign_missing_fields "
+                    f"campaign={slot} initialized={','.join(missing_fields)}"
+                )
             loaded = CampaignState.from_dict(payload)
             print(f"[campaign-memory] load campaign={slot}")
             print(f"[campaign-memory] isolated_state_root={self.campaign_state_root / slot}")

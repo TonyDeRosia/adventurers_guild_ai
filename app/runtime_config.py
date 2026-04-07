@@ -23,7 +23,7 @@ class ImageRuntimeConfig:
     enabled: bool = True
     comfyui_path: str = ""
     manual_image_generation_enabled: bool = True
-    campaign_auto_visual_timing: str = "off"
+    campaign_auto_visual_timing: str = "after_narration"
     checkpoint_source: str = "local"
     checkpoint_model_page: str = "https://civitai.com/models/4384/dreamshaper"
     checkpoint_folder: str = ""
@@ -88,7 +88,7 @@ class RuntimeConfigStore:
                 comfyui_path=str(image_payload.get("comfyui_path", "")),
                 manual_image_generation_enabled=bool(image_payload.get("manual_image_generation_enabled", True)),
                 campaign_auto_visual_timing=self._normalize_campaign_auto_visual_timing(
-                    image_payload.get("campaign_auto_visual_timing", image_payload.get("turn_visuals_mode", "off"))
+                    image_payload.get("campaign_auto_visual_timing", image_payload.get("turn_visuals_mode", "after_narration"))
                 ),
                 checkpoint_source=str(image_payload.get("checkpoint_source", "local")),
                 checkpoint_model_page=str(image_payload.get("checkpoint_model_page", "https://civitai.com/models/4384/dreamshaper")),

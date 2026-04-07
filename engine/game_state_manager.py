@@ -48,7 +48,7 @@ class GameStateManager:
         starting_location_name: str | None = None,
         premise: str | None = None,
         player_concept: str | None = None,
-        suggested_moves_enabled: bool = True,
+        suggested_moves_enabled: bool = False,
         character_sheets: list[dict[str, object]] | None = None,
         character_sheet_guidance_strength: str = "light",
     ) -> CampaignState:
@@ -132,8 +132,12 @@ class GameStateManager:
         }
         new_payload["settings"]["suggested_moves_enabled"] = bool(suggested_moves_enabled)
         new_payload["settings"]["image_generation_enabled"] = True
-        new_payload["settings"]["campaign_auto_visuals_enabled"] = False
+        new_payload["settings"]["campaign_auto_visuals_enabled"] = True
         new_payload["settings"]["player_suggested_moves_override"] = None
+        print(
+            "[settings-defaults] new_campaign_defaults "
+            "manual=true auto=true timing=after_narration suggested_moves=false"
+        )
         if not content_settings_enabled:
             new_payload["settings"]["content_settings"] = {
                 "tone": resolved_tone,
