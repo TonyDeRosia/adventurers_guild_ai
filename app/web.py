@@ -288,16 +288,20 @@ class WebRuntime:
         return shutil.which("ollama")
 
     def start_ollama_service(self) -> dict[str, Any]:
+        print("[setup-action] start-ollama requested")
         if self.app_config.model.provider != "ollama":
+            print("[setup-action] start-ollama failure reason=model provider is not ollama")
             return {
                 "ok": False,
                 "message": "Model provider is not set to ollama.",
                 "next_step": "Set model provider to ollama, then retry.",
             }
         if self.get_model_status().get("reachable", False):
+            print("[setup-action] start-ollama success reason=already running")
             return {"ok": True, "message": "Ollama is already running."}
         ollama_cli = self._find_ollama_cli()
         if not ollama_cli:
+            print("[setup-action] start-ollama failure reason=ollama cli not found")
             return {
                 "ok": False,
                 "message": "Ollama is not installed (CLI not found on PATH).",
@@ -319,6 +323,7 @@ class WebRuntime:
                     start_new_session=True,
                 )
         except OSError as exc:
+            print(f"[setup-action] start-ollama failure reason={exc}")
             return {
                 "ok": False,
                 "message": f"Could not start Ollama service: {exc}",
@@ -327,7 +332,9 @@ class WebRuntime:
         for _ in range(6):
             time.sleep(0.5)
             if self.get_model_status().get("reachable", False):
+                print("[setup-action] start-ollama success reason=service reachable")
                 return {"ok": True, "message": "Ollama service started.", "readiness_refreshed": True}
+        print("[setup-action] start-ollama failure reason=service not reachable after launch")
         return {
             "ok": False,
             "message": "Ollama start command was sent, but the service is still not reachable.",
@@ -336,10 +343,13 @@ class WebRuntime:
 
     def install_story_model(self, model_name: str | None = None) -> dict[str, Any]:
         model = (model_name or self.app_config.model.model_name or "llama3").strip()
+        print(f"[setup-action] install-model requested model={model or '(empty)'}")
         if not model:
+            print("[setup-action] install-model failure reason=model name missing")
             return {"ok": False, "message": "Model name is required."}
         ollama_cli = self._find_ollama_cli()
         if not ollama_cli:
+            print("[setup-action] install-model failure reason=ollama cli not found")
             return {
                 "ok": False,
                 "message": "Ollama is not installed (CLI not found on PATH).",
@@ -354,6 +364,7 @@ class WebRuntime:
                 check=False,
             )
         except subprocess.TimeoutExpired:
+            print(f"[setup-action] install-model failure reason=timeout model={model}")
             return {
                 "ok": False,
                 "message": f"Model install timed out for {model}.",
@@ -362,12 +373,14 @@ class WebRuntime:
         output = (completed.stdout or completed.stderr or "").strip()
         snippet = output[-300:] if output else ""
         if completed.returncode != 0:
+            print(f"[setup-action] install-model failure reason=exit_{completed.returncode} model={model}")
             return {
                 "ok": False,
                 "message": f"Failed to install model {model}.",
                 "details": snippet,
                 "next_step": f"Run `ollama pull {model}` manually and retry.",
             }
+        print(f"[setup-action] install-model success model={model}")
         return {
             "ok": True,
             "message": f"Model {model} installed (or already present).",
@@ -738,11 +751,14 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
 
     @app.post("/api/setup/start-ollama")
     def setup_start_ollama() -> dict[str, Any]:
+        print("[setup-action] route invoked endpoint=/api/setup/start-ollama")
         return runtime.start_ollama_service()
 
     @app.post("/api/setup/install-model")
     def setup_install_model(payload: dict[str, Any]) -> dict[str, Any]:
-        return runtime.install_story_model(str(payload.get("model", "")).strip() or None)
+        model_name = str(payload.get("model", "")).strip() or None
+        print(f"[setup-action] route invoked endpoint=/api/setup/install-model model={model_name or runtime.app_config.model.model_name}")
+        return runtime.install_story_model(model_name)
 
     @app.post("/api/campaign/input")
     def campaign_input(payload: dict[str, Any]) -> dict[str, Any]:

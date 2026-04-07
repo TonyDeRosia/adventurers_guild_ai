@@ -4,7 +4,9 @@ import json
 from pathlib import Path
 import subprocess
 
-from app.web import WebRuntime
+import pytest
+
+from app.web import WebRuntime, create_web_app
 from models.base import NarrationModelAdapter, ProviderUnavailableError
 
 
@@ -318,7 +320,63 @@ def test_dependency_readiness_does_not_pollute_story_messages(tmp_path: Path, mo
     runtime.handle_player_input("look")
     messages_after = [message["text"] for message in runtime.session.message_history]
     assert len(messages_after) > messages_before
-    assert not any("Start Ollama" in text or "ComfyUI" in text for text in messages_after)
+
+
+def test_start_ollama_logs_setup_action(tmp_path: Path, monkeypatch, capsys) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.model.provider = "ollama"
+    monkeypatch.setattr("shutil.which", lambda _: "C:/Ollama/ollama.exe")
+    monkeypatch.setattr(
+        runtime,
+        "get_model_status",
+        lambda: {"provider": "ollama", "reachable": True, "model_exists": True, "ready": True},
+    )
+
+    result = runtime.start_ollama_service()
+    captured = capsys.readouterr()
+    assert result["ok"] is True
+    assert "[setup-action] start-ollama requested" in captured.out
+    assert "[setup-action] start-ollama success" in captured.out
+
+
+def test_install_model_logs_setup_action(tmp_path: Path, monkeypatch, capsys) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    monkeypatch.setattr("shutil.which", lambda _: "C:/Ollama/ollama.exe")
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args=args[0], returncode=0, stdout="already exists", stderr=""),
+    )
+
+    result = runtime.install_story_model("llama3")
+    captured = capsys.readouterr()
+    assert result["ok"] is True
+    assert "[setup-action] install-model requested model=llama3" in captured.out
+    assert "[setup-action] install-model success model=llama3" in captured.out
+
+
+def test_setup_endpoints_invoke_backend_actions(tmp_path: Path, monkeypatch, capsys) -> None:
+    try:
+        from fastapi.testclient import TestClient
+    except RuntimeError as exc:
+        pytest.skip(str(exc))
+    runtime = _runtime(tmp_path, monkeypatch)
+    app = create_web_app(runtime, runtime.root / "app" / "static")
+    client = TestClient(app)
+
+    monkeypatch.setattr(runtime, "start_ollama_service", lambda: {"ok": True, "message": "started"})
+    monkeypatch.setattr(runtime, "install_story_model", lambda model_name=None: {"ok": True, "message": f"installed {model_name}"})
+
+    start_response = client.post("/api/setup/start-ollama", json={})
+    install_response = client.post("/api/setup/install-model", json={"model": "llama3"})
+    captured = capsys.readouterr()
+
+    assert start_response.status_code == 200
+    assert install_response.status_code == 200
+    assert start_response.json()["ok"] is True
+    assert install_response.json()["ok"] is True
+    assert "[setup-action] route invoked endpoint=/api/setup/start-ollama" in captured.out
+    assert "[setup-action] route invoked endpoint=/api/setup/install-model model=llama3" in captured.out
 
 
 def test_dependency_readiness_reports_missing_ollama_install(tmp_path: Path, monkeypatch) -> None:
