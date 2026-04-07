@@ -273,6 +273,14 @@ HP: 20/20
 The lantern-light flickers across the gate as unseen footsteps circle your flank."""
 
 
+class _SanitizedButGroundedProvider(NarrationModelAdapter):
+    provider_name = "ollama"
+
+    def generate(self, prompt: str, system_prompt: str = "", history=None) -> str:
+        return """Recent memory: none
+Moonfall Keep remains in view. The cracked wall still sheds dust near the torchlit arch."""
+
+
 class _SuggestedMoveProvider(NarrationModelAdapter):
     provider_name = "ollama"
 
@@ -426,6 +434,79 @@ def test_scene_aware_fallback_reuses_existing_damage_state(tmp_path: Path, monke
     assert "already-cracked wall" in second["narrative"].lower()
 
 
+def test_perception_fallback_describes_scene_without_boilerplate(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _RefusalProvider()
+    out = runtime.handle_player_input("i look around")
+    lowered = out["narrative"].lower()
+    assert "action resolves immediately" not in lowered
+    assert "specific surface features and changes become immediately visible" not in lowered
+    assert "look around" not in lowered.split(".")[0]
+    assert "moonfall" in lowered or "scene" in lowered or "view" in lowered
+
+
+def test_what_is_all_around_me_is_classified_as_perception(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _RefusalProvider()
+    out = runtime.handle_player_input("what is all around me")
+    lowered = out["narrative"].lower()
+    assert "you shift position" not in lowered
+    assert "remains" in lowered or "in view" in lowered
+
+
+def test_movement_fallback_describes_changed_viewpoint(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _RefusalProvider()
+    out = runtime.handle_player_input("i walk around")
+    lowered = out["narrative"].lower()
+    assert "you shift position" in lowered or "new viewpoint" in lowered or "changing your angle" in lowered
+    assert "your movement changes position right away" not in lowered
+
+
+def test_attack_spell_fallback_references_existing_damage(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _RefusalProvider()
+    runtime.handle_player_input("i cast fireball at the wall")
+    out = runtime.handle_player_input("i cast fireball at the wall again")
+    lowered = out["narrative"].lower()
+    assert "prior damage" in lowered or "already visible" in lowered or "again" in lowered
+    assert "point of impact" not in lowered
+
+
+def test_dialogue_fallback_does_not_invent_npc_reply(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _RefusalProvider()
+    out = runtime.handle_player_input('i say "show yourself"')
+    lowered = out["narrative"].lower()
+    assert "show yourself" in lowered
+    assert "no immediate spoken reply" in lowered or "voice carries" in lowered
+
+
+def test_sanitized_grounded_output_is_kept_without_quality_fallback(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _SanitizedButGroundedProvider()
+    out = runtime.handle_player_input("look")
+    lowered = out["narrative"].lower()
+    assert out["metadata"]["sanitized_output"] is True
+    assert out["metadata"]["quality_fallback_used"] is False
+    assert "cracked wall" in lowered
+
+
+def test_fallback_regression_blocks_abstract_placeholder_phrases(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _RefusalProvider()
+    outputs = [
+        runtime.handle_player_input("i look around")["narrative"].lower(),
+        runtime.handle_player_input("i cast fireball at the wall")["narrative"].lower(),
+        runtime.handle_player_input("i walk around")["narrative"].lower(),
+    ]
+    merged = " ".join(outputs)
+    assert "the action resolves immediately" not in merged
+    assert "the immediate outcome is visible at the point of impact" not in merged
+    assert "your movement changes position right away" not in merged
+    assert "specific surface features and changes become immediately visible" not in merged
+
+
 def test_scene_state_summary_is_injected_into_prompt(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     capture = _PromptCaptureProvider()
@@ -477,7 +558,7 @@ def test_turn_sanitizer_removes_prompt_scaffold_leaks(tmp_path: Path, monkeypatc
     assert "Recent memory:" not in out["narrative"]
     assert "[Requested Mode]" not in out["narrative"]
     assert out["metadata"]["quality_fallback_used"] is True
-    assert "look." in out["narrative"].lower()
+    assert "look." not in out["narrative"].lower()
 
 
 def test_recommendations_only_show_when_player_explicitly_requests_guidance(tmp_path: Path, monkeypatch) -> None:
