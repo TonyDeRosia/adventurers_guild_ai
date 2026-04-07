@@ -20,6 +20,7 @@ class ImageRuntimeConfig:
     provider: str = "local"
     base_url: str = "http://localhost:8188"
     enabled: bool = True
+    comfyui_path: str = ""
 
 
 @dataclass
@@ -60,6 +61,7 @@ class RuntimeConfigStore:
                 provider=str(image_payload.get("provider", "local")),
                 base_url=str(image_payload.get("base_url", "http://localhost:8188")),
                 enabled=bool(image_payload.get("enabled", True)),
+                comfyui_path=str(image_payload.get("comfyui_path", "")),
             ),
         )
 

@@ -294,6 +294,7 @@ def test_dependency_readiness_ollama_online_model_present(tmp_path: Path, monkey
 def test_dependency_readiness_comfyui_offline(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.app_config.image.provider = "comfyui"
+    monkeypatch.setattr(runtime, "_find_comfyui_root", lambda: Path("/fake/ComfyUI"))
     monkeypatch.setattr(
         "images.comfyui_adapter.ComfyUIAdapter.check_readiness",
         lambda self: {
@@ -311,7 +312,8 @@ def test_dependency_readiness_comfyui_offline(tmp_path: Path, monkeypatch) -> No
     image_item = readiness["items"][2]
     assert image_item["provider_type"] == "image_provider"
     assert image_item["reachable"] is False
-    assert "Start ComfyUI" in image_item["next_action"]
+    assert image_item["status_code"] == "not_running"
+    assert image_item["actions"][0]["id"] == "start_image_engine"
 
 
 def test_dependency_readiness_does_not_pollute_story_messages(tmp_path: Path, monkeypatch) -> None:
@@ -354,6 +356,7 @@ def test_install_model_logs_setup_action(tmp_path: Path, monkeypatch, capsys) ->
     assert result["ok"] is True
     assert "[setup-action] install-model requested model=llama3" in captured.out
     assert "[setup-action] install-model success model=llama3" in captured.out
+    assert result["message"] == "Story model installed. Text generation is ready."
 
 
 def test_setup_endpoints_invoke_backend_actions(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -368,10 +371,14 @@ def test_setup_endpoints_invoke_backend_actions(tmp_path: Path, monkeypatch, cap
     monkeypatch.setattr(runtime, "start_ollama_service", lambda: {"ok": True, "message": "started"})
     monkeypatch.setattr(runtime, "install_ollama", lambda: {"ok": True, "message": "installed ollama"})
     monkeypatch.setattr(runtime, "install_story_model", lambda model_name=None: {"ok": True, "message": f"installed {model_name}"})
+    monkeypatch.setattr(runtime, "install_image_engine", lambda: {"ok": True, "message": "installed comfyui"})
+    monkeypatch.setattr(runtime, "start_image_engine", lambda: {"ok": True, "message": "started comfyui"})
 
     start_response = client.post("/api/setup/start-ollama", json={})
     install_ollama_response = client.post("/api/setup/install-ollama", json={})
     install_response = client.post("/api/setup/install-model", json={"model": "llama3"})
+    install_image_response = client.post("/api/setup/install-image-engine", json={})
+    start_image_response = client.post("/api/setup/start-image-engine", json={})
     captured = capsys.readouterr()
 
     assert start_response.status_code == 200
@@ -380,9 +387,27 @@ def test_setup_endpoints_invoke_backend_actions(tmp_path: Path, monkeypatch, cap
     assert start_response.json()["ok"] is True
     assert install_ollama_response.json()["ok"] is True
     assert install_response.json()["ok"] is True
+    assert install_image_response.json()["ok"] is True
+    assert start_image_response.json()["ok"] is True
     assert "[setup-action] route invoked endpoint=/api/setup/start-ollama" in captured.out
     assert "[setup-action] route invoked endpoint=/api/setup/install-ollama" in captured.out
     assert "[setup-action] route invoked endpoint=/api/setup/install-model model=llama3" in captured.out
+    assert "[setup-action] route invoked endpoint=/api/setup/install-image-engine" in captured.out
+    assert "[setup-action] route invoked endpoint=/api/setup/start-image-engine" in captured.out
+
+
+def test_dependency_readiness_comfyui_not_installed(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    monkeypatch.setattr(runtime, "_find_comfyui_root", lambda: None)
+    monkeypatch.setattr(
+        "images.comfyui_adapter.ComfyUIAdapter.check_readiness",
+        lambda self: {"provider": "comfyui", "base_url": self.base_url, "reachable": False, "ready": False, "status_level": "error", "user_message": "offline", "next_action": "n/a", "error": "connection refused"},
+    )
+    readiness = runtime.get_dependency_readiness()
+    image_item = readiness["items"][2]
+    assert image_item["status_code"] == "not_installed"
+    assert image_item["actions"][0]["id"] == "install_image_engine"
 
 
 def test_dependency_readiness_reports_missing_ollama_install(tmp_path: Path, monkeypatch) -> None:

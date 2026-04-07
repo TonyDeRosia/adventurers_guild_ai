@@ -73,6 +73,17 @@ button:hover { border-color: var(--accent); }
   padding: 8px;
   background: #0f1a2d;
 }
+.readiness-section {
+  border: 1px solid #2f4665;
+  border-radius: 8px;
+  padding: 8px;
+  background: #101d33;
+  display: grid;
+  gap: 8px;
+}
+.readiness-section h4 {
+  margin: 0;
+}
 .readiness-summary {
   border: 1px solid #344c6d;
   border-radius: 8px;

@@ -22,6 +22,10 @@ const readinessLabels = {
   image_provider: 'Image Generation Service',
 };
 
+function toTitle(statusCode) {
+  return String(statusCode || '').replaceAll('_', ' ');
+}
+
 function commandFromAction(actionText) {
   const clean = String(actionText || '').trim();
   if (clean.startsWith('Run: ')) return clean.slice(5).trim();
@@ -74,7 +78,31 @@ async function runReadinessAction(actionId, item) {
       console.log(`[setup-action] install-model ${result.ok ? 'success' : 'failure'} reason=${result.message || 'unknown'} model=${modelName}`);
       await refreshDependencyReadiness();
       console.log('[setup-action] readiness refresh triggered');
-      setStatus(result.ok ? (result.message || `Installed ${modelName}.`) : (result.next_step ? `${result.message} ${result.next_step}` : result.message), !result.ok);
+      setStatus(result.ok ? (result.message || 'Story model installed. Text generation is ready.') : (result.next_step ? `${result.message} ${result.next_step}` : result.message), !result.ok);
+      return;
+    }
+    if (actionId === 'install_image_engine') {
+      setStatus('Installing ComfyUI bootstrap files...');
+      console.log('[setup-action] install-image-engine requested');
+      const result = await api('/api/setup/install-image-engine', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+      });
+      console.log(`[setup-action] install-image-engine ${result.ok ? 'success' : 'failure'} reason=${result.message || 'unknown'}`);
+      await refreshDependencyReadiness();
+      console.log('[setup-action] readiness refresh triggered');
+      setStatus(result.ok ? (result.message || 'Image engine setup ready for next step.') : (result.next_step ? `${result.message} ${result.next_step}` : result.message), !result.ok);
+      return;
+    }
+    if (actionId === 'start_image_engine') {
+      setStatus('Starting ComfyUI...');
+      console.log('[setup-action] start-image-engine requested');
+      const result = await api('/api/setup/start-image-engine', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+      });
+      console.log(`[setup-action] start-image-engine ${result.ok ? 'success' : 'failure'} reason=${result.message || 'unknown'}`);
+      await refreshDependencyReadiness();
+      console.log('[setup-action] readiness refresh triggered');
+      setStatus(result.ok ? (result.message || 'ComfyUI started.') : (result.next_step ? `${result.message} ${result.next_step}` : result.message), !result.ok);
     }
   } catch (error) {
     setStatus(error.message, true);
@@ -243,18 +271,28 @@ async function refreshSaves() {
 
 function renderDependencyReadiness(payload) {
   readinessPanel.innerHTML = '';
+  const byType = Object.fromEntries((payload.items || []).map((item) => [item.provider_type, item]));
   const summary = document.createElement('div');
   summary.className = 'readiness-summary';
-  const byType = Object.fromEntries((payload.items || []).map((item) => [item.provider_type, item]));
   summary.innerHTML = `
-    <div>Text generation: ${byType.model_provider?.status_level === 'ready' ? 'ready' : 'not ready'}</div>
-    <div>Story model: ${byType.selected_model?.status_level === 'ready' ? 'installed' : 'not installed'}</div>
-    <div>Image generation: ${byType.image_provider?.status_level === 'ready' ? 'ready' : 'not ready'}</div>
+    <div><strong>Text AI Setup:</strong> ${byType.model_provider?.status_level === 'ready' && byType.selected_model?.status_level === 'ready' ? 'ready' : 'needs setup'}</div>
+    <div><strong>Image AI Setup:</strong> ${byType.image_provider?.status_level === 'ready' ? 'ready' : 'needs setup'}</div>
     <div>Fallback story mode: available</div>
+    <div>Fallback image mode: local placeholder available</div>
   `;
   readinessPanel.appendChild(summary);
 
-  for (const item of payload.items || []) {
+  const sections = [
+    { id: 'text', title: 'Text AI Setup', types: ['model_provider', 'selected_model'] },
+    { id: 'image', title: 'Image AI Setup', types: ['image_provider'] },
+  ];
+  for (const sectionDef of sections) {
+    const section = document.createElement('div');
+    section.className = 'readiness-section';
+    const sectionItems = sectionDef.types.map((type) => byType[type]).filter(Boolean);
+    const overallReady = sectionItems.every((item) => item.status_level === 'ready');
+    section.innerHTML = `<h4>${sectionDef.title}</h4><div class="${overallReady ? 'ready-badge' : 'not-ready-badge'}">Overall: ${overallReady ? 'Ready' : 'Needs setup'}</div>`;
+    for (const item of sectionItems) {
     const el = document.createElement('div');
     el.className = 'readiness-item';
     const ready = item.status_level === 'ready';
@@ -266,13 +304,17 @@ function renderDependencyReadiness(payload) {
     const actionButtons = (item.actions || [])
       .map((action) => `<button class="readiness-action-btn" data-action="${escapeHtml(action.id)}">${escapeHtml(action.label)}</button>`)
       .join('');
+    const statusCode = item.status_code ? `<div>Status: <code>${escapeHtml(toTitle(item.status_code))}</code></div>` : '';
+    const fallbackInfo = item.fallback_available ? '<div>Fallback: available</div>' : '';
     el.innerHTML = `
       <strong>${escapeHtml(title)}</strong>
       <div>Provider: <code>${escapeHtml(item.provider)}</code></div>
       <div class="${badgeClass}">${ready ? 'Ready' : 'Not ready'}</div>
+      ${statusCode}
       ${selectedModel}
       <div>${escapeHtml(item.user_message || '')}</div>
       <div>Next step: ${escapeHtml(item.next_action || 'No action needed.')}</div>
+      ${fallbackInfo}
       <div class="readiness-action-row">${actionButtons}${copyButton}</div>
     `;
     const btn = el.querySelector('.copy-cmd-btn');
@@ -282,7 +324,9 @@ function renderDependencyReadiness(payload) {
     el.querySelectorAll('.readiness-action-btn').forEach((button) => {
       button.onclick = () => runReadinessAction(button.dataset.action, item);
     });
-    readinessPanel.appendChild(el);
+      section.appendChild(el);
+    }
+    readinessPanel.appendChild(section);
   }
 
   setupGuidance.innerHTML = '';
