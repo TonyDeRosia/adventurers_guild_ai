@@ -1846,8 +1846,20 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     def image_generate(payload: dict[str, Any]) -> dict[str, Any]:
         print("[image-pipeline] request started")
         result = runtime.generate_image(payload)
+        response_payload = result.to_dict()
         if result.success:
             public_image_url = runtime.public_image_path(result.result_path)
+            image_meta = {}
+            if isinstance(result.metadata, dict):
+                image_meta = dict(result.metadata.get("image", {}) or result.metadata.get("image_info", {}) or {})
+            response_payload["ok"] = True
+            response_payload["prompt"] = payload.get("prompt", "")
+            response_payload["image"] = {
+                "filename": image_meta.get("filename", ""),
+                "subfolder": image_meta.get("subfolder", ""),
+                "type": image_meta.get("type", "output"),
+                "url": public_image_url,
+            }
             runtime._append_message(
                 "image",
                 payload.get("prompt", "Image generated"),
@@ -1858,7 +1870,8 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
             reason = result.metadata.get("error_category", "unknown") if isinstance(result.metadata, dict) else "unknown"
             status_code = result.metadata.get("status_code", 400) if isinstance(result.metadata, dict) else 400
             print(f"[image-pipeline] request failed status={status_code} reason={reason}")
-            return JSONResponse(status_code=HTTPStatus.BAD_REQUEST, content=result.to_dict())
-        return result.to_dict()
+            response_payload["ok"] = False
+            return JSONResponse(status_code=HTTPStatus.BAD_REQUEST, content=response_payload)
+        return response_payload
 
     return app

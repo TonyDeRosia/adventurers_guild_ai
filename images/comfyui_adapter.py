@@ -61,6 +61,7 @@ class ComfyUIAdapter(ImageGeneratorAdapter):
             workflow_request = self._normalize_request(request_payload)
             workflow = workflow_manager.build_workflow(workflow_request)
             workflow_manager.validate_workflow(workflow)
+            bindings = workflow_manager.inspect_bindings(workflow)
             print("[image-pipeline] workflow validated")
             print(f"[image-pipeline] payload_summary=nodes:{len(workflow)} workflow_id:{workflow_id}")
         except Exception as exc:
@@ -99,14 +100,14 @@ class ComfyUIAdapter(ImageGeneratorAdapter):
                 metadata={"base_url": self.base_url, "error_category": "bad_response"},
             )
 
-        image_info = self._wait_for_generated_image(prompt_id)
+        image_info, history_error = self._wait_for_generated_image(prompt_id, bindings.save_image_node_ids)
         if not image_info:
             return ImageGenerationResult(
                 success=False,
                 workflow_id=workflow_id,
                 prompt_id=prompt_id,
-                error="ComfyUI accepted the prompt but no image output was found in history.",
-                metadata={"base_url": self.base_url, "error_category": "missing_output"},
+                error=history_error or "ComfyUI accepted the prompt but no image output was found in history.",
+                metadata={"base_url": self.base_url, "error_category": "missing_output", "save_nodes": bindings.save_image_node_ids},
             )
 
         saved_path = self._download_output_image(image_info)
@@ -125,7 +126,7 @@ class ComfyUIAdapter(ImageGeneratorAdapter):
             workflow_id=workflow_id,
             prompt_id=prompt_id,
             result_path=str(saved_path),
-            metadata={"base_url": self.base_url, "image_info": image_info},
+            metadata={"base_url": self.base_url, "image": image_info, "save_nodes": bindings.save_image_node_ids},
         )
 
     def _normalize_request(self, request_payload: ImageGenerationRequest) -> ImageGenerationRequest:
@@ -174,28 +175,48 @@ class ComfyUIAdapter(ImageGeneratorAdapter):
         except Exception:
             return []
 
-    def _wait_for_generated_image(self, prompt_id: str, timeout_seconds: int = 90) -> dict[str, str] | None:
+    def _wait_for_generated_image(self, prompt_id: str, save_node_ids: list[str], timeout_seconds: int = 90) -> tuple[dict[str, str] | None, str | None]:
         deadline = time.time() + timeout_seconds
+        last_error: str | None = None
         while time.time() < deadline:
-            image_info = self._fetch_history_image(prompt_id)
+            image_info, history_error = self._fetch_history_image(prompt_id, save_node_ids)
             if image_info:
-                return image_info
+                return image_info, None
+            if history_error:
+                last_error = history_error
             time.sleep(1)
-        return None
+        return None, last_error
 
-    def _fetch_history_image(self, prompt_id: str) -> dict[str, str] | None:
+    def _fetch_history_image(self, prompt_id: str, save_node_ids: list[str]) -> tuple[dict[str, str] | None, str | None]:
         req = request.Request(f"{self.base_url}/history/{prompt_id}")
         try:
             with request.urlopen(req, timeout=15) as response:
                 body = json.loads(response.read().decode("utf-8"))
         except Exception:
-            return None
+            return None, None
 
         payload = body.get(prompt_id, {})
+        if not isinstance(payload, dict):
+            return None, None
+        status = payload.get("status")
+        if isinstance(status, dict):
+            status_str = str(status.get("status_str", ""))
+            messages = status.get("messages")
+            if status_str.lower() in {"error", "failed"}:
+                if isinstance(messages, list) and messages:
+                    return None, f"ComfyUI generation failed: {messages[-1]}"
+                return None, "ComfyUI generation failed."
+
         outputs = payload.get("outputs", {})
         if not isinstance(outputs, dict):
-            return None
-        for node_data in outputs.values():
+            return None, None
+
+        ordered_node_ids = [node_id for node_id in save_node_ids if node_id in outputs]
+        if not ordered_node_ids:
+            ordered_node_ids = list(outputs.keys())
+
+        for node_id in ordered_node_ids:
+            node_data = outputs.get(node_id)
             if not isinstance(node_data, dict):
                 continue
             images = node_data.get("images")
@@ -207,8 +228,8 @@ class ComfyUIAdapter(ImageGeneratorAdapter):
                         "filename": str(image.get("filename", "")),
                         "subfolder": str(image.get("subfolder", "")),
                         "type": str(image.get("type", "output")),
-                    }
-        return None
+                    }, None
+        return None, None
 
     def _download_output_image(self, image_info: dict[str, str]) -> Path | None:
         if not self.output_dir:

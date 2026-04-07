@@ -2,7 +2,8 @@ const chatThread = document.getElementById('chat-thread');
 const campaignMeta = document.getElementById('campaign-meta');
 const statePanel = document.getElementById('state-panel');
 const saveList = document.getElementById('save-list');
-const imagePreview = document.getElementById('image-preview');
+const sceneImageDisplay = document.getElementById('scene-image-display');
+const sceneVisualMeta = document.getElementById('scene-visual-meta');
 const imagePromptInput = document.getElementById('image-prompt-input');
 const imageStatusLine = document.getElementById('image-status-line');
 const statusLine = document.getElementById('status-line');
@@ -24,7 +25,10 @@ const turnVisualsModeInput = document.getElementById('turn-visuals-mode');
 const manualImagePanel = document.getElementById('manual-image-panel');
 const visualModeSummary = document.getElementById('visual-mode-summary');
 
-let selectedImageUrl = '';
+let currentSceneImage = null;
+let currentSceneImagePrompt = '';
+let currentSceneImageTurn = null;
+let imageHistory = [];
 let selectedSlot = 'autosave';
 let loadedSlot = 'autosave';
 let selectedCampaignName = 'autosave';
@@ -436,7 +440,7 @@ function renderMessage(msg) {
     const img = document.createElement('img');
     img.src = msg.image.url;
     img.alt = 'generated';
-    img.onclick = () => setImagePreview(msg.image.url, msg.text || 'Generated image');
+    img.onclick = () => setSceneImage(msg.image.url, msg.text || 'Generated image');
     el.appendChild(img);
   }
   chatThread.appendChild(el);
@@ -447,17 +451,32 @@ function labelForType(type) {
   return ({ player: 'PLAYER', narrator: 'NARRATOR', npc: 'NPC', quest: 'QUEST', image: 'IMAGE', system: 'SYSTEM', error: 'ERROR' })[type] || 'SYSTEM';
 }
 
-function setImagePreview(url, caption = '') {
-  selectedImageUrl = url;
-  imagePreview.innerHTML = '';
+function setSceneImage(url, caption = '', turn = null) {
+  currentSceneImage = url;
+  currentSceneImagePrompt = caption || '';
+  currentSceneImageTurn = turn;
+  imageHistory = [{ url, caption, turn }, ...imageHistory.filter((entry) => entry.url !== url)].slice(0, 30);
+  sceneImageDisplay.innerHTML = '';
   const img = document.createElement('img');
   img.src = url;
-  img.alt = caption || 'Generated image preview';
+  img.alt = caption || 'Generated scene image';
   const text = document.createElement('div');
-  text.textContent = caption || 'Generated image preview';
-  imagePreview.appendChild(img);
-  imagePreview.appendChild(text);
-  setImageStatus('Latest generated image loaded in preview.');
+  text.textContent = caption || 'Generated scene image';
+  sceneImageDisplay.appendChild(img);
+  sceneImageDisplay.appendChild(text);
+  if (sceneVisualMeta) {
+    const turnLabel = turn ? `Turn ${turn}` : 'Scene visual updated';
+    sceneVisualMeta.textContent = `${turnLabel} • ${caption || 'Generated image'}`;
+  }
+  setImageStatus('Latest generated image loaded in Scene Visual.');
+}
+
+function clearSceneImage(message = 'Scene image will appear here.') {
+  currentSceneImage = null;
+  currentSceneImagePrompt = '';
+  currentSceneImageTurn = null;
+  if (sceneImageDisplay) sceneImageDisplay.textContent = message;
+  if (sceneVisualMeta) sceneVisualMeta.textContent = 'Generate an image to view the current scene.';
 }
 
 async function refreshMessages() {
@@ -466,7 +485,12 @@ async function refreshMessages() {
   const messages = data.messages || [];
   messages.forEach(renderMessage);
   const lastImage = [...messages].reverse().find((message) => message.image && message.image.url);
-  if (lastImage && !selectedImageUrl) setImagePreview(lastImage.image.url, lastImage.text || 'Generated image');
+  if (lastImage) {
+    const turnMatch = (lastImage.text || '').match(/turn\s+(\d+)/i);
+    setSceneImage(lastImage.image.url, lastImage.text || 'Generated image', turnMatch ? Number(turnMatch[1]) : null);
+  } else {
+    clearSceneImage();
+  }
 }
 
 async function refreshState() {
@@ -501,7 +525,7 @@ async function loadSelectedCampaign() {
     await api('/api/campaign/start', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'load', slot: selectedSlot }),
     });
-    selectedImageUrl = '';
+    clearSceneImage();
     await Promise.all([refreshMessages(), refreshState(), refreshSaves()]);
     setStatus(`Loaded ${selectedSlot}.`);
   } catch (error) {
@@ -789,7 +813,7 @@ async function generateImage() {
     const result = await api('/api/images/generate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workflow_id: 'scene_image', prompt }),
     });
-    if (result.result_path) selectedImageUrl = '';
+    if (result.image?.url) setSceneImage(result.image.url, prompt);
     await refreshMessages();
     setImageStatus('Image generated successfully via ComfyUI.');
     setStatus('Image generated.');
@@ -905,8 +929,7 @@ async function createCampaignFromForm() {
     await api('/api/campaign/start', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
     });
-    selectedImageUrl = '';
-    imagePreview.textContent = 'Click an inline image to preview it here.';
+    clearSceneImage();
     closeNewCampaignModal();
     await Promise.all([refreshMessages(), refreshState(), refreshSaves()]);
     setStatus('New campaign started.');
@@ -984,8 +1007,7 @@ document.getElementById('load-autosave').onclick = async () => {
     await api('/api/campaign/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'load', slot: 'autosave' }) });
     selectedSlot = 'autosave';
     selectedCampaignName = 'autosave';
-    selectedImageUrl = '';
-    imagePreview.textContent = 'Click an inline image to preview it here.';
+    clearSceneImage();
     await Promise.all([refreshMessages(), refreshState(), refreshSaves()]);
     setStatus('Autosave loaded.');
   } catch (error) { setStatus(error.message, true); }
