@@ -243,6 +243,36 @@ class WebRuntime:
         provider = self.app_config.image.provider
         base_url = self.app_config.image.base_url
         if provider == "comfyui":
+            path_config = self.get_path_configuration_status()
+            image_paths = path_config["image"]
+            if not bool(image_paths["comfyui_root"]["valid"]):
+                reason = "missing_path" if not image_paths["comfyui_root"]["configured"] else "invalid_path"
+                print(f"[path-config] image_features_disabled reason={reason}")
+                return {
+                    "provider": "comfyui",
+                    "base_url": base_url,
+                    "reachable": False,
+                    "ready": False,
+                    "status_code": "setup_required",
+                    "status_level": "error",
+                    "user_message": str(image_paths["comfyui_root"]["message"]),
+                    "next_action": "Set your ComfyUI folder in AI Setup, then click Recheck.",
+                    "error": reason,
+                }
+            if not bool(image_paths["workflow_path"]["valid"]):
+                reason = "missing_workflow_path" if not image_paths["workflow_path"]["configured"] else "invalid_workflow_path"
+                print(f"[path-config] image_features_disabled reason={reason}")
+                return {
+                    "provider": "comfyui",
+                    "base_url": base_url,
+                    "reachable": False,
+                    "ready": False,
+                    "status_code": "workflow_required",
+                    "status_level": "error",
+                    "user_message": str(image_paths["workflow_path"]["message"]),
+                    "next_action": "Set your workflow JSON file in AI Setup, then click Recheck.",
+                    "error": reason,
+                }
             base_status = ComfyUIAdapter(base_url=base_url).check_readiness()
             comfyui_root = self._find_comfyui_root()
             installed = comfyui_root is not None
@@ -415,6 +445,8 @@ class WebRuntime:
         if self.app_config.image.provider != "comfyui":
             return [{"id": "recheck", "label": "Recheck"}]
         status_code = str(image_status.get("status_code", ""))
+        if status_code in {"setup_required", "workflow_required"}:
+            return [{"id": "recheck", "label": "Recheck"}]
         if status_code == "not_installed":
             return [{"id": "install_image_engine", "label": "Install Image Engine"}, {"id": "recheck", "label": "Recheck"}]
         if status_code == "not_running":
@@ -487,7 +519,7 @@ class WebRuntime:
         if not candidate.exists():
             return {"ok": False, "message": "Selected ComfyUI folder does not exist."}
         validation = self.validate_comfyui_install(candidate)
-        if not validation.get("valid", False):
+        if not validation.get("ok", False):
             missing = ", ".join(validation.get("missing_files", []))
             return {
                 "ok": False,
@@ -1065,7 +1097,8 @@ class WebRuntime:
             embedded_python = path.parent / "python_embeded" / "python.exe"
             if not embedded_python.exists() and not shutil.which("python") and not shutil.which("py"):
                 missing_files.append("python-runtime")
-        return {"ok": len(missing_files) == 0, "missing_files": missing_files}
+        valid = len(missing_files) == 0
+        return {"ok": valid, "valid": valid, "missing_files": missing_files}
 
     def _write_comfyui_cpu_launcher(self, comfyui_root: Path) -> bool:
         launcher = comfyui_root / "run_cpu.bat"
@@ -1153,16 +1186,74 @@ class WebRuntime:
         configured = str(self.app_config.image.comfyui_path or "").strip()
         if configured:
             candidates.append(Path(configured))
-        candidates.append(self._default_comfyui_path())
-        if os.name == "nt":
-            user_profile = os.environ.get("USERPROFILE", "")
-            if user_profile:
-                candidates.append(Path(user_profile) / "ComfyUI_windows_portable" / "ComfyUI")
-                candidates.append(Path(user_profile) / "ComfyUI")
+        default_managed = self._default_comfyui_path()
+        if default_managed.exists():
+            candidates.append(default_managed)
         for candidate in candidates:
             if (candidate / "main.py").exists():
                 return candidate
         return None
+
+    def _validate_comfyui_root_config(self, configured_path: str) -> dict[str, Any]:
+        raw = str(configured_path or "").strip()
+        if not raw:
+            print("[path-config] comfyui_root configured=false")
+            return {"configured": False, "valid": False, "path": "", "message": "Set your ComfyUI folder."}
+        candidate = Path(raw)
+        if not candidate.exists() or not candidate.is_dir():
+            print("[path-config] comfyui_root valid=false")
+            return {"configured": True, "valid": False, "path": raw, "message": "This path does not exist."}
+        validation = self.validate_comfyui_install(candidate)
+        if not validation.get("ok", False):
+            missing = ", ".join(validation.get("missing_files", []))
+            print("[path-config] comfyui_root valid=false")
+            return {
+                "configured": True,
+                "valid": False,
+                "path": raw,
+                "message": f"This folder is missing {missing}.",
+                "missing_files": validation.get("missing_files", []),
+            }
+        print("[path-config] comfyui_root valid=true")
+        return {"configured": True, "valid": True, "path": str(candidate), "message": "ComfyUI folder is valid."}
+
+    def _validate_workflow_path_config(self, configured_path: str) -> dict[str, Any]:
+        raw = str(configured_path or "").strip()
+        if not raw:
+            print("[path-config] workflow_path configured=false")
+            return {"configured": False, "valid": False, "path": "", "message": "Set your workflow file (.json)."}
+        candidate = Path(raw)
+        if not candidate.exists() or not candidate.is_file():
+            print("[path-config] workflow_path valid=false")
+            return {"configured": True, "valid": False, "path": raw, "message": "Workflow path does not exist."}
+        if candidate.suffix.lower() != ".json":
+            print("[path-config] workflow_path valid=false")
+            return {"configured": True, "valid": False, "path": raw, "message": "Workflow file must be a .json file."}
+        print("[path-config] workflow_path valid=true")
+        return {"configured": True, "valid": True, "path": str(candidate), "message": "Workflow path is valid."}
+
+    def _validate_output_dir_config(self, configured_path: str) -> dict[str, Any]:
+        raw = str(configured_path or "").strip()
+        if not raw:
+            return {
+                "configured": False,
+                "valid": True,
+                "path": "",
+                "resolved_path": str(self.generated_image_dir),
+                "message": "Using app-managed generated images folder.",
+            }
+        candidate = Path(raw)
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return {"configured": True, "valid": False, "path": raw, "message": "Output folder does not exist and cannot be created."}
+        return {"configured": True, "valid": True, "path": str(candidate), "resolved_path": str(candidate), "message": "Output folder is valid."}
+
+    def get_path_configuration_status(self) -> dict[str, Any]:
+        comfyui_root = self._validate_comfyui_root_config(self.app_config.image.comfyui_path)
+        workflow_path = self._validate_workflow_path_config(self.app_config.image.comfyui_workflow_path)
+        output_dir = self._validate_output_dir_config(self.app_config.image.comfyui_output_dir)
+        return {"image": {"comfyui_root": comfyui_root, "workflow_path": workflow_path, "output_dir": output_dir}}
 
     def install_image_engine(self) -> dict[str, Any]:
         print("[setup-action] install-image-engine requested")
@@ -1654,18 +1745,35 @@ class WebRuntime:
 
     def list_campaigns(self) -> list[dict[str, Any]]:
         campaigns = []
-        for slot in self.list_saves():
-            state = self.state_manager.load(slot)
-            if state is None:
+        save_paths = sorted(self.paths.saves.glob("*.json")) if self.paths.saves.exists() else []
+        for save_path in save_paths:
+            slot = save_path.stem
+            updated = save_path.stat().st_mtime if save_path.exists() else time.time()
+            try:
+                payload = json.loads(save_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError, ValueError):
+                campaigns.append(
+                    {
+                        "slot": slot,
+                        "campaign_id": "",
+                        "campaign_name": "(Unreadable save file)",
+                        "world_name": "Unknown world",
+                        "turn_count": 0,
+                        "updated": updated,
+                        "loadable": False,
+                    }
+                )
                 continue
+            world_meta = payload.get("world_meta", {}) if isinstance(payload, dict) else {}
             campaigns.append(
                 {
                     "slot": slot,
-                    "campaign_id": state.campaign_id,
-                    "campaign_name": state.campaign_name,
-                    "world_name": state.world_meta.world_name,
-                    "turn_count": state.turn_count,
-                    "updated": (self.paths.saves / f"{slot}.json").stat().st_mtime,
+                    "campaign_id": str(payload.get("campaign_id", "")),
+                    "campaign_name": str(payload.get("campaign_name", slot)),
+                    "world_name": str(world_meta.get("world_name", "Unknown world")),
+                    "turn_count": int(payload.get("turn_count", 0)),
+                    "updated": updated,
+                    "loadable": True,
                 }
             )
         return sorted(campaigns, key=lambda item: item["updated"], reverse=True)
@@ -2089,6 +2197,8 @@ class WebRuntime:
                 "base_url": self.app_config.image.base_url,
                 "enabled": self.app_config.image.enabled,
                 "comfyui_path": self.app_config.image.comfyui_path,
+                "comfyui_workflow_path": self.app_config.image.comfyui_workflow_path,
+                "comfyui_output_dir": self.app_config.image.comfyui_output_dir,
                 "manual_image_generation_enabled": self.app_config.image.manual_image_generation_enabled,
                 "campaign_auto_visual_timing": self._normalize_campaign_auto_visual_timing(
                     self.app_config.image.campaign_auto_visual_timing
@@ -2099,6 +2209,7 @@ class WebRuntime:
                 "preferred_checkpoint": self.app_config.image.preferred_checkpoint,
                 "preferred_launcher": self.app_config.image.preferred_launcher,
             },
+            "path_config": self.get_path_configuration_status(),
             "dependency_readiness": self.get_dependency_readiness(),
             "supported_models": self.get_supported_model_inventory(refresh=False),
         }
@@ -2124,6 +2235,8 @@ class WebRuntime:
             base_url=str(image_payload.get("base_url", self.app_config.image.base_url)),
             enabled=bool(image_payload.get("enabled", self.app_config.image.enabled)),
             comfyui_path=str(image_payload.get("comfyui_path", self.app_config.image.comfyui_path)),
+            comfyui_workflow_path=str(image_payload.get("comfyui_workflow_path", self.app_config.image.comfyui_workflow_path)),
+            comfyui_output_dir=str(image_payload.get("comfyui_output_dir", self.app_config.image.comfyui_output_dir)),
             manual_image_generation_enabled=bool(
                 image_payload.get("manual_image_generation_enabled", self.app_config.image.manual_image_generation_enabled)
             ),
@@ -2300,6 +2413,22 @@ class WebRuntime:
     def generate_image(self, payload: dict[str, Any]) -> ImageGenerationResult:
         if not self.session.state.settings.image_generation_enabled:
             return ImageGenerationResult(success=False, workflow_id=str(payload.get("workflow_id", "scene_image")), error="Image generation is disabled for this campaign.")
+        path_config = self.get_path_configuration_status()["image"]
+        if self.app_config.image.provider == "comfyui":
+            if not path_config["comfyui_root"]["valid"]:
+                return ImageGenerationResult(
+                    success=False,
+                    workflow_id=str(payload.get("workflow_id", "scene_image")),
+                    error=str(path_config["comfyui_root"]["message"]),
+                    metadata={"provider": "comfyui", "status_code": "setup_required"},
+                )
+            if not path_config["workflow_path"]["valid"]:
+                return ImageGenerationResult(
+                    success=False,
+                    workflow_id=str(payload.get("workflow_id", "scene_image")),
+                    error=str(path_config["workflow_path"]["message"]),
+                    metadata={"provider": "comfyui", "status_code": "workflow_required"},
+                )
         if self.app_config.image.provider == "comfyui":
             image_status = self.get_image_status()
             if not bool(image_status.get("ready", False)):
@@ -2322,7 +2451,13 @@ class WebRuntime:
             negative_prompt=str(payload.get("negative_prompt", "")),
             parameters=parameters,
         )
-        result = self.image_adapter.generate(request, self.workflow_manager)
+        workflow_manager = self.workflow_manager
+        configured_workflow = str(self.app_config.image.comfyui_workflow_path or "").strip()
+        if configured_workflow:
+            workflow_path = Path(configured_workflow)
+            request.workflow_id = workflow_path.stem
+            workflow_manager = WorkflowManager(workflow_path.parent)
+        result = self.image_adapter.generate(request, workflow_manager)
         return result
 
     def get_comfy_debug_bundle(self) -> dict[str, Any]:

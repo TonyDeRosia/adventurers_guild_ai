@@ -17,7 +17,10 @@ const newCampaignModal = document.getElementById('new-campaign-modal');
 const setupModal = document.getElementById('setup-modal');
 const ollamaPathInput = document.getElementById('ollama-path-input');
 const comfyuiPathInput = document.getElementById('comfyui-path-input');
+const comfyuiWorkflowPathInput = document.getElementById('comfyui-workflow-path-input');
+const comfyuiOutputDirInput = document.getElementById('comfyui-output-dir-input');
 const comfyuiModelsList = document.getElementById('comfyui-models-list');
+const pathConfigStatus = document.getElementById('path-config-status');
 const checkpointFolderInput = document.getElementById('checkpoint-folder-input');
 const checkpointSourceInput = document.getElementById('checkpoint-source');
 const preferredCheckpointInput = document.getElementById('preferred-checkpoint');
@@ -1288,6 +1291,10 @@ async function refreshSaves() {
     const btn = document.createElement('button');
     btn.className = `save-item ${campaign.slot === selectedSlot ? 'selected' : ''}`;
     btn.innerHTML = `${escapeHtml(campaign.slot)} • ${escapeHtml(campaign.campaign_name)}<small>${escapeHtml(campaign.world_name || 'Unknown world')} • Turn ${campaign.turn_count}</small>`;
+    if (campaign.loadable === false) {
+      btn.classList.add('warning');
+      btn.title = 'This save file exists but could not be parsed.';
+    }
     btn.onclick = () => {
       selectedSlot = campaign.slot;
       selectedCampaignName = campaign.campaign_name;
@@ -1744,6 +1751,8 @@ async function applySettings() {
         image: {
           provider: imageProvider,
           comfyui_path: comfyuiPathInput?.value.trim() || '',
+          comfyui_workflow_path: comfyuiWorkflowPathInput?.value.trim() || '',
+          comfyui_output_dir: comfyuiOutputDirInput?.value.trim() || '',
           manual_image_generation_enabled: manualImageEnabled,
           campaign_auto_visual_timing: campaignAutoVisualTiming,
           checkpoint_source: checkpointSourceInput?.value || 'local',
@@ -1782,6 +1791,7 @@ async function applySettings() {
     } else {
       setStatus('Settings applied.');
     }
+    renderPathConfigStatus(settings.settings?.path_config);
   } catch (error) {
     setStatus(error.message, true);
   } finally {
@@ -1791,6 +1801,21 @@ async function applySettings() {
     const applyButton = document.getElementById('apply-settings');
     if (applyButton) applyButton.disabled = false;
   }
+}
+
+function renderPathConfigStatus(config) {
+  if (!pathConfigStatus) return;
+  const imageConfig = config?.image || {};
+  const comfy = imageConfig.comfyui_root || {};
+  const workflow = imageConfig.workflow_path || {};
+  const output = imageConfig.output_dir || {};
+  const entries = [
+    `ComfyUI folder: ${comfy.valid ? 'valid' : (comfy.configured ? 'invalid' : 'not configured')}`,
+    `Workflow file: ${workflow.valid ? 'valid' : (workflow.configured ? 'invalid' : 'not configured')}`,
+    `Output folder: ${output.valid ? 'valid' : 'invalid'}`,
+  ];
+  const details = [comfy.message, workflow.message, output.message].filter(Boolean).join(' | ');
+  pathConfigStatus.textContent = `${entries.join(' • ')}${details ? ` — ${details}` : ''}`;
 }
 
 async function loadSettings() {
@@ -1805,6 +1830,8 @@ async function loadSettings() {
   }
   if (ollamaPathInput) ollamaPathInput.value = data.settings.model.ollama_path || '';
   if (comfyuiPathInput) comfyuiPathInput.value = data.settings.image.comfyui_path || '';
+  if (comfyuiWorkflowPathInput) comfyuiWorkflowPathInput.value = data.settings.image.comfyui_workflow_path || '';
+  if (comfyuiOutputDirInput) comfyuiOutputDirInput.value = data.settings.image.comfyui_output_dir || '';
   if (checkpointFolderInput) checkpointFolderInput.value = data.settings.image.checkpoint_folder || '';
   if (checkpointSourceInput) checkpointSourceInput.value = data.settings.image.checkpoint_source || 'local';
   if (preferredCheckpointInput) preferredCheckpointInput.value = data.settings.image.preferred_checkpoint || 'DreamShaper';
@@ -1828,6 +1855,7 @@ async function loadSettings() {
     setStatus(modelStatus.user_message || 'Ollama provider is unavailable.', true);
   }
   renderDependencyReadiness(data.settings?.dependency_readiness || { items: [], setup_guidance: [] });
+  renderPathConfigStatus(data.settings?.path_config);
   if (data.settings?.supported_models) {
     modelInventoryState = data.settings.supported_models;
     renderSupportedModels(modelInventoryState);

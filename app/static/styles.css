@@ -342,6 +342,7 @@ button:disabled {
 .save-item { text-align: left; border: 1px solid #2e3d52; background: #132238; }
 .save-item small { display: block; color: var(--muted); margin-top: 4px; }
 .save-item.selected { border-color: #4cc2ff; box-shadow: 0 0 0 1px #4cc2ff inset; background: #18324f; }
+.save-item.warning { border-color: #a8873a; }
 .state-panel { white-space: pre-wrap; overflow: auto; margin: 0; max-height: 32vh; }
 .left-panel, .right-panel { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
 .left-panel h2 { font-size: 1rem; margin-bottom: 6px; }
