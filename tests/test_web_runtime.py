@@ -145,6 +145,20 @@ def test_campaign_listing_includes_display_mode_for_selected_campaign_summary(tm
     assert by_slot["slot_mud_list"]["display_mode"] == "mud"
 
 
+def test_campaign_listing_surfaces_all_save_files_even_unreadable_json_shapes(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"player_name": "ListAll", "slot": "slot_valid"})
+    runtime.save_active_campaign("slot_valid")
+    invalid_shape_path = runtime.paths.saves / "slot_invalid_shape.json"
+    invalid_shape_path.write_text(json.dumps(["not", "a", "campaign", "object"]), encoding="utf-8")
+
+    campaigns = runtime.list_campaigns()
+    by_slot = {entry["slot"]: entry for entry in campaigns}
+    assert "slot_valid" in by_slot
+    assert "slot_invalid_shape" in by_slot
+    assert by_slot["slot_invalid_shape"]["loadable"] is False
+
+
 @pytest.mark.parametrize("display_mode", ["mud", "rpg"])
 def test_campaign_creation_accepts_non_story_display_modes(tmp_path: Path, monkeypatch, display_mode: str) -> None:
     runtime = _runtime(tmp_path, monkeypatch)

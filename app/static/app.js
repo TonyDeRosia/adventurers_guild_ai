@@ -1589,7 +1589,7 @@ async function refreshSaves() {
   campaigns.forEach((campaign) => {
     const btn = document.createElement('button');
     btn.className = `save-item ${campaign.slot === selectedSlot ? 'selected' : ''}`;
-    btn.innerHTML = `${escapeHtml(campaign.campaign_name)}<small>${escapeHtml(campaign.world_name || 'Unknown world')} · Turn ${campaign.turn_count} · ${displayModeLabel(campaign.display_mode || 'story')}</small>`;
+    btn.innerHTML = `<strong>${escapeHtml(campaign.slot)}</strong><small>${escapeHtml(campaign.campaign_name || campaign.slot)}</small><small>${escapeHtml(campaign.world_name || 'Unknown world')} · Turn ${campaign.turn_count} · ${displayModeLabel(campaign.display_mode || 'story')}</small>`;
     if (campaign.loadable === false) {
       btn.classList.add('warning');
       btn.title = 'This save file exists but could not be parsed.';
