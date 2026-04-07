@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib import parse, request
 from urllib.error import HTTPError, URLError
@@ -22,6 +23,17 @@ class ComfyUIAdapter(ImageGeneratorAdapter):
         self.output_dir = output_dir
         if self.output_dir:
             self.output_dir.mkdir(parents=True, exist_ok=True)
+        debug_root = (self.output_dir.parent if self.output_dir else Path.cwd()) / "logs" / "comfy_debug"
+        self.debug_dir = debug_root.resolve()
+        self.debug_dir.mkdir(parents=True, exist_ok=True)
+        self.last_debug_snapshot: dict[str, object] = {
+            "debug_dir": str(self.debug_dir),
+            "last_payload_path": "",
+            "last_response_path": "",
+            "last_history_path": "",
+            "last_error": "",
+            "last_prompt_id": "",
+        }
 
     def check_readiness(self) -> dict[str, object]:
         req = request.Request(f"{self.base_url}/system_stats")
@@ -55,6 +67,9 @@ class ComfyUIAdapter(ImageGeneratorAdapter):
     def generate(self, request_payload: ImageGenerationRequest, workflow_manager: WorkflowManager) -> ImageGenerationResult:
         print("[image-pipeline] request started")
         print(f"[image-pipeline] endpoint={self.base_url}/prompt")
+        self.debug_dir = workflow_manager.debug_dir
+        self.debug_dir.mkdir(parents=True, exist_ok=True)
+        self.last_debug_snapshot["debug_dir"] = str(self.debug_dir)
 
         workflow_id = request_payload.workflow_id
         try:
@@ -65,6 +80,7 @@ class ComfyUIAdapter(ImageGeneratorAdapter):
             print("[image-pipeline] workflow validated")
             print(f"[image-pipeline] payload_summary=nodes:{len(workflow)} workflow_id:{workflow_id}")
         except Exception as exc:
+            self.last_debug_snapshot["last_error"] = f"ComfyUI workflow invalid: {exc}"
             return ImageGenerationResult(
                 success=False,
                 workflow_id=workflow_id,
@@ -73,6 +89,14 @@ class ComfyUIAdapter(ImageGeneratorAdapter):
             )
 
         payload = {"prompt": workflow}
+        prompt_node_count = len(workflow) if isinstance(workflow, dict) else 0
+        self._debug_log(f"prompt_endpoint={self.base_url}/prompt")
+        self._debug_log(f"payload_top_keys={list(payload.keys())}")
+        self._debug_log(f"payload_prompt_node_count={prompt_node_count}")
+        self._debug_log(f"payload_preview={json.dumps(payload, ensure_ascii=False)[:600]}")
+        payload_path = self._write_debug_artifact("comfy_prompt_payload.json", payload)
+        self.last_debug_snapshot["last_payload_path"] = str(payload_path)
+
         req = request.Request(
             f"{self.base_url}/prompt",
             data=json.dumps(payload).encode("utf-8"),
@@ -80,10 +104,16 @@ class ComfyUIAdapter(ImageGeneratorAdapter):
         )
         try:
             with request.urlopen(req, timeout=30) as response:
-                body = json.loads(response.read().decode("utf-8"))
+                response_text = response.read().decode("utf-8")
+            body = json.loads(response_text)
+            self._debug_log(f"prompt_response_status=200")
+            self._debug_log(f"prompt_response_body={response_text[:600]}")
+            response_path = self._write_debug_artifact("comfy_response_last.json", body)
+            self.last_debug_snapshot["last_response_path"] = str(response_path)
         except HTTPError as exc:
             return self._http_error_result(exc, workflow_id)
         except Exception as exc:
+            self.last_debug_snapshot["last_error"] = str(exc)
             return ImageGenerationResult(
                 success=False,
                 workflow_id=workflow_id,
@@ -93,6 +123,7 @@ class ComfyUIAdapter(ImageGeneratorAdapter):
 
         prompt_id = str(body.get("prompt_id", "")).strip()
         if not prompt_id:
+            self.last_debug_snapshot["last_error"] = "missing prompt_id"
             return ImageGenerationResult(
                 success=False,
                 workflow_id=workflow_id,
@@ -100,8 +131,12 @@ class ComfyUIAdapter(ImageGeneratorAdapter):
                 metadata={"base_url": self.base_url, "error_category": "bad_response"},
             )
 
+        self.last_debug_snapshot["last_prompt_id"] = prompt_id
+        self._debug_log(f"prompt_id={prompt_id}")
+        self._debug_log(f"history_poll_start={self.base_url}/history/{prompt_id}")
         image_info, history_error = self._wait_for_generated_image(prompt_id, bindings.save_image_node_ids)
         if not image_info:
+            self.last_debug_snapshot["last_error"] = history_error or "missing output"
             return ImageGenerationResult(
                 success=False,
                 workflow_id=workflow_id,
@@ -112,6 +147,7 @@ class ComfyUIAdapter(ImageGeneratorAdapter):
 
         saved_path = self._download_output_image(image_info)
         if not saved_path:
+            self.last_debug_snapshot["last_error"] = "download failed"
             return ImageGenerationResult(
                 success=False,
                 workflow_id=workflow_id,
@@ -121,6 +157,7 @@ class ComfyUIAdapter(ImageGeneratorAdapter):
             )
 
         print("[image-pipeline] image generated successfully")
+        self.last_debug_snapshot["last_error"] = ""
         return ImageGenerationResult(
             success=True,
             workflow_id=workflow_id,
@@ -178,16 +215,20 @@ class ComfyUIAdapter(ImageGeneratorAdapter):
     def _wait_for_generated_image(self, prompt_id: str, save_node_ids: list[str], timeout_seconds: int = 90) -> tuple[dict[str, str] | None, str | None]:
         deadline = time.time() + timeout_seconds
         last_error: str | None = None
+        poll_attempt = 0
         while time.time() < deadline:
-            image_info, history_error = self._fetch_history_image(prompt_id, save_node_ids)
+            poll_attempt += 1
+            image_info, history_error = self._fetch_history_image(prompt_id, save_node_ids, poll_attempt)
             if image_info:
+                self._debug_log(f"history_image_found_at_attempt={poll_attempt}")
                 return image_info, None
             if history_error:
                 last_error = history_error
             time.sleep(1)
+        self._debug_log(f"history_timeout_seconds={timeout_seconds} prompt_id={prompt_id}")
         return None, last_error
 
-    def _fetch_history_image(self, prompt_id: str, save_node_ids: list[str]) -> tuple[dict[str, str] | None, str | None]:
+    def _fetch_history_image(self, prompt_id: str, save_node_ids: list[str], poll_attempt: int) -> tuple[dict[str, str] | None, str | None]:
         req = request.Request(f"{self.base_url}/history/{prompt_id}")
         try:
             with request.urlopen(req, timeout=15) as response:
@@ -195,12 +236,14 @@ class ComfyUIAdapter(ImageGeneratorAdapter):
         except Exception:
             return None, None
 
+        self._debug_log(f"history_poll_attempt={poll_attempt} prompt_id={prompt_id}")
         payload = body.get(prompt_id, {})
         if not isinstance(payload, dict):
             return None, None
         status = payload.get("status")
         if isinstance(status, dict):
             status_str = str(status.get("status_str", ""))
+            self._debug_log(f"history_status={status_str}")
             messages = status.get("messages")
             if status_str.lower() in {"error", "failed"}:
                 if isinstance(messages, list) and messages:
@@ -211,9 +254,11 @@ class ComfyUIAdapter(ImageGeneratorAdapter):
         if not isinstance(outputs, dict):
             return None, None
 
+        output_node_ids = list(outputs.keys())
+        self._debug_log(f"history_output_node_ids={output_node_ids}")
         ordered_node_ids = [node_id for node_id in save_node_ids if node_id in outputs]
         if not ordered_node_ids:
-            ordered_node_ids = list(outputs.keys())
+            ordered_node_ids = output_node_ids
 
         for node_id in ordered_node_ids:
             node_data = outputs.get(node_id)
@@ -224,11 +269,18 @@ class ComfyUIAdapter(ImageGeneratorAdapter):
                 continue
             for image in images:
                 if isinstance(image, dict) and image.get("filename"):
-                    return {
+                    image_info = {
                         "filename": str(image.get("filename", "")),
                         "subfolder": str(image.get("subfolder", "")),
                         "type": str(image.get("type", "output")),
-                    }, None
+                    }
+                    self._debug_log(
+                        "history_image="
+                        f"filename:{image_info['filename']} subfolder:{image_info['subfolder']} type:{image_info['type']}"
+                    )
+                    history_path = self._write_debug_artifact("comfy_history_last.json", body)
+                    self.last_debug_snapshot["last_history_path"] = str(history_path)
+                    return image_info, None
         return None, None
 
     def _download_output_image(self, image_info: dict[str, str]) -> Path | None:
@@ -255,12 +307,29 @@ class ComfyUIAdapter(ImageGeneratorAdapter):
 
     def _http_error_result(self, exc: HTTPError, workflow_id: str) -> ImageGenerationResult:
         body_text = ""
+        headers_dict = dict(exc.headers.items()) if exc.headers else {}
         try:
             body_text = exc.read().decode("utf-8", errors="replace")
         except Exception:
             body_text = ""
+
+        parsed_body: object = body_text
+        response_filename = "comfy_response_last.txt"
+        try:
+            parsed_body = json.loads(body_text)
+            response_filename = "comfy_response_last.json"
+            self._debug_log(f"http_error_body_json={json.dumps(parsed_body, ensure_ascii=False)[:600]}")
+        except Exception:
+            self._debug_log(f"http_error_body_text={body_text[:600]}")
+
+        response_path = self._write_debug_artifact(response_filename, parsed_body)
+        self.last_debug_snapshot["last_response_path"] = str(response_path)
+        self._debug_log(f"http_error_status={exc.code}")
+        self._debug_log(f"http_error_headers={headers_dict}")
+
         error_message, error_category = self._classify_error(exc.code, body_text)
         print(f"[image-pipeline] request failed status={exc.code} reason={error_category}")
+        self.last_debug_snapshot["last_error"] = error_message
         return ImageGenerationResult(
             success=False,
             workflow_id=workflow_id,
@@ -289,3 +358,21 @@ class ComfyUIAdapter(ImageGeneratorAdapter):
 
         detail = body_text.strip() or f"HTTP {status_code}"
         return f"ComfyUI request failed ({category}): {detail}", category
+
+    def _write_debug_artifact(self, filename: str, payload: object) -> Path:
+        target = self.debug_dir / filename
+        if isinstance(payload, str):
+            serialized = payload
+        else:
+            serialized = json.dumps(payload, indent=2, ensure_ascii=False)
+        target.write_text(serialized, encoding="utf-8")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        stamped = self.debug_dir / f"{target.stem}_{timestamp}{target.suffix}"
+        stamped.write_text(serialized, encoding="utf-8")
+        return target
+
+    def _debug_log(self, message: str) -> None:
+        print(f"[comfy-debug] {message}")
+
+    def get_debug_snapshot(self) -> dict[str, object]:
+        return dict(self.last_debug_snapshot)

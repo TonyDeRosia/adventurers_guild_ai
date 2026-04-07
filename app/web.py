@@ -1703,6 +1703,18 @@ class WebRuntime:
         result = self.image_adapter.generate(request, self.workflow_manager)
         return result
 
+    def get_comfy_debug_bundle(self) -> dict[str, Any]:
+        adapter_snapshot: dict[str, Any] = {}
+        if hasattr(self.image_adapter, "get_debug_snapshot"):
+            try:
+                adapter_snapshot = getattr(self.image_adapter, "get_debug_snapshot")()
+            except Exception as exc:
+                adapter_snapshot = {"error": str(exc)}
+        return {
+            "workflow_debug": dict(getattr(self.workflow_manager, "last_debug_info", {})),
+            "adapter_debug": adapter_snapshot,
+        }
+
     def public_image_path(self, result_path: str | None) -> str | None:
         if not result_path:
             return None
@@ -1757,6 +1769,11 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+
+    @app.get("/api/debug/comfyui-last")
+    def debug_comfyui_last() -> dict[str, Any]:
+        return runtime.get_comfy_debug_bundle()
 
     @app.get("/api/campaign/state")
     def campaign_state() -> dict[str, Any]:
