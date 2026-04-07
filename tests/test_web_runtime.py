@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
 
 from app.web import WebRuntime
 from models.base import NarrationModelAdapter, ProviderUnavailableError
@@ -221,6 +222,7 @@ def test_dependency_readiness_ollama_offline(tmp_path: Path, monkeypatch) -> Non
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.app_config.model.provider = "ollama"
     runtime.app_config.model.model_name = "llama3"
+    monkeypatch.setattr("shutil.which", lambda name: "C:/Ollama/ollama.exe")
     monkeypatch.setattr(
         "models.ollama_adapter.OllamaAdapter.check_readiness",
         lambda self: {
@@ -317,3 +319,49 @@ def test_dependency_readiness_does_not_pollute_story_messages(tmp_path: Path, mo
     messages_after = [message["text"] for message in runtime.session.message_history]
     assert len(messages_after) > messages_before
     assert not any("Start Ollama" in text or "ComfyUI" in text for text in messages_after)
+
+
+def test_dependency_readiness_reports_missing_ollama_install(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.model.provider = "ollama"
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    monkeypatch.setattr(
+        "models.ollama_adapter.OllamaAdapter.check_readiness",
+        lambda self: {
+            "provider": "ollama",
+            "model": self.model,
+            "base_url": self.base_url,
+            "reachable": False,
+            "model_exists": False,
+            "ready": False,
+            "user_message": "Ollama is not running.",
+            "fallback_reason": "offline",
+            "error": "connection refused",
+        },
+    )
+    readiness = runtime.get_dependency_readiness()
+    provider_item = readiness["items"][0]
+    assert "not installed" in provider_item["user_message"].lower()
+    assert provider_item["actions"] == [{"id": "recheck", "label": "Recheck"}]
+
+
+def test_start_ollama_reports_missing_cli(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.model.provider = "ollama"
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    result = runtime.start_ollama_service()
+    assert result["ok"] is False
+    assert "not installed" in result["message"].lower()
+
+
+def test_install_story_model_runs_pull_and_returns_success(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    monkeypatch.setattr("shutil.which", lambda name: "/bin/ollama")
+
+    def _fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(args=["ollama", "pull", "llama3"], returncode=0, stdout="pulled", stderr="")
+
+    monkeypatch.setattr("subprocess.run", _fake_run)
+    result = runtime.install_story_model("llama3")
+    assert result["ok"] is True
+    assert "installed" in result["message"].lower()

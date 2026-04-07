@@ -33,6 +33,36 @@ function commandFromAction(actionText) {
   return '';
 }
 
+async function runReadinessAction(actionId, item) {
+  try {
+    if (actionId === 'recheck') {
+      await refreshDependencyReadiness();
+      setStatus('Dependency readiness refreshed.');
+      return;
+    }
+    if (actionId === 'start_ollama') {
+      setStatus('Starting Ollama...');
+      const result = await api('/api/setup/start-ollama', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+      });
+      await refreshDependencyReadiness();
+      setStatus(result.ok ? (result.message || 'Ollama start request sent.') : (result.next_step ? `${result.message} ${result.next_step}` : result.message), !result.ok);
+      return;
+    }
+    if (actionId === 'install_model') {
+      const modelName = item.selected_model || document.getElementById('model-name').value.trim() || 'llama3';
+      setStatus(`Installing model ${modelName}... This can take a while.`);
+      const result = await api('/api/setup/install-model', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: modelName }),
+      });
+      await refreshDependencyReadiness();
+      setStatus(result.ok ? (result.message || `Installed ${modelName}.`) : (result.next_step ? `${result.message} ${result.next_step}` : result.message), !result.ok);
+    }
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
 async function copyCommand(command) {
   try {
     await navigator.clipboard.writeText(command);
@@ -215,6 +245,9 @@ function renderDependencyReadiness(payload) {
     const selectedModel = item.selected_model ? `<div>Selected model: <code>${escapeHtml(item.selected_model)}</code></div>` : '';
     const command = commandFromAction(item.next_action);
     const copyButton = command ? `<button class="copy-cmd-btn" data-command="${escapeHtml(command)}">Copy command</button>` : '';
+    const actionButtons = (item.actions || [])
+      .map((action) => `<button class="readiness-action-btn" data-action="${escapeHtml(action.id)}">${escapeHtml(action.label)}</button>`)
+      .join('');
     el.innerHTML = `
       <strong>${escapeHtml(title)}</strong>
       <div>Provider: <code>${escapeHtml(item.provider)}</code></div>
@@ -222,12 +255,15 @@ function renderDependencyReadiness(payload) {
       ${selectedModel}
       <div>${escapeHtml(item.user_message || '')}</div>
       <div>Next step: ${escapeHtml(item.next_action || 'No action needed.')}</div>
-      ${copyButton}
+      <div class="readiness-action-row">${actionButtons}${copyButton}</div>
     `;
     const btn = el.querySelector('.copy-cmd-btn');
     if (btn && command) {
       btn.onclick = () => copyCommand(command);
     }
+    el.querySelectorAll('.readiness-action-btn').forEach((button) => {
+      button.onclick = () => runReadinessAction(button.dataset.action, item);
+    });
     readinessPanel.appendChild(el);
   }
 
@@ -321,20 +357,30 @@ async function deleteCampaign() {
       setStatus('No save is selected for deletion.', true);
       return;
     }
+    const selectedCampaign = lastCampaigns.find((campaign) => campaign.slot === selectedSlot);
+    if (!selectedCampaign) {
+      selectedSlot = '';
+      selectedCampaignName = '';
+      updateSelectedSaveLabel();
+      setStatus('No valid selected save to delete.', true);
+      await refreshSaves();
+      return;
+    }
     if (selectedSlot === loadedSlot) {
       setStatus('Cannot delete the active save. Load another save first.', true);
       return;
     }
-    const confirmation = prompt(`Type DELETE to remove '${selectedCampaignName}' (${selectedSlot}). This cannot be undone.`);
+    const confirmation = prompt(`Type DELETE to remove '${selectedCampaign.campaign_name}' (${selectedSlot}). This cannot be undone.`);
     if (confirmation !== 'DELETE') {
       setStatus('Delete cancelled.');
       return;
     }
     deletingCampaign = true;
     const deletedSlot = selectedSlot;
-    const deletedName = selectedCampaignName;
+    const deletedName = selectedCampaign.campaign_name;
     await api('/api/campaign/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slot: selectedSlot }) });
     const remaining = lastCampaigns.filter((campaign) => campaign.slot !== deletedSlot);
+    lastCampaigns = remaining;
     const nextChoice = remaining.find((campaign) => campaign.slot === loadedSlot) || remaining[0] || null;
     selectedSlot = nextChoice ? nextChoice.slot : '';
     selectedCampaignName = nextChoice ? nextChoice.campaign_name : '';
