@@ -303,16 +303,18 @@ class WebRuntime:
         }
         return {
             "items": [model_provider_item, model_item, image_item],
+            "primary_actions": [
+                {"id": "setup_text_ai", "label": "Set Up Text AI"},
+                {"id": "setup_image_ai", "label": "Set Up Image AI"},
+                {"id": "setup_everything", "label": "Set Up Everything"},
+            ],
             "setup_checklist": [
-                "Text generation setup:",
-                "1) Install Ollama (https://ollama.com/download).",
-                "2) Start the Ollama service: ollama serve",
-                f"3) Install the story model: ollama pull {self.app_config.model.model_name}",
-                "4) Click Recheck dependencies in the app.",
-                "Image generation setup:",
-                "1) Install ComfyUI from the in-app Install Image Engine action.",
-                "2) Start ComfyUI from the in-app Start Image Engine action.",
-                "3) Keep image provider set to local if ComfyUI is unavailable.",
+                "Primary onboarding actions:",
+                "1) Click Set Up Text AI to install/start Ollama and install the selected model.",
+                "2) Click Set Up Image AI to bootstrap and start ComfyUI.",
+                "3) Click Set Up Everything to run both in sequence.",
+                "Fallback actions:",
+                "Use Recheck and Copy command if a step fails and manual intervention is needed.",
                 "Fallback story mode stays available even when providers are missing.",
             ],
             "setup_guidance": [
@@ -353,6 +355,21 @@ class WebRuntime:
                 return candidate
             return f"https://ollama.com{candidate}"
         return "https://ollama.com/download/OllamaSetup.exe"
+
+    def _run_command_capture(self, command: list[str], timeout_seconds: int) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout_seconds,
+            check=False,
+        )
+
+    def _refresh_readiness_snapshot(self) -> dict[str, Any]:
+        print("[setup-orchestrator] readiness refresh triggered")
+        return self.get_dependency_readiness()
 
     def install_ollama(self) -> dict[str, Any]:
         print("[setup-action] install-ollama requested")
@@ -528,13 +545,7 @@ class WebRuntime:
                 "next_step": "Start Ollama first, then install the model.",
             }
         try:
-            completed = subprocess.run(
-                [ollama_cli, "pull", model],
-                capture_output=True,
-                text=True,
-                timeout=60 * 60,
-                check=False,
-            )
+            completed = self._run_command_capture([ollama_cli, "pull", model], timeout_seconds=60 * 60)
         except subprocess.TimeoutExpired:
             print(f"[setup-action] install-model failure reason=timeout model={model}")
             return {
@@ -558,6 +569,141 @@ class WebRuntime:
             "message": "Story model installed. Text generation is ready.",
             "details": snippet,
             "readiness_refreshed": True,
+        }
+
+    def orchestrate_setup_text_ai(self, model_name: str | None = None) -> dict[str, Any]:
+        model = (model_name or self.app_config.model.model_name or "llama3").strip() or "llama3"
+        print("[setup-orchestrator] setup-text requested")
+        if self.app_config.model.provider != "ollama":
+            print("[setup-orchestrator] setup-text step=provider-check failure")
+            return {
+                "ok": False,
+                "message": "Text AI setup requires model provider set to ollama.",
+                "next_step": "Set model provider to ollama, then click Set Up Text AI.",
+                "summary": "Text AI failed: provider is not ollama.",
+            }
+
+        steps: list[dict[str, str]] = []
+        if not self._find_ollama_cli():
+            print("[setup-orchestrator] setup-text step=install-ollama start")
+            result = self.install_ollama()
+            if result.get("ok"):
+                print("[setup-orchestrator] setup-text step=install-ollama success")
+                steps.append({"step": "install-ollama", "state": "ready", "message": str(result.get("message", "Ollama installed."))})
+                self._refresh_readiness_snapshot()
+            else:
+                print("[setup-orchestrator] setup-text step=install-ollama failure")
+                steps.append({"step": "install-ollama", "state": "failed", "message": str(result.get("message", "Failed to install Ollama."))})
+                return {"ok": False, "message": str(result.get("message", "Failed to install Ollama.")), "next_step": result.get("next_step"), "steps": steps, "summary": "Text AI failed during install-ollama."}
+
+        if not self.get_model_status().get("reachable", False):
+            print("[setup-orchestrator] setup-text step=start-ollama start")
+            result = self.start_ollama_service()
+            if result.get("ok"):
+                print("[setup-orchestrator] setup-text step=start-ollama success")
+                steps.append({"step": "start-ollama", "state": "ready", "message": str(result.get("message", "Ollama started."))})
+                self._refresh_readiness_snapshot()
+            else:
+                print("[setup-orchestrator] setup-text step=start-ollama failure")
+                steps.append({"step": "start-ollama", "state": "failed", "message": str(result.get("message", "Failed to start Ollama."))})
+                return {"ok": False, "message": str(result.get("message", "Failed to start Ollama.")), "next_step": result.get("next_step"), "steps": steps, "summary": "Text AI failed during start-ollama."}
+
+        model_status = self.get_model_status()
+        if not model_status.get("model_exists", False):
+            print("[setup-orchestrator] setup-text step=install-model start")
+            result = self.install_story_model(model)
+            if result.get("ok"):
+                print("[setup-orchestrator] setup-text step=install-model success")
+                steps.append({"step": "install-model", "state": "ready", "message": str(result.get("message", "Story model installed."))})
+                self._refresh_readiness_snapshot()
+            else:
+                print("[setup-orchestrator] setup-text step=install-model failure")
+                steps.append({"step": "install-model", "state": "failed", "message": str(result.get("message", "Failed to install story model."))})
+                return {"ok": False, "message": str(result.get("message", "Failed to install story model.")), "next_step": result.get("next_step"), "steps": steps, "summary": "Text AI failed during install-model."}
+
+        final_status = self.get_model_status()
+        ready = bool(final_status.get("reachable", False) and final_status.get("model_exists", False))
+        summary = "Text AI ready." if ready else "Text AI failed: readiness check did not pass."
+        return {
+            "ok": ready,
+            "message": "Text AI setup complete." if ready else "Text AI setup did not complete.",
+            "steps": steps,
+            "summary": summary,
+            "readiness": self._refresh_readiness_snapshot(),
+            "next_step": None if ready else f"Run: ollama pull {model}",
+        }
+
+    def orchestrate_setup_image_ai(self) -> dict[str, Any]:
+        print("[setup-orchestrator] setup-image requested")
+        if self.app_config.image.provider != "comfyui":
+            print("[setup-orchestrator] setup-image step=provider-check failure")
+            return {
+                "ok": False,
+                "message": "Image AI setup requires image provider set to comfyui.",
+                "next_step": "Set image provider to comfyui, then click Set Up Image AI.",
+                "summary": "Image AI failed: provider is not comfyui.",
+            }
+        steps: list[dict[str, str]] = []
+        if self._find_comfyui_root() is None:
+            print("[setup-orchestrator] setup-image step=install-image-engine start")
+            result = self.install_image_engine()
+            if result.get("ok"):
+                print("[setup-orchestrator] setup-image step=install-image-engine success")
+                steps.append({"step": "install-image-engine", "state": "ready", "message": str(result.get("message", "ComfyUI installed."))})
+                self._refresh_readiness_snapshot()
+            else:
+                print("[setup-orchestrator] setup-image step=install-image-engine failure")
+                steps.append({"step": "install-image-engine", "state": "failed", "message": str(result.get("message", "Failed to install image engine."))})
+                return {"ok": False, "message": str(result.get("message", "Failed to install image engine.")), "next_step": result.get("next_step"), "steps": steps, "summary": "Image AI failed during install-image-engine."}
+
+        if not self.get_image_status().get("reachable", False):
+            print("[setup-orchestrator] setup-image step=start-image-engine start")
+            result = self.start_image_engine()
+            if result.get("ok"):
+                print("[setup-orchestrator] setup-image step=start-image-engine success")
+                steps.append({"step": "start-image-engine", "state": "ready", "message": str(result.get("message", "ComfyUI started."))})
+                self._refresh_readiness_snapshot()
+            else:
+                print("[setup-orchestrator] setup-image step=start-image-engine failure")
+                steps.append({"step": "start-image-engine", "state": "failed", "message": str(result.get("message", "Failed to start image engine."))})
+                return {"ok": False, "message": str(result.get("message", "Failed to start image engine.")), "next_step": result.get("next_step"), "steps": steps, "summary": "Image AI failed during start-image-engine."}
+
+        ready = bool(self.get_image_status().get("reachable", False))
+        return {
+            "ok": ready,
+            "message": "Image AI setup complete." if ready else "Image AI setup did not complete.",
+            "steps": steps,
+            "summary": "Image AI ready." if ready else "Image AI failed: readiness check did not pass.",
+            "readiness": self._refresh_readiness_snapshot(),
+        }
+
+    def orchestrate_setup_everything(self, model_name: str | None = None) -> dict[str, Any]:
+        print("[setup-orchestrator] setup-everything requested")
+        text_result = self.orchestrate_setup_text_ai(model_name)
+        if not text_result.get("ok"):
+            return {
+                "ok": False,
+                "message": "Setup Everything stopped during Text AI setup.",
+                "text": text_result,
+                "image": None,
+                "summary": f"Text AI failed: {text_result.get('message', 'unknown error')}",
+            }
+        image_result = self.orchestrate_setup_image_ai()
+        if not image_result.get("ok"):
+            return {
+                "ok": False,
+                "message": "Setup Everything stopped during Image AI setup.",
+                "text": text_result,
+                "image": image_result,
+                "summary": f"Text AI ready. Image AI failed: {image_result.get('message', 'unknown error')}",
+            }
+        return {
+            "ok": True,
+            "message": "Setup Everything complete.",
+            "text": text_result,
+            "image": image_result,
+            "summary": "Text AI ready. Image AI ready.",
+            "readiness": self._refresh_readiness_snapshot(),
         }
 
     def _default_comfyui_path(self) -> Path:
@@ -1086,6 +1232,23 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     def setup_start_image_engine() -> dict[str, Any]:
         print("[setup-action] route invoked endpoint=/api/setup/start-image-engine")
         return runtime.start_image_engine()
+
+    @app.post("/api/setup/orchestrate-text")
+    def setup_orchestrate_text(payload: dict[str, Any]) -> dict[str, Any]:
+        model_name = str(payload.get("model", "")).strip() or None
+        print(f"[setup-action] route invoked endpoint=/api/setup/orchestrate-text model={model_name or runtime.app_config.model.model_name}")
+        return runtime.orchestrate_setup_text_ai(model_name)
+
+    @app.post("/api/setup/orchestrate-image")
+    def setup_orchestrate_image() -> dict[str, Any]:
+        print("[setup-action] route invoked endpoint=/api/setup/orchestrate-image")
+        return runtime.orchestrate_setup_image_ai()
+
+    @app.post("/api/setup/orchestrate-everything")
+    def setup_orchestrate_everything(payload: dict[str, Any]) -> dict[str, Any]:
+        model_name = str(payload.get("model", "")).strip() or None
+        print(f"[setup-action] route invoked endpoint=/api/setup/orchestrate-everything model={model_name or runtime.app_config.model.model_name}")
+        return runtime.orchestrate_setup_everything(model_name)
 
     @app.post("/api/campaign/input")
     def campaign_input(payload: dict[str, Any]) -> dict[str, Any]:

@@ -373,12 +373,18 @@ def test_setup_endpoints_invoke_backend_actions(tmp_path: Path, monkeypatch, cap
     monkeypatch.setattr(runtime, "install_story_model", lambda model_name=None: {"ok": True, "message": f"installed {model_name}"})
     monkeypatch.setattr(runtime, "install_image_engine", lambda: {"ok": True, "message": "installed comfyui"})
     monkeypatch.setattr(runtime, "start_image_engine", lambda: {"ok": True, "message": "started comfyui"})
+    monkeypatch.setattr(runtime, "orchestrate_setup_text_ai", lambda model_name=None: {"ok": True, "message": f"orchestrated text {model_name}"})
+    monkeypatch.setattr(runtime, "orchestrate_setup_image_ai", lambda: {"ok": True, "message": "orchestrated image"})
+    monkeypatch.setattr(runtime, "orchestrate_setup_everything", lambda model_name=None: {"ok": True, "message": f"orchestrated all {model_name}"})
 
     start_response = client.post("/api/setup/start-ollama", json={})
     install_ollama_response = client.post("/api/setup/install-ollama", json={})
     install_response = client.post("/api/setup/install-model", json={"model": "llama3"})
     install_image_response = client.post("/api/setup/install-image-engine", json={})
     start_image_response = client.post("/api/setup/start-image-engine", json={})
+    orchestrate_text_response = client.post("/api/setup/orchestrate-text", json={"model": "llama3"})
+    orchestrate_image_response = client.post("/api/setup/orchestrate-image", json={})
+    orchestrate_everything_response = client.post("/api/setup/orchestrate-everything", json={"model": "llama3"})
     captured = capsys.readouterr()
 
     assert start_response.status_code == 200
@@ -389,11 +395,17 @@ def test_setup_endpoints_invoke_backend_actions(tmp_path: Path, monkeypatch, cap
     assert install_response.json()["ok"] is True
     assert install_image_response.json()["ok"] is True
     assert start_image_response.json()["ok"] is True
+    assert orchestrate_text_response.json()["ok"] is True
+    assert orchestrate_image_response.json()["ok"] is True
+    assert orchestrate_everything_response.json()["ok"] is True
     assert "[setup-action] route invoked endpoint=/api/setup/start-ollama" in captured.out
     assert "[setup-action] route invoked endpoint=/api/setup/install-ollama" in captured.out
     assert "[setup-action] route invoked endpoint=/api/setup/install-model model=llama3" in captured.out
     assert "[setup-action] route invoked endpoint=/api/setup/install-image-engine" in captured.out
     assert "[setup-action] route invoked endpoint=/api/setup/start-image-engine" in captured.out
+    assert "[setup-action] route invoked endpoint=/api/setup/orchestrate-text model=llama3" in captured.out
+    assert "[setup-action] route invoked endpoint=/api/setup/orchestrate-image" in captured.out
+    assert "[setup-action] route invoked endpoint=/api/setup/orchestrate-everything model=llama3" in captured.out
 
 
 def test_dependency_readiness_comfyui_not_installed(tmp_path: Path, monkeypatch) -> None:
@@ -450,12 +462,44 @@ def test_install_story_model_runs_pull_and_returns_success(tmp_path: Path, monke
     monkeypatch.setattr(runtime, "get_model_status", lambda: {"reachable": True})
 
     def _fake_run(*args, **kwargs):
+        assert kwargs["encoding"] == "utf-8"
+        assert kwargs["errors"] == "replace"
         return subprocess.CompletedProcess(args=["ollama", "pull", "llama3"], returncode=0, stdout="pulled", stderr="")
 
     monkeypatch.setattr("subprocess.run", _fake_run)
     result = runtime.install_story_model("llama3")
     assert result["ok"] is True
     assert "installed" in result["message"].lower()
+
+
+def test_orchestrate_text_ai_from_missing_model_to_ready(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.model.provider = "ollama"
+    states = iter(
+        [
+            {"reachable": False, "model_exists": False},
+            {"reachable": True, "model_exists": False},
+            {"reachable": True, "model_exists": True},
+        ]
+    )
+    monkeypatch.setattr(runtime, "get_model_status", lambda: next(states))
+    monkeypatch.setattr(runtime, "_find_ollama_cli", lambda: "C:/Ollama/ollama.exe")
+    monkeypatch.setattr(runtime, "start_ollama_service", lambda: {"ok": True, "message": "started"})
+    monkeypatch.setattr(runtime, "install_story_model", lambda model_name=None: {"ok": True, "message": "installed model"})
+    monkeypatch.setattr(runtime, "_refresh_readiness_snapshot", lambda: {"items": []})
+    result = runtime.orchestrate_setup_text_ai("llama3")
+    assert result["ok"] is True
+    assert result["summary"] == "Text AI ready."
+
+
+def test_orchestrate_everything_combines_text_and_image_results(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    monkeypatch.setattr(runtime, "orchestrate_setup_text_ai", lambda model_name=None: {"ok": True, "message": "text ok"})
+    monkeypatch.setattr(runtime, "orchestrate_setup_image_ai", lambda: {"ok": True, "message": "image ok"})
+    monkeypatch.setattr(runtime, "_refresh_readiness_snapshot", lambda: {"items": []})
+    result = runtime.orchestrate_setup_everything("llama3")
+    assert result["ok"] is True
+    assert "Text AI ready. Image AI ready." in result["summary"]
 
 
 def test_install_story_model_requires_running_ollama(tmp_path: Path, monkeypatch) -> None:
