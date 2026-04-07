@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from http import HTTPStatus
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Any
 
 try:
@@ -75,6 +76,7 @@ class WebRuntime:
         default_slot = "autosave" if self.state_manager.can_load("autosave") else "campaign_1"
         self.session = WebSession(state=self._load_or_create(default_slot), active_slot=default_slot)
         self.session.message_history = self._history_for_slot(self.session.active_slot)
+        self.image_startup_status: dict[str, Any] = {}
         print("[web-runtime] session initialized")
 
     def _load_history_store(self) -> dict[str, list[dict[str, Any]]]:
@@ -301,6 +303,8 @@ class WebRuntime:
             "fallback_available": True,
             "actions": self._image_readiness_actions(image_status),
         }
+        if self.image_startup_status:
+            image_item["startup_status"] = dict(self.image_startup_status)
         return {
             "items": [model_provider_item, model_item, image_item],
             "primary_actions": [
@@ -719,6 +723,10 @@ class WebRuntime:
             missing_files.append("models/")
         if not ((path / "run_cpu.bat").exists() or (path / "run_nvidia_gpu.bat").exists()):
             missing_files.append("run_cpu.bat|run_nvidia_gpu.bat")
+        if os.name == "nt":
+            embedded_python = path.parent / "python_embeded" / "python.exe"
+            if not embedded_python.exists() and not shutil.which("python") and not shutil.which("py"):
+                missing_files.append("python-runtime")
         return {"ok": len(missing_files) == 0, "missing_files": missing_files}
 
     def _write_comfyui_cpu_launcher(self, comfyui_root: Path) -> bool:
@@ -736,6 +744,47 @@ class WebRuntime:
         except OSError as exc:
             print(f"[setup-orchestrator] comfyui install repair failure reason={exc}")
             return False
+
+    def _append_image_startup_log(self, lines: list[str], message: str) -> None:
+        if message:
+            lines.append(f"{datetime.now(timezone.utc).isoformat()} | {message}")
+
+    def _sanitize_image_startup_log(self, lines: list[str], max_lines: int = 120, max_chars: int = 6000) -> str:
+        safe_lines = [line.replace("\r", "").strip() for line in lines if line and line.strip()]
+        if len(safe_lines) > max_lines:
+            safe_lines = safe_lines[-max_lines:]
+        text = "\n".join(safe_lines)
+        if len(text) > max_chars:
+            text = f"...(trimmed)\n{text[-max_chars:]}"
+        return text
+
+    def _read_startup_log_tail(self, startup_log_path: Path, max_lines: int = 80) -> list[str]:
+        if not startup_log_path.exists():
+            return []
+        try:
+            lines = startup_log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            return lines[-max_lines:]
+        except OSError:
+            return []
+
+    def _detect_runtime_error(self, startup_log_text: str) -> str:
+        lowered = startup_log_text.lower()
+        markers = [
+            "modulenotfounderror",
+            "traceback (most recent call last)",
+            "runtimeerror",
+            "error:",
+            "failed to import",
+            "no module named",
+        ]
+        for marker in markers:
+            if marker in lowered:
+                return marker
+        return ""
+
+    def _extract_comfyui_bind_urls(self, startup_log_text: str) -> list[str]:
+        candidates = re.findall(r"(https?://[0-9a-zA-Z\.\-_:]+)", startup_log_text)
+        return sorted(set(candidates))
 
     def _download_and_extract_comfyui(self, target_dir: Path) -> tuple[bool, str]:
         archive_path = Path(tempfile.gettempdir()) / "ComfyUI-master.zip"
@@ -832,6 +881,10 @@ class WebRuntime:
 
     def start_image_engine(self) -> dict[str, Any]:
         print("[setup-action] start-image-engine requested")
+        startup_log_lines: list[str] = []
+        startup_log_file = self.paths.logs / "image_engine_startup.log"
+        startup_log_file.parent.mkdir(parents=True, exist_ok=True)
+        self.image_startup_status = {}
         if self.app_config.image.provider != "comfyui":
             print("[setup-action] start-image-engine failure reason=image provider is not comfyui")
             return {
@@ -844,6 +897,14 @@ class WebRuntime:
             }
         if self.get_image_status().get("reachable", False):
             print("[setup-action] start-image-engine success reason=already running")
+            self.image_startup_status = {
+                "stage": "wait-for-readiness",
+                "reason": "already-reachable",
+                "summary": "ComfyUI is already running.",
+                "log_text": "",
+                "log_available": False,
+                "log_file": str(startup_log_file),
+            }
             return {
                 "ok": True,
                 "message": "ComfyUI is already running.",
@@ -864,6 +925,7 @@ class WebRuntime:
             }
         self.app_config.image.comfyui_path = str(comfyui_root)
         self.config_store.save(self.app_config)
+        self._append_image_startup_log(startup_log_lines, f"Using install path: {comfyui_root}")
         print("[setup-orchestrator] setup-image step=verify-install")
         validation = self.validate_comfyui_install(comfyui_root)
         if not validation.get("ok"):
@@ -885,6 +947,22 @@ class WebRuntime:
             self.app_config.image.comfyui_path = str(comfyui_root)
             self.config_store.save(self.app_config)
             validation = self.validate_comfyui_install(comfyui_root)
+        if not validation.get("ok"):
+            missing_files = list(validation.get("missing_files", []))
+            unresolved = [item for item in missing_files if item != "run_cpu.bat|run_nvidia_gpu.bat"]
+            if unresolved:
+                missing = ", ".join(unresolved)
+                return {
+                    "ok": False,
+                    "message": f"ComfyUI install is incomplete: missing {missing}.",
+                    "next_step": "Repair the install/runtime, then retry Start Image Engine.",
+                    "failure_stage": "verify-install",
+                    "failure_stage_message": "required files/runtime missing",
+                    "steps": [
+                        {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
+                        {"step": "verify-install", "state": "failed", "message": f"Missing: {missing}"},
+                    ],
+                }
         run_script = comfyui_root / "run_nvidia_gpu.bat"
         fallback_script = comfyui_root / "run_cpu.bat"
         if not fallback_script.exists():
@@ -910,22 +988,33 @@ class WebRuntime:
                 ],
             }
         print("[setup-orchestrator] setup-image step=launch-engine")
+        process: subprocess.Popen[str] | None = None
         try:
             if os.name == "nt" and run_script.exists():
-                subprocess.Popen(
-                    [str(run_script)],
+                self._append_image_startup_log(startup_log_lines, f"Launching script: {run_script.name}")
+                with startup_log_file.open("w", encoding="utf-8") as handle:
+                    handle.write("")
+                process = subprocess.Popen(
+                    [
+                        "cmd.exe",
+                        "/c",
+                        f"\"{run_script}\" 1>>\"{startup_log_file}\" 2>&1",
+                    ],
                     cwd=str(comfyui_root),
                     creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,  # type: ignore[attr-defined]
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
                 )
             elif os.name == "nt" and fallback_script.exists():
-                subprocess.Popen(
-                    [str(fallback_script)],
+                self._append_image_startup_log(startup_log_lines, f"Launching script: {fallback_script.name}")
+                with startup_log_file.open("w", encoding="utf-8") as handle:
+                    handle.write("")
+                process = subprocess.Popen(
+                    [
+                        "cmd.exe",
+                        "/c",
+                        f"\"{fallback_script}\" 1>>\"{startup_log_file}\" 2>&1",
+                    ],
                     cwd=str(comfyui_root),
                     creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,  # type: ignore[attr-defined]
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
                 )
             else:
                 python_exe = shutil.which("python") or shutil.which("py")
@@ -945,11 +1034,13 @@ class WebRuntime:
                     ],
                 }
                 command = [python_exe, "main.py"]
-                subprocess.Popen(
+                self._append_image_startup_log(startup_log_lines, f"Launching command: {' '.join(command)}")
+                process = subprocess.Popen(
                     command,
                     cwd=str(comfyui_root),
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
                     start_new_session=True,
                 )
         except OSError as exc:
@@ -967,12 +1058,60 @@ class WebRuntime:
                     {"step": "launch-engine", "state": "failed", "message": f"Process launch failed: {exc}"},
                 ],
             }
+        if process is None:
+            return {"ok": False, "message": "ComfyUI process launch did not initialize.", "failure_stage": "launch-engine", "failure_stage_message": "process launch failed"}
         print(f"[setup-action] start-image-engine launch command={launcher}")
         print("[setup-orchestrator] setup-image step=wait-for-readiness")
-        for _ in range(8):
+        expected_base = self.app_config.image.base_url
+        expected = urlparse(expected_base)
+        for _ in range(20):
             time.sleep(0.75)
+            if process.poll() is not None:
+                if getattr(process, "stdout", None) is not None:
+                    try:
+                        captured, _ = process.communicate(timeout=0.2)
+                        if captured:
+                            startup_log_lines.extend(str(captured).splitlines()[-80:])
+                    except (OSError, subprocess.SubprocessError):
+                        pass
+                tail_lines = self._read_startup_log_tail(startup_log_file)
+                startup_log_lines.extend(tail_lines)
+                startup_log_text = self._sanitize_image_startup_log(startup_log_lines)
+                runtime_error = self._detect_runtime_error(startup_log_text)
+                self.image_startup_status = {
+                    "stage": "wait-for-readiness",
+                    "reason": "process-exited-immediately",
+                    "summary": "Image AI failed: ComfyUI exited during startup.",
+                    "runtime_error_hint": runtime_error,
+                    "log_text": startup_log_text,
+                    "log_available": bool(startup_log_text),
+                    "log_file": str(startup_log_file),
+                }
+                return {
+                    "ok": False,
+                    "message": "Image AI failed: ComfyUI exited during startup.",
+                    "next_step": "Open setup details to review startup log and fix the runtime/dependency issue.",
+                    "failure_stage": "wait-for-readiness",
+                    "failure_stage_message": "ComfyUI exited during startup",
+                    "startup_status": self.image_startup_status,
+                    "steps": [
+                        {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
+                        {"step": "verify-install", "state": "ready", "message": "Install verification completed."},
+                        {"step": "repair-launcher", "state": "ready", "message": "Launcher verified or repaired."},
+                        {"step": "launch-engine", "state": "ready", "message": "ComfyUI launch command sent."},
+                        {"step": "wait-for-readiness", "state": "failed", "message": "ComfyUI process exited before readiness endpoint was reachable."},
+                    ],
+                }
             if self.get_image_status().get("reachable", False):
                 print("[setup-action] start-image-engine success")
+                self.image_startup_status = {
+                    "stage": "wait-for-readiness",
+                    "reason": "ready",
+                    "summary": "ComfyUI started and is reachable.",
+                    "log_text": self._sanitize_image_startup_log(startup_log_lines + self._read_startup_log_tail(startup_log_file)),
+                    "log_available": True,
+                    "log_file": str(startup_log_file),
+                }
                 return {
                     "ok": True,
                     "message": "ComfyUI started and is reachable.",
@@ -985,14 +1124,52 @@ class WebRuntime:
                         {"step": "wait-for-readiness", "state": "ready", "message": "ComfyUI responded to readiness probe."},
                     ],
                 }
+        tail_lines = self._read_startup_log_tail(startup_log_file)
+        if getattr(process, "stdout", None) is not None:
+            try:
+                captured, _ = process.communicate(timeout=0.2)
+                if captured:
+                    startup_log_lines.extend(str(captured).splitlines()[-80:])
+            except (OSError, subprocess.SubprocessError):
+                pass
+        startup_log_lines.extend(tail_lines)
+        startup_log_text = self._sanitize_image_startup_log(startup_log_lines)
+        bound_urls = self._extract_comfyui_bind_urls(startup_log_text)
+        runtime_error = self._detect_runtime_error(startup_log_text)
+        reason = "timeout-waiting-for-comfyui"
+        message = "ComfyUI launch command was sent, but readiness timed out."
+        stage_message = "timeout waiting for ComfyUI"
+        if runtime_error:
+            reason = "runtime-error-in-launcher-output"
+            message = "Image AI failed: launcher output reported a runtime/dependency error."
+            stage_message = "runtime/dependency error in launcher output"
+        elif bound_urls and not any(expected.netloc in url for url in bound_urls):
+            reason = "bound-to-unexpected-address"
+            message = "Image AI failed: ComfyUI appears to be running on a different address/port."
+            stage_message = "ComfyUI bound to unexpected address/port"
+        else:
+            message = "Image AI failed: ComfyUI is still running but not reachable yet."
+            stage_message = "ComfyUI still running but not reachable"
+        self.image_startup_status = {
+            "stage": "wait-for-readiness",
+            "reason": reason,
+            "summary": message,
+            "runtime_error_hint": runtime_error,
+            "detected_bind_urls": bound_urls,
+            "expected_base_url": expected_base,
+            "log_text": startup_log_text,
+            "log_available": bool(startup_log_text),
+            "log_file": str(startup_log_file),
+        }
         print("[setup-action] start-image-engine failure reason=timeout-waiting-for-comfyui")
         print("[setup-orchestrator] setup-image failure stage=wait-for-readiness")
         return {
             "ok": False,
-            "message": "ComfyUI launch command was sent, but readiness timed out.",
+            "message": message,
             "next_step": "Wait for startup to finish, then click Recheck.",
             "failure_stage": "wait-for-readiness",
-            "failure_stage_message": "timeout waiting for ComfyUI",
+            "failure_stage_message": stage_message,
+            "startup_status": self.image_startup_status,
             "steps": [
                 {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
                 {"step": "verify-install", "state": "ready", "message": "Install verification completed."},

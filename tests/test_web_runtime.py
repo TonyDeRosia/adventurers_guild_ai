@@ -483,6 +483,46 @@ def test_start_image_engine_repairs_launcher_before_failing(tmp_path: Path, monk
     assert result["failure_stage"] == "launch-engine"
 
 
+def test_start_image_engine_detects_early_exit_and_exposes_startup_log(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    comfy_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
+    comfy_dir.mkdir(parents=True, exist_ok=True)
+    (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_dir / "run_cpu.bat").write_text("@echo off\r\npython main.py\r\n", encoding="utf-8")
+    (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
+    (comfy_dir / "models").mkdir(exist_ok=True)
+
+    monkeypatch.setattr(runtime, "_find_comfyui_root", lambda: comfy_dir)
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": False})
+    monkeypatch.setattr("time.sleep", lambda _seconds: None)
+
+    class _Proc:
+        stdout = True
+
+        def poll(self):
+            return 1
+
+        def communicate(self, timeout=0.0):
+            return ("Traceback (most recent call last):\nModuleNotFoundError: x\n", "")
+
+    monkeypatch.setattr("subprocess.Popen", lambda *_args, **_kwargs: _Proc())
+    result = runtime.start_image_engine()
+    assert result["ok"] is False
+    assert result["failure_stage_message"] == "ComfyUI exited during startup"
+    assert result["startup_status"]["reason"] == "process-exited-immediately"
+    assert "modulenotfounderror" in result["startup_status"]["runtime_error_hint"]
+
+
+def test_dependency_readiness_includes_image_startup_status(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.image_startup_status = {"reason": "runtime-error-in-launcher-output", "summary": "runtime error", "log_text": "error line"}
+    readiness = runtime.get_dependency_readiness()
+    image_item = readiness["items"][2]
+    assert image_item["startup_status"]["reason"] == "runtime-error-in-launcher-output"
+    assert "runtime error" in image_item["startup_status"]["summary"]
+
+
 def test_dependency_readiness_reports_missing_ollama_install(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.app_config.model.provider = "ollama"

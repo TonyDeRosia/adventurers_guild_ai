@@ -9,16 +9,17 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter, system-ui, sans-serif; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter, system-ui, sans-serif; overflow: hidden; }
 
-.app-shell { display: grid; grid-template-columns: 280px 1fr 320px; min-height: 100vh; gap: 12px; padding: 12px; }
+.app-shell { display: grid; grid-template-columns: 280px 1fr 320px; height: 100dvh; gap: 12px; padding: 12px; overflow: hidden; }
 .sidebar, .chat-main { background: var(--panel); border-radius: 12px; padding: 12px; border: 1px solid #243654; }
 .sidebar h2, .sidebar h3 { margin-top: 0; }
 .panel-block { margin-bottom: 12px; }
 .button-row { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 8px; }
 #selected-save-label { color: var(--muted); margin: 6px 0 10px; font-size: 0.9rem; }
 
-.chat-main { display: flex; flex-direction: column; }
+.chat-main { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .chat-header h1 { margin: 0; font-size: 1.15rem; }
 .chat-header p { margin: 4px 0 12px; color: var(--muted); font-size: 0.9rem; }
 
@@ -32,6 +33,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter,
   flex-direction: column;
   gap: 10px;
   background: #0f1728;
+  min-height: 0;
 }
 
 .msg { padding: 8px 10px; border-radius: 10px; line-height: 1.35; white-space: pre-wrap; }
@@ -146,6 +148,16 @@ button:hover { border-color: var(--accent); }
 .setup-progress .setup-step.ready { color: #86efac; }
 .setup-progress .setup-step.running { color: #fde68a; }
 .setup-progress .setup-step.failed { color: #fca5a5; }
+.startup-log summary { cursor: pointer; color: #bfdbfe; }
+.startup-log pre {
+  margin: 6px 0 0;
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid #2f4665;
+  border-radius: 6px;
+  padding: 8px;
+  background: #0b1628;
+}
 button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -164,6 +176,7 @@ button:disabled {
 .save-item small { display: block; color: var(--muted); margin-top: 4px; }
 .save-item.selected { border-color: #4cc2ff; box-shadow: 0 0 0 1px #4cc2ff inset; background: #18324f; }
 .state-panel { white-space: pre-wrap; max-height: 35vh; overflow: auto; margin: 0; }
+.left-panel, .right-panel { min-height: 0; overflow-y: auto; }
 
 .image-preview img { max-width: 100%; border-radius: 8px; }
 .modal.hidden { display: none; }
@@ -187,6 +200,7 @@ textarea { border-radius: 8px; border: 1px solid #2e3d52; background: #131e2b; c
 .modal-grid label:last-child { grid-column: 1 / -1; }
 
 @media (max-width: 1150px) {
-  .app-shell { grid-template-columns: 1fr; }
+  body { overflow: auto; }
+  .app-shell { grid-template-columns: 1fr; height: auto; min-height: 100dvh; overflow: visible; }
   .left-panel, .right-panel { min-height: auto; }
 }
