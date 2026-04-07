@@ -173,6 +173,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter,
   border-radius: 8px;
   border: 1px solid #33506e;
 }
+.scene-image-display > div { display: none; }
 
 .input-bar { margin-top: 10px; display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 .input-bar { flex-shrink: 0; }
@@ -415,6 +416,24 @@ textarea { border-radius: 8px; border: 1px solid #2e3d52; background: #131e2b; c
 .sheet-sections section { border: 1px solid #3b3b54; border-radius: 6px; padding: 8px; }
 .sheet-sections section h6 { margin: 0 0 6px; }
 .sheet-sections label { display: block; margin-bottom: 6px; }
+.sheet-ability-list { display: grid; gap: 8px; margin-bottom: 8px; }
+.sheet-ability-entry {
+  border: 1px solid #344c6d;
+  border-radius: 8px;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 10px;
+}
+.sheet-ability-entry label:last-of-type { grid-column: 1 / -1; }
+.sheet-ability-entry .button-row { grid-column: 1 / -1; margin: 0; }
+.spellbook-group { margin-bottom: 10px; }
+.spellbook-entry {
+  border: 1px solid #344c6d;
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 6px;
+}
 .compact-row { margin-bottom: 8px; }
 .runtime-sheet-card { border: 1px solid #344c6d; border-radius: 8px; padding: 10px; margin-bottom: 8px; }
 .runtime-sheet-card h4 { margin: 0 0 6px; }

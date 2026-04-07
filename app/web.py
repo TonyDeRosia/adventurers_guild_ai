@@ -1617,6 +1617,18 @@ class WebRuntime:
                     "classic_attributes": sheet.classic_attributes.__dict__,
                     "traits": sheet.traits,
                     "abilities": sheet.abilities,
+                    "guaranteed_abilities": [
+                        {
+                            "name": entry.name,
+                            "type": entry.type,
+                            "description": entry.description,
+                            "cost_or_resource": entry.cost_or_resource,
+                            "cooldown": entry.cooldown,
+                            "tags": list(entry.tags),
+                            "notes": entry.notes,
+                        }
+                        for entry in sheet.guaranteed_abilities
+                    ],
                     "equipment": sheet.equipment,
                     "weaknesses": sheet.weaknesses,
                     "temperament": sheet.temperament,
@@ -1631,6 +1643,8 @@ class WebRuntime:
                 }
                 for sheet in state.character_sheets
             ],
+            "inventory_state": state.structured_state.runtime.inventory_state,
+            "spellbook": state.structured_state.runtime.spellbook,
             "active_slot": self.session.active_slot,
         }
 
@@ -1721,6 +1735,62 @@ class WebRuntime:
             if isinstance(entry, dict):
                 clean.append(entry)
         return clean
+
+    def get_inventory_state(self) -> dict[str, Any]:
+        runtime = self.session.state.structured_state.runtime
+        if not runtime.inventory_state:
+            self.engine.state_orchestrator.update_runtime_state(
+                self.session.state,
+                action="inventory_sync",
+                system_messages=[],
+                narrative="",
+            )
+        print(f"[inventory] viewer_opened campaign={self.session.active_slot}")
+        return runtime.inventory_state
+
+    def get_spellbook_state(self) -> list[dict[str, Any]]:
+        runtime = self.session.state.structured_state.runtime
+        if not isinstance(runtime.spellbook, list):
+            runtime.spellbook = []
+        print(f"[spellbook] viewer_opened campaign={self.session.active_slot}")
+        print(f"[spellbook] current_entry_count={len(runtime.spellbook)}")
+        return runtime.spellbook
+
+    def upsert_spellbook_entry(self, payload: dict[str, Any]) -> dict[str, Any]:
+        runtime = self.session.state.structured_state.runtime
+        action = str(payload.get("action", "upsert")).strip().lower()
+        if not isinstance(runtime.spellbook, list):
+            runtime.spellbook = []
+        if action == "delete":
+            entry_id = str(payload.get("id", "")).strip()
+            runtime.spellbook = [entry for entry in runtime.spellbook if str(entry.get("id", "")) != entry_id]
+        else:
+            entry = {
+                "id": str(payload.get("id", "")).strip() or f"sb_{int(time.time() * 1000)}",
+                "name": str(payload.get("name", "")).strip(),
+                "type": str(payload.get("type", "ability")).strip().lower(),
+                "description": str(payload.get("description", "")).strip(),
+                "cost_or_resource": str(payload.get("cost_or_resource", "")).strip(),
+                "cooldown": str(payload.get("cooldown", "")).strip(),
+                "tags": [str(tag).strip() for tag in payload.get("tags", []) if str(tag).strip()],
+                "notes": str(payload.get("notes", "")).strip(),
+            }
+            if not entry["name"]:
+                raise ValueError("Spellbook entry name is required.")
+            if entry["type"] not in {"spell", "skill", "ability", "passive"}:
+                entry["type"] = "ability"
+            replaced = False
+            for index, existing in enumerate(runtime.spellbook):
+                if str(existing.get("id", "")) == entry["id"]:
+                    runtime.spellbook[index] = entry
+                    replaced = True
+                    break
+            if not replaced:
+                runtime.spellbook.append(entry)
+        runtime.spellbook = self.engine.state_orchestrator._normalize_spellbook(runtime.spellbook)
+        self.save_active_campaign(self.session.active_slot)
+        print(f"[spellbook] current_entry_count={len(runtime.spellbook)}")
+        return {"spellbook": runtime.spellbook}
 
     def create_campaign(self, payload: dict[str, Any]) -> dict[str, Any]:
         mode = str(payload.get("mode", "custom")).strip().lower() or "custom"
@@ -2293,6 +2363,21 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     @app.get("/api/campaign/scene-visual")
     def campaign_scene_visual() -> dict[str, Any]:
         return {"scene_visual": runtime._scene_visual_for_slot()}
+
+    @app.get("/api/campaign/inventory")
+    def campaign_inventory() -> dict[str, Any]:
+        return {"inventory": runtime.get_inventory_state()}
+
+    @app.get("/api/campaign/spellbook")
+    def campaign_spellbook() -> dict[str, Any]:
+        return {"spellbook": runtime.get_spellbook_state()}
+
+    @app.post("/api/campaign/spellbook")
+    def campaign_spellbook_update(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return runtime.upsert_spellbook_entry(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(exc)) from exc
 
     @app.get("/api/campaign/saves")
     def campaign_saves() -> dict[str, Any]:

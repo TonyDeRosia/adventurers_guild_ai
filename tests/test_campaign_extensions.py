@@ -271,6 +271,38 @@ def test_campaign_creation_can_disable_content_settings() -> None:
     assert state.settings.content_settings.thematic_flags == []
 
 
+def test_main_character_guaranteed_loadout_initializes_runtime_spellbook() -> None:
+    manager = GameStateManager(Path("data"), Path("data") / "saves")
+    state = manager.create_new_campaign(
+        player_name="Mira",
+        char_class="Mage",
+        profile="classic_fantasy",
+        mature_content_enabled=False,
+        character_sheets=[
+            {
+                "id": "sheet_mira",
+                "name": "Mira",
+                "sheet_type": "main_character",
+                "role": "Mage",
+                "guaranteed_abilities": [
+                    {
+                        "name": "Arc Bolt",
+                        "type": "spell",
+                        "description": "A focused arcane strike.",
+                        "cost_or_resource": "5 mana",
+                        "cooldown": "1 turn",
+                        "tags": ["arcane", "starter"],
+                        "notes": "Core opener",
+                    }
+                ],
+            }
+        ],
+    )
+    assert len(state.structured_state.runtime.spellbook) == 1
+    assert state.structured_state.runtime.spellbook[0]["name"] == "Arc Bolt"
+    assert state.structured_state.runtime.spellbook[0]["type"] == "spell"
+
+
 def test_memory_retrieval_pipeline_prefers_contextual_entries() -> None:
     state = load_state()
     state.turn_count = 10

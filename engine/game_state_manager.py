@@ -180,6 +180,18 @@ class GameStateManager:
                     "classic_attributes": sheet.classic_attributes.__dict__,
                     "traits": list(sheet.traits),
                     "abilities": list(sheet.abilities),
+                    "guaranteed_abilities": [
+                        {
+                            "name": entry.name,
+                            "type": entry.type,
+                            "description": entry.description,
+                            "cost_or_resource": entry.cost_or_resource,
+                            "cooldown": entry.cooldown,
+                            "tags": list(entry.tags),
+                            "notes": entry.notes,
+                        }
+                        for entry in sheet.guaranteed_abilities
+                    ],
                     "equipment": list(sheet.equipment),
                     "weaknesses": list(sheet.weaknesses),
                     "temperament": sheet.temperament,
@@ -249,6 +261,34 @@ class GameStateManager:
             "charisma": main_sheet.classic_attributes.charisma,
         }
         world_flags["main_character_sheet_applied"] = True
+        structured_payload = payload.get("structured_state")
+        if not isinstance(structured_payload, dict):
+            structured_payload = {}
+            payload["structured_state"] = structured_payload
+        runtime_payload = structured_payload.get("runtime")
+        if not isinstance(runtime_payload, dict):
+            runtime_payload = {}
+            structured_payload["runtime"] = runtime_payload
+        spellbook_payload = runtime_payload.get("spellbook")
+        if not isinstance(spellbook_payload, list) or not spellbook_payload:
+            runtime_payload["spellbook"] = [
+                {
+                    "id": f"main_{index}_{entry.name.lower().replace(' ', '_')}",
+                    "name": entry.name,
+                    "type": entry.type,
+                    "description": entry.description,
+                    "cost_or_resource": entry.cost_or_resource,
+                    "cooldown": entry.cooldown,
+                    "tags": list(entry.tags),
+                    "notes": entry.notes,
+                }
+                for index, entry in enumerate(main_sheet.guaranteed_abilities)
+                if entry.name.strip()
+            ]
+            print(
+                f"[spellbook] initialized_from_main_sheet={str(bool(runtime_payload['spellbook'])).lower()} "
+                f"entry_count={len(runtime_payload['spellbook'])}"
+            )
         print(f"[character-sheets] applied_health={main_sheet.stats.health}")
 
     def save(self, state: CampaignState, slot: str = "autosave") -> Path:

@@ -221,7 +221,8 @@ class CampaignRuntimeState:
     player_core: dict[str, Any] = field(default_factory=dict)
     inventory: list[str] = field(default_factory=list)
     equipment: dict[str, str | None] = field(default_factory=dict)
-    spellbook: list[str] = field(default_factory=list)
+    inventory_state: dict[str, Any] = field(default_factory=dict)
+    spellbook: list[dict[str, Any]] = field(default_factory=list)
     abilities_learned: list[str] = field(default_factory=list)
     current_location_id: str = ""
     discovered_locations: list[str] = field(default_factory=list)
@@ -453,7 +454,8 @@ class CampaignState:
                 player_core=dict(raw_runtime.get("player_core", {})),
                 inventory=[str(v) for v in raw_runtime.get("inventory", [])],
                 equipment={str(k): (None if v is None else str(v)) for k, v in raw_runtime.get("equipment", {}).items()},
-                spellbook=[str(v) for v in raw_runtime.get("spellbook", [])],
+                inventory_state=dict(raw_runtime.get("inventory_state", {})),
+                spellbook=CampaignState._spellbook_from_payload(raw_runtime.get("spellbook", [])),
                 abilities_learned=[str(v) for v in raw_runtime.get("abilities_learned", [])],
                 current_location_id=str(raw_runtime.get("current_location_id", "")),
                 discovered_locations=[str(v) for v in raw_runtime.get("discovered_locations", [])],
@@ -494,6 +496,7 @@ class CampaignState:
                 player_core=dict(payload.get("player", {})),
                 inventory=[str(v) for v in payload.get("player", {}).get("inventory", [])],
                 equipment={"equipped_item_id": payload.get("player", {}).get("equipped_item_id")},
+                inventory_state={},
                 current_location_id=str(payload.get("current_location_id", "")),
                 discovered_locations=discovered_locations,
                 quest_state={str(k): str(v.get("status", "active")) for k, v in payload.get("quests", {}).items()},
@@ -517,3 +520,44 @@ class CampaignState:
                 running_summary=str(payload.get("session_summaries", [{}])[-1].get("summary", "")) if payload.get("session_summaries") else "",
             ),
         )
+
+    @staticmethod
+    def _spellbook_from_payload(raw_spellbook: Any) -> list[dict[str, Any]]:
+        entries: list[dict[str, Any]] = []
+        for index, entry in enumerate(raw_spellbook if isinstance(raw_spellbook, list) else []):
+            if isinstance(entry, dict):
+                clean_name = str(entry.get("name", "")).strip()
+                if not clean_name:
+                    continue
+                clean_type = str(entry.get("type", "ability")).strip().lower()
+                if clean_type not in {"spell", "skill", "ability", "passive"}:
+                    clean_type = "ability"
+                entries.append(
+                    {
+                        "id": str(entry.get("id", "")).strip() or f"sb_{index}_{clean_name.lower().replace(' ', '_')}",
+                        "name": clean_name,
+                        "type": clean_type,
+                        "description": str(entry.get("description", "")).strip(),
+                        "cost_or_resource": str(entry.get("cost_or_resource", "")).strip(),
+                        "cooldown": str(entry.get("cooldown", "")).strip(),
+                        "tags": [str(tag).strip() for tag in entry.get("tags", []) if str(tag).strip()],
+                        "notes": str(entry.get("notes", "")).strip(),
+                    }
+                )
+                continue
+            clean_name = str(entry).strip()
+            if not clean_name:
+                continue
+            entries.append(
+                {
+                    "id": f"sb_{index}_{clean_name.lower().replace(' ', '_')}",
+                    "name": clean_name,
+                    "type": "ability",
+                    "description": "",
+                    "cost_or_resource": "",
+                    "cooldown": "",
+                    "tags": [],
+                    "notes": "",
+                }
+            )
+        return entries
