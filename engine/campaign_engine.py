@@ -467,7 +467,10 @@ class CampaignEngine:
             )
 
         action_subtype = self._classify_gameplay_action_subtype(action)
-        if action_subtype == "dialogue":
+        # Boundary: the engine resolves social target/context, but narrator rules and prompt guidance own
+        # how mixed social moments are narrated. Only pure dialogue turns should be shortcut into direct
+        # same-turn NPC reply generation.
+        if action_subtype == "dialogue" and self._is_pure_dialogue_action(action):
             target_actor = self._resolve_scene_actor_target(action, scene_state)
             if target_actor is not None:
                 npc_record = self._materialize_lightweight_npc(state, scene_state, target_actor)
@@ -1292,6 +1295,21 @@ class CampaignEngine:
         if any(phrase in normalized for phrase in ("cast", "attack", "hit", "strike", "kick", "slash", "shoot", "spell")):
             return "attack_or_spell"
         return "generic"
+
+    def _is_pure_dialogue_action(self, action: str) -> bool:
+        normalized = re.sub(r"\s+", " ", action.strip().lower())
+        if not normalized:
+            return False
+        has_dialogue_marker = bool(
+            re.search(r"['\"][^'\"]+['\"]", normalized)
+            or "wait for" in normalized and "reply" in normalized
+            or any(keyword in normalized for keyword in (" say ", " ask ", " tell ", " shout ", " speak "))
+            or normalized.startswith(("say ", "ask ", "tell ", "shout ", "speak "))
+        )
+        if not has_dialogue_marker:
+            return False
+        mixed_action_markers = ("walk", "move", "step", "approach", "go to", "circle", "pace", "around")
+        return not any(marker in normalized for marker in mixed_action_markers)
 
     def _build_internal_fallback(self, scene_state: dict[str, Any]) -> str:
         location = str(scene_state.get("location_name") or "the current area")

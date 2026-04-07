@@ -655,6 +655,18 @@ class _FigureIntroProvider(NarrationModelAdapter):
         return "A hooded figure lingers beside the broken arch and watches you."
 
 
+class _MixedSocialNarrationProvider(NarrationModelAdapter):
+    provider_name = "ollama"
+
+    def generate(self, prompt: str, system_prompt: str = "", history=None) -> str:
+        return (
+            "You close the distance by two careful steps, and the man who has been staring straight through you "
+            "shifts his weight with a visible hitch in his shoulders. A few nearby patrons go quiet, sensing the "
+            "tension between you. When you offer a calm hello, he exhales through his nose and answers low: "
+            "“...Hello. Keep your voice down.” His eyes stay on you, waiting to see what you do next."
+        )
+
+
 def test_turn_fallback_is_clean_when_provider_fails(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _FailingProvider()
@@ -835,6 +847,41 @@ def test_wait_for_reply_with_visible_actor_generates_progress(tmp_path: Path, mo
     lowered = out["narrative"].lower()
     assert "turns toward you" in lowered
     assert "air is thick" not in lowered
+
+
+def test_mixed_social_turn_is_not_collapsed_to_short_npc_reply(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _MixedSocialNarrationProvider()
+    runtime.handle_player_input("look")
+    out = runtime.handle_player_input("i walk up to the man staring at me and say hello")
+    lowered = out["narrative"].lower()
+    assert "you close the distance" in lowered
+    assert "staring" in lowered
+    assert "tension" in lowered
+    assert "hello" in lowered
+    assert "turns toward you, posture" not in lowered
+
+
+def test_mixed_social_turn_preserves_full_scene_shape_with_target_context(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _FigureIntroProvider()
+    runtime.handle_player_input("look")
+    runtime.engine.model = _MixedSocialNarrationProvider()
+    out = runtime.handle_player_input("i approach her and ask her name")
+    lowered = out["narrative"].lower()
+    scene_state = runtime.session.state.structured_state.runtime.scene_state
+    assert len(scene_state.get("scene_actors", [])) >= 1
+    assert "keep your voice down" in lowered
+
+
+def test_mixed_social_change_keeps_structured_and_dialogue_paths_intact(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _ShortDialogueProvider()
+    runtime.handle_player_input("look")
+    pure_dialogue = runtime.handle_player_input('i say "hello there"')
+    assert "turns toward you" in pure_dialogue["narrative"].lower() or "i hear you" in pure_dialogue["narrative"].lower()
+    structured = runtime.handle_player_input("what are my stats")
+    assert structured["metadata"]["requested_mode"] == "structured_lookup"
 
 
 def test_lightweight_npc_scene_state_persists_and_stays_campaign_scoped(tmp_path: Path, monkeypatch) -> None:
