@@ -207,6 +207,7 @@ class CampaignCanonState:
 
     campaign_premise: str = ""
     world_rules: list[str] = field(default_factory=list)
+    custom_narrator_rules: list[dict[str, str]] = field(default_factory=list)
     lore: list[str] = field(default_factory=list)
     character_sheet_ids: list[str] = field(default_factory=list)
     faction_setup: dict[str, int] = field(default_factory=dict)
@@ -444,6 +445,14 @@ class CampaignState:
             canon=CampaignCanonState(
                 campaign_premise=str(raw_canon.get("campaign_premise", "")),
                 world_rules=[str(v) for v in raw_canon.get("world_rules", [])],
+                custom_narrator_rules=[
+                    {
+                        "id": str(entry.get("id", "")).strip() or f"rule_{index}",
+                        "text": str(entry.get("text", "")).strip(),
+                    }
+                    for index, entry in enumerate(raw_canon.get("custom_narrator_rules", []))
+                    if isinstance(entry, dict) and str(entry.get("text", "")).strip()
+                ],
                 lore=[str(v) for v in raw_canon.get("lore", [])],
                 character_sheet_ids=[str(v) for v in raw_canon.get("character_sheet_ids", [])],
                 faction_setup={str(k): int(v) for k, v in raw_canon.get("faction_setup", {}).items()},

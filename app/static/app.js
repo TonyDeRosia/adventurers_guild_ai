@@ -41,6 +41,8 @@ const runtimeInventoryModal = document.getElementById('runtime-inventory-modal')
 const runtimeInventoryDetail = document.getElementById('runtime-inventory-detail');
 const runtimeSpellbookModal = document.getElementById('runtime-spellbook-modal');
 const runtimeSpellbookList = document.getElementById('runtime-spellbook-list');
+const narratorRulesModal = document.getElementById('narrator-rules-modal');
+const narratorRulesList = document.getElementById('narrator-rules-list');
 
 let draftCharacterSheets = [];
 let editingSheetIndex = -1;
@@ -48,6 +50,7 @@ let runtimeCharacterSheets = [];
 let selectedRuntimeSheetId = '';
 let runtimeInventoryState = {};
 let runtimeSpellbookEntries = [];
+let customNarratorRules = [];
 
 let currentSceneImage = null;
 let currentSceneImagePrompt = '';
@@ -1174,6 +1177,52 @@ async function refreshSpellbook() {
   renderSpellbookViewer();
 }
 
+function renderNarratorRules() {
+  if (!narratorRulesList) return;
+  if (!customNarratorRules.length) {
+    narratorRulesList.textContent = 'No custom narrator rules yet.';
+    return;
+  }
+  narratorRulesList.innerHTML = '';
+  customNarratorRules.forEach((entry) => {
+    const card = document.createElement('div');
+    card.className = 'narrator-rule-item';
+    card.innerHTML = `<p>${escapeHtml(entry.text || '')}</p>`;
+    const actions = document.createElement('div');
+    actions.className = 'button-row';
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.textContent = 'Edit';
+    editBtn.onclick = () => {
+      document.getElementById('narrator-rule-edit-id').value = entry.id;
+      document.getElementById('narrator-rule-input').value = entry.text || '';
+    };
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.textContent = 'Delete';
+    deleteBtn.onclick = async () => {
+      const result = await api('/api/campaign/narrator-rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', id: entry.id }),
+      });
+      customNarratorRules = Array.isArray(result.rules) ? result.rules : [];
+      renderNarratorRules();
+      console.log(`[narrator-rules] rule_deleted campaign=${loadedSlot || 'unknown'} count=${customNarratorRules.length}`);
+    };
+    actions.appendChild(editBtn);
+    actions.appendChild(deleteBtn);
+    card.appendChild(actions);
+    narratorRulesList.appendChild(card);
+  });
+}
+
+async function refreshNarratorRules() {
+  const payload = await api('/api/campaign/narrator-rules');
+  customNarratorRules = Array.isArray(payload.rules) ? payload.rules : [];
+  renderNarratorRules();
+}
+
 async function refreshState() {
   const data = await api('/api/campaign/state');
   const state = data.state;
@@ -1185,9 +1234,11 @@ async function refreshState() {
   runtimeCharacterSheets = Array.isArray(state.character_sheets) ? state.character_sheets : [];
   runtimeInventoryState = state.inventory_state || runtimeInventoryState || {};
   runtimeSpellbookEntries = Array.isArray(state.spellbook) ? state.spellbook.map(normalizeSpellbookEntry) : [];
+  customNarratorRules = Array.isArray(state.custom_narrator_rules) ? state.custom_narrator_rules : [];
   renderRuntimeCharacterSheets();
   renderInventoryViewer();
   renderSpellbookViewer();
+  renderNarratorRules();
   campaignMeta.textContent = `${state.campaign_name || 'Campaign'} · Turn ${state.turn_count || 0}`;
   ingestPersistedCampaignSettings(
     {
@@ -1910,6 +1961,49 @@ document.getElementById('open-runtime-spellbook').onclick = async () => {
 };
 document.getElementById('close-runtime-spellbook').onclick = () => {
   runtimeSpellbookModal?.classList.add('hidden');
+};
+document.getElementById('open-narrator-rules').onclick = async () => {
+  console.log('[narrator-rules] runtime_button_rendered=true');
+  await refreshNarratorRules();
+  narratorRulesModal?.classList.remove('hidden');
+  console.log(`[narrator-rules] modal_opened campaign=${loadedSlot || 'unknown'}`);
+};
+document.getElementById('close-narrator-rules').onclick = () => {
+  narratorRulesModal?.classList.add('hidden');
+};
+document.getElementById('narrator-rule-clear').onclick = () => {
+  document.getElementById('narrator-rule-edit-id').value = '';
+  document.getElementById('narrator-rule-input').value = '';
+};
+document.getElementById('narrator-rule-save').onclick = async () => {
+  const text = document.getElementById('narrator-rule-input').value.trim();
+  if (!text) {
+    setStatus('Narrator rule cannot be empty.', true);
+    return;
+  }
+  const result = await api('/api/campaign/narrator-rules', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'upsert',
+      id: document.getElementById('narrator-rule-edit-id').value.trim(),
+      text,
+    }),
+  });
+  customNarratorRules = Array.isArray(result.rules) ? result.rules : [];
+  renderNarratorRules();
+  document.getElementById('narrator-rule-edit-id').value = '';
+  document.getElementById('narrator-rule-input').value = '';
+  console.log(`[narrator-rules] rule_added campaign=${loadedSlot || 'unknown'} count=${customNarratorRules.length}`);
+};
+document.getElementById('narrator-rules-save-campaign').onclick = async () => {
+  await api('/api/campaign/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slot: loadedSlot || selectedSlot || 'autosave' }),
+  });
+  await refreshSaves();
+  setStatus('Narrator rules saved to campaign.');
 };
 document.getElementById('close-runtime-character-sheets').onclick = () => {
   runtimeCharacterSheetsModal?.classList.add('hidden');

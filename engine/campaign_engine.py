@@ -462,7 +462,9 @@ class CampaignEngine:
             guidance_requested=guidance_requested,
             suggested_moves_enabled=suggested_moves_enabled,
         )
+        narrative, custom_rule_cleanup_applied = self._apply_custom_narrator_rule_validation(state, narrative)
         print(f"[narration] recommendation_cleanup_applied={str(cleanup_applied).lower()}")
+        print(f"[narrator-rules] validation_cleanup_applied={str(custom_rule_cleanup_applied).lower()}")
         self.memory.record_recent(state, f"Narrator: {narrative}")
         self.state_orchestrator.update_runtime_state(state, action=action, system_messages=system_messages, narrative=narrative)
         self.memory.record_conversation_turn(
@@ -495,6 +497,7 @@ class CampaignEngine:
                 "sanitized_output": was_sanitized,
                 "guidance_requested": guidance_requested,
                 "recommendation_cleanup_applied": cleanup_applied,
+                "custom_rule_cleanup_applied": custom_rule_cleanup_applied,
                 "turn_count": state.turn_count,
                 "timing": timing,
             },
@@ -601,6 +604,35 @@ class CampaignEngine:
         text = "\n".join(line.rstrip() for line in text.splitlines() if line.strip())
         text = re.sub(r"\s{2,}", " ", text).strip()
         return text
+
+    def _apply_custom_narrator_rule_validation(self, state: CampaignState, narrative: str) -> tuple[str, bool]:
+        rules = state.structured_state.canon.custom_narrator_rules
+        if not rules:
+            return narrative, False
+        texts = [
+            str(entry.get("text", "")).strip().lower()
+            for entry in rules
+            if isinstance(entry, dict) and str(entry.get("text", "")).strip()
+        ]
+        if not texts:
+            return narrative, False
+        cleaned = narrative.strip()
+        applied = False
+        if any("never make decisions for me" in rule or "don't make decisions for me" in rule for rule in texts):
+            before = cleaned
+            cleaned = re.sub(
+                r"\b(?:you|your character)\s+(?:decide|decides|chose|choose|chooses|start|starts|begin|begins)\s+to\b[^.!?\n]*[.!?]?",
+                " ",
+                cleaned,
+                flags=re.IGNORECASE,
+            )
+            cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+            if cleaned != before:
+                applied = True
+        if not cleaned:
+            cleaned = "The air stills, awaiting your command."
+            applied = True
+        return cleaned, applied
 
     def _build_model_history(self, state: CampaignState) -> list[ChatMessage]:
         history: list[ChatMessage] = []

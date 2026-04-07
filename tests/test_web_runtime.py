@@ -245,6 +245,26 @@ class _AdvisoryPhraseProvider(NarrationModelAdapter):
         return "Rain glitters on the cobblestones. You could follow the footprints into the alley."
 
 
+class _PromptCaptureProvider(NarrationModelAdapter):
+    provider_name = "ollama"
+
+    def __init__(self) -> None:
+        self.last_prompt = ""
+        self.last_system_prompt = ""
+
+    def generate(self, prompt: str, system_prompt: str = "", history=None) -> str:
+        self.last_prompt = prompt
+        self.last_system_prompt = system_prompt
+        return "The hall is silent as your minions await your command."
+
+
+class _ForcedAgencyProvider(NarrationModelAdapter):
+    provider_name = "ollama"
+
+    def generate(self, prompt: str, system_prompt: str = "", history=None) -> str:
+        return "You decide to kneel before the altar. Dark light spills across the chamber."
+
+
 def test_turn_fallback_is_clean_when_provider_fails(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _FailingProvider()
@@ -295,6 +315,44 @@ def test_recommendation_cleanup_removes_generic_advisory_phrasing(tmp_path: Path
     out = runtime.handle_player_input("look")
     assert "You could" not in out["narrative"]
     assert out["metadata"]["recommendation_cleanup_applied"] is True
+
+
+def test_custom_narrator_rules_persist_and_remain_campaign_scoped(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"player_name": "Mira", "slot": "slot_rule_a"})
+    runtime.upsert_narrator_rule({"action": "upsert", "text": "Use darker gothic tone"})
+    runtime.save_active_campaign("slot_rule_a")
+
+    runtime.create_campaign({"player_name": "Aric", "slot": "slot_rule_b"})
+    runtime.upsert_narrator_rule({"action": "upsert", "text": "Keep combat responses short and brutal"})
+    runtime.save_active_campaign("slot_rule_b")
+
+    runtime.switch_campaign("slot_rule_a")
+    rules_a = runtime.get_narrator_rules()
+    runtime.switch_campaign("slot_rule_b")
+    rules_b = runtime.get_narrator_rules()
+
+    assert any("darker gothic tone" in entry.get("text", "").lower() for entry in rules_a)
+    assert all("darker gothic tone" not in entry.get("text", "").lower() for entry in rules_b)
+
+
+def test_custom_narrator_rules_are_injected_into_prompt(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    capture = _PromptCaptureProvider()
+    runtime.engine.model = capture
+    runtime.upsert_narrator_rule({"action": "upsert", "text": "Never describe my emotions unless I state them"})
+    runtime.handle_player_input("look around")
+    assert "Narrator Rules - Hard" in capture.last_system_prompt
+    assert "Never describe my emotions unless I state them" in capture.last_system_prompt
+
+
+def test_custom_never_make_decisions_rule_applies_cleanup(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _ForcedAgencyProvider()
+    runtime.upsert_narrator_rule({"action": "upsert", "text": "Never make decisions for me"})
+    out = runtime.handle_player_input("wait")
+    assert "You decide to" not in out["narrative"]
+    assert out["metadata"]["custom_rule_cleanup_applied"] is True
 
 
 def test_settings_include_ollama_unavailable_status(tmp_path: Path, monkeypatch) -> None:

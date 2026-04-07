@@ -1645,6 +1645,7 @@ class WebRuntime:
             ],
             "inventory_state": state.structured_state.runtime.inventory_state,
             "spellbook": state.structured_state.runtime.spellbook,
+            "custom_narrator_rules": state.structured_state.canon.custom_narrator_rules,
             "active_slot": self.session.active_slot,
         }
 
@@ -1791,6 +1792,42 @@ class WebRuntime:
         self.save_active_campaign(self.session.active_slot)
         print(f"[spellbook] current_entry_count={len(runtime.spellbook)}")
         return {"spellbook": runtime.spellbook}
+
+    def get_narrator_rules(self) -> list[dict[str, str]]:
+        canon = self.session.state.structured_state.canon
+        if not isinstance(canon.custom_narrator_rules, list):
+            canon.custom_narrator_rules = []
+        return canon.custom_narrator_rules
+
+    def upsert_narrator_rule(self, payload: dict[str, Any]) -> dict[str, Any]:
+        canon = self.session.state.structured_state.canon
+        if not isinstance(canon.custom_narrator_rules, list):
+            canon.custom_narrator_rules = []
+        action = str(payload.get("action", "upsert")).strip().lower()
+        if action == "delete":
+            entry_id = str(payload.get("id", "")).strip()
+            canon.custom_narrator_rules = [
+                entry
+                for entry in canon.custom_narrator_rules
+                if str(entry.get("id", "")).strip() != entry_id
+            ]
+            print(f"[narrator-rules] rule_deleted campaign={self.session.active_slot} count={len(canon.custom_narrator_rules)}")
+        else:
+            text = str(payload.get("text", "")).strip()
+            if not text:
+                raise ValueError("Narrator rule text is required.")
+            entry_id = str(payload.get("id", "")).strip() or f"nr_{int(time.time() * 1000)}"
+            updated = False
+            for entry in canon.custom_narrator_rules:
+                if str(entry.get("id", "")).strip() == entry_id:
+                    entry["text"] = text
+                    updated = True
+                    break
+            if not updated:
+                canon.custom_narrator_rules.append({"id": entry_id, "text": text})
+            print(f"[narrator-rules] rule_added campaign={self.session.active_slot} count={len(canon.custom_narrator_rules)}")
+        self.save_active_campaign(self.session.active_slot)
+        return {"rules": canon.custom_narrator_rules}
 
     def create_campaign(self, payload: dict[str, Any]) -> dict[str, Any]:
         mode = str(payload.get("mode", "custom")).strip().lower() or "custom"
@@ -2372,10 +2409,21 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     def campaign_spellbook() -> dict[str, Any]:
         return {"spellbook": runtime.get_spellbook_state()}
 
+    @app.get("/api/campaign/narrator-rules")
+    def campaign_narrator_rules() -> dict[str, Any]:
+        return {"rules": runtime.get_narrator_rules()}
+
     @app.post("/api/campaign/spellbook")
     def campaign_spellbook_update(payload: dict[str, Any]) -> dict[str, Any]:
         try:
             return runtime.upsert_spellbook_entry(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.post("/api/campaign/narrator-rules")
+    def campaign_narrator_rules_update(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return runtime.upsert_narrator_rule(payload)
         except ValueError as exc:
             raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(exc)) from exc
 

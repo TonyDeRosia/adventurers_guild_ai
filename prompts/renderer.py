@@ -26,6 +26,11 @@ class PromptPacket:
 class PromptRenderer:
     def __init__(self) -> None:
         self.sheet_formatter = CharacterSheetPromptFormatter()
+        self.built_in_narrator_rules = [
+            "Never make decisions for the player character.",
+            "Do not dictate the player's emotions, intentions, or choices.",
+            "When the player explicitly asks for stats, include concrete numeric stats available in state.",
+        ]
 
     """Converts current state + player action into model-ready prompts."""
 
@@ -52,9 +57,21 @@ class PromptRenderer:
             premise=world_meta.premise or "none",
             player_concept=world_meta.player_concept or "none",
         )
+        custom_rules = [
+            str(entry.get("text", "")).strip()
+            for entry in state.structured_state.canon.custom_narrator_rules
+            if isinstance(entry, dict) and str(entry.get("text", "")).strip()
+        ]
+        injected_custom = bool(custom_rules)
+        print(f"[narrator-rules] injected_custom_rules={str(injected_custom).lower()} count={len(custom_rules)}")
+        narrator_rules_layer = "\n".join(
+            [f"- {rule}" for rule in self.built_in_narrator_rules]
+            + ([f"- {rule}" for rule in custom_rules] if custom_rules else ["- none"])
+        )
         return (
             f"[System Role]\n{SYSTEM_ROLE_TEMPLATE}\n"
             f"[System Tone]\n{SYSTEM_TONE_TEMPLATE}\n"
+            f"[Narrator Rules - Hard]\n{narrator_rules_layer}\n"
             f"[Campaign Tone]\n{campaign_tone}\n"
             f"[Content Settings]\n{content_layer}\n"
             f"[World Setup]\n{world_layer}\n"
