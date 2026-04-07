@@ -409,3 +409,8 @@ textarea { border-radius: 8px; border: 1px solid #2e3d52; background: #131e2b; c
 .sheet-sections section { border: 1px solid #3b3b54; border-radius: 6px; padding: 8px; }
 .sheet-sections section h6 { margin: 0 0 6px; }
 .sheet-sections label { display: block; margin-bottom: 6px; }
+.compact-row { margin-bottom: 8px; }
+.runtime-sheet-card { border: 1px solid #344c6d; border-radius: 8px; padding: 10px; margin-bottom: 8px; }
+.runtime-sheet-card h4 { margin: 0 0 6px; }
+.runtime-sheet-card dl { margin: 0; display: grid; grid-template-columns: 170px 1fr; row-gap: 4px; column-gap: 10px; }
+.runtime-sheet-card dt { color: var(--muted); }

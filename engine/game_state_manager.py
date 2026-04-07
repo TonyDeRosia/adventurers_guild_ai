@@ -158,11 +158,13 @@ class GameStateManager:
             "premise": clean_premise,
             "player_concept": clean_player_concept,
         }
+        parsed_sheets: list[CharacterSheet] = []
         new_payload["character_sheets"] = []
         for raw_sheet in character_sheets or []:
             if not isinstance(raw_sheet, dict):
                 continue
             sheet = CharacterSheet.from_payload(raw_sheet)
+            parsed_sheets.append(sheet)
             new_payload["character_sheets"].append(
                 {
                     "id": sheet.id,
@@ -190,6 +192,7 @@ class GameStateManager:
                     "guidance_strength": sheet.guidance_strength,
                 }
             )
+        self._apply_main_character_sheet_to_payload(new_payload, parsed_sheets, source="campaign_create")
         strength = str(character_sheet_guidance_strength or "light").strip().lower()
         new_payload["character_sheet_guidance_strength"] = strength if strength in {"light", "strong"} else "light"
         new_payload["world_events"] = ["campaign_started"]
@@ -201,12 +204,64 @@ class GameStateManager:
         print("[campaign-create] seeded_quests=[]")
         return CampaignState.from_dict(new_payload)
 
+    def _apply_main_character_sheet_to_payload(
+        self,
+        payload: dict[str, object],
+        sheets: list[CharacterSheet],
+        source: str,
+    ) -> None:
+        main_sheet = next((sheet for sheet in sheets if sheet.sheet_type == "main_character"), None)
+        print(f"[character-sheets] attached_main_sheet_found={str(main_sheet is not None).lower()} source={source}")
+        if main_sheet is None:
+            return
+
+        player_payload = payload.get("player")
+        if not isinstance(player_payload, dict):
+            return
+
+        world_flags = payload.get("world_flags")
+        if not isinstance(world_flags, dict):
+            world_flags = {}
+            payload["world_flags"] = world_flags
+
+        print("[character-sheets] applying_main_sheet_to_campaign_state=true")
+        player_payload["name"] = main_sheet.name or player_payload.get("name", "")
+        if main_sheet.role.strip():
+            player_payload["char_class"] = main_sheet.role.strip()
+        player_payload["role"] = main_sheet.role
+        player_payload["archetype"] = main_sheet.archetype
+        player_payload["hp"] = int(main_sheet.stats.health)
+        player_payload["max_hp"] = int(main_sheet.stats.health)
+        player_payload["energy_or_mana"] = int(main_sheet.stats.energy_or_mana)
+        player_payload["attack_bonus"] = int(main_sheet.stats.attack)
+        player_payload["defense"] = int(main_sheet.stats.defense)
+        player_payload["speed"] = int(main_sheet.stats.speed)
+        player_payload["magic"] = int(main_sheet.stats.magic)
+        player_payload["willpower"] = int(main_sheet.stats.willpower)
+        player_payload["presence"] = int(main_sheet.stats.presence)
+        player_payload["classic_attributes"] = {
+            "strength": main_sheet.classic_attributes.strength,
+            "dexterity": main_sheet.classic_attributes.dexterity,
+            "constitution": main_sheet.classic_attributes.constitution,
+            "intelligence": main_sheet.classic_attributes.intelligence,
+            "wisdom": main_sheet.classic_attributes.wisdom,
+            "charisma": main_sheet.classic_attributes.charisma,
+        }
+        world_flags["main_character_sheet_applied"] = True
+        print(f"[character-sheets] applied_health={main_sheet.stats.health}")
+
     def save(self, state: CampaignState, slot: str = "autosave") -> Path:
         return self.save_manager.save(state, slot)
 
     def load(self, slot: str = "autosave") -> CampaignState:
         loaded = self.save_manager.load(slot)
         if loaded is not None:
+            has_sheets = bool(loaded.character_sheets)
+            print(f"[character-sheets] campaign_loaded_with_sheets=count:{len(loaded.character_sheets)}")
+            if has_sheets and not loaded.world_flags.get("main_character_sheet_applied", False):
+                payload = loaded.to_dict()
+                self._apply_main_character_sheet_to_payload(payload, loaded.character_sheets, source="campaign_load_migration")
+                return CampaignState.from_dict(payload)
             return loaded
         return self.create_new_campaign(
             player_name="Aria",
