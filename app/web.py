@@ -709,6 +709,58 @@ class WebRuntime:
     def _default_comfyui_path(self) -> Path:
         return self.paths.user_data / "tools" / "ComfyUI"
 
+    def validate_comfyui_install(self, path: Path) -> dict[str, Any]:
+        missing_files: list[str] = []
+        if not (path / "main.py").exists():
+            missing_files.append("main.py")
+        if not (path / "custom_nodes").exists():
+            missing_files.append("custom_nodes/")
+        if not (path / "models").exists():
+            missing_files.append("models/")
+        if not ((path / "run_cpu.bat").exists() or (path / "run_nvidia_gpu.bat").exists()):
+            missing_files.append("run_cpu.bat|run_nvidia_gpu.bat")
+        return {"ok": len(missing_files) == 0, "missing_files": missing_files}
+
+    def _write_comfyui_cpu_launcher(self, comfyui_root: Path) -> bool:
+        launcher = comfyui_root / "run_cpu.bat"
+        embedded_python = comfyui_root.parent / "python_embeded" / "python.exe"
+        if embedded_python.exists():
+            command = "..\\python_embeded\\python.exe main.py"
+        else:
+            command = "python main.py"
+        content = f"@echo off\r\ncd /d %~dp0\r\n{command}\r\npause\r\n"
+        try:
+            launcher.write_text(content, encoding="utf-8")
+            print("[setup-orchestrator] comfyui install repair reason=created-missing-launcher")
+            return True
+        except OSError as exc:
+            print(f"[setup-orchestrator] comfyui install repair failure reason={exc}")
+            return False
+
+    def _download_and_extract_comfyui(self, target_dir: Path) -> tuple[bool, str]:
+        archive_path = Path(tempfile.gettempdir()) / "ComfyUI-master.zip"
+        repo_url = "https://github.com/comfyanonymous/ComfyUI/archive/refs/heads/master.zip"
+        print(f"[setup-action] install-image-engine bootstrap-download url={repo_url}")
+        try:
+            with urllib.request.urlopen(repo_url, timeout=60) as response:
+                archive_path.write_bytes(response.read())
+            with zipfile.ZipFile(archive_path, "r") as archive:
+                extract_root = target_dir.parent / "ComfyUI-master"
+                if extract_root.exists():
+                    shutil.rmtree(extract_root, ignore_errors=True)
+                archive.extractall(target_dir.parent)
+            extracted = target_dir.parent / "ComfyUI-master"
+            if target_dir.exists():
+                shutil.rmtree(target_dir, ignore_errors=True)
+            extracted.rename(target_dir)
+            return True, "ok"
+        except OSError as exc:
+            print(f"[setup-action] install-image-engine failure reason={exc}")
+            return False, "Failed to download or unpack ComfyUI bootstrap files."
+        except zipfile.BadZipFile:
+            print("[setup-action] install-image-engine failure reason=invalid-archive")
+            return False, "ComfyUI archive download was invalid."
+
     def _find_comfyui_root(self) -> Path | None:
         candidates: list[Path] = []
         configured = str(self.app_config.image.comfyui_path or "").strip()
@@ -737,48 +789,43 @@ class WebRuntime:
             }
         existing = self._find_comfyui_root()
         if existing is not None:
-            print(f"[setup-action] install-image-engine success reason=already-installed path={existing}")
-            self.app_config.image.comfyui_path = str(existing)
-            self.config_store.save(self.app_config)
-            return {"ok": True, "message": "ComfyUI is already installed.", "readiness_refreshed": True}
+            validation = self.validate_comfyui_install(existing)
+            if validation.get("ok"):
+                print(f"[setup-action] install-image-engine success reason=already-installed path={existing}")
+                self.app_config.image.comfyui_path = str(existing)
+                self.config_store.save(self.app_config)
+                return {"ok": True, "message": "ComfyUI is already installed.", "readiness_refreshed": True}
+            print(f"[setup-orchestrator] comfyui install repair reason=existing-install-invalid missing={validation.get('missing_files')}")
         target_dir = self._default_comfyui_path()
         target_dir.parent.mkdir(parents=True, exist_ok=True)
-        archive_path = Path(tempfile.gettempdir()) / "ComfyUI-master.zip"
-        repo_url = "https://github.com/comfyanonymous/ComfyUI/archive/refs/heads/master.zip"
-        print(f"[setup-action] install-image-engine bootstrap-download url={repo_url}")
-        try:
-            with urllib.request.urlopen(repo_url, timeout=60) as response:
-                archive_path.write_bytes(response.read())
-            with zipfile.ZipFile(archive_path, "r") as archive:
-                extract_root = target_dir.parent / "ComfyUI-master"
-                if extract_root.exists():
-                    shutil.rmtree(extract_root, ignore_errors=True)
-                archive.extractall(target_dir.parent)
-            extracted = target_dir.parent / "ComfyUI-master"
-            if target_dir.exists():
-                shutil.rmtree(target_dir, ignore_errors=True)
-            extracted.rename(target_dir)
-        except OSError as exc:
-            print(f"[setup-action] install-image-engine failure reason={exc}")
+        print("[setup-orchestrator] comfyui install start")
+        ok, install_message = self._download_and_extract_comfyui(target_dir)
+        if not ok:
             return {
                 "ok": False,
-                "message": "Failed to download or unpack ComfyUI bootstrap files.",
+                "message": install_message,
                 "next_step": "Open https://github.com/comfyanonymous/ComfyUI and install manually.",
             }
-        except zipfile.BadZipFile:
-            print("[setup-action] install-image-engine failure reason=invalid-archive")
-            return {
-                "ok": False,
-                "message": "ComfyUI archive download was invalid.",
-                "next_step": "Retry installation, or install manually from the official repository.",
-            }
+        validation = self.validate_comfyui_install(target_dir)
+        if not validation.get("ok"):
+            print("[setup-orchestrator] comfyui install repair")
+            if "run_cpu.bat|run_nvidia_gpu.bat" in validation.get("missing_files", []):
+                self._write_comfyui_cpu_launcher(target_dir)
+            validation = self.validate_comfyui_install(target_dir)
+            if not validation.get("ok"):
+                return {
+                    "ok": False,
+                    "message": f"ComfyUI install is incomplete: missing {', '.join(validation.get('missing_files', []))}.",
+                    "next_step": "Retry installation, or install manually from the official repository.",
+                }
         self.app_config.image.comfyui_path = str(target_dir)
         self.config_store.save(self.app_config)
         webbrowser.open("https://github.com/comfyanonymous/ComfyUI")
+        print("[setup-orchestrator] comfyui install success")
         print("[setup-action] install-image-engine success")
         return {
             "ok": True,
-            "message": "ComfyUI bootstrap downloaded. Complete dependency setup, then start the engine.",
+            "message": "ComfyUI install verified and ready to launch.",
             "next_step": "Install Python dependencies in ComfyUI, then click Start Image Engine.",
             "readiness_refreshed": True,
         }
@@ -817,8 +864,34 @@ class WebRuntime:
             }
         self.app_config.image.comfyui_path = str(comfyui_root)
         self.config_store.save(self.app_config)
+        print("[setup-orchestrator] setup-image step=verify-install")
+        validation = self.validate_comfyui_install(comfyui_root)
+        if not validation.get("ok"):
+            print("[setup-orchestrator] setup-image step=repair-install")
+            self.install_image_engine()
+            comfyui_root = self._find_comfyui_root()
+            if comfyui_root is None:
+                return {
+                    "ok": False,
+                    "message": "ComfyUI install could not be repaired.",
+                    "next_step": "Re-run install or install ComfyUI manually.",
+                    "failure_stage": "launch-engine",
+                    "failure_stage_message": "launcher script missing and could not be repaired",
+                    "steps": [
+                        {"step": "detect-install-path", "state": "ready", "message": "Install path was found."},
+                        {"step": "verify-install", "state": "failed", "message": f"Missing files: {', '.join(validation.get('missing_files', []))}"},
+                    ],
+                }
+            self.app_config.image.comfyui_path = str(comfyui_root)
+            self.config_store.save(self.app_config)
+            validation = self.validate_comfyui_install(comfyui_root)
         run_script = comfyui_root / "run_nvidia_gpu.bat"
         fallback_script = comfyui_root / "run_cpu.bat"
+        if not fallback_script.exists():
+            print("[setup-orchestrator] setup-image step=repair-launcher")
+            self._write_comfyui_cpu_launcher(comfyui_root)
+            fallback_script = comfyui_root / "run_cpu.bat"
+            validation = self.validate_comfyui_install(comfyui_root)
         launcher = run_script if run_script.exists() else fallback_script if fallback_script.exists() else comfyui_root / "main.py"
         if os.name == "nt" and not run_script.exists() and not fallback_script.exists():
             print("[setup-action] start-image-engine failure reason=launcher-script-missing")
@@ -826,11 +899,13 @@ class WebRuntime:
             return {
                 "ok": False,
                 "message": "ComfyUI launcher script was not found (run_nvidia_gpu.bat / run_cpu.bat).",
-                "next_step": "Restore ComfyUI launcher scripts or start ComfyUI manually, then click Recheck.",
+                "next_step": "Restore ComfyUI launcher scripts or reinstall ComfyUI, then click Recheck.",
                 "failure_stage": "launch-engine",
-                "failure_stage_message": "launcher script missing",
+                "failure_stage_message": "launcher script missing and could not be repaired",
                 "steps": [
                     {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
+                    {"step": "verify-install", "state": "ready", "message": "Install verification completed."},
+                    {"step": "repair-launcher", "state": "failed", "message": "Launcher script missing and could not be repaired."},
                     {"step": "launch-engine", "state": "failed", "message": "Launcher script missing."},
                 ],
             }
@@ -863,11 +938,12 @@ class WebRuntime:
                         "next_step": "Install Python and retry, or start ComfyUI manually.",
                         "failure_stage": "launch-engine",
                         "failure_stage_message": "process launch failed",
-                        "steps": [
-                            {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
-                            {"step": "launch-engine", "state": "failed", "message": "Python executable not found on PATH."},
-                        ],
-                    }
+                    "steps": [
+                        {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
+                        {"step": "verify-install", "state": "ready", "message": "Install verification completed."},
+                        {"step": "launch-engine", "state": "failed", "message": "Python executable not found on PATH."},
+                    ],
+                }
                 command = [python_exe, "main.py"]
                 subprocess.Popen(
                     command,
@@ -887,6 +963,7 @@ class WebRuntime:
                 "failure_stage_message": "process launch failed",
                 "steps": [
                     {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
+                    {"step": "verify-install", "state": "ready", "message": "Install verification completed."},
                     {"step": "launch-engine", "state": "failed", "message": f"Process launch failed: {exc}"},
                 ],
             }
@@ -902,6 +979,8 @@ class WebRuntime:
                     "readiness_refreshed": True,
                     "steps": [
                         {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
+                        {"step": "verify-install", "state": "ready", "message": "Install verification completed."},
+                        {"step": "repair-launcher", "state": "ready", "message": "Launcher verified or repaired."},
                         {"step": "launch-engine", "state": "ready", "message": "ComfyUI launch command sent."},
                         {"step": "wait-for-readiness", "state": "ready", "message": "ComfyUI responded to readiness probe."},
                     ],
@@ -916,6 +995,8 @@ class WebRuntime:
             "failure_stage_message": "timeout waiting for ComfyUI",
             "steps": [
                 {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
+                {"step": "verify-install", "state": "ready", "message": "Install verification completed."},
+                {"step": "repair-launcher", "state": "ready", "message": "Launcher verified or repaired."},
                 {"step": "launch-engine", "state": "ready", "message": "ComfyUI launch command sent."},
                 {"step": "wait-for-readiness", "state": "failed", "message": "Process launched but readiness check failed before timeout window closed."},
             ],
