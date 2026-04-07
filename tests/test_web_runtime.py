@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import subprocess
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -258,6 +259,47 @@ def test_turn_visual_mode_aliases_normalize_to_supported_values(tmp_path: Path, 
     runtime = _runtime(tmp_path, monkeypatch)
     settings = runtime.set_global_settings({"image": {"turn_visuals_mode": "auto_after"}})
     assert settings["image"]["turn_visuals_mode"] == "auto_after_narration"
+
+
+def test_auto_after_turn_visual_only_queues_for_meaningful_narration(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    queued: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(
+        runtime,
+        "_run_turn_visual_generation_async",
+        lambda player_action, narrator_response, stage: queued.append((player_action, narrator_response, stage)) or True,
+    )
+
+    not_queued = runtime._maybe_queue_auto_turn_visual(
+        mode="auto_after_narration",
+        player_action="look around",
+        narrator_response="...",
+        stage="after_narration",
+    )
+    assert not_queued is False
+    assert queued == []
+
+    queued_ok = runtime._maybe_queue_auto_turn_visual(
+        mode="auto_after_narration",
+        player_action="look around",
+        narrator_response="The torchlight reveals wet stone arches and a narrow bridge over dark water.",
+        stage="after_narration",
+    )
+    assert queued_ok is True
+    assert len(queued) == 1
+
+
+def test_auto_turn_visual_async_dedupes_same_slot_turn_and_stage(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.set_global_settings({"image": {"provider": "comfyui", "turn_visuals_mode": "auto_after_narration"}})
+    runtime.set_campaign_settings({"image_generation_enabled": True})
+    monkeypatch.setattr(runtime, "_run_turn_visual_generation", lambda *args, **kwargs: time.sleep(0.1))
+
+    first = runtime._run_turn_visual_generation_async("inspect", "A vivid chamber blooms with blue witchlight.", "after_narration")
+    second = runtime._run_turn_visual_generation_async("inspect", "A vivid chamber blooms with blue witchlight.", "after_narration")
+
+    assert first is True
+    assert second is False
 
 
 def test_dependency_readiness_ollama_offline(tmp_path: Path, monkeypatch) -> None:
