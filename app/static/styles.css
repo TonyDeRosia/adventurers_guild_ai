@@ -463,14 +463,41 @@ textarea { border-radius: 8px; border: 1px solid #2e3d52; background: #131e2b; c
 .runtime-sheet-card h4 { margin: 0 0 6px; }
 .runtime-sheet-card dl { margin: 0; }
 .runtime-sheet-card dt { color: var(--muted); }
-.runtime-sheet-create-panel {
+.runtime-sheet-create-modal-card {
+  width: min(1120px, 100%);
+  max-height: calc(100dvh - 40px);
+  overflow: auto;
+}
+.runtime-sheet-create-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.runtime-sheet-create-grid section {
   border: 1px solid #344c6d;
   border-radius: 8px;
   background: #122036;
-  padding: 8px;
-  margin-bottom: 8px;
+  padding: 12px;
   display: grid;
-  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+.runtime-sheet-create-grid section h4,
+.runtime-sheet-create-grid section .full-width {
+  grid-column: 1 / -1;
+}
+.runtime-sheet-create-grid section h4 { margin: 0; color: #9fd2ff; }
+.runtime-sheet-create-grid section label { margin: 0; }
+.runtime-sheet-ability-list .sheet-ability-entry {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+}
+.runtime-sheet-ability-list .sheet-ability-full {
+  grid-column: 1 / -1;
+}
+.runtime-sheet-ability-list .sheet-ability-actions {
+  grid-column: 1 / -1;
+  margin-top: 2px;
 }
 .runtime-sheet-section {
   border-top: 1px solid #2a3f5f;
@@ -522,7 +549,9 @@ textarea { border-radius: 8px; border: 1px solid #2e3d52; background: #131e2b; c
   .modal-grid,
   .sheet-sections,
   .sheet-ability-entry,
-  .runtime-sheet-grid {
+  .runtime-sheet-grid,
+  .runtime-sheet-create-grid,
+  .runtime-sheet-create-grid section {
     grid-template-columns: 1fr;
   }
 }

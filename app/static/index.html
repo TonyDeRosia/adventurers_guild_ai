@@ -195,41 +195,37 @@
               <h4>Sheets</h4>
               <button id="runtime-character-sheet-create-toggle" type="button">Create Character Sheet</button>
             </div>
-            <div id="runtime-character-sheet-create-panel" class="runtime-sheet-create-panel hidden">
-              <label>Name <input id="runtime-sheet-create-name" type="text" placeholder="New companion" /></label>
-              <label>Sheet Type
-                <select id="runtime-sheet-create-type">
-                  <option value="npc_or_mob">NPC / Mob</option>
-                  <option value="party_member">Party Member</option>
-                  <option value="main_character">Main Character</option>
-                  <option value="minion_or_summon">Minion / Summon</option>
-                </select>
-              </label>
-              <label>Role
-                <select id="runtime-sheet-create-role">
-                  <option value="main_character">main_character</option>
-                  <option value="companion">companion</option>
-                  <option value="party_member">party_member</option>
-                  <option value="npc_ally">npc_ally</option>
-                  <option value="custom">custom</option>
-                </select>
-              </label>
-              <label id="runtime-sheet-create-custom-role-wrap" class="hidden">Custom Role
-                <input id="runtime-sheet-create-custom-role" type="text" placeholder="shield bearer" />
-              </label>
-              <label>Archetype <input id="runtime-sheet-create-archetype" type="text" placeholder="Scout" /></label>
-              <label>Description <textarea id="runtime-sheet-create-description" rows="2" placeholder="Helpful notes"></textarea></label>
-              <div class="button-row">
-                <button id="runtime-character-sheet-create-save" type="button">Create</button>
-                <button id="runtime-character-sheet-create-cancel" type="button">Cancel</button>
-              </div>
-            </div>
             <div id="runtime-character-sheets-list" class="character-sheets-list">No sheets attached to this campaign.</div>
           </aside>
           <section>
             <h4>Sheet Details</h4>
             <div id="runtime-character-sheet-detail" class="runtime-sheet-detail">Select a sheet to view details.</div>
           </section>
+        </div>
+      </div>
+    </div>
+
+    <div id="runtime-character-sheet-create-modal" class="modal hidden">
+      <div class="modal-card runtime-sheet-create-modal-card">
+        <div class="panel-title-row">
+          <h3>Create Character Sheet</h3>
+          <button id="close-runtime-character-sheet-create" type="button">Close</button>
+        </div>
+        <p class="setup-intro">Create a full campaign-attached character sheet without crowding the sheet browser.</p>
+        <div class="runtime-sheet-create-grid">
+          <section><h4>Basic</h4><label>Name <input id="runtime-sheet-create-name" type="text" placeholder="New companion" /></label><label>Type <select id="runtime-sheet-create-type"><option value="main_character">Main Character</option><option value="npc_or_mob">NPC/Mob</option><option value="party_member">Party Member</option><option value="minion_or_summon">Minion/Summon</option></select></label><label>Role <select id="runtime-sheet-create-role"><option value="main_character">main_character</option><option value="companion">companion</option><option value="party_member">party_member</option><option value="npc_ally">npc_ally</option><option value="custom">custom</option></select></label><label id="runtime-sheet-create-custom-role-wrap" class="hidden">Custom Role <input id="runtime-sheet-create-custom-role" type="text" placeholder="shield bearer" /></label><label>Archetype <input id="runtime-sheet-create-archetype" type="text" /></label><label>Level or Rank <input id="runtime-sheet-create-level-rank" type="text" /></label><label>Faction <input id="runtime-sheet-create-faction" type="text" /></label><label class="full-width">Description <textarea id="runtime-sheet-create-description" rows="2"></textarea></label></section>
+          <section><h4>Personality</h4><label>Traits (comma separated) <input id="runtime-sheet-create-traits" type="text" /></label><label>Temperament <input id="runtime-sheet-create-temperament" type="text" /></label><label>Loyalty <input id="runtime-sheet-create-loyalty" type="text" /></label><label>Fear <input id="runtime-sheet-create-fear" type="text" /></label><label>Desire <input id="runtime-sheet-create-desire" type="text" /></label><label>Social Style <input id="runtime-sheet-create-social-style" type="text" /></label><label>Speech Style <input id="runtime-sheet-create-speech-style" type="text" /></label></section>
+          <section><h4>Combat / Power</h4><label>Abilities (comma separated) <input id="runtime-sheet-create-abilities" type="text" /></label><label>Equipment (comma separated) <input id="runtime-sheet-create-equipment" type="text" /></label><label>Weaknesses (comma separated) <input id="runtime-sheet-create-weaknesses" type="text" /></label><label>Health <input id="runtime-sheet-create-health" type="number" value="10" /></label><label>Energy or Mana <input id="runtime-sheet-create-energy" type="number" value="10" /></label><label>Attack <input id="runtime-sheet-create-attack" type="number" value="10" /></label><label>Defense <input id="runtime-sheet-create-defense" type="number" value="10" /></label><label>Speed <input id="runtime-sheet-create-speed" type="number" value="10" /></label><label>Magic <input id="runtime-sheet-create-magic" type="number" value="10" /></label><label>Willpower <input id="runtime-sheet-create-willpower" type="number" value="10" /></label><label>Presence <input id="runtime-sheet-create-presence" type="number" value="10" /></label></section>
+          <section class="full-width">
+            <h4>Guaranteed Loadout (Spells / Skills / Abilities / Passives)</h4>
+            <div id="runtime-sheet-guaranteed-abilities" class="sheet-ability-list runtime-sheet-ability-list"></div>
+            <button id="runtime-sheet-add-guaranteed-ability" type="button">Add Loadout Entry</button>
+          </section>
+          <section><h4>Notes & State</h4><label class="full-width">Notes <textarea id="runtime-sheet-create-notes" rows="3"></textarea></label><label>Current Condition <input id="runtime-sheet-create-current-condition" type="text" /></label><label>Trust <input id="runtime-sheet-create-trust" type="number" /></label><label>Suspicion <input id="runtime-sheet-create-suspicion" type="number" /></label><label>Anger <input id="runtime-sheet-create-anger" type="number" /></label><label>Fear State <input id="runtime-sheet-create-fear-state" type="number" /></label><label>Morale <input id="runtime-sheet-create-morale" type="number" /></label><label>Bond to Player <input id="runtime-sheet-create-bond" type="number" /></label><label>Guidance Strength <select id="runtime-sheet-create-guidance-strength"><option value="light">Light</option><option value="strong">Strong</option></select></label></section>
+        </div>
+        <div class="button-row">
+          <button id="runtime-character-sheet-create-save" type="button">Create Sheet</button>
+          <button id="runtime-character-sheet-create-cancel" type="button">Cancel</button>
         </div>
       </div>
     </div>
