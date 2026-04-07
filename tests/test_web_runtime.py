@@ -594,6 +594,20 @@ class _UngroundedProvider(NarrationModelAdapter):
         return "Moonlight reflects across still water while distant bells ring."
 
 
+class _ShortDialogueProvider(NarrationModelAdapter):
+    provider_name = "ollama"
+
+    def generate(self, prompt: str, system_prompt: str = "", history=None) -> str:
+        return '"I hear you."'
+
+
+class _AdvisoryOnlyProvider(NarrationModelAdapter):
+    provider_name = "ollama"
+
+    def generate(self, prompt: str, system_prompt: str = "", history=None) -> str:
+        return "You should step forward now."
+
+
 class _WallProgressionProvider(NarrationModelAdapter):
     provider_name = "ollama"
 
@@ -652,6 +666,24 @@ def test_ungrounded_output_is_replaced_with_action_tied_narration(tmp_path: Path
     assert "attack" in lowered
     assert "statue" in lowered
     assert out["metadata"]["quality_fallback_used"] is True
+
+
+def test_valid_short_dialogue_is_preserved_without_quality_fallback(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _ShortDialogueProvider()
+    out = runtime.handle_player_input('i say "hello there"')
+    assert "i hear you" in out["narrative"].lower()
+    assert out["metadata"]["quality_fallback_used"] is False
+    assert out["metadata"]["quality_invalid_output"] is False
+
+
+def test_recommendation_only_output_is_not_replaced_with_engine_template(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _AdvisoryOnlyProvider()
+    runtime.set_campaign_settings({"player_suggested_moves_override": False})
+    out = runtime.handle_player_input("look")
+    assert "world holds its breath for a heartbeat" not in out["narrative"].lower()
+    assert out["metadata"]["quality_fallback_used"] is False
 
 
 def test_legacy_payload_loads_with_default_scene_state(tmp_path: Path, monkeypatch) -> None:
@@ -849,11 +881,14 @@ def test_system_and_structured_turns_do_not_mutate_scene_state(tmp_path: Path, m
 def test_repetitive_output_uses_fallback_on_second_turn(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _CountingProvider()
-    first = runtime.handle_player_input("i attack the goblin")
-    second = runtime.handle_player_input("i attack the goblin again")
+    first = runtime.handle_player_input("look")
+    second = runtime.handle_player_input("look around")
+    third = runtime.handle_player_input("inspect the chamber")
     assert first["narrative"] != ""
-    assert second["metadata"]["quality_repetitive_output"] is True
-    assert second["metadata"]["quality_fallback_used"] is True
+    assert second["metadata"]["quality_repetitive_output"] is False
+    assert second["metadata"]["quality_fallback_used"] is False
+    assert third["metadata"]["quality_repetitive_output"] is True
+    assert third["metadata"]["quality_fallback_used"] is True
 
 
 def test_turn_sanitizer_removes_prompt_scaffold_leaks(tmp_path: Path, monkeypatch) -> None:

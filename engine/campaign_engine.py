@@ -609,6 +609,7 @@ class CampaignEngine:
         suggested_moves_enabled = state.settings.suggested_moves_active()
         action_subtype = self._classify_gameplay_action_subtype(action)
         last_narration = state.structured_state.runtime.last_narration
+        consecutive_repetition_count = int(scene_state.get("consecutive_repetition_count", 0) or 0)
         sanitized_concrete = self._is_concrete_scene_grounded_output(
             action=action,
             narrative=sanitized_narrative,
@@ -621,8 +622,15 @@ class CampaignEngine:
         narration_invalid = self._is_invalid_narration_output(sanitized_narrative)
         if was_sanitized and sanitized_concrete:
             narration_invalid = False
-        narration_repetitive = self._is_repetitive_narration(sanitized_narrative, last_narration)
-        forced_fallback = was_sanitized and not sanitized_concrete
+        repetition_candidate = self._is_repetitive_narration(sanitized_narrative, last_narration)
+        narration_repetitive = repetition_candidate and consecutive_repetition_count >= 1
+        severe_ungrounded = (
+            action_subtype in {"attack_or_spell", "interaction", "movement"}
+            and not guidance_requested
+            and not self._is_action_grounded(action, sanitized_narrative)
+            and not self._is_concrete_scene_grounded_output(action, sanitized_narrative, scene_state)
+        )
+        forced_fallback = was_sanitized and not sanitized_concrete and self._is_invalid_narration_output(sanitized_narrative)
         if action_subtype == "internal":
             narrative = self._build_internal_fallback(scene_state)
             cleanup_applied = False
@@ -638,6 +646,8 @@ class CampaignEngine:
             grounding_cleanup_applied = False
             quality_fallback_used = True
         else:
+            if action_subtype == "dialogue" and sanitized_narrative.strip():
+                print("[control-audit] fallback_skipped_reason=valid_dialogue")
             narrative, cleanup_applied = self._apply_recommendation_policy(
                 sanitized_narrative,
                 guidance_requested=guidance_requested,
@@ -646,18 +656,23 @@ class CampaignEngine:
             narrative, custom_rule_cleanup_applied = self._apply_custom_narrator_rule_validation(state, narrative)
             narrative, grounding_cleanup_applied = self._apply_grounding_enforcement(state, action, narrative)
             quality_fallback_used = False
-            if self._contains_blocked_filler(action, narrative) or (
-                not guidance_requested
-                and not self._is_action_grounded(action, narrative)
-                and not self._is_concrete_scene_grounded_output(action, narrative, scene_state)
-            ):
+            if self._contains_blocked_filler(action, narrative) or severe_ungrounded:
                 narrative = self._build_scene_aware_fallback(action, scene_state)
                 narration_invalid = True
                 quality_fallback_used = True
-            if self._is_repetitive_narration(narrative, last_narration):
+            if self._is_repetitive_narration(narrative, last_narration) and consecutive_repetition_count >= 1:
                 narrative = self._build_scene_aware_fallback(action, scene_state)
                 narration_repetitive = True
                 quality_fallback_used = True
+            elif not quality_fallback_used:
+                print("[control-audit] preserved_generated_output=true")
+        if quality_fallback_used:
+            scene_state["consecutive_repetition_count"] = 0
+        elif repetition_candidate:
+            scene_state["consecutive_repetition_count"] = consecutive_repetition_count + 1
+            print("[control-audit] repetition_threshold_not_met")
+        else:
+            scene_state["consecutive_repetition_count"] = 0
         print(f"[turn-quality] invalid={str(narration_invalid).lower()}")
         print(f"[turn-quality] repetitive={str(narration_repetitive).lower()}")
         print(f"[turn-quality] fallback_used={str(quality_fallback_used).lower()}")
@@ -873,7 +888,7 @@ class CampaignEngine:
         cleaned = self._strip_recommendation_segments(narrative)
         if cleaned:
             return cleaned, cleaned != narrative.strip()
-        return "The world holds its breath for a heartbeat, waiting for your next move.", True
+        return narrative.strip(), False
 
     def _strip_recommendation_segments(self, narrative: str) -> str:
         text = narrative.strip()
@@ -969,9 +984,6 @@ class CampaignEngine:
                 if action_word_count <= 8:
                     removed_count += 1
                     continue
-            if re.search(r"\b(?:you arrive at|you enter|you step into)\b", lowered) and not action.lower().strip().startswith("move "):
-                removed_count += 1
-                continue
             environment_unsupported = False
             for terms in unsupported_environment_terms.values():
                 if any(term in lowered for term in terms) and not any(term in location_text for term in terms):
@@ -992,10 +1004,12 @@ class CampaignEngine:
 
     def _is_invalid_narration_output(self, narrative: str) -> bool:
         text = re.sub(r"\s+", " ", narrative.strip().lower())
-        if len(text) < 24:
+        if not text:
             return True
-        refusal_markers = ("i cannot", "i can't", "cannot create")
+        refusal_markers = ("i cannot", "i can't", "cannot create", "i won't", "i will not")
         if any(marker in text for marker in refusal_markers):
+            return True
+        if len(text) < 8:
             return True
         if re.search(r"\b(?:wall|stone|floor|room|chamber|torch|arch|dust|gate|road|scene|view)\b", text) and re.search(
             r"\b(?:remains|flickers|sheds|cracked|visible|stands|opens|echoes)\b", text
@@ -1021,10 +1035,10 @@ class CampaignEngine:
         if any(phrase in current and phrase in prior for phrase in repeated_phrases):
             return True
         if current and prior and len(current) > 20 and len(prior) > 20:
-            if current in prior or prior in current:
+            if current == prior:
                 return True
             similarity = SequenceMatcher(None, current, prior).ratio()
-            if similarity >= 0.82:
+            if similarity >= 0.92:
                 return True
         return False
 
@@ -1069,6 +1083,7 @@ class CampaignEngine:
         scene_state.setdefault("scene_actors", [])
         scene_state.setdefault("lightweight_npcs", [])
         scene_state.setdefault("last_target_actor_id", "")
+        scene_state.setdefault("consecutive_repetition_count", 0)
         runtime.scene_state = scene_state
         return scene_state
 
