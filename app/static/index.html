@@ -57,6 +57,9 @@
         </div>
         <section class="panel-block">
           <h3>Character / Quests / Inventory</h3>
+          <div class="button-row compact-row">
+            <button id="open-runtime-character-sheets" type="button">Character Sheets</button>
+          </div>
           <pre id="state-panel" class="state-panel"></pre>
         </section>
         <section class="panel-block">
@@ -128,6 +131,16 @@
           <button id="create-campaign-confirm">Create campaign</button>
           <button id="create-campaign-cancel">Cancel</button>
         </div>
+      </div>
+    </div>
+
+    <div id="runtime-character-sheets-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="panel-title-row">
+          <h3>Attached Character Sheets</h3>
+          <button id="close-runtime-character-sheets" type="button">Close</button>
+        </div>
+        <div id="runtime-character-sheets-list" class="character-sheets-list">No sheets attached to this campaign.</div>
       </div>
     </div>
 

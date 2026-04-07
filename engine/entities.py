@@ -28,6 +28,15 @@ class Character:
     agility: int = 2
     intellect: int = 2
     vitality: int = 2
+    energy_or_mana: int = 10
+    defense: int = 10
+    speed: int = 10
+    magic: int = 10
+    willpower: int = 10
+    presence: int = 10
+    role: str = ""
+    archetype: str = ""
+    classic_attributes: dict[str, int | None] = field(default_factory=dict)
     inventory: list[str] = field(default_factory=list)
     xp: int = 0
     equipped_item_id: str | None = None

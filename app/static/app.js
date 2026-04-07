@@ -36,9 +36,12 @@ const cancelSettingsButton = document.getElementById('cancel-settings');
 const characterSheetsManager = document.getElementById('character-sheets-manager');
 const characterSheetsList = document.getElementById('character-sheets-list');
 const characterSheetsCount = document.getElementById('character-sheets-count');
+const runtimeCharacterSheetsModal = document.getElementById('runtime-character-sheets-modal');
+const runtimeCharacterSheetsList = document.getElementById('runtime-character-sheets-list');
 
 let draftCharacterSheets = [];
 let editingSheetIndex = -1;
+let runtimeCharacterSheets = [];
 
 let currentSceneImage = null;
 let currentSceneImagePrompt = '';
@@ -736,6 +739,30 @@ function renderCharacterSheetList() {
   });
 }
 
+function renderRuntimeCharacterSheets() {
+  if (!runtimeCharacterSheetsList) return;
+  if (!runtimeCharacterSheets.length) {
+    runtimeCharacterSheetsList.textContent = 'No sheets attached to this campaign.';
+    return;
+  }
+  runtimeCharacterSheetsList.innerHTML = runtimeCharacterSheets.map((sheet) => {
+    const stats = sheet.stats || {};
+    const classic = sheet.classic_attributes || {};
+    return `
+      <article class="runtime-sheet-card">
+        <h4>${escapeHtml(sheet.name || 'Unnamed')} • ${escapeHtml(sheet.sheet_type || 'unknown')}</h4>
+        <dl>
+          <dt>Role / Archetype</dt><dd>${escapeHtml(sheet.role || 'n/a')} / ${escapeHtml(sheet.archetype || 'n/a')}</dd>
+          <dt>Faction</dt><dd>${escapeHtml(sheet.faction || 'n/a')}</dd>
+          <dt>Description</dt><dd>${escapeHtml(sheet.description || 'n/a')}</dd>
+          <dt>Stats</dt><dd>HP ${Number(stats.health ?? 0)} • Energy ${Number(stats.energy_or_mana ?? 0)} • Atk ${Number(stats.attack ?? 0)} • Def ${Number(stats.defense ?? 0)} • Spd ${Number(stats.speed ?? 0)} • Mag ${Number(stats.magic ?? 0)} • Will ${Number(stats.willpower ?? 0)} • Presence ${Number(stats.presence ?? 0)}</dd>
+          <dt>Classic Attributes</dt><dd>STR ${classic.strength ?? 'n/a'} • DEX ${classic.dexterity ?? 'n/a'} • CON ${classic.constitution ?? 'n/a'} • INT ${classic.intelligence ?? 'n/a'} • WIS ${classic.wisdom ?? 'n/a'} • CHA ${classic.charisma ?? 'n/a'}</dd>
+        </dl>
+      </article>
+    `;
+  }).join('');
+}
+
 function openSheetEditor(index = -1) {
   const editor = document.getElementById('character-sheet-editor');
   const title = document.getElementById('character-sheet-editor-title');
@@ -937,6 +964,8 @@ async function refreshState() {
   selectedSlot = state.active_slot || selectedSlot;
   selectedCampaignName = state.campaign_name;
   const world = state.world_meta || {};
+  runtimeCharacterSheets = Array.isArray(state.character_sheets) ? state.character_sheets : [];
+  renderRuntimeCharacterSheets();
   campaignMeta.textContent = `${state.campaign_name} • ${world.world_name || 'Untitled World'} • Slot ${loadedSlot} • Turn ${state.turn_count} • ${state.current_location_id}`;
   statePanel.textContent = [
     `Character: ${state.player.name} (${state.player.class})`,
@@ -1638,6 +1667,14 @@ if (cancelSettingsButton) {
 document.getElementById('open-character-sheets').onclick = () => {
   characterSheetsManager?.classList.remove('hidden');
   renderCharacterSheetList();
+};
+document.getElementById('open-runtime-character-sheets').onclick = () => {
+  console.log('[character-sheets] runtime_sheet_view_opened=true');
+  renderRuntimeCharacterSheets();
+  runtimeCharacterSheetsModal?.classList.remove('hidden');
+};
+document.getElementById('close-runtime-character-sheets').onclick = () => {
+  runtimeCharacterSheetsModal?.classList.add('hidden');
 };
 document.getElementById('character-sheet-close').onclick = () => {
   characterSheetsManager?.classList.add('hidden');

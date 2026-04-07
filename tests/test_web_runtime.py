@@ -805,7 +805,23 @@ def test_create_campaign_with_character_sheets_persists_and_restores(tmp_path: P
     assert created["state"]["character_sheet_guidance_strength"] == "strong"
     assert len(created["state"]["character_sheets"]) == 1
     assert created["state"]["character_sheets"][0]["sheet_type"] == "main_character"
+    assert created["state"]["player"]["hp"] == 14
+    assert created["state"]["player"]["max_hp"] == 14
+    assert created["state"]["player"]["attack"] == 11
+    assert created["state"]["player"]["defense"] == 9
+    assert created["state"]["player"]["magic"] == 15
+    assert created["state"]["player"]["class"] == "leader"
 
     runtime.switch_campaign("slot_sheets")
     assert runtime.session.state.character_sheet_guidance_strength == "strong"
     assert runtime.session.state.character_sheets[0].name == "Kael"
+    assert runtime.session.state.player.hp == 14
+    assert runtime.session.state.player.max_hp == 14
+
+
+def test_create_campaign_without_character_sheets_keeps_defaults(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    created = runtime.create_campaign({"player_name": "Aria", "char_class": "Ranger", "slot": "slot_default"})
+    assert created["state"]["player"]["hp"] == 20
+    assert created["state"]["player"]["max_hp"] == 20
+    assert created["state"]["player"]["class"] == "Ranger"
