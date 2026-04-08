@@ -681,6 +681,13 @@ class _MixedSocialNarrationProvider(NarrationModelAdapter):
         )
 
 
+class _NamedIntroProvider(NarrationModelAdapter):
+    provider_name = "ollama"
+
+    def generate(self, prompt: str, system_prompt: str = "", history=None) -> str:
+        return 'The woman meets your gaze and says, "My name is Eira."'
+
+
 def test_turn_fallback_is_clean_when_provider_fails(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _FailingProvider()
@@ -942,6 +949,45 @@ def test_lightweight_npc_gets_generated_personality_profile_on_materialization(t
     assert profile.get("baseline_temperament")
     assert profile.get("conversational_tone")
     assert profile.get("stress_response")
+
+
+def test_narration_name_intro_registers_real_npc_profile_and_world_building_entry(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _NamedIntroProvider()
+    runtime.handle_player_input('i say "who are you?"')
+    state = runtime.session.state
+    eira = next((npc for npc in state.npcs.values() if npc.name == "Eira"), None)
+    assert eira is not None
+    assert eira.personality_profile is not None
+    payload = runtime.get_world_building_view()
+    assert any(entry.get("name") == "Eira" for entry in payload["npc_personalities"])
+
+
+def test_named_npc_intro_does_not_duplicate_entity_on_repeat_mentions(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _NamedIntroProvider()
+    runtime.handle_player_input('i say "who are you?"')
+    first_ids = {npc.id for npc in runtime.session.state.npcs.values() if npc.name == "Eira"}
+    runtime.handle_player_input("i nod and listen")
+    second_ids = {npc.id for npc in runtime.session.state.npcs.values() if npc.name == "Eira"}
+    assert len(first_ids) == 1
+    assert first_ids == second_ids
+
+
+def test_named_npc_intro_persists_across_turns_and_save_reload(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _NamedIntroProvider()
+    runtime.create_campaign({"slot": "slot_eira"})
+    runtime.handle_player_input('i say "who are you?"')
+    runtime.handle_player_input("look")
+    assert any(npc.name == "Eira" for npc in runtime.session.state.npcs.values())
+    runtime.save_active_campaign("slot_eira")
+
+    reloaded = _runtime(tmp_path, monkeypatch)
+    reloaded.switch_campaign("slot_eira")
+    reloaded_eira = next((npc for npc in reloaded.session.state.npcs.values() if npc.name == "Eira"), None)
+    assert reloaded_eira is not None
+    assert reloaded_eira.personality_profile is not None
 
 
 def test_sanitized_grounded_output_is_kept_without_quality_fallback(tmp_path: Path, monkeypatch) -> None:
@@ -2164,3 +2210,18 @@ def test_world_building_view_surfaces_real_npc_world_and_reactive_data(tmp_path:
     assert "Discovered Lore" in world_design_labels
     assert "Persistent Environment Changes" in reactive_labels
     assert "Major Scene Consequences" in reactive_labels
+
+
+def test_world_design_excludes_raw_narration_logs_and_keeps_structured_entries(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_world_design_cleanup"})
+    state = runtime.session.state
+    state.important_world_facts = ["The citadel gate closes at moonrise."]
+    state.recent_memory = ["Narrator: Full paragraph narration that should not be listed in world design."]
+    state.world_flags = {"citadel_alert": True}
+    payload = runtime.get_world_building_view()
+    labels = {entry["label"] for entry in payload["world_design"]}
+    merged_entries = " ".join(item for group in payload["world_design"] for item in group.get("entries", []))
+    assert "Persistent State" in labels
+    assert "Narrative Threads" not in labels
+    assert "full paragraph narration" not in merged_entries.lower()

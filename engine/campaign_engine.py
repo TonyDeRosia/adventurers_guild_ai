@@ -12,7 +12,7 @@ from typing import Any
 from engine.character_sheet import CharacterSheetService
 from engine.content_registry import ContentRegistry
 from engine.dialogue_service import DialogueService
-from engine.entities import CampaignState
+from engine.entities import CampaignState, NPC
 from engine.inventory import InventoryService
 from memory.campaign_memory import CampaignMemory
 from memory.campaign_state_orchestrator import CampaignStateOrchestrator
@@ -1575,6 +1575,92 @@ class CampaignEngine:
                 labels.append(pattern)
         return labels
 
+    def _normalize_person_name(self, value: str) -> str:
+        return re.sub(r"[^a-z]", "", str(value or "").lower())
+
+    def _detect_npc_introductions_from_narration(self, text: str) -> list[str]:
+        if not text.strip():
+            return []
+        patterns = (
+            r"\bmy name is\s+([A-Z][a-z]+(?:[-'][A-Z][a-z]+){0,2})\b",
+            r"\bi am\s+([A-Z][a-z]+(?:[-'][A-Z][a-z]+){0,2})\b",
+            r"\bi'm\s+([A-Z][a-z]+(?:[-'][A-Z][a-z]+){0,2})\b",
+            r"\bintroduce(?:s|d)? (?:themself|himself|herself) as\s+([A-Z][a-z]+(?:[-'][A-Z][a-z]+){0,2})\b",
+            r"(?:^|[\n\"“])([A-Z][a-z]+(?:[-'][A-Z][a-z]+){0,2})\s*:\s*[\"“]?",
+        )
+        blocked = {"I", "The", "You", "We", "They", "He", "She", "It"}
+        discovered: list[str] = []
+        for pattern in patterns:
+            for match in re.finditer(pattern, text, flags=re.IGNORECASE):
+                candidate = str(match.group(1)).strip(" .,!?:;\"'“”")
+                if not candidate or candidate in blocked:
+                    continue
+                if candidate not in discovered:
+                    discovered.append(candidate)
+        return discovered
+
+    def _find_existing_npc_by_name(self, state: CampaignState, name: str) -> NPC | None:
+        normalized = self._normalize_person_name(name)
+        if not normalized:
+            return None
+        same_location = [npc for npc in state.npcs.values() if npc.location_id == state.current_location_id]
+        for npc in [*same_location, *state.npcs.values()]:
+            if self._normalize_person_name(npc.name) == normalized:
+                return npc
+        return None
+
+    def _build_dynamic_npc_id(self, state: CampaignState, name: str) -> str:
+        slug = re.sub(r"[^a-z0-9]+", "_", name.strip().lower()).strip("_")
+        if not slug:
+            slug = "unknown"
+        base = f"npc_{slug}"
+        npc_id = base
+        suffix = 2
+        while npc_id in state.npcs:
+            npc_id = f"{base}_{suffix}"
+            suffix += 1
+        return npc_id
+
+    def _register_narrative_npc(self, state: CampaignState, scene_state: dict[str, Any], name: str) -> NPC:
+        existing = self._find_existing_npc_by_name(state, name)
+        if existing is not None:
+            existing.location_id = state.current_location_id
+            self.personality.initialize_npc(state, existing.id)
+            if existing.personality_profile is None:
+                existing.personality_profile = self.personality.generate_profile(npc_name=existing.name, role_hint="local npc")
+            return existing
+        npc_id = self._build_dynamic_npc_id(state, name)
+        npc = NPC(id=npc_id, name=name, location_id=state.current_location_id)
+        state.npcs[npc_id] = npc
+        self.personality.initialize_npc(state, npc_id)
+        if npc.personality_profile is None:
+            npc.personality_profile = self.personality.generate_profile(npc_name=npc.name, role_hint="local npc")
+        actor = next(
+            (
+                entry
+                for entry in scene_state.get("scene_actors", [])
+                if isinstance(entry, dict) and str(entry.get("display_name", "")).strip().lower() == name.lower()
+            ),
+            None,
+        )
+        if actor is not None:
+            actor["provisional"] = False
+            actor["entity_type"] = "npc"
+            actor["linked_npc_id"] = npc_id
+            lite = next(
+                (
+                    entry
+                    for entry in scene_state.get("lightweight_npcs", [])
+                    if isinstance(entry, dict) and str(entry.get("linked_actor_id", "")) == str(actor.get("actor_id", ""))
+                ),
+                None,
+            )
+            if lite is not None:
+                lite["npc_id"] = npc_id
+                lite["display_name"] = name
+        print(f"[npc-intro] registered id={npc_id} name={name}")
+        return npc
+
     def _register_scene_actor(self, state: CampaignState, scene_state: dict[str, Any], label: str) -> dict[str, Any]:
         clean_label = re.sub(r"\s+", " ", label.strip().lower())
         existing = next(
@@ -1641,6 +1727,10 @@ class CampaignEngine:
         for source in [narrative, *system_messages[-2:]]:
             for label in self._extract_scene_actor_labels(source):
                 self._register_scene_actor(state, scene_state, label)
+        detected_npcs = self._detect_npc_introductions_from_narration(narrative)
+        for detected_name in detected_npcs:
+            self._register_narrative_npc(state, scene_state, detected_name)
+        npc_names = [npc.name for npc in state.npcs.values() if npc.location_id == state.current_location_id]
         visible_actor_names = [
             str(actor.get("display_name", "")).strip()
             for actor in scene_state.get("scene_actors", [])
