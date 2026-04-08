@@ -269,6 +269,13 @@ class PromptRenderer:
     ) -> str:
         npc_states = turn_context.npc_states if turn_context else []
         lines = [f"- Active participants: {', '.join(turn_context.active_participants) if turn_context and turn_context.active_participants else 'none'}"]
+        lines.extend(
+            [
+                "- Identity continuity: reuse established NPC names once introduced.",
+                "- Do not rename existing NPCs or split one character into duplicate entries.",
+                "- Generic references (for example, 'the guard' or 'the stranger') should map to the established character when context matches.",
+            ]
+        )
         if npc_states:
             for npc_state in npc_states:
                 lines.append(f"- {npc_state}")

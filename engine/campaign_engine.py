@@ -1203,11 +1203,12 @@ class CampaignEngine:
             if persistent_conditions:
                 visible_condition = ", ".join([visible_condition, ", ".join(persistent_conditions[-3:])])
             relationship = f"{npc.relationship_tier} toward {state.player.name}"
+            role_summary = self._describe_npc_role(npc)
             personality_summary = self._describe_npc_personality(npc)
             intent = self._describe_npc_intent(eval_snapshot)
             tone = str(getattr(eval_snapshot, "tone", "neutral")).strip() or "neutral"
             npc_states.append(
-                f"{npc.name}: {visible_condition}, {relationship}, personality {personality_summary}, likely intent {intent}, tone {tone}."
+                f"{npc.name}: role {role_summary}; {visible_condition}, {relationship}, personality {personality_summary}, likely intent {intent}, tone {tone}."
             )
         for lite in scene_state.get("lightweight_npcs", []):
             if not isinstance(lite, dict):
@@ -1275,6 +1276,16 @@ class CampaignEngine:
         if fear >= 15:
             return "guarded, trying not to show fear"
         return "steady and composed"
+
+    def _describe_npc_role(self, npc: Any) -> str:
+        if getattr(npc, "personality_nodes", None) and str(npc.personality_nodes.role).strip():
+            return str(npc.personality_nodes.role).strip()
+        if getattr(npc, "personality_profile", None) and str(npc.personality_profile.archetype).strip():
+            return str(npc.personality_profile.archetype).strip()
+        archetype = str(getattr(npc, "personality_archetype", "") or "").strip()
+        if archetype:
+            return archetype
+        return "local figure"
 
     def _describe_npc_personality(self, npc: Any) -> str:
         if getattr(npc, "personality_profile", None):
@@ -1578,6 +1589,47 @@ class CampaignEngine:
     def _normalize_person_name(self, value: str) -> str:
         return re.sub(r"[^a-z]", "", str(value or "").lower())
 
+    def _normalize_actor_label(self, value: str) -> str:
+        lowered = re.sub(r"\s+", " ", str(value or "").strip().lower())
+        return re.sub(r"^(the|a|an)\s+", "", lowered).strip()
+
+    def _canonical_role_label(self, value: str) -> str:
+        lowered = self._normalize_actor_label(value)
+        if "guard" in lowered or "sentry" in lowered:
+            return "guard"
+        if "merchant" in lowered or "vendor" in lowered or "shopkeep" in lowered:
+            return "merchant"
+        if "stranger" in lowered:
+            return "stranger"
+        if "hooded" in lowered and "figure" in lowered:
+            return "hooded figure"
+        if "figure" in lowered:
+            return "figure"
+        return lowered
+
+    def _is_generic_identity_label(self, value: str) -> bool:
+        label = self._canonical_role_label(value)
+        return label in {
+            "guard",
+            "stranger",
+            "merchant",
+            "figure",
+            "hooded figure",
+            "woman in a cloak",
+            "person",
+            "traveler",
+            "unknown",
+        }
+
+    def _infer_npc_role_hint(self, npc: NPC) -> str:
+        if npc.personality_nodes and str(npc.personality_nodes.role).strip():
+            return str(npc.personality_nodes.role)
+        if npc.personality_profile and str(npc.personality_profile.archetype).strip():
+            return str(npc.personality_profile.archetype)
+        if str(npc.personality_archetype or "").strip():
+            return str(npc.personality_archetype)
+        return npc.name
+
     def _detect_npc_introductions_from_narration(self, text: str) -> list[str]:
         if not text.strip():
             return []
@@ -1609,6 +1661,21 @@ class CampaignEngine:
                 return npc
         return None
 
+    def _find_existing_npc_by_role(self, state: CampaignState, role_label: str) -> NPC | None:
+        canonical = self._canonical_role_label(role_label)
+        if not canonical:
+            return None
+        same_location = [npc for npc in state.npcs.values() if npc.location_id == state.current_location_id]
+        matches = [
+            npc
+            for npc in same_location
+            if canonical in self._canonical_role_label(self._infer_npc_role_hint(npc))
+            or canonical in self._canonical_role_label(npc.name)
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        return None
+
     def _build_dynamic_npc_id(self, state: CampaignState, name: str) -> str:
         slug = re.sub(r"[^a-z0-9]+", "_", name.strip().lower()).strip("_")
         if not slug:
@@ -1629,24 +1696,58 @@ class CampaignEngine:
             if existing.personality_profile is None:
                 existing.personality_profile = self.personality.generate_profile(npc_name=existing.name, role_hint="local npc")
             return existing
+        candidate_actor = self._resolve_scene_actor_target(f"the {name}", scene_state)
+        linked_npc_id = str(candidate_actor.get("linked_npc_id", "")).strip() if isinstance(candidate_actor, dict) else ""
+        if linked_npc_id and linked_npc_id in state.npcs:
+            npc = state.npcs[linked_npc_id]
+            if self._is_generic_identity_label(npc.name):
+                npc.name = name
+                if npc.personality_profile is not None:
+                    npc.personality_profile.identity_label = name
+            npc.location_id = state.current_location_id
+            if isinstance(candidate_actor, dict):
+                candidate_actor["display_name"] = name
+                candidate_actor["provisional"] = False
+                candidate_actor["entity_type"] = "npc"
+            self.personality.initialize_npc(state, npc.id)
+            print(f"[npc-intro] resolved_existing id={npc.id} name={npc.name}")
+            return npc
+        if isinstance(candidate_actor, dict):
+            role_hint = str(candidate_actor.get("short_label") or candidate_actor.get("display_name") or "").strip()
+            role_match = self._find_existing_npc_by_role(state, role_hint) if role_hint else None
+            if role_match is not None and self._is_generic_identity_label(role_match.name):
+                role_match.name = name
+                role_match.location_id = state.current_location_id
+                if role_match.personality_profile is not None:
+                    role_match.personality_profile.identity_label = name
+                candidate_actor["linked_npc_id"] = role_match.id
+                candidate_actor["display_name"] = name
+                candidate_actor["provisional"] = False
+                candidate_actor["entity_type"] = "npc"
+                self.personality.initialize_npc(state, role_match.id)
+                print(f"[npc-intro] role_reconciled id={role_match.id} name={name}")
+                return role_match
         npc_id = self._build_dynamic_npc_id(state, name)
         npc = NPC(id=npc_id, name=name, location_id=state.current_location_id)
         state.npcs[npc_id] = npc
         self.personality.initialize_npc(state, npc_id)
         if npc.personality_profile is None:
             npc.personality_profile = self.personality.generate_profile(npc_name=npc.name, role_hint="local npc")
-        actor = next(
-            (
-                entry
-                for entry in scene_state.get("scene_actors", [])
-                if isinstance(entry, dict) and str(entry.get("display_name", "")).strip().lower() == name.lower()
-            ),
-            None,
-        )
+        actor = candidate_actor if isinstance(candidate_actor, dict) else None
+        if actor is None:
+            actor = next(
+                (
+                    entry
+                    for entry in scene_state.get("scene_actors", [])
+                    if isinstance(entry, dict) and str(entry.get("display_name", "")).strip().lower() == name.lower()
+                ),
+                None,
+            )
         if actor is not None:
             actor["provisional"] = False
             actor["entity_type"] = "npc"
             actor["linked_npc_id"] = npc_id
+            actor["display_name"] = name
             lite = next(
                 (
                     entry
@@ -1662,7 +1763,21 @@ class CampaignEngine:
         return npc
 
     def _register_scene_actor(self, state: CampaignState, scene_state: dict[str, Any], label: str) -> dict[str, Any]:
-        clean_label = re.sub(r"\s+", " ", label.strip().lower())
+        clean_label = self._normalize_actor_label(label)
+        role_matched_npc = self._find_existing_npc_by_role(state, clean_label) if self._is_generic_identity_label(clean_label) else None
+        if role_matched_npc is not None:
+            existing_linked = next(
+                (
+                    actor
+                    for actor in scene_state.get("scene_actors", [])
+                    if isinstance(actor, dict) and str(actor.get("linked_npc_id", "")).strip() == role_matched_npc.id
+                ),
+                None,
+            )
+            if existing_linked is not None:
+                existing_linked["visible"] = True
+                existing_linked["last_interaction_turn"] = state.turn_count
+                return existing_linked
         existing = next(
             (
                 actor
@@ -1680,19 +1795,21 @@ class CampaignEngine:
         actor_id = f"scene_actor_{state.current_location_id}_{len(scene_state.get('scene_actors', [])) + 1}"
         actor = {
             "actor_id": actor_id,
-            "display_name": clean_label.title(),
+            "display_name": role_matched_npc.name if role_matched_npc is not None else clean_label.title(),
             "short_label": clean_label,
             "entity_type": "npc" if any(word in clean_label for word in ("guard", "merchant", "stranger", "figure", "woman")) else "unknown",
             "visible": True,
             "introduced_turn": state.turn_count,
             "last_interaction_turn": 0,
             "tags": [token for token in clean_label.split() if token not in {"the", "a", "an", "in"}],
-            "provisional": True,
+            "provisional": role_matched_npc is None,
+            "linked_npc_id": role_matched_npc.id if role_matched_npc is not None else "",
             "location_id": state.current_location_id,
         }
         scene_state.setdefault("scene_actors", []).append(actor)
         print(f"[scene-actors] registered id={actor_id}")
-        self._materialize_lightweight_npc(state, scene_state, actor)
+        if role_matched_npc is None:
+            self._materialize_lightweight_npc(state, scene_state, actor)
         return actor
 
     def _update_scene_state_from_turn(
@@ -1949,7 +2066,7 @@ class CampaignEngine:
             print(f"[scene-actors] target_resolved={actor.get('actor_id', '')}")
             return actor
         lowered = action.lower()
-        generic_refs = ("them", "the figure", "the stranger", "him", "her", "that person", "that figure")
+        generic_refs = ("them", "the figure", "the stranger", "the guard", "him", "her", "that person", "that figure")
         for actor in actors:
             labels = [
                 str(actor.get("display_name", "")).lower(),
