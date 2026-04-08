@@ -522,6 +522,29 @@ def test_repetition_detection_allows_progression_on_same_subject() -> None:
     assert assessment["is_dead_loop"] is False
 
 
+def test_repetition_detection_allows_same_location_with_new_consequence() -> None:
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+    prior = "You remain in the crypt hall while the same iron door rattles in its frame."
+    current = "You remain in the crypt hall, but now the iron door cracks and torch smoke spills through."
+    assessment = engine._assess_repetition_pattern(current, prior)
+    assert assessment["is_progression"] is True
+    assert assessment["is_dead_loop"] is False
+
+
+def test_validator_preserves_coherent_non_refusal_output_even_if_indirect() -> None:
+    state = load_state()
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+    scene_state = engine._ensure_scene_state(state)
+    assessment = engine._validate_narration_output(
+        "attack the statue",
+        "Moonlight reflects across still water while distant bells ring.",
+        state,
+        scene_state,
+    )
+    assert assessment["valid"] is True
+    assert assessment["reason"] == "ok"
+
+
 def test_prompt_renderer_player_facts_relevance_filtering() -> None:
     state = load_state()
     retrieval = MemoryRetrievalPipeline().retrieve(

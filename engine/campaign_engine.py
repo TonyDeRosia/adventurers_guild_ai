@@ -643,7 +643,7 @@ class CampaignEngine:
         action_subtype = self._classify_gameplay_action_subtype(action)
         last_narration = state.structured_state.runtime.last_narration
         consecutive_repetition_count = int(scene_state.get("consecutive_repetition_count", 0) or 0)
-        strict_validation_reasons = {"no_output", "refusal", "broken_scaffold", "action_override", "stale_state_loop", "scene_reset"}
+        strict_validation_reasons = {"no_output", "refusal", "broken_scaffold"}
         strict_invalid = (not bool(validation["valid"])) and str(validation.get("reason", "")) in strict_validation_reasons
         narration_invalid = strict_invalid or self._is_invalid_narration_output(sanitized_narrative)
         repetition = self._assess_repetition_pattern(sanitized_narrative, last_narration)
@@ -673,7 +673,7 @@ class CampaignEngine:
             narration_invalid = strict_invalid or self._is_invalid_narration_output(sanitized_narrative)
             repetition = self._assess_repetition_pattern(sanitized_narrative, last_narration)
             dead_loop_detected = repetition["is_dead_loop"]
-        narration_repetitive = dead_loop_detected and consecutive_repetition_count >= 1 and retry_used
+        narration_repetitive = dead_loop_detected and consecutive_repetition_count >= 2 and retry_used
         # Minimal narration control mode:
         # engine owns structural truth/recovery; narrator rules own narrative behavior.
         if narration_invalid or narration_repetitive:
@@ -1049,39 +1049,35 @@ class CampaignEngine:
             return {"is_dead_loop": False, "is_progression": False}
         if current == prior and len(current) > 20:
             return {"is_dead_loop": True, "is_progression": False}
+
         similarity = SequenceMatcher(None, current, prior).ratio()
+        repeated_fillers = [phrase for phrase in self._filler_loop_phrases if phrase in current and phrase in prior]
+
         progression_markers = {
-            "then",
-            "now",
-            "after",
-            "finally",
-            "instead",
-            "reveals",
-            "opens",
-            "staggers",
-            "retreats",
-            "strikes",
-            "breaks",
-            "falls",
-            "answers",
-            "admits",
+            "then", "now", "after", "finally", "instead", "suddenly", "as", "while",
+            "reveals", "opens", "staggers", "retreats", "strikes", "breaks", "falls", "answers",
+            "admits", "charges", "drops", "shifts", "turns", "cracks", "widens", "bleeds", "burns",
+        }
+        state_change_markers = {
+            "already", "new", "worsens", "improves", "widening", "deeper", "closer", "farther",
+            "unsteady", "stunned", "exposed", "disabled", "disarmed", "arrives", "leaves", "waits",
         }
         current_tokens = {token for token in re.findall(r"[a-z]{4,}", current) if token not in self._repetition_stopwords}
         prior_tokens = {token for token in re.findall(r"[a-z]{4,}", prior) if token not in self._repetition_stopwords}
         novel_tokens = current_tokens - prior_tokens
-        progression = bool(novel_tokens) and (
-            len(novel_tokens) >= 3
-            or any(marker in current for marker in progression_markers)
-        )
-        if progression:
+
+        has_progression_markers = any(marker in current for marker in progression_markers)
+        has_state_change_markers = any(marker in current for marker in state_change_markers)
+        has_novel_progression = len(novel_tokens) >= 2
+        is_progression = has_progression_markers or has_state_change_markers or has_novel_progression
+        if is_progression:
             return {"is_dead_loop": False, "is_progression": True}
-        if similarity >= 0.992 and len(current) > 40 and len(prior) > 40:
-            return {"is_dead_loop": True, "is_progression": False}
-        repeated_fillers = [phrase for phrase in self._filler_loop_phrases if phrase in current and phrase in prior]
-        return {"is_dead_loop": bool(repeated_fillers), "is_progression": False}
+
+        highly_similar = similarity >= 0.992 and len(current) > 40 and len(prior) > 40
+        static_loop = highly_similar or bool(repeated_fillers)
+        return {"is_dead_loop": static_loop, "is_progression": False}
 
     def _validate_narration_output(self, action: str, narrative: str, state: CampaignState, scene_state: dict[str, Any]) -> dict[str, str | bool]:
-        normalized_action = self._normalize_action(action)
         normalized_narrative = re.sub(r"\s+", " ", narrative.strip().lower())
         if not normalized_narrative:
             return {"valid": False, "reason": "no_output"}
@@ -1089,14 +1085,6 @@ class CampaignEngine:
             return {"valid": False, "reason": "refusal"}
         if self._contains_broken_scaffold_leakage(normalized_narrative):
             return {"valid": False, "reason": "broken_scaffold"}
-        if self._detect_action_override(normalized_action, normalized_narrative, scene_state):
-            return {"valid": False, "reason": "action_override"}
-        if self._is_clear_stale_state_loop(normalized_narrative, state):
-            return {"valid": False, "reason": "stale_state_loop"}
-        if self._is_scene_reset_output(normalized_narrative, state):
-            return {"valid": False, "reason": "scene_reset"}
-        if self._requires_immediate_grounding(action) and not self._is_concrete_scene_grounded_output(action, narrative, scene_state):
-            return {"valid": False, "reason": "weak_grounding"}
         return {"valid": True, "reason": "ok"}
 
     def _contains_broken_scaffold_leakage(self, normalized_narrative: str) -> bool:

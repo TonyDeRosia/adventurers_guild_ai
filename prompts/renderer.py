@@ -124,7 +124,8 @@ class PromptRenderer:
         ]
         npc_context = " | ".join(nearby_npcs) if nearby_npcs else "none"
         suggested_move_instruction = self._build_writing_instructions_block(guidance_requested)
-        structured_turn_context = self._format_turn_context(turn_context, action, location_summary)
+        focus = self._infer_player_fact_focus(action)
+        structured_turn_context = self._format_turn_context(turn_context, action, location_summary, focus=focus)
         current_action_priority = self._build_current_action_priority_block(
             action,
             enforce_action_priority=enforce_action_priority,
@@ -144,6 +145,7 @@ class PromptRenderer:
             active_quest_count=active_quest_count,
             character_sheet_guidance=character_sheet_guidance,
             gm_context=gm_context,
+            focus=focus,
         )
         recent_consequences_block = self._build_recent_consequences_prompt_block(
             memory=memory,
@@ -209,19 +211,20 @@ class PromptRenderer:
             return "none"
         return " | ".join(consequence_like[-3:])
 
-    def _format_turn_context(self, context: TurnPromptContext | None, action: str, location_summary: str) -> str:
+    def _format_turn_context(self, context: TurnPromptContext | None, action: str, location_summary: str, *, focus: str) -> str:
         if context is None:
             return f"- current_player_action: {action}\n- scene_location: {location_summary}\n- active_participants: none"
         lines = [
             f"- current_player_action: {context.current_player_action or action}",
             f"- scene_location: {context.scene_location or location_summary}",
             f"- active_participants: {', '.join(context.active_participants) if context.active_participants else 'none'}",
-            f"- npc_states: {'; '.join(context.npc_states) if context.npc_states else 'none'}",
-            f"- environment_state: {'; '.join(context.environment_state) if context.environment_state else 'none'}",
-            f"- unresolved_threats: {'; '.join(context.unresolved_threats) if context.unresolved_threats else 'none'}",
-            f"- recent_consequences: {'; '.join(context.recent_consequences) if context.recent_consequences else 'none'}",
-            f"- narrator_rules: {'; '.join(context.narrator_rules) if context.narrator_rules else 'none'}",
+            f"- environment_state: {'; '.join(context.environment_state[:2]) if context.environment_state else 'none'}",
+            f"- recent_consequences: {'; '.join(context.recent_consequences[:2]) if context.recent_consequences else 'none'}",
         ]
+        if focus == "dialogue":
+            lines.append(f"- npc_states: {'; '.join(context.npc_states[:2]) if context.npc_states else 'none'}")
+        elif focus in {"combat", "magic"}:
+            lines.append(f"- unresolved_threats: {'; '.join(context.unresolved_threats[:3]) if context.unresolved_threats else 'none'}")
         return "\n".join(lines)
 
     def _build_scene_prompt_block(
@@ -280,8 +283,8 @@ class PromptRenderer:
         active_quest_count: int,
         character_sheet_guidance: list[str] | None,
         gm_context: str,
+        focus: str,
     ) -> str:
-        focus = self._infer_player_fact_focus(action)
         active_conditions = sorted([key for key, enabled in state.combat_effects.items() if enabled])
         inventory = state.player.inventory
         spellbook = state.structured_state.runtime.spellbook
@@ -301,7 +304,7 @@ class PromptRenderer:
             )
         if focus in {"inventory_use", "item_use", "combat", "exploration"}:
             facts.append(f"- Inventory highlights: {', '.join(inventory[:5]) if inventory else 'none'}")
-        if focus in {"magic", "combat"}:
+        if focus in {"magic", "combat", "exploration"}:
             facts.append(
                 f"- Spellbook highlights: {', '.join(entry.get('name', 'unknown') for entry in spellbook[:5]) if spellbook else 'none'}"
             )
@@ -312,7 +315,7 @@ class PromptRenderer:
             f"- [Character Sheet Guidance] {' | '.join(character_sheet_guidance[:2]) if character_sheet_guidance else 'none'}",
             f"- Structured truth attached: {'yes' if bool(gm_context.strip()) else 'no'}",
             "[STRUCTURED CAMPAIGN FACTS]",
-            self._compress_structured_truth(gm_context),
+            self._compress_structured_truth(gm_context, focus=focus),
             ]
         )
         return "\n".join(facts)
@@ -329,14 +332,60 @@ class PromptRenderer:
             return "dialogue"
         return "exploration"
 
-    def _compress_structured_truth(self, gm_context: str) -> str:
+    def _compress_structured_truth(self, gm_context: str, *, focus: str) -> str:
         text = (gm_context or "").strip()
         if not text:
             return "none"
         compact = re.sub(r"\s+", " ", text)
-        if len(compact) <= 900:
-            return compact
-        return compact[:900].rstrip() + " ...[truncated]"
+
+        def _segment(label: str, next_labels: list[str]) -> str:
+            start = compact.find(label)
+            if start == -1:
+                return ""
+            end = len(compact)
+            for candidate in next_labels:
+                idx = compact.find(candidate, start + len(label))
+                if idx != -1:
+                    end = min(end, idx)
+            return compact[start:end].strip().rstrip(',')
+
+        core_labels = [
+            "Canon:",
+            "'player_core':",
+            "'inventory_state':",
+            "'spellbook':",
+            "'nearby_npcs':",
+            "'scene_actors':",
+            "'world_state':",
+            "Recent Turn Memory:",
+        ]
+        segments: list[str] = []
+        for idx, label in enumerate(core_labels):
+            chunk = _segment(label, core_labels[idx + 1 :])
+            if chunk:
+                segments.append(chunk)
+
+        focus_map = {
+            "magic": ["'spellbook':", "'player_core':", "'nearby_npcs':", "'world_state':"],
+            "item_use": ["'inventory_state':", "'player_core':", "'world_state':", "'nearby_npcs':"],
+            "inventory_use": ["'inventory_state':", "'player_core':", "'world_state':", "'nearby_npcs':"],
+            "dialogue": ["'nearby_npcs':", "'scene_actors':", "'player_core':", "'world_state':"],
+            "combat": ["'player_core':", "'world_state':", "'nearby_npcs':", "'spellbook':", "'inventory_state':"],
+            "exploration": ["'world_state':", "'scene_actors':", "'nearby_npcs':", "'player_core':"],
+        }
+        ordered_focus_labels = focus_map.get(focus, focus_map["exploration"])
+        prioritized: list[str] = []
+        for label in ["Canon:", *ordered_focus_labels, "Recent Turn Memory:"]:
+            chunk = next((seg for seg in segments if seg.startswith(label)), "")
+            if chunk and chunk not in prioritized:
+                prioritized.append(chunk)
+
+        if not prioritized:
+            prioritized = segments
+        joined = " || ".join(prioritized)
+        if len(joined) <= 900:
+            return joined
+        return joined[:900].rstrip() + " ...[truncated]"
 
     def _build_recent_consequences_prompt_block(
         self,
