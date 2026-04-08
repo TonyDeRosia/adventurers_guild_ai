@@ -115,10 +115,7 @@ class PromptRenderer:
         enforce_action_priority: bool = True,
         retry_action_priority: bool = False,
     ) -> str:
-        recent = " | ".join(state.event_log[-4:]) if state.event_log else "No significant events yet"
-        recent_conversation = self._summarize_recent_conversation(state)
         active_quest_count = sum(1 for quest in state.quests.values() if quest.status == "active")
-        flags = ", ".join(k for k, v in sorted(state.world_flags.items()) if v) or "none"
         nearby_npcs = [
             f"{npc.name}(tier={npc.relationship_tier}, trust={npc.dynamic_state.trust_toward_player}, stress={npc.dynamic_state.stress})"
             for npc in state.npcs.values()
@@ -134,12 +131,9 @@ class PromptRenderer:
         )
         scene_block = self._build_scene_prompt_block(
             state=state,
-            action=action,
             location_summary=location_summary,
             scene_state_summary=scene_state_summary,
-            recent_events=recent,
-            recent_conversation=recent_conversation,
-            world_flags=flags,
+            recent_visible_consequences=turn_context.recent_consequences if turn_context else [],
         )
         npc_block = self._build_npc_prompt_block(turn_context=turn_context, npc_guidance=npc_guidance, npc_context=npc_context)
         enemy_block = self._build_enemy_prompt_block(state=state, turn_context=turn_context)
@@ -186,7 +180,8 @@ class PromptRenderer:
             "This exact action must be resolved now.\n"
             "Do not replace it with earlier actions or prior narration.\n"
             "Do not ignore it.\n"
-            "Resolve this action first, then narrate consequences."
+            "Resolve this action first, then narrate consequences.\n"
+            "Latest action overrides any stale unresolved prior action."
             + retry_suffix
         )
 
@@ -231,21 +226,17 @@ class PromptRenderer:
         self,
         *,
         state: CampaignState,
-        action: str,
         location_summary: str,
         scene_state_summary: str,
-        recent_events: str,
-        recent_conversation: str,
-        world_flags: str,
+        recent_visible_consequences: list[str] | None = None,
     ) -> str:
+        recent_visible = recent_visible_consequences or []
         parts = [
             f"- Campaign: {state.campaign_name}",
             f"- World: {state.world_meta.world_name} ({state.world_meta.world_theme})",
             f"- Location: {location_summary}",
-            f"- Action anchor: {action}",
-            f"- Recent events: {recent_events}",
-            f"- Recent conversation cues: {recent_conversation or 'none'}",
-            f"- World flags in play: {world_flags}",
+            f"- Visible environmental changes: {scene_state_summary or 'none'}",
+            f"- Recent visible consequences: {' | '.join(recent_visible) if recent_visible else 'none'}",
             scene_state_summary or "Current Scene State:\n- none",
         ]
         return "\n".join(parts)
@@ -258,19 +249,19 @@ class PromptRenderer:
         npc_context: str,
     ) -> str:
         npc_states = turn_context.npc_states if turn_context else []
-        lines = [f"- Active participant snapshot: {', '.join(turn_context.active_participants) if turn_context and turn_context.active_participants else 'none'}"]
+        lines = [f"- Active participants: {', '.join(turn_context.active_participants) if turn_context and turn_context.active_participants else 'none'}"]
         if npc_states:
-            lines.append(f"- NPC state summaries: {' | '.join(npc_states)}")
+            for npc_state in npc_states:
+                lines.append(f"- {npc_state}")
         else:
-            lines.append("- NPC state summaries: none")
-        lines.append(f"- Nearby NPC context: {npc_context}")
-        lines.append(f"- NPC behavior guidance: {' | '.join(npc_guidance) if npc_guidance else 'none'}")
+            lines.append("- none")
+        lines.append(f"- NPC behavior anchors: {' | '.join(npc_guidance) if npc_guidance else npc_context}")
         return "\n".join(lines)
 
     def _build_enemy_prompt_block(self, *, state: CampaignState, turn_context: TurnPromptContext | None) -> str:
         threats = list(turn_context.unresolved_threats) if turn_context else []
         if state.active_enemy_id and (state.active_enemy_hp or 0) > 0:
-            threat_line = f"active_enemy={state.active_enemy_id} hp={state.active_enemy_hp}"
+            threat_line = f"active enemy present: {state.active_enemy_id} (HP {state.active_enemy_hp})"
             if threat_line not in threats:
                 threats.append(threat_line)
         if not threats:
@@ -289,8 +280,17 @@ class PromptRenderer:
             f"- Player: {state.player.name} ({state.player.char_class})",
             f"- HP: {state.player.hp}/{state.player.max_hp}",
             f"- Attack bonus: +{state.player.attack_bonus}",
+            f"- Active conditions: {', '.join(sorted([key for key, enabled in state.combat_effects.items() if enabled])) or 'none'}",
+            f"- Equipped item: {state.player.equipped_item_id or 'none'}",
+            f"- Inventory highlights: {', '.join(state.player.inventory[:6]) if state.player.inventory else 'none'}",
+            (
+                f"- Spellbook highlights: {', '.join(entry.get('name', 'unknown') for entry in state.structured_state.runtime.spellbook[:6])}"
+                if state.structured_state.runtime.spellbook
+                else "- Spellbook highlights: none"
+            ),
             f"- Active quest count: {active_quest_count}",
-            f"- Character sheet guidance: {' | '.join(character_sheet_guidance) if character_sheet_guidance else 'none'}",
+            f"- Character sheet guidance: {' | '.join(character_sheet_guidance[:4]) if character_sheet_guidance else 'none'}",
+            f"- Structured truth reference attached: {'yes' if bool(gm_context.strip()) else 'no'}",
             "[STRUCTURED CAMPAIGN FACTS]",
             gm_context or "none",
         ]
@@ -340,8 +340,9 @@ class PromptRenderer:
         return (
             "Write natural, expressive scene prose using the structured facts above as truth.\n"
             "Resolve the current action first, then show concrete consequences in scene, NPC behavior, and threat behavior.\n"
+            "Use readable sections when they improve clarity (Scene, NPC Reactions, Enemy/Threat Reactions, Dialogue, Immediate Result).\n"
             "Do not collapse into stat-sheet formatting unless the player explicitly asked for structured output.\n"
-            "Keep output compact (usually 1-3 short paragraphs) and end on a clean handoff to player agency.\n"
+            "Keep output compact (usually 1-4 short paragraphs) and end on a clean handoff to player agency.\n"
             "Do not suggest actions, next steps, or recommendations unless the player explicitly asked for guidance.\n"
             + (
                 "Guidance was explicitly requested this turn; recommendations are allowed."

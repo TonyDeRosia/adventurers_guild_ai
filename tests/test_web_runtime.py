@@ -979,7 +979,23 @@ def test_turn_prompt_keeps_npcs_and_enemies_in_separate_sections(tmp_path: Path,
     enemy_idx = prompt.find("[ENEMIES / THREATS]")
     assert npc_idx >= 0
     assert enemy_idx > npc_idx
-    assert "active_enemy=goblin_raider hp=12" in prompt
+    assert "Hostile threat active: goblin_raider (HP 12)." in prompt
+
+
+def test_turn_prompt_retains_player_system_feeds(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    capture = _PromptCaptureProvider()
+    runtime.engine.model = capture
+    runtime.session.state.player.inventory = ["torch", "field_draught"]
+    runtime.session.state.structured_state.runtime.spellbook = [{"name": "Arc Bolt", "type": "spell"}]
+    runtime.upsert_narrator_rule({"action": "upsert", "text": "Keep the moonlight imagery grounded in the current location."})
+    runtime.handle_player_input("look")
+    prompt = capture.last_prompt
+    assert "[PLAYER FACTS]" in prompt
+    assert "Inventory highlights: torch, field_draught" in prompt
+    assert "Spellbook highlights: Arc Bolt" in prompt
+    assert "[NARRATOR RULES]" in prompt
+    assert "Keep the moonlight imagery grounded in the current location." in prompt
 
 
 def test_expressive_indirect_resolution_is_not_invalidated(tmp_path: Path, monkeypatch) -> None:
