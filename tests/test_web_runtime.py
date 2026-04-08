@@ -96,7 +96,8 @@ def test_new_campaign_uses_preferred_visual_and_suggested_move_defaults(tmp_path
     runtime = _runtime(tmp_path, monkeypatch)
     created = runtime.create_campaign({"player_name": "DefaultCheck", "slot": "slot_defaults"})
 
-    assert created["state"]["settings"]["campaign_auto_visuals_enabled"] is True
+    assert "campaign_auto_visuals_enabled" not in created["state"]["settings"]
+    assert created["state"]["settings"]["play_style"]["scene_visual_mode"] == "after_narration"
     assert created["state"]["settings"]["suggested_moves_enabled"] is False
     assert created["state"]["settings"]["effective_suggested_moves_enabled"] is False
     assert created["state"]["settings"]["display_mode"] == "story"
@@ -111,9 +112,9 @@ def test_existing_campaign_settings_are_preserved_on_load(tmp_path: Path, monkey
     runtime.create_campaign({"player_name": "KeepMe", "slot": "slot_keep"})
     runtime.set_campaign_settings(
         {
-            "campaign_auto_visuals_enabled": False,
             "suggested_moves_enabled": True,
             "player_suggested_moves_override": True,
+            "play_style": {"scene_visual_mode": "manual"},
         }
     )
     runtime.save_active_campaign("slot_keep")
@@ -121,7 +122,8 @@ def test_existing_campaign_settings_are_preserved_on_load(tmp_path: Path, monkey
     reloaded = _runtime(tmp_path, monkeypatch)
     reloaded.switch_campaign("slot_keep")
     settings = reloaded.serialize_state()["settings"]
-    assert settings["campaign_auto_visuals_enabled"] is False
+    assert settings["play_style"]["scene_visual_mode"] == "manual"
+    assert "campaign_auto_visuals_enabled" not in settings
     assert settings["suggested_moves_enabled"] is True
     assert settings["effective_suggested_moves_enabled"] is True
 
@@ -1536,7 +1538,7 @@ def test_image_generation_requires_comfyui_readiness(tmp_path: Path, monkeypatch
 def test_auto_after_visual_updates_scene_panel_without_image_chat_message(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.set_global_settings({"image": {"provider": "comfyui", "campaign_auto_visual_timing": "after_narration"}})
-    runtime.set_campaign_settings({"image_generation_enabled": True, "campaign_auto_visuals_enabled": True})
+    runtime.set_campaign_settings({"image_generation_enabled": True, "play_style": {"scene_visual_mode": "after_narration"}})
     monkeypatch.setattr(runtime, "get_image_status", lambda: {"ready": True})
     output_file = runtime.generated_image_dir / "turn_visual.png"
     output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -1602,10 +1604,77 @@ def test_auto_after_turn_visual_only_queues_for_meaningful_narration(tmp_path: P
     assert len(queued) == 1
 
 
+@pytest.mark.parametrize(
+    ("mode", "expected_auto_enabled", "expected_timing"),
+    [
+        ("off", False, "off"),
+        ("manual", False, "off"),
+        ("before_narration", True, "before_narration"),
+        ("after_narration", True, "after_narration"),
+    ],
+)
+def test_scene_visual_mode_is_single_source_for_auto_behavior(
+    tmp_path: Path, monkeypatch, mode: str, expected_auto_enabled: bool, expected_timing: str
+) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.set_campaign_settings(
+        {
+            "image_generation_enabled": True,
+            "play_style": {"scene_visual_mode": mode},
+            "campaign_auto_visuals_enabled": not expected_auto_enabled,
+        }
+    )
+    runtime.set_global_settings({"image": {"provider": "comfyui", "campaign_auto_visual_timing": "off"}})
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"ready": False})
+    captured: list[tuple[bool, str, str]] = []
+    monkeypatch.setattr(
+        runtime,
+        "_maybe_queue_auto_turn_visual",
+        lambda auto_enabled, auto_timing, player_action, narrator_response, stage: captured.append(
+            (auto_enabled, auto_timing, stage)
+        )
+        or False,
+    )
+
+    runtime.handle_player_input("look around")
+    assert captured
+    assert captured[0][0] is expected_auto_enabled
+    assert captured[0][1] == expected_timing
+
+
+def test_manual_visual_generation_works_when_scene_visual_mode_is_off(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.set_campaign_settings({"play_style": {"scene_visual_mode": "off"}})
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"ready": True})
+    output_file = runtime.generated_image_dir / "manual_scene.png"
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.write_bytes(b"fake")
+    monkeypatch.setattr(
+        runtime,
+        "generate_image",
+        lambda payload: ImageGenerationResult(
+            success=True,
+            workflow_id="scene_image",
+            result_path=str(output_file),
+            metadata={"image": {"filename": "manual_scene.png", "type": "output"}},
+        ),
+    )
+
+    runtime._run_turn_visual_generation(
+        player_action="raise lantern",
+        narrator_response="Dark stone glitters in the rain.",
+        stage="manual",
+        source="manual",
+    )
+    scene_visual = runtime._scene_visual_for_slot()
+    assert scene_visual is not None
+    assert scene_visual["source"] == "manual"
+
+
 def test_auto_turn_visual_async_dedupes_same_slot_turn_and_stage(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.set_global_settings({"image": {"provider": "comfyui", "campaign_auto_visual_timing": "after_narration"}})
-    runtime.set_campaign_settings({"image_generation_enabled": True, "campaign_auto_visuals_enabled": True})
+    runtime.set_campaign_settings({"image_generation_enabled": True, "play_style": {"scene_visual_mode": "after_narration"}})
     monkeypatch.setattr(runtime, "_run_turn_visual_generation", lambda *args, **kwargs: time.sleep(0.1))
 
     first = runtime._run_turn_visual_generation_async("inspect", "A vivid chamber blooms with blue witchlight.", "after_narration", "auto_after")
