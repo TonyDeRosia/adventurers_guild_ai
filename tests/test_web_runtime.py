@@ -384,6 +384,18 @@ def test_campaign_panel_removes_quick_load_autosave_and_hides_display_mode_contr
     assert "display_mode_change_applied" not in app_js
 
 
+def test_input_mode_toggle_markup_and_frontend_mode_switching_present() -> None:
+    index_html = Path("app/static/index.html").read_text(encoding="utf-8")
+    app_js = Path("app/static/app.js").read_text(encoding="utf-8")
+    styles_css = Path("app/static/styles.css").read_text(encoding="utf-8")
+    assert 'id="input-mode-toggle"' in index_html
+    assert "let currentInputMode = 'ic';" in app_js
+    assert "function toggleInputMode()" in app_js
+    assert "body: JSON.stringify({ text, mode: currentInputMode })" in app_js
+    assert ".msg-ooc_player" in styles_css
+    assert ".msg-ooc_gm" in styles_css
+
+
 def test_custom_campaign_starts_without_sample_npcs_or_quests(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     created = runtime.create_campaign(
@@ -575,6 +587,48 @@ def test_turn_flow_persists_memory_and_messages(tmp_path: Path, monkeypatch) -> 
     runtime.save_active_campaign("slot_memory")
     runtime.switch_campaign("slot_memory")
     assert runtime.session.state.conversation_turns[-1].player_input == "summarize"
+
+
+def test_ooc_input_returns_contextual_reply_without_mutating_campaign_state(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.handle_player_input("look around")
+    original_turn_count = runtime.session.state.turn_count
+    original_conversation_turns = len(runtime.session.state.conversation_turns)
+    original_spellbook = list(runtime.session.state.structured_state.runtime.spellbook)
+    original_npc_ids = sorted(runtime.session.state.npcs.keys())
+
+    monkeypatch.setattr(runtime.engine.model, "generate", lambda *args, **kwargs: "OOC: You're in the starting area right now.")
+    output = runtime.handle_ooc_input("What scene are we in?")
+
+    assert output["metadata"]["mode"] == "ooc"
+    assert output["messages"][0]["type"] == "ooc_gm"
+    assert "starting area" in output["messages"][0]["text"].lower()
+    assert runtime.session.state.turn_count == original_turn_count
+    assert len(runtime.session.state.conversation_turns) == original_conversation_turns
+    assert runtime.session.state.structured_state.runtime.spellbook == original_spellbook
+    assert sorted(runtime.session.state.npcs.keys()) == original_npc_ids
+    assert runtime.session.message_history[-2]["type"] == "ooc_player"
+    assert runtime.session.message_history[-1]["type"] == "ooc_gm"
+
+
+def test_ooc_input_does_not_trigger_turn_pipeline_side_effects(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+
+    monkeypatch.setattr(runtime.engine, "run_turn", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("run_turn should not execute")))
+    monkeypatch.setattr(
+        runtime,
+        "_run_turn_visual_generation",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("visual generation should not execute")),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_maybe_queue_auto_turn_visual",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("auto visual queue should not execute")),
+    )
+    monkeypatch.setattr(runtime.engine.model, "generate", lambda *args, **kwargs: "OOC: Clarification only.")
+
+    output = runtime.handle_ooc_input("Did narration skip a beat?")
+    assert output["messages"][0]["text"].startswith("OOC:")
 
 
 def test_history_and_scene_visual_are_campaign_namespaced(tmp_path: Path, monkeypatch) -> None:
@@ -1948,6 +2002,37 @@ def test_campaign_recalibrate_endpoint_invokes_runtime_recalibration(tmp_path: P
 
     assert response.status_code == 200
     assert response.json()["ok"] is True
+
+
+def test_campaign_input_endpoint_routes_ic_and_ooc_modes(tmp_path: Path, monkeypatch) -> None:
+    try:
+        from fastapi.testclient import TestClient
+    except RuntimeError as exc:
+        pytest.skip(str(exc))
+    runtime = _runtime(tmp_path, monkeypatch)
+    app = create_web_app(runtime, runtime.root / "app" / "static")
+    client = TestClient(app)
+
+    monkeypatch.setattr(
+        runtime,
+        "handle_player_input",
+        lambda text: {"messages": [{"type": "narrator", "text": f"IC:{text}"}], "metadata": {"mode": "ic"}, "state": runtime.serialize_state()},
+    )
+    monkeypatch.setattr(
+        runtime,
+        "handle_ooc_input",
+        lambda text: {"messages": [{"type": "ooc_gm", "text": f"OOC:{text}"}], "metadata": {"mode": "ooc"}, "state": runtime.serialize_state()},
+    )
+
+    ic_response = client.post("/api/campaign/input", json={"text": "look", "mode": "ic"})
+    ooc_response = client.post("/api/campaign/input", json={"text": "what happened?", "mode": "ooc"})
+    bad_mode = client.post("/api/campaign/input", json={"text": "hello", "mode": "meta"})
+
+    assert ic_response.status_code == 200
+    assert ic_response.json()["metadata"]["mode"] == "ic"
+    assert ooc_response.status_code == 200
+    assert ooc_response.json()["metadata"]["mode"] == "ooc"
+    assert bad_mode.status_code == 400
 
 
 def test_dependency_readiness_comfyui_not_installed(tmp_path: Path, monkeypatch) -> None:

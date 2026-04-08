@@ -98,6 +98,8 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter,
 .msg-quest { background: #66501a; }
 .msg-system { background: #2a3444; color: #cfdae7; }
 .msg-image { background: #1b4b3b; }
+.msg-ooc_player { background: #4f3b1e; align-self: flex-end; max-width: 85%; }
+.msg-ooc_gm { background: #21314f; border: 1px solid #3d5d8b; }
 .msg small { display: block; color: var(--muted); margin-bottom: 4px; }
 .msg img { margin-top: 8px; max-width: 100%; border-radius: 8px; border: 1px solid #33506e; cursor: pointer; }
 
@@ -206,8 +208,13 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter,
 }
 .scene-image-display > div { display: none; }
 
-.input-bar { margin-top: 10px; display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.input-bar { margin-top: 10px; display: grid; grid-template-columns: auto 1fr auto; gap: 8px; }
 .input-bar { flex-shrink: 0; }
+#input-mode-toggle {
+  min-width: 58px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
 input, button { border-radius: 8px; border: 1px solid #2e3d52; background: #131e2b; color: var(--text); padding: 10px; }
 select, label { display: block; width: 100%; margin-bottom: 8px; color: var(--muted); font-size: 0.9rem; }
 .path-picker-row {

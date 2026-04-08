@@ -1800,7 +1800,7 @@ class WebRuntime:
             self._persist_history_store()
 
     def _normalize_message_type(self, message_type: str, text: str) -> str:
-        if message_type in {"player", "narrator", "npc", "quest", "image", "system", "error"}:
+        if message_type in {"player", "narrator", "npc", "quest", "image", "system", "error", "ooc_player", "ooc_gm"}:
             return message_type
         lowered = text.lower()
         if "quest" in lowered:
@@ -2771,6 +2771,78 @@ class WebRuntime:
             "state": self.serialize_state(),
         }
 
+    def _build_ooc_context(self) -> str:
+        state = self.session.state
+        location = state.locations.get(state.current_location_id)
+        location_name = location.name if location else "Unknown location"
+        location_description = location.description if location else ""
+        recent_history = self.session.message_history[-10:]
+        recent_lines = [f"{entry.get('type', 'system').upper()}: {str(entry.get('text', '')).strip()}" for entry in recent_history]
+        recent_chat = "\n".join(line for line in recent_lines if line.strip()) or "No recent chat yet."
+        recent_turns = state.conversation_turns[-3:]
+        recent_turn_text = "\n".join(
+            f"Turn {turn.turn}: Player={turn.player_input} | Narrator={turn.narrator_response}"
+            for turn in recent_turns
+            if str(turn.player_input or "").strip() or str(turn.narrator_response or "").strip()
+        ) or "No canon turns have been completed yet."
+        npc_names = sorted({npc.name for npc in state.npcs.values() if str(npc.name).strip()})
+        npc_preview = ", ".join(npc_names[:8]) if npc_names else "None recorded"
+        return (
+            f"Campaign: {state.campaign_name}\n"
+            f"Turn Count: {state.turn_count}\n"
+            f"Current Scene: {location_name}\n"
+            f"Scene Description: {location_description}\n"
+            f"Known NPCs: {npc_preview}\n\n"
+            f"[RECENT CANON TURNS]\n{recent_turn_text}\n\n"
+            f"[RECENT CHAT]\n{recent_chat}"
+        )
+
+    def handle_ooc_input(self, text: str) -> dict[str, Any]:
+        request_received_at = datetime.now(timezone.utc).isoformat()
+        clean_text = text.strip()
+        model_status = self.get_model_status()
+        self._append_message("ooc_player", clean_text, persist=False)
+        context_prompt = self._build_ooc_context()
+        system_prompt = (
+            "You are the Adventure Guild AI GM brain responding in OOC mode.\n"
+            "Answer using campaign context, clarify continuity, and acknowledge uncertainty when relevant.\n"
+            "Do not advance canon, do not declare state changes, and do not apply gameplay consequences."
+        )
+        started = time.perf_counter()
+        try:
+            response_text = self.engine.model.generate(
+                prompt=f"{context_prompt}\n\n[OOC PLAYER MESSAGE]\n{clean_text}",
+                system_prompt=system_prompt,
+            )
+        except ProviderUnavailableError:
+            response_text = (
+                "OOC note: The model provider is currently unavailable, so I cannot fully analyze continuity right now. "
+                "No canon state has changed."
+            )
+        except Exception as exc:  # pragma: no cover - defensive guard for provider-specific failures
+            response_text = (
+                f"OOC note: I hit an error while processing that question ({exc}). "
+                "No canon state was changed."
+            )
+        generation_ms = (time.perf_counter() - started) * 1000
+        self._append_message("ooc_gm", response_text, persist=False)
+        self._flush_history_store()
+        return {
+            "narrative": response_text,
+            "system_messages": [],
+            "messages": [{"type": "ooc_gm", "text": response_text}],
+            "should_exit": False,
+            "metadata": {
+                "mode": "ooc",
+                "model_status": model_status,
+                "timing": {
+                    "request_received_at": request_received_at,
+                    "ooc_generation_ms": round(generation_ms, 2),
+                },
+            },
+            "state": self.serialize_state(),
+        }
+
     def _run_turn_visual_generation(self, player_action: str, narrator_response: str, stage: str, source: str = "automatic") -> None:
         self._request_scene_visual_generation(
             source=source,
@@ -3470,8 +3542,13 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     @app.post("/api/campaign/input")
     def campaign_input(payload: dict[str, Any]) -> dict[str, Any]:
         player_text = str(payload.get("text", "")).strip()
+        mode = str(payload.get("mode", "ic")).strip().lower()
         if not player_text:
             raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="'text' is required")
+        if mode not in {"ic", "ooc"}:
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="'mode' must be 'ic' or 'ooc'")
+        if mode == "ooc":
+            return runtime.handle_ooc_input(player_text)
         return runtime.handle_player_input(player_text)
 
     @app.post("/api/campaign/start")
