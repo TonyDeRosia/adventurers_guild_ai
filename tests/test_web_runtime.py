@@ -951,6 +951,55 @@ def test_scene_state_summary_is_injected_into_prompt(tmp_path: Path, monkeypatch
     assert "Damaged objects:" in capture.last_prompt
 
 
+def test_turn_prompt_uses_separated_gm_brief_sections(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    capture = _PromptCaptureProvider()
+    runtime.engine.model = capture
+    runtime.handle_player_input("i cast fireball at the wall")
+    prompt = capture.last_prompt
+    assert "[CURRENT PLAYER ACTION]" in prompt
+    assert "[SCENE / SETTING]" in prompt
+    assert "[NPCS IN SCENE]" in prompt
+    assert "[ENEMIES / THREATS]" in prompt
+    assert "[PLAYER FACTS]" in prompt
+    assert "[RECENT CONSEQUENCES]" in prompt
+    assert "[NARRATOR RULES]" in prompt
+    assert "[WRITING INSTRUCTIONS]" in prompt
+
+
+def test_turn_prompt_keeps_npcs_and_enemies_in_separate_sections(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    capture = _PromptCaptureProvider()
+    runtime.engine.model = capture
+    runtime.session.state.active_enemy_id = "goblin_raider"
+    runtime.session.state.active_enemy_hp = 12
+    runtime.handle_player_input("look")
+    prompt = capture.last_prompt
+    npc_idx = prompt.find("[NPCS IN SCENE]")
+    enemy_idx = prompt.find("[ENEMIES / THREATS]")
+    assert npc_idx >= 0
+    assert enemy_idx > npc_idx
+    assert "active_enemy=goblin_raider hp=12" in prompt
+
+
+def test_expressive_indirect_resolution_is_not_invalidated(tmp_path: Path, monkeypatch) -> None:
+    class _IndirectResolutionProvider(NarrationModelAdapter):
+        provider_name = "ollama"
+
+        def generate(self, prompt: str, system_prompt: str = "", history=None) -> str:
+            return (
+                "Heat blooms across the stone as your casting gesture lands; dust peels from the seam and a jagged line "
+                "threads outward through the wall while nearby voices choke off into silence."
+            )
+
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _IndirectResolutionProvider()
+    out = runtime.handle_player_input("i cast fireball at the wall")
+    assert out["metadata"]["quality_invalid_output"] is False
+    assert out["metadata"]["quality_fallback_used"] is False
+    assert "jagged line" in out["narrative"].lower()
+
+
 def test_scene_state_lists_are_capped_and_deduped(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _RefusalProvider()

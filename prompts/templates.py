@@ -50,45 +50,27 @@ WORLD_META_TEMPLATE = (
 TURN_TEMPLATE = """[Requested Mode]
 {requested_mode}
 
-[Current Action Priority]
+[CURRENT PLAYER ACTION]
 {current_action_priority}
 
-[Turn Resolution Order]
-{turn_resolution_order}
+[SCENE / SETTING]
+{scene_block}
 
-[Structured Turn Context]
-{structured_turn_context}
+[NPCS IN SCENE]
+{npc_block}
 
-[Conversation Context]
-Recent chat turns: {recent_conversation}
+[ENEMIES / THREATS]
+{enemy_block}
 
-[Memory Context]
-Recent memory summary: {recent_memory_summary}
-Recent consequences: {recent_consequences_summary}
-Long-term memory: {long_term_memory}
-Session summaries: {session_summaries}
-Unresolved plot threads: {plot_threads}
-Important world facts: {world_facts}
+[PLAYER FACTS]
+{player_facts_block}
 
-[Scene Context]
-Campaign: {campaign_name}
-World: {world_name} ({world_theme})
-Location: {location}
-Action: {action}
-{scene_state}
+[RECENT CONSEQUENCES]
+{recent_consequences_block}
 
-[Player State Summary]
-Player: {player_name} ({char_class})
-HP: {hp}/{max_hp}
-Attack bonus: +{attack_bonus}
-Active quest count: {active_quest_count}
-World flags: {world_flags}
-Recent events: {recent_events}
+[NARRATOR RULES]
+{narrator_rules_block}
 
-[Structured Campaign Context]
-{gm_context}
-
-{suggested_move_instruction}
-{npc_personality_guidance}
-{character_sheet_guidance}
+[WRITING INSTRUCTIONS]
+{writing_instructions_block}
 """
