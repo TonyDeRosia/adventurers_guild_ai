@@ -125,67 +125,51 @@ class PromptRenderer:
             if npc.location_id == state.current_location_id
         ]
         npc_context = " | ".join(nearby_npcs) if nearby_npcs else "none"
-        suggested_move_instruction = (
-            "Respond with compact but substantial narration (usually 1-3 short paragraphs) focused on immediate scene framing, "
-            "specific reactions, concrete consequences, and a clean handoff. "
-            "Do not suggest actions, next steps, or recommended moves unless the player explicitly asked for guidance. "
-            + (
-                "In this turn, the player explicitly asked for guidance, so you may include clear options or recommendations."
-                if guidance_requested
-                else "In this turn, the player did not ask for guidance, so do not include advisory phrasing."
-            )
-        )
-        npc_personality_guidance = (
-            "[NPC Personality Guidance]\n" + " | ".join(npc_guidance)
-            if npc_guidance
-            else "[NPC Personality Guidance]\nnone"
-        )
-        sheet_guidance_text = (
-            "[Character Sheet Guidance]\n" + " | ".join(character_sheet_guidance)
-            if character_sheet_guidance
-            else "[Character Sheet Guidance]\nnone"
-        )
+        suggested_move_instruction = self._build_writing_instructions_block(guidance_requested)
         structured_turn_context = self._format_turn_context(turn_context, action, location_summary)
         current_action_priority = self._build_current_action_priority_block(
             action,
             enforce_action_priority=enforce_action_priority,
             retry_action_priority=retry_action_priority,
         )
-        return TURN_TEMPLATE.format(
-            requested_mode=requested_mode,
-            recent_conversation=recent_conversation or "none",
-            current_action_priority=current_action_priority,
-            turn_resolution_order=(
-                "1) Resolve the current player action immediately. "
-                "2) Identify direct targets and effects. "
-                "3) Update NPC/environment state with concrete consequences. "
-                "4) Narrate the resulting moment with concise flavor."
-            ),
-            structured_turn_context=structured_turn_context,
-            recent_memory_summary=self._summarize_recent_memory(memory),
-            recent_consequences_summary=self._summarize_recent_consequences(memory),
+        scene_block = self._build_scene_prompt_block(
+            state=state,
+            action=action,
+            location_summary=location_summary,
+            scene_state_summary=scene_state_summary,
+            recent_events=recent,
+            recent_conversation=recent_conversation,
+            world_flags=flags,
+        )
+        npc_block = self._build_npc_prompt_block(turn_context=turn_context, npc_guidance=npc_guidance, npc_context=npc_context)
+        enemy_block = self._build_enemy_prompt_block(state=state, turn_context=turn_context)
+        player_facts_block = self._build_player_facts_prompt_block(
+            state=state,
+            active_quest_count=active_quest_count,
+            character_sheet_guidance=character_sheet_guidance,
+            gm_context=gm_context,
+        )
+        recent_consequences_block = self._build_recent_consequences_prompt_block(
+            memory=memory,
+            turn_context=turn_context,
             long_term_memory=" | ".join(memory.long_term_memory) if memory.long_term_memory else "none",
             session_summaries=" | ".join(memory.session_summaries) if memory.session_summaries else "none",
             plot_threads=" | ".join(memory.unresolved_plot_threads) if memory.unresolved_plot_threads else "none",
             world_facts=" | ".join(memory.important_world_facts) if memory.important_world_facts else "none",
-            campaign_name=state.campaign_name,
-            world_name=state.world_meta.world_name,
-            world_theme=state.world_meta.world_theme,
-            location=location_summary,
-            action=action,
-            scene_state=scene_state_summary or "Current Scene State:\n- none",
-            player_name=state.player.name,
-            char_class=state.player.char_class,
-            hp=state.player.hp,
-            max_hp=state.player.max_hp,
-            attack_bonus=state.player.attack_bonus,
-            active_quest_count=active_quest_count,
-            world_flags=flags,
-            recent_events=f"{recent} | Nearby NPC context: {npc_context}",
-            suggested_move_instruction=suggested_move_instruction,
-            npc_personality_guidance=npc_personality_guidance,
-            character_sheet_guidance=sheet_guidance_text,
-            gm_context=gm_context or "none",
+        )
+        narrator_rules_block = self._build_narrator_rules_prompt_block(state=state, turn_context=turn_context)
+        return TURN_TEMPLATE.format(
+            requested_mode=requested_mode,
+            current_action_priority=current_action_priority,
+            scene_block=scene_block,
+            npc_block=npc_block,
+            enemy_block=enemy_block,
+            player_facts_block=player_facts_block,
+            recent_consequences_block=recent_consequences_block,
+            narrator_rules_block=narrator_rules_block,
+            writing_instructions_block=(
+                f"{suggested_move_instruction}\n\n[STRUCTURED TURN SNAPSHOT]\n{structured_turn_context}"
+            ),
         )
 
     def _build_current_action_priority_block(self, action: str, *, enforce_action_priority: bool, retry_action_priority: bool) -> str:
@@ -242,6 +226,129 @@ class PromptRenderer:
             f"- narrator_rules: {'; '.join(context.narrator_rules) if context.narrator_rules else 'none'}",
         ]
         return "\n".join(lines)
+
+    def _build_scene_prompt_block(
+        self,
+        *,
+        state: CampaignState,
+        action: str,
+        location_summary: str,
+        scene_state_summary: str,
+        recent_events: str,
+        recent_conversation: str,
+        world_flags: str,
+    ) -> str:
+        parts = [
+            f"- Campaign: {state.campaign_name}",
+            f"- World: {state.world_meta.world_name} ({state.world_meta.world_theme})",
+            f"- Location: {location_summary}",
+            f"- Action anchor: {action}",
+            f"- Recent events: {recent_events}",
+            f"- Recent conversation cues: {recent_conversation or 'none'}",
+            f"- World flags in play: {world_flags}",
+            scene_state_summary or "Current Scene State:\n- none",
+        ]
+        return "\n".join(parts)
+
+    def _build_npc_prompt_block(
+        self,
+        *,
+        turn_context: TurnPromptContext | None,
+        npc_guidance: list[str] | None,
+        npc_context: str,
+    ) -> str:
+        npc_states = turn_context.npc_states if turn_context else []
+        lines = [f"- Active participant snapshot: {', '.join(turn_context.active_participants) if turn_context and turn_context.active_participants else 'none'}"]
+        if npc_states:
+            lines.append(f"- NPC state summaries: {' | '.join(npc_states)}")
+        else:
+            lines.append("- NPC state summaries: none")
+        lines.append(f"- Nearby NPC context: {npc_context}")
+        lines.append(f"- NPC behavior guidance: {' | '.join(npc_guidance) if npc_guidance else 'none'}")
+        return "\n".join(lines)
+
+    def _build_enemy_prompt_block(self, *, state: CampaignState, turn_context: TurnPromptContext | None) -> str:
+        threats = list(turn_context.unresolved_threats) if turn_context else []
+        if state.active_enemy_id and (state.active_enemy_hp or 0) > 0:
+            threat_line = f"active_enemy={state.active_enemy_id} hp={state.active_enemy_hp}"
+            if threat_line not in threats:
+                threats.append(threat_line)
+        if not threats:
+            return "- No active combat mobs or immediate hostile threats."
+        return "- " + "\n- ".join(threats)
+
+    def _build_player_facts_prompt_block(
+        self,
+        *,
+        state: CampaignState,
+        active_quest_count: int,
+        character_sheet_guidance: list[str] | None,
+        gm_context: str,
+    ) -> str:
+        facts = [
+            f"- Player: {state.player.name} ({state.player.char_class})",
+            f"- HP: {state.player.hp}/{state.player.max_hp}",
+            f"- Attack bonus: +{state.player.attack_bonus}",
+            f"- Active quest count: {active_quest_count}",
+            f"- Character sheet guidance: {' | '.join(character_sheet_guidance) if character_sheet_guidance else 'none'}",
+            "[STRUCTURED CAMPAIGN FACTS]",
+            gm_context or "none",
+        ]
+        return "\n".join(facts)
+
+    def _build_recent_consequences_prompt_block(
+        self,
+        *,
+        memory: RetrievedMemory,
+        turn_context: TurnPromptContext | None,
+        long_term_memory: str,
+        session_summaries: str,
+        plot_threads: str,
+        world_facts: str,
+    ) -> str:
+        turn_recent = " | ".join(turn_context.recent_consequences) if turn_context and turn_context.recent_consequences else "none"
+        return "\n".join(
+            [
+                f"- Turn-level consequences: {turn_recent}",
+                f"- Recent memory summary: {self._summarize_recent_memory(memory)}",
+                f"- Retrieved consequence cues: {self._summarize_recent_consequences(memory)}",
+                f"- Long-term memory: {long_term_memory}",
+                f"- Session summaries: {session_summaries}",
+                f"- Unresolved plot threads: {plot_threads}",
+                f"- Important world facts: {world_facts}",
+            ]
+        )
+
+    def _build_narrator_rules_prompt_block(self, *, state: CampaignState, turn_context: TurnPromptContext | None) -> str:
+        custom_rules = [
+            str(entry.get("text", "")).strip()
+            for entry in state.structured_state.canon.custom_narrator_rules
+            if isinstance(entry, dict) and str(entry.get("text", "")).strip()
+        ]
+        combined = [*self.built_in_narrator_rules, *custom_rules]
+        if turn_context and turn_context.narrator_rules:
+            combined.extend(turn_context.narrator_rules)
+        if not combined:
+            return "- none"
+        deduped: list[str] = []
+        for rule in combined:
+            if rule not in deduped:
+                deduped.append(rule)
+        return "- " + "\n- ".join(deduped[:12])
+
+    def _build_writing_instructions_block(self, guidance_requested: bool) -> str:
+        return (
+            "Write natural, expressive scene prose using the structured facts above as truth.\n"
+            "Resolve the current action first, then show concrete consequences in scene, NPC behavior, and threat behavior.\n"
+            "Do not collapse into stat-sheet formatting unless the player explicitly asked for structured output.\n"
+            "Keep output compact (usually 1-3 short paragraphs) and end on a clean handoff to player agency.\n"
+            "Do not suggest actions, next steps, or recommendations unless the player explicitly asked for guidance.\n"
+            + (
+                "Guidance was explicitly requested this turn; recommendations are allowed."
+                if guidance_requested
+                else "Guidance was not requested this turn; avoid advisory phrasing."
+            )
+        )
 
     def build_prompt_packet(
         self,

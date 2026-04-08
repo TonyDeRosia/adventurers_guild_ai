@@ -1011,11 +1011,11 @@ class CampaignEngine:
         normalized_narrative = re.sub(r"\s+", " ", narrative.strip().lower())
         if not normalized_narrative:
             return {"valid": False, "reason": "no_output"}
+        if self._is_refusal_output(normalized_narrative):
+            return {"valid": False, "reason": "refusal"}
         if self._detect_action_override(normalized_action, normalized_narrative, scene_state):
             return {"valid": False, "reason": "action_override"}
-        if not self._is_action_resolved(normalized_action, normalized_narrative):
-            return {"valid": False, "reason": "no_action_resolution"}
-        if self._is_stale_state_loop(normalized_narrative, state):
+        if self._is_clear_stale_state_loop(normalized_narrative, state):
             return {"valid": False, "reason": "stale_state_loop"}
         if self._is_scene_reset_output(normalized_narrative, state):
             return {"valid": False, "reason": "scene_reset"}
@@ -1025,13 +1025,18 @@ class CampaignEngine:
         return re.sub(r"\s+", " ", action.strip().lower())
 
     def _detect_action_override(self, action: str, narrative: str, scene_state: dict[str, Any]) -> bool:
+        def _has_term(text: str, term: str) -> bool:
+            return bool(re.search(rf"\b{re.escape(term)}\b", text))
+
         conflict_pairs = [
             (("freeze", "ice", "frost", "immobilize"), ("flame", "fire", "burn", "blaze")),
             (("fire", "flame", "burn"), ("freeze", "ice", "frost")),
         ]
         for action_terms, conflict_terms in conflict_pairs:
             if any(term in action for term in action_terms):
-                if any(term in narrative for term in conflict_terms) and not any(term in narrative for term in action_terms):
+                if any(_has_term(narrative, term) for term in conflict_terms) and not any(
+                    _has_term(narrative, term) for term in action_terms
+                ):
                     return True
         previous_action = str(scene_state.get("last_player_action", "")).lower()
         if previous_action and previous_action != action:
@@ -1042,47 +1047,20 @@ class CampaignEngine:
                     return True
         return False
 
-    def _is_action_resolved(self, action: str, narrative: str) -> bool:
-        action_tokens = [token for token in re.findall(r"[a-z]{4,}", action) if token not in {"with", "into", "from", "then", "cast"}]
-        if not action_tokens:
-            return True
-        mentions_action = any(token in narrative for token in action_tokens[:4])
-        effect_words = (
-            "hits",
-            "strikes",
-            "freezes",
-            "burns",
-            "shatters",
-            "staggers",
-            "reels",
-            "cracks",
-            "lands",
-            "impact",
-            "wounds",
-            "locks",
-            "hardens",
-            "crashes",
-            "blasts",
-            "blasting",
-            "erupts",
-        )
-        has_effect = any(word in narrative for word in effect_words)
-        if not mentions_action and any(token in action for token in ("freeze", "ice", "frost")):
-            mentions_action = any(token in narrative for token in ("freeze", "frozen", "ice", "frost"))
-        if not mentions_action and "flamestrike" in action:
-            mentions_action = any(token in narrative for token in ("flamestrike", "flame", "fire", "white-hot"))
-        return mentions_action and has_effect
-
-    def _is_stale_state_loop(self, narrative: str, state: CampaignState) -> bool:
+    def _is_clear_stale_state_loop(self, narrative: str, state: CampaignState) -> bool:
         if not state.conversation_turns:
             return False
         prior = state.conversation_turns[-1].narrator_response.lower()
         if not prior:
             return False
         similarity = SequenceMatcher(None, narrative, prior).ratio()
-        if similarity >= 0.94:
+        if similarity >= 0.995 and len(narrative) > 40 and len(prior) > 40:
             return True
         return any(phrase in narrative and phrase in prior for phrase in self._filler_loop_phrases)
+
+    def _is_refusal_output(self, normalized_narrative: str) -> bool:
+        refusal_markers = ("i cannot", "i can't", "cannot create", "i won't", "i will not")
+        return any(marker in normalized_narrative for marker in refusal_markers)
 
     def _is_scene_reset_output(self, narrative: str, state: CampaignState) -> bool:
         if state.turn_count <= 2:
