@@ -25,6 +25,7 @@ from memory.world_state import WorldStateTracker
 from models.base import ChatMessage, NarrationModelAdapter
 from models.base import NullNarrationAdapter, ProviderUnavailableError
 from prompts.renderer import PromptRenderer
+from prompts.renderer import TurnPromptContext
 from rules.combat import CombatEngine
 
 
@@ -64,6 +65,13 @@ class CampaignEngine:
             "active_effects": 6,
             "recent_consequences": 5,
         }
+        self._filler_loop_phrases: tuple[str, ...] = (
+            "eyes widening in alarm",
+            "posture crumbling",
+            "torches flickering",
+            "patrons leaning in",
+            "air thick with tension",
+        )
 
     def run_turn(self, state: CampaignState, action: str) -> TurnResult:
         state.turn_count += 1
@@ -495,6 +503,12 @@ class CampaignEngine:
         prompt_started = time.perf_counter()
         gm_context_text = self.state_orchestrator.build_gm_context(state)
         scene_state_summary = self._summarize_scene_state_for_prompt(scene_state)
+        turn_context = self._build_structured_turn_context(state, action, scene_state)
+        recent_consequence_summary = self._build_recent_consequence_summary(scene_state)
+        print(f"[narration-debug] current_action_received={action.strip()}")
+        print("[narration-debug] structured_state_summary_built=true")
+        print(f"[narration-debug] recent_memory_summary_length={len(recent_consequence_summary)}")
+        print("[narration-debug] raw_narration_history_included=false")
         prompt_packet = self.prompts.build_prompt_packet(
             state,
             action=action,
@@ -505,6 +519,7 @@ class CampaignEngine:
             npc_guidance=self.personality.build_prompt_guidance(state),
             gm_context=gm_context_text,
             scene_state_summary=scene_state_summary,
+            turn_context=turn_context,
         )
         self._last_prompt_debug_by_campaign[state.campaign_id] = {
             "campaign_id": state.campaign_id,
@@ -552,6 +567,8 @@ class CampaignEngine:
         fallback_used = False
         fallback_reason = ""
         raw_narrative = ""
+        retry_used = False
+        retry_reason = ""
         model_started = time.perf_counter()
         try:
             raw_narrative = self.model.generate(prompt_packet.turn_prompt, prompt_packet.system_prompt, history=history)
@@ -565,6 +582,34 @@ class CampaignEngine:
             raw_narrative = NullNarrationAdapter().generate(prompt_packet.turn_prompt, prompt_packet.system_prompt, history=history)
         model_ms = (time.perf_counter() - model_started) * 1000
         sanitized_narrative, was_sanitized = self._sanitize_narrative(raw_narrative)
+        validation = self._validate_narration_output(action, sanitized_narrative, state, scene_state)
+        print(f"[narration-debug] validator_result={'valid' if validation['valid'] else 'invalid'}")
+        if not validation["valid"]:
+            retry_used = True
+            retry_reason = str(validation["reason"])
+            print(f"[narration-debug] invalid_reason={retry_reason}")
+            retry_prompt_packet = self.prompts.build_prompt_packet(
+                state,
+                action=action,
+                location_summary=location_summary,
+                memory=memory_context,
+                requested_mode=requested_mode,
+                guidance_requested=guidance_requested,
+                npc_guidance=self.personality.build_prompt_guidance(state),
+                gm_context=gm_context_text,
+                scene_state_summary=scene_state_summary,
+                turn_context=turn_context,
+                retry_action_priority=True,
+            )
+            retry_raw = self.model.generate(retry_prompt_packet.turn_prompt, retry_prompt_packet.system_prompt, history=history)
+            retry_sanitized, retry_was_sanitized = self._sanitize_narrative(retry_raw)
+            sanitized_narrative = retry_sanitized
+            was_sanitized = was_sanitized or retry_was_sanitized
+            validation = self._validate_narration_output(action, sanitized_narrative, state, scene_state)
+            print(f"[narration-debug] retry_used=true")
+            print(f"[narration-debug] retry_validator_result={'valid' if validation['valid'] else 'invalid'}")
+        else:
+            print("[narration-debug] retry_used=false")
         if not fallback_used:
             print(
                 f"[turn-routing] provider={selected_provider} model={selected_model} attempted={provider_attempted} "
@@ -578,7 +623,7 @@ class CampaignEngine:
         action_subtype = self._classify_gameplay_action_subtype(action)
         last_narration = state.structured_state.runtime.last_narration
         consecutive_repetition_count = int(scene_state.get("consecutive_repetition_count", 0) or 0)
-        narration_invalid = self._is_invalid_narration_output(sanitized_narrative)
+        narration_invalid = self._is_invalid_narration_output(sanitized_narrative) or (not bool(validation["valid"]))
         repetition_candidate = self._is_repetitive_narration(sanitized_narrative, last_narration)
         narration_repetitive = repetition_candidate and consecutive_repetition_count >= 2
         # Minimal narration control mode:
@@ -651,6 +696,8 @@ class CampaignEngine:
                 "quality_invalid_output": narration_invalid,
                 "quality_repetitive_output": narration_repetitive,
                 "quality_fallback_used": quality_fallback_used,
+                "retry_used": retry_used,
+                "retry_reason": retry_reason,
                 "turn_count": state.turn_count,
                 "timing": timing,
             },
@@ -942,6 +989,8 @@ class CampaignEngine:
             return True
         if len(text) < 3:
             return True
+        if any(phrase in text for phrase in self._filler_loop_phrases):
+            return True
         return False
 
     def _is_repetitive_narration(self, narrative: str, last_narration: str) -> bool:
@@ -952,7 +1001,129 @@ class CampaignEngine:
         if current == prior and len(current) > 20:
             return True
         similarity = SequenceMatcher(None, current, prior).ratio()
-        return similarity >= 0.98 and len(current) > 40 and len(prior) > 40
+        if similarity >= 0.98 and len(current) > 40 and len(prior) > 40:
+            return True
+        repeated_fillers = [phrase for phrase in self._filler_loop_phrases if phrase in current and phrase in prior]
+        return bool(repeated_fillers)
+
+    def _validate_narration_output(self, action: str, narrative: str, state: CampaignState, scene_state: dict[str, Any]) -> dict[str, str | bool]:
+        normalized_action = self._normalize_action(action)
+        normalized_narrative = re.sub(r"\s+", " ", narrative.strip().lower())
+        if not normalized_narrative:
+            return {"valid": False, "reason": "no_output"}
+        if self._detect_action_override(normalized_action, normalized_narrative, scene_state):
+            return {"valid": False, "reason": "action_override"}
+        if not self._is_action_resolved(normalized_action, normalized_narrative):
+            return {"valid": False, "reason": "no_action_resolution"}
+        if self._is_stale_state_loop(normalized_narrative, state):
+            return {"valid": False, "reason": "stale_state_loop"}
+        if self._is_scene_reset_output(normalized_narrative, state):
+            return {"valid": False, "reason": "scene_reset"}
+        return {"valid": True, "reason": "ok"}
+
+    def _normalize_action(self, action: str) -> str:
+        return re.sub(r"\s+", " ", action.strip().lower())
+
+    def _detect_action_override(self, action: str, narrative: str, scene_state: dict[str, Any]) -> bool:
+        conflict_pairs = [
+            (("freeze", "ice", "frost", "immobilize"), ("flame", "fire", "burn", "blaze")),
+            (("fire", "flame", "burn"), ("freeze", "ice", "frost")),
+        ]
+        for action_terms, conflict_terms in conflict_pairs:
+            if any(term in action for term in action_terms):
+                if any(term in narrative for term in conflict_terms) and not any(term in narrative for term in action_terms):
+                    return True
+        previous_action = str(scene_state.get("last_player_action", "")).lower()
+        if previous_action and previous_action != action:
+            if any(token in previous_action for token in ("fire", "flame", "ice", "freeze")) and any(
+                token in narrative for token in re.findall(r"[a-z]{4,}", previous_action)
+            ):
+                if not any(token in narrative for token in re.findall(r"[a-z]{4,}", action)[:3]):
+                    return True
+        return False
+
+    def _is_action_resolved(self, action: str, narrative: str) -> bool:
+        action_tokens = [token for token in re.findall(r"[a-z]{4,}", action) if token not in {"with", "into", "from", "then", "cast"}]
+        if not action_tokens:
+            return True
+        mentions_action = any(token in narrative for token in action_tokens[:4])
+        effect_words = (
+            "hits",
+            "strikes",
+            "freezes",
+            "burns",
+            "shatters",
+            "staggers",
+            "reels",
+            "cracks",
+            "lands",
+            "impact",
+            "wounds",
+            "locks",
+            "hardens",
+            "crashes",
+            "blasts",
+            "blasting",
+            "erupts",
+        )
+        has_effect = any(word in narrative for word in effect_words)
+        if not mentions_action and any(token in action for token in ("freeze", "ice", "frost")):
+            mentions_action = any(token in narrative for token in ("freeze", "frozen", "ice", "frost"))
+        if not mentions_action and "flamestrike" in action:
+            mentions_action = any(token in narrative for token in ("flamestrike", "flame", "fire", "white-hot"))
+        return mentions_action and has_effect
+
+    def _is_stale_state_loop(self, narrative: str, state: CampaignState) -> bool:
+        if not state.conversation_turns:
+            return False
+        prior = state.conversation_turns[-1].narrator_response.lower()
+        if not prior:
+            return False
+        similarity = SequenceMatcher(None, narrative, prior).ratio()
+        if similarity >= 0.94:
+            return True
+        return any(phrase in narrative and phrase in prior for phrase in self._filler_loop_phrases)
+
+    def _is_scene_reset_output(self, narrative: str, state: CampaignState) -> bool:
+        if state.turn_count <= 2:
+            return False
+        reset_markers = ("you arrive at", "as you enter", "the scene opens", "once again you stand", "at the start of")
+        return any(marker in narrative for marker in reset_markers)
+
+    def _build_structured_turn_context(self, state: CampaignState, action: str, scene_state: dict[str, Any]) -> TurnPromptContext:
+        location = str(scene_state.get("location_name") or state.current_location_id or "unknown")
+        participants = [npc.name for npc in state.npcs.values() if npc.location_id == state.current_location_id]
+        npc_states = [
+            f"{npc.name}: tier={npc.relationship_tier}, trust={npc.dynamic_state.trust_toward_player}, stress={npc.dynamic_state.stress}"
+            for npc in state.npcs.values()
+            if npc.location_id == state.current_location_id
+        ]
+        environment_state = [str(v) for v in scene_state.get("altered_environment", []) if str(v).strip()]
+        if not environment_state:
+            environment_state = [str(scene_state.get("scene_summary", "")).strip()] if str(scene_state.get("scene_summary", "")).strip() else []
+        unresolved_threats: list[str] = []
+        if state.active_enemy_id and (state.active_enemy_hp or 0) > 0:
+            unresolved_threats.append(f"active_enemy={state.active_enemy_id} hp={state.active_enemy_hp}")
+        recent_consequences = [str(v) for v in scene_state.get("recent_consequences", []) if str(v).strip()][-3:]
+        narrator_rules = [
+            str(entry.get("text", "")).strip()
+            for entry in state.structured_state.canon.custom_narrator_rules
+            if isinstance(entry, dict) and str(entry.get("text", "")).strip()
+        ]
+        return TurnPromptContext(
+            current_player_action=action.strip(),
+            scene_location=location,
+            active_participants=participants[-6:],
+            npc_states=npc_states[-6:],
+            environment_state=environment_state[-5:],
+            unresolved_threats=unresolved_threats,
+            recent_consequences=recent_consequences,
+            narrator_rules=narrator_rules[-5:],
+        )
+
+    def _build_recent_consequence_summary(self, scene_state: dict[str, Any]) -> str:
+        recent = [str(v).strip() for v in scene_state.get("recent_consequences", []) if str(v).strip()]
+        return " | ".join(recent[-3:]) if recent else "none"
 
     def _contains_blocked_filler(self, action: str, narrative: str) -> bool:
         action_text = action.lower()
@@ -1503,11 +1674,12 @@ class CampaignEngine:
 
     def _build_model_history(self, state: CampaignState) -> list[ChatMessage]:
         history: list[ChatMessage] = []
-        for turn in state.conversation_turns[-6:]:
+        for turn in state.conversation_turns[-4:]:
             if turn.player_input:
                 history.append(ChatMessage(role="user", content=turn.player_input))
             if turn.narrator_response:
-                history.append(ChatMessage(role="assistant", content=turn.narrator_response))
+                compact = re.sub(r"\s+", " ", turn.narrator_response.strip()).split(".")[0][:160].strip()
+                history.append(ChatMessage(role="assistant", content=f"Outcome summary: {compact}"))
         return history
 
     def _build_structured_messages(self, system_messages: list[str], narrative: str) -> list[dict[str, str]]:

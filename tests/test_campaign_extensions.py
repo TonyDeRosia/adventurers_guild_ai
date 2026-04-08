@@ -9,7 +9,7 @@ from engine.game_state_manager import GameStateManager
 from prompts.renderer import PromptRenderer
 from engine.save_manager import SaveManager
 from memory.retrieval import MemoryRetrievalPipeline, RetrievalRequest
-from models.base import NullNarrationAdapter
+from models.base import NarrationModelAdapter, NullNarrationAdapter
 
 
 def load_state() -> CampaignState:
@@ -427,3 +427,72 @@ def test_prompt_renderer_includes_narrative_quality_and_agency_guidance() -> Non
     assert "[Player Agency Guardrails]" in system_prompt
     assert "Never force player actions" in system_prompt
     assert "[Dialogue Quality]" in system_prompt
+
+
+class SequencedNarrationAdapter(NarrationModelAdapter):
+    provider_name = "test-sequenced"
+
+    def __init__(self, outputs: list[str]) -> None:
+        self.outputs = outputs
+        self.calls = 0
+
+    def generate(self, prompt: str, system_prompt: str = "", history=None) -> str:
+        self.calls += 1
+        if self.outputs:
+            return self.outputs.pop(0)
+        return "The action lands with visible impact."
+
+
+def test_latest_action_priority_retries_when_stale_fire_overrides_ice() -> None:
+    state = load_state()
+    adapter = SequencedNarrationAdapter(
+        [
+            "Flames engulf him again while torches flicker and patrons lean in.",
+            "Ice surges over him, locking his legs in place as frost hardens across the floor.",
+        ]
+    )
+    engine = CampaignEngine(adapter, data_dir=Path("data"))
+
+    state.structured_state.runtime.scene_state = {
+        "location_id": state.current_location_id,
+        "location_name": state.locations[state.current_location_id].name,
+        "recent_consequences": ["fire scorched the pillar"],
+        "last_player_action": "cast fireball at the thug",
+    }
+    result = engine.run_turn(state, "freeze him in ice")
+
+    assert adapter.calls == 2
+    assert "ice surges over him" in result.narrative.lower()
+    assert result.metadata and result.metadata["retry_used"] is True
+    assert result.metadata["retry_reason"] == "action_override"
+
+
+def test_spell_action_requires_clear_effect_and_impact() -> None:
+    state = load_state()
+    adapter = SequencedNarrationAdapter(
+        [
+            "The room feels tense and uncertain as everyone waits.",
+            "Your flamestrike crashes down in a white-hot column, blasting the target backward.",
+        ]
+    )
+    engine = CampaignEngine(adapter, data_dir=Path("data"))
+    turn = engine.run_turn(state, "cast flamestrike")
+
+    assert "flamestrike" in turn.narrative.lower()
+    assert ("crashes" in turn.narrative.lower() or "blasting" in turn.narrative.lower())
+    assert turn.metadata and turn.metadata["retry_used"] is True
+
+
+def test_prompt_renderer_includes_current_action_priority_block() -> None:
+    state = load_state()
+    prompt = PromptRenderer().build_turn_prompt(
+        state,
+        action="freeze him in ice",
+        location_summary="Moonfall Tavern",
+        memory=MemoryRetrievalPipeline().retrieve(
+            state,
+            RetrievalRequest(location_id=state.current_location_id, active_quest_ids=[], current_npc_id=None, recent_actions=[], important_world_state=[]),
+        ),
+    )
+    assert "CURRENT PLAYER ACTION - HIGHEST PRIORITY" in prompt
+    assert "Resolve this action first, then narrate consequences." in prompt
