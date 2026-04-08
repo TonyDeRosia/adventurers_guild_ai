@@ -9,6 +9,7 @@ const imageStatusLine = document.getElementById('image-status-line');
 const sceneImageProgressStrip = document.getElementById('scene-image-progress-strip');
 const sceneImageProgressText = document.getElementById('scene-image-progress-text');
 const statusLine = document.getElementById('status-line');
+const inputModeToggle = document.getElementById('input-mode-toggle');
 const readinessPanel = document.getElementById('dependency-readiness');
 const setupGuidance = document.getElementById('setup-guidance');
 const setupProgress = document.getElementById('setup-progress');
@@ -137,6 +138,7 @@ let setupRunState = {
 };
 let latestDependencyReadiness = null;
 let turnRequestInFlight = false;
+let currentInputMode = 'ic';
 let modelInventoryState = { active_model_id: '', models: [] };
 let modelInstallState = {};
 let appliedVisualPipelinePaths = {
@@ -1331,7 +1333,33 @@ function renderMessage(msg) {
 }
 
 function labelForType(type) {
-  return ({ player: 'PLAYER', narrator: 'NARRATOR', npc: 'NPC', quest: 'QUEST', image: 'IMAGE', system: 'SYSTEM', error: 'ERROR' })[type] || 'SYSTEM';
+  return ({
+    player: 'PLAYER',
+    narrator: 'NARRATOR',
+    npc: 'NPC',
+    quest: 'QUEST',
+    image: 'IMAGE',
+    system: 'SYSTEM',
+    error: 'ERROR',
+    ooc_player: 'OOC',
+    ooc_gm: 'GM',
+  })[type] || 'SYSTEM';
+}
+
+function renderInputModeToggle() {
+  if (!inputModeToggle) return;
+  const label = currentInputMode === 'ooc' ? 'OOC' : 'IC';
+  inputModeToggle.textContent = label;
+  inputModeToggle.title = currentInputMode === 'ooc'
+    ? 'Out of Character: ask the GM brain without advancing canon.'
+    : 'In Character: submit canon gameplay actions.';
+}
+
+function toggleInputMode() {
+  if (turnRequestInFlight) return;
+  currentInputMode = currentInputMode === 'ic' ? 'ooc' : 'ic';
+  renderInputModeToggle();
+  setStatus(currentInputMode === 'ooc' ? 'Input mode set to OOC (non-canon).' : 'Input mode set to IC (canon gameplay).');
 }
 
 function setSceneImage(url, caption = '', turn = null) {
@@ -1973,25 +2001,36 @@ async function sendInput() {
     turnRequestInFlight = true;
     input.disabled = true;
     sendButton.disabled = true;
-    renderMessage({ type: 'player', text, timestamp: new Date().toISOString() });
-    renderMessage({ type: 'system', text: 'Resolving turn…', timestamp: new Date().toISOString() });
-    setStatus('Processing action...');
+    if (inputModeToggle) inputModeToggle.disabled = true;
+    const localMessageType = currentInputMode === 'ooc' ? 'ooc_player' : 'player';
+    const pendingText = currentInputMode === 'ooc' ? 'Consulting GM brain…' : 'Resolving turn…';
+    renderMessage({ type: localMessageType, text, timestamp: new Date().toISOString() });
+    renderMessage({ type: 'system', text: pendingText, timestamp: new Date().toISOString() });
+    setStatus(currentInputMode === 'ooc' ? 'Processing OOC question...' : 'Processing action...');
     input.value = '';
     console.log(`[turn-timing] frontend_submit_ms=0.00 submitted_at=${new Date().toISOString()}`);
-    const turn = await api('/api/campaign/input', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+    const turn = await api('/api/campaign/input', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, mode: currentInputMode }),
+    });
     const responseAt = performance.now();
     const roundTripMs = responseAt - submittedAt;
     const backendTiming = turn.metadata?.timing || {};
     const firstVisibleMs = roundTripMs - (backendTiming.save_ms || 0);
     console.log(`[turn-timing] frontend_round_trip_ms=${roundTripMs.toFixed(2)} first_visible_estimate_ms=${Math.max(firstVisibleMs, 0).toFixed(2)}`);
     input.value = '';
-    const previousVisual = await refreshSceneVisual().catch(() => null);
-    await Promise.all([refreshMessages(), refreshState()]);
-    if (backendTiming.auto_after_image_queued) {
-      setImageStatus('Generating scene image...');
-      waitForSceneVisualUpdate(previousVisual?.updated_at || '').catch(() => {});
+    if (currentInputMode === 'ic') {
+      const previousVisual = await refreshSceneVisual().catch(() => null);
+      await Promise.all([refreshMessages(), refreshState()]);
+      if (backendTiming.auto_after_image_queued) {
+        setImageStatus('Generating scene image...');
+        waitForSceneVisualUpdate(previousVisual?.updated_at || '').catch(() => {});
+      }
+      refreshSaves().catch((error) => console.warn('save list refresh failed', error));
+    } else {
+      await refreshMessages();
     }
-    refreshSaves().catch((error) => console.warn('save list refresh failed', error));
     const modelStatus = turn.metadata?.model_status;
     if (modelStatus && modelStatus.provider === 'ollama' && !modelStatus.ready) {
       setStatus(modelStatus.user_message || 'Ollama provider is unavailable.', true);
@@ -2005,6 +2044,7 @@ async function sendInput() {
     const sendButton = document.getElementById('send-btn');
     input.disabled = false;
     sendButton.disabled = false;
+    if (inputModeToggle) inputModeToggle.disabled = false;
     turnRequestInFlight = false;
     input.focus();
   }
@@ -2395,6 +2435,8 @@ async function loadSettings() {
 
 document.getElementById('send-btn').onclick = sendInput;
 document.getElementById('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendInput(); });
+if (inputModeToggle) inputModeToggle.onclick = toggleInputMode;
+renderInputModeToggle();
 document.getElementById('load-selected').onclick = loadSelectedCampaign;
 document.getElementById('open-campaign-browser').onclick = openCampaignBrowser;
 document.getElementById('new-campaign').onclick = openNewCampaignModal;
