@@ -137,6 +137,17 @@ class GameStateManager:
         new_payload["settings"]["image_generation_enabled"] = True
         new_payload["settings"]["campaign_auto_visuals_enabled"] = True
         new_payload["settings"]["player_suggested_moves_override"] = None
+        new_payload["settings"]["play_style"] = {
+            "allow_freeform_powers": True,
+            "auto_update_character_sheet_from_actions": True,
+            "strict_sheet_enforcement": False,
+            "auto_sync_player_declared_identity": True,
+            "auto_generate_npc_personalities": True,
+            "auto_evolve_npc_personalities": True,
+            "reactive_world_persistence": True,
+            "narration_format_mode": "book",
+            "scene_visual_mode": "after_narration",
+        }
         print(
             "[settings-defaults] new_campaign_defaults "
             "manual=true auto=true timing=after_narration suggested_moves=false"

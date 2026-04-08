@@ -36,6 +36,15 @@ const manualImageEnabledInput = document.getElementById('manual-image-enabled');
 const campaignAutoVisualsEnabledInput = document.getElementById('campaign-auto-visuals-enabled');
 const campaignAutoVisualTimingInput = document.getElementById('campaign-auto-visual-timing');
 const suggestedMovesToggleInput = document.getElementById('suggested-moves-toggle');
+const allowFreeformPowersInput = document.getElementById('allow-freeform-powers');
+const autoUpdateSheetFromActionsInput = document.getElementById('auto-update-sheet-from-actions');
+const strictSheetEnforcementInput = document.getElementById('strict-sheet-enforcement');
+const autoSyncPlayerIdentityInput = document.getElementById('auto-sync-player-identity');
+const autoGenerateNpcPersonalitiesInput = document.getElementById('auto-generate-npc-personalities');
+const autoEvolveNpcPersonalitiesInput = document.getElementById('auto-evolve-npc-personalities');
+const reactiveWorldPersistenceInput = document.getElementById('reactive-world-persistence');
+const narrationFormatModeInput = document.getElementById('narration-format-mode');
+const sceneVisualModeInput = document.getElementById('scene-visual-mode');
 const manualImagePanel = document.getElementById('manual-image-panel');
 const supportedModelsList = document.getElementById('supported-models-list');
 const activeModelBanner = document.getElementById('active-model-banner');
@@ -192,12 +201,40 @@ function normalizeCampaignAutoVisualTiming(mode) {
   return 'off';
 }
 
+function normalizeNarrationFormatMode(mode) {
+  const clean = String(mode || '').trim().toLowerCase();
+  return ['book', 'compact', 'dialogue_focused'].includes(clean) ? clean : 'book';
+}
+
+function normalizeSceneVisualMode(mode) {
+  const clean = String(mode || '').trim().toLowerCase();
+  return ['off', 'manual', 'before_narration', 'after_narration'].includes(clean) ? clean : 'after_narration';
+}
+
+function playStyleSnapshotFromUi() {
+  return {
+    allow_freeform_powers: !!allowFreeformPowersInput?.checked,
+    auto_update_character_sheet_from_actions: !!autoUpdateSheetFromActionsInput?.checked,
+    strict_sheet_enforcement: !!strictSheetEnforcementInput?.checked,
+    auto_sync_player_declared_identity: !!autoSyncPlayerIdentityInput?.checked,
+    auto_generate_npc_personalities: !!autoGenerateNpcPersonalitiesInput?.checked,
+    auto_evolve_npc_personalities: !!autoEvolveNpcPersonalitiesInput?.checked,
+    reactive_world_persistence: !!reactiveWorldPersistenceInput?.checked,
+    narration_format_mode: normalizeNarrationFormatMode(narrationFormatModeInput?.value || 'book'),
+    scene_visual_mode: normalizeSceneVisualMode(sceneVisualModeInput?.value || 'after_narration'),
+  };
+}
+
 function campaignSettingsSnapshotFromUi() {
+  const playStyle = playStyleSnapshotFromUi();
+  const derivedAutoVisualsEnabled = ['before_narration', 'after_narration'].includes(playStyle.scene_visual_mode);
+  const derivedTiming = derivedAutoVisualsEnabled ? playStyle.scene_visual_mode : 'off';
   return {
     image_generation_enabled: !!document.getElementById('image-enabled')?.checked,
-    campaign_auto_visuals_enabled: !!campaignAutoVisualsEnabledInput?.checked,
+    campaign_auto_visuals_enabled: derivedAutoVisualsEnabled,
     suggested_moves_enabled: !!suggestedMovesToggleInput?.checked,
-    campaign_auto_visual_timing: normalizeCampaignAutoVisualTiming(campaignAutoVisualTimingInput?.value || 'off'),
+    campaign_auto_visual_timing: normalizeCampaignAutoVisualTiming(derivedTiming),
+    play_style: playStyle,
   };
 }
 
@@ -208,6 +245,15 @@ function campaignSettingsEqual(left, right) {
     && !!left.campaign_auto_visuals_enabled === !!right.campaign_auto_visuals_enabled
     && !!left.suggested_moves_enabled === !!right.suggested_moves_enabled
     && normalizeCampaignAutoVisualTiming(left.campaign_auto_visual_timing) === normalizeCampaignAutoVisualTiming(right.campaign_auto_visual_timing)
+    && normalizeNarrationFormatMode(left.play_style?.narration_format_mode) === normalizeNarrationFormatMode(right.play_style?.narration_format_mode)
+    && normalizeSceneVisualMode(left.play_style?.scene_visual_mode) === normalizeSceneVisualMode(right.play_style?.scene_visual_mode)
+    && !!left.play_style?.allow_freeform_powers === !!right.play_style?.allow_freeform_powers
+    && !!left.play_style?.auto_update_character_sheet_from_actions === !!right.play_style?.auto_update_character_sheet_from_actions
+    && !!left.play_style?.strict_sheet_enforcement === !!right.play_style?.strict_sheet_enforcement
+    && !!left.play_style?.auto_sync_player_declared_identity === !!right.play_style?.auto_sync_player_declared_identity
+    && !!left.play_style?.auto_generate_npc_personalities === !!right.play_style?.auto_generate_npc_personalities
+    && !!left.play_style?.auto_evolve_npc_personalities === !!right.play_style?.auto_evolve_npc_personalities
+    && !!left.play_style?.reactive_world_persistence === !!right.play_style?.reactive_world_persistence
   );
 }
 
@@ -258,8 +304,26 @@ function applyCampaignSettingsToUi(snapshot) {
   if (suggestedMovesToggleInput) {
     suggestedMovesToggleInput.checked = !!snapshot.suggested_moves_enabled;
   }
+  if (allowFreeformPowersInput) allowFreeformPowersInput.checked = !!snapshot.play_style?.allow_freeform_powers;
+  if (autoUpdateSheetFromActionsInput) {
+    autoUpdateSheetFromActionsInput.checked = !!snapshot.play_style?.auto_update_character_sheet_from_actions;
+  }
+  if (strictSheetEnforcementInput) strictSheetEnforcementInput.checked = !!snapshot.play_style?.strict_sheet_enforcement;
+  if (autoSyncPlayerIdentityInput) autoSyncPlayerIdentityInput.checked = !!snapshot.play_style?.auto_sync_player_declared_identity;
+  if (autoGenerateNpcPersonalitiesInput) {
+    autoGenerateNpcPersonalitiesInput.checked = !!snapshot.play_style?.auto_generate_npc_personalities;
+  }
+  if (autoEvolveNpcPersonalitiesInput) {
+    autoEvolveNpcPersonalitiesInput.checked = !!snapshot.play_style?.auto_evolve_npc_personalities;
+  }
+  if (reactiveWorldPersistenceInput) reactiveWorldPersistenceInput.checked = !!snapshot.play_style?.reactive_world_persistence;
+  if (narrationFormatModeInput) narrationFormatModeInput.value = normalizeNarrationFormatMode(snapshot.play_style?.narration_format_mode);
+  if (sceneVisualModeInput) sceneVisualModeInput.value = normalizeSceneVisualMode(snapshot.play_style?.scene_visual_mode);
   if (campaignAutoVisualTimingInput) {
     campaignAutoVisualTimingInput.value = normalizeCampaignAutoVisualTiming(snapshot.campaign_auto_visual_timing || 'off');
+  }
+  if (campaignAutoVisualsEnabledInput) {
+    campaignAutoVisualsEnabledInput.checked = !!snapshot.campaign_auto_visuals_enabled;
   }
   syncVisualModeUi({
     manualEnabled: !!(manualImageEnabledInput?.checked),
@@ -275,6 +339,17 @@ function ingestPersistedCampaignSettings(snapshot, slot, { forceUi = false } = {
     suggested_moves_enabled: !!snapshot.suggested_moves_enabled,
     campaign_auto_visual_timing: normalizeCampaignAutoVisualTiming(snapshot.campaign_auto_visual_timing || 'off'),
     display_mode: normalizeDisplayMode(snapshot.display_mode || 'story'),
+    play_style: {
+      allow_freeform_powers: !!snapshot.play_style?.allow_freeform_powers,
+      auto_update_character_sheet_from_actions: !!snapshot.play_style?.auto_update_character_sheet_from_actions,
+      strict_sheet_enforcement: !!snapshot.play_style?.strict_sheet_enforcement,
+      auto_sync_player_declared_identity: !!snapshot.play_style?.auto_sync_player_declared_identity,
+      auto_generate_npc_personalities: !!snapshot.play_style?.auto_generate_npc_personalities,
+      auto_evolve_npc_personalities: !!snapshot.play_style?.auto_evolve_npc_personalities,
+      reactive_world_persistence: !!snapshot.play_style?.reactive_world_persistence,
+      narration_format_mode: normalizeNarrationFormatMode(snapshot.play_style?.narration_format_mode || 'book'),
+      scene_visual_mode: normalizeSceneVisualMode(snapshot.play_style?.scene_visual_mode || 'after_narration'),
+    },
   };
   const slotChanged = campaignSettingsSlot && slot && campaignSettingsSlot !== slot;
   campaignSettingsPersisted = normalized;
@@ -290,6 +365,8 @@ function syncVisualModeUi({ manualEnabled, autoEnabled, autoTiming }) {
     manualImagePanel.style.display = manualEnabled ? 'grid' : 'none';
   }
   if (campaignAutoVisualTimingInput) campaignAutoVisualTimingInput.disabled = !autoEnabled;
+  if (campaignAutoVisualsEnabledInput) campaignAutoVisualsEnabledInput.checked = !!autoEnabled;
+  if (campaignAutoVisualTimingInput) campaignAutoVisualTimingInput.value = normalizeCampaignAutoVisualTiming(autoTiming || 'off');
 }
 
 function installTypeLabel(installType) {
@@ -1605,6 +1682,7 @@ async function refreshState() {
       suggested_moves_enabled: !!state.settings.effective_suggested_moves_enabled,
       campaign_auto_visual_timing: campaignSettingsPersisted?.campaign_auto_visual_timing || campaignAutoVisualTimingInput?.value || 'off',
       display_mode: normalizeDisplayMode(state.settings?.display_mode || 'story'),
+      play_style: state.settings?.play_style || campaignSettingsPersisted?.play_style || playStyleSnapshotFromUi(),
     },
     incomingSlot,
   );
@@ -2089,6 +2167,18 @@ async function createCampaignFromForm() {
     const playerName = document.getElementById('form-player-name').value.trim() || 'Aria';
     const playerClass = document.getElementById('form-player-class').value.trim() || 'Ranger';
     const worldTheme = document.getElementById('form-world-theme').value.trim() || 'classic fantasy';
+    const sceneVisualMode = normalizeSceneVisualMode(document.getElementById('form-scene-visual-mode')?.value || 'after_narration');
+    const playStyle = {
+      allow_freeform_powers: !!document.getElementById('form-allow-freeform-powers')?.checked,
+      auto_update_character_sheet_from_actions: !!document.getElementById('form-auto-update-sheet-from-actions')?.checked,
+      strict_sheet_enforcement: !!document.getElementById('form-strict-sheet-enforcement')?.checked,
+      auto_sync_player_declared_identity: !!document.getElementById('form-auto-sync-player-identity')?.checked,
+      auto_generate_npc_personalities: !!document.getElementById('form-auto-generate-npc-personalities')?.checked,
+      auto_evolve_npc_personalities: !!document.getElementById('form-auto-evolve-npc-personalities')?.checked,
+      reactive_world_persistence: !!document.getElementById('form-reactive-world-persistence')?.checked,
+      narration_format_mode: normalizeNarrationFormatMode(document.getElementById('form-narration-format-mode')?.value || 'book'),
+      scene_visual_mode: sceneVisualMode,
+    };
     const payload = {
       mode: 'new',
       campaign_name: document.getElementById('form-campaign-name').value.trim() || `${playerName}'s Campaign`,
@@ -2104,6 +2194,8 @@ async function createCampaignFromForm() {
       thematic_flags: worldTheme ? [worldTheme.toLowerCase().replaceAll(' ', '_'), 'adventure'] : ['adventure', 'mystery'],
       display_mode: 'story',
       suggested_moves_enabled: !!document.getElementById('form-suggested-moves-enabled')?.checked,
+      campaign_auto_visuals_enabled: ['before_narration', 'after_narration'].includes(sceneVisualMode),
+      play_style: playStyle,
       character_sheets: draftCharacterSheets,
       character_sheet_guidance_strength: document.getElementById('form-character-sheet-guidance-strength')?.value || 'light',
     };
@@ -2171,8 +2263,9 @@ async function applySettings() {
     const campaignImageEnabled = document.getElementById('image-enabled').checked;
     const suggestedMovesEnabled = !!suggestedMovesToggleInput?.checked;
     const manualImageEnabled = !!manualImageEnabledInput?.checked;
-    const campaignAutoVisualsEnabled = !!campaignAutoVisualsEnabledInput?.checked;
-    const campaignAutoVisualTiming = normalizeCampaignAutoVisualTiming(campaignAutoVisualTimingInput?.value || 'off');
+    const playStyle = playStyleSnapshotFromUi();
+    const campaignAutoVisualsEnabled = ['before_narration', 'after_narration'].includes(playStyle.scene_visual_mode);
+    const campaignAutoVisualTiming = campaignAutoVisualsEnabled ? playStyle.scene_visual_mode : 'off';
     const settings = await api('/api/settings/global', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2198,6 +2291,7 @@ async function applySettings() {
         campaign_auto_visuals_enabled: campaignAutoVisualsEnabled,
         suggested_moves_enabled: suggestedMovesEnabled,
         player_suggested_moves_override: suggestedMovesEnabled,
+        play_style: playStyle,
       }),
     });
     await refreshDependencyReadiness();
@@ -2210,6 +2304,7 @@ async function applySettings() {
         campaign_auto_visuals_enabled: !!campaignSettings.settings?.campaign_auto_visuals_enabled,
         suggested_moves_enabled: !!campaignSettings.settings?.effective_suggested_moves_enabled,
         campaign_auto_visual_timing: campaignAutoVisualTiming,
+        play_style: campaignSettings.settings?.play_style || playStyle,
       },
       loadedSlot,
       { forceUi: true },
@@ -2304,6 +2399,7 @@ async function loadSettings() {
       campaign_auto_visuals_enabled: campaignSettingsPersisted?.campaign_auto_visuals_enabled ?? !!campaignAutoVisualsEnabledInput?.checked,
       suggested_moves_enabled: campaignSettingsPersisted?.suggested_moves_enabled ?? !!suggestedMovesToggleInput?.checked,
       campaign_auto_visual_timing: loadedTiming,
+      play_style: campaignSettingsPersisted?.play_style || playStyleSnapshotFromUi(),
     },
     loadedSlot,
   );
@@ -2382,10 +2478,14 @@ if (manualImageEnabledInput) {
 }
 if (campaignAutoVisualsEnabledInput) {
   campaignAutoVisualsEnabledInput.onchange = () => {
+    if (sceneVisualModeInput) {
+      sceneVisualModeInput.value = campaignAutoVisualsEnabledInput.checked ? 'after_narration' : 'manual';
+    }
+    const derivedSceneMode = normalizeSceneVisualMode(sceneVisualModeInput?.value || 'after_narration');
     syncVisualModeUi({
       manualEnabled: !!(manualImageEnabledInput?.checked),
-      autoEnabled: !!campaignAutoVisualsEnabledInput.checked,
-      autoTiming: campaignAutoVisualTimingInput?.value || 'off',
+      autoEnabled: ['before_narration', 'after_narration'].includes(derivedSceneMode),
+      autoTiming: ['before_narration', 'after_narration'].includes(derivedSceneMode) ? derivedSceneMode : 'off',
     });
     updateCampaignDirtyState();
     queueAutoApplyCampaignSettings();
@@ -2402,6 +2502,10 @@ if (campaignAutoVisualsEnabledInput) {
 });
 if (campaignAutoVisualTimingInput) {
   campaignAutoVisualTimingInput.onchange = () => {
+    if (sceneVisualModeInput) {
+      const timing = normalizeCampaignAutoVisualTiming(campaignAutoVisualTimingInput.value);
+      sceneVisualModeInput.value = timing === 'off' ? 'manual' : timing;
+    }
     syncVisualModeUi({
       manualEnabled: !!(manualImageEnabledInput?.checked),
       autoEnabled: !!(campaignAutoVisualsEnabledInput?.checked),
@@ -2413,6 +2517,37 @@ if (campaignAutoVisualTimingInput) {
 }
 if (suggestedMovesToggleInput) {
   suggestedMovesToggleInput.onchange = () => {
+    updateCampaignDirtyState();
+    queueAutoApplyCampaignSettings();
+  };
+}
+[
+  allowFreeformPowersInput,
+  autoUpdateSheetFromActionsInput,
+  strictSheetEnforcementInput,
+  autoSyncPlayerIdentityInput,
+  autoGenerateNpcPersonalitiesInput,
+  autoEvolveNpcPersonalitiesInput,
+  reactiveWorldPersistenceInput,
+  narrationFormatModeInput,
+].forEach((input) => {
+  if (!input) return;
+  input.onchange = () => {
+    updateCampaignDirtyState();
+    queueAutoApplyCampaignSettings();
+  };
+});
+if (sceneVisualModeInput) {
+  sceneVisualModeInput.onchange = () => {
+    const mode = normalizeSceneVisualMode(sceneVisualModeInput.value);
+    const autoEnabled = ['before_narration', 'after_narration'].includes(mode);
+    if (campaignAutoVisualsEnabledInput) campaignAutoVisualsEnabledInput.checked = autoEnabled;
+    if (campaignAutoVisualTimingInput) campaignAutoVisualTimingInput.value = autoEnabled ? mode : 'off';
+    syncVisualModeUi({
+      manualEnabled: !!(manualImageEnabledInput?.checked),
+      autoEnabled,
+      autoTiming: autoEnabled ? mode : 'off',
+    });
     updateCampaignDirtyState();
     queueAutoApplyCampaignSettings();
   };

@@ -136,6 +136,14 @@ class WebRuntime:
             return normalized
         return "off"
 
+    def _normalize_narration_format_mode(self, value: str | None) -> str:
+        clean = str(value or "").strip().lower()
+        return clean if clean in {"book", "compact", "dialogue_focused"} else "book"
+
+    def _normalize_scene_visual_mode(self, value: str | None) -> str:
+        clean = str(value or "").strip().lower()
+        return clean if clean in {"off", "manual", "before_narration", "after_narration"} else "after_narration"
+
     def _set_scene_visual(
         self,
         *,
@@ -1844,6 +1852,17 @@ class WebRuntime:
                     "maturity_level": state.settings.content_settings.maturity_level,
                     "thematic_flags": state.settings.content_settings.thematic_flags,
                 },
+                "play_style": {
+                    "allow_freeform_powers": state.settings.play_style.allow_freeform_powers,
+                    "auto_update_character_sheet_from_actions": state.settings.play_style.auto_update_character_sheet_from_actions,
+                    "strict_sheet_enforcement": state.settings.play_style.strict_sheet_enforcement,
+                    "auto_sync_player_declared_identity": state.settings.play_style.auto_sync_player_declared_identity,
+                    "auto_generate_npc_personalities": state.settings.play_style.auto_generate_npc_personalities,
+                    "auto_evolve_npc_personalities": state.settings.play_style.auto_evolve_npc_personalities,
+                    "reactive_world_persistence": state.settings.play_style.reactive_world_persistence,
+                    "narration_format_mode": state.settings.play_style.narration_format_mode,
+                    "scene_visual_mode": state.settings.play_style.scene_visual_mode,
+                },
             },
             "world_meta": {
                 "world_name": state.world_meta.world_name,
@@ -2420,6 +2439,7 @@ class WebRuntime:
             print("[campaign-create] mode=premade")
             print("[campaign-create] using_sample_template=True")
         else:
+            play_style_payload = payload.get("play_style", {})
             state = self.state_manager.create_new_campaign(
                 player_name=player_name,
                 char_class=char_class,
@@ -2440,6 +2460,39 @@ class WebRuntime:
                 character_sheets=self._coerce_character_sheets(payload.get("character_sheets", [])),
                 character_sheet_guidance_strength=str(payload.get("character_sheet_guidance_strength", "light")),
             )
+            state.settings.play_style.allow_freeform_powers = bool(
+                play_style_payload.get("allow_freeform_powers", state.settings.play_style.allow_freeform_powers)
+            )
+            state.settings.play_style.auto_update_character_sheet_from_actions = bool(
+                play_style_payload.get(
+                    "auto_update_character_sheet_from_actions", state.settings.play_style.auto_update_character_sheet_from_actions
+                )
+            )
+            state.settings.play_style.strict_sheet_enforcement = bool(
+                play_style_payload.get("strict_sheet_enforcement", state.settings.play_style.strict_sheet_enforcement)
+            )
+            state.settings.play_style.auto_sync_player_declared_identity = bool(
+                play_style_payload.get(
+                    "auto_sync_player_declared_identity", state.settings.play_style.auto_sync_player_declared_identity
+                )
+            )
+            state.settings.play_style.auto_generate_npc_personalities = bool(
+                play_style_payload.get(
+                    "auto_generate_npc_personalities", state.settings.play_style.auto_generate_npc_personalities
+                )
+            )
+            state.settings.play_style.auto_evolve_npc_personalities = bool(
+                play_style_payload.get("auto_evolve_npc_personalities", state.settings.play_style.auto_evolve_npc_personalities)
+            )
+            state.settings.play_style.reactive_world_persistence = bool(
+                play_style_payload.get("reactive_world_persistence", state.settings.play_style.reactive_world_persistence)
+            )
+            state.settings.play_style.narration_format_mode = self._normalize_narration_format_mode(
+                play_style_payload.get("narration_format_mode", state.settings.play_style.narration_format_mode)
+            )
+            state.settings.play_style.scene_visual_mode = self._normalize_scene_visual_mode(
+                play_style_payload.get("scene_visual_mode", state.settings.play_style.scene_visual_mode)
+            )
         self._seed_scene_state(state)
         self.session = WebSession(state=state, active_slot=slot)
         self.session.message_history = []
@@ -2455,10 +2508,14 @@ class WebRuntime:
         request_started = time.perf_counter()
         request_received_at = datetime.now(timezone.utc).isoformat()
         model_status = self.get_model_status()
-        auto_enabled = bool(self.session.state.settings.campaign_auto_visuals_enabled)
+        visual_mode = self._normalize_scene_visual_mode(self.session.state.settings.play_style.scene_visual_mode)
+        auto_enabled = bool(self.session.state.settings.campaign_auto_visuals_enabled) and visual_mode in {
+            "before_narration",
+            "after_narration",
+        }
         image_generation_enabled = bool(self.session.state.settings.image_generation_enabled)
         suggested_moves_enabled = bool(self.session.state.settings.suggested_moves_active())
-        auto_timing = self._normalize_campaign_auto_visual_timing(self.app_config.image.campaign_auto_visual_timing)
+        auto_timing = visual_mode if visual_mode in {"before_narration", "after_narration"} else "off"
         auto_provider_ready = self.app_config.image.provider == "comfyui" and image_generation_enabled
         print(
             "[campaign-settings] loaded for turn "
@@ -2760,6 +2817,41 @@ class WebRuntime:
             maturity_level=str(content.get("maturity_level", settings.content_settings.maturity_level)),
             thematic_flags=list(content.get("thematic_flags", settings.content_settings.thematic_flags)),
         )
+        play_style = payload.get("play_style", {})
+        requested_scene_visual_mode = play_style.get("scene_visual_mode") if isinstance(play_style, dict) else None
+        settings.play_style = CampaignSettings.PlayStyleSettings(
+            allow_freeform_powers=bool(
+                play_style.get("allow_freeform_powers", settings.play_style.allow_freeform_powers)
+            ),
+            auto_update_character_sheet_from_actions=bool(
+                play_style.get(
+                    "auto_update_character_sheet_from_actions", settings.play_style.auto_update_character_sheet_from_actions
+                )
+            ),
+            strict_sheet_enforcement=bool(
+                play_style.get("strict_sheet_enforcement", settings.play_style.strict_sheet_enforcement)
+            ),
+            auto_sync_player_declared_identity=bool(
+                play_style.get("auto_sync_player_declared_identity", settings.play_style.auto_sync_player_declared_identity)
+            ),
+            auto_generate_npc_personalities=bool(
+                play_style.get("auto_generate_npc_personalities", settings.play_style.auto_generate_npc_personalities)
+            ),
+            auto_evolve_npc_personalities=bool(
+                play_style.get("auto_evolve_npc_personalities", settings.play_style.auto_evolve_npc_personalities)
+            ),
+            reactive_world_persistence=bool(
+                play_style.get("reactive_world_persistence", settings.play_style.reactive_world_persistence)
+            ),
+            narration_format_mode=self._normalize_narration_format_mode(
+                play_style.get("narration_format_mode", settings.play_style.narration_format_mode)
+            ),
+            scene_visual_mode=self._normalize_scene_visual_mode(
+                play_style.get("scene_visual_mode", settings.play_style.scene_visual_mode)
+            ),
+        )
+        if requested_scene_visual_mode is not None:
+            settings.campaign_auto_visuals_enabled = settings.play_style.scene_visual_mode in {"before_narration", "after_narration"}
         self.save_active_campaign(self.session.active_slot)
         print(f"[settings] persisted_auto_visuals={str(settings.campaign_auto_visuals_enabled).lower()}")
         print(f"[settings] runtime_auto_visuals={str(self.session.state.settings.campaign_auto_visuals_enabled).lower()}")

@@ -154,6 +154,20 @@ class CampaignSettings:
         maturity_level: str = "standard"
         thematic_flags: list[str] = field(default_factory=lambda: ["adventure", "mystery"])
 
+    @dataclass
+    class PlayStyleSettings:
+        """Campaign-specific behavior rules and style preferences."""
+
+        allow_freeform_powers: bool = True
+        auto_update_character_sheet_from_actions: bool = True
+        strict_sheet_enforcement: bool = False
+        auto_sync_player_declared_identity: bool = True
+        auto_generate_npc_personalities: bool = True
+        auto_evolve_npc_personalities: bool = True
+        reactive_world_persistence: bool = True
+        narration_format_mode: str = "book"
+        scene_visual_mode: str = "after_narration"
+
     profile: str = "classic_fantasy"
     mature_content_enabled: bool = False
     narration_tone: str = "heroic"
@@ -163,6 +177,7 @@ class CampaignSettings:
     display_mode: str = "story"
     player_suggested_moves_override: bool | None = None
     content_settings: ContentSettings = field(default_factory=ContentSettings)
+    play_style: PlayStyleSettings = field(default_factory=PlayStyleSettings)
 
     def suggested_moves_active(self) -> bool:
         if self.player_suggested_moves_override is None:
@@ -453,6 +468,7 @@ class CampaignState:
 
         settings = dict(raw_settings)
         raw_content = settings.pop("content_settings", None)
+        raw_play_style = settings.pop("play_style", None)
         content_settings: CampaignSettings.ContentSettings
 
         if raw_content is None:
@@ -470,6 +486,8 @@ class CampaignState:
             )
 
         settings["content_settings"] = content_settings
+        play_style = CampaignState._play_style_from_payload(raw_play_style, settings)
+        settings["play_style"] = play_style
         settings["image_generation_enabled"] = bool(settings.get("image_generation_enabled", True))
         settings["campaign_auto_visuals_enabled"] = bool(settings.get("campaign_auto_visuals_enabled", True))
         settings["suggested_moves_enabled"] = bool(settings.get("suggested_moves_enabled", False))
@@ -478,6 +496,28 @@ class CampaignState:
         raw_override = settings.get("player_suggested_moves_override")
         settings["player_suggested_moves_override"] = None if raw_override is None else bool(raw_override)
         return CampaignSettings(**settings)
+
+    @staticmethod
+    def _play_style_from_payload(raw_play_style: Any, settings: dict[str, Any]) -> CampaignSettings.PlayStyleSettings:
+        source = raw_play_style if isinstance(raw_play_style, dict) else {}
+        narration_mode = str(source.get("narration_format_mode", "book")).strip().lower()
+        if narration_mode not in {"book", "compact", "dialogue_focused"}:
+            narration_mode = "book"
+        visual_mode = str(source.get("scene_visual_mode", "")).strip().lower()
+        if visual_mode not in {"off", "manual", "before_narration", "after_narration"}:
+            campaign_auto_visuals_enabled = bool(settings.get("campaign_auto_visuals_enabled", True))
+            visual_mode = "after_narration" if campaign_auto_visuals_enabled else "manual"
+        return CampaignSettings.PlayStyleSettings(
+            allow_freeform_powers=bool(source.get("allow_freeform_powers", True)),
+            auto_update_character_sheet_from_actions=bool(source.get("auto_update_character_sheet_from_actions", True)),
+            strict_sheet_enforcement=bool(source.get("strict_sheet_enforcement", False)),
+            auto_sync_player_declared_identity=bool(source.get("auto_sync_player_declared_identity", True)),
+            auto_generate_npc_personalities=bool(source.get("auto_generate_npc_personalities", True)),
+            auto_evolve_npc_personalities=bool(source.get("auto_evolve_npc_personalities", True)),
+            reactive_world_persistence=bool(source.get("reactive_world_persistence", True)),
+            narration_format_mode=narration_mode,
+            scene_visual_mode=visual_mode,
+        )
 
     @staticmethod
     def _world_meta_from_payload(raw_world_meta: dict[str, Any] | None, payload: dict[str, Any]) -> CampaignWorldMeta:

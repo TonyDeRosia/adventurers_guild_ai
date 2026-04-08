@@ -66,6 +66,32 @@ def test_create_campaign_persists_world_metadata(tmp_path: Path, monkeypatch) ->
     assert runtime.session.state.locations[runtime.session.state.current_location_id].name == "Black Harbor"
 
 
+def test_create_campaign_stores_campaign_play_style_settings(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    created = runtime.create_campaign(
+        {
+            "player_name": "StyleCreate",
+            "slot": "slot_style_create",
+            "play_style": {
+                "allow_freeform_powers": False,
+                "auto_update_character_sheet_from_actions": False,
+                "strict_sheet_enforcement": True,
+                "auto_sync_player_declared_identity": False,
+                "auto_generate_npc_personalities": False,
+                "auto_evolve_npc_personalities": False,
+                "reactive_world_persistence": False,
+                "narration_format_mode": "compact",
+                "scene_visual_mode": "manual",
+            },
+        }
+    )
+    play_style = created["state"]["settings"]["play_style"]
+    assert play_style["allow_freeform_powers"] is False
+    assert play_style["strict_sheet_enforcement"] is True
+    assert play_style["narration_format_mode"] == "compact"
+    assert play_style["scene_visual_mode"] == "manual"
+
+
 def test_new_campaign_uses_preferred_visual_and_suggested_move_defaults(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     created = runtime.create_campaign({"player_name": "DefaultCheck", "slot": "slot_defaults"})
@@ -98,6 +124,52 @@ def test_existing_campaign_settings_are_preserved_on_load(tmp_path: Path, monkey
     assert settings["campaign_auto_visuals_enabled"] is False
     assert settings["suggested_moves_enabled"] is True
     assert settings["effective_suggested_moves_enabled"] is True
+
+
+def test_campaign_play_style_settings_persist_across_save_and_load(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"player_name": "PersistStyle", "slot": "slot_style_persist"})
+    runtime.set_campaign_settings(
+        {
+            "play_style": {
+                "allow_freeform_powers": False,
+                "auto_update_character_sheet_from_actions": False,
+                "strict_sheet_enforcement": True,
+                "auto_sync_player_declared_identity": False,
+                "auto_generate_npc_personalities": False,
+                "auto_evolve_npc_personalities": True,
+                "reactive_world_persistence": False,
+                "narration_format_mode": "dialogue_focused",
+                "scene_visual_mode": "before_narration",
+            }
+        }
+    )
+    runtime.save_active_campaign("slot_style_persist")
+
+    reloaded = _runtime(tmp_path, monkeypatch)
+    loaded = reloaded.switch_campaign("slot_style_persist")
+    play_style = loaded["state"]["settings"]["play_style"]
+    assert play_style["allow_freeform_powers"] is False
+    assert play_style["strict_sheet_enforcement"] is True
+    assert play_style["narration_format_mode"] == "dialogue_focused"
+    assert play_style["scene_visual_mode"] == "before_narration"
+
+
+def test_campaign_play_style_is_isolated_per_campaign(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"player_name": "StyleA", "slot": "slot_style_a"})
+    runtime.set_campaign_settings({"play_style": {"narration_format_mode": "compact", "scene_visual_mode": "manual"}})
+    runtime.save_active_campaign("slot_style_a")
+    runtime.create_campaign({"player_name": "StyleB", "slot": "slot_style_b"})
+    runtime.set_campaign_settings({"play_style": {"narration_format_mode": "book", "scene_visual_mode": "after_narration"}})
+    runtime.save_active_campaign("slot_style_b")
+
+    first = runtime.switch_campaign("slot_style_a")
+    assert first["state"]["settings"]["play_style"]["narration_format_mode"] == "compact"
+    assert first["state"]["settings"]["play_style"]["scene_visual_mode"] == "manual"
+    second = runtime.switch_campaign("slot_style_b")
+    assert second["state"]["settings"]["play_style"]["narration_format_mode"] == "book"
+    assert second["state"]["settings"]["play_style"]["scene_visual_mode"] == "after_narration"
 
 
 def test_display_mode_persists_after_save_load_and_switch(tmp_path: Path, monkeypatch) -> None:
@@ -196,6 +268,25 @@ def test_campaign_state_api_includes_display_mode(tmp_path: Path, monkeypatch) -
     runtime.create_campaign({"player_name": "ApiMode", "slot": "slot_api_mode", "display_mode": "mud"})
     state = runtime.serialize_state()
     assert state["settings"]["display_mode"] == "mud"
+
+
+def test_legacy_campaign_without_play_style_loads_safe_defaults() -> None:
+    legacy = {
+        "campaign_id": "legacy",
+        "campaign_name": "Legacy",
+        "turn_count": 0,
+        "current_location_id": "start",
+        "player": {"id": "p1", "name": "Legacy", "char_class": "Ranger"},
+        "npcs": {},
+        "locations": {"start": {"id": "start", "name": "Start", "description": "start", "connections": []}},
+        "quests": {},
+        "settings": {},
+    }
+    loaded = CampaignState.from_dict(legacy)
+    play_style = loaded.settings.play_style
+    assert play_style.allow_freeform_powers is True
+    assert play_style.narration_format_mode == "book"
+    assert play_style.scene_visual_mode == "after_narration"
 
 
 def test_character_sheet_can_be_created_after_campaign_start_and_serialized(tmp_path: Path, monkeypatch) -> None:

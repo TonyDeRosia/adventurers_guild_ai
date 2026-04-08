@@ -85,6 +85,20 @@ class PromptRenderer:
             [f"- {rule}" for rule in self.built_in_narrator_rules]
             + ([f"- {rule}" for rule in custom_rules] if custom_rules else ["- none"])
         )
+        play_style = state.settings.play_style
+        play_style_layer = "\n".join(
+            [
+                f"- allow_freeform_powers: {str(play_style.allow_freeform_powers).lower()}",
+                f"- auto_update_character_sheet_from_actions: {str(play_style.auto_update_character_sheet_from_actions).lower()}",
+                f"- strict_sheet_enforcement: {str(play_style.strict_sheet_enforcement).lower()}",
+                f"- auto_sync_player_declared_identity: {str(play_style.auto_sync_player_declared_identity).lower()}",
+                f"- auto_generate_npc_personalities: {str(play_style.auto_generate_npc_personalities).lower()}",
+                f"- auto_evolve_npc_personalities: {str(play_style.auto_evolve_npc_personalities).lower()}",
+                f"- reactive_world_persistence: {str(play_style.reactive_world_persistence).lower()}",
+                f"- narration_format_mode: {play_style.narration_format_mode}",
+                f"- scene_visual_mode: {play_style.scene_visual_mode}",
+            ]
+        )
         print("[narrative-quality] strengthened_prompt=true")
         return (
             f"[System Role]\n{SYSTEM_ROLE_TEMPLATE}\n"
@@ -94,6 +108,7 @@ class PromptRenderer:
             f"[Dialogue Quality]\n{DIALOGUE_QUALITY_TEMPLATE}\n"
             f"[Narrative Examples]\n{NARRATIVE_EXAMPLES_TEMPLATE}\n"
             f"[Narrator Rules - Hard]\n{narrator_rules_layer}\n"
+            f"[Campaign Play Style]\n{play_style_layer}\n"
             f"[Campaign Tone]\n{campaign_tone}\n"
             f"[Content Settings]\n{content_layer}\n"
             f"[World Setup]\n{world_layer}\n"
@@ -123,7 +138,7 @@ class PromptRenderer:
             if npc.location_id == state.current_location_id
         ]
         npc_context = " | ".join(nearby_npcs) if nearby_npcs else "none"
-        suggested_move_instruction = self._build_writing_instructions_block(guidance_requested)
+        suggested_move_instruction = self._build_writing_instructions_block(guidance_requested, state)
         focus = self._infer_player_fact_focus(action)
         structured_turn_context = self._format_turn_context(turn_context, action, location_summary, focus=focus)
         current_action_priority = self._build_current_action_priority_block(
@@ -427,7 +442,24 @@ class PromptRenderer:
                 deduped.append(rule)
         return "- " + "\n- ".join(deduped[:12])
 
-    def _build_writing_instructions_block(self, guidance_requested: bool) -> str:
+    def _build_writing_instructions_block(self, guidance_requested: bool, state: CampaignState) -> str:
+        narration_mode = state.settings.play_style.narration_format_mode
+        strict_sheet = state.settings.play_style.strict_sheet_enforcement
+        freeform = state.settings.play_style.allow_freeform_powers
+        mode_instruction = {
+            "compact": "Prefer shorter, tighter narration with minimal flourish and rapid turn pacing.",
+            "dialogue_focused": "Prioritize character dialogue and conversational exchange while still resolving action consequences.",
+            "book": "Use immersive prose-first narration with descriptive scene transitions.",
+        }.get(narration_mode, "Use immersive prose-first narration with descriptive scene transitions.")
+        sheet_instruction = (
+            "When powers are used, treat only abilities already present in structured character sheet/spellbook as authoritative."
+            if strict_sheet
+            else (
+                "Allow creative freeform actions and powers, grounding outcomes in campaign truth and continuity."
+                if freeform
+                else "Allow actions not explicitly listed, but mark outcomes cautiously and keep continuity grounded."
+            )
+        )
         return (
             "Write natural, expressive scene prose using the structured facts above as truth.\n"
             "Write like a scene, not a report: avoid wrappers such as 'Turn X' or 'Outcome summary'.\n"
@@ -441,6 +473,8 @@ class PromptRenderer:
             "Use natural prose paragraphs and spacing instead of bracketed section headers.\n"
             "Do not collapse into stat-sheet formatting unless the player explicitly asked for structured output.\n"
             "Keep output compact (usually 1-4 short paragraphs) and end on a clean handoff to player agency.\n"
+            f"{mode_instruction}\n"
+            f"{sheet_instruction}\n"
             "Do not suggest actions, next steps, or recommendations unless the player explicitly asked for guidance.\n"
             + (
                 "Guidance was explicitly requested this turn; recommendations are allowed."
