@@ -1933,7 +1933,7 @@ class CampaignEngine:
                 history.append(ChatMessage(role="user", content=turn.player_input))
             if turn.narrator_response:
                 compact = re.sub(r"\s+", " ", turn.narrator_response.strip()).split(".")[0][:160].strip()
-                history.append(ChatMessage(role="assistant", content=f"Outcome summary: {compact}"))
+                history.append(ChatMessage(role="assistant", content=compact))
         return history
 
     def _build_structured_messages(self, system_messages: list[str], narrative: str) -> list[dict[str, str]]:

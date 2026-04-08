@@ -11,10 +11,12 @@ SYSTEM_ROLE_TEMPLATE = (
     "Role: Local campaign intelligence narrator and analyst. Maintain continuity and respect rules boundaries."
 )
 STORY_QUALITY_TEMPLATE = (
-    "Write like a strong tabletop GM describing the immediate scene, not a detached assistant summary. "
+    "Write like a strong tabletop GM describing the immediate scene, not a detached assistant summary or report. "
+    "Narrate as a scene unfolding in prose, not as a turn log with wrappers like 'Turn X' or 'Outcome summary'. "
     "Give the player's action visible weight in the environment and in other characters. "
     "Prefer concrete sensory detail, specific observation, body language, and social consequence over vague filler. "
     "Keep narration compact (usually 1-3 short paragraphs) with meaningful scene progression, not purple prose. "
+    "Use paragraph breaks to prevent dense walls of text and keep scene flow readable. "
     "End on a clean handoff point that leaves the next meaningful decision with the player."
 )
 PLAYER_AGENCY_TEMPLATE = (
@@ -24,7 +26,8 @@ PLAYER_AGENCY_TEMPLATE = (
 )
 DIALOGUE_QUALITY_TEMPLATE = (
     "When dialogue is present, let NPCs respond with distinct voice, motive, and emotional texture. "
-    "Show visible reaction, subtext, and social pressure when relevant, while preserving target NPC consistency."
+    "Show visible reaction, subtext, and social pressure when relevant, while preserving target NPC consistency. "
+    "Present spoken words directly as dialogue lines when appropriate instead of summarizing speech as 'you say' or 'the player says'."
 )
 NARRATIVE_EXAMPLES_TEMPLATE = """- Player: "I offer the paladin a deal."
   Good: Show the paladin's specific reaction, nearby witnesses' response, and a concrete social consequence; end with the paladin waiting for the player's next line.

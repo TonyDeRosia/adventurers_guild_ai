@@ -498,6 +498,56 @@ def test_prompt_renderer_includes_current_action_priority_block() -> None:
     assert "Resolve this action first, then narrate consequences." in prompt
 
 
+def test_writing_instructions_discourage_summary_style_and_prefer_scene_flow() -> None:
+    state = load_state()
+    prompt = PromptRenderer().build_turn_prompt(
+        state,
+        action="look around",
+        location_summary="Moonfall Tavern",
+        memory=MemoryRetrievalPipeline().retrieve(
+            state,
+            RetrievalRequest(location_id=state.current_location_id, active_quest_ids=[], current_npc_id=None, recent_actions=[], important_world_state=[]),
+        ),
+    )
+    assert "Write like a scene, not a report" in prompt
+    assert "avoid wrappers such as 'Turn X' or 'Outcome summary'" in prompt
+
+
+def test_writing_instructions_prefer_direct_dialogue_and_readable_spacing() -> None:
+    state = load_state()
+    prompt = PromptRenderer().build_turn_prompt(
+        state,
+        action="talk to elder thorne",
+        location_summary="Moonfall Tavern",
+        memory=MemoryRetrievalPipeline().retrieve(
+            state,
+            RetrievalRequest(location_id=state.current_location_id, active_quest_ids=[], current_npc_id=None, recent_actions=[], important_world_state=[]),
+        ),
+    )
+    assert "Present speech directly as dialogue" in prompt
+    assert "avoid summary phrasing like 'you say' or 'the player says'" in prompt
+    assert "Use spacing and paragraph breaks generously" in prompt
+    assert "Separate setting, action/reaction, and dialogue into readable blocks" in prompt
+
+
+def test_model_history_does_not_prefix_narrator_entries_with_outcome_summary_wrapper() -> None:
+    state = load_state()
+    state.conversation_turns = [
+        __import__("engine.entities", fromlist=["ConversationTurn"]).ConversationTurn(
+            turn=1,
+            player_input="I inspect the sigil.",
+            narrator_response="The sigil glows faintly as old runes wake along the stone.",
+            system_messages=[],
+        )
+    ]
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+    history = engine._build_model_history(state)
+
+    assert len(history) == 2
+    assert history[1].role == "assistant"
+    assert not history[1].content.lower().startswith("outcome summary:")
+
+
 def test_coherent_output_does_not_trigger_quality_fallback() -> None:
     state = load_state()
     adapter = SequencedNarrationAdapter(
