@@ -626,9 +626,11 @@ class CampaignEngine:
         narration_invalid = self._is_invalid_narration_output(sanitized_narrative) or (not bool(validation["valid"]))
         repetition_candidate = self._is_repetitive_narration(sanitized_narrative, last_narration)
         narration_repetitive = repetition_candidate and consecutive_repetition_count >= 2
+        strict_validation_reasons = {"no_output", "refusal", "action_override", "stale_state_loop", "scene_reset"}
+        strict_invalid = (not bool(validation["valid"])) and str(validation.get("reason", "")) in strict_validation_reasons
         # Minimal narration control mode:
         # engine owns structural truth/recovery; narrator rules own narrative behavior.
-        if narration_invalid or narration_repetitive:
+        if narration_invalid or narration_repetitive or strict_invalid:
             narrative = self._build_scene_aware_fallback(action, scene_state)
             cleanup_applied = False
             custom_rule_cleanup_applied = False
@@ -989,8 +991,6 @@ class CampaignEngine:
             return True
         if len(text) < 3:
             return True
-        if any(phrase in text for phrase in self._filler_loop_phrases):
-            return True
         return False
 
     def _is_repetitive_narration(self, narrative: str, last_narration: str) -> bool:
@@ -1071,17 +1071,35 @@ class CampaignEngine:
     def _build_structured_turn_context(self, state: CampaignState, action: str, scene_state: dict[str, Any]) -> TurnPromptContext:
         location = str(scene_state.get("location_name") or state.current_location_id or "unknown")
         participants = [npc.name for npc in state.npcs.values() if npc.location_id == state.current_location_id]
-        npc_states = [
-            f"{npc.name}: tier={npc.relationship_tier}, trust={npc.dynamic_state.trust_toward_player}, stress={npc.dynamic_state.stress}"
-            for npc in state.npcs.values()
-            if npc.location_id == state.current_location_id
-        ]
+        npc_states: list[str] = []
+        for npc_id, npc in state.npcs.items():
+            if npc.location_id != state.current_location_id:
+                continue
+            eval_snapshot = self.personality.evaluate(state, npc_id, scene="dialogue")
+            visible_condition = self._describe_npc_visible_condition(npc)
+            relationship = f"{npc.relationship_tier} toward {state.player.name}"
+            personality_summary = self._describe_npc_personality(npc)
+            intent = self._describe_npc_intent(eval_snapshot)
+            npc_states.append(
+                f"{npc.name} ({npc.personality_nodes.role if npc.personality_nodes and npc.personality_nodes.role else 'npc'}): "
+                f"visible condition {visible_condition}; stance {relationship}; personality {personality_summary}; likely behavior {intent}."
+            )
         environment_state = [str(v) for v in scene_state.get("altered_environment", []) if str(v).strip()]
         if not environment_state:
             environment_state = [str(scene_state.get("scene_summary", "")).strip()] if str(scene_state.get("scene_summary", "")).strip() else []
         unresolved_threats: list[str] = []
         if state.active_enemy_id and (state.active_enemy_hp or 0) > 0:
-            unresolved_threats.append(f"active_enemy={state.active_enemy_id} hp={state.active_enemy_hp}")
+            enemy = self.content.get_enemy(state.active_enemy_id)
+            if enemy:
+                hp = int(state.active_enemy_hp or enemy.max_hp)
+                condition = "fresh" if hp >= enemy.max_hp * 0.75 else "wounded" if hp >= enemy.max_hp * 0.35 else "near collapse"
+                pressure = "high pressure" if enemy.behavior == "aggressive" else "moderate pressure"
+                unresolved_threats.append(
+                    f"{enemy.name}: visible condition {condition} ({hp}/{enemy.max_hp} HP); aggression/pressure {pressure}; "
+                    f"combat behavior {enemy.behavior}; likely state {'advancing' if enemy.behavior == 'aggressive' else 'guarding'}."
+                )
+            else:
+                unresolved_threats.append(f"Hostile threat active: {state.active_enemy_id} (HP {state.active_enemy_hp}).")
         recent_consequences = [str(v) for v in scene_state.get("recent_consequences", []) if str(v).strip()][-3:]
         narrator_rules = [
             str(entry.get("text", "")).strip()
@@ -1098,6 +1116,35 @@ class CampaignEngine:
             recent_consequences=recent_consequences,
             narrator_rules=narrator_rules[-5:],
         )
+
+    def _describe_npc_visible_condition(self, npc: Any) -> str:
+        stress = int(getattr(npc.dynamic_state, "stress", 0) or 0)
+        anger = int(getattr(npc.dynamic_state, "anger", 0) or 0)
+        fear = int(getattr(npc.dynamic_state, "fear_toward_player", 0) or 0)
+        if stress >= 20 or anger >= 20:
+            return "tense and visibly strained"
+        if fear >= 15:
+            return "guarded and watchful"
+        return "steady and composed"
+
+    def _describe_npc_personality(self, npc: Any) -> str:
+        if npc.personality_nodes:
+            bits = [npc.personality_nodes.temperament, npc.personality_nodes.social_style, npc.personality_nodes.speech_style]
+            cleaned = [bit for bit in bits if bit]
+            if cleaned:
+                return ", ".join(cleaned[:2])
+        archetype = str(getattr(npc, "personality_archetype", "") or "").strip()
+        return archetype if archetype else "distinct but currently unread"
+
+    def _describe_npc_intent(self, evaluation: Any) -> str:
+        tone = str(getattr(evaluation, "tone", "neutral"))
+        hostility = int(getattr(evaluation, "hostility", 0) or 0)
+        willingness = int(getattr(evaluation, "willingness_to_share", 0) or 0)
+        if hostility >= 18:
+            return f"{tone}, confrontational, testing boundaries"
+        if willingness >= 10:
+            return f"{tone}, open to sharing useful detail"
+        return f"{tone}, polite but guarded"
 
     def _build_recent_consequence_summary(self, scene_state: dict[str, Any]) -> str:
         recent = [str(v).strip() for v in scene_state.get("recent_consequences", []) if str(v).strip()]
