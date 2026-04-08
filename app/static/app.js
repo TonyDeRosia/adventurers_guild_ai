@@ -1292,17 +1292,17 @@ function labelForType(type) {
 
 function setSceneImage(url, caption = '', turn = null) {
   currentSceneImage = url;
-  currentSceneImagePrompt = caption || '';
+  const readableCaption = (caption || '').trim();
+  currentSceneImagePrompt = readableCaption;
   currentSceneImageTurn = turn;
-  imageHistory = [{ url, caption, turn }, ...imageHistory.filter((entry) => entry.url !== url)].slice(0, 30);
+  imageHistory = [{ url, caption: readableCaption, turn }, ...imageHistory.filter((entry) => entry.url !== url)].slice(0, 30);
   sceneImageDisplay.innerHTML = '';
   const img = document.createElement('img');
   img.src = url;
-  img.alt = caption || 'Generated scene image';
+  img.alt = readableCaption || 'Generated scene image';
   sceneImageDisplay.appendChild(img);
   if (sceneVisualMeta) {
-    const turnLabel = turn ? `Turn ${turn}` : 'Scene visual updated';
-    sceneVisualMeta.textContent = `${turnLabel} • ${caption || 'Generated image'}`;
+    sceneVisualMeta.textContent = readableCaption || (turn ? `Scene visual updated for Turn ${turn}.` : 'Scene visual reflects the current area.');
   }
   setImageStatus('Latest generated image loaded in Scene Visual.');
   if (imageProgressState.phase !== 'idle') {
@@ -1329,7 +1329,7 @@ async function refreshSceneVisual() {
   const data = await api('/api/campaign/scene-visual');
   const sceneVisual = data.scene_visual;
   if (sceneVisual?.image_url) {
-    setSceneImage(sceneVisual.image_url, sceneVisual.prompt || 'Generated scene image', sceneVisual.turn || null);
+    setSceneImage(sceneVisual.image_url, sceneVisual.caption || 'Latest generated image loaded in Scene Visual.', sceneVisual.turn || null);
     return sceneVisual;
   }
   clearSceneImage();
@@ -1983,7 +1983,11 @@ async function generateImage() {
     });
     updateImageProgress(progressId, 'finalizing', 'Finalizing visual...');
     if (result.scene_visual?.image_url) {
-      setSceneImage(result.scene_visual.image_url, result.scene_visual.prompt || prompt, result.scene_visual.turn || null);
+      setSceneImage(
+        result.scene_visual.image_url,
+        result.scene_visual.caption || 'Latest generated image loaded in Scene Visual.',
+        result.scene_visual.turn || null,
+      );
     } else if (result.image?.url) {
       setSceneImage(result.image.url, prompt);
     }

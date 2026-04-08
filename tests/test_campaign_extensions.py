@@ -528,6 +528,7 @@ def test_writing_instructions_prefer_direct_dialogue_and_readable_spacing() -> N
     assert "avoid summary phrasing like 'you say' or 'the player says'" in prompt
     assert "Use spacing and paragraph breaks generously" in prompt
     assert "Separate setting, action/reaction, and dialogue into readable blocks" in prompt
+    assert "Do not print visible scaffold labels such as [Scene], [Dialogue], [Turn Snapshot], [NPC Reactions], [Enemy/Threat Reactions], or [Immediate Result]" in prompt
 
 
 def test_model_history_does_not_prefix_narrator_entries_with_outcome_summary_wrapper() -> None:

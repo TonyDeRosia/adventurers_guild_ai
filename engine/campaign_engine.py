@@ -879,22 +879,43 @@ class CampaignEngine:
             "important world facts:",
             "respond with 2-4 sentences",
         )
+        leaked_scaffold_labels = {
+            "[scene]",
+            "[dialogue]",
+            "[turn snapshot]",
+            "[npc reactions]",
+            "[enemy/threat reactions]",
+            "[enemy / threat reactions]",
+            "[immediate result]",
+        }
         filtered_lines: list[str] = []
         for line in text.splitlines():
             stripped = line.strip()
             if not stripped:
+                if filtered_lines and filtered_lines[-1] != "":
+                    filtered_lines.append("")
                 continue
             lowered = re.sub(r"^[\[\]\-\*\s]+", "", stripped.lower())
             if any(lowered.startswith(marker) for marker in banned_markers):
                 continue
             if any(lowered.startswith(prefix) for prefix in banned_line_prefixes):
                 continue
+            if stripped.lower() in leaked_scaffold_labels:
+                if filtered_lines and filtered_lines[-1] != "":
+                    filtered_lines.append("")
+                continue
             filtered_lines.append(stripped)
-        text = " ".join(filtered_lines) if filtered_lines else text
+        text = "\n".join(filtered_lines).strip() if filtered_lines else text
         text = re.sub(r"\[(?:Local template narrator|Requested Mode|Conversation Context|Memory Context|Scene Context|Player State Summary)\]", "", text, flags=re.IGNORECASE).strip()
         text = re.sub(r"(Respond with 2-4 sentences(?: and one suggested next move)?\.?)+", "", text, flags=re.IGNORECASE).strip()
         text = re.sub(r"(Recent chat turns:|Recent memory:|Long-term memory:|Session summaries:|Unresolved plot threads:|Important world facts:).*?(?=(?:\[[^\]]+\])|$)", "", text, flags=re.IGNORECASE).strip()
-        text = re.sub(r"\s{2,}", " ", text).strip()
+        text = re.sub(
+            r"(?im)^\s*\[(?:Scene|Dialogue|Turn Snapshot|NPC Reactions|Enemy/Threat Reactions|Enemy / Threat Reactions|Immediate Result)\]\s*$",
+            "",
+            text,
+        )
+        text = re.sub(r"[ \t]{2,}", " ", text)
+        text = re.sub(r"\n{3,}", "\n\n", text).strip()
         return text, text != original
 
     def _player_requested_guidance(self, action: str) -> bool:
