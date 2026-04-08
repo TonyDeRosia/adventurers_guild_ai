@@ -90,6 +90,7 @@ class NPC:
         identity_label: str = ""
         archetype: str = ""
         baseline_temperament: str = ""
+        emotional_baseline: str = ""
         social_style: str = ""
         confidence_fear_tendency: str = ""
         moral_leaning: str = ""
@@ -97,6 +98,10 @@ class NPC:
         conversational_tone: str = ""
         stress_response: str = ""
         conflict_response: str = ""
+        reaction_to_power: str = ""
+        reaction_to_threat: str = ""
+        reaction_to_kindness: str = ""
+        reaction_to_disrespect: str = ""
 
     id: str
     name: str
@@ -370,6 +375,7 @@ class CampaignState:
                     identity_label=str(profile_raw.get("identity_label", "")),
                     archetype=str(profile_raw.get("archetype", "")),
                     baseline_temperament=str(profile_raw.get("baseline_temperament", "")),
+                    emotional_baseline=str(profile_raw.get("emotional_baseline", "")),
                     social_style=str(profile_raw.get("social_style", "")),
                     confidence_fear_tendency=str(profile_raw.get("confidence_fear_tendency", "")),
                     moral_leaning=str(profile_raw.get("moral_leaning", "")),
@@ -377,6 +383,10 @@ class CampaignState:
                     conversational_tone=str(profile_raw.get("conversational_tone", "")),
                     stress_response=str(profile_raw.get("stress_response", "")),
                     conflict_response=str(profile_raw.get("conflict_response", "")),
+                    reaction_to_power=str(profile_raw.get("reaction_to_power", "")),
+                    reaction_to_threat=str(profile_raw.get("reaction_to_threat", "")),
+                    reaction_to_kindness=str(profile_raw.get("reaction_to_kindness", "")),
+                    reaction_to_disrespect=str(profile_raw.get("reaction_to_disrespect", "")),
                 )
                 if isinstance(profile_raw, dict)
                 else None
@@ -642,6 +652,7 @@ class CampaignState:
                 "identity_label": str(profile.get("identity_label", entry.get("display_name", ""))),
                 "archetype": str(profile.get("archetype", "unknown local actor")),
                 "baseline_temperament": str(profile.get("baseline_temperament", "reserved")),
+                "emotional_baseline": str(profile.get("emotional_baseline", "steady but watchful")),
                 "social_style": str(profile.get("social_style", "measured")),
                 "confidence_fear_tendency": str(profile.get("confidence_fear_tendency", "balanced caution")),
                 "moral_leaning": str(profile.get("moral_leaning", "situational")),
@@ -649,6 +660,10 @@ class CampaignState:
                 "conversational_tone": str(profile.get("conversational_tone", "brief and observant")),
                 "stress_response": str(profile.get("stress_response", "narrows focus and watches exits")),
                 "conflict_response": str(profile.get("conflict_response", "tests intent before escalation")),
+                "reaction_to_power": str(profile.get("reaction_to_power", "respects clear authority but watches for overreach")),
+                "reaction_to_threat": str(profile.get("reaction_to_threat", "tightens posture and chooses caution or pushback based on leverage")),
+                "reaction_to_kindness": str(profile.get("reaction_to_kindness", "acknowledges goodwill carefully before opening up")),
+                "reaction_to_disrespect": str(profile.get("reaction_to_disrespect", "goes cooler and more defensive before deciding whether to confront")),
             }
             normalized = dict(entry)
             normalized["personality_profile"] = normalized_profile
