@@ -584,3 +584,109 @@ def test_prompt_renderer_npc_and_enemy_blocks_are_compact_and_behavioral() -> No
 
     assert "likely intent" in prompt
     assert "tactical posture" in prompt
+
+
+def test_scene_state_tracks_and_persists_npc_conditions() -> None:
+    state = load_state()
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+    scene_state = engine._ensure_scene_state(state)
+
+    npc = next(iter([entry for entry in state.npcs.values() if entry.location_id == state.current_location_id]))
+    engine._update_scene_state_from_turn(
+        state,
+        action=f"i freeze {npc.name}",
+        narrative=f"{npc.name} is frozen in place and weakened.",
+        system_messages=[],
+        is_gameplay=True,
+    )
+    persisted = scene_state.get("npc_conditions", {}).get(npc.id, [])
+    assert "frozen" in persisted
+    assert "weakened" in persisted
+
+    engine._update_scene_state_from_turn(
+        state,
+        action="i look around",
+        narrative="Frost still cages the target.",
+        system_messages=[],
+        is_gameplay=True,
+    )
+    follow_up = scene_state.get("npc_conditions", {}).get(npc.id, [])
+    assert "frozen" in follow_up
+
+
+def test_scene_state_tracks_enemy_condition_behavior_and_pressure() -> None:
+    state = load_state()
+    state.active_enemy_id = "bone_warden"
+    state.active_enemy_hp = 6
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+
+    engine._update_scene_state_from_turn(
+        state,
+        action="attack the bone warden",
+        narrative="The Bone Warden is badly injured but still advancing with intense pressure.",
+        system_messages=[],
+        is_gameplay=True,
+    )
+    enemy_state = engine._ensure_scene_state(state).get("enemy_conditions", {}).get("bone_warden", {})
+    assert "critical" in enemy_state.get("conditions", []) or "injured" in enemy_state.get("conditions", [])
+    assert enemy_state.get("behavior") == "advancing"
+    assert enemy_state.get("pressure") == "high"
+
+
+def test_scene_state_environment_persistence_and_condition_evolution() -> None:
+    state = load_state()
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+    scene_state = engine._ensure_scene_state(state)
+
+    npc = next(iter([entry for entry in state.npcs.values() if entry.location_id == state.current_location_id]))
+    engine._update_scene_state_from_turn(
+        state,
+        action=f"i freeze {npc.name} and scorch the floor",
+        narrative=f"{npc.name} is frozen while fire starts spreading across nearby cover.",
+        system_messages=[],
+        is_gameplay=True,
+    )
+    engine._update_scene_state_from_turn(
+        state,
+        action=f"i shatter {npc.name}",
+        narrative=f"{npc.name} is shattered into icy fragments.",
+        system_messages=[],
+        is_gameplay=True,
+    )
+
+    npc_conditions = scene_state.get("npc_conditions", {}).get(npc.id, [])
+    assert "shattered" in npc_conditions
+    assert "frozen" not in npc_conditions
+    persistent_environment = [item.lower() for item in scene_state.get("environment_consequences", [])]
+    assert any("fire is spreading" in item for item in persistent_environment)
+
+
+def test_prompt_includes_persistent_condition_summaries() -> None:
+    state = load_state()
+    state.active_enemy_id = "bone_warden"
+    state.active_enemy_hp = 8
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+    scene_state = engine._ensure_scene_state(state)
+    npc = next(iter([entry for entry in state.npcs.values() if entry.location_id == state.current_location_id]))
+    scene_state["npc_conditions"][npc.id] = ["frozen", "weakened"]
+    scene_state["enemy_conditions"]["bone_warden"] = {
+        "conditions": ["injured"],
+        "behavior": "advancing",
+        "pressure": "high",
+    }
+    scene_state["environment_consequences"] = ["frost spreading across the tavern floor"]
+    context = engine._build_structured_turn_context(state, "attack", scene_state)
+    prompt = PromptRenderer().build_turn_prompt(
+        state,
+        action="attack",
+        location_summary="Moonfall Catacombs",
+        memory=MemoryRetrievalPipeline().retrieve(
+            state,
+            RetrievalRequest(location_id=state.current_location_id, active_quest_ids=[], current_npc_id=None, recent_actions=[], important_world_state=[]),
+        ),
+        scene_state_summary=engine._summarize_scene_state_for_prompt(scene_state),
+        turn_context=context,
+    )
+
+    assert "frozen, weakened" in prompt
+    assert "injured, advancing, pressure high" in prompt
