@@ -95,6 +95,10 @@ const runtimeSpellbookModal = document.getElementById('runtime-spellbook-modal')
 const runtimeSpellbookList = document.getElementById('runtime-spellbook-list');
 const narratorRulesModal = document.getElementById('narrator-rules-modal');
 const narratorRulesList = document.getElementById('narrator-rules-list');
+const worldBuildingModal = document.getElementById('world-building-modal');
+const worldBuildingNpcList = document.getElementById('world-building-npc-list');
+const worldBuildingDesignList = document.getElementById('world-building-design-list');
+const worldBuildingReactiveList = document.getElementById('world-building-reactive-list');
 
 let draftCharacterSheets = [];
 let editingSheetIndex = -1;
@@ -103,6 +107,7 @@ let selectedRuntimeSheetId = '';
 let runtimeInventoryState = {};
 let runtimeSpellbookEntries = [];
 let customNarratorRules = [];
+let worldBuildingState = { npc_personalities: [], world_design: [], reactive_world_changes: [] };
 
 let currentSceneImage = null;
 let currentSceneImagePrompt = '';
@@ -1524,6 +1529,55 @@ async function refreshNarratorRules() {
   renderNarratorRules();
 }
 
+function renderWorldBuildingBulletList(items, emptyText) {
+  const clean = Array.isArray(items) ? items.filter((item) => String(item || '').trim()) : [];
+  if (!clean.length) return `<p class="runtime-sheet-muted">${escapeHtml(emptyText)}</p>`;
+  return `<ul class="world-building-bullet-list">${clean.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`;
+}
+
+function renderWorldBuildingViewer() {
+  if (!worldBuildingNpcList || !worldBuildingDesignList || !worldBuildingReactiveList) return;
+  const npcProfiles = Array.isArray(worldBuildingState.npc_personalities) ? worldBuildingState.npc_personalities : [];
+  const worldDesign = Array.isArray(worldBuildingState.world_design) ? worldBuildingState.world_design : [];
+  const reactiveChanges = Array.isArray(worldBuildingState.reactive_world_changes) ? worldBuildingState.reactive_world_changes : [];
+
+  worldBuildingNpcList.innerHTML = npcProfiles.length ? npcProfiles.map((profile) => `
+    <article class="world-building-card">
+      <h5>${escapeHtml(profile.name || 'Unnamed NPC')} <small>${escapeHtml(profile.role_or_archetype || 'Unknown role')}</small></h5>
+      <div class="world-building-grid">
+        <div><span>Personality Summary</span><p>${escapeHtml(profile.personality_summary || 'Not available')}</p></div>
+        <div><span>Social Style</span><p>${escapeHtml(profile.social_style || 'Not available')}</p></div>
+        <div><span>Likely Motivations</span><p>${escapeHtml(profile.likely_motivations || 'Not available')}</p></div>
+        <div><span>Speaking Style</span><p>${escapeHtml(profile.speaking_style || 'Not available')}</p></div>
+        <div><span>Conflict Style</span><p>${escapeHtml(profile.conflict_style || 'Not available')}</p></div>
+        <div><span>Current Stance Toward Player</span><p>${escapeHtml(profile.current_stance_toward_player || 'Not available')}</p></div>
+        <div><span>Persistent Conditions</span>${renderWorldBuildingBulletList(profile.current_persistent_conditions || [], 'None recorded.')}</div>
+        <div><span>Notable Evolution</span><p>${escapeHtml(profile.notable_evolution || 'Not available')}</p></div>
+      </div>
+    </article>
+  `).join('') : '<p class="runtime-sheet-muted">No NPC personalities generated yet.</p>';
+
+  worldBuildingDesignList.innerHTML = worldDesign.length ? worldDesign.map((group) => `
+    <article class="world-building-card">
+      <h5>${escapeHtml(group.label || 'World Design')}</h5>
+      ${renderWorldBuildingBulletList(group.entries || [], `No ${String(group.label || 'entries').toLowerCase()} available yet.`)}
+    </article>
+  `).join('') : '<p class="runtime-sheet-muted">No world design entries available yet.</p>';
+
+  worldBuildingReactiveList.innerHTML = reactiveChanges.length ? reactiveChanges.map((group) => `
+    <article class="world-building-card">
+      <h5>${escapeHtml(group.label || 'Reactive Changes')}</h5>
+      ${renderWorldBuildingBulletList(group.entries || [], `No ${String(group.label || 'entries').toLowerCase()} available yet.`)}
+    </article>
+  `).join('') : '<p class="runtime-sheet-muted">No reactive world changes recorded yet.</p>';
+}
+
+async function refreshWorldBuilding() {
+  const payload = await api('/api/campaign/world-building');
+  worldBuildingState = payload.world_building || { npc_personalities: [], world_design: [], reactive_world_changes: [] };
+  renderWorldBuildingViewer();
+}
+
 async function refreshState() {
   const data = await api('/api/campaign/state');
   const state = data.state;
@@ -2417,8 +2471,15 @@ document.getElementById('open-narrator-rules').onclick = async () => {
   narratorRulesModal?.classList.remove('hidden');
   console.log(`[narrator-rules] modal_opened campaign=${loadedSlot || 'unknown'}`);
 };
+document.getElementById('open-world-building').onclick = async () => {
+  await refreshWorldBuilding();
+  worldBuildingModal?.classList.remove('hidden');
+};
 document.getElementById('close-narrator-rules').onclick = () => {
   narratorRulesModal?.classList.add('hidden');
+};
+document.getElementById('close-world-building').onclick = () => {
+  worldBuildingModal?.classList.add('hidden');
 };
 document.getElementById('narrator-rule-clear').onclick = () => {
   document.getElementById('narrator-rule-edit-id').value = '';

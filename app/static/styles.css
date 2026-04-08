@@ -618,6 +618,7 @@ textarea { border-radius: 8px; border: 1px solid #2e3d52; background: #131e2b; c
   .sheet-sections,
   .sheet-ability-entry,
   .runtime-sheet-grid,
+  .world-building-grid,
   .runtime-sheet-create-grid,
   .runtime-sheet-create-grid section {
     grid-template-columns: 1fr;
@@ -678,4 +679,58 @@ textarea { border-radius: 8px; border: 1px solid #2e3d52; background: #131e2b; c
 .narrator-rule-item p {
   margin: 0 0 8px;
   white-space: pre-wrap;
+}
+.world-building-modal-card {
+  width: min(980px, 100%);
+}
+.world-building-viewer {
+  display: grid;
+  gap: 12px;
+}
+.world-building-section {
+  border: 1px solid #2a3f5f;
+  border-radius: 8px;
+  padding: 10px;
+  background: #0e1729;
+}
+.world-building-section h4 {
+  margin: 0 0 8px;
+  color: #9fd2ff;
+}
+.world-building-list {
+  display: grid;
+  gap: 8px;
+}
+.world-building-card {
+  border: 1px solid #344c6d;
+  border-radius: 8px;
+  padding: 8px;
+  background: #122036;
+}
+.world-building-card h5 {
+  margin: 0 0 6px;
+}
+.world-building-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 10px;
+}
+.world-building-grid div {
+  display: grid;
+  gap: 2px;
+}
+.world-building-grid span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.world-building-grid p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.world-building-bullet-list {
+  margin: 0;
+  padding-left: 18px;
+}
+.world-building-bullet-list li {
+  margin-bottom: 4px;
 }
