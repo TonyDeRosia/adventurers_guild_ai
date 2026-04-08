@@ -94,6 +94,13 @@ class CampaignEngine:
             "just",
         }
 
+    @dataclass
+    class PendingAbilityLearning:
+        raw_name: str
+        normalized_name: str
+        category: str
+        confidence: str
+
     def run_turn(self, state: CampaignState, action: str) -> TurnResult:
         state.turn_count += 1
         for faction, baseline in self.content.faction_defaults().items():
@@ -445,6 +452,8 @@ class CampaignEngine:
             self.memory.record_recent(state, msg)
             self._capture_important_memory(state, msg)
 
+        pending_ability_learning = self._prepare_pending_ability_learning(state, action, system_messages)
+
         if self.summary.should_summarize(action, system_messages):
             summary = self.summary.build_summary(state, action, system_messages)
             self.memory.add_session_summary(
@@ -718,6 +727,8 @@ class CampaignEngine:
         print(f"[narrator-rules] validation_cleanup_applied={str(custom_rule_cleanup_applied).lower()}")
         print(f"[narration] grounding_cleanup_applied={str(grounding_cleanup_applied).lower()}")
         state.structured_state.runtime.last_narration = narrative
+        if pending_ability_learning and self._is_successful_ability_demonstration(narrative):
+            self._learn_ability_from_action(state, pending_ability_learning)
         self._update_scene_state_from_turn(state, action=action, narrative=narrative, system_messages=system_messages, is_gameplay=True)
         self.memory.record_recent(state, f"Narrator: {narrative}")
         self.state_orchestrator.update_runtime_state(state, action=action, system_messages=system_messages, narrative=narrative)
@@ -762,6 +773,130 @@ class CampaignEngine:
                 "timing": timing,
             },
         )
+
+    def _prepare_pending_ability_learning(
+        self,
+        state: CampaignState,
+        action: str,
+        system_messages: list[str],
+    ) -> PendingAbilityLearning | None:
+        detected = self._detect_action_ability(action)
+        print(f"[ability-learn] detected={str(detected is not None).lower()}")
+        if detected is None:
+            return None
+        if self._ability_exists(state, detected.normalized_name):
+            print(f"[ability-learn] new_ability={detected.raw_name}")
+            print("[ability-learn] added_to_spellbook=false")
+            return None
+        if not state.settings.play_style.auto_update_character_sheet_from_actions:
+            print(f"[ability-learn] new_ability={detected.raw_name}")
+            print("[ability-learn] added_to_spellbook=false")
+            return None
+        if state.settings.play_style.strict_sheet_enforcement:
+            system_messages.append(
+                f"Strict sheet mode note: '{detected.normalized_name}' is newly demonstrated and not yet trusted until this turn succeeds."
+            )
+        print(f"[ability-learn] new_ability={detected.raw_name}")
+        print("[ability-learn] added_to_spellbook=pending")
+        return detected
+
+    def _detect_action_ability(self, action: str) -> PendingAbilityLearning | None:
+        normalized = re.sub(r"\s+", " ", action.strip().lower())
+        patterns = (
+            r"\bcast\s+(.+)$",
+            r"\buse\s+(?:my\s+)?(.+)$",
+            r"\bchannel\s+(.+)$",
+            r"\binvoke\s+(.+)$",
+            r"\bsummon\s+(.+)$",
+            r"\bactivate\s+(.+)$",
+            r"\bperform\s+(.+)$",
+        )
+        phrase = ""
+        for pattern in patterns:
+            match = re.search(pattern, normalized)
+            if match:
+                phrase = match.group(1).strip(" .,!?")
+                break
+        if not phrase:
+            return None
+        phrase = re.sub(r"^(?:a|an|the)\s+", "", phrase).strip()
+        if not phrase:
+            return None
+        normalized_name = self._normalize_ability_name(phrase)
+        category = self._classify_ability_category(phrase)
+        confidence = "high" if any(token in normalized for token in ("cast", "invoke", "summon")) else "medium"
+        return CampaignEngine.PendingAbilityLearning(
+            raw_name=phrase,
+            normalized_name=normalized_name,
+            category=category,
+            confidence=confidence,
+        )
+
+    def _normalize_ability_name(self, raw_name: str) -> str:
+        cleaned = re.sub(r"[^a-zA-Z0-9\s\-]", "", raw_name).strip()
+        cleaned = re.sub(r"\s+", " ", cleaned)
+        return cleaned.title() if cleaned else "Unknown Ability"
+
+    def _classify_ability_category(self, raw_name: str) -> str:
+        lowered = raw_name.lower()
+        if any(token in lowered for token in ("spell", "arcane", "magic", "rune", "hex", "sigil", "summon")):
+            return "magic"
+        if any(token in lowered for token in ("strike", "slash", "shot", "punch", "kick", "stance")):
+            return "physical"
+        if any(token in lowered for token in ("stealth", "track", "craft", "lockpick", "persuade", "charm")):
+            return "skill"
+        return "ability"
+
+    def _ability_exists(self, state: CampaignState, normalized_name: str) -> bool:
+        candidate_key = re.sub(r"[^a-z0-9]", "", normalized_name.lower())
+        existing_names = [
+            str(entry.get("name", ""))
+            for entry in state.structured_state.runtime.spellbook
+            if isinstance(entry, dict)
+        ]
+        main_sheet = next((sheet for sheet in state.character_sheets if sheet.sheet_type == "main_character"), None)
+        if main_sheet is not None:
+            existing_names.extend(main_sheet.abilities)
+            existing_names.extend(entry.name for entry in main_sheet.guaranteed_abilities)
+        for existing in existing_names:
+            existing_key = re.sub(r"[^a-z0-9]", "", existing.lower())
+            if not existing_key:
+                continue
+            if existing_key == candidate_key:
+                return True
+            if SequenceMatcher(None, existing_key, candidate_key).ratio() >= 0.9:
+                return True
+        return False
+
+    def _is_successful_ability_demonstration(self, narrative: str) -> bool:
+        lowered = narrative.lower()
+        failure_markers = ("fail", "fails", "misfire", "backfire", "cannot", "can't", "fizzle", "miss")
+        success_markers = ("success", "succeeds", "hits", "works", "you do", "you weave", "you cast", "you channel")
+        if any(marker in lowered for marker in failure_markers):
+            return False
+        return any(marker in lowered for marker in success_markers)
+
+    def _learn_ability_from_action(self, state: CampaignState, pending: PendingAbilityLearning) -> None:
+        ability_type = "spell" if pending.category == "magic" else "skill" if pending.category == "skill" else "ability"
+        entry = {
+            "id": f"learned_{state.turn_count}_{pending.normalized_name.lower().replace(' ', '_')}",
+            "name": pending.normalized_name,
+            "type": ability_type,
+            "description": "Learned from successful in-play demonstration.",
+            "cost_or_resource": "",
+            "cooldown": "",
+            "tags": ["learned_from_action", pending.category],
+            "notes": f"confidence={pending.confidence}",
+        }
+        state.structured_state.runtime.spellbook.append(entry)
+        state.structured_state.runtime.abilities_learned = sorted(
+            set(state.structured_state.runtime.abilities_learned + [pending.normalized_name])
+        )
+        main_sheet = next((sheet for sheet in state.character_sheets if sheet.sheet_type == "main_character"), None)
+        if main_sheet is not None:
+            if not any(self._normalize_ability_name(name) == pending.normalized_name for name in main_sheet.abilities):
+                main_sheet.abilities.append(pending.normalized_name)
+        print("[ability-learn] added_to_spellbook=true")
 
     def _classify_turn_intent(self, action: str) -> str:
         normalized = re.sub(r"\s+", " ", action.strip().lower())
