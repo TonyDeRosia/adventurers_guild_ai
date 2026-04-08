@@ -2160,6 +2160,196 @@ class WebRuntime:
             "reactive_world_changes": reactive_changes,
         }
 
+    def _extract_recent_recalibration_turns(self, state: CampaignState, limit: int = 10) -> list[Any]:
+        turns = state.conversation_turns[-max(5, min(limit, 10)) :]
+        return [turn for turn in turns if turn]
+
+    def _find_main_character_sheet(self, state: CampaignState) -> CharacterSheet | None:
+        for sheet in state.character_sheets:
+            if sheet.sheet_type == "main_character":
+                return sheet
+        return None
+
+    def _recalibration_sync_player_identity(self, state: CampaignState, narration_blob: str) -> None:
+        main_sheet = self._find_main_character_sheet(state)
+        title_match = re.search(r"\b(captain|sir|lady|warden|magister|commander)\s+([A-Z][a-z]+)\b", narration_blob)
+        if title_match and main_sheet is not None:
+            title_value = f"{title_match.group(1).title()} {title_match.group(2).title()}"
+            if not str(main_sheet.level_or_rank or "").strip():
+                main_sheet.level_or_rank = title_value
+        intro_patterns = (
+            r"\bi am\s+([A-Z][a-z]+(?:[-'][A-Z][a-z]+)?)\b",
+            r"\bmy name is\s+([A-Z][a-z]+(?:[-'][A-Z][a-z]+)?)\b",
+        )
+        for pattern in intro_patterns:
+            match = re.search(pattern, narration_blob)
+            if not match:
+                continue
+            discovered_name = str(match.group(1)).strip()
+            if discovered_name and not str(state.player.name or "").strip():
+                state.player.name = discovered_name
+            if main_sheet is not None and not str(main_sheet.name or "").strip():
+                main_sheet.name = discovered_name
+            break
+
+    def _recalibration_sync_abilities(self, state: CampaignState, turns: list[Any]) -> int:
+        if not state.settings.play_style.auto_update_character_sheet_from_actions:
+            return 0
+        runtime = state.structured_state.runtime
+        runtime.spellbook = runtime.spellbook if isinstance(runtime.spellbook, list) else []
+        main_sheet = self._find_main_character_sheet(state)
+        added = 0
+        for turn in turns:
+            detected = self.engine._detect_action_ability(str(turn.player_input or ""))
+            if detected is None:
+                continue
+            existing_name = self.engine._find_existing_ability_name(state, detected.normalized_name)
+            if existing_name:
+                continue
+            ability_type = "spell" if detected.category == "magic" else "skill" if detected.category == "skill" else "ability"
+            runtime.spellbook.append(
+                {
+                    "id": f"recal_{int(time.time() * 1000)}_{len(runtime.spellbook)}",
+                    "name": detected.normalized_name,
+                    "type": ability_type,
+                    "description": "Recovered from recent action history during recalibration.",
+                    "cost_or_resource": "",
+                    "cooldown": "",
+                    "tags": ["recalibrated"],
+                    "notes": "",
+                }
+            )
+            if main_sheet is not None and not any(
+                self.engine._normalize_ability_name(name) == detected.normalized_name for name in main_sheet.abilities
+            ):
+                main_sheet.abilities.append(detected.normalized_name)
+            added += 1
+        runtime.spellbook = self.engine.state_orchestrator._normalize_spellbook(runtime.spellbook)
+        return added
+
+    def _recalibration_merge_duplicate_npcs(self, state: CampaignState, scene_state: dict[str, Any]) -> int:
+        by_name: dict[str, list[str]] = {}
+        for npc_id, npc in state.npcs.items():
+            normalized = self.engine._normalize_person_name(npc.name)
+            if not normalized:
+                continue
+            by_name.setdefault(normalized, []).append(npc_id)
+        merged = 0
+        for _, npc_ids in by_name.items():
+            if len(npc_ids) < 2:
+                continue
+            keeper = max(
+                npc_ids,
+                key=lambda npc_id: (
+                    1 if state.npcs[npc_id].personality_profile is not None else 0,
+                    len(state.npcs[npc_id].notes),
+                    len(state.npcs[npc_id].memory_log),
+                ),
+            )
+            for npc_id in npc_ids:
+                if npc_id == keeper or npc_id not in state.npcs:
+                    continue
+                for actor in scene_state.get("scene_actors", []):
+                    if isinstance(actor, dict) and str(actor.get("linked_npc_id", "")).strip() == npc_id:
+                        actor["linked_npc_id"] = keeper
+                npc_conditions = scene_state.setdefault("npc_conditions", {})
+                if npc_id in npc_conditions and keeper not in npc_conditions:
+                    npc_conditions[keeper] = npc_conditions.get(npc_id, [])
+                npc_conditions.pop(npc_id, None)
+                del state.npcs[npc_id]
+                merged += 1
+        return merged
+
+    def recalibrate_campaign_state(self, state: CampaignState) -> dict[str, Any]:
+        print("[recalibration] started")
+        scene_state = self.engine._ensure_scene_state(state)
+        turns = self._extract_recent_recalibration_turns(state)
+        narration_sources: list[str] = []
+        generic_label_counts: dict[str, int] = {}
+        npc_created_names: list[str] = []
+        for turn in turns:
+            narration_sources.extend([str(turn.narrator_response or ""), *[str(msg) for msg in turn.system_messages]])
+            for label in self.engine._extract_scene_actor_labels(str(turn.narrator_response or "")):
+                generic_label_counts[label] = generic_label_counts.get(label, 0) + 1
+                self.engine._register_scene_actor(state, scene_state, label)
+            for npc_name in self.engine._detect_npc_introductions_from_narration(str(turn.narrator_response or "")):
+                before_ids = set(state.npcs.keys())
+                npc = self.engine._register_narrative_npc(state, scene_state, npc_name)
+                if npc.id not in before_ids:
+                    npc_created_names.append(npc.name)
+        narration_blob = " ".join(source for source in narration_sources if source.strip())
+        self._recalibration_sync_player_identity(state, narration_blob)
+        abilities_synced = self._recalibration_sync_abilities(state, turns)
+
+        # Backfill missing personalities only; never overwrite existing profiles.
+        for npc in state.npcs.values():
+            mention_key = npc.name.lower()
+            if npc.location_id != state.current_location_id or mention_key not in narration_blob.lower():
+                continue
+            self.engine.personality.initialize_npc(state, npc.id)
+            if npc.personality_profile is None:
+                npc.personality_profile = self.engine.personality.generate_profile(npc_name=npc.name, role_hint="local npc")
+                print(f"[recalibration] npc_created={npc.name}")
+
+        # Normalize repeated generic identities into stable named NPC identities.
+        for label, count in generic_label_counts.items():
+            if count < 2:
+                continue
+            matched_npc = self.engine._find_existing_npc_by_role(state, label)
+            if matched_npc is None:
+                stable_name = f"{label.title()} {state.current_location_id.replace('_', ' ').title()}".strip()
+                self.engine._register_narrative_npc(state, scene_state, stable_name)
+                npc_created_names.append(stable_name)
+                continue
+            if self.engine._is_generic_identity_label(matched_npc.name):
+                stable_name = f"{label.title()} {state.current_location_id.replace('_', ' ').title()}".strip()
+                matched_npc.name = stable_name
+                if matched_npc.personality_profile is not None and not matched_npc.personality_profile.identity_label:
+                    matched_npc.personality_profile.identity_label = stable_name
+
+        world_updates = 0
+        extracted = self.engine._extract_consequences_from_narration(narration_blob)
+        for turn in turns:
+            action_extracted = self.engine._extract_consequences_from_action(str(turn.player_input or ""))
+            for key in extracted.keys():
+                extracted[key].extend(action_extracted[key])
+        for key, values in extracted.items():
+            for value in values:
+                before = list(scene_state.get(key, []))
+                self.engine._merge_scene_consequence(scene_state, key, value)
+                if before != scene_state.get(key, []):
+                    world_updates += 1
+                    if key == "altered_environment":
+                        lowered = value.lower()
+                        for token in ("frost", "fire", "storm"):
+                            if token in lowered and not state.world_flags.get(f"env_{token}_active", False):
+                                state.world_flags[f"env_{token}_active"] = True
+        lowered_blob = narration_blob.lower()
+        for token in ("frost", "fire", "storm"):
+            if token in lowered_blob and not state.world_flags.get(f"env_{token}_active", False):
+                state.world_flags[f"env_{token}_active"] = True
+                world_updates += 1
+        for location in state.locations.values():
+            if location.name and location.name.lower() in narration_blob.lower():
+                if location.id not in state.structured_state.runtime.discovered_locations:
+                    state.structured_state.runtime.discovered_locations.append(location.id)
+                    world_updates += 1
+        merged_npcs = self._recalibration_merge_duplicate_npcs(state, scene_state)
+        state.structured_state.runtime.spellbook = self.engine.state_orchestrator._normalize_spellbook(
+            state.structured_state.runtime.spellbook
+        )
+        print(f"[recalibration] abilities_synced={abilities_synced}")
+        print(f"[recalibration] world_updates={world_updates}")
+        print("[recalibration] complete")
+        self.save_active_campaign(self.session.active_slot)
+        return {
+            "ok": True,
+            "npc_created": npc_created_names,
+            "abilities_synced": abilities_synced,
+            "world_updates": world_updates,
+            "npc_merged": merged_npcs,
+        }
+
     def get_inventory_state(self) -> dict[str, Any]:
         runtime = self.session.state.structured_state.runtime
         if not runtime.inventory_state:
@@ -3114,6 +3304,10 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     @app.get("/api/campaign/world-building")
     def campaign_world_building() -> dict[str, Any]:
         return {"world_building": runtime.get_world_building_view()}
+
+    @app.post("/api/campaign/recalibrate")
+    def campaign_recalibrate() -> dict[str, Any]:
+        return runtime.recalibrate_campaign_state(runtime.session.state)
 
     @app.get("/api/campaign/debug/narrator-packet")
     def campaign_narrator_packet() -> dict[str, Any]:
