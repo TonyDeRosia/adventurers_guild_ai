@@ -779,6 +779,21 @@ class _NamedIntroProvider(NarrationModelAdapter):
         return 'The woman meets your gaze and says, "My name is Eira."'
 
 
+class _GuardThenNamedProvider(NarrationModelAdapter):
+    provider_name = "ollama"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def generate(self, prompt: str, system_prompt: str = "", history=None) -> str:
+        self.calls += 1
+        if self.calls == 1:
+            return "A guard blocks the path and studies you in silence."
+        if self.calls == 2:
+            return 'The guard lifts his chin. "I am Gravell."'
+        return "The guard stays measured, watching for your intent before speaking again."
+
+
 def test_turn_fallback_is_clean_when_provider_fails(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _FailingProvider()
@@ -1081,6 +1096,43 @@ def test_named_npc_intro_persists_across_turns_and_save_reload(tmp_path: Path, m
     assert reloaded_eira.personality_profile is not None
 
 
+def test_alias_resolution_maps_guard_label_back_to_named_npc(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _GuardThenNamedProvider()
+    runtime.handle_player_input("look")
+    runtime.handle_player_input('i say "who are you?"')
+    runtime.handle_player_input('i say "guard, answer me."')
+
+    state = runtime.session.state
+    gravell_entries = [npc for npc in state.npcs.values() if npc.name == "Gravell"]
+    assert len(gravell_entries) == 1
+    assert not any(npc.name.lower() == "guard" for npc in state.npcs.values())
+    scene_state = state.structured_state.runtime.scene_state
+    guard_actor = next(
+        (
+            actor
+            for actor in scene_state.get("scene_actors", [])
+            if isinstance(actor, dict) and str(actor.get("short_label", "")).strip().lower() == "guard"
+        ),
+        None,
+    )
+    assert guard_actor is not None
+    assert str(guard_actor.get("linked_npc_id", "")).strip() == gravell_entries[0].id
+
+
+def test_unnamed_actor_name_reveal_updates_same_entity_instead_of_duplicate(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _GuardThenNamedProvider()
+    runtime.handle_player_input("look")
+    scene_state = runtime.session.state.structured_state.runtime.scene_state
+    assert any(str(actor.get("short_label", "")).strip().lower() == "guard" for actor in scene_state.get("scene_actors", []))
+
+    runtime.handle_player_input('i say "state your name."')
+    names = sorted(npc.name for npc in runtime.session.state.npcs.values())
+    assert names.count("Gravell") == 1
+    assert "Guard" not in names
+
+
 def test_sanitized_grounded_output_is_kept_without_quality_fallback(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _SanitizedButGroundedProvider()
@@ -1130,6 +1182,19 @@ def test_turn_prompt_uses_separated_gm_brief_sections(tmp_path: Path, monkeypatc
     assert "[RECENT CONSEQUENCES]" in prompt
     assert "[NARRATOR RULES]" in prompt
     assert "[WRITING INSTRUCTIONS]" in prompt
+
+
+def test_turn_prompt_includes_identity_continuity_guidance_for_npcs(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    capture = _PromptCaptureProvider()
+    runtime.engine.model = _NamedIntroProvider()
+    runtime.handle_player_input('i say "who are you?"')
+    runtime.engine.model = capture
+    runtime.handle_player_input('i say "the stranger should answer."')
+    prompt = capture.last_prompt
+    assert "reuse established NPC names once introduced" in prompt
+    assert "Do not rename existing NPCs" in prompt
+    assert "Generic references" in prompt
 
 
 def test_turn_prompt_keeps_npcs_and_enemies_in_separate_sections(tmp_path: Path, monkeypatch) -> None:

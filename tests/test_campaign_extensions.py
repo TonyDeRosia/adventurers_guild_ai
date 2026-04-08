@@ -673,6 +673,18 @@ def test_prompt_renderer_npc_and_enemy_blocks_are_compact_and_behavioral() -> No
     assert "tactical posture" in prompt
 
 
+def test_structured_turn_context_npc_summary_includes_name_role_and_traits() -> None:
+    state = load_state()
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+    scene_state = engine._ensure_scene_state(state)
+    context = engine._build_structured_turn_context(state, "talk elder_thorne", scene_state)
+    assert context.npc_states
+    first = context.npc_states[0]
+    assert ":" in first
+    assert "role " in first
+    assert "personality " in first
+
+
 def test_scene_state_tracks_and_persists_npc_conditions() -> None:
     state = load_state()
     engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))

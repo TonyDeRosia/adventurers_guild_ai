@@ -183,8 +183,14 @@ class NPCPersonalitySystem:
             profile = npc.personality_profile or self.generate_profile(npc_name=npc.name)
             player_stance = self._describe_player_stance(npc)
             behavior_note = self._build_behavior_note(profile, player_stance)
+            role_label = (
+                (npc.personality_nodes.role if npc.personality_nodes and npc.personality_nodes.role else "")
+                or profile.archetype
+                or npc.personality_archetype
+                or "local actor"
+            )
             guidance.append(
-                f"{npc.name}: {profile.archetype}; {profile.baseline_temperament}, {profile.social_style}, "
+                f"{npc.name}: role {role_label}; traits {profile.baseline_temperament}, {profile.social_style}, "
                 f"{profile.confidence_fear_tendency}, {profile.moral_leaning}. Speaks in a {profile.conversational_tone} register. "
                 f"Driven by {profile.motivations}. Emotional baseline: {profile.emotional_baseline}. "
                 f"Under stress: {profile.stress_response}. In conflict: {profile.conflict_response}. "
