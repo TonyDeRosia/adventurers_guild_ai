@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
+from engine.character_sheets import CharacterSheet, CharacterSheetClassicAttributes, CharacterSheetStats
 from engine.entities import CampaignSceneState, CampaignState
 
 
@@ -15,6 +16,7 @@ class CampaignStateOrchestrator:
 
     def ensure_initialized(self, state: CampaignState) -> None:
         structured = state.structured_state
+        self._ensure_main_character_sheet(state)
         if not structured.canon.campaign_premise:
             structured.canon.campaign_premise = state.world_meta.premise
         if not structured.canon.character_sheet_ids and state.character_sheets:
@@ -155,6 +157,8 @@ class CampaignStateOrchestrator:
         return (
             "[Authoritative Campaign State]\n"
             "Treat the structured campaign state below as source-of-truth over stylistic improvisation.\n"
+            "Player capabilities must respect the character sheet unless learning mode is enabled.\n"
+            "Do not treat player self-claims about stats/rank as canon unless validated by this state.\n"
             f"Canon: {asdict(structured.canon)}\n"
             f"Runtime: {{'player_core': {structured.runtime.player_core}, 'inventory': {structured.runtime.inventory}, "
             f"'inventory_state': {structured.runtime.inventory_state}, 'equipment': {structured.runtime.equipment}, 'spellbook': {structured.runtime.spellbook}, "
@@ -209,6 +213,43 @@ class CampaignStateOrchestrator:
             "currency": {"gold": 0, "silver": 0, "copper": 0},
             "equipped": {"equipped_item_id": state.player.equipped_item_id},
         }
+
+    def _ensure_main_character_sheet(self, state: CampaignState) -> None:
+        main_sheet = next((sheet for sheet in state.character_sheets if sheet.sheet_type == "main_character"), None)
+        if main_sheet is not None:
+            return
+        auto_sheet = CharacterSheet(
+            id=f"sheet_auto_{state.player.id}",
+            name=state.player.name or "Player",
+            sheet_type="main_character",
+            role=state.player.char_class,
+            level_or_rank=str(state.player.level),
+            description="Auto-generated from runtime player state.",
+            stats=CharacterSheetStats(
+                health=state.player.max_hp or state.player.hp,
+                energy_or_mana=state.player.energy_or_mana,
+                attack=state.player.attack_bonus,
+                defense=state.player.defense,
+                speed=state.player.speed,
+                magic=state.player.magic,
+                willpower=state.player.willpower,
+                presence=state.player.presence,
+            ),
+            classic_attributes=CharacterSheetClassicAttributes(
+                strength=state.player.strength,
+                dexterity=state.player.agility,
+                constitution=state.player.vitality,
+                intelligence=state.player.intellect,
+                wisdom=state.player.willpower,
+                charisma=state.player.presence,
+            ),
+            abilities=[str(entry.get("name", "")).strip() for entry in state.structured_state.runtime.spellbook if isinstance(entry, dict)],
+            equipment=list(state.player.inventory),
+            notes="Created automatically because no main character sheet was provided.",
+        )
+        auto_sheet.abilities = [name for name in auto_sheet.abilities if name]
+        state.character_sheets.append(auto_sheet)
+        print(f"[character-sheets] auto_created_main_sheet=true id={auto_sheet.id}")
 
     def _normalize_spellbook(self, raw_entries: list[dict[str, object]] | list[object]) -> list[dict[str, object]]:
         normalized: list[dict[str, object]] = []

@@ -453,19 +453,26 @@ class PromptRenderer:
         narration_mode = state.settings.play_style.narration_format_mode
         strict_sheet = state.settings.play_style.strict_sheet_enforcement
         freeform = state.settings.play_style.allow_freeform_powers
+        auto_update = state.settings.play_style.auto_update_character_sheet_from_actions
         mode_instruction = {
             "compact": "Prefer shorter, tighter narration with minimal flourish and rapid turn pacing.",
             "dialogue_focused": "Prioritize character dialogue and conversational exchange while still resolving action consequences.",
             "book": "Use immersive prose-first narration with descriptive scene transitions.",
         }.get(narration_mode, "Use immersive prose-first narration with descriptive scene transitions.")
         sheet_instruction = (
-            "When powers are used, treat only abilities already present in structured character sheet/spellbook as authoritative."
+            "When powers are used, treat only abilities already present in structured character sheet/spellbook as authoritative. "
+            "If an ability is unknown in strict mode, portray it as unstable, weaker, or risky unless it becomes learned through successful play."
             if strict_sheet
             else (
                 "Allow creative freeform actions and powers, grounding outcomes in campaign truth and continuity."
                 if freeform
                 else "Allow actions not explicitly listed, but mark outcomes cautiously and keep continuity grounded."
             )
+        )
+        learning_instruction = (
+            "Learning mode is enabled: successful new actions may be promoted into permanent abilities."
+            if auto_update
+            else "Learning mode is disabled: do not promote new actions into permanent abilities."
         )
         return (
             "Write natural, expressive scene prose using the structured facts above as truth.\n"
@@ -482,6 +489,7 @@ class PromptRenderer:
             "Keep output compact (usually 1-4 short paragraphs) and end on a clean handoff to player agency.\n"
             f"{mode_instruction}\n"
             f"{sheet_instruction}\n"
+            f"{learning_instruction}\n"
             "Do not suggest actions, next steps, or recommendations unless the player explicitly asked for guidance.\n"
             + (
                 "Guidance was explicitly requested this turn; recommendations are allowed."
