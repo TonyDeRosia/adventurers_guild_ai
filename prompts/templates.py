@@ -50,11 +50,21 @@ WORLD_META_TEMPLATE = (
 TURN_TEMPLATE = """[Requested Mode]
 {requested_mode}
 
+[Current Action Priority]
+{current_action_priority}
+
+[Turn Resolution Order]
+{turn_resolution_order}
+
+[Structured Turn Context]
+{structured_turn_context}
+
 [Conversation Context]
 Recent chat turns: {recent_conversation}
 
 [Memory Context]
-Recent memory: {recent_memory}
+Recent memory summary: {recent_memory_summary}
+Recent consequences: {recent_consequences_summary}
 Long-term memory: {long_term_memory}
 Session summaries: {session_summaries}
 Unresolved plot threads: {plot_threads}

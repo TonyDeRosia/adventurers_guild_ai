@@ -27,6 +27,18 @@ class PromptPacket:
     turn_prompt: str
 
 
+@dataclass
+class TurnPromptContext:
+    current_player_action: str
+    scene_location: str
+    active_participants: list[str]
+    npc_states: list[str]
+    environment_state: list[str]
+    unresolved_threats: list[str]
+    recent_consequences: list[str]
+    narrator_rules: list[str]
+
+
 class PromptRenderer:
     def __init__(self) -> None:
         self.sheet_formatter = CharacterSheetPromptFormatter()
@@ -99,12 +111,12 @@ class PromptRenderer:
         character_sheet_guidance: list[str] | None = None,
         gm_context: str = "",
         scene_state_summary: str = "",
+        turn_context: TurnPromptContext | None = None,
+        enforce_action_priority: bool = True,
+        retry_action_priority: bool = False,
     ) -> str:
         recent = " | ".join(state.event_log[-4:]) if state.event_log else "No significant events yet"
-        recent_conversation = " | ".join(
-            f"You: {turn.player_input} || Narrator: {turn.narrator_response}"
-            for turn in state.conversation_turns[-3:]
-        )
+        recent_conversation = self._summarize_recent_conversation(state)
         active_quest_count = sum(1 for quest in state.quests.values() if quest.status == "active")
         flags = ", ".join(k for k, v in sorted(state.world_flags.items()) if v) or "none"
         nearby_npcs = [
@@ -133,10 +145,25 @@ class PromptRenderer:
             if character_sheet_guidance
             else "[Character Sheet Guidance]\nnone"
         )
+        structured_turn_context = self._format_turn_context(turn_context, action, location_summary)
+        current_action_priority = self._build_current_action_priority_block(
+            action,
+            enforce_action_priority=enforce_action_priority,
+            retry_action_priority=retry_action_priority,
+        )
         return TURN_TEMPLATE.format(
             requested_mode=requested_mode,
             recent_conversation=recent_conversation or "none",
-            recent_memory=" | ".join(memory.recent_memory) if memory.recent_memory else "none",
+            current_action_priority=current_action_priority,
+            turn_resolution_order=(
+                "1) Resolve the current player action immediately. "
+                "2) Identify direct targets and effects. "
+                "3) Update NPC/environment state with concrete consequences. "
+                "4) Narrate the resulting moment with concise flavor."
+            ),
+            structured_turn_context=structured_turn_context,
+            recent_memory_summary=self._summarize_recent_memory(memory),
+            recent_consequences_summary=self._summarize_recent_consequences(memory),
             long_term_memory=" | ".join(memory.long_term_memory) if memory.long_term_memory else "none",
             session_summaries=" | ".join(memory.session_summaries) if memory.session_summaries else "none",
             plot_threads=" | ".join(memory.unresolved_plot_threads) if memory.unresolved_plot_threads else "none",
@@ -161,6 +188,61 @@ class PromptRenderer:
             gm_context=gm_context or "none",
         )
 
+    def _build_current_action_priority_block(self, action: str, *, enforce_action_priority: bool, retry_action_priority: bool) -> str:
+        if not enforce_action_priority:
+            return f"Current player action: {action}"
+        retry_suffix = (
+            " This is a retry because a prior draft failed action resolution; resolve this action explicitly before any atmosphere."
+            if retry_action_priority
+            else ""
+        )
+        return (
+            "CURRENT PLAYER ACTION - HIGHEST PRIORITY\n"
+            f"Action: {action}\n"
+            "This exact action must be resolved now.\n"
+            "Do not replace it with earlier actions or prior narration.\n"
+            "Do not ignore it.\n"
+            "Resolve this action first, then narrate consequences."
+            + retry_suffix
+        )
+
+    def _summarize_recent_conversation(self, state: CampaignState) -> str:
+        snippets: list[str] = []
+        for turn in state.conversation_turns[-3:]:
+            user_text = turn.player_input.strip()
+            if not user_text:
+                continue
+            narrator_preview = turn.narrator_response.strip()
+            narrator_preview = narrator_preview.split(".")[0][:100].strip() if narrator_preview else "no narrator line"
+            snippets.append(f"You: {user_text} || Result: {narrator_preview or 'no narrator line'}")
+        return " | ".join(snippets) if snippets else "none"
+
+    def _summarize_recent_memory(self, memory: RetrievedMemory) -> str:
+        if not memory.recent_memory:
+            return "none"
+        return " | ".join(memory.recent_memory[-3:])
+
+    def _summarize_recent_consequences(self, memory: RetrievedMemory) -> str:
+        consequence_like = [item for item in memory.recent_memory if item.lower().startswith("narrator:") or "damage" in item.lower() or "quest" in item.lower()]
+        if not consequence_like:
+            return "none"
+        return " | ".join(consequence_like[-3:])
+
+    def _format_turn_context(self, context: TurnPromptContext | None, action: str, location_summary: str) -> str:
+        if context is None:
+            return f"- current_player_action: {action}\n- scene_location: {location_summary}\n- active_participants: none"
+        lines = [
+            f"- current_player_action: {context.current_player_action or action}",
+            f"- scene_location: {context.scene_location or location_summary}",
+            f"- active_participants: {', '.join(context.active_participants) if context.active_participants else 'none'}",
+            f"- npc_states: {'; '.join(context.npc_states) if context.npc_states else 'none'}",
+            f"- environment_state: {'; '.join(context.environment_state) if context.environment_state else 'none'}",
+            f"- unresolved_threats: {'; '.join(context.unresolved_threats) if context.unresolved_threats else 'none'}",
+            f"- recent_consequences: {'; '.join(context.recent_consequences) if context.recent_consequences else 'none'}",
+            f"- narrator_rules: {'; '.join(context.narrator_rules) if context.narrator_rules else 'none'}",
+        ]
+        return "\n".join(lines)
+
     def build_prompt_packet(
         self,
         state: CampaignState,
@@ -173,6 +255,8 @@ class PromptRenderer:
         npc_guidance: list[str] | None = None,
         gm_context: str = "",
         scene_state_summary: str = "",
+        turn_context: TurnPromptContext | None = None,
+        retry_action_priority: bool = False,
     ) -> PromptPacket:
         sheet_guidance = self.sheet_formatter.build_guidance_blocks(
             state.character_sheets,
@@ -202,5 +286,7 @@ class PromptRenderer:
                 character_sheet_guidance=sheet_guidance,
                 gm_context=gm_context_text,
                 scene_state_summary=scene_state_summary,
+                turn_context=turn_context,
+                retry_action_priority=retry_action_priority,
             ),
         )
