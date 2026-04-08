@@ -1842,7 +1842,6 @@ class WebRuntime:
                 "narration_tone": state.settings.narration_tone,
                 "mature_content_enabled": state.settings.mature_content_enabled,
                 "image_generation_enabled": state.settings.image_generation_enabled,
-                "campaign_auto_visuals_enabled": state.settings.campaign_auto_visuals_enabled,
                 "suggested_moves_enabled": state.settings.suggested_moves_enabled,
                 "display_mode": state.settings.display_mode,
                 "player_suggested_moves_override": state.settings.player_suggested_moves_override,
@@ -2509,10 +2508,7 @@ class WebRuntime:
         request_received_at = datetime.now(timezone.utc).isoformat()
         model_status = self.get_model_status()
         visual_mode = self._normalize_scene_visual_mode(self.session.state.settings.play_style.scene_visual_mode)
-        auto_enabled = bool(self.session.state.settings.campaign_auto_visuals_enabled) and visual_mode in {
-            "before_narration",
-            "after_narration",
-        }
+        auto_enabled = visual_mode in {"before_narration", "after_narration"}
         image_generation_enabled = bool(self.session.state.settings.image_generation_enabled)
         suggested_moves_enabled = bool(self.session.state.settings.suggested_moves_active())
         auto_timing = visual_mode if visual_mode in {"before_narration", "after_narration"} else "off"
@@ -2791,9 +2787,6 @@ class WebRuntime:
         requested = {
             "campaign": self.session.active_slot,
             "image_generation_enabled": bool(payload.get("image_generation_enabled", settings.image_generation_enabled)),
-            "campaign_auto_visuals_enabled": bool(
-                payload.get("campaign_auto_visuals_enabled", settings.campaign_auto_visuals_enabled)
-            ),
             "suggested_moves_enabled": bool(payload.get("suggested_moves_enabled", settings.suggested_moves_enabled)),
             "player_suggested_moves_override": payload.get("player_suggested_moves_override", settings.player_suggested_moves_override),
         }
@@ -2802,9 +2795,6 @@ class WebRuntime:
         settings.narration_tone = str(payload.get("narration_tone", settings.narration_tone))
         settings.mature_content_enabled = bool(payload.get("mature_content_enabled", settings.mature_content_enabled))
         settings.image_generation_enabled = bool(payload.get("image_generation_enabled", settings.image_generation_enabled))
-        settings.campaign_auto_visuals_enabled = bool(
-            payload.get("campaign_auto_visuals_enabled", settings.campaign_auto_visuals_enabled)
-        )
         settings.suggested_moves_enabled = bool(payload.get("suggested_moves_enabled", settings.suggested_moves_enabled))
         requested_display_mode = str(payload.get("display_mode", settings.display_mode)).strip().lower()
         if requested_display_mode in {"story", "mud", "rpg"}:
@@ -2819,6 +2809,9 @@ class WebRuntime:
         )
         play_style = payload.get("play_style", {})
         requested_scene_visual_mode = play_style.get("scene_visual_mode") if isinstance(play_style, dict) else None
+        legacy_auto_visuals_enabled = payload.get("campaign_auto_visuals_enabled")
+        if requested_scene_visual_mode is None and legacy_auto_visuals_enabled is not None:
+            requested_scene_visual_mode = "after_narration" if bool(legacy_auto_visuals_enabled) else "manual"
         settings.play_style = CampaignSettings.PlayStyleSettings(
             allow_freeform_powers=bool(
                 play_style.get("allow_freeform_powers", settings.play_style.allow_freeform_powers)
@@ -2850,16 +2843,16 @@ class WebRuntime:
                 play_style.get("scene_visual_mode", settings.play_style.scene_visual_mode)
             ),
         )
-        if requested_scene_visual_mode is not None:
-            settings.campaign_auto_visuals_enabled = settings.play_style.scene_visual_mode in {"before_narration", "after_narration"}
         self.save_active_campaign(self.session.active_slot)
-        print(f"[settings] persisted_auto_visuals={str(settings.campaign_auto_visuals_enabled).lower()}")
-        print(f"[settings] runtime_auto_visuals={str(self.session.state.settings.campaign_auto_visuals_enabled).lower()}")
+        print(
+            "[settings] persisted_scene_visual_mode="
+            f"{self._normalize_scene_visual_mode(settings.play_style.scene_visual_mode)}"
+        )
         serialized = self.serialize_state()["settings"]
         print(
             "[campaign-settings] apply succeeded "
             f"campaign={self.session.active_slot} suggested_moves={str(serialized['effective_suggested_moves_enabled']).lower()} "
-            f"auto_visuals={str(serialized['campaign_auto_visuals_enabled']).lower()} "
+            f"scene_visual_mode={serialized['play_style']['scene_visual_mode']} "
             f"image_generation={str(serialized['image_generation_enabled']).lower()}"
         )
         return serialized

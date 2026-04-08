@@ -135,7 +135,6 @@ class GameStateManager:
         clean_display_mode = str(display_mode or "story").strip().lower()
         new_payload["settings"]["display_mode"] = clean_display_mode if clean_display_mode in {"story", "mud", "rpg"} else "story"
         new_payload["settings"]["image_generation_enabled"] = True
-        new_payload["settings"]["campaign_auto_visuals_enabled"] = True
         new_payload["settings"]["player_suggested_moves_override"] = None
         new_payload["settings"]["play_style"] = {
             "allow_freeform_powers": True,
@@ -150,7 +149,7 @@ class GameStateManager:
         }
         print(
             "[settings-defaults] new_campaign_defaults "
-            "manual=true auto=true timing=after_narration suggested_moves=false"
+            "manual=true scene_visual_mode=after_narration suggested_moves=false"
         )
         if not content_settings_enabled:
             new_payload["settings"]["content_settings"] = {

@@ -172,7 +172,6 @@ class CampaignSettings:
     mature_content_enabled: bool = False
     narration_tone: str = "heroic"
     image_generation_enabled: bool = True
-    campaign_auto_visuals_enabled: bool = True
     suggested_moves_enabled: bool = False
     display_mode: str = "story"
     player_suggested_moves_override: bool | None = None
@@ -489,7 +488,6 @@ class CampaignState:
         play_style = CampaignState._play_style_from_payload(raw_play_style, settings)
         settings["play_style"] = play_style
         settings["image_generation_enabled"] = bool(settings.get("image_generation_enabled", True))
-        settings["campaign_auto_visuals_enabled"] = bool(settings.get("campaign_auto_visuals_enabled", True))
         settings["suggested_moves_enabled"] = bool(settings.get("suggested_moves_enabled", False))
         raw_display_mode = str(settings.get("display_mode", "story")).strip().lower()
         settings["display_mode"] = raw_display_mode if raw_display_mode in {"story", "mud", "rpg"} else "story"
@@ -505,8 +503,11 @@ class CampaignState:
             narration_mode = "book"
         visual_mode = str(source.get("scene_visual_mode", "")).strip().lower()
         if visual_mode not in {"off", "manual", "before_narration", "after_narration"}:
-            campaign_auto_visuals_enabled = bool(settings.get("campaign_auto_visuals_enabled", True))
-            visual_mode = "after_narration" if campaign_auto_visuals_enabled else "manual"
+            legacy_auto_visuals = settings.get("campaign_auto_visuals_enabled")
+            if legacy_auto_visuals is None:
+                visual_mode = "after_narration"
+            else:
+                visual_mode = "after_narration" if bool(legacy_auto_visuals) else "manual"
         return CampaignSettings.PlayStyleSettings(
             allow_freeform_powers=bool(source.get("allow_freeform_powers", True)),
             auto_update_character_sheet_from_actions=bool(source.get("auto_update_character_sheet_from_actions", True)),

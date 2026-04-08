@@ -48,8 +48,6 @@ class SaveManager:
             if not isinstance(raw_settings, dict):
                 raw_settings = {}
             missing_fields: list[str] = []
-            if "campaign_auto_visuals_enabled" not in raw_settings:
-                missing_fields.append("campaign_auto_visuals_enabled")
             if "suggested_moves_enabled" not in raw_settings:
                 missing_fields.append("suggested_moves_enabled")
             print(f"[settings-defaults] existing_campaign_preserved=true campaign={slot}")

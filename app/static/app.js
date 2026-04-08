@@ -33,8 +33,6 @@ const checkpointSourceInput = document.getElementById('checkpoint-source');
 const preferredCheckpointInput = document.getElementById('preferred-checkpoint');
 const preferredLauncherInput = document.getElementById('preferred-launcher');
 const manualImageEnabledInput = document.getElementById('manual-image-enabled');
-const campaignAutoVisualsEnabledInput = document.getElementById('campaign-auto-visuals-enabled');
-const campaignAutoVisualTimingInput = document.getElementById('campaign-auto-visual-timing');
 const suggestedMovesToggleInput = document.getElementById('suggested-moves-toggle');
 const allowFreeformPowersInput = document.getElementById('allow-freeform-powers');
 const autoUpdateSheetFromActionsInput = document.getElementById('auto-update-sheet-from-actions');
@@ -193,14 +191,6 @@ function actionTitle(actionId) {
   }[actionId] || actionId;
 }
 
-function normalizeCampaignAutoVisualTiming(mode) {
-  const clean = String(mode || '').trim().toLowerCase();
-  if (clean === 'auto_before' || clean === 'auto_before_narration') return 'before_narration';
-  if (clean === 'auto_after' || clean === 'auto_after_narration') return 'after_narration';
-  if (['off', 'before_narration', 'after_narration'].includes(clean)) return clean;
-  return 'off';
-}
-
 function normalizeNarrationFormatMode(mode) {
   const clean = String(mode || '').trim().toLowerCase();
   return ['book', 'compact', 'dialogue_focused'].includes(clean) ? clean : 'book';
@@ -227,13 +217,9 @@ function playStyleSnapshotFromUi() {
 
 function campaignSettingsSnapshotFromUi() {
   const playStyle = playStyleSnapshotFromUi();
-  const derivedAutoVisualsEnabled = ['before_narration', 'after_narration'].includes(playStyle.scene_visual_mode);
-  const derivedTiming = derivedAutoVisualsEnabled ? playStyle.scene_visual_mode : 'off';
   return {
     image_generation_enabled: !!document.getElementById('image-enabled')?.checked,
-    campaign_auto_visuals_enabled: derivedAutoVisualsEnabled,
     suggested_moves_enabled: !!suggestedMovesToggleInput?.checked,
-    campaign_auto_visual_timing: normalizeCampaignAutoVisualTiming(derivedTiming),
     play_style: playStyle,
   };
 }
@@ -242,9 +228,7 @@ function campaignSettingsEqual(left, right) {
   if (!left || !right) return false;
   return (
     !!left.image_generation_enabled === !!right.image_generation_enabled
-    && !!left.campaign_auto_visuals_enabled === !!right.campaign_auto_visuals_enabled
     && !!left.suggested_moves_enabled === !!right.suggested_moves_enabled
-    && normalizeCampaignAutoVisualTiming(left.campaign_auto_visual_timing) === normalizeCampaignAutoVisualTiming(right.campaign_auto_visual_timing)
     && normalizeNarrationFormatMode(left.play_style?.narration_format_mode) === normalizeNarrationFormatMode(right.play_style?.narration_format_mode)
     && normalizeSceneVisualMode(left.play_style?.scene_visual_mode) === normalizeSceneVisualMode(right.play_style?.scene_visual_mode)
     && !!left.play_style?.allow_freeform_powers === !!right.play_style?.allow_freeform_powers
@@ -298,9 +282,6 @@ function queueAutoApplyCampaignSettings() {
 function applyCampaignSettingsToUi(snapshot) {
   if (!snapshot) return;
   document.getElementById('image-enabled').checked = !!snapshot.image_generation_enabled;
-  if (campaignAutoVisualsEnabledInput) {
-    campaignAutoVisualsEnabledInput.checked = !!snapshot.campaign_auto_visuals_enabled;
-  }
   if (suggestedMovesToggleInput) {
     suggestedMovesToggleInput.checked = !!snapshot.suggested_moves_enabled;
   }
@@ -319,25 +300,13 @@ function applyCampaignSettingsToUi(snapshot) {
   if (reactiveWorldPersistenceInput) reactiveWorldPersistenceInput.checked = !!snapshot.play_style?.reactive_world_persistence;
   if (narrationFormatModeInput) narrationFormatModeInput.value = normalizeNarrationFormatMode(snapshot.play_style?.narration_format_mode);
   if (sceneVisualModeInput) sceneVisualModeInput.value = normalizeSceneVisualMode(snapshot.play_style?.scene_visual_mode);
-  if (campaignAutoVisualTimingInput) {
-    campaignAutoVisualTimingInput.value = normalizeCampaignAutoVisualTiming(snapshot.campaign_auto_visual_timing || 'off');
-  }
-  if (campaignAutoVisualsEnabledInput) {
-    campaignAutoVisualsEnabledInput.checked = !!snapshot.campaign_auto_visuals_enabled;
-  }
-  syncVisualModeUi({
-    manualEnabled: !!(manualImageEnabledInput?.checked),
-    autoEnabled: !!(campaignAutoVisualsEnabledInput?.checked),
-    autoTiming: campaignAutoVisualTimingInput?.value || 'off',
-  });
+  syncVisualModeUi({ manualEnabled: !!(manualImageEnabledInput?.checked) });
 }
 
 function ingestPersistedCampaignSettings(snapshot, slot, { forceUi = false } = {}) {
   const normalized = {
     image_generation_enabled: !!snapshot.image_generation_enabled,
-    campaign_auto_visuals_enabled: !!snapshot.campaign_auto_visuals_enabled,
     suggested_moves_enabled: !!snapshot.suggested_moves_enabled,
-    campaign_auto_visual_timing: normalizeCampaignAutoVisualTiming(snapshot.campaign_auto_visual_timing || 'off'),
     display_mode: normalizeDisplayMode(snapshot.display_mode || 'story'),
     play_style: {
       allow_freeform_powers: !!snapshot.play_style?.allow_freeform_powers,
@@ -360,13 +329,10 @@ function ingestPersistedCampaignSettings(snapshot, slot, { forceUi = false } = {
   updateCampaignDirtyState();
 }
 
-function syncVisualModeUi({ manualEnabled, autoEnabled, autoTiming }) {
+function syncVisualModeUi({ manualEnabled }) {
   if (manualImagePanel) {
     manualImagePanel.style.display = manualEnabled ? 'grid' : 'none';
   }
-  if (campaignAutoVisualTimingInput) campaignAutoVisualTimingInput.disabled = !autoEnabled;
-  if (campaignAutoVisualsEnabledInput) campaignAutoVisualsEnabledInput.checked = !!autoEnabled;
-  if (campaignAutoVisualTimingInput) campaignAutoVisualTimingInput.value = normalizeCampaignAutoVisualTiming(autoTiming || 'off');
 }
 
 function installTypeLabel(installType) {
@@ -1678,9 +1644,7 @@ async function refreshState() {
   ingestPersistedCampaignSettings(
     {
       image_generation_enabled: !!state.settings.image_generation_enabled,
-      campaign_auto_visuals_enabled: !!state.settings.campaign_auto_visuals_enabled,
       suggested_moves_enabled: !!state.settings.effective_suggested_moves_enabled,
-      campaign_auto_visual_timing: campaignSettingsPersisted?.campaign_auto_visual_timing || campaignAutoVisualTimingInput?.value || 'off',
       display_mode: normalizeDisplayMode(state.settings?.display_mode || 'story'),
       play_style: state.settings?.play_style || campaignSettingsPersisted?.play_style || playStyleSnapshotFromUi(),
     },
@@ -2194,7 +2158,6 @@ async function createCampaignFromForm() {
       thematic_flags: worldTheme ? [worldTheme.toLowerCase().replaceAll(' ', '_'), 'adventure'] : ['adventure', 'mystery'],
       display_mode: 'story',
       suggested_moves_enabled: !!document.getElementById('form-suggested-moves-enabled')?.checked,
-      campaign_auto_visuals_enabled: ['before_narration', 'after_narration'].includes(sceneVisualMode),
       play_style: playStyle,
       character_sheets: draftCharacterSheets,
       character_sheet_guidance_strength: document.getElementById('form-character-sheet-guidance-strength')?.value || 'light',
@@ -2264,8 +2227,9 @@ async function applySettings() {
     const suggestedMovesEnabled = !!suggestedMovesToggleInput?.checked;
     const manualImageEnabled = !!manualImageEnabledInput?.checked;
     const playStyle = playStyleSnapshotFromUi();
-    const campaignAutoVisualsEnabled = ['before_narration', 'after_narration'].includes(playStyle.scene_visual_mode);
-    const campaignAutoVisualTiming = campaignAutoVisualsEnabled ? playStyle.scene_visual_mode : 'off';
+    const campaignAutoVisualTiming = ['before_narration', 'after_narration'].includes(playStyle.scene_visual_mode)
+      ? playStyle.scene_visual_mode
+      : 'off';
     const settings = await api('/api/settings/global', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2288,7 +2252,6 @@ async function applySettings() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         image_generation_enabled: campaignImageEnabled,
-        campaign_auto_visuals_enabled: campaignAutoVisualsEnabled,
         suggested_moves_enabled: suggestedMovesEnabled,
         player_suggested_moves_override: suggestedMovesEnabled,
         play_style: playStyle,
@@ -2297,13 +2260,11 @@ async function applySettings() {
     await refreshDependencyReadiness();
     await refreshSupportedModels(false);
     await refreshComfyuiModelList();
-    syncVisualModeUi({ manualEnabled: manualImageEnabled, autoEnabled: campaignAutoVisualsEnabled, autoTiming: campaignAutoVisualTiming });
+    syncVisualModeUi({ manualEnabled: manualImageEnabled });
     ingestPersistedCampaignSettings(
       {
         image_generation_enabled: !!campaignSettings.settings?.image_generation_enabled,
-        campaign_auto_visuals_enabled: !!campaignSettings.settings?.campaign_auto_visuals_enabled,
         suggested_moves_enabled: !!campaignSettings.settings?.effective_suggested_moves_enabled,
-        campaign_auto_visual_timing: campaignAutoVisualTiming,
         play_style: campaignSettings.settings?.play_style || playStyle,
       },
       loadedSlot,
@@ -2375,10 +2336,6 @@ async function loadSettings() {
   document.getElementById('model-name').value = data.settings.model.model_name;
   document.getElementById('image-provider').value = data.settings.image.provider;
   if (manualImageEnabledInput) manualImageEnabledInput.checked = !!data.settings.image.manual_image_generation_enabled;
-  const loadedTiming = normalizeCampaignAutoVisualTiming(data.settings.image.campaign_auto_visual_timing || 'off');
-  if (campaignAutoVisualTimingInput) {
-    campaignAutoVisualTimingInput.value = loadedTiming;
-  }
   if (ollamaPathInput) ollamaPathInput.value = data.settings.model.ollama_path || '';
   if (comfyuiPathInput) comfyuiPathInput.value = data.settings.image.comfyui_path || '';
   if (comfyuiWorkflowPathInput) comfyuiWorkflowPathInput.value = data.settings.image.comfyui_workflow_path || '';
@@ -2396,18 +2353,12 @@ async function loadSettings() {
   ingestPersistedCampaignSettings(
     {
       image_generation_enabled: campaignSettingsPersisted?.image_generation_enabled ?? document.getElementById('image-enabled').checked,
-      campaign_auto_visuals_enabled: campaignSettingsPersisted?.campaign_auto_visuals_enabled ?? !!campaignAutoVisualsEnabledInput?.checked,
       suggested_moves_enabled: campaignSettingsPersisted?.suggested_moves_enabled ?? !!suggestedMovesToggleInput?.checked,
-      campaign_auto_visual_timing: loadedTiming,
       play_style: campaignSettingsPersisted?.play_style || playStyleSnapshotFromUi(),
     },
     loadedSlot,
   );
-  syncVisualModeUi({
-    manualEnabled: !!(manualImageEnabledInput?.checked),
-    autoEnabled: !!(campaignAutoVisualsEnabledInput?.checked),
-    autoTiming: campaignAutoVisualTimingInput?.value || 'off',
-  });
+  syncVisualModeUi({ manualEnabled: !!(manualImageEnabledInput?.checked) });
   const modelStatus = data.settings.model_status;
   if (modelStatus && modelStatus.provider === 'ollama' && !modelStatus.ready) {
     setStatus(modelStatus.user_message || 'Ollama provider is unavailable.', true);
@@ -2470,26 +2421,7 @@ document.getElementById('recheck-readiness').onclick = async () => {
   }
 };
 if (manualImageEnabledInput) {
-  manualImageEnabledInput.onchange = () => syncVisualModeUi({
-    manualEnabled: !!manualImageEnabledInput.checked,
-    autoEnabled: !!(campaignAutoVisualsEnabledInput?.checked),
-    autoTiming: campaignAutoVisualTimingInput?.value || 'off',
-  });
-}
-if (campaignAutoVisualsEnabledInput) {
-  campaignAutoVisualsEnabledInput.onchange = () => {
-    if (sceneVisualModeInput) {
-      sceneVisualModeInput.value = campaignAutoVisualsEnabledInput.checked ? 'after_narration' : 'manual';
-    }
-    const derivedSceneMode = normalizeSceneVisualMode(sceneVisualModeInput?.value || 'after_narration');
-    syncVisualModeUi({
-      manualEnabled: !!(manualImageEnabledInput?.checked),
-      autoEnabled: ['before_narration', 'after_narration'].includes(derivedSceneMode),
-      autoTiming: ['before_narration', 'after_narration'].includes(derivedSceneMode) ? derivedSceneMode : 'off',
-    });
-    updateCampaignDirtyState();
-    queueAutoApplyCampaignSettings();
-  };
+  manualImageEnabledInput.onchange = () => syncVisualModeUi({ manualEnabled: !!manualImageEnabledInput.checked });
 }
 [
   { field: 'comfyui_path', element: comfyuiPathInput },
@@ -2500,21 +2432,6 @@ if (campaignAutoVisualsEnabledInput) {
   if (!element) return;
   element.addEventListener('input', () => console.log(`[path-config] draft_updated field=${field}`));
 });
-if (campaignAutoVisualTimingInput) {
-  campaignAutoVisualTimingInput.onchange = () => {
-    if (sceneVisualModeInput) {
-      const timing = normalizeCampaignAutoVisualTiming(campaignAutoVisualTimingInput.value);
-      sceneVisualModeInput.value = timing === 'off' ? 'manual' : timing;
-    }
-    syncVisualModeUi({
-      manualEnabled: !!(manualImageEnabledInput?.checked),
-      autoEnabled: !!(campaignAutoVisualsEnabledInput?.checked),
-      autoTiming: campaignAutoVisualTimingInput.value,
-    });
-    updateCampaignDirtyState();
-    queueAutoApplyCampaignSettings();
-  };
-}
 if (suggestedMovesToggleInput) {
   suggestedMovesToggleInput.onchange = () => {
     updateCampaignDirtyState();
@@ -2539,15 +2456,7 @@ if (suggestedMovesToggleInput) {
 });
 if (sceneVisualModeInput) {
   sceneVisualModeInput.onchange = () => {
-    const mode = normalizeSceneVisualMode(sceneVisualModeInput.value);
-    const autoEnabled = ['before_narration', 'after_narration'].includes(mode);
-    if (campaignAutoVisualsEnabledInput) campaignAutoVisualsEnabledInput.checked = autoEnabled;
-    if (campaignAutoVisualTimingInput) campaignAutoVisualTimingInput.value = autoEnabled ? mode : 'off';
-    syncVisualModeUi({
-      manualEnabled: !!(manualImageEnabledInput?.checked),
-      autoEnabled,
-      autoTiming: autoEnabled ? mode : 'off',
-    });
+    syncVisualModeUi({ manualEnabled: !!(manualImageEnabledInput?.checked) });
     updateCampaignDirtyState();
     queueAutoApplyCampaignSettings();
   };
