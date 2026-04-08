@@ -106,6 +106,31 @@
               <option value="strong">Strong guidance</option>
             </select>
           </label>
+          <section class="campaign-play-style-group full-width">
+            <h4>Campaign Play Style</h4>
+            <label><input id="form-allow-freeform-powers" type="checkbox" checked /> Allow freeform powers/actions not yet on sheet</label>
+            <label><input id="form-auto-update-sheet-from-actions" type="checkbox" checked /> Auto-update character sheet from demonstrated actions</label>
+            <label><input id="form-strict-sheet-enforcement" type="checkbox" /> Strictly require sheet-listed powers</label>
+            <label><input id="form-auto-sync-player-identity" type="checkbox" checked /> Auto-sync player-declared identity/name/title</label>
+            <label><input id="form-auto-generate-npc-personalities" type="checkbox" checked /> Auto-generate NPC personalities</label>
+            <label><input id="form-auto-evolve-npc-personalities" type="checkbox" checked /> Auto-evolve NPC personalities over time</label>
+            <label><input id="form-reactive-world-persistence" type="checkbox" checked /> Persist reactive world consequences</label>
+            <label>Narration format
+              <select id="form-narration-format-mode">
+                <option value="book" selected>Book</option>
+                <option value="compact">Compact</option>
+                <option value="dialogue_focused">Dialogue focused</option>
+              </select>
+            </label>
+            <label>Scene visual mode
+              <select id="form-scene-visual-mode">
+                <option value="off">Off</option>
+                <option value="manual">Manual only</option>
+                <option value="before_narration">Before narration</option>
+                <option value="after_narration" selected>After narration</option>
+              </select>
+            </label>
+          </section>
           <div id="character-sheets-manager" class="character-sheets-manager hidden">
             <h4>Character Sheets Manager</h4>
             <div id="character-sheets-list" class="character-sheets-list">No sheets yet.</div>
@@ -385,6 +410,31 @@
             </select>
           </label>
           <label><input id="suggested-moves-toggle" type="checkbox" /> Show narrator suggested next moves</label>
+          <section class="campaign-play-style-group">
+            <h4>Campaign Rules &amp; Behavior</h4>
+            <label><input id="allow-freeform-powers" type="checkbox" /> Allow freeform powers/actions not yet on sheet</label>
+            <label><input id="auto-update-sheet-from-actions" type="checkbox" /> Auto-update character sheet from demonstrated actions</label>
+            <label><input id="strict-sheet-enforcement" type="checkbox" /> Strictly require sheet-listed powers</label>
+            <label><input id="auto-sync-player-identity" type="checkbox" /> Auto-sync player-declared identity/name/title</label>
+            <label><input id="auto-generate-npc-personalities" type="checkbox" /> Auto-generate NPC personalities</label>
+            <label><input id="auto-evolve-npc-personalities" type="checkbox" /> Auto-evolve NPC personalities over time</label>
+            <label><input id="reactive-world-persistence" type="checkbox" /> Persist reactive world consequences</label>
+            <label>Narration format
+              <select id="narration-format-mode">
+                <option value="book">Book</option>
+                <option value="compact">Compact</option>
+                <option value="dialogue_focused">Dialogue focused</option>
+              </select>
+            </label>
+            <label>Scene visual mode
+              <select id="scene-visual-mode">
+                <option value="off">Off</option>
+                <option value="manual">Manual only</option>
+                <option value="before_narration">Before narration</option>
+                <option value="after_narration">After narration</option>
+              </select>
+            </label>
+          </section>
           <div class="settings-status-row">
             <span id="campaign-settings-status" class="settings-status saved">Saved</span>
             <button id="cancel-settings" type="button">Cancel changes</button>
