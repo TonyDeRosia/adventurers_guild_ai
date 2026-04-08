@@ -17,6 +17,16 @@ def load_state() -> CampaignState:
     return CampaignState.from_dict(__import__("json").loads((root / "data" / "sample_campaign.json").read_text(encoding="utf-8")))
 
 
+class StaticNarrationAdapter(NarrationModelAdapter):
+    provider_name = "test"
+
+    def __init__(self, narrative: str) -> None:
+        self.narrative = narrative
+
+    def generate(self, prompt: str, system_prompt: str = "", history: list[object] | None = None) -> str:
+        return self.narrative
+
+
 def test_dialogue_branching_updates_quest_and_flags() -> None:
     state = load_state()
     engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
@@ -269,6 +279,56 @@ def test_campaign_creation_can_disable_content_settings() -> None:
     assert state.settings.content_settings.tone == "heroic"
     assert state.settings.content_settings.maturity_level == "standard"
     assert state.settings.content_settings.thematic_flags == []
+
+
+def test_new_ability_is_added_after_successful_use() -> None:
+    state = load_state()
+    state.settings.play_style.auto_update_character_sheet_from_actions = True
+    state.settings.play_style.strict_sheet_enforcement = True
+    engine = CampaignEngine(StaticNarrationAdapter("You cast rain spell and the storm answers immediately."), data_dir=Path("data"))
+
+    engine.run_turn(state, "cast rain spell")
+
+    names = [entry.get("name") for entry in state.structured_state.runtime.spellbook]
+    assert "Rain Spell" in names
+
+
+def test_learned_ability_persists_across_turns_and_prompt_injection() -> None:
+    state = load_state()
+    state.settings.play_style.auto_update_character_sheet_from_actions = True
+    engine = CampaignEngine(StaticNarrationAdapter("You cast rain spell and it succeeds."), data_dir=Path("data"))
+
+    engine.run_turn(state, "cast rain spell")
+    engine.run_turn(state, "look")
+
+    gm_context = engine.state_orchestrator.build_gm_context(state)
+    assert "Rain Spell" in gm_context
+    assert any(entry.get("name") == "Rain Spell" for entry in state.structured_state.runtime.spellbook)
+
+
+def test_duplicate_ability_entries_are_not_created() -> None:
+    state = load_state()
+    state.settings.play_style.auto_update_character_sheet_from_actions = True
+    engine = CampaignEngine(StaticNarrationAdapter("You cast rain spell and it works."), data_dir=Path("data"))
+
+    engine.run_turn(state, "cast rain spell")
+    engine.run_turn(state, "cast rain spell")
+
+    matches = [entry for entry in state.structured_state.runtime.spellbook if entry.get("name") == "Rain Spell"]
+    assert len(matches) == 1
+
+
+def test_strict_mode_recognizes_learned_abilities_after_learning() -> None:
+    state = load_state()
+    state.settings.play_style.auto_update_character_sheet_from_actions = True
+    state.settings.play_style.strict_sheet_enforcement = True
+    engine = CampaignEngine(StaticNarrationAdapter("You cast rain spell and it succeeds."), data_dir=Path("data"))
+
+    first = engine.run_turn(state, "cast rain spell")
+    second = engine.run_turn(state, "cast rain spell")
+
+    assert any("newly demonstrated" in msg.lower() for msg in first.system_messages)
+    assert not any("newly demonstrated" in msg.lower() for msg in second.system_messages)
 
 
 def test_main_character_guaranteed_loadout_initializes_runtime_spellbook() -> None:
