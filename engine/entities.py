@@ -267,6 +267,9 @@ class CampaignSceneState:
     scene_actors: list[dict[str, Any]] = field(default_factory=list)
     lightweight_npcs: list[dict[str, Any]] = field(default_factory=list)
     last_target_actor_id: str = ""
+    npc_conditions: dict[str, list[str]] = field(default_factory=dict)
+    enemy_conditions: dict[str, dict[str, Any]] = field(default_factory=dict)
+    environment_consequences: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -639,5 +642,20 @@ class CampaignState:
                 scene_actors=[dict(v) for v in state.get("scene_actors", []) if isinstance(v, dict)],
                 lightweight_npcs=[dict(v) for v in state.get("lightweight_npcs", []) if isinstance(v, dict)],
                 last_target_actor_id=str(state.get("last_target_actor_id", "")),
+                npc_conditions={
+                    str(npc_id): [str(item).strip() for item in values if str(item).strip()]
+                    for npc_id, values in (state.get("npc_conditions", {}) or {}).items()
+                    if isinstance(values, list)
+                },
+                enemy_conditions={
+                    str(enemy_id): {
+                        "conditions": [str(item).strip() for item in raw.get("conditions", []) if str(item).strip()],
+                        "behavior": str(raw.get("behavior", "")).strip(),
+                        "pressure": str(raw.get("pressure", "")).strip(),
+                    }
+                    for enemy_id, raw in (state.get("enemy_conditions", {}) or {}).items()
+                    if isinstance(raw, dict)
+                },
+                environment_consequences=[str(v).strip() for v in state.get("environment_consequences", []) if str(v).strip()],
             )
         )

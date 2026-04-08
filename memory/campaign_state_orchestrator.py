@@ -38,6 +38,9 @@ class CampaignStateOrchestrator:
         scene_state.setdefault("scene_actors", [])
         scene_state.setdefault("lightweight_npcs", [])
         scene_state.setdefault("last_target_actor_id", "")
+        scene_state.setdefault("npc_conditions", {})
+        scene_state.setdefault("enemy_conditions", {})
+        scene_state.setdefault("environment_consequences", [])
 
     def update_runtime_state(self, state: CampaignState, *, action: str, system_messages: list[str], narrative: str) -> dict[str, bool]:
         self.ensure_initialized(state)

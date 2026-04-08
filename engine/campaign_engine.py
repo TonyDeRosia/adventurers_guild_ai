@@ -64,6 +64,7 @@ class CampaignEngine:
             "altered_environment": 8,
             "active_effects": 6,
             "recent_consequences": 5,
+            "environment_consequences": 6,
         }
         self._filler_loop_phrases: tuple[str, ...] = (
             "eyes widening in alarm",
@@ -1152,13 +1153,23 @@ class CampaignEngine:
 
     def _build_structured_turn_context(self, state: CampaignState, action: str, scene_state: dict[str, Any]) -> TurnPromptContext:
         location = str(scene_state.get("location_name") or state.current_location_id or "unknown")
-        participants = [npc.name for npc in state.npcs.values() if npc.location_id == state.current_location_id]
+        npc_condition_map = scene_state.get("npc_conditions", {})
+        participants = [
+            npc.name
+            for npc_id, npc in state.npcs.items()
+            if npc.location_id == state.current_location_id and not self._is_resolved_condition_set(npc_condition_map.get(npc_id, []))
+        ]
         npc_states: list[str] = []
         for npc_id, npc in state.npcs.items():
             if npc.location_id != state.current_location_id:
                 continue
+            persistent_conditions = [str(v).strip() for v in npc_condition_map.get(npc_id, []) if str(v).strip()]
+            if self._is_resolved_condition_set(persistent_conditions):
+                continue
             eval_snapshot = self.personality.evaluate(state, npc_id, scene="dialogue")
             visible_condition = self._describe_npc_visible_condition(npc)
+            if persistent_conditions:
+                visible_condition = ", ".join([visible_condition, ", ".join(persistent_conditions[-3:])])
             relationship = f"{npc.relationship_tier} toward {state.player.name}"
             personality_summary = self._describe_npc_personality(npc)
             intent = self._describe_npc_intent(eval_snapshot)
@@ -1170,6 +1181,17 @@ class CampaignEngine:
         if not environment_state:
             environment_state = [str(scene_state.get("scene_summary", "")).strip()] if str(scene_state.get("scene_summary", "")).strip() else []
         unresolved_threats: list[str] = []
+        enemy_state_map = scene_state.get("enemy_conditions", {})
+        for enemy_id, payload in enemy_state_map.items():
+            if not isinstance(payload, dict):
+                continue
+            conditions = [str(v).strip() for v in payload.get("conditions", []) if str(v).strip()]
+            behavior = str(payload.get("behavior", "")).strip() or "unknown behavior"
+            pressure = str(payload.get("pressure", "")).strip() or "moderate"
+            if self._is_resolved_condition_set(conditions):
+                continue
+            enemy_name = self.content.get_enemy(enemy_id).name if self.content.get_enemy(enemy_id) else enemy_id
+            unresolved_threats.append(f"{enemy_name}: {', '.join(conditions[-3:]) or 'active'}, {behavior}, pressure {pressure}.")
         if state.active_enemy_id and (state.active_enemy_hp or 0) > 0:
             enemy = self.content.get_enemy(state.active_enemy_id)
             if enemy:
@@ -1281,6 +1303,9 @@ class CampaignEngine:
         scene_state.setdefault("scene_actors", [])
         scene_state.setdefault("lightweight_npcs", [])
         scene_state.setdefault("last_target_actor_id", "")
+        scene_state.setdefault("npc_conditions", {})
+        scene_state.setdefault("enemy_conditions", {})
+        scene_state.setdefault("environment_consequences", [])
         scene_state.setdefault("consecutive_repetition_count", 0)
         runtime.scene_state = scene_state
         return scene_state
@@ -1295,6 +1320,7 @@ class CampaignEngine:
             ("visible_entities", "Visible entities"),
             ("damaged_objects", "Damaged objects"),
             ("altered_environment", "Environment changes"),
+            ("environment_consequences", "Persistent consequences"),
             ("active_effects", "Active visible effects"),
             ("recent_consequences", "Recent consequences"),
         )
@@ -1335,12 +1361,19 @@ class CampaignEngine:
             extracted["damaged_objects"].append("cracked wall")
             extracted["altered_environment"].append("scorched stone")
             extracted["recent_consequences"].append("the wall is visibly damaged")
+            extracted["altered_environment"].append("burn marks on nearby surfaces")
         if "door" in lowered and re.search(r"\b(break|splinter|shatter|open)\w*", lowered):
             extracted["damaged_objects"].append("broken door")
             extracted["recent_consequences"].append("doorway opened")
         if "floor" in lowered and re.search(r"\b(frost|ice|frozen|slick)\w*", lowered):
             extracted["altered_environment"].append("frost-covered floor")
             extracted["recent_consequences"].append("the floor is slick with frost")
+        if re.search(r"\b(fire|flame|burn|blaze|inferno)\w*", lowered):
+            extracted["altered_environment"].append("fire is spreading through nearby cover")
+        if re.search(r"\b(frost|ice|freeze|rime)\w*", lowered):
+            extracted["altered_environment"].append("frost buildup is thickening across surfaces")
+        if re.search(r"\b(hazard|danger|unstable|collapsing)\w*", lowered):
+            extracted["altered_environment"].append("an active environmental hazard is present")
         if re.search(r"\b(radiant|holy|flare|nova|glow)\w*", lowered):
             extracted["active_effects"].append("radiant flare")
         return extracted
@@ -1363,9 +1396,117 @@ class CampaignEngine:
         if "floor" in lowered and any(token in lowered for token in ("ice", "frost", "freeze", "blast")):
             extracted["altered_environment"].append("frost-covered floor")
             extracted["recent_consequences"].append("the floor is slick with frost")
+        if any(token in lowered for token in ("fire", "flame", "burn", "ignite")):
+            extracted["altered_environment"].append("fire is spreading through nearby cover")
+        if any(token in lowered for token in ("frost", "freeze", "ice", "rime")):
+            extracted["altered_environment"].append("frost buildup is thickening across surfaces")
         if any(token in lowered for token in ("holy nova", "radiant", "radiance")):
             extracted["active_effects"].append("radiant flare")
         return extracted
+
+    def _is_resolved_condition_set(self, conditions: list[str]) -> bool:
+        resolved_markers = {"dead", "defeated", "resolved", "shattered", "incapacitated"}
+        return any(str(item).strip().lower() in resolved_markers for item in conditions)
+
+    def _merge_condition_list(self, current: list[str], incoming: list[str]) -> list[str]:
+        evolved = [str(v).strip().lower() for v in current if str(v).strip()]
+        for item in incoming:
+            normalized = str(item).strip().lower()
+            if not normalized:
+                continue
+            if normalized == "critical" and "injured" in evolved:
+                evolved = [entry for entry in evolved if entry != "injured"]
+            if normalized == "shattered" and "frozen" in evolved:
+                evolved = [entry for entry in evolved if entry != "frozen"]
+            if normalized in {"calmed", "steady"} and "panicking" in evolved:
+                evolved = [entry for entry in evolved if entry != "panicking"]
+            if normalized not in evolved:
+                evolved.append(normalized)
+        return evolved[-6:]
+
+    def _collect_condition_tags(self, text: str) -> list[str]:
+        lowered = text.lower()
+        condition_markers = (
+            ("frozen", ("frozen", "freeze", "icebound", "encased in ice")),
+            ("burning", ("burning", "on fire", "engulfed in flame", "scorched")),
+            ("injured", ("injured", "wounded", "bleeding", "hurt")),
+            ("critical", ("critical", "near defeat", "near collapse", "on the brink")),
+            ("weakened", ("weakened", "staggered", "drained")),
+            ("stunned", ("stunned", "dazed")),
+            ("restrained", ("restrained", "bound", "pinned", "immobilized")),
+            ("panicking", ("panicking", "panic", "terrified", "breaking rank")),
+            ("dead", ("dead", "slain", "killed", "lifeless", "defeated")),
+            ("shattered", ("shattered", "splintered apart")),
+        )
+        return [label for label, markers in condition_markers if any(marker in lowered for marker in markers)]
+
+    def _extract_behavior_state(self, text: str, default: str) -> str:
+        lowered = text.lower()
+        if any(token in lowered for token in ("retreat", "fall back", "withdraw")):
+            return "retreating"
+        if any(token in lowered for token in ("guard", "brace", "hold position")):
+            return "guarding"
+        if any(token in lowered for token in ("advance", "press", "charge")):
+            return "advancing"
+        return default
+
+    def _extract_pressure_state(self, text: str, default: str) -> str:
+        lowered = text.lower()
+        if any(token in lowered for token in ("overwhelming", "high pressure", "closing in", "intense")):
+            return "high"
+        if any(token in lowered for token in ("steady", "moderate", "measured")):
+            return "moderate"
+        if any(token in lowered for token in ("low pressure", "hesitant", "cautious")):
+            return "low"
+        return default
+
+    def _update_persistent_condition_state(self, state: CampaignState, scene_state: dict[str, Any], action: str, merged_text: str) -> None:
+        combined_text = f"{action} {merged_text}".strip()
+        npc_conditions = scene_state.setdefault("npc_conditions", {})
+        for npc_id, npc in state.npcs.items():
+            if npc.location_id != state.current_location_id:
+                continue
+            name_tokens = [npc.name.lower(), npc_id.lower().replace("_", " ")]
+            if not any(token in combined_text.lower() for token in name_tokens):
+                continue
+            condition_updates = self._collect_condition_tags(combined_text)
+            if condition_updates:
+                npc_conditions[npc_id] = self._merge_condition_list(npc_conditions.get(npc_id, []), condition_updates)
+
+        for actor in scene_state.get("scene_actors", []):
+            if not isinstance(actor, dict):
+                continue
+            actor_id = str(actor.get("actor_id", "")).strip()
+            label = str(actor.get("display_name", "")).strip().lower()
+            if not actor_id:
+                continue
+            if label and label not in combined_text.lower():
+                continue
+            condition_updates = self._collect_condition_tags(combined_text)
+            if condition_updates:
+                npc_conditions[actor_id] = self._merge_condition_list(npc_conditions.get(actor_id, []), condition_updates)
+
+        enemy_conditions = scene_state.setdefault("enemy_conditions", {})
+        if state.active_enemy_id:
+            enemy_id = state.active_enemy_id
+            enemy = self.content.get_enemy(enemy_id)
+            existing = enemy_conditions.get(enemy_id, {}) if isinstance(enemy_conditions.get(enemy_id), dict) else {}
+            current_conditions = [str(v).strip() for v in existing.get("conditions", []) if str(v).strip()]
+            if enemy and state.active_enemy_hp is not None:
+                hp = int(state.active_enemy_hp)
+                if hp <= int(enemy.max_hp * 0.3):
+                    current_conditions = self._merge_condition_list(current_conditions, ["critical"])
+                elif hp < int(enemy.max_hp * 0.8):
+                    current_conditions = self._merge_condition_list(current_conditions, ["injured"])
+            inferred = self._collect_condition_tags(combined_text)
+            if inferred:
+                current_conditions = self._merge_condition_list(current_conditions, inferred)
+            default_behavior = enemy.behavior if enemy else "advancing"
+            enemy_conditions[enemy_id] = {
+                "conditions": current_conditions or ["active"],
+                "behavior": self._extract_behavior_state(combined_text, default=existing.get("behavior", default_behavior)),
+                "pressure": self._extract_pressure_state(combined_text, default=existing.get("pressure", "moderate")),
+            }
 
     def _extract_scene_actor_labels(self, text: str) -> list[str]:
         lowered = text.lower()
@@ -1466,6 +1607,9 @@ class CampaignEngine:
         for key, values in extracted.items():
             for value in values:
                 self._merge_scene_consequence(scene_state, key, value)
+        for value in extracted["altered_environment"] + extracted["damaged_objects"] + extracted["active_effects"]:
+            self._merge_scene_consequence(scene_state, "environment_consequences", value)
+        self._update_persistent_condition_state(state, scene_state, action, merged)
         if extracted["recent_consequences"]:
             scene_state["last_immediate_result"] = extracted["recent_consequences"][-1]
         elif narrative.strip():
@@ -1478,6 +1622,9 @@ class CampaignEngine:
             summary_parts.append(f"damage: {', '.join(damaged[-2:])}")
         if altered:
             summary_parts.append(f"environment: {', '.join(altered[-2:])}")
+        persistent_environment = scene_state.get("environment_consequences", [])
+        if persistent_environment:
+            summary_parts.append(f"persistent: {', '.join(persistent_environment[-2:])}")
         if effects:
             summary_parts.append(f"effects: {', '.join(effects[-2:])}")
         scene_state["scene_summary"] = "; ".join(summary_parts)
@@ -1909,6 +2056,14 @@ class CampaignEngine:
     def _resolve_catacombs_victory(self, state: CampaignState, enemy, system_messages: list[str], outcome: str) -> None:
         msg = self.character_sheet.grant_xp(state.player, enemy.reward.xp)
         system_messages.append(f"{enemy.name} defeated. {msg}")
+        scene_state = self._ensure_scene_state(state)
+        enemy_conditions = scene_state.setdefault("enemy_conditions", {})
+        existing = enemy_conditions.get(enemy.id, {}) if isinstance(enemy_conditions.get(enemy.id), dict) else {}
+        enemy_conditions[enemy.id] = {
+            "conditions": self._merge_condition_list(existing.get("conditions", []), ["dead", "resolved"]),
+            "behavior": "downed",
+            "pressure": "low",
+        }
         state.active_enemy_id = None
         state.active_enemy_hp = None
         state.world_flags["catacombs_cleared"] = True
