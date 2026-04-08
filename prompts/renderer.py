@@ -38,6 +38,11 @@ class TurnPromptContext:
     unresolved_threats: list[str]
     recent_consequences: list[str]
     narrator_rules: list[str]
+    strict_sheet_enforcement: bool = False
+    learning_mode: bool = True
+    ability_name: str = "none"
+    ability_state: str = "none"
+    ability_confidence: str = "none"
 
 
 class PromptRenderer:
@@ -235,6 +240,11 @@ class PromptRenderer:
             f"- active_participants: {', '.join(context.active_participants) if context.active_participants else 'none'}",
             f"- environment_state: {'; '.join(context.environment_state[:2]) if context.environment_state else 'none'}",
             f"- recent_consequences: {'; '.join(context.recent_consequences[:2]) if context.recent_consequences else 'none'}",
+            f"- strict_sheet_enforcement: {str(context.strict_sheet_enforcement).lower()}",
+            f"- learning_mode: {str(context.learning_mode).lower()}",
+            f"- attempted_ability: {context.ability_name}",
+            f"- ability_state: {context.ability_state}",
+            f"- ability_confidence: {context.ability_confidence}",
         ]
         if focus == "dialogue":
             lines.append(f"- npc_states: {'; '.join(context.npc_states[:2]) if context.npc_states else 'none'}")

@@ -102,6 +102,15 @@ class CampaignEngine:
         confidence: str
         source_verb: str
 
+    @dataclass
+    class AbilityResolutionAssessment:
+        ability_name: str
+        state: str
+        confidence: str
+        strict_sheet_enforcement: bool
+        learning_mode: bool
+        allow_freeform_powers: bool
+
     def run_turn(self, state: CampaignState, action: str) -> TurnResult:
         state.turn_count += 1
         for faction, baseline in self.content.faction_defaults().items():
@@ -454,6 +463,9 @@ class CampaignEngine:
             self._capture_important_memory(state, msg)
 
         pending_ability_learning = self._prepare_pending_ability_learning(state, action, system_messages)
+        ability_assessment = self._assess_ability_resolution(state, action, pending_ability_learning)
+        if ability_assessment is not None:
+            system_messages.extend(self._build_ability_authority_messages(ability_assessment))
 
         if self.summary.should_summarize(action, system_messages):
             summary = self.summary.build_summary(state, action, system_messages)
@@ -536,7 +548,7 @@ class CampaignEngine:
         prompt_started = time.perf_counter()
         gm_context_text = self.state_orchestrator.build_gm_context(state)
         scene_state_summary = self._summarize_scene_state_for_prompt(scene_state)
-        turn_context = self._build_structured_turn_context(state, action, scene_state)
+        turn_context = self._build_structured_turn_context(state, action, scene_state, ability_assessment=ability_assessment)
         recent_consequence_summary = self._build_recent_consequence_summary(scene_state)
         print(f"[narration-debug] current_action_received={action.strip()}")
         print("[narration-debug] structured_state_summary_built=true")
@@ -795,12 +807,95 @@ class CampaignEngine:
         if not state.settings.play_style.auto_update_character_sheet_from_actions:
             print("[ability-learn] added_to_spellbook=false")
             return None
-        if state.settings.play_style.strict_sheet_enforcement:
-            system_messages.append(
-                f"Strict sheet mode note: '{detected.normalized_name}' is newly demonstrated and not yet trusted until this turn succeeds."
-            )
         print("[ability-learn] added_to_spellbook=pending")
         return detected
+
+    def _assess_ability_resolution(
+        self,
+        state: CampaignState,
+        action: str,
+        pending_ability_learning: PendingAbilityLearning | None,
+    ) -> AbilityResolutionAssessment | None:
+        detected = pending_ability_learning or self._detect_action_ability(action)
+        if detected is None:
+            return None
+        play_style = state.settings.play_style
+        strict_sheet = bool(play_style.strict_sheet_enforcement)
+        learning_mode = bool(play_style.auto_update_character_sheet_from_actions)
+        freeform = bool(play_style.allow_freeform_powers)
+        print(f"[settings] strict_sheet_enforcement={str(strict_sheet).lower()}")
+        print(f"[settings] auto_update_character_sheet_from_actions={str(learning_mode).lower()}")
+        print(f"[settings] allow_freeform_powers={str(freeform).lower()}")
+        print(
+            f"[settings] auto_sync_player_declared_identity="
+            f"{str(bool(play_style.auto_sync_player_declared_identity)).lower()}"
+        )
+        print(
+            f"[settings] auto_generate_npc_personalities="
+            f"{str(bool(play_style.auto_generate_npc_personalities)).lower()}"
+        )
+        print(
+            f"[settings] auto_evolve_npc_personalities="
+            f"{str(bool(play_style.auto_evolve_npc_personalities)).lower()}"
+        )
+        print(f"[settings] reactive_world_persistence={str(bool(play_style.reactive_world_persistence)).lower()}")
+        print(f"[settings] narration_format_mode={play_style.narration_format_mode}")
+        print(f"[settings] scene_visual_mode={play_style.scene_visual_mode}")
+        existing_name = self._find_existing_ability_name(state, detected.normalized_name)
+        if existing_name is not None:
+            ability_state = "known"
+            confidence = "normal"
+            ability_name = existing_name
+        elif learning_mode:
+            ability_state = "newly_demonstrated"
+            ability_name = detected.normalized_name
+            confidence = "reduced" if strict_sheet else "adaptive"
+        else:
+            ability_state = "untrained"
+            ability_name = detected.normalized_name
+            if strict_sheet:
+                confidence = "low"
+            elif freeform:
+                confidence = "freeform"
+            else:
+                confidence = "cautious"
+        print(f"[ability-state] name={ability_name} state={ability_state}")
+        print(f"[ability-state] confidence={confidence}")
+        return CampaignEngine.AbilityResolutionAssessment(
+            ability_name=ability_name,
+            state=ability_state,
+            confidence=confidence,
+            strict_sheet_enforcement=strict_sheet,
+            learning_mode=learning_mode,
+            allow_freeform_powers=freeform,
+        )
+
+    def _build_ability_authority_messages(self, assessment: AbilityResolutionAssessment) -> list[str]:
+        messages = [
+            "Ability authority: "
+            f"strict={str(assessment.strict_sheet_enforcement).lower()} "
+            f"learning={str(assessment.learning_mode).lower()} "
+            f"freeform={str(assessment.allow_freeform_powers).lower()} "
+            f"ability={assessment.ability_name} "
+            f"state={assessment.state} "
+            f"confidence={assessment.confidence}."
+        ]
+        if assessment.strict_sheet_enforcement and assessment.state == "newly_demonstrated":
+            messages.append(
+                f"Strict sheet mode note: '{assessment.ability_name}' is newly demonstrated; resolve with reduced confidence,"
+                " instability, risk, partial effect, or cost until learned."
+            )
+        elif assessment.strict_sheet_enforcement and assessment.state == "untrained":
+            messages.append(
+                f"Strict sheet mode note: '{assessment.ability_name}' is untrained; resolve as weak, unreliable, risky, partial, or failed."
+            )
+        elif not assessment.strict_sheet_enforcement and assessment.state == "untrained" and assessment.allow_freeform_powers:
+            messages.append(
+                f"Freeform power note: '{assessment.ability_name}' may resolve creatively; keep continuity grounded in current scene truth."
+            )
+        if not assessment.learning_mode and assessment.state != "known":
+            messages.append("Learning mode is disabled for this attempt; do not permanently add this ability from this action.")
+        return messages
 
     def _detect_action_ability(self, action: str) -> PendingAbilityLearning | None:
         normalized = re.sub(r"\s+", " ", action.strip().lower())
@@ -1345,7 +1440,14 @@ class CampaignEngine:
         lowered = action.lower()
         return any(token in lowered for token in ("cast", "spell", "ability", "invoke", "summon", "channel"))
 
-    def _build_structured_turn_context(self, state: CampaignState, action: str, scene_state: dict[str, Any]) -> TurnPromptContext:
+    def _build_structured_turn_context(
+        self,
+        state: CampaignState,
+        action: str,
+        scene_state: dict[str, Any],
+        *,
+        ability_assessment: AbilityResolutionAssessment | None = None,
+    ) -> TurnPromptContext:
         location = str(scene_state.get("location_name") or state.current_location_id or "unknown")
         npc_condition_map = scene_state.get("npc_conditions", {})
         participants = [
@@ -1427,6 +1529,17 @@ class CampaignEngine:
             unresolved_threats=unresolved_threats,
             recent_consequences=recent_consequences,
             narrator_rules=narrator_rules[-5:],
+            strict_sheet_enforcement=(
+                ability_assessment.strict_sheet_enforcement if ability_assessment else state.settings.play_style.strict_sheet_enforcement
+            ),
+            learning_mode=(
+                ability_assessment.learning_mode
+                if ability_assessment
+                else state.settings.play_style.auto_update_character_sheet_from_actions
+            ),
+            ability_name=ability_assessment.ability_name if ability_assessment else "none",
+            ability_state=ability_assessment.state if ability_assessment else "none",
+            ability_confidence=ability_assessment.confidence if ability_assessment else "none",
         )
 
     def _describe_npc_visible_condition(self, npc: Any) -> str:
