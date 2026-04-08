@@ -107,6 +107,48 @@ def test_node_based_personality_guidance_is_available_for_prompting() -> None:
 
     assert guidance
     elder_line = next((line for line in guidance if line.startswith("Elder Thorne:")), "")
-    assert "role=Town elder" in elder_line
-    assert "temperament=stoic and duty-bound" in elder_line
-    assert "state(trust=" in elder_line
+    assert "measured and tradition-minded" in elder_line or "stoic" in elder_line
+    assert "likely voice=" in elder_line
+    assert "stress=" in elder_line
+    assert "current stance toward player=" in elder_line
+
+
+def test_personality_profile_auto_generated_for_existing_npc_and_persists() -> None:
+    state = load_state()
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+    npc = state.npcs["elder_thorne"]
+    npc.personality_profile = None
+
+    guidance_before = engine.personality.build_prompt_guidance(state)
+    assert guidance_before
+    assert npc.personality_profile is not None
+    first_tone = npc.personality_profile.conversational_tone
+
+    guidance_after = engine.personality.build_prompt_guidance(state)
+    assert guidance_after
+    assert npc.personality_profile is not None
+    assert npc.personality_profile.conversational_tone == first_tone
+
+
+def test_personality_profile_survives_serialization_roundtrip() -> None:
+    state = load_state()
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+    engine.personality.build_prompt_guidance(state)
+
+    reloaded = CampaignState.from_dict(state.to_dict())
+    npc = reloaded.npcs["elder_thorne"]
+    assert npc.personality_profile is not None
+    assert npc.personality_profile.identity_label == "Elder Thorne"
+
+
+def test_personality_profile_evolves_slightly_after_betrayal_pattern() -> None:
+    state = load_state()
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+    engine.personality.build_prompt_guidance(state)
+
+    engine.personality.apply_event(state, "elder_thorne", "player_betrayal", {"summary": "first betrayal"})
+    engine.personality.apply_event(state, "elder_thorne", "player_betrayal", {"summary": "second betrayal"})
+    profile = state.npcs["elder_thorne"].personality_profile
+    assert profile is not None
+    assert "suspicious" in profile.social_style or "guarded" in profile.social_style
+    assert "deception" in profile.conflict_response or "contingencies" in profile.conflict_response

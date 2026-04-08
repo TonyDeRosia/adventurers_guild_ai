@@ -913,7 +913,21 @@ def test_lightweight_npc_scene_state_persists_and_stays_campaign_scoped(tmp_path
     reloaded.switch_campaign("slot_npc_scope_a")
     scene_a = reloaded.session.state.structured_state.runtime.scene_state
     assert len(scene_a.get("lightweight_npcs", [])) >= 1
+    assert isinstance(scene_a["lightweight_npcs"][0].get("personality_profile"), dict)
     assert reloaded.serialize_state()["character_sheets"] == []
+
+
+def test_lightweight_npc_gets_generated_personality_profile_on_materialization(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _FigureIntroProvider()
+    runtime.handle_player_input("look")
+    runtime.handle_player_input("i say hello to them")
+    scene_state = runtime.session.state.structured_state.runtime.scene_state
+    assert scene_state.get("lightweight_npcs")
+    profile = scene_state["lightweight_npcs"][0].get("personality_profile", {})
+    assert profile.get("baseline_temperament")
+    assert profile.get("conversational_tone")
+    assert profile.get("stress_response")
 
 
 def test_sanitized_grounded_output_is_kept_without_quality_fallback(tmp_path: Path, monkeypatch) -> None:
