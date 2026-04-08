@@ -365,6 +365,87 @@ def test_strict_mode_recognizes_learned_abilities_after_learning() -> None:
     assert not any("newly demonstrated" in msg.lower() for msg in second.system_messages)
 
 
+def test_ability_state_matrix_strict_on_auto_update_on_transitions_after_learning() -> None:
+    state = load_state()
+    state.settings.play_style.strict_sheet_enforcement = True
+    state.settings.play_style.auto_update_character_sheet_from_actions = True
+    state.settings.play_style.allow_freeform_powers = False
+    engine = CampaignEngine(StaticNarrationAdapter("You cast chain lightning and it succeeds."), data_dir=Path("data"))
+
+    first = engine.run_turn(state, "cast chain lightning")
+    second = engine.run_turn(state, "cast chain lightning")
+
+    first_authority = next(msg for msg in first.system_messages if msg.startswith("Ability authority:"))
+    second_authority = next(msg for msg in second.system_messages if msg.startswith("Ability authority:"))
+    assert "state=newly_demonstrated" in first_authority
+    assert "confidence=reduced" in first_authority
+    assert "state=known" in second_authority
+    assert "confidence=normal" in second_authority
+
+
+def test_ability_state_matrix_strict_on_auto_update_off_never_learns_unknown_action() -> None:
+    state = load_state()
+    state.settings.play_style.strict_sheet_enforcement = True
+    state.settings.play_style.auto_update_character_sheet_from_actions = False
+    engine = CampaignEngine(StaticNarrationAdapter("You cast rain spell and it succeeds."), data_dir=Path("data"))
+
+    first = engine.run_turn(state, "cast rain spell")
+    second = engine.run_turn(state, "cast rain spell")
+
+    assert any("state=untrained" in msg for msg in first.system_messages if msg.startswith("Ability authority:"))
+    assert any("state=untrained" in msg for msg in second.system_messages if msg.startswith("Ability authority:"))
+    assert not any(entry.get("name") == "Rain Spell" for entry in state.structured_state.runtime.spellbook)
+
+
+def test_ability_state_matrix_strict_off_freeform_on_allows_freer_untrained_resolution() -> None:
+    state = load_state()
+    state.settings.play_style.strict_sheet_enforcement = False
+    state.settings.play_style.auto_update_character_sheet_from_actions = False
+    state.settings.play_style.allow_freeform_powers = True
+    engine = CampaignEngine(StaticNarrationAdapter("You invoke storm lattice and it works."), data_dir=Path("data"))
+
+    turn = engine.run_turn(state, "invoke storm lattice")
+
+    authority = next(msg for msg in turn.system_messages if msg.startswith("Ability authority:"))
+    assert "state=untrained" in authority
+    assert "confidence=freeform" in authority
+    assert any("freeform power note" in msg.lower() for msg in turn.system_messages)
+
+
+def test_ability_authority_changes_by_settings_without_codepath_drift() -> None:
+    state = load_state()
+    state.settings.play_style.auto_update_character_sheet_from_actions = False
+    state.settings.play_style.allow_freeform_powers = True
+    engine = CampaignEngine(StaticNarrationAdapter("You channel void pulse and it works."), data_dir=Path("data"))
+
+    state.settings.play_style.strict_sheet_enforcement = True
+    strict_turn = engine.run_turn(state, "channel void pulse")
+    state.settings.play_style.strict_sheet_enforcement = False
+    relaxed_turn = engine.run_turn(state, "channel void pulse")
+
+    strict_authority = next(msg for msg in strict_turn.system_messages if msg.startswith("Ability authority:"))
+    relaxed_authority = next(msg for msg in relaxed_turn.system_messages if msg.startswith("Ability authority:"))
+    assert "state=untrained" in strict_authority
+    assert "confidence=low" in strict_authority
+    assert "state=untrained" in relaxed_authority
+    assert "confidence=freeform" in relaxed_authority
+
+
+def test_prompt_injection_includes_settings_driven_ability_truth() -> None:
+    state = load_state()
+    state.settings.play_style.strict_sheet_enforcement = True
+    state.settings.play_style.auto_update_character_sheet_from_actions = True
+    engine = CampaignEngine(StaticNarrationAdapter("You cast rain spell and it succeeds."), data_dir=Path("data"))
+
+    engine.run_turn(state, "cast rain spell")
+    prompt = engine.get_last_prompt_debug_packet(state.campaign_id)["turn_prompt"]
+
+    assert "- strict_sheet_enforcement: true" in prompt
+    assert "- learning_mode: true" in prompt
+    assert "- ability_state: newly_demonstrated" in prompt
+    assert "- ability_confidence: reduced" in prompt
+
+
 def test_main_character_sheet_is_auto_created_and_injected_when_missing() -> None:
     state = load_state()
     state.character_sheets = []
