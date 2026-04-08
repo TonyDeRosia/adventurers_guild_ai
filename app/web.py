@@ -2109,9 +2109,21 @@ class WebRuntime:
             for name, value in state.faction_reputation.items()
             if isinstance(value, (int, float)) and value != 0
         ]
+        persistent_state_entries = [
+            f"{flag}: {value}"
+            for flag, value in state.world_flags.items()
+            if bool(value)
+        ]
+        persistent_state_entries.extend(
+            [
+                f"{key}: {value}"
+                for key, value in runtime.world_state.items()
+                if value not in ("", None, False, [], {})
+            ]
+        )
         self._append_group(world_design, "Factions & Powers", self._clean_list(faction_entries))
         self._append_group(world_design, "Emerging Tensions", self._clean_list(state.unresolved_plot_threads))
-        self._append_group(world_design, "Narrative Threads", self._clean_list(state.recent_memory))
+        self._append_group(world_design, "Persistent State", self._clean_list(persistent_state_entries))
 
         reactive_changes: list[dict[str, Any]] = []
         self._append_group(reactive_changes, "Persistent Environment Changes", self._clean_list(scene_state.get("altered_environment", [])))
