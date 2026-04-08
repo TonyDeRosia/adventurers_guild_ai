@@ -544,6 +544,20 @@ class _SanitizedButGroundedProvider(NarrationModelAdapter):
 Moonfall Keep remains in view. The cracked wall still sheds dust near the torchlit arch."""
 
 
+class _ScaffoldLabelLeakProvider(NarrationModelAdapter):
+    provider_name = "ollama"
+
+    def generate(self, prompt: str, system_prompt: str = "", history=None) -> str:
+        return """[Scene]
+Rain beads on the broken archway.
+
+[Dialogue]
+"Keep low," the scout whispers.
+
+[Immediate Result]
+Bootsteps scrape nearby stone."""
+
+
 class _SuggestedMoveProvider(NarrationModelAdapter):
     provider_name = "ollama"
 
@@ -1079,6 +1093,25 @@ def test_turn_sanitizer_removes_prompt_scaffold_leaks(tmp_path: Path, monkeypatc
     assert out["metadata"]["quality_fallback_used"] is False
 
 
+def test_turn_sanitizer_removes_internal_scaffold_labels_but_preserves_readability(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _ScaffoldLabelLeakProvider()
+    out = runtime.handle_player_input("look")
+    assert "[Scene]" not in out["narrative"]
+    assert "[Dialogue]" not in out["narrative"]
+    assert "[Immediate Result]" not in out["narrative"]
+    assert '"Keep low," the scout whispers.' in out["narrative"]
+    assert "\n\n" in out["narrative"]
+
+
+def test_turn_sanitizer_keeps_normal_prose_unchanged(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _PromptCaptureProvider()
+    out = runtime.handle_player_input("look")
+    assert out["narrative"] == "The hall is silent as your minions await your command."
+    assert out["metadata"]["sanitized_output"] is False
+
+
 def test_recommendations_are_not_engine_suppressed_when_not_broken(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _SuggestedMoveProvider()
@@ -1328,6 +1361,7 @@ def test_auto_after_visual_updates_scene_panel_without_image_chat_message(tmp_pa
     assert scene_visual is not None
     assert scene_visual["image_url"].endswith("/generated/turn_visual.png")
     assert scene_visual["source"] == "automatic"
+    assert scene_visual["caption"] == "Scene visual reflects the current area."
 
 
 def test_campaign_auto_visual_timing_aliases_normalize_to_supported_values(tmp_path: Path, monkeypatch) -> None:

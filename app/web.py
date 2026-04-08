@@ -148,9 +148,11 @@ class WebRuntime:
         metadata: dict[str, Any] | None = None,
     ) -> None:
         namespace = self._campaign_namespace(slot)
+        caption = self._build_scene_visual_caption(source=source, turn=turn)
         self.scene_visual_store[namespace] = {
             "image_url": image_url,
             "prompt": prompt,
+            "caption": caption,
             "source": source,
             "stage": stage,
             "turn": turn,
@@ -166,7 +168,20 @@ class WebRuntime:
         payload = self.scene_visual_store.get(namespace)
         if payload is None:
             payload = self.scene_visual_store.get(target_slot)
-        return payload if isinstance(payload, dict) else None
+        if not isinstance(payload, dict):
+            return None
+        response = dict(payload)
+        turn = int(response.get("turn", 0) or 0)
+        source = str(response.get("source", "")).strip()
+        response["caption"] = str(response.get("caption", "")).strip() or self._build_scene_visual_caption(source=source, turn=turn)
+        return response
+
+    def _build_scene_visual_caption(self, *, source: str, turn: int) -> str:
+        if turn > 0:
+            return f"Scene visual updated for Turn {turn}."
+        if source == "manual":
+            return "Latest generated image loaded in Scene Visual."
+        return "Scene visual reflects the current area."
 
     def _history_for_slot(self, slot: str) -> list[dict[str, Any]]:
         namespace = self._campaign_namespace(slot)
