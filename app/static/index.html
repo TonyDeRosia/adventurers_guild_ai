@@ -9,14 +9,14 @@
   <body>
     <div class="app-shell">
       <aside class="sidebar left-panel">
-        <h2>Campaigns & Saves</h2>
+        <h2>Campaign Controls</h2>
+        <button id="open-campaign-browser" type="button">Campaigns</button>
         <p id="selected-save-label">Selected save: autosave</p>
         <div id="selected-campaign-summary" class="selected-campaign-summary">
           <strong>autosave</strong>
           <small>Unknown world · Turn 0</small>
           <small>Display Mode: Story Mode</small>
         </div>
-        <div id="save-list" class="save-list"></div>
         <div class="button-row">
           <button id="load-selected">Load selected</button>
           <button id="new-campaign">New campaign</button>
@@ -137,6 +137,17 @@
           <button id="create-campaign-confirm">Create campaign</button>
           <button id="create-campaign-cancel">Cancel</button>
         </div>
+      </div>
+    </div>
+
+    <div id="campaign-browser-modal" class="modal hidden">
+      <div class="modal-card campaign-browser-modal-card">
+        <div class="panel-title-row">
+          <h3>Campaign Save Journal</h3>
+          <button id="close-campaign-browser" type="button">Close</button>
+        </div>
+        <p class="setup-intro">Browse your campaigns and select the save slot you want to use.</p>
+        <div id="save-list" class="save-list campaign-browser-list"></div>
       </div>
     </div>
 

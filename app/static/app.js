@@ -16,6 +16,7 @@ const setupSummary = document.getElementById('setup-summary');
 const selectedSaveLabel = document.getElementById('selected-save-label');
 const selectedCampaignSummary = document.getElementById('selected-campaign-summary');
 const newCampaignModal = document.getElementById('new-campaign-modal');
+const campaignBrowserModal = document.getElementById('campaign-browser-modal');
 const setupModal = document.getElementById('setup-modal');
 const ollamaPathInput = document.getElementById('ollama-path-input');
 const comfyuiPathInput = document.getElementById('comfyui-path-input');
@@ -813,6 +814,14 @@ function openNewCampaignModal() {
 
 function closeNewCampaignModal() {
   newCampaignModal.classList.add('hidden');
+}
+
+function openCampaignBrowser() {
+  campaignBrowserModal?.classList.remove('hidden');
+}
+
+function closeCampaignBrowser() {
+  campaignBrowserModal?.classList.add('hidden');
 }
 
 function openSetupModal() {
@@ -2263,7 +2272,9 @@ async function loadSettings() {
 document.getElementById('send-btn').onclick = sendInput;
 document.getElementById('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendInput(); });
 document.getElementById('load-selected').onclick = loadSelectedCampaign;
+document.getElementById('open-campaign-browser').onclick = openCampaignBrowser;
 document.getElementById('new-campaign').onclick = openNewCampaignModal;
+document.getElementById('close-campaign-browser').onclick = closeCampaignBrowser;
 document.getElementById('create-campaign-cancel').onclick = closeNewCampaignModal;
 document.getElementById('create-campaign-confirm').onclick = createCampaignFromForm;
 document.getElementById('image-generate-submit').onclick = generateImage;
@@ -2390,6 +2401,16 @@ document.getElementById('open-runtime-spellbook').onclick = async () => {
 document.getElementById('close-runtime-spellbook').onclick = () => {
   runtimeSpellbookModal?.classList.add('hidden');
 };
+campaignBrowserModal?.addEventListener('click', (event) => {
+  if (event.target === campaignBrowserModal) {
+    closeCampaignBrowser();
+  }
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && campaignBrowserModal && !campaignBrowserModal.classList.contains('hidden')) {
+    closeCampaignBrowser();
+  }
+});
 document.getElementById('open-narrator-rules').onclick = async () => {
   console.log('[narrator-rules] runtime_button_rendered=true');
   await refreshNarratorRules();
