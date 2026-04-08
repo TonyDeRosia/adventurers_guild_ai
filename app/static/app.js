@@ -106,6 +106,7 @@ const worldBuildingModal = document.getElementById('world-building-modal');
 const worldBuildingNpcList = document.getElementById('world-building-npc-list');
 const worldBuildingDesignList = document.getElementById('world-building-design-list');
 const worldBuildingReactiveList = document.getElementById('world-building-reactive-list');
+const recalibrateWorldBuildingButton = document.getElementById('recalibrate-world-building');
 
 let draftCharacterSheets = [];
 let editingSheetIndex = -1;
@@ -1621,6 +1622,24 @@ async function refreshWorldBuilding() {
   renderWorldBuildingViewer();
 }
 
+async function recalibrateWorldBuilding() {
+  if (!recalibrateWorldBuildingButton) return;
+  const idleLabel = 'Recalibrate';
+  recalibrateWorldBuildingButton.disabled = true;
+  recalibrateWorldBuildingButton.textContent = 'Recalibrating...';
+  try {
+    await api('/api/campaign/recalibrate', { method: 'POST' });
+    await refreshWorldBuilding();
+    await refreshState();
+    setStatus('Recalibration complete.');
+  } catch (error) {
+    setStatus(`Recalibration failed: ${error.message}`, true);
+  } finally {
+    recalibrateWorldBuildingButton.disabled = false;
+    recalibrateWorldBuildingButton.textContent = idleLabel;
+  }
+}
+
 async function refreshState() {
   const data = await api('/api/campaign/state');
   const state = data.state;
@@ -2523,6 +2542,11 @@ document.getElementById('open-world-building').onclick = async () => {
   await refreshWorldBuilding();
   worldBuildingModal?.classList.remove('hidden');
 };
+if (recalibrateWorldBuildingButton) {
+  recalibrateWorldBuildingButton.onclick = async () => {
+    await recalibrateWorldBuilding();
+  };
+}
 document.getElementById('close-narrator-rules').onclick = () => {
   narratorRulesModal?.classList.add('hidden');
 };

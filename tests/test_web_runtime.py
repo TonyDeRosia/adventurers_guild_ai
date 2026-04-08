@@ -9,7 +9,8 @@ from types import SimpleNamespace
 import pytest
 
 from app.web import WebRuntime, create_web_app
-from engine.entities import CampaignState, NPC
+from engine.character_sheets import CharacterSheet
+from engine.entities import CampaignState, ConversationTurn, NPC
 from images.base import ImageGenerationResult
 from models.base import NarrationModelAdapter, ProviderUnavailableError
 
@@ -1933,6 +1934,22 @@ def test_pick_file_endpoint_returns_selected_path(tmp_path: Path, monkeypatch) -
     assert response.json()["path"].endswith("workflow.json")
 
 
+def test_campaign_recalibrate_endpoint_invokes_runtime_recalibration(tmp_path: Path, monkeypatch) -> None:
+    try:
+        from fastapi.testclient import TestClient
+    except RuntimeError as exc:
+        pytest.skip(str(exc))
+    runtime = _runtime(tmp_path, monkeypatch)
+    app = create_web_app(runtime, runtime.root / "app" / "static")
+    client = TestClient(app)
+    monkeypatch.setattr(runtime, "recalibrate_campaign_state", lambda state: {"ok": True, "abilities_synced": 1})
+
+    response = client.post("/api/campaign/recalibrate", json={})
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+
+
 def test_dependency_readiness_comfyui_not_installed(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.app_config.image.provider = "comfyui"
@@ -2368,11 +2385,14 @@ def test_world_building_button_and_modal_markup_present_in_left_controls() -> No
     assert "NPC Personalities" in index_html
     assert "World Design" in index_html
     assert "Reactive World Changes" in index_html
+    assert 'id="recalibrate-world-building"' in index_html
+    assert ">Recalibrate</button>" in index_html
     assert "No NPC personalities generated yet." in index_html
     assert "No world design entries available yet." in index_html
     assert "No reactive world changes recorded yet." in index_html
     assert "open-world-building" in app_js
     assert "/api/campaign/world-building" in app_js
+    assert "/api/campaign/recalibrate" in app_js
 
 
 def test_world_building_view_returns_empty_collections_when_no_data(tmp_path: Path, monkeypatch) -> None:
@@ -2450,3 +2470,104 @@ def test_world_design_excludes_raw_narration_logs_and_keeps_structured_entries(t
     assert "Persistent State" in labels
     assert "Narrative Threads" not in labels
     assert "full paragraph narration" not in merged_entries.lower()
+
+
+def test_recalibration_creates_missing_npc_from_recent_narration(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_recal_npc"})
+    state = runtime.session.state
+    state.conversation_turns = [
+        ConversationTurn(
+            turn=1,
+            player_input="I ask the guard for directions.",
+            narrator_response='The guard nods. "My name is Eira."',
+            system_messages=[],
+        )
+    ]
+    state.npcs = {}
+
+    result = runtime.recalibrate_campaign_state(state)
+
+    assert result["ok"] is True
+    assert any(npc.name == "Eira" for npc in state.npcs.values())
+
+
+def test_recalibration_adds_missing_ability_when_learning_mode_enabled(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_recal_ability"})
+    state = runtime.session.state
+    state.settings.play_style.auto_update_character_sheet_from_actions = True
+    state.character_sheets = [
+        CharacterSheet.from_payload({"id": "sheet_main", "name": state.player.name, "sheet_type": "main_character"})
+    ]
+    state.structured_state.runtime.spellbook = []
+    state.conversation_turns = [
+        ConversationTurn(turn=1, player_input="I cast ember lance at the ice wall.", narrator_response="The wall cracks.", system_messages=[]),
+    ]
+
+    result = runtime.recalibrate_campaign_state(state)
+
+    assert result["abilities_synced"] >= 1
+    names = [entry["name"] for entry in state.structured_state.runtime.spellbook]
+    assert any("ember" in name.lower() and "lance" in name.lower() for name in names)
+
+
+def test_recalibration_merges_duplicate_npcs_by_name(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_recal_dedupe"})
+    state = runtime.session.state
+    state.npcs = {
+        "npc_eira": NPC(id="npc_eira", name="Eira", location_id=state.current_location_id),
+        "npc_eira_2": NPC(id="npc_eira_2", name="Eira", location_id=state.current_location_id),
+    }
+    state.structured_state.runtime.scene_state = {
+        "scene_actors": [{"actor_id": "a1", "linked_npc_id": "npc_eira_2", "display_name": "Eira"}],
+        "npc_conditions": {"npc_eira_2": ["injured"]},
+    }
+    state.conversation_turns = [
+        ConversationTurn(turn=1, player_input="I check on Eira.", narrator_response="Eira steadies her breath.", system_messages=[]),
+    ]
+
+    result = runtime.recalibrate_campaign_state(state)
+
+    assert result["npc_merged"] >= 1
+    assert len(state.npcs) == 1
+
+
+def test_recalibration_extracts_world_effects_from_recent_narration(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_recal_world"})
+    state = runtime.session.state
+    state.structured_state.runtime.scene_state = {}
+    state.conversation_turns = [
+        ConversationTurn(
+            turn=1,
+            player_input="I unleash fire at the floor.",
+            narrator_response="Frost races over the floor while fire spreads and a storm howls through the hall.",
+            system_messages=[],
+        ),
+    ]
+
+    result = runtime.recalibrate_campaign_state(state)
+    scene_state = state.structured_state.runtime.scene_state
+
+    assert result["world_updates"] >= 1
+    assert any("frost" in entry.lower() for entry in scene_state.get("altered_environment", []))
+    assert state.world_flags.get("env_storm_active") is True
+
+
+def test_recalibration_does_not_overwrite_existing_personality_profile(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_recal_safe"})
+    state = runtime.session.state
+    npc = NPC(id="npc_known", name="Eira", location_id=state.current_location_id)
+    npc.personality_profile = NPC.PersonalityProfile(archetype="Watch Captain", baseline_temperament="steady")
+    state.npcs = {npc.id: npc}
+    state.conversation_turns = [
+        ConversationTurn(turn=1, player_input="I greet Eira.", narrator_response="Eira watches carefully.", system_messages=[]),
+    ]
+
+    runtime.recalibrate_campaign_state(state)
+
+    assert state.npcs["npc_known"].personality_profile is not None
+    assert state.npcs["npc_known"].personality_profile.archetype == "Watch Captain"
