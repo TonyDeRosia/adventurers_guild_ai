@@ -430,8 +430,13 @@ class PromptRenderer:
     def _build_writing_instructions_block(self, guidance_requested: bool) -> str:
         return (
             "Write natural, expressive scene prose using the structured facts above as truth.\n"
+            "Write like a scene, not a report: avoid wrappers such as 'Turn X' or 'Outcome summary'.\n"
             "Resolve the current action first, then show concrete consequences in scene, NPC behavior, and threat behavior.\n"
-            "Use readable sections when they improve clarity (Scene, NPC Reactions, Enemy/Threat Reactions, Dialogue, Immediate Result).\n"
+            "Use spacing and paragraph breaks generously when they improve readability.\n"
+            "Separate setting, action/reaction, and dialogue into readable blocks when appropriate instead of one dense paragraph.\n"
+            "Present speech directly as dialogue when characters speak; avoid summary phrasing like 'you say' or 'the player says'.\n"
+            "Do not cram multiple speakers into one paragraph when a break improves clarity.\n"
+            "Use lightweight readable structure only when helpful (Scene, NPC Reactions, Enemy/Threat Reactions, Dialogue, Immediate Result).\n"
             "Do not collapse into stat-sheet formatting unless the player explicitly asked for structured output.\n"
             "Keep output compact (usually 1-4 short paragraphs) and end on a clean handoff to player agency.\n"
             "Do not suggest actions, next steps, or recommendations unless the player explicitly asked for guidance.\n"
