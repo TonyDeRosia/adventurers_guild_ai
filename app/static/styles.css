@@ -702,6 +702,15 @@ textarea { border-radius: 8px; border: 1px solid #2e3d52; background: #131e2b; c
 .world-building-modal-card {
   width: min(980px, 100%);
 }
+.world-building-actions-row {
+  display: flex;
+  grid-template-columns: none;
+  gap: 8px;
+  margin-top: 0;
+}
+.world-building-actions-row button {
+  width: auto;
+}
 .world-building-viewer {
   display: grid;
   gap: 12px;

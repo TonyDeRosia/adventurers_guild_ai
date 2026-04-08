@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import subprocess
 import time
 from types import SimpleNamespace
@@ -629,6 +630,49 @@ def test_ooc_input_does_not_trigger_turn_pipeline_side_effects(tmp_path: Path, m
 
     output = runtime.handle_ooc_input("Did narration skip a beat?")
     assert output["messages"][0]["text"].startswith("OOC:")
+
+
+def test_ooc_structured_spell_generation_updates_spellbook_and_sheet(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_ooc_structured_spells"})
+    state = runtime.session.state
+    state.structured_state.runtime.spellbook = []
+    state.character_sheets = [CharacterSheet.from_payload({"id": "sheet_main", "name": "Aria", "sheet_type": "main_character"})]
+    main_sheet = state.character_sheets[0]
+
+    monkeypatch.setattr(
+        runtime.engine.model,
+        "generate",
+        lambda *args, **kwargs: "- Ember Lance: A piercing line of fire.\n- Mist Ward: A defensive veil.",
+    )
+    output = runtime.handle_ooc_input("Generate two spells for my spellbook.")
+
+    assert output["metadata"]["ooc_mode"] == "structured_authoring"
+    names = [entry.get("name", "") for entry in state.structured_state.runtime.spellbook]
+    assert "Ember Lance" in names
+    assert "Mist Ward" in names
+    assert any(name == "Ember Lance" for name in main_sheet.abilities)
+    assert output["metadata"]["ooc_sync"]["spellbook_entries_added"] >= 2
+
+
+def test_ooc_structured_character_sheet_update_applies_requested_title(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_ooc_structured_sheet"})
+    state = runtime.session.state
+    state.character_sheets = [CharacterSheet.from_payload({"id": "sheet_main", "name": "Aria", "sheet_type": "main_character"})]
+    main_sheet = state.character_sheets[0]
+    main_sheet.level_or_rank = ""
+    monkeypatch.setattr(
+        runtime.engine.model,
+        "generate",
+        lambda *args, **kwargs: "Done. Title updated to Kokudar the Ash Lord.",
+    )
+
+    output = runtime.handle_ooc_input("Make my title Kokudar the Ash Lord.")
+
+    assert output["metadata"]["ooc_mode"] == "structured_authoring"
+    assert main_sheet.level_or_rank == "Kokudar the Ash Lord"
+    assert output["metadata"]["ooc_sync"]["character_sheet_updated"] is True
 
 
 def test_history_and_scene_visual_are_campaign_namespaced(tmp_path: Path, monkeypatch) -> None:
@@ -2480,6 +2524,19 @@ def test_world_building_button_and_modal_markup_present_in_left_controls() -> No
     assert "/api/campaign/recalibrate" in app_js
 
 
+def test_world_building_modal_places_recalibrate_left_of_close_on_same_row() -> None:
+    index_html = Path("app/static/index.html").read_text(encoding="utf-8")
+    styles_css = Path("app/static/styles.css").read_text(encoding="utf-8")
+    action_row_match = re.search(
+        r'<div class="button-row world-building-actions-row">\s*<button id="recalibrate-world-building"[^>]*>Recalibrate</button>\s*<button id="close-world-building"[^>]*>Close</button>',
+        index_html,
+        flags=re.S,
+    )
+    assert action_row_match is not None
+    assert ".world-building-actions-row {" in styles_css
+    assert "display: flex;" in styles_css
+
+
 def test_world_building_view_returns_empty_collections_when_no_data(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.create_campaign({"slot": "slot_world_empty"})
@@ -2595,6 +2652,24 @@ def test_recalibration_adds_missing_ability_when_learning_mode_enabled(tmp_path:
     assert result["abilities_synced"] >= 1
     names = [entry["name"] for entry in state.structured_state.runtime.spellbook]
     assert any("ember" in name.lower() and "lance" in name.lower() for name in names)
+
+
+def test_recalibration_backfills_structured_ooc_spells_from_message_history(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_recal_ooc_backfill"})
+    state = runtime.session.state
+    state.structured_state.runtime.spellbook = []
+    runtime.session.message_history = [
+        {"type": "ooc_player", "text": "Generate ranger spells for my spellbook."},
+        {"type": "ooc_gm", "text": "- Storm Arrow: Wind-guided shot.\n- Root Snare: Entangling vines."},
+    ]
+
+    result = runtime.recalibrate_campaign_state(state)
+
+    names = [entry["name"] for entry in state.structured_state.runtime.spellbook]
+    assert "Storm Arrow" in names
+    assert "Root Snare" in names
+    assert result["ooc_backfill_spellbook_entries"] >= 2
 
 
 def test_recalibration_merges_duplicate_npcs_by_name(tmp_path: Path, monkeypatch) -> None:

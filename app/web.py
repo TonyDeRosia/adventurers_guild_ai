@@ -41,7 +41,7 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency in some te
 from app.pathing import initialize_user_data_paths, project_root, static_dir
 from app.runtime_config import AppRuntimeConfig, ImageRuntimeConfig, ModelRuntimeConfig, RuntimeConfigStore
 from engine.campaign_engine import CampaignEngine, TurnResult
-from engine.character_sheets import CharacterSheet
+from engine.character_sheets import CharacterSheet, CharacterSheetAbilityEntry
 from engine.entities import CampaignSettings, CampaignState
 from engine.game_state_manager import GameStateManager
 from images.base import ImageGenerationRequest, ImageGenerationResult, ImageGeneratorAdapter, NullImageAdapter
@@ -2280,6 +2280,7 @@ class WebRuntime:
         narration_blob = " ".join(source for source in narration_sources if source.strip())
         self._recalibration_sync_player_identity(state, narration_blob)
         abilities_synced = self._recalibration_sync_abilities(state, turns)
+        ooc_backfill = self._recalibration_backfill_ooc_structured_data(state)
 
         # Backfill missing personalities only; never overwrite existing profiles.
         for npc in state.npcs.values():
@@ -2339,6 +2340,7 @@ class WebRuntime:
             state.structured_state.runtime.spellbook
         )
         print(f"[recalibration] abilities_synced={abilities_synced}")
+        print(f"[recalibration] ooc_spellbook_backfill={ooc_backfill['spellbook_entries_added']}")
         print(f"[recalibration] world_updates={world_updates}")
         print("[recalibration] complete")
         self.save_active_campaign(self.session.active_slot)
@@ -2348,6 +2350,9 @@ class WebRuntime:
             "abilities_synced": abilities_synced,
             "world_updates": world_updates,
             "npc_merged": merged_npcs,
+            "ooc_backfill_spellbook_entries": ooc_backfill["spellbook_entries_added"],
+            "ooc_backfill_character_sheet_updated": ooc_backfill["character_sheet_updated"],
+            "ooc_backfill_world_entries": ooc_backfill["world_entries_added"],
         }
 
     def get_inventory_state(self) -> dict[str, Any]:
@@ -2797,16 +2802,185 @@ class WebRuntime:
             f"[RECENT CHAT]\n{recent_chat}"
         )
 
+
+    def _detect_ooc_mode(self, text: str) -> str:
+        lowered = str(text or "").strip().lower()
+        if not lowered:
+            return "clarify"
+        authoring_verbs = {"add", "create", "generate", "make", "update", "set", "give", "write", "build"}
+        structured_targets = {
+            "spellbook",
+            "spell",
+            "character sheet",
+            "abilities",
+            "ability",
+            "world building",
+            "world notes",
+            "world note",
+            "npc personality",
+            "npc personalities",
+            "inventory",
+            "title",
+            "identity",
+        }
+        has_authoring_verb = any(token in lowered for token in authoring_verbs)
+        has_target = any(token in lowered for token in structured_targets)
+        return "structured_authoring" if has_authoring_verb and has_target else "clarify"
+
+    def _extract_structured_ability_entries(self, text: str) -> list[dict[str, Any]]:
+        entries: list[dict[str, Any]] = []
+        for raw_line in str(text or "").splitlines():
+            line = str(raw_line).strip()
+            if not line:
+                continue
+            if line.startswith(("-", "*")):
+                line = line[1:].strip()
+            line = re.sub(r"^\d+\.\s*", "", line).strip()
+            if not line or len(line.split()) < 2:
+                continue
+            if ":" in line:
+                name, description = line.split(":", 1)
+            elif "-" in line:
+                name, description = line.split("-", 1)
+            else:
+                name, description = line, ""
+            clean_name = str(name).strip(" -*_`").strip()
+            if not clean_name or len(clean_name) > 80:
+                continue
+            if clean_name.lower().startswith("ooc"):
+                continue
+            lowered_name = clean_name.lower()
+            if lowered_name in {"spells", "abilities", "character sheet", "world building"}:
+                continue
+            entry_type = "spell" if any(token in lowered_name for token in {"spell", "bolt", "lance", "flare", "ward"}) else "ability"
+            entries.append(
+                {
+                    "name": clean_name,
+                    "type": entry_type,
+                    "description": str(description).strip(" -*_`").strip(),
+                    "cost_or_resource": "",
+                    "cooldown": "",
+                    "tags": ["ooc_structured"],
+                    "notes": "Added from OOC structured authoring.",
+                }
+            )
+        return entries
+
+    def _extract_world_entries_from_ooc_response(self, text: str) -> list[str]:
+        entries: list[str] = []
+        for raw_line in str(text or "").splitlines():
+            line = str(raw_line).strip()
+            if not line:
+                continue
+            if line.startswith(("-", "*")):
+                line = line[1:].strip()
+            line = re.sub(r"^\d+\.\s*", "", line).strip()
+            if not line or line.lower().startswith("ooc"):
+                continue
+            entries.append(line[:220])
+        return entries[:10]
+
+    def _sync_ooc_spellbook_and_sheet(self, state: CampaignState, entries: list[dict[str, Any]]) -> dict[str, Any]:
+        runtime = state.structured_state.runtime
+        runtime.spellbook = runtime.spellbook if isinstance(runtime.spellbook, list) else []
+        before_count = len(runtime.spellbook)
+        runtime.spellbook.extend(entries)
+        runtime.spellbook = self.engine.state_orchestrator._normalize_spellbook(runtime.spellbook)
+        spellbook_added = max(0, len(runtime.spellbook) - before_count)
+        main_sheet = self._find_main_character_sheet(state)
+        character_sheet_updated = False
+        if main_sheet is not None:
+            existing_names = {self.engine._normalize_ability_name(name) for name in main_sheet.abilities}
+            existing_guaranteed = {self.engine._normalize_ability_name(entry.name) for entry in main_sheet.guaranteed_abilities}
+            for entry in runtime.spellbook:
+                name = str(entry.get("name", "")).strip()
+                if not name:
+                    continue
+                normalized = self.engine._normalize_ability_name(name)
+                if normalized not in existing_names:
+                    main_sheet.abilities.append(name)
+                    existing_names.add(normalized)
+                    character_sheet_updated = True
+                if normalized not in existing_guaranteed:
+                    main_sheet.guaranteed_abilities.append(CharacterSheetAbilityEntry.from_payload(entry))
+                    existing_guaranteed.add(normalized)
+                    character_sheet_updated = True
+        return {"spellbook_entries_added": spellbook_added, "character_sheet_updated": character_sheet_updated}
+
+    def _apply_ooc_structured_updates(self, request_text: str, response_text: str) -> dict[str, Any]:
+        lowered_request = str(request_text or "").lower()
+        state = self.session.state
+        summary = {
+            "spellbook_entries_added": 0,
+            "character_sheet_updated": False,
+            "world_entries_added": 0,
+            "mutated": False,
+        }
+        if any(token in lowered_request for token in {"spellbook", "spell", "abilities", "ability", "character sheet"}):
+            parsed_entries = self._extract_structured_ability_entries(response_text)
+            if parsed_entries:
+                sync_summary = self._sync_ooc_spellbook_and_sheet(state, parsed_entries)
+                summary["spellbook_entries_added"] = int(sync_summary["spellbook_entries_added"])
+                summary["character_sheet_updated"] = bool(sync_summary["character_sheet_updated"])
+        if any(token in lowered_request for token in {"title", "identity"}):
+            main_sheet = self._find_main_character_sheet(state)
+            title_match = re.search(r"(?:title|identity)[^A-Za-z0-9]*[:=]?\s*([A-Za-z][A-Za-z '\-]{2,60})", request_text, flags=re.I)
+            if title_match and main_sheet is not None:
+                next_title = title_match.group(1).strip(" .")
+                if next_title and next_title != main_sheet.level_or_rank:
+                    main_sheet.level_or_rank = next_title
+                    summary["character_sheet_updated"] = True
+        if any(token in lowered_request for token in {"world building", "world notes", "world note"}):
+            world_entries = self._extract_world_entries_from_ooc_response(response_text)
+            if world_entries:
+                lore = state.structured_state.canon.lore
+                existing = {str(entry).strip().lower() for entry in lore}
+                for entry in world_entries:
+                    key = entry.strip().lower()
+                    if key and key not in existing:
+                        lore.append(entry)
+                        existing.add(key)
+                        summary["world_entries_added"] += 1
+        summary["mutated"] = bool(
+            summary["spellbook_entries_added"] > 0
+            or summary["character_sheet_updated"]
+            or summary["world_entries_added"] > 0
+        )
+        return summary
+
+    def _recalibration_backfill_ooc_structured_data(self, state: CampaignState) -> dict[str, Any]:
+        summary = {"spellbook_entries_added": 0, "character_sheet_updated": False, "world_entries_added": 0}
+        for index, entry in enumerate(self.session.message_history):
+            if str(entry.get("type", "")).strip() != "ooc_player":
+                continue
+            request_text = str(entry.get("text", "")).strip()
+            if self._detect_ooc_mode(request_text) != "structured_authoring":
+                continue
+            if index + 1 >= len(self.session.message_history):
+                continue
+            reply = self.session.message_history[index + 1]
+            if str(reply.get("type", "")).strip() != "ooc_gm":
+                continue
+            sync = self._apply_ooc_structured_updates(request_text, str(reply.get("text", "")))
+            summary["spellbook_entries_added"] += int(sync.get("spellbook_entries_added", 0))
+            summary["character_sheet_updated"] = bool(summary["character_sheet_updated"] or sync.get("character_sheet_updated"))
+            summary["world_entries_added"] += int(sync.get("world_entries_added", 0))
+        return summary
+
     def handle_ooc_input(self, text: str) -> dict[str, Any]:
         request_received_at = datetime.now(timezone.utc).isoformat()
         clean_text = text.strip()
+        ooc_mode = self._detect_ooc_mode(clean_text)
         model_status = self.get_model_status()
         self._append_message("ooc_player", clean_text, persist=False)
+        print(f"[ooc] mode={ooc_mode}")
         context_prompt = self._build_ooc_context()
         system_prompt = (
             "You are the Adventure Guild AI GM brain responding in OOC mode.\n"
             "Answer using campaign context, clarify continuity, and acknowledge uncertainty when relevant.\n"
-            "Do not advance canon, do not declare state changes, and do not apply gameplay consequences."
+            "Do not advance canon, do not declare gameplay consequences.\n"
+            "If the user explicitly asks to create or update structured campaign data (spellbook, character sheet, world notes), "
+            "you may provide structured content suitable for persistence."
         )
         started = time.perf_counter()
         try:
@@ -2825,6 +2999,14 @@ class WebRuntime:
                 "No canon state was changed."
             )
         generation_ms = (time.perf_counter() - started) * 1000
+        sync_summary = {"spellbook_entries_added": 0, "character_sheet_updated": False, "world_entries_added": 0, "mutated": False}
+        if ooc_mode == "structured_authoring":
+            sync_summary = self._apply_ooc_structured_updates(clean_text, response_text)
+            print(f"[ooc-sync] spellbook_entries_added={sync_summary['spellbook_entries_added']}")
+            print(f"[ooc-sync] character_sheet_updated={str(sync_summary['character_sheet_updated']).lower()}")
+            print(f"[ooc-sync] world_entries_added={sync_summary['world_entries_added']}")
+            if sync_summary["mutated"]:
+                self.save_active_campaign(self.session.active_slot)
         self._append_message("ooc_gm", response_text, persist=False)
         self._flush_history_store()
         return {
@@ -2834,6 +3016,8 @@ class WebRuntime:
             "should_exit": False,
             "metadata": {
                 "mode": "ooc",
+                "ooc_mode": ooc_mode,
+                "ooc_sync": sync_summary,
                 "model_status": model_status,
                 "timing": {
                     "request_received_at": request_received_at,
