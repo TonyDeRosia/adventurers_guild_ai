@@ -85,6 +85,19 @@ class NPC:
         impact: dict[str, int] = field(default_factory=dict)
         tags: list[str] = field(default_factory=list)
 
+    @dataclass
+    class PersonalityProfile:
+        identity_label: str = ""
+        archetype: str = ""
+        baseline_temperament: str = ""
+        social_style: str = ""
+        confidence_fear_tendency: str = ""
+        moral_leaning: str = ""
+        motivations: str = ""
+        conversational_tone: str = ""
+        stress_response: str = ""
+        conflict_response: str = ""
+
     id: str
     name: str
     location_id: str
@@ -95,6 +108,7 @@ class NPC:
     profile_id: str | None = None
     personality_archetype: str | None = None
     personality_nodes: PersonalityNodes | None = None
+    personality_profile: PersonalityProfile | None = None
     dynamic_state: DynamicState = field(default_factory=DynamicState)
     memory_log: list[MemoryEntry] = field(default_factory=list)
     unlocked_behaviors: list[str] = field(default_factory=list)
@@ -350,10 +364,28 @@ class CampaignState:
                 if isinstance(personality_nodes_raw, dict)
                 else None
             )
+            profile_raw = raw.get("personality_profile")
+            personality_profile = (
+                NPC.PersonalityProfile(
+                    identity_label=str(profile_raw.get("identity_label", "")),
+                    archetype=str(profile_raw.get("archetype", "")),
+                    baseline_temperament=str(profile_raw.get("baseline_temperament", "")),
+                    social_style=str(profile_raw.get("social_style", "")),
+                    confidence_fear_tendency=str(profile_raw.get("confidence_fear_tendency", "")),
+                    moral_leaning=str(profile_raw.get("moral_leaning", "")),
+                    motivations=str(profile_raw.get("motivations", "")),
+                    conversational_tone=str(profile_raw.get("conversational_tone", "")),
+                    stress_response=str(profile_raw.get("stress_response", "")),
+                    conflict_response=str(profile_raw.get("conflict_response", "")),
+                )
+                if isinstance(profile_raw, dict)
+                else None
+            )
             npc_payload = dict(raw)
             npc_payload["dynamic_state"] = dynamic_state
             npc_payload["memory_log"] = memory_log
             npc_payload["personality_nodes"] = personality_nodes
+            npc_payload["personality_profile"] = personality_profile
             npcs[key] = NPC(**npc_payload)
         for npc in npcs.values():
             if not npc.relationship_tier:
@@ -604,6 +636,24 @@ class CampaignState:
 
     @staticmethod
     def _scene_state_from_payload(raw_scene_state: Any, payload: dict[str, Any]) -> dict[str, Any]:
+        def _normalize_lightweight_npc(entry: dict[str, Any]) -> dict[str, Any]:
+            profile = entry.get("personality_profile", {})
+            normalized_profile = {
+                "identity_label": str(profile.get("identity_label", entry.get("display_name", ""))),
+                "archetype": str(profile.get("archetype", "unknown local actor")),
+                "baseline_temperament": str(profile.get("baseline_temperament", "reserved")),
+                "social_style": str(profile.get("social_style", "measured")),
+                "confidence_fear_tendency": str(profile.get("confidence_fear_tendency", "balanced caution")),
+                "moral_leaning": str(profile.get("moral_leaning", "situational")),
+                "motivations": str(profile.get("motivations", "protect immediate interests")),
+                "conversational_tone": str(profile.get("conversational_tone", "brief and observant")),
+                "stress_response": str(profile.get("stress_response", "narrows focus and watches exits")),
+                "conflict_response": str(profile.get("conflict_response", "tests intent before escalation")),
+            }
+            normalized = dict(entry)
+            normalized["personality_profile"] = normalized_profile
+            return normalized
+
         state = dict(raw_scene_state) if isinstance(raw_scene_state, dict) else {}
         current_location_id = str(payload.get("current_location_id", "")).strip()
         location_payload = payload.get("locations", {}).get(current_location_id, {}) if isinstance(payload.get("locations"), dict) else {}
@@ -640,7 +690,7 @@ class CampaignState:
                 last_player_action=str(state.get("last_player_action", "")),
                 last_immediate_result=str(state.get("last_immediate_result", "")),
                 scene_actors=[dict(v) for v in state.get("scene_actors", []) if isinstance(v, dict)],
-                lightweight_npcs=[dict(v) for v in state.get("lightweight_npcs", []) if isinstance(v, dict)],
+                lightweight_npcs=[_normalize_lightweight_npc(v) for v in state.get("lightweight_npcs", []) if isinstance(v, dict)],
                 last_target_actor_id=str(state.get("last_target_actor_id", "")),
                 npc_conditions={
                     str(npc_id): [str(item).strip() for item in values if str(item).strip()]

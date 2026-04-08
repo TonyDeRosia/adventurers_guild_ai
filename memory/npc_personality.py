@@ -55,6 +55,14 @@ class NPCPersonalitySystem:
                     decision_bias=str(nodes.get("decision_bias", "")),
                     faction_alignment=str(nodes.get("faction_alignment", "")),
                 )
+        if npc.personality_profile is None:
+            npc.personality_profile = self.generate_profile(
+                npc_name=npc.name,
+                role_hint=(npc.personality_nodes.role if npc.personality_nodes else "") or npc.personality_archetype or "",
+                temperament_hint=npc.personality_nodes.temperament if npc.personality_nodes else "",
+                social_hint=npc.personality_nodes.social_style if npc.personality_nodes else "",
+                speech_hint=npc.personality_nodes.speech_style if npc.personality_nodes else "",
+            )
 
     def record_memory(
         self,
@@ -106,6 +114,7 @@ class NPCPersonalitySystem:
         )
         if payload.get("impact"):
             self.apply_state_delta(state, npc_id, payload["impact"])
+        self._apply_profile_event_shift(state, npc_id, event_type)
         self._apply_evolution_rules(state, npc_id, event_type, payload)
 
     def evaluate(self, state: CampaignState, npc_id: str, scene: str) -> PersonalityEvaluation:
@@ -160,14 +169,102 @@ class NPCPersonalitySystem:
             self.initialize_npc(state, npc_id)
             mood = npc.dynamic_state.current_mood or "neutral"
             memory_tags = ", ".join(npc.dynamic_state.memory_tags[-4:]) if npc.dynamic_state.memory_tags else "none"
-            node_summary = self._node_summary(npc)
+            profile = npc.personality_profile or self.generate_profile(npc_name=npc.name)
+            player_stance = self._describe_player_stance(npc)
             guidance.append(
-                f"{npc.name}: archetype={npc.personality_archetype or 'none'}; nodes={node_summary}; "
-                f"state(trust={npc.dynamic_state.trust_toward_player}, fear={npc.dynamic_state.fear_toward_player}, "
-                f"suspicion={npc.dynamic_state.suspicion}, anger={npc.dynamic_state.anger}, attraction={npc.dynamic_state.attraction}, mood={mood}); "
-                f"recent_memory_tags={memory_tags}."
+                f"{npc.name}: {profile.baseline_temperament}, {profile.social_style}, {profile.moral_leaning}; "
+                f"motivation={profile.motivations}; likely voice={profile.conversational_tone}; "
+                f"stress={profile.stress_response}; conflict={profile.conflict_response}; "
+                f"current stance toward player={player_stance}; mood={mood}; tags={memory_tags}."
             )
         return guidance
+
+    def build_lightweight_prompt_guidance(self, scene_state: dict[str, Any], current_location_id: str) -> list[str]:
+        guidance: list[str] = []
+        for npc in scene_state.get("lightweight_npcs", []):
+            if not isinstance(npc, dict):
+                continue
+            if str(npc.get("location_id", current_location_id)) != current_location_id:
+                continue
+            profile = self.ensure_lightweight_profile(npc)
+            attitude = str(npc.get("attitude_to_player", "unknown")).strip() or "unknown"
+            guidance.append(
+                f"{npc.get('display_name', 'Unknown')}: {profile['baseline_temperament']}, {profile['social_style']}, "
+                f"{profile['moral_leaning']}; motivation={profile['motivations']}; voice={profile['conversational_tone']}; "
+                f"stress={profile['stress_response']}; conflict={profile['conflict_response']}; player stance={attitude}."
+            )
+        return guidance
+
+    def ensure_lightweight_profile(self, npc_record: dict[str, Any]) -> dict[str, str]:
+        existing = npc_record.get("personality_profile")
+        if isinstance(existing, dict) and str(existing.get("baseline_temperament", "")).strip():
+            return {k: str(v) for k, v in existing.items()}
+        generated = self.generate_profile(
+            npc_name=str(npc_record.get("display_name", "Unknown")),
+            role_hint=str(npc_record.get("role_hint", "")),
+            temperament_hint=str(npc_record.get("tone_default", "")),
+            social_hint=str(npc_record.get("personality_seed", "")),
+        )
+        profile = {
+            "identity_label": generated.identity_label,
+            "archetype": generated.archetype,
+            "baseline_temperament": generated.baseline_temperament,
+            "social_style": generated.social_style,
+            "confidence_fear_tendency": generated.confidence_fear_tendency,
+            "moral_leaning": generated.moral_leaning,
+            "motivations": generated.motivations,
+            "conversational_tone": generated.conversational_tone,
+            "stress_response": generated.stress_response,
+            "conflict_response": generated.conflict_response,
+        }
+        npc_record["personality_profile"] = profile
+        return profile
+
+    def generate_profile(
+        self,
+        *,
+        npc_name: str,
+        role_hint: str = "",
+        temperament_hint: str = "",
+        social_hint: str = "",
+        speech_hint: str = "",
+    ) -> NPC.PersonalityProfile:
+        role = role_hint.lower()
+        archetype = role_hint.strip() or "unknown local actor"
+        baseline_temperament = temperament_hint.strip() or "guarded"
+        if "guard" in role:
+            baseline_temperament = "disciplined and alert"
+        elif "merchant" in role:
+            baseline_temperament = "pragmatic and socially adaptive"
+        elif "elder" in role:
+            baseline_temperament = "measured and tradition-minded"
+        elif "stranger" in role or "figure" in role:
+            baseline_temperament = "watchful and hard to read"
+        social_style = social_hint.strip() or ("formal" if "guard" in role or "elder" in role else "measured")
+        confidence_fear_tendency = "steady confidence"
+        if "cautious" in baseline_temperament or "watchful" in baseline_temperament:
+            confidence_fear_tendency = "leans cautious under uncertainty"
+        moral_leaning = "duty-first" if "guard" in role else "situational but not needlessly cruel"
+        motivations = "maintain local stability and protect personal interests"
+        if "merchant" in role:
+            motivations = "secure profitable outcomes while avoiding unnecessary risk"
+        elif "stranger" in role or "figure" in role:
+            motivations = "protect their secrets and assess who can be trusted"
+        conversational_tone = speech_hint.strip() or ("formal and concise" if "guard" in role else "brief, deliberate")
+        stress_response = "tightens language and watches for leverage"
+        conflict_response = "tests motives, then chooses de-escalation or force based on perceived threat"
+        return NPC.PersonalityProfile(
+            identity_label=npc_name.strip() or "Unknown",
+            archetype=archetype,
+            baseline_temperament=baseline_temperament,
+            social_style=social_style,
+            confidence_fear_tendency=confidence_fear_tendency,
+            moral_leaning=moral_leaning,
+            motivations=motivations,
+            conversational_tone=conversational_tone,
+            stress_response=stress_response,
+            conflict_response=conflict_response,
+        )
 
     def _node_summary(self, npc: NPC) -> str:
         if npc.personality_nodes is None:
@@ -188,6 +285,43 @@ class NPCPersonalitySystem:
             f"secrets={','.join(nodes.secrets[:2]) if nodes.secrets else 'none'}",
         ]
         return "; ".join(segments)
+
+    def _describe_player_stance(self, npc: NPC) -> str:
+        trust = int(npc.dynamic_state.trust_toward_player)
+        fear = int(npc.dynamic_state.fear_toward_player)
+        anger = int(npc.dynamic_state.anger)
+        if trust - anger >= 10:
+            return "cautiously supportive"
+        if anger - trust >= 12:
+            return "resentful and defensive"
+        if fear >= 15:
+            return "wary and risk-averse"
+        return "evaluating and undecided"
+
+    def _apply_profile_event_shift(self, state: CampaignState, npc_id: str, event_type: str) -> None:
+        npc = state.npcs[npc_id]
+        if npc.personality_profile is None:
+            return
+        profile = npc.personality_profile
+        recent = npc.memory_log[-8:]
+        kindness_count = sum(1 for entry in recent if entry.event_type == "player_kindness")
+        betrayal_count = sum(1 for entry in recent if entry.event_type == "player_betrayal")
+        fear_count = sum(1 for entry in recent if entry.event_type in {"player_threat", "player_betrayal"})
+        victory_count = sum(1 for entry in recent if entry.event_type in {"player_defeat", "npc_victory"})
+
+        if kindness_count >= 3:
+            profile.social_style = "less guarded and more cooperative"
+            profile.conflict_response = "prefers negotiation before force when possible"
+        elif betrayal_count >= 2:
+            profile.social_style = "guarded and suspicious"
+            profile.conflict_response = "prepares contingencies and tests for deception"
+        if fear_count >= 2:
+            profile.confidence_fear_tendency = "leans fearful when pressure spikes"
+            profile.stress_response = "withdraws, seeks distance, and speaks tersely"
+        elif victory_count >= 2:
+            profile.confidence_fear_tendency = "confidence rising after repeated wins"
+        if event_type == "player_kindness" and "brief" in profile.conversational_tone:
+            profile.conversational_tone = "careful but warmer"
 
     def _apply_evolution_rules(
         self, state: CampaignState, npc_id: str, event_type: str, payload: dict[str, Any]

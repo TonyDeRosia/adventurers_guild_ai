@@ -538,7 +538,10 @@ class CampaignEngine:
             memory=memory_context,
             requested_mode=requested_mode,
             guidance_requested=guidance_requested,
-            npc_guidance=self.personality.build_prompt_guidance(state),
+            npc_guidance=(
+                self.personality.build_prompt_guidance(state)
+                + self.personality.build_lightweight_prompt_guidance(scene_state, state.current_location_id)
+            ),
             gm_context=gm_context_text,
             scene_state_summary=scene_state_summary,
             turn_context=turn_context,
@@ -617,7 +620,10 @@ class CampaignEngine:
                 memory=memory_context,
                 requested_mode=requested_mode,
                 guidance_requested=guidance_requested,
-                npc_guidance=self.personality.build_prompt_guidance(state),
+                npc_guidance=(
+                    self.personality.build_prompt_guidance(state)
+                    + self.personality.build_lightweight_prompt_guidance(scene_state, state.current_location_id)
+                ),
                 gm_context=gm_context_text,
                 scene_state_summary=scene_state_summary,
                 turn_context=turn_context,
@@ -660,7 +666,10 @@ class CampaignEngine:
                 memory=memory_context,
                 requested_mode=requested_mode,
                 guidance_requested=guidance_requested,
-                npc_guidance=self.personality.build_prompt_guidance(state),
+                npc_guidance=(
+                    self.personality.build_prompt_guidance(state)
+                    + self.personality.build_lightweight_prompt_guidance(scene_state, state.current_location_id)
+                ),
                 gm_context=gm_context_text,
                 scene_state_summary=scene_state_summary,
                 turn_context=turn_context,
@@ -1178,6 +1187,18 @@ class CampaignEngine:
             npc_states.append(
                 f"{npc.name}: {visible_condition}, {relationship}, personality {personality_summary}, likely intent {intent}, tone {tone}."
             )
+        for lite in scene_state.get("lightweight_npcs", []):
+            if not isinstance(lite, dict):
+                continue
+            if str(lite.get("location_id", state.current_location_id)) != state.current_location_id:
+                continue
+            profile = self.personality.ensure_lightweight_profile(lite)
+            attitude = str(lite.get("attitude_to_player", "unknown")).strip() or "unknown"
+            npc_states.append(
+                f"{lite.get('display_name', 'Unknown')}: local actor, {profile.get('baseline_temperament', 'reserved')}, "
+                f"{profile.get('social_style', 'measured')}, likely tone {profile.get('conversational_tone', 'brief')}, "
+                f"stress response {profile.get('stress_response', 'unclear')}, stance toward player {attitude}."
+            )
         environment_state = [str(v) for v in scene_state.get("altered_environment", []) if str(v).strip()]
         if not environment_state:
             environment_state = [str(scene_state.get("scene_summary", "")).strip()] if str(scene_state.get("scene_summary", "")).strip() else []
@@ -1234,6 +1255,12 @@ class CampaignEngine:
         return "steady and composed"
 
     def _describe_npc_personality(self, npc: Any) -> str:
+        if getattr(npc, "personality_profile", None):
+            profile = npc.personality_profile
+            bits = [profile.baseline_temperament, profile.social_style, profile.conversational_tone]
+            cleaned = [bit for bit in bits if bit]
+            if cleaned:
+                return ", ".join(cleaned[:2])
         if npc.personality_nodes:
             bits = [npc.personality_nodes.temperament, npc.personality_nodes.social_style, npc.personality_nodes.speech_style]
             cleaned = [bit for bit in bits if bit]
@@ -1865,7 +1892,9 @@ class CampaignEngine:
             "willingness_to_talk": 1,
             "last_dialogue_turn": 0,
             "last_dialogue_summary": "",
+            "location_id": state.current_location_id,
         }
+        npc_record["personality_profile"] = self.personality.ensure_lightweight_profile(npc_record)
         scene_state.setdefault("lightweight_npcs", []).append(npc_record)
         print(f"[npc-lite] materialized id={npc_id} tone={tone_default}")
         return npc_record
