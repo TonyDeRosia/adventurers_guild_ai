@@ -506,6 +506,7 @@ class CampaignEngine:
                 target_actor["last_interaction_turn"] = state.turn_count
                 scene_state["last_target_actor_id"] = str(target_actor.get("actor_id", ""))
                 print(f"[npc-dialogue] target_context={target_actor.get('actor_id', '')}")
+        self.personality.ensure_scene_profiles(state, scene_state)
 
         location_started = time.perf_counter()
         location_summary = self.world.get_current_location_summary(state)

@@ -64,6 +64,17 @@ class NPCPersonalitySystem:
                 speech_hint=npc.personality_nodes.speech_style if npc.personality_nodes else "",
             )
 
+    def ensure_scene_profiles(self, state: CampaignState, scene_state: dict[str, Any]) -> None:
+        for npc_id, npc in state.npcs.items():
+            if npc.location_id == state.current_location_id:
+                self.initialize_npc(state, npc_id)
+        for lite in scene_state.get("lightweight_npcs", []):
+            if not isinstance(lite, dict):
+                continue
+            if str(lite.get("location_id", state.current_location_id)) != state.current_location_id:
+                continue
+            self.ensure_lightweight_profile(lite)
+
     def record_memory(
         self,
         state: CampaignState,
@@ -171,11 +182,15 @@ class NPCPersonalitySystem:
             memory_tags = ", ".join(npc.dynamic_state.memory_tags[-4:]) if npc.dynamic_state.memory_tags else "none"
             profile = npc.personality_profile or self.generate_profile(npc_name=npc.name)
             player_stance = self._describe_player_stance(npc)
+            behavior_note = self._build_behavior_note(profile, player_stance)
             guidance.append(
-                f"{npc.name}: {profile.baseline_temperament}, {profile.social_style}, {profile.moral_leaning}; "
-                f"motivation={profile.motivations}; likely voice={profile.conversational_tone}; "
-                f"stress={profile.stress_response}; conflict={profile.conflict_response}; "
-                f"current stance toward player={player_stance}; mood={mood}; tags={memory_tags}."
+                f"{npc.name}: {profile.archetype}; {profile.baseline_temperament}, {profile.social_style}, "
+                f"{profile.confidence_fear_tendency}, {profile.moral_leaning}. Speaks in a {profile.conversational_tone} register. "
+                f"Driven by {profile.motivations}. Emotional baseline: {profile.emotional_baseline}. "
+                f"Under stress: {profile.stress_response}. In conflict: {profile.conflict_response}. "
+                f"Power/threat/kindness/disrespect: {profile.reaction_to_power}; {profile.reaction_to_threat}; "
+                f"{profile.reaction_to_kindness}; {profile.reaction_to_disrespect}. "
+                f"Toward player: {player_stance}. Current mood: {mood}. Behavioral note: {behavior_note}. Memory cues: {memory_tags}."
             )
         return guidance
 
@@ -188,10 +203,15 @@ class NPCPersonalitySystem:
                 continue
             profile = self.ensure_lightweight_profile(npc)
             attitude = str(npc.get("attitude_to_player", "unknown")).strip() or "unknown"
+            behavior_note = self._build_behavior_note_dict(profile, attitude)
             guidance.append(
-                f"{npc.get('display_name', 'Unknown')}: {profile['baseline_temperament']}, {profile['social_style']}, "
-                f"{profile['moral_leaning']}; motivation={profile['motivations']}; voice={profile['conversational_tone']}; "
-                f"stress={profile['stress_response']}; conflict={profile['conflict_response']}; player stance={attitude}."
+                f"{npc.get('display_name', 'Unknown')}: {profile['archetype']}; {profile['baseline_temperament']}, {profile['social_style']}, "
+                f"{profile['confidence_fear_tendency']}, {profile['moral_leaning']}. Voice: {profile['conversational_tone']}. "
+                f"Motivation: {profile['motivations']}. Emotional baseline: {profile['emotional_baseline']}. "
+                f"Stress/conflict: {profile['stress_response']}; {profile['conflict_response']}. "
+                f"Power/threat/kindness/disrespect: {profile['reaction_to_power']}; {profile['reaction_to_threat']}; "
+                f"{profile['reaction_to_kindness']}; {profile['reaction_to_disrespect']}. "
+                f"Stance toward player: {attitude}. Behavioral note: {behavior_note}."
             )
         return guidance
 
@@ -209,6 +229,7 @@ class NPCPersonalitySystem:
             "identity_label": generated.identity_label,
             "archetype": generated.archetype,
             "baseline_temperament": generated.baseline_temperament,
+            "emotional_baseline": generated.emotional_baseline,
             "social_style": generated.social_style,
             "confidence_fear_tendency": generated.confidence_fear_tendency,
             "moral_leaning": generated.moral_leaning,
@@ -216,6 +237,10 @@ class NPCPersonalitySystem:
             "conversational_tone": generated.conversational_tone,
             "stress_response": generated.stress_response,
             "conflict_response": generated.conflict_response,
+            "reaction_to_power": generated.reaction_to_power,
+            "reaction_to_threat": generated.reaction_to_threat,
+            "reaction_to_kindness": generated.reaction_to_kindness,
+            "reaction_to_disrespect": generated.reaction_to_disrespect,
         }
         npc_record["personality_profile"] = profile
         return profile
@@ -241,22 +266,31 @@ class NPCPersonalitySystem:
         elif "stranger" in role or "figure" in role:
             baseline_temperament = "watchful and hard to read"
         social_style = social_hint.strip() or ("formal" if "guard" in role or "elder" in role else "measured")
+        emotional_baseline = "contained but attentive"
         confidence_fear_tendency = "steady confidence"
         if "cautious" in baseline_temperament or "watchful" in baseline_temperament:
             confidence_fear_tendency = "leans cautious under uncertainty"
+            emotional_baseline = "guarded and vigilant"
         moral_leaning = "duty-first" if "guard" in role else "situational but not needlessly cruel"
         motivations = "maintain local stability and protect personal interests"
         if "merchant" in role:
             motivations = "secure profitable outcomes while avoiding unnecessary risk"
+            emotional_baseline = "pleasant on the surface, calculating underneath"
         elif "stranger" in role or "figure" in role:
             motivations = "protect their secrets and assess who can be trusted"
+            emotional_baseline = "cool restraint masking active suspicion"
         conversational_tone = speech_hint.strip() or ("formal and concise" if "guard" in role else "brief, deliberate")
         stress_response = "tightens language and watches for leverage"
         conflict_response = "tests motives, then chooses de-escalation or force based on perceived threat"
+        reaction_to_power = "respects clear authority but resists humiliation or arbitrary control"
+        reaction_to_threat = "narrows choices quickly and either hardens or withdraws based on advantage"
+        reaction_to_kindness = "acknowledges goodwill cautiously, then opens up in increments"
+        reaction_to_disrespect = "stiffens posture and becomes sharper or colder before deciding next move"
         return NPC.PersonalityProfile(
             identity_label=npc_name.strip() or "Unknown",
             archetype=archetype,
             baseline_temperament=baseline_temperament,
+            emotional_baseline=emotional_baseline,
             social_style=social_style,
             confidence_fear_tendency=confidence_fear_tendency,
             moral_leaning=moral_leaning,
@@ -264,6 +298,10 @@ class NPCPersonalitySystem:
             conversational_tone=conversational_tone,
             stress_response=stress_response,
             conflict_response=conflict_response,
+            reaction_to_power=reaction_to_power,
+            reaction_to_threat=reaction_to_threat,
+            reaction_to_kindness=reaction_to_kindness,
+            reaction_to_disrespect=reaction_to_disrespect,
         )
 
     def _node_summary(self, npc: NPC) -> str:
@@ -310,18 +348,70 @@ class NPCPersonalitySystem:
         victory_count = sum(1 for entry in recent if entry.event_type in {"player_defeat", "npc_victory"})
 
         if kindness_count >= 3:
-            profile.social_style = "less guarded and more cooperative"
-            profile.conflict_response = "prefers negotiation before force when possible"
+            profile.social_style = self._bounded_shift(
+                profile.social_style,
+                target="more cooperative and less defensive",
+                marker="cooperative",
+            )
+            profile.reaction_to_kindness = self._bounded_shift(
+                profile.reaction_to_kindness,
+                target="responds with cautious warmth while still checking intent",
+                marker="cautious warmth",
+            )
         elif betrayal_count >= 2:
-            profile.social_style = "guarded and suspicious"
-            profile.conflict_response = "prepares contingencies and tests for deception"
+            profile.social_style = self._bounded_shift(
+                profile.social_style,
+                target="more guarded and suspicious",
+                marker="guarded",
+            )
+            profile.conflict_response = self._bounded_shift(
+                profile.conflict_response,
+                target="leans on contingencies and deception checks before commitment",
+                marker="contingencies",
+            )
         if fear_count >= 2:
-            profile.confidence_fear_tendency = "leans fearful when pressure spikes"
-            profile.stress_response = "withdraws, seeks distance, and speaks tersely"
+            profile.confidence_fear_tendency = self._bounded_shift(
+                profile.confidence_fear_tendency,
+                target="more risk-averse when pressure spikes",
+                marker="risk-averse",
+            )
+            profile.stress_response = self._bounded_shift(
+                profile.stress_response,
+                target="withdraws for leverage, scans exits, and uses clipped language",
+                marker="scans exits",
+            )
         elif victory_count >= 2:
-            profile.confidence_fear_tendency = "confidence rising after repeated wins"
-        if event_type == "player_kindness" and "brief" in profile.conversational_tone:
-            profile.conversational_tone = "careful but warmer"
+            profile.confidence_fear_tendency = self._bounded_shift(
+                profile.confidence_fear_tendency,
+                target="confidence rising, occasionally bordering on pride",
+                marker="rising",
+            )
+        if event_type == "player_kindness":
+            profile.conversational_tone = self._bounded_shift(
+                profile.conversational_tone,
+                target="careful but warmer",
+                marker="warmer",
+            )
+
+    def _bounded_shift(self, current: str, *, target: str, marker: str) -> str:
+        base = (current or "").strip()
+        if marker in base.lower():
+            return base
+        if not base:
+            return target
+        return f"{base}; now slightly {target}"
+
+    def _build_behavior_note(self, profile: NPC.PersonalityProfile, player_stance: str) -> str:
+        return (
+            "Actions and body language should reflect this temperament, with hesitation/escalation paced by stress and threat. "
+            f"Trust behavior should track the current player stance ({player_stance}) rather than flipping abruptly."
+        )
+
+    def _build_behavior_note_dict(self, profile: dict[str, str], player_stance: str) -> str:
+        return (
+            "Use the profile to guide reactions, posture, and escalation pace. "
+            f"Let trust or suspicion shift gradually from the current stance ({player_stance})."
+        )
 
     def _apply_evolution_rules(
         self, state: CampaignState, npc_id: str, event_type: str, payload: dict[str, Any]

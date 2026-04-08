@@ -108,9 +108,9 @@ def test_node_based_personality_guidance_is_available_for_prompting() -> None:
     assert guidance
     elder_line = next((line for line in guidance if line.startswith("Elder Thorne:")), "")
     assert "measured and tradition-minded" in elder_line or "stoic" in elder_line
-    assert "likely voice=" in elder_line
-    assert "stress=" in elder_line
-    assert "current stance toward player=" in elder_line
+    assert "Speaks in a" in elder_line
+    assert "Under stress:" in elder_line
+    assert "Toward player:" in elder_line
 
 
 def test_personality_profile_auto_generated_for_existing_npc_and_persists() -> None:
@@ -152,3 +152,86 @@ def test_personality_profile_evolves_slightly_after_betrayal_pattern() -> None:
     assert profile is not None
     assert "suspicious" in profile.social_style or "guarded" in profile.social_style
     assert "deception" in profile.conflict_response or "contingencies" in profile.conflict_response
+
+
+def test_scene_profile_generation_happens_before_prompt_guidance_build() -> None:
+    state = load_state()
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+    npc = state.npcs["elder_thorne"]
+    npc.personality_profile = None
+
+    scene_state = state.structured_state.runtime.scene_state
+    engine.personality.ensure_scene_profiles(state, scene_state)
+    assert npc.personality_profile is not None
+
+    guidance = engine.personality.build_prompt_guidance(state)
+    elder_line = next((line for line in guidance if line.startswith("Elder Thorne:")), "")
+    assert "Power/threat/kindness/disrespect:" in elder_line
+
+
+def test_lightweight_npc_profile_is_full_and_behaviorally_usable_on_intro() -> None:
+    state = load_state()
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+    scene_state = state.structured_state.runtime.scene_state
+    scene_state["lightweight_npcs"] = [
+        {
+            "npc_id": "npc_lite_test",
+            "display_name": "Hooded Figure",
+            "role_hint": "hooded figure",
+            "personality_seed": "cautious",
+            "tone_default": "guarded",
+            "attitude_to_player": "unknown",
+            "location_id": state.current_location_id,
+        }
+    ]
+
+    engine.personality.ensure_scene_profiles(state, scene_state)
+    profile = scene_state["lightweight_npcs"][0]["personality_profile"]
+    for key in (
+        "identity_label",
+        "archetype",
+        "baseline_temperament",
+        "social_style",
+        "confidence_fear_tendency",
+        "moral_leaning",
+        "motivations",
+        "conversational_tone",
+        "stress_response",
+        "conflict_response",
+        "emotional_baseline",
+        "reaction_to_power",
+        "reaction_to_threat",
+        "reaction_to_kindness",
+        "reaction_to_disrespect",
+    ):
+        assert profile.get(key)
+
+
+def test_prompt_summary_reads_as_behavioral_anchor_not_flat_fields() -> None:
+    state = load_state()
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+    guidance = engine.personality.build_prompt_guidance(state)
+    elder_line = next((line for line in guidance if line.startswith("Elder Thorne:")), "")
+    assert "Speaks in a" in elder_line
+    assert "Emotional baseline:" in elder_line
+    assert "Under stress:" in elder_line
+    assert "In conflict:" in elder_line
+    assert "Behavioral note:" in elder_line
+
+
+def test_personality_evolution_is_gradual_and_identity_consistent() -> None:
+    state = load_state()
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+    npc = state.npcs["elder_thorne"]
+    engine.personality.build_prompt_guidance(state)
+    assert npc.personality_profile is not None
+    original_label = npc.personality_profile.identity_label
+    original_archetype = npc.personality_profile.archetype
+
+    for idx in range(5):
+        engine.personality.apply_event(state, "elder_thorne", "player_betrayal", {"summary": f"betrayal {idx}"})
+    evolved = npc.personality_profile
+    assert evolved is not None
+    assert evolved.identity_label == original_label
+    assert evolved.archetype == original_archetype
+    assert "guarded" in evolved.social_style or "suspicious" in evolved.social_style
