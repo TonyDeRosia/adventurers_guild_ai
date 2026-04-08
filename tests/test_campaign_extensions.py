@@ -548,6 +548,42 @@ def test_model_history_does_not_prefix_narrator_entries_with_outcome_summary_wra
     assert not history[1].content.lower().startswith("outcome summary:")
 
 
+def test_system_message_sanitizer_blocks_log_style_wrappers() -> None:
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+    cleaned = engine._sanitize_system_messages(
+        [
+            "Turn 3: the lantern flickers.",
+            "Outcome summary: corridor is clear.",
+            "You say: hello there.",
+            "The corridor air smells like wet stone.",
+        ]
+    )
+
+    assert cleaned == ["The corridor air smells like wet stone."]
+
+
+def test_finish_turn_filters_banned_system_message_phrases() -> None:
+    state = load_state()
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+    result = engine._finish_turn(
+        state,
+        action="check log filter",
+        system_messages=[
+            "Turn 8: movement confirmed.",
+            "Outcome summary: doorway opened.",
+            "You say: we proceed.",
+            "A cold draft spills from the opened doorway.",
+        ],
+        skip_narrator=True,
+    )
+
+    texts = [message["text"] for message in result.messages]
+    assert texts == ["A cold draft spills from the opened doorway."]
+    assert not any("turn" in text.lower() for text in texts)
+    assert not any("outcome summary" in text.lower() for text in texts)
+    assert not any("you say" in text.lower() for text in texts)
+
+
 def test_coherent_output_does_not_trigger_quality_fallback() -> None:
     state = load_state()
     adapter = SequencedNarrationAdapter(

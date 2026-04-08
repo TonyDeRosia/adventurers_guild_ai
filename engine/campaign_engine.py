@@ -438,6 +438,7 @@ class CampaignEngine:
     ) -> TurnResult:
         turn_started = time.perf_counter()
         scene_state = self._ensure_scene_state(state)
+        system_messages = self._sanitize_system_messages(system_messages)
         self.memory.record_recent(state, f"Player action: {action}")
         for msg in system_messages:
             self.quests.add_event(state, msg)
@@ -1932,9 +1933,26 @@ class CampaignEngine:
             if turn.player_input:
                 history.append(ChatMessage(role="user", content=turn.player_input))
             if turn.narrator_response:
-                compact = re.sub(r"\s+", " ", turn.narrator_response.strip()).split(".")[0][:160].strip()
-                history.append(ChatMessage(role="assistant", content=compact))
+                normalized = re.sub(r"\s+", " ", turn.narrator_response.strip())
+                if normalized:
+                    history.append(ChatMessage(role="assistant", content=normalized[:500]))
         return history
+
+    def _sanitize_system_messages(self, system_messages: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        banned_patterns = (
+            re.compile(r"\bturn\b", re.IGNORECASE),
+            re.compile(r"outcome\s+summary", re.IGNORECASE),
+            re.compile(r"you\s+say", re.IGNORECASE),
+        )
+        for message in system_messages:
+            text = re.sub(r"\s+", " ", str(message).strip())
+            if not text:
+                continue
+            if any(pattern.search(text) for pattern in banned_patterns):
+                continue
+            cleaned.append(text)
+        return cleaned
 
     def _build_structured_messages(self, system_messages: list[str], narrative: str) -> list[dict[str, str]]:
         payload = [{"type": self._classify_message_type(message), "text": message} for message in system_messages]
