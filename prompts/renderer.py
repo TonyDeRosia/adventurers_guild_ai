@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 
 from engine.character_sheets import CharacterSheetPromptFormatter
 from engine.entities import CampaignState
@@ -139,6 +140,7 @@ class PromptRenderer:
         enemy_block = self._build_enemy_prompt_block(state=state, turn_context=turn_context)
         player_facts_block = self._build_player_facts_prompt_block(
             state=state,
+            action=action,
             active_quest_count=active_quest_count,
             character_sheet_guidance=character_sheet_guidance,
             gm_context=gm_context,
@@ -237,7 +239,6 @@ class PromptRenderer:
             f"- Location: {location_summary}",
             f"- Visible environmental changes: {scene_state_summary or 'none'}",
             f"- Recent visible consequences: {' | '.join(recent_visible) if recent_visible else 'none'}",
-            scene_state_summary or "Current Scene State:\n- none",
         ]
         return "\n".join(parts)
 
@@ -255,7 +256,10 @@ class PromptRenderer:
                 lines.append(f"- {npc_state}")
         else:
             lines.append("- none")
-        lines.append(f"- NPC behavior anchors: {' | '.join(npc_guidance) if npc_guidance else npc_context}")
+        if npc_guidance:
+            lines.append(f"- NPC behavior anchors: {' | '.join(npc_guidance[:4])}")
+        elif npc_context != "none":
+            lines.append(f"- NPC behavior anchors: {npc_context}")
         return "\n".join(lines)
 
     def _build_enemy_prompt_block(self, *, state: CampaignState, turn_context: TurnPromptContext | None) -> str:
@@ -272,29 +276,67 @@ class PromptRenderer:
         self,
         *,
         state: CampaignState,
+        action: str,
         active_quest_count: int,
         character_sheet_guidance: list[str] | None,
         gm_context: str,
     ) -> str:
+        focus = self._infer_player_fact_focus(action)
+        active_conditions = sorted([key for key, enabled in state.combat_effects.items() if enabled])
+        inventory = state.player.inventory
+        spellbook = state.structured_state.runtime.spellbook
         facts = [
             f"- Player: {state.player.name} ({state.player.char_class})",
             f"- HP: {state.player.hp}/{state.player.max_hp}",
-            f"- Attack bonus: +{state.player.attack_bonus}",
-            f"- Active conditions: {', '.join(sorted([key for key, enabled in state.combat_effects.items() if enabled])) or 'none'}",
-            f"- Equipped item: {state.player.equipped_item_id or 'none'}",
-            f"- Inventory highlights: {', '.join(state.player.inventory[:6]) if state.player.inventory else 'none'}",
-            (
-                f"- Spellbook highlights: {', '.join(entry.get('name', 'unknown') for entry in state.structured_state.runtime.spellbook[:6])}"
-                if state.structured_state.runtime.spellbook
-                else "- Spellbook highlights: none"
-            ),
+            f"- Active conditions: {', '.join(active_conditions[:4]) or 'none'}",
             f"- Active quest count: {active_quest_count}",
-            f"- Character sheet guidance: {' | '.join(character_sheet_guidance[:4]) if character_sheet_guidance else 'none'}",
-            f"- Structured truth reference attached: {'yes' if bool(gm_context.strip()) else 'no'}",
-            "[STRUCTURED CAMPAIGN FACTS]",
-            gm_context or "none",
+            f"- Focus for this turn: {focus}",
         ]
+        if focus in {"combat", "inventory_use", "item_use"}:
+            facts.extend(
+                [
+                    f"- Attack bonus: +{state.player.attack_bonus}",
+                    f"- Equipped item: {state.player.equipped_item_id or 'none'}",
+                ]
+            )
+        if focus in {"inventory_use", "item_use", "combat", "exploration"}:
+            facts.append(f"- Inventory highlights: {', '.join(inventory[:5]) if inventory else 'none'}")
+        if focus in {"magic", "combat"}:
+            facts.append(
+                f"- Spellbook highlights: {', '.join(entry.get('name', 'unknown') for entry in spellbook[:5]) if spellbook else 'none'}"
+            )
+        if focus == "dialogue":
+            facts.append(f"- Social loadout cue: equipped item {state.player.equipped_item_id or 'none'}")
+        facts.extend(
+            [
+            f"- [Character Sheet Guidance] {' | '.join(character_sheet_guidance[:2]) if character_sheet_guidance else 'none'}",
+            f"- Structured truth attached: {'yes' if bool(gm_context.strip()) else 'no'}",
+            "[STRUCTURED CAMPAIGN FACTS]",
+            self._compress_structured_truth(gm_context),
+            ]
+        )
         return "\n".join(facts)
+
+    def _infer_player_fact_focus(self, action: str) -> str:
+        lowered = action.lower()
+        if any(word in lowered for word in ("cast", "spell", "ritual", "arcane", "magic")):
+            return "magic"
+        if any(word in lowered for word in ("use ", "drink ", "consume ", "apply ", "equip ", "draw ")):
+            return "item_use"
+        if any(word in lowered for word in ("attack", "defend", "strike", "flee", "ability")):
+            return "combat"
+        if any(word in lowered for word in ("talk", "say", "ask", "persuade", "threaten", "negotiate", "choose")):
+            return "dialogue"
+        return "exploration"
+
+    def _compress_structured_truth(self, gm_context: str) -> str:
+        text = (gm_context or "").strip()
+        if not text:
+            return "none"
+        compact = re.sub(r"\s+", " ", text)
+        if len(compact) <= 900:
+            return compact
+        return compact[:900].rstrip() + " ...[truncated]"
 
     def _build_recent_consequences_prompt_block(
         self,
