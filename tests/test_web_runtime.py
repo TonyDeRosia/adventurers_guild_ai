@@ -675,6 +675,81 @@ def test_ooc_structured_character_sheet_update_applies_requested_title(tmp_path:
     assert output["metadata"]["ooc_sync"]["character_sheet_updated"] is True
 
 
+def test_ooc_behavior_rule_detected_and_persisted_as_narrator_rule(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    output = runtime.handle_ooc_input("OOC stop using mysterious hooded figures all the time")
+
+    assert output["metadata"]["ooc_mode"] == "behavior_rule"
+    assert "I’ll apply this narrator rule" in output["messages"][0]["text"]
+    rules = runtime.get_narrator_rules()
+    assert len(rules) == 1
+    assert "generic mysterious hooded figures" in rules[0].get("text", "").lower()
+    assert rules[0].get("source") == "ooc_behavior_rule"
+
+
+def test_ooc_behavior_rule_normalizes_investigation_request(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    output = runtime.handle_ooc_input("OOC do not skip over things I explicitly investigate")
+
+    assert output["metadata"]["ooc_mode"] == "behavior_rule"
+    rules = runtime.get_narrator_rules()
+    assert any("explicitly investigates a target" in entry.get("text", "") for entry in rules)
+
+
+def test_ooc_behavior_rule_dedupes_repeat_requests(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.handle_ooc_input("OOC keep NPC dialogue shorter")
+    runtime.handle_ooc_input("OOC keep npc dialogue short")
+    rules = runtime.get_narrator_rules()
+    assert len(rules) == 1
+
+
+def test_ooc_behavior_rule_injected_into_future_prompt_generation(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    capture = _PromptCaptureProvider()
+    runtime.engine.model = capture
+    runtime.handle_ooc_input("OOC stop making every stranger guarded by default")
+
+    runtime.handle_player_input("I greet the gate guard.")
+    assert "Narrator Rules - Hard" in capture.last_system_prompt
+    assert "Do not make strangers guarded by default" in capture.last_system_prompt
+
+
+def test_ooc_behavior_rule_does_not_mutate_structured_or_world_data(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    state = runtime.session.state
+    before_spellbook = list(state.structured_state.runtime.spellbook)
+    before_world_lore = list(state.structured_state.canon.lore)
+    main_sheet = runtime._find_main_character_sheet(state)
+    before_title = main_sheet.level_or_rank if main_sheet is not None else ""
+
+    output = runtime.handle_ooc_input("OOC prioritize resolving my direct investigation before introducing distractions")
+
+    assert output["metadata"]["ooc_mode"] == "behavior_rule"
+    assert state.structured_state.runtime.spellbook == before_spellbook
+    assert state.structured_state.canon.lore == before_world_lore
+    if main_sheet is not None:
+        assert main_sheet.level_or_rank == before_title
+
+
+def test_ooc_behavior_rule_campaign_switching_isolated(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"player_name": "Mira", "slot": "slot_behavior_a"})
+    runtime.handle_ooc_input("OOC keep NPC dialogue shorter")
+    runtime.save_active_campaign("slot_behavior_a")
+
+    runtime.create_campaign({"player_name": "Aric", "slot": "slot_behavior_b"})
+    runtime.save_active_campaign("slot_behavior_b")
+
+    runtime.switch_campaign("slot_behavior_a")
+    rules_a = runtime.get_narrator_rules()
+    runtime.switch_campaign("slot_behavior_b")
+    rules_b = runtime.get_narrator_rules()
+
+    assert any("dialogue concise" in entry.get("text", "").lower() for entry in rules_a)
+    assert all("dialogue concise" not in entry.get("text", "").lower() for entry in rules_b)
+
+
 def test_history_and_scene_visual_are_campaign_namespaced(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.create_campaign({"player_name": "Mira", "slot": "slot_iso"})

@@ -14,6 +14,7 @@ import sys
 import urllib.request
 import zipfile
 import webbrowser
+from difflib import SequenceMatcher
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -2495,10 +2496,17 @@ class WebRuntime:
             for entry in canon.custom_narrator_rules:
                 if str(entry.get("id", "")).strip() == entry_id:
                     entry["text"] = text
+                    entry["source"] = str(payload.get("source", entry.get("source", "manual"))).strip() or "manual"
                     updated = True
                     break
             if not updated:
-                canon.custom_narrator_rules.append({"id": entry_id, "text": text})
+                canon.custom_narrator_rules.append(
+                    {
+                        "id": entry_id,
+                        "text": text,
+                        "source": str(payload.get("source", "manual")).strip() or "manual",
+                    }
+                )
             print(f"[narrator-rules] rule_added campaign={self.session.active_slot} count={len(canon.custom_narrator_rules)}")
         self.save_active_campaign(self.session.active_slot)
         print(f"[narrator-rules] persisted=true count={len(canon.custom_narrator_rules)}")
@@ -2807,6 +2815,8 @@ class WebRuntime:
         lowered = str(text or "").strip().lower()
         if not lowered:
             return "clarify"
+        if self._is_ooc_behavior_rule_request(lowered):
+            return "behavior_rule"
         authoring_verbs = {"add", "create", "generate", "make", "update", "set", "give", "write", "build"}
         structured_targets = {
             "spellbook",
@@ -2826,6 +2836,80 @@ class WebRuntime:
         has_authoring_verb = any(token in lowered for token in authoring_verbs)
         has_target = any(token in lowered for token in structured_targets)
         return "structured_authoring" if has_authoring_verb and has_target else "clarify"
+
+    def _is_ooc_behavior_rule_request(self, lowered_text: str) -> bool:
+        text = str(lowered_text or "").strip().lower()
+        if not text:
+            return False
+        if text.endswith("?") and not any(token in text for token in ("always", "never", "stop", "avoid", "prefer", "when i", "do not", "don't")):
+            return False
+        authoring_targets = ("spellbook", "character sheet", "world notes", "world note", "title", "identity", "inventory")
+        if any(target in text for target in authoring_targets):
+            return False
+        direct_patterns = (
+            r"\bstop\b.+",
+            r"\bdon['’]?t\b.+",
+            r"\bdo not\b.+",
+            r"\balways\b.+",
+            r"\bnever\b.+",
+            r"\bavoid\b.+",
+            r"\bprefer\b.+",
+            r"\bprioriti(?:ze|s)e?\b.+",
+            r"\bkeep\b.+(?:short|brief|concise|longer|clear|focused)",
+            r"\bwhen\b.+\b(?:resolve|do|focus|prioritize|prefer)\b",
+        )
+        return any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in direct_patterns)
+
+    def _normalize_behavior_rule_text(self, request_text: str) -> str:
+        text = str(request_text or "").strip()
+        text = re.sub(r"^\s*ooc[\s:,\-]*", "", text, flags=re.IGNORECASE).strip()
+        text = re.sub(r"^(please|pls)\s+", "", text, flags=re.IGNORECASE).strip()
+        lowered = text.lower()
+
+        if re.search(r"\bskip over\b.*\b(investigat\w*|inspect\w*)\b", lowered):
+            return "When the player explicitly investigates a target, resolve that investigation directly before shifting focus elsewhere."
+        if re.search(r"\bhooded figure", lowered):
+            return "Avoid repeatedly introducing generic mysterious hooded figures. Prefer more varied and distinct NPC introductions."
+        if re.search(r"\bguarded by default\b", lowered):
+            return "Do not make strangers guarded by default; vary initial NPC demeanor based on context."
+        if re.search(r"\b(dialogue|dialog)\b.*\b(short|shorter|brief|concise)\b", lowered):
+            return "Keep NPC dialogue concise unless the scene clearly calls for extended speech."
+        if re.search(r"\bprioriti(?:ze|s)e?\b.*\b(investigat\w*|inspect\w*)\b", lowered):
+            return "Prioritize resolving the player's direct investigation before introducing new distractions."
+
+        compact = re.sub(r"\s+", " ", text).strip(" .!?")
+        compact = compact[0].upper() + compact[1:] if compact else "Adjust narration behavior based on the latest player instruction."
+        if not compact.endswith("."):
+            compact += "."
+        if len(compact) > 220:
+            compact = compact[:217].rstrip() + "..."
+        return compact
+
+    def _upsert_ooc_behavior_rule(self, request_text: str) -> tuple[dict[str, Any], bool, bool]:
+        normalized_rule = self._normalize_behavior_rule_text(request_text)
+        print(f'[narrator-rules] normalized_rule="{normalized_rule}"')
+        canon = self.session.state.structured_state.canon
+        if not isinstance(canon.custom_narrator_rules, list):
+            canon.custom_narrator_rules = []
+        normalized_key = re.sub(r"[^a-z0-9]+", "", normalized_rule.lower())
+        for entry in canon.custom_narrator_rules:
+            existing_text = str(entry.get("text", "")).strip()
+            if not existing_text:
+                continue
+            existing_key = re.sub(r"[^a-z0-9]+", "", existing_text.lower())
+            if existing_key == normalized_key:
+                return entry, False, True
+            if existing_key and normalized_key and SequenceMatcher(None, existing_key, normalized_key).ratio() >= 0.93:
+                entry["text"] = normalized_rule
+                entry["source"] = "ooc_behavior_rule"
+                return entry, False, True
+        entry = {
+            "id": f"nr_{int(time.time() * 1000)}",
+            "text": normalized_rule,
+            "source": "ooc_behavior_rule",
+        }
+        canon.custom_narrator_rules.append(entry)
+        return entry, True, False
 
     def _extract_structured_ability_entries(self, text: str) -> list[dict[str, Any]]:
         entries: list[dict[str, Any]] = []
@@ -2974,6 +3058,37 @@ class WebRuntime:
         model_status = self.get_model_status()
         self._append_message("ooc_player", clean_text, persist=False)
         print(f"[ooc] mode={ooc_mode}")
+        if ooc_mode == "behavior_rule":
+            sync_summary = {"spellbook_entries_added": 0, "character_sheet_updated": False, "world_entries_added": 0, "mutated": False}
+            rule_entry, added, deduped = self._upsert_ooc_behavior_rule(clean_text)
+            print(f"[narrator-rules] added_custom_rule={str(added).lower()}")
+            print(f"[narrator-rules] dedupe_reused={str(deduped).lower()}")
+            self.save_active_campaign(self.session.active_slot)
+            acknowledgement = f"Got it. I’ll apply this narrator rule for this campaign: {rule_entry.get('text', '').strip()}"
+            self._append_message("ooc_gm", acknowledgement, persist=False)
+            self._flush_history_store()
+            return {
+                "narrative": acknowledgement,
+                "system_messages": [],
+                "messages": [{"type": "ooc_gm", "text": acknowledgement}],
+                "should_exit": False,
+                "metadata": {
+                    "mode": "ooc",
+                    "ooc_mode": ooc_mode,
+                    "ooc_sync": sync_summary,
+                    "model_status": model_status,
+                    "behavior_rule": {
+                        "id": str(rule_entry.get("id", "")).strip(),
+                        "text": str(rule_entry.get("text", "")).strip(),
+                        "added": added,
+                    },
+                    "timing": {
+                        "request_received_at": request_received_at,
+                        "ooc_generation_ms": 0.0,
+                    },
+                },
+                "state": self.serialize_state(),
+            }
         context_prompt = self._build_ooc_context()
         system_prompt = (
             "You are the Adventure Guild AI GM brain responding in OOC mode.\n"

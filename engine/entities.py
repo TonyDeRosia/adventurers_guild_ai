@@ -559,6 +559,7 @@ class CampaignState:
                     {
                         "id": str(entry.get("id", "")).strip() or f"rule_{index}",
                         "text": str(entry.get("text", "")).strip(),
+                        "source": str(entry.get("source", "manual")).strip() or "manual",
                     }
                     for index, entry in enumerate(raw_canon.get("custom_narrator_rules", []))
                     if isinstance(entry, dict) and str(entry.get("text", "")).strip()
