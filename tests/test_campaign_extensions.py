@@ -293,6 +293,28 @@ def test_new_ability_is_added_after_successful_use() -> None:
     assert "Rain Spell" in names
 
 
+def test_ability_normalization_produces_clean_reusable_names() -> None:
+    state = load_state()
+    state.settings.play_style.auto_update_character_sheet_from_actions = True
+    engine = CampaignEngine(StaticNarrationAdapter("You cast chain lightning and it succeeds."), data_dir=Path("data"))
+
+    engine.run_turn(state, "cast chain lightning in the air")
+    assert any(entry.get("name") == "Chain Lightning" for entry in state.structured_state.runtime.spellbook)
+
+
+def test_summon_and_create_actions_normalize_to_named_abilities() -> None:
+    state = load_state()
+    state.settings.play_style.auto_update_character_sheet_from_actions = True
+    engine = CampaignEngine(StaticNarrationAdapter("You channel primal power and it works."), data_dir=Path("data"))
+
+    engine.run_turn(state, "i summon fire")
+    engine.run_turn(state, "i create rain")
+
+    names = [entry.get("name") for entry in state.structured_state.runtime.spellbook]
+    assert "Fire Summoning" in names
+    assert "Rain Calling" in names
+
+
 def test_learned_ability_persists_across_turns_and_prompt_injection() -> None:
     state = load_state()
     state.settings.play_style.auto_update_character_sheet_from_actions = True
@@ -318,6 +340,18 @@ def test_duplicate_ability_entries_are_not_created() -> None:
     assert len(matches) == 1
 
 
+def test_duplicate_ability_entries_are_prevented_by_fuzzy_similarity() -> None:
+    state = load_state()
+    state.settings.play_style.auto_update_character_sheet_from_actions = True
+    engine = CampaignEngine(StaticNarrationAdapter("You cast chain lightning and it works."), data_dir=Path("data"))
+
+    engine.run_turn(state, "cast chain lightning in the air")
+    engine.run_turn(state, "cast chain-lightning")
+
+    matches = [entry for entry in state.structured_state.runtime.spellbook if entry.get("name") == "Chain Lightning"]
+    assert len(matches) == 1
+
+
 def test_strict_mode_recognizes_learned_abilities_after_learning() -> None:
     state = load_state()
     state.settings.play_style.auto_update_character_sheet_from_actions = True
@@ -329,6 +363,18 @@ def test_strict_mode_recognizes_learned_abilities_after_learning() -> None:
 
     assert any("newly demonstrated" in msg.lower() for msg in first.system_messages)
     assert not any("newly demonstrated" in msg.lower() for msg in second.system_messages)
+
+
+def test_main_character_sheet_is_auto_created_and_injected_when_missing() -> None:
+    state = load_state()
+    state.character_sheets = []
+    engine = CampaignEngine(StaticNarrationAdapter("You look around carefully."), data_dir=Path("data"))
+
+    engine.run_turn(state, "look")
+
+    assert any(sheet.sheet_type == "main_character" for sheet in state.character_sheets)
+    gm_context = engine.state_orchestrator.build_gm_context(state)
+    assert "Player capabilities must respect the character sheet unless learning mode is enabled." in gm_context
 
 
 def test_main_character_guaranteed_loadout_initializes_runtime_spellbook() -> None:

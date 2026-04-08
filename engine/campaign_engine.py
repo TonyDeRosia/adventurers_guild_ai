@@ -100,6 +100,7 @@ class CampaignEngine:
         normalized_name: str
         category: str
         confidence: str
+        source_verb: str
 
     def run_turn(self, state: CampaignState, action: str) -> TurnResult:
         state.turn_count += 1
@@ -784,45 +785,49 @@ class CampaignEngine:
         print(f"[ability-learn] detected={str(detected is not None).lower()}")
         if detected is None:
             return None
-        if self._ability_exists(state, detected.normalized_name):
-            print(f"[ability-learn] new_ability={detected.raw_name}")
+        existing_name = self._find_existing_ability_name(state, detected.normalized_name)
+        print(f'[ability-learn] raw="{detected.raw_name}"')
+        print(f'[ability-learn] normalized="{detected.normalized_name}"')
+        if existing_name is not None:
+            print(f'[ability-learn] reused_existing="{existing_name}"')
             print("[ability-learn] added_to_spellbook=false")
             return None
         if not state.settings.play_style.auto_update_character_sheet_from_actions:
-            print(f"[ability-learn] new_ability={detected.raw_name}")
             print("[ability-learn] added_to_spellbook=false")
             return None
         if state.settings.play_style.strict_sheet_enforcement:
             system_messages.append(
                 f"Strict sheet mode note: '{detected.normalized_name}' is newly demonstrated and not yet trusted until this turn succeeds."
             )
-        print(f"[ability-learn] new_ability={detected.raw_name}")
         print("[ability-learn] added_to_spellbook=pending")
         return detected
 
     def _detect_action_ability(self, action: str) -> PendingAbilityLearning | None:
         normalized = re.sub(r"\s+", " ", action.strip().lower())
         patterns = (
-            r"\bcast\s+(.+)$",
-            r"\buse\s+(?:my\s+)?(.+)$",
-            r"\bchannel\s+(.+)$",
-            r"\binvoke\s+(.+)$",
-            r"\bsummon\s+(.+)$",
-            r"\bactivate\s+(.+)$",
-            r"\bperform\s+(.+)$",
+            ("cast", r"\bcast\s+(.+)$"),
+            ("use", r"\buse\s+(?:my\s+)?(.+)$"),
+            ("channel", r"\bchannel\s+(.+)$"),
+            ("invoke", r"\binvoke\s+(.+)$"),
+            ("summon", r"\bsummon\s+(.+)$"),
+            ("create", r"\bcreate\s+(.+)$"),
+            ("activate", r"\bactivate\s+(.+)$"),
+            ("perform", r"\bperform\s+(.+)$"),
         )
         phrase = ""
-        for pattern in patterns:
+        source_verb = ""
+        for verb, pattern in patterns:
             match = re.search(pattern, normalized)
             if match:
                 phrase = match.group(1).strip(" .,!?")
+                source_verb = verb
                 break
         if not phrase:
             return None
         phrase = re.sub(r"^(?:a|an|the)\s+", "", phrase).strip()
         if not phrase:
             return None
-        normalized_name = self._normalize_ability_name(phrase)
+        normalized_name = self._normalize_ability_name(phrase, source_verb=source_verb)
         category = self._classify_ability_category(phrase)
         confidence = "high" if any(token in normalized for token in ("cast", "invoke", "summon")) else "medium"
         return CampaignEngine.PendingAbilityLearning(
@@ -830,12 +835,27 @@ class CampaignEngine:
             normalized_name=normalized_name,
             category=category,
             confidence=confidence,
+            source_verb=source_verb,
         )
 
-    def _normalize_ability_name(self, raw_name: str) -> str:
-        cleaned = re.sub(r"[^a-zA-Z0-9\s\-]", "", raw_name).strip()
-        cleaned = re.sub(r"\s+", " ", cleaned)
-        return cleaned.title() if cleaned else "Unknown Ability"
+    def _normalize_ability_name(self, raw_name: str, *, source_verb: str = "") -> str:
+        cleaned = re.sub(r"[^a-zA-Z0-9\s\-]", " ", raw_name.lower())
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        if not cleaned:
+            return "Unknown Ability"
+        cleaned = re.sub(r"\b(in the air|around me|around us|around the area|at the target|at the enemy|for now|right now)\b", " ", cleaned)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        cleaned = re.sub(r"^(?:my|the|a|an)\s+", "", cleaned).strip()
+        tokens = [token for token in cleaned.split(" ") if token and token not in {"with", "into", "toward", "towards"}]
+        if not tokens:
+            return "Unknown Ability"
+        core_tokens = tokens[:3]
+        if source_verb in {"summon", "create"} and len(core_tokens) <= 2:
+            noun = " ".join(core_tokens).title()
+            suffix = "Summoning" if source_verb == "summon" else "Calling"
+            return f"{noun} {suffix}".strip()
+        normalized = " ".join(core_tokens).title()
+        return normalized or "Unknown Ability"
 
     def _classify_ability_category(self, raw_name: str) -> str:
         lowered = raw_name.lower()
@@ -847,7 +867,7 @@ class CampaignEngine:
             return "skill"
         return "ability"
 
-    def _ability_exists(self, state: CampaignState, normalized_name: str) -> bool:
+    def _find_existing_ability_name(self, state: CampaignState, normalized_name: str) -> str | None:
         candidate_key = re.sub(r"[^a-z0-9]", "", normalized_name.lower())
         existing_names = [
             str(entry.get("name", ""))
@@ -863,10 +883,10 @@ class CampaignEngine:
             if not existing_key:
                 continue
             if existing_key == candidate_key:
-                return True
+                return existing
             if SequenceMatcher(None, existing_key, candidate_key).ratio() >= 0.9:
-                return True
-        return False
+                return existing
+        return None
 
     def _is_successful_ability_demonstration(self, narrative: str) -> bool:
         lowered = narrative.lower()
@@ -1246,6 +1266,7 @@ class CampaignEngine:
         return {"is_dead_loop": static_loop, "is_progression": False}
 
     def _validate_narration_output(self, action: str, narrative: str, state: CampaignState, scene_state: dict[str, Any]) -> dict[str, str | bool]:
+        normalized_action = self._normalize_action(action)
         normalized_narrative = re.sub(r"\s+", " ", narrative.strip().lower())
         if not normalized_narrative:
             return {"valid": False, "reason": "no_output"}
@@ -1253,6 +1274,12 @@ class CampaignEngine:
             return {"valid": False, "reason": "refusal"}
         if self._contains_broken_scaffold_leakage(normalized_narrative):
             return {"valid": False, "reason": "broken_scaffold"}
+        if self._detect_action_override(normalized_action, normalized_narrative, scene_state):
+            return {"valid": False, "reason": "action_override"}
+        if self._requires_immediate_grounding(normalized_action):
+            action_tokens = [token for token in re.findall(r"[a-z]{4,}", normalized_action) if token not in {"cast", "attack", "strike", "spell", "with", "into", "from"}]
+            if action_tokens and not any(token in normalized_narrative for token in action_tokens[:3]):
+                return {"valid": False, "reason": "action_ungrounded"}
         return {"valid": True, "reason": "ok"}
 
     def _contains_broken_scaffold_leakage(self, normalized_narrative: str) -> bool:
@@ -1316,7 +1343,7 @@ class CampaignEngine:
 
     def _requires_immediate_grounding(self, action: str) -> bool:
         lowered = action.lower()
-        return any(token in lowered for token in ("cast", "attack", "strike", "shoot", "ability", "defend"))
+        return any(token in lowered for token in ("cast", "spell", "ability", "invoke", "summon", "channel"))
 
     def _build_structured_turn_context(self, state: CampaignState, action: str, scene_state: dict[str, Any]) -> TurnPromptContext:
         location = str(scene_state.get("location_name") or state.current_location_id or "unknown")
@@ -2334,7 +2361,7 @@ class CampaignEngine:
     def _sanitize_system_messages(self, system_messages: list[str]) -> list[str]:
         cleaned: list[str] = []
         banned_patterns = (
-            re.compile(r"\bturn\b", re.IGNORECASE),
+            re.compile(r"^\s*turn\s+\d+\s*:", re.IGNORECASE),
             re.compile(r"outcome\s+summary", re.IGNORECASE),
             re.compile(r"you\s+say", re.IGNORECASE),
         )
