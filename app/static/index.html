@@ -24,6 +24,7 @@
           <button id="rename-campaign">Rename</button>
           <button id="delete-campaign">Delete selected</button>
           <button id="open-narrator-rules" type="button">Narrator Rules</button>
+          <button id="open-world-building" type="button">World Building</button>
         </div>
       </aside>
 
@@ -252,6 +253,29 @@
           <button id="narrator-rule-save" type="button">Save Rule</button>
           <button id="narrator-rule-clear" type="button">Clear Editor</button>
           <button id="narrator-rules-save-campaign" type="button">Save Rules to Campaign</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="world-building-modal" class="modal hidden">
+      <div class="modal-card runtime-sheets-modal-card world-building-modal-card">
+        <div class="panel-title-row">
+          <h3>World Building</h3>
+          <button id="close-world-building" type="button">Close</button>
+        </div>
+        <div id="world-building-viewer" class="world-building-viewer">
+          <section class="world-building-section">
+            <h4>NPC Personalities</h4>
+            <div id="world-building-npc-list" class="world-building-list">No NPC personalities generated yet.</div>
+          </section>
+          <section class="world-building-section">
+            <h4>World Design</h4>
+            <div id="world-building-design-list" class="world-building-list">No world design entries available yet.</div>
+          </section>
+          <section class="world-building-section">
+            <h4>Reactive World Changes</h4>
+            <div id="world-building-reactive-list" class="world-building-list">No reactive world changes recorded yet.</div>
+          </section>
         </div>
       </div>
     </div>

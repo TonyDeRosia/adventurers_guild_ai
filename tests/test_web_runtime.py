@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.web import WebRuntime, create_web_app
-from engine.entities import CampaignState
+from engine.entities import CampaignState, NPC
 from images.base import ImageGenerationResult
 from models.base import NarrationModelAdapter, ProviderUnavailableError
 
@@ -2050,3 +2050,83 @@ def test_narrator_rules_persist_after_restart_and_switch_isolated(tmp_path: Path
     reloaded.switch_campaign("slot_rules_b")
     reloaded.handle_player_input("look")
     assert "Rule A tone" not in capture.last_system_prompt
+
+
+def test_world_building_button_and_modal_markup_present_in_left_controls() -> None:
+    index_html = Path("app/static/index.html").read_text(encoding="utf-8")
+    app_js = Path("app/static/app.js").read_text(encoding="utf-8")
+    narrator_idx = index_html.index('id="open-narrator-rules"')
+    world_idx = index_html.index('id="open-world-building"')
+    assert narrator_idx < world_idx
+    assert ">World Building</button>" in index_html
+    assert 'id="world-building-modal"' in index_html
+    assert "NPC Personalities" in index_html
+    assert "World Design" in index_html
+    assert "Reactive World Changes" in index_html
+    assert "No NPC personalities generated yet." in index_html
+    assert "No world design entries available yet." in index_html
+    assert "No reactive world changes recorded yet." in index_html
+    assert "open-world-building" in app_js
+    assert "/api/campaign/world-building" in app_js
+
+
+def test_world_building_view_returns_empty_collections_when_no_data(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_world_empty"})
+    runtime.session.state.npcs = {}
+    runtime.session.state.important_world_facts = []
+    runtime.session.state.structured_state.canon.lore = []
+    runtime.session.state.structured_state.runtime.discovered_locations = []
+    runtime.session.state.world_events = []
+    runtime.session.state.structured_state.runtime.scene_state = {}
+    payload = runtime.get_world_building_view()
+    assert payload["npc_personalities"] == []
+    assert payload["world_design"] == []
+    assert payload["reactive_world_changes"] == []
+
+
+def test_world_building_view_surfaces_real_npc_world_and_reactive_data(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_world_rich", "starting_location_name": "Black Harbor"})
+    state = runtime.session.state
+    if state.npcs:
+        npc = next(iter(state.npcs.values()))
+    else:
+        npc = NPC(id="npc_captain_myra", name="Captain Myra", location_id=state.current_location_id)
+        state.npcs[npc.id] = npc
+    npc.name = "Captain Myra"
+    if npc.personality_profile is None:
+        npc.personality_profile = NPC.PersonalityProfile()
+    npc.personality_profile.archetype = "Veteran Captain"
+    npc.personality_profile.baseline_temperament = "Disciplined but compassionate"
+    npc.personality_profile.social_style = "Direct leadership"
+    npc.personality_profile.motivations = "Protect the harbor and crew"
+    npc.personality_profile.conversational_tone = "Measured and practical"
+    npc.personality_profile.conflict_response = "Prefers strategic de-escalation"
+    npc.dynamic_state.current_mood = "Wary respect"
+    npc.applied_evolution_rules = ["Became more trusting after the dock rescue"]
+    state.structured_state.runtime.scene_state = {
+        "npc_conditions": {npc.id: ["Recovering from storm injuries"]},
+        "altered_environment": ["Collapsed pier blocks eastern docking lane"],
+        "recent_consequences": ["Harbor watch doubled night patrols after sabotage"],
+        "active_effects": ["Smuggler network laying low but still active"],
+    }
+    state.important_world_facts = ["The moon-tide determines safe passage through the reefs."]
+    state.structured_state.canon.lore = ["The Black Beacon was built by exiled star-mages."]
+    state.structured_state.runtime.discovered_locations = [state.current_location_id]
+    state.faction_reputation = {"Harbor Watch": 15}
+    state.unresolved_plot_threads = ["Who funded the dock saboteurs?"]
+    state.recent_memory = ["Captain Myra asked the party for a discreet investigation."]
+    state.world_events = ["Emergency council called in Black Harbor."]
+    state.structured_state.recent_turn_memory.recent_discoveries = ["Recovered coded ledger from smuggler cache."]
+
+    payload = runtime.get_world_building_view()
+    assert payload["npc_personalities"]
+    assert payload["npc_personalities"][0]["name"] == "Captain Myra"
+    assert payload["npc_personalities"][0]["current_persistent_conditions"] == ["Recovering from storm injuries"]
+    world_design_labels = {entry["label"] for entry in payload["world_design"]}
+    reactive_labels = {entry["label"] for entry in payload["reactive_world_changes"]}
+    assert "World Facts" in world_design_labels
+    assert "Discovered Lore" in world_design_labels
+    assert "Persistent Environment Changes" in reactive_labels
+    assert "Major Scene Consequences" in reactive_labels

@@ -2007,6 +2007,114 @@ class WebRuntime:
                 clean.append(entry)
         return clean
 
+    def _clean_text(self, value: Any) -> str:
+        return str(value or "").strip()
+
+    def _clean_list(self, values: Any) -> list[str]:
+        if not isinstance(values, list):
+            return []
+        return [str(value).strip() for value in values if str(value).strip()]
+
+    def _append_group(self, groups: list[dict[str, Any]], label: str, entries: list[str]) -> None:
+        clean = [entry for entry in entries if str(entry).strip()]
+        if clean:
+            groups.append({"label": label, "entries": clean})
+
+    def get_world_building_view(self) -> dict[str, Any]:
+        state = self.session.state
+        runtime = state.structured_state.runtime
+        scene_state = runtime.scene_state if isinstance(runtime.scene_state, dict) else {}
+        npc_conditions = scene_state.get("npc_conditions", {}) if isinstance(scene_state, dict) else {}
+        npc_conditions = npc_conditions if isinstance(npc_conditions, dict) else {}
+
+        npc_profiles: list[dict[str, Any]] = []
+        for npc in state.npcs.values():
+            profile = npc.personality_profile
+            nodes = npc.personality_nodes
+            dynamic = npc.dynamic_state
+            notes = self._clean_list(npc.notes)
+            memory_summaries = self._clean_list([entry.summary for entry in npc.memory_log if getattr(entry, "summary", "")])
+            evolution = self._clean_list(npc.applied_evolution_rules)
+            conditions = self._clean_list(npc_conditions.get(npc.id, []))
+            role_or_archetype = self._clean_text(
+                (profile.archetype if profile else "")
+                or npc.personality_archetype
+                or (nodes.role if nodes else "")
+                or "Unknown role"
+            )
+            personality_summary = self._clean_text(
+                (profile.baseline_temperament if profile else "")
+                or (nodes.temperament if nodes else "")
+                or "No personality summary available yet."
+            )
+            social_style = self._clean_text((profile.social_style if profile else "") or (nodes.social_style if nodes else ""))
+            motivations = self._clean_text((profile.motivations if profile else "") or ", ".join((nodes.desires if nodes else [])[:3]))
+            speaking_style = self._clean_text((profile.conversational_tone if profile else "") or (nodes.speech_style if nodes else ""))
+            conflict_style = self._clean_text((profile.conflict_response if profile else "") or (nodes.aggression if nodes else ""))
+            stance = self._clean_text(dynamic.current_mood if dynamic else "")
+            notable_evolution = self._clean_text(evolution[-1] if evolution else (memory_summaries[-1] if memory_summaries else (notes[-1] if notes else "")))
+
+            has_profile_data = any(
+                [
+                    profile is not None,
+                    nodes is not None,
+                    notes,
+                    memory_summaries,
+                    evolution,
+                    conditions,
+                ]
+            )
+            if not has_profile_data:
+                continue
+            npc_profiles.append(
+                {
+                    "name": self._clean_text(npc.name) or "Unnamed NPC",
+                    "role_or_archetype": role_or_archetype,
+                    "personality_summary": personality_summary,
+                    "social_style": social_style,
+                    "likely_motivations": motivations,
+                    "speaking_style": speaking_style,
+                    "conflict_style": conflict_style,
+                    "current_stance_toward_player": stance,
+                    "current_persistent_conditions": conditions,
+                    "notable_evolution": notable_evolution,
+                }
+            )
+
+        world_design: list[dict[str, Any]] = []
+        self._append_group(world_design, "World Facts", self._clean_list(state.important_world_facts))
+        self._append_group(world_design, "Discovered Lore", self._clean_list(state.structured_state.canon.lore))
+        discovered_locations = []
+        for location_id in self._clean_list(runtime.discovered_locations):
+            location = state.locations.get(location_id)
+            discovered_locations.append(location.name if location else location_id)
+        self._append_group(world_design, "Established Locations", self._clean_list(discovered_locations))
+        faction_entries = [
+            f"{name}: {value}"
+            for name, value in state.faction_reputation.items()
+            if isinstance(value, (int, float)) and value != 0
+        ]
+        self._append_group(world_design, "Factions & Powers", self._clean_list(faction_entries))
+        self._append_group(world_design, "Emerging Tensions", self._clean_list(state.unresolved_plot_threads))
+        self._append_group(world_design, "Narrative Threads", self._clean_list(state.recent_memory))
+
+        reactive_changes: list[dict[str, Any]] = []
+        self._append_group(reactive_changes, "Persistent Environment Changes", self._clean_list(scene_state.get("altered_environment", [])))
+        self._append_group(reactive_changes, "Major Scene Consequences", self._clean_list(scene_state.get("recent_consequences", [])))
+        self._append_group(reactive_changes, "World State Shifts", self._clean_list(state.world_events))
+        self._append_group(reactive_changes, "Ongoing Threats / Aftermath", self._clean_list(scene_state.get("active_effects", [])))
+        self._append_group(
+            reactive_changes,
+            "Resolved / Unresolved Changes",
+            self._clean_list(state.structured_state.recent_turn_memory.recent_discoveries),
+        )
+
+        return {
+            "npc_personalities": npc_profiles,
+            "world_design": world_design,
+            "reactive_world_changes": reactive_changes,
+        }
+
     def get_inventory_state(self) -> dict[str, Any]:
         runtime = self.session.state.structured_state.runtime
         if not runtime.inventory_state:
@@ -2890,6 +2998,10 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     @app.get("/api/campaign/narrator-rules")
     def campaign_narrator_rules() -> dict[str, Any]:
         return {"rules": runtime.get_narrator_rules()}
+
+    @app.get("/api/campaign/world-building")
+    def campaign_world_building() -> dict[str, Any]:
+        return {"world_building": runtime.get_world_building_view()}
 
     @app.get("/api/campaign/debug/narrator-packet")
     def campaign_narrator_packet() -> dict[str, Any]:
