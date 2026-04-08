@@ -2340,8 +2340,10 @@ class WebRuntime:
         state.structured_state.runtime.spellbook = self.engine.state_orchestrator._normalize_spellbook(
             state.structured_state.runtime.spellbook
         )
+        removed_invalid_spell_entries = self._cleanup_invalid_spell_text_entries(state)
         print(f"[recalibration] abilities_synced={abilities_synced}")
         print(f"[recalibration] ooc_spellbook_backfill={ooc_backfill['spellbook_entries_added']}")
+        print(f"[recalibration] cleaned_invalid_spell_entries={removed_invalid_spell_entries}")
         print(f"[recalibration] world_updates={world_updates}")
         print("[recalibration] complete")
         self.save_active_campaign(self.session.active_slot)
@@ -2354,6 +2356,7 @@ class WebRuntime:
             "ooc_backfill_spellbook_entries": ooc_backfill["spellbook_entries_added"],
             "ooc_backfill_character_sheet_updated": ooc_backfill["character_sheet_updated"],
             "ooc_backfill_world_entries": ooc_backfill["world_entries_added"],
+            "cleaned_invalid_spell_entries": removed_invalid_spell_entries,
         }
 
     def get_inventory_state(self) -> dict[str, Any]:
@@ -2911,44 +2914,77 @@ class WebRuntime:
         canon.custom_narrator_rules.append(entry)
         return entry, True, False
 
-    def _extract_structured_ability_entries(self, text: str) -> list[dict[str, Any]]:
-        entries: list[dict[str, Any]] = []
-        for raw_line in str(text or "").splitlines():
-            line = str(raw_line).strip()
-            if not line:
+    def _is_valid_structured_spell_name(self, candidate: str) -> bool:
+        name = str(candidate or "").strip()
+        lowered = name.lower()
+        invalid_phrases = (
+            "what would you like",
+            "do you have",
+            "please provide",
+            "let's get started",
+            "i’d be happy to help",
+            "i'd be happy to help",
+        )
+        compact = re.sub(r"\s+", " ", name)
+        is_valid = bool(
+            compact
+            and len(compact) <= 48
+            and "?" not in compact
+            and len(compact.split()) <= 6
+            and not any(phrase in lowered for phrase in invalid_phrases)
+            and not re.search(r"[.!]{1,}", compact)
+            and bool(re.fullmatch(r"[A-Za-z][A-Za-z0-9' \-]{1,47}", compact))
+            and not re.search(r"\b(you|your|we|let|please|would|could|should)\b", lowered)
+        )
+        print(f'[ooc-sync] candidate_spell_name="{compact}" valid={str(is_valid).lower()}')
+        return is_valid
+
+    def _extract_ooc_structured_payload(self, response_text: str) -> dict[str, Any]:
+        content = str(response_text or "")
+        marker_pattern = re.compile(
+            r"\[STRUCTURED_SYNC_PAYLOAD\](.*?)\[/STRUCTURED_SYNC_PAYLOAD\]",
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        marker_match = marker_pattern.search(content)
+        candidate_json = marker_match.group(1).strip() if marker_match else ""
+        if not candidate_json:
+            fenced = re.search(r"```json\s*(\{.*?\})\s*```", content, flags=re.IGNORECASE | re.DOTALL)
+            candidate_json = fenced.group(1).strip() if fenced else ""
+        if not candidate_json:
+            return {}
+        try:
+            payload = json.loads(candidate_json)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            print("[ooc-sync] structured_payload_parse_failed=true")
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _validate_structured_spell_entries(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        raw_entries = payload.get("spellbook_entries", [])
+        if not isinstance(raw_entries, list):
+            return []
+        validated: list[dict[str, Any]] = []
+        for raw in raw_entries:
+            if not isinstance(raw, dict):
                 continue
-            if line.startswith(("-", "*")):
-                line = line[1:].strip()
-            line = re.sub(r"^\d+\.\s*", "", line).strip()
-            if not line or len(line.split()) < 2:
+            name = str(raw.get("name", "")).strip()
+            if not self._is_valid_structured_spell_name(name):
                 continue
-            if ":" in line:
-                name, description = line.split(":", 1)
-            elif "-" in line:
-                name, description = line.split("-", 1)
-            else:
-                name, description = line, ""
-            clean_name = str(name).strip(" -*_`").strip()
-            if not clean_name or len(clean_name) > 80:
-                continue
-            if clean_name.lower().startswith("ooc"):
-                continue
-            lowered_name = clean_name.lower()
-            if lowered_name in {"spells", "abilities", "character sheet", "world building"}:
-                continue
-            entry_type = "spell" if any(token in lowered_name for token in {"spell", "bolt", "lance", "flare", "ward"}) else "ability"
-            entries.append(
+            entry_type = str(raw.get("type", "spell")).strip().lower()
+            if entry_type not in {"spell", "skill", "ability", "passive"}:
+                entry_type = "spell"
+            validated.append(
                 {
-                    "name": clean_name,
+                    "name": name,
                     "type": entry_type,
-                    "description": str(description).strip(" -*_`").strip(),
-                    "cost_or_resource": "",
-                    "cooldown": "",
-                    "tags": ["ooc_structured"],
-                    "notes": "Added from OOC structured authoring.",
+                    "description": str(raw.get("description", "")).strip(),
+                    "cost_or_resource": str(raw.get("cost_or_resource", raw.get("cost", raw.get("resource", "")))).strip(),
+                    "cooldown": str(raw.get("cooldown", "")).strip(),
+                    "tags": [str(tag).strip() for tag in raw.get("tags", []) if str(tag).strip()] if isinstance(raw.get("tags", []), list) else [],
+                    "notes": str(raw.get("notes", "")).strip(),
                 }
             )
-        return entries
+        return validated
 
     def _extract_world_entries_from_ooc_response(self, text: str) -> list[str]:
         entries: list[str] = []
@@ -2967,6 +3003,7 @@ class WebRuntime:
     def _sync_ooc_spellbook_and_sheet(self, state: CampaignState, entries: list[dict[str, Any]]) -> dict[str, Any]:
         runtime = state.structured_state.runtime
         runtime.spellbook = runtime.spellbook if isinstance(runtime.spellbook, list) else []
+        entries = [entry for entry in entries if self._is_valid_structured_spell_name(str(entry.get("name", "")))]
         before_count = len(runtime.spellbook)
         runtime.spellbook.extend(entries)
         runtime.spellbook = self.engine.state_orchestrator._normalize_spellbook(runtime.spellbook)
@@ -2980,6 +3017,8 @@ class WebRuntime:
                 name = str(entry.get("name", "")).strip()
                 if not name:
                     continue
+                if not self._is_valid_structured_spell_name(name):
+                    continue
                 normalized = self.engine._normalize_ability_name(name)
                 if normalized not in existing_names:
                     main_sheet.abilities.append(name)
@@ -2991,9 +3030,45 @@ class WebRuntime:
                     character_sheet_updated = True
         return {"spellbook_entries_added": spellbook_added, "character_sheet_updated": character_sheet_updated}
 
-    def _apply_ooc_structured_updates(self, request_text: str, response_text: str) -> dict[str, Any]:
+    def _cleanup_invalid_spell_text_entries(self, state: CampaignState) -> int:
+        removed = 0
+        runtime = state.structured_state.runtime
+        runtime.spellbook = runtime.spellbook if isinstance(runtime.spellbook, list) else []
+        cleaned_spellbook: list[dict[str, Any]] = []
+        for entry in runtime.spellbook:
+            if isinstance(entry, dict) and self._is_valid_structured_spell_name(str(entry.get("name", ""))):
+                cleaned_spellbook.append(entry)
+            else:
+                removed += 1
+        runtime.spellbook = self.engine.state_orchestrator._normalize_spellbook(cleaned_spellbook)
+
+        main_sheet = self._find_main_character_sheet(state)
+        if main_sheet is None:
+            print(f"[cleanup] removed_invalid_spell_entries={removed}")
+            return removed
+
+        valid_abilities: list[str] = []
+        for ability in list(main_sheet.abilities):
+            if self._is_valid_structured_spell_name(ability):
+                valid_abilities.append(str(ability).strip())
+            else:
+                removed += 1
+        main_sheet.abilities = valid_abilities
+
+        valid_guaranteed: list[CharacterSheetAbilityEntry] = []
+        for ability in list(main_sheet.guaranteed_abilities):
+            if self._is_valid_structured_spell_name(ability.name):
+                valid_guaranteed.append(ability)
+            else:
+                removed += 1
+        main_sheet.guaranteed_abilities = valid_guaranteed
+        print(f"[cleanup] removed_invalid_spell_entries={removed}")
+        return removed
+
+    def _apply_ooc_structured_updates(self, request_text: str, response_text: str, structured_payload: dict[str, Any] | None = None) -> dict[str, Any]:
         lowered_request = str(request_text or "").lower()
         state = self.session.state
+        payload = structured_payload if isinstance(structured_payload, dict) else {}
         summary = {
             "spellbook_entries_added": 0,
             "character_sheet_updated": False,
@@ -3001,7 +3076,7 @@ class WebRuntime:
             "mutated": False,
         }
         if any(token in lowered_request for token in {"spellbook", "spell", "abilities", "ability", "character sheet"}):
-            parsed_entries = self._extract_structured_ability_entries(response_text)
+            parsed_entries = self._validate_structured_spell_entries(payload)
             if parsed_entries:
                 sync_summary = self._sync_ooc_spellbook_and_sheet(state, parsed_entries)
                 summary["spellbook_entries_added"] = int(sync_summary["spellbook_entries_added"])
@@ -3045,7 +3120,11 @@ class WebRuntime:
             reply = self.session.message_history[index + 1]
             if str(reply.get("type", "")).strip() != "ooc_gm":
                 continue
-            sync = self._apply_ooc_structured_updates(request_text, str(reply.get("text", "")))
+            payload = reply.get("structured_sync_payload", {})
+            if not isinstance(payload, dict) or not payload:
+                print("[recalibration] skipped_unstructured_ooc_text=true")
+                continue
+            sync = self._apply_ooc_structured_updates(request_text, str(reply.get("text", "")), payload)
             summary["spellbook_entries_added"] += int(sync.get("spellbook_entries_added", 0))
             summary["character_sheet_updated"] = bool(summary["character_sheet_updated"] or sync.get("character_sheet_updated"))
             summary["world_entries_added"] += int(sync.get("world_entries_added", 0))
@@ -3095,7 +3174,10 @@ class WebRuntime:
             "Answer using campaign context, clarify continuity, and acknowledge uncertainty when relevant.\n"
             "Do not advance canon, do not declare gameplay consequences.\n"
             "If the user explicitly asks to create or update structured campaign data (spellbook, character sheet, world notes), "
-            "you may provide structured content suitable for persistence."
+            "you may provide structured content suitable for persistence.\n"
+            "When providing structured content, include a machine-only JSON object between "
+            "[STRUCTURED_SYNC_PAYLOAD] and [/STRUCTURED_SYNC_PAYLOAD] with keys like spellbook_entries.\n"
+            "Never include conversational text inside this JSON payload."
         )
         started = time.perf_counter()
         try:
@@ -3114,15 +3196,16 @@ class WebRuntime:
                 "No canon state was changed."
             )
         generation_ms = (time.perf_counter() - started) * 1000
+        structured_payload = self._extract_ooc_structured_payload(response_text) if ooc_mode == "structured_authoring" else {}
         sync_summary = {"spellbook_entries_added": 0, "character_sheet_updated": False, "world_entries_added": 0, "mutated": False}
         if ooc_mode == "structured_authoring":
-            sync_summary = self._apply_ooc_structured_updates(clean_text, response_text)
+            sync_summary = self._apply_ooc_structured_updates(clean_text, response_text, structured_payload)
             print(f"[ooc-sync] spellbook_entries_added={sync_summary['spellbook_entries_added']}")
             print(f"[ooc-sync] character_sheet_updated={str(sync_summary['character_sheet_updated']).lower()}")
             print(f"[ooc-sync] world_entries_added={sync_summary['world_entries_added']}")
             if sync_summary["mutated"]:
                 self.save_active_campaign(self.session.active_slot)
-        self._append_message("ooc_gm", response_text, persist=False)
+        self._append_message("ooc_gm", response_text, persist=False, structured_sync_payload=structured_payload)
         self._flush_history_store()
         return {
             "narrative": response_text,

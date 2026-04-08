@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.web import WebRuntime, create_web_app
-from engine.character_sheets import CharacterSheet
+from engine.character_sheets import CharacterSheet, CharacterSheetAbilityEntry
 from engine.entities import CampaignState, ConversationTurn, NPC
 from images.base import ImageGenerationResult
 from models.base import NarrationModelAdapter, ProviderUnavailableError
@@ -643,7 +643,12 @@ def test_ooc_structured_spell_generation_updates_spellbook_and_sheet(tmp_path: P
     monkeypatch.setattr(
         runtime.engine.model,
         "generate",
-        lambda *args, **kwargs: "- Ember Lance: A piercing line of fire.\n- Mist Ward: A defensive veil.",
+        lambda *args, **kwargs: (
+            "Here are two ranger spells.\n"
+            "[STRUCTURED_SYNC_PAYLOAD]"
+            '{"spellbook_entries":[{"name":"Ember Lance","type":"spell","description":"A piercing line of fire."},{"name":"Mist Ward","type":"spell","description":"A defensive veil."}]}'
+            "[/STRUCTURED_SYNC_PAYLOAD]"
+        ),
     )
     output = runtime.handle_ooc_input("Generate two spells for my spellbook.")
 
@@ -653,6 +658,29 @@ def test_ooc_structured_spell_generation_updates_spellbook_and_sheet(tmp_path: P
     assert "Mist Ward" in names
     assert any(name == "Ember Lance" for name in main_sheet.abilities)
     assert output["metadata"]["ooc_sync"]["spellbook_entries_added"] >= 2
+
+
+def test_ooc_structured_spell_generation_rejects_conversational_spell_lines(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_ooc_structured_spells_reject"})
+    state = runtime.session.state
+    state.structured_state.runtime.spellbook = []
+
+    monkeypatch.setattr(
+        runtime.engine.model,
+        "generate",
+        lambda *args, **kwargs: (
+            "I can help you choose spells.\n"
+            "[STRUCTURED_SYNC_PAYLOAD]"
+            "{\"spellbook_entries\":[{\"name\":\"Do you have a preferred level for these new spells?\"},{\"name\":\"Now that we've got your data up to date, what would you like to do next?\"}]}"
+            "[/STRUCTURED_SYNC_PAYLOAD]"
+        ),
+    )
+
+    output = runtime.handle_ooc_input("Generate spells for my spellbook.")
+    assert output["metadata"]["ooc_mode"] == "structured_authoring"
+    assert output["metadata"]["ooc_sync"]["spellbook_entries_added"] == 0
+    assert state.structured_state.runtime.spellbook == []
 
 
 def test_ooc_structured_character_sheet_update_applies_requested_title(tmp_path: Path, monkeypatch) -> None:
@@ -2736,7 +2764,16 @@ def test_recalibration_backfills_structured_ooc_spells_from_message_history(tmp_
     state.structured_state.runtime.spellbook = []
     runtime.session.message_history = [
         {"type": "ooc_player", "text": "Generate ranger spells for my spellbook."},
-        {"type": "ooc_gm", "text": "- Storm Arrow: Wind-guided shot.\n- Root Snare: Entangling vines."},
+        {
+            "type": "ooc_gm",
+            "text": "- Storm Arrow: Wind-guided shot.\n- Root Snare: Entangling vines.",
+            "structured_sync_payload": {
+                "spellbook_entries": [
+                    {"name": "Storm Arrow", "type": "spell", "description": "Wind-guided shot."},
+                    {"name": "Root Snare", "type": "spell", "description": "Entangling vines."},
+                ]
+            },
+        },
     ]
 
     result = runtime.recalibrate_campaign_state(state)
@@ -2745,6 +2782,49 @@ def test_recalibration_backfills_structured_ooc_spells_from_message_history(tmp_
     assert "Storm Arrow" in names
     assert "Root Snare" in names
     assert result["ooc_backfill_spellbook_entries"] >= 2
+
+
+def test_recalibration_skips_unstructured_ooc_gm_text(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_recal_ooc_unstructured"})
+    state = runtime.session.state
+    state.structured_state.runtime.spellbook = []
+    runtime.session.message_history = [
+        {"type": "ooc_player", "text": "Generate ranger spells for my spellbook."},
+        {"type": "ooc_gm", "text": "- Storm Arrow: Wind-guided shot.\n- Root Snare: Entangling vines."},
+    ]
+
+    result = runtime.recalibrate_campaign_state(state)
+    assert result["ooc_backfill_spellbook_entries"] == 0
+    assert state.structured_state.runtime.spellbook == []
+
+
+def test_recalibration_cleanup_removes_invalid_spell_entries_and_keeps_valid(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_recal_cleanup"})
+    state = runtime.session.state
+    state.character_sheets = [CharacterSheet.from_payload({"id": "sheet_main", "name": "Aria", "sheet_type": "main_character"})]
+    main_sheet = state.character_sheets[0]
+    state.structured_state.runtime.spellbook = [
+        {"name": "Bark Shield", "type": "spell"},
+        {"name": "Do you have a preferred level for these new spells?", "type": "spell"},
+    ]
+    main_sheet.abilities = ["Bark Shield", "Now that we've got your data up to date, what would you like to do next?"]
+    main_sheet.guaranteed_abilities = [
+        CharacterSheetAbilityEntry.from_payload({"name": "Moonlit Tracker", "type": "ability"}),
+        CharacterSheetAbilityEntry.from_payload({"name": "Please provide your spell preference", "type": "spell"}),
+    ]
+
+    result = runtime.recalibrate_campaign_state(state)
+    names = [entry["name"] for entry in state.structured_state.runtime.spellbook]
+    guaranteed = [entry.name for entry in main_sheet.guaranteed_abilities]
+    assert "Bark Shield" in names
+    assert "Do you have a preferred level for these new spells?" not in names
+    assert "Bark Shield" in main_sheet.abilities
+    assert all("what would you like" not in value.lower() for value in main_sheet.abilities)
+    assert "Moonlit Tracker" in guaranteed
+    assert all("please provide" not in value.lower() for value in guaranteed)
+    assert result["cleaned_invalid_spell_entries"] >= 2
 
 
 def test_recalibration_merges_duplicate_npcs_by_name(tmp_path: Path, monkeypatch) -> None:
