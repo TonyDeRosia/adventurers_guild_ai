@@ -72,6 +72,26 @@ class CampaignEngine:
             "patrons leaning in",
             "air thick with tension",
         )
+        self._repetition_stopwords: set[str] = {
+            "the",
+            "and",
+            "with",
+            "from",
+            "that",
+            "this",
+            "then",
+            "into",
+            "your",
+            "over",
+            "under",
+            "while",
+            "still",
+            "again",
+            "there",
+            "where",
+            "have",
+            "just",
+        }
 
     def run_turn(self, state: CampaignState, action: str) -> TurnResult:
         state.turn_count += 1
@@ -623,14 +643,40 @@ class CampaignEngine:
         action_subtype = self._classify_gameplay_action_subtype(action)
         last_narration = state.structured_state.runtime.last_narration
         consecutive_repetition_count = int(scene_state.get("consecutive_repetition_count", 0) or 0)
-        narration_invalid = self._is_invalid_narration_output(sanitized_narrative) or (not bool(validation["valid"]))
-        repetition_candidate = self._is_repetitive_narration(sanitized_narrative, last_narration)
-        narration_repetitive = repetition_candidate and consecutive_repetition_count >= 2
-        strict_validation_reasons = {"no_output", "refusal", "action_override", "stale_state_loop", "scene_reset"}
+        strict_validation_reasons = {"no_output", "refusal", "broken_scaffold", "action_override", "stale_state_loop", "scene_reset"}
         strict_invalid = (not bool(validation["valid"])) and str(validation.get("reason", "")) in strict_validation_reasons
+        narration_invalid = strict_invalid or self._is_invalid_narration_output(sanitized_narrative)
+        repetition = self._assess_repetition_pattern(sanitized_narrative, last_narration)
+        dead_loop_detected = repetition["is_dead_loop"]
+        if dead_loop_detected and not retry_used:
+            retry_used = True
+            retry_reason = "dead_repetition_loop"
+            retry_prompt_packet = self.prompts.build_prompt_packet(
+                state,
+                action=action,
+                location_summary=location_summary,
+                memory=memory_context,
+                requested_mode=requested_mode,
+                guidance_requested=guidance_requested,
+                npc_guidance=self.personality.build_prompt_guidance(state),
+                gm_context=gm_context_text,
+                scene_state_summary=scene_state_summary,
+                turn_context=turn_context,
+                retry_action_priority=True,
+            )
+            retry_raw = self.model.generate(retry_prompt_packet.turn_prompt, retry_prompt_packet.system_prompt, history=history)
+            retry_sanitized, retry_was_sanitized = self._sanitize_narrative(retry_raw)
+            sanitized_narrative = retry_sanitized
+            was_sanitized = was_sanitized or retry_was_sanitized
+            validation = self._validate_narration_output(action, sanitized_narrative, state, scene_state)
+            strict_invalid = (not bool(validation["valid"])) and str(validation.get("reason", "")) in strict_validation_reasons
+            narration_invalid = strict_invalid or self._is_invalid_narration_output(sanitized_narrative)
+            repetition = self._assess_repetition_pattern(sanitized_narrative, last_narration)
+            dead_loop_detected = repetition["is_dead_loop"]
+        narration_repetitive = dead_loop_detected and consecutive_repetition_count >= 1 and retry_used
         # Minimal narration control mode:
         # engine owns structural truth/recovery; narrator rules own narrative behavior.
-        if narration_invalid or narration_repetitive or strict_invalid:
+        if narration_invalid or narration_repetitive:
             narrative = self._build_scene_aware_fallback(action, scene_state)
             cleanup_applied = False
             custom_rule_cleanup_applied = False
@@ -648,7 +694,7 @@ class CampaignEngine:
             print("[narrative-quality] preserved_valid_output=true")
         if quality_fallback_used:
             scene_state["consecutive_repetition_count"] = 0
-        elif repetition_candidate:
+        elif dead_loop_detected:
             scene_state["consecutive_repetition_count"] = consecutive_repetition_count + 1
             print("[control-audit] repetition_threshold_not_met")
         else:
@@ -994,17 +1040,45 @@ class CampaignEngine:
         return False
 
     def _is_repetitive_narration(self, narrative: str, last_narration: str) -> bool:
+        return self._assess_repetition_pattern(narrative, last_narration)["is_dead_loop"]
+
+    def _assess_repetition_pattern(self, narrative: str, last_narration: str) -> dict[str, bool]:
         current = re.sub(r"\s+", " ", narrative.strip().lower())
         prior = re.sub(r"\s+", " ", str(last_narration or "").strip().lower())
         if not current or not prior:
-            return False
+            return {"is_dead_loop": False, "is_progression": False}
         if current == prior and len(current) > 20:
-            return True
+            return {"is_dead_loop": True, "is_progression": False}
         similarity = SequenceMatcher(None, current, prior).ratio()
-        if similarity >= 0.98 and len(current) > 40 and len(prior) > 40:
-            return True
+        progression_markers = {
+            "then",
+            "now",
+            "after",
+            "finally",
+            "instead",
+            "reveals",
+            "opens",
+            "staggers",
+            "retreats",
+            "strikes",
+            "breaks",
+            "falls",
+            "answers",
+            "admits",
+        }
+        current_tokens = {token for token in re.findall(r"[a-z]{4,}", current) if token not in self._repetition_stopwords}
+        prior_tokens = {token for token in re.findall(r"[a-z]{4,}", prior) if token not in self._repetition_stopwords}
+        novel_tokens = current_tokens - prior_tokens
+        progression = bool(novel_tokens) and (
+            len(novel_tokens) >= 3
+            or any(marker in current for marker in progression_markers)
+        )
+        if progression:
+            return {"is_dead_loop": False, "is_progression": True}
+        if similarity >= 0.992 and len(current) > 40 and len(prior) > 40:
+            return {"is_dead_loop": True, "is_progression": False}
         repeated_fillers = [phrase for phrase in self._filler_loop_phrases if phrase in current and phrase in prior]
-        return bool(repeated_fillers)
+        return {"is_dead_loop": bool(repeated_fillers), "is_progression": False}
 
     def _validate_narration_output(self, action: str, narrative: str, state: CampaignState, scene_state: dict[str, Any]) -> dict[str, str | bool]:
         normalized_action = self._normalize_action(action)
@@ -1013,13 +1087,29 @@ class CampaignEngine:
             return {"valid": False, "reason": "no_output"}
         if self._is_refusal_output(normalized_narrative):
             return {"valid": False, "reason": "refusal"}
+        if self._contains_broken_scaffold_leakage(normalized_narrative):
+            return {"valid": False, "reason": "broken_scaffold"}
         if self._detect_action_override(normalized_action, normalized_narrative, scene_state):
             return {"valid": False, "reason": "action_override"}
         if self._is_clear_stale_state_loop(normalized_narrative, state):
             return {"valid": False, "reason": "stale_state_loop"}
         if self._is_scene_reset_output(normalized_narrative, state):
             return {"valid": False, "reason": "scene_reset"}
+        if self._requires_immediate_grounding(action) and not self._is_concrete_scene_grounded_output(action, narrative, scene_state):
+            return {"valid": False, "reason": "weak_grounding"}
         return {"valid": True, "reason": "ok"}
+
+    def _contains_broken_scaffold_leakage(self, normalized_narrative: str) -> bool:
+        leakage_markers = (
+            "[scene / setting]",
+            "[npcs in scene]",
+            "[enemies / threats]",
+            "[player facts]",
+            "[recent consequences]",
+            "[narrator rules]",
+            "current player action - highest priority",
+        )
+        return any(marker in normalized_narrative for marker in leakage_markers)
 
     def _normalize_action(self, action: str) -> str:
         return re.sub(r"\s+", " ", action.strip().lower())
@@ -1029,8 +1119,8 @@ class CampaignEngine:
             return bool(re.search(rf"\b{re.escape(term)}\b", text))
 
         conflict_pairs = [
-            (("freeze", "ice", "frost", "immobilize"), ("flame", "fire", "burn", "blaze")),
-            (("fire", "flame", "burn"), ("freeze", "ice", "frost")),
+            (("freeze", "ice", "frost", "immobilize"), ("flame", "flames", "fire", "burn", "blaze")),
+            (("fire", "flame", "flames", "burn"), ("freeze", "ice", "frost")),
         ]
         for action_terms, conflict_terms in conflict_pairs:
             if any(term in action for term in action_terms):
@@ -1068,6 +1158,10 @@ class CampaignEngine:
         reset_markers = ("you arrive at", "as you enter", "the scene opens", "once again you stand", "at the start of")
         return any(marker in narrative for marker in reset_markers)
 
+    def _requires_immediate_grounding(self, action: str) -> bool:
+        lowered = action.lower()
+        return any(token in lowered for token in ("cast", "attack", "strike", "shoot", "ability", "defend"))
+
     def _build_structured_turn_context(self, state: CampaignState, action: str, scene_state: dict[str, Any]) -> TurnPromptContext:
         location = str(scene_state.get("location_name") or state.current_location_id or "unknown")
         participants = [npc.name for npc in state.npcs.values() if npc.location_id == state.current_location_id]
@@ -1080,9 +1174,9 @@ class CampaignEngine:
             relationship = f"{npc.relationship_tier} toward {state.player.name}"
             personality_summary = self._describe_npc_personality(npc)
             intent = self._describe_npc_intent(eval_snapshot)
+            tone = str(getattr(eval_snapshot, "tone", "neutral")).strip() or "neutral"
             npc_states.append(
-                f"{npc.name} ({npc.personality_nodes.role if npc.personality_nodes and npc.personality_nodes.role else 'npc'}): "
-                f"visible condition {visible_condition}; stance {relationship}; personality {personality_summary}; likely behavior {intent}."
+                f"{npc.name}: {visible_condition}, {relationship}, personality {personality_summary}, likely intent {intent}, tone {tone}."
             )
         environment_state = [str(v) for v in scene_state.get("altered_environment", []) if str(v).strip()]
         if not environment_state:
@@ -1092,11 +1186,12 @@ class CampaignEngine:
             enemy = self.content.get_enemy(state.active_enemy_id)
             if enemy:
                 hp = int(state.active_enemy_hp or enemy.max_hp)
-                condition = "fresh" if hp >= enemy.max_hp * 0.75 else "wounded" if hp >= enemy.max_hp * 0.35 else "near collapse"
-                pressure = "high pressure" if enemy.behavior == "aggressive" else "moderate pressure"
+                condition = "fresh" if hp >= enemy.max_hp * 0.75 else "injured" if hp >= enemy.max_hp * 0.35 else "near collapse"
+                pressure = "high pressure" if enemy.behavior == "aggressive" else "measured pressure"
+                posture = "pressing forward" if enemy.behavior == "aggressive" else "probing and guarding"
                 unresolved_threats.append(
-                    f"{enemy.name}: visible condition {condition} ({hp}/{enemy.max_hp} HP); aggression/pressure {pressure}; "
-                    f"combat behavior {enemy.behavior}; likely state {'advancing' if enemy.behavior == 'aggressive' else 'guarding'}."
+                    f"{enemy.name}: {condition} ({hp}/{enemy.max_hp} HP), {pressure}, tactical posture {posture}, "
+                    f"likely next behavior {'close distance and strike' if enemy.behavior == 'aggressive' else 'wait for an opening'}."
                 )
             else:
                 unresolved_threats.append(f"Hostile threat active: {state.active_enemy_id} (HP {state.active_enemy_hp}).")
@@ -1124,7 +1219,7 @@ class CampaignEngine:
         if stress >= 20 or anger >= 20:
             return "tense and visibly strained"
         if fear >= 15:
-            return "guarded and watchful"
+            return "guarded, trying not to show fear"
         return "steady and composed"
 
     def _describe_npc_personality(self, npc: Any) -> str:
@@ -1137,14 +1232,13 @@ class CampaignEngine:
         return archetype if archetype else "distinct but currently unread"
 
     def _describe_npc_intent(self, evaluation: Any) -> str:
-        tone = str(getattr(evaluation, "tone", "neutral"))
         hostility = int(getattr(evaluation, "hostility", 0) or 0)
         willingness = int(getattr(evaluation, "willingness_to_share", 0) or 0)
         if hostility >= 18:
-            return f"{tone}, confrontational, testing boundaries"
+            return "confrontational, testing boundaries"
         if willingness >= 10:
-            return f"{tone}, open to sharing useful detail"
-        return f"{tone}, polite but guarded"
+            return "open to sharing useful detail"
+        return "polite but guarded"
 
     def _build_recent_consequence_summary(self, scene_state: dict[str, Any]) -> str:
         recent = [str(v).strip() for v in scene_state.get("recent_consequences", []) if str(v).strip()]

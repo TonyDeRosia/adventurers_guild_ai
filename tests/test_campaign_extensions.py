@@ -496,3 +496,68 @@ def test_prompt_renderer_includes_current_action_priority_block() -> None:
     )
     assert "CURRENT PLAYER ACTION - HIGHEST PRIORITY" in prompt
     assert "Resolve this action first, then narrate consequences." in prompt
+
+
+def test_coherent_output_does_not_trigger_quality_fallback() -> None:
+    state = load_state()
+    adapter = SequencedNarrationAdapter(
+        [
+            "You hesitate for a heartbeat, then the room answers your move: chairs scrape back and Elder Thorne watches for what you do next.",
+        ]
+    )
+    engine = CampaignEngine(adapter, data_dir=Path("data"))
+    result = engine.run_turn(state, "look")
+
+    assert result.metadata is not None
+    assert result.metadata["quality_fallback_used"] is False
+    assert "elder thorne" in result.narrative.lower()
+
+
+def test_repetition_detection_allows_progression_on_same_subject() -> None:
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+    prior = "The Bone Warden advances with shield high and the crypt dust shakes under its steps."
+    current = "The Bone Warden still advances, but now it staggers after your hit and its shield arm drops."
+    assessment = engine._assess_repetition_pattern(current, prior)
+    assert assessment["is_progression"] is True
+    assert assessment["is_dead_loop"] is False
+
+
+def test_prompt_renderer_player_facts_relevance_filtering() -> None:
+    state = load_state()
+    retrieval = MemoryRetrievalPipeline().retrieve(
+        state,
+        RetrievalRequest(location_id=state.current_location_id, active_quest_ids=[], current_npc_id=None, recent_actions=[], important_world_state=[]),
+    )
+    renderer = PromptRenderer()
+    cast_prompt = renderer.build_turn_prompt(state, action="cast flamestrike", location_summary="Moonfall Tavern", memory=retrieval)
+    item_prompt = renderer.build_turn_prompt(state, action="use field_draught", location_summary="Moonfall Tavern", memory=retrieval)
+    dialogue_prompt = renderer.build_turn_prompt(state, action="talk elder_thorne", location_summary="Moonfall Tavern", memory=retrieval)
+
+    assert "Focus for this turn: magic" in cast_prompt
+    assert "Spellbook highlights:" in cast_prompt
+    assert "Focus for this turn: item_use" in item_prompt
+    assert "Inventory highlights:" in item_prompt
+    assert "Focus for this turn: dialogue" in dialogue_prompt
+    assert "Attack bonus:" not in dialogue_prompt
+
+
+def test_prompt_renderer_npc_and_enemy_blocks_are_compact_and_behavioral() -> None:
+    state = load_state()
+    state.active_enemy_id = "bone_warden"
+    state.active_enemy_hp = 9
+    engine = CampaignEngine(NullNarrationAdapter(), data_dir=Path("data"))
+    scene_state = engine._ensure_scene_state(state)
+    context = engine._build_structured_turn_context(state, "attack", scene_state)
+    prompt = PromptRenderer().build_turn_prompt(
+        state,
+        action="attack",
+        location_summary="Moonfall Catacombs",
+        memory=MemoryRetrievalPipeline().retrieve(
+            state,
+            RetrievalRequest(location_id=state.current_location_id, active_quest_ids=[], current_npc_id=None, recent_actions=[], important_world_state=[]),
+        ),
+        turn_context=context,
+    )
+
+    assert "likely intent" in prompt
+    assert "tactical posture" in prompt
