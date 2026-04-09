@@ -12,13 +12,17 @@ import subprocess
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, simpledialog
+import webbrowser
 
 
 class BuildLauncherApp:
+    EXE_PATH = Path("dist") / "AdventurerGuildAI" / "AdventurerGuildAI.exe"
+    INSTALLER_PATH = Path("installer") / "Output" / "AdventurerGuildAI_Setup.exe"
+
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("Adventurers Guild AI Build Launcher")
-        self.root.geometry("980x680")
+        self.root.geometry("1020x760")
         self.root.minsize(860, 560)
 
         self.repo_root = Path(__file__).resolve().parent
@@ -29,6 +33,8 @@ class BuildLauncherApp:
         self.status_var = tk.StringVar(value="Ready.")
         self.log_queue: queue.Queue[str] = queue.Queue()
         self.worker: threading.Thread | None = None
+        self.prereq_status_vars: dict[str, tk.StringVar] = {}
+        self.step_status_vars: dict[str, tk.StringVar] = {}
 
         logs_dir = self.repo_root / "logs"
         logs_dir.mkdir(exist_ok=True)
@@ -40,6 +46,8 @@ class BuildLauncherApp:
         self._append_log(f"Repository root: {self.repo_root}")
         self._append_log(f"Persistent log: {self.persistent_log_path}")
         self._set_status("Ready.", "#1e3a8a")
+        self._refresh_prerequisites(log_output=True)
+        self._set_step_state("prereq", "ready")
         self.root.after(100, self._drain_log_queue)
 
     def _build_ui(self) -> None:
@@ -52,6 +60,22 @@ class BuildLauncherApp:
 
         self.choose_button = tk.Button(top, text="Choose output folder", command=self.choose_output_folder, width=22)
         self.choose_button.grid(row=0, column=4, sticky="e")
+
+        prereq_frame = tk.LabelFrame(self.root, text="Step 1: Prerequisite readiness", padx=10, pady=8)
+        prereq_frame.pack(fill="x", padx=12)
+        self._add_prereq_row(prereq_frame, "python", "Python 3.10+")
+        self._add_prereq_row(prereq_frame, "pyinstaller", "PyInstaller")
+        self._add_prereq_row(prereq_frame, "inno", "Inno Setup 6 (for installer builds)")
+        self._add_prereq_row(prereq_frame, "packaging", "Required packaging files/folders")
+        self.recheck_button = tk.Button(prereq_frame, text="Recheck prerequisites", command=lambda: self._refresh_prerequisites(log_output=True))
+        self.recheck_button.grid(row=4, column=0, sticky="w", pady=(8, 0))
+
+        flow_frame = tk.LabelFrame(self.root, text="Guided build flow", padx=10, pady=8)
+        flow_frame.pack(fill="x", padx=12, pady=(10, 0))
+        self._add_step_row(flow_frame, "prereq", "Step 1", "Prerequisite checks")
+        self._add_step_row(flow_frame, "exe", "Step 2", "Build EXE")
+        self._add_step_row(flow_frame, "installer", "Step 3", "Build installer")
+        self._add_step_row(flow_frame, "copy", "Step 4", "Copy final artifact(s) to output folder")
 
         action_bar = tk.Frame(self.root, padx=12, pady=10)
         action_bar.pack(fill="x")
@@ -98,6 +122,19 @@ class BuildLauncherApp:
         self.log_text = scrolledtext.ScrolledText(log_frame, wrap="word", state="disabled", height=24)
         self.log_text.pack(fill="both", expand=True)
 
+    def _add_prereq_row(self, parent: tk.Misc, key: str, title: str) -> None:
+        row = len(self.prereq_status_vars)
+        tk.Label(parent, text=title, anchor="w").grid(row=row, column=0, sticky="w")
+        self.prereq_status_vars[key] = tk.StringVar(value="Checking...")
+        label = tk.Label(parent, textvariable=self.prereq_status_vars[key], anchor="w")
+        label.grid(row=row, column=1, sticky="w", padx=(12, 0))
+
+    def _add_step_row(self, parent: tk.Misc, key: str, step_label: str, title: str) -> None:
+        row = len(self.step_status_vars)
+        tk.Label(parent, text=f"{step_label}: {title}", anchor="w").grid(row=row, column=0, sticky="w")
+        self.step_status_vars[key] = tk.StringVar(value="Pending")
+        tk.Label(parent, textvariable=self.step_status_vars[key], anchor="w").grid(row=row, column=1, sticky="w", padx=(12, 0))
+
     def choose_output_folder(self) -> None:
         initial = self.output_dir_var.get() or str(self.repo_root)
         try:
@@ -128,17 +165,12 @@ class BuildLauncherApp:
             self._append_log(f"ERROR: Could not create output folder {output_dir}: {exc}")
             return
 
-        if mode in {"installer", "all"} and not self._has_inno_setup():
-            msg = (
-                "Inno Setup 6 (ISCC.exe) was not found.\n"
-                "Installer and Build Everything modes require Inno Setup.\n"
-                "Install from https://jrsoftware.org/isinfo.php"
-            )
-            self._set_status("Missing prerequisite: Inno Setup 6 not found.", "#991b1b")
-            self._append_log("ERROR: Inno Setup prerequisite missing for installer build.")
-            messagebox.showerror("Missing prerequisite", msg)
+        if not self._ensure_prerequisites(mode):
+            self._set_status("Build cancelled. Prerequisites are not ready.", "#991b1b")
             return
 
+        for step in ("exe", "installer", "copy"):
+            self._set_step_state(step, "pending")
         self._enable_build_controls(False)
         self.open_output_button.config(state="disabled")
         mode_label = {"exe": "EXE", "installer": "Installer", "all": "Everything"}[mode]
@@ -152,34 +184,48 @@ class BuildLauncherApp:
 
     def _run_build(self, mode: str, output_dir: Path) -> None:
         ok = True
-        artifacts: list[Path] = []
+        artifacts_to_copy: list[Path] = []
 
         try:
+            self.log_queue.put("__STEP|exe|IN_PROGRESS")
             if mode in {"exe", "all"}:
                 ok = self._run_script(self.exe_script)
-                if ok:
-                    exe_path = self.repo_root / "dist" / "AdventurerGuildAI" / "AdventurerGuildAI.exe"
-                    if exe_path.exists():
-                        copied = self._copy_artifact(exe_path, output_dir)
-                        artifacts.append(copied)
-                    else:
-                        self._append_log("WARNING: Expected executable not found after EXE build.")
+                if ok and (self.repo_root / self.EXE_PATH).exists():
+                    artifacts_to_copy.append(self.repo_root / self.EXE_PATH)
+                elif ok:
+                    self._append_log("WARNING: Expected executable not found after EXE build.")
+            self.log_queue.put(f"__STEP|exe|{'DONE' if ok else 'ERROR'}")
 
+            if mode == "exe":
+                self.log_queue.put("__STEP|installer|SKIPPED")
+            elif ok:
+                self.log_queue.put("__STEP|installer|IN_PROGRESS")
             if ok and mode in {"installer", "all"}:
                 ok = self._run_script(self.installer_script)
-                installer_path = self.repo_root / "installer" / "Output" / "AdventurerGuildAI_Setup.exe"
+                installer_path = self.repo_root / self.INSTALLER_PATH
                 if ok and installer_path.exists():
-                    copied = self._copy_artifact(installer_path, output_dir)
-                    artifacts.append(copied)
-                    self._append_log(f"FINAL INSTALLER PATH: {copied}")
+                    artifacts_to_copy.append(installer_path)
                 elif ok:
                     self._append_log("WARNING: Installer script completed but expected installer was not found.")
+            if mode in {"installer", "all"}:
+                self.log_queue.put(f"__STEP|installer|{'DONE' if ok else 'ERROR'}")
 
             if ok:
+                self.log_queue.put("__STEP|copy|IN_PROGRESS")
+                copied_artifacts: list[Path] = []
+                for artifact in artifacts_to_copy:
+                    copied = self._copy_artifact(artifact, output_dir)
+                    copied_artifacts.append(copied)
+                self.log_queue.put("__STEP|copy|DONE")
+                if copied_artifacts:
+                    self._append_log("Copied final artifacts:")
+                    for copied in copied_artifacts:
+                        self._append_log(f"  - {copied}")
                 summary = f"Build completed successfully. Artifacts copied to: {output_dir}"
                 self.log_queue.put(f"__STATUS_OK__{summary}")
                 self.log_queue.put("__ENABLE_OPEN__")
             else:
+                self.log_queue.put("__STEP|copy|ERROR")
                 self.log_queue.put("__STATUS_ERR__Build failed. Review log details above.")
         except Exception as exc:  # pragma: no cover - guard rail for GUI apps
             self._append_log(f"ERROR: Unexpected launcher exception: {exc}")
@@ -241,6 +287,147 @@ class BuildLauncherApp:
 
         return False
 
+    def _get_python_cmd(self) -> str | None:
+        for candidate in ("py -3", "python"):
+            try:
+                completed = subprocess.run(
+                    candidate.split(),
+                    cwd=self.repo_root,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=8,
+                )
+            except (OSError, subprocess.SubprocessError):
+                continue
+
+            output = (completed.stdout or "").strip().lower()
+            if completed.returncode == 0 and "python 3." in output:
+                return candidate
+        return None
+
+    def _has_pyinstaller(self, python_cmd: str | None) -> bool:
+        if not python_cmd:
+            return False
+        try:
+            completed = subprocess.run(
+                python_cmd.split() + ["-m", "PyInstaller", "--version"],
+                cwd=self.repo_root,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=8,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return completed.returncode == 0
+
+    def _has_packaging_assets(self) -> tuple[bool, list[str]]:
+        required_paths = [
+            Path("tools/build_exe.bat"),
+            Path("tools/build_installer.bat"),
+            Path("packaging/windows/AdventurerGuildAI.spec"),
+            Path("installer/AdventurerGuildAI.iss"),
+            Path("packaging/windows/runtime_bundle/comfyui/README.txt"),
+            Path("packaging/windows/runtime_bundle/workflows/scene_image.json"),
+            Path("packaging/windows/runtime_bundle/THIRD_PARTY_NOTICES.txt"),
+            Path("packaging/windows/runtime_bundle/licenses/ComfyUI-LICENSE-MIT.txt"),
+        ]
+        missing = [str(path) for path in required_paths if not (self.repo_root / path).exists()]
+        return not missing, missing
+
+    def _refresh_prerequisites(self, log_output: bool = False) -> dict[str, object]:
+        python_cmd = self._get_python_cmd()
+        pyinstaller_ok = self._has_pyinstaller(python_cmd)
+        inno_ok = self._has_inno_setup()
+        packaging_ok, missing_packaging = self._has_packaging_assets()
+
+        prereqs = {
+            "python_ok": python_cmd is not None,
+            "python_cmd": python_cmd,
+            "pyinstaller_ok": pyinstaller_ok,
+            "inno_ok": inno_ok,
+            "packaging_ok": packaging_ok,
+            "missing_packaging": missing_packaging,
+        }
+
+        self.prereq_status_vars["python"].set(f"✅ Ready ({python_cmd})" if python_cmd else "❌ Missing")
+        self.prereq_status_vars["pyinstaller"].set("✅ Ready" if pyinstaller_ok else "❌ Missing")
+        self.prereq_status_vars["inno"].set("✅ Ready" if inno_ok else "❌ Missing")
+        self.prereq_status_vars["packaging"].set("✅ Ready" if packaging_ok else "❌ Missing files")
+
+        if log_output:
+            self._append_log("Prerequisite check complete:")
+            self._append_log(f"  Python: {'ready' if prereqs['python_ok'] else 'missing'}")
+            self._append_log(f"  PyInstaller: {'ready' if pyinstaller_ok else 'missing'}")
+            self._append_log(f"  Inno Setup: {'ready' if inno_ok else 'missing'}")
+            self._append_log(f"  Packaging files/folders: {'ready' if packaging_ok else 'missing'}")
+            if missing_packaging:
+                self._append_log("  Missing packaging paths:")
+                for item in missing_packaging:
+                    self._append_log(f"    - {item}")
+        return prereqs
+
+    def _ensure_prerequisites(self, mode: str) -> bool:
+        self._set_step_state("prereq", "in_progress")
+        prereqs = self._refresh_prerequisites(log_output=True)
+        needs_inno = mode in {"installer", "all"}
+        missing: list[tuple[str, str, str | None]] = []
+
+        if not prereqs["python_ok"]:
+            missing.append(("Python 3.10+", "https://www.python.org/downloads/windows/", None))
+        if not prereqs["pyinstaller_ok"]:
+            missing.append(("PyInstaller", "https://pyinstaller.org/en/stable/installation.html", None))
+        if needs_inno and not prereqs["inno_ok"]:
+            missing.append(("Inno Setup 6", "https://jrsoftware.org/isinfo.php", None))
+        if not prereqs["packaging_ok"]:
+            missing.append(("Required packaging files/folders", "", "\n".join(prereqs["missing_packaging"])))
+
+        for name, url, details in missing:
+            if not self._guide_missing_prerequisite(name, url, details):
+                self._set_step_state("prereq", "error")
+                return False
+
+        self._set_step_state("prereq", "done")
+        return True
+
+    def _guide_missing_prerequisite(self, name: str, download_url: str, details: str | None) -> bool:
+        while True:
+            detail_message = f"\n\nMissing details:\n{details}" if details else ""
+            action = messagebox.askyesnocancel(
+                "Missing prerequisite",
+                (
+                    f"{name} is still missing.{detail_message}\n\n"
+                    "Yes = Open setup/download page.\n"
+                    "No = Recheck now.\n"
+                    "Cancel = Stop build."
+                ),
+            )
+            if action is None:
+                self._append_log(f"Build cancelled by user while resolving prerequisite: {name}")
+                return False
+            if action:
+                if download_url:
+                    webbrowser.open(download_url)
+                    self._append_log(f"Opened prerequisite page for {name}: {download_url}")
+                else:
+                    self._append_log(f"No download page for {name}. Recheck after restoring missing files.")
+                continue
+
+            prereqs = self._refresh_prerequisites(log_output=True)
+            if name.startswith("Python") and prereqs["python_ok"]:
+                return True
+            if name == "PyInstaller" and prereqs["pyinstaller_ok"]:
+                return True
+            if name.startswith("Inno") and prereqs["inno_ok"]:
+                return True
+            if name.startswith("Required packaging") and prereqs["packaging_ok"]:
+                return True
+
     def open_output_folder(self) -> None:
         output_dir = Path(self.output_dir_var.get()).expanduser()
         if not output_dir.exists():
@@ -284,6 +471,16 @@ class BuildLauncherApp:
             if item == "__ENABLE_OPEN__":
                 self.open_output_button.config(state="normal")
                 continue
+            if item.startswith("__STEP|"):
+                _, step, raw_state = item.split("|", 2)
+                mapping = {
+                    "IN_PROGRESS": "in_progress",
+                    "DONE": "done",
+                    "ERROR": "error",
+                    "SKIPPED": "skipped",
+                }
+                self._set_step_state(step, mapping.get(raw_state, "pending"))
+                continue
 
             self.log_text.configure(state="normal")
             self.log_text.insert(tk.END, item + "\n")
@@ -300,6 +497,20 @@ class BuildLauncherApp:
         self.build_installer_button.config(state=state)
         self.build_all_button.config(state=state)
         self.choose_button.config(state=state)
+        self.recheck_button.config(state=state)
+
+    def _set_step_state(self, step: str, state: str) -> None:
+        if step not in self.step_status_vars:
+            return
+        label = {
+            "pending": "Pending",
+            "ready": "Ready to run",
+            "in_progress": "🟡 In progress",
+            "done": "✅ Complete",
+            "error": "❌ Blocked/failed",
+            "skipped": "⏭️ Skipped",
+        }.get(state, "Pending")
+        self.step_status_vars[step].set(label)
 
 
 def main() -> None:
