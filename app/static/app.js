@@ -38,6 +38,7 @@ const chooseExistingModelFolderButton = document.getElementById('choose-existing
 const openRecommendedModelPageButton = document.getElementById('open-recommended-model-page');
 const skipImagesForNowButton = document.getElementById('skip-images-for-now');
 const recheckImageSetupButton = document.getElementById('recheck-image-setup');
+const pickCheckpointFolderButton = document.getElementById('pick-checkpoint-folder');
 const preferredLauncherInput = document.getElementById('preferred-launcher');
 const manualImageEnabledInput = document.getElementById('manual-image-enabled');
 const suggestedMovesToggleInput = document.getElementById('suggested-moves-toggle');
@@ -1905,6 +1906,8 @@ function renderImageSetupCard(snapshot = latestImageSetupSnapshot) {
 
 function bindClickOnce(element, handler) {
   if (!element) return;
+  if (element.dataset.clickBound === 'true') return;
+  element.dataset.clickBound = 'true';
   element.onclick = handler;
 }
 
@@ -2629,7 +2632,7 @@ document.getElementById('pick-ollama-folder').onclick = () => pickFolder('Select
 document.getElementById('pick-comfyui-folder').onclick = () => pickFolder('Select ComfyUI folder', comfyuiPathInput);
 document.getElementById('pick-comfyui-workflow-file').onclick = () => pickFile('Select ComfyUI workflow JSON', comfyuiWorkflowPathInput, ['.json']);
 document.getElementById('pick-comfyui-output-folder').onclick = () => pickFolder('Select ComfyUI output folder', comfyuiOutputDirInput);
-bindClickOnce(document.getElementById('pick-checkpoint-folder'), () => chooseExistingModelFolder().catch((error) => setStatus(error.message, true)));
+bindClickOnce(pickCheckpointFolderButton, () => chooseExistingModelFolder().catch((error) => setStatus(error.message, true)));
 bindClickOnce(useBundledImageEngineButton, () => useBundledImageEngine().catch((error) => setStatus(error.message, true)));
 bindClickOnce(chooseExistingModelFolderButton, () => chooseExistingModelFolder().catch((error) => setStatus(error.message, true)));
 bindClickOnce(openRecommendedModelPageButton, openRecommendedModelPage);
