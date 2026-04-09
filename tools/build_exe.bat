@@ -43,11 +43,14 @@ if errorlevel 1 (
     exit /b 1
 )
 
-set "PYINSTALLER_CMD=%PYTHON_CMD% -m PyInstaller --noconfirm --clean --onedir --windowed --name AdventurerGuildAI run.py --add-data data;data --add-data app/static;app/static --collect-submodules app --collect-submodules engine --collect-submodules images --collect-submodules memory --collect-submodules models --collect-submodules prompts --collect-submodules rules --collect-all fastapi --collect-all uvicorn --collect-all starlette"
+set "SPEC_FILE=packaging\windows\AdventurerGuildAI.spec"
+if not exist "%SPEC_FILE%" (
+    echo PyInstaller spec file not found at %SPEC_FILE%.
+    exit /b 1
+)
 
-echo Building standalone executable with PyInstaller...
-echo %PYINSTALLER_CMD%
-call %PYINSTALLER_CMD%
+echo Building standalone executable with PyInstaller spec...
+call %PYTHON_CMD% -m PyInstaller --noconfirm --clean "%SPEC_FILE%"
 if errorlevel 1 (
     echo Executable build failed.
     exit /b 1
@@ -56,11 +59,6 @@ if errorlevel 1 (
 if not exist "dist\AdventurerGuildAI\AdventurerGuildAI.exe" (
     echo Executable build did not produce dist\AdventurerGuildAI\AdventurerGuildAI.exe.
     exit /b 1
-)
-
-if exist "packaging\windows\runtime_bundle" (
-    echo Copying runtime bundle scaffold...
-    xcopy /E /I /Y "packaging\windows\runtime_bundle" "dist\AdventurerGuildAI\runtime_bundle" >nul
 )
 
 echo Running post-build distribution audit...
