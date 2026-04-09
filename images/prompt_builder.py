@@ -53,6 +53,13 @@ class SceneExtraction:
     combat_posture_or_distance: str
     emotional_tone_visual: str
     scene_type: str
+    interaction_type: str
+    participant_anchors: list[str]
+    role_anchors: list[str]
+    interaction_anchor: str
+    tone_anchors: list[str]
+    environment_anchors: list[str]
+    non_peaceful_tone: bool
     event_summary: str
     continuity: SceneVisualContinuity
 
@@ -89,6 +96,13 @@ class TurnImagePromptBuilder:
         "blurry",
         "low detail",
     ]
+    _NON_PEACEFUL_NEGATIVE_TERMS = [
+        "peaceful group scene",
+        "children",
+        "casual reading",
+        "cozy domestic setting",
+        "smiling group with no tension",
+    ]
 
     def build(self, state: CampaignState, player_action: str, narrator_response: str = "") -> str:
         """Backward-compatible single-string builder used by existing call sites."""
@@ -106,6 +120,8 @@ class TurnImagePromptBuilder:
         """Extract scene facts and compose the final positive/negative prompts."""
         extraction, continuity_state = self._extract_scene(state, player_action=player_action, narrator_response=narrator_response)
         prompt = self._compose_positive_prompt(extraction=extraction, stage=stage)
+        if not self._prompt_passes_anchor_validation(prompt, extraction):
+            prompt = self._compose_positive_prompt(extraction=extraction, stage=stage, force_rebuild=True)
         negative_prompt = self._compose_negative_prompt(extraction=extraction, additions=negative_prompt_additions or [])
         return ScenePromptPacket(
             prompt=prompt,
@@ -178,6 +194,16 @@ class TurnImagePromptBuilder:
         combat_posture = self._derive_combat_posture(action_text, narrator_response, enemy_count)
         emotional_tone = self._derive_visual_emotion(narrator_response)
         scene_type = self._classify_scene_type(action_text, narrator_response, enemy_count, scene_state)
+        interaction_type = self._normalize_interaction_type(scene_type)
+        participant_anchors, role_anchors = self._collect_participant_anchors(state, scene_state, action_target)
+        interaction_anchor = self._build_interaction_anchor(
+            interaction_type=interaction_type,
+            action=action_text,
+            target=action_target,
+            participants=participant_anchors,
+        )
+        tone_anchors, non_peaceful_tone = self._derive_tone_anchors(narrator_response=narrator_response, scene_state=scene_state)
+        environment_anchors = self._collect_environment_anchors(scene_state=scene_state, narration=narrator_response)
 
         continuity = SceneVisualContinuity(
             player_appearance=appearance or continuity_prior.player_appearance,
@@ -221,80 +247,97 @@ class TurnImagePromptBuilder:
             combat_posture_or_distance=combat_posture,
             emotional_tone_visual=emotional_tone,
             scene_type=scene_type,
+            interaction_type=interaction_type,
+            participant_anchors=participant_anchors,
+            role_anchors=role_anchors,
+            interaction_anchor=interaction_anchor,
+            tone_anchors=tone_anchors,
+            environment_anchors=environment_anchors,
+            non_peaceful_tone=non_peaceful_tone,
             event_summary=event_summary,
             continuity=continuity,
         )
         return extraction, self._serialize_continuity(continuity)
 
     # -------- composition layer --------
-    def _compose_positive_prompt(self, *, extraction: SceneExtraction, stage: str) -> str:
-        subject_and_action = extraction.event_summary or (
-            f"{extraction.immediate_action} at {extraction.location_name or extraction.location_description}".strip()
-        )
+    def _compose_positive_prompt(self, *, extraction: SceneExtraction, stage: str, force_rebuild: bool = False) -> str:
+        participants = extraction.participant_anchors or ["player adventurer"]
+        if force_rebuild and extraction.role_anchors and not any(role in " ".join(participants).lower() for role in extraction.role_anchors):
+            participants = [f"{participants[0]} ({extraction.role_anchors[0]})", *participants[1:]]
+        who_is_present = f"who is present: {', '.join(participants)}"
 
-        participants = [
-            f"protagonist {extraction.continuity.player_appearance or 'adventurer'}",
-            f"companions: {', '.join(extraction.companions_present[:3])}" if extraction.companions_present else "",
-            (
-                f"enemies: {', '.join(extraction.enemies_present[:3])}"
-                f" ({extraction.enemy_count} total, {extraction.enemy_condition})"
-                if extraction.enemies_present
-                else ""
-            ),
-        ]
+        action_label = self._clean(extraction.immediate_action) or "holds position"
+        target_label = f" toward {extraction.action_target}" if extraction.action_target else ""
+        outcome_label = f"; visible outcome: {extraction.visible_outcome}" if extraction.visible_outcome else ""
+        what_they_are_doing = f"what they are doing: {action_label}{target_label}{outcome_label}"
 
-        setting = ", ".join(
-            part
-            for part in [
+        interaction_detail = extraction.interaction_anchor
+        if force_rebuild and not any(verb in interaction_detail.lower() for verb in self._interaction_verbs()):
+            interaction_detail = f"{interaction_detail}, speaking face-to-face"
+        interaction_type = f"interaction type: {interaction_detail}"
+
+        environment_bits = self._dedupe_preserve_order(
+            [
                 extraction.location_name,
                 extraction.location_description,
                 extraction.environment_type,
                 extraction.time_of_day,
                 extraction.weather,
                 extraction.lighting,
+                *extraction.environment_anchors[:3],
             ]
-            if part
         )
+        environment = f"environment: {', '.join([bit for bit in environment_bits if bit])}"
 
-        continuity_bits = [
-            extraction.continuity.armor_clothing,
-            extraction.continuity.primary_weapon,
-            ", ".join(extraction.continuity.persistent_magic_effects[:3]) if extraction.continuity.persistent_magic_effects else "",
-        ]
-
-        outcome_bits = [
-            extraction.visible_outcome,
-            extraction.combat_posture_or_distance if extraction.scene_type == "combat" else "",
-            extraction.emotional_tone_visual,
-        ]
-
-        env_bits = [
-            ", ".join(extraction.notable_props_or_landmarks[:3]) if extraction.notable_props_or_landmarks else "",
-            f"world flavor: {self._clean(extraction.environment_type)}" if extraction.environment_type else "",
-        ]
-
+        tone_bits = self._dedupe_preserve_order(
+            [
+                *extraction.tone_anchors,
+                extraction.combat_posture_or_distance if extraction.scene_type == "combat" else "",
+                extraction.emotional_tone_visual,
+            ]
+        )
         if stage == "before_narration":
-            fidelity_hint = "pre-outcome framing from current scene state"
+            tone_bits.append("pre-outcome framing from current scene state")
         else:
-            fidelity_hint = "turn outcome reflected"
+            tone_bits.append("turn outcome reflected")
+        tone_and_posture = f"tone and posture: {', '.join([bit for bit in tone_bits if bit])}"
 
-        style_suffix = self._style_suffix_for_scene_type(extraction.scene_type)
+        continuity_bits = self._dedupe_preserve_order(
+            [
+                extraction.event_summary,
+                (
+                    f"visible opponents: {', '.join(extraction.enemies_present[:3])} "
+                    f"({extraction.enemy_count} total, {extraction.enemy_condition})"
+                    if extraction.enemies_present
+                    else ""
+                ),
+                extraction.continuity.player_appearance,
+                extraction.continuity.armor_clothing,
+                extraction.continuity.primary_weapon,
+                *self._role_visual_cues(extraction.role_anchors),
+                ", ".join(extraction.continuity.persistent_magic_effects[:3]) if extraction.continuity.persistent_magic_effects else "",
+                ", ".join(extraction.notable_props_or_landmarks[:3]) if extraction.notable_props_or_landmarks else "",
+            ]
+        )
+        continuity_details = f"continuity details: {', '.join([bit for bit in continuity_bits if bit])}"
+        style_suffix = f"style suffix: {self._style_suffix_for_scene_type(extraction.scene_type)}"
 
         parts = [
-            subject_and_action,
-            *[part for part in participants if part],
-            setting,
-            *[part for part in continuity_bits if part],
-            *[part for part in outcome_bits if part],
-            *[part for part in env_bits if part],
-            fidelity_hint,
+            who_is_present,
+            what_they_are_doing,
+            interaction_type,
+            environment,
+            tone_and_posture,
+            continuity_details,
             style_suffix,
         ]
-        return self._join_prompt_parts(parts, max_parts=10)
+        return self._join_prompt_parts(parts, max_parts=7)
 
     def _compose_negative_prompt(self, *, extraction: SceneExtraction, additions: list[str]) -> str:
         terms = list(self._DEFAULT_AUTO_NEGATIVE_TERMS)
         if extraction.scene_type == "dialogue":
+            terms.extend(["battle pose", "combat blood spray", "explosion impact"])
+        if extraction.scene_type == "negotiation":
             terms.extend(["battle pose", "combat blood spray", "explosion impact"])
         if extraction.scene_type == "combat":
             terms.extend(["peaceful tea party", "idle portrait only"])
@@ -302,6 +345,8 @@ class TurnImagePromptBuilder:
             terms.append("incorrect enemy count")
         if extraction.time_of_day:
             terms.append(f"wrong {extraction.time_of_day}")
+        if extraction.non_peaceful_tone:
+            terms.extend(self._NON_PEACEFUL_NEGATIVE_TERMS)
         for item in additions:
             clean = self._clean(item)
             if clean:
@@ -434,12 +479,14 @@ class TurnImagePromptBuilder:
         text = f"{action} {narration}".lower()
         if enemy_count > 0 or any(token in text for token in ["attack", "strike", "parry", "slash", "cast"]):
             return "combat"
-        if any(token in text for token in ["say", "ask", "reply", "talk", "negotiate", "bargain"]):
+        if any(token in text for token in ["negotiate", "bargain", "haggle", "trade", "price", "deal"]):
+            return "negotiation"
+        if any(token in text for token in ["say", "ask", "reply", "talk", "speak"]):
             return "dialogue"
         if any(token in text for token in ["travel", "ride", "march", "journey"]):
-            return "travel"
+            return "exploration"
         if any(token in text for token in ["investigate", "inspect", "search", "examine"]):
-            return "investigation"
+            return "exploration"
         if any(token in text for token in ["sneak", "hide", "stealth"]):
             return "stealth"
         if any(token in text for token in ["ritual", "chant", "sigil", "summon"]):
@@ -622,11 +669,118 @@ class TurnImagePromptBuilder:
     def _style_suffix_for_scene_type(self, scene_type: str) -> str:
         if scene_type == "combat":
             return "cinematic fantasy combat, coherent anatomy, clear attacker/defender silhouettes, impact detail, dramatic lighting"
-        if scene_type == "dialogue":
+        if scene_type in {"dialogue", "negotiation"}:
             return "cinematic fantasy dialogue scene, expressive body language, coherent anatomy, detailed environment"
-        if scene_type in {"ritual", "investigation", "stealth"}:
+        if scene_type in {"ritual", "stealth"}:
             return "cinematic fantasy scene, environmental storytelling, coherent anatomy, detailed props, moody lighting"
         return "cinematic fantasy scene, coherent anatomy, detailed environment, dramatic lighting"
+
+    def _normalize_interaction_type(self, scene_type: str) -> str:
+        allowed = {"combat", "dialogue", "negotiation", "exploration", "ritual", "stealth"}
+        return scene_type if scene_type in allowed else "exploration"
+
+    def _collect_participant_anchors(
+        self, state: CampaignState, scene_state: dict[str, Any], action_target: str
+    ) -> tuple[list[str], list[str]]:
+        participants: list[str] = []
+        role_anchors: list[str] = []
+        player_label = self._clean(state.player.name) or "player"
+        participants.append(f"player {player_label}")
+        visible_actors = [
+            actor for actor in scene_state.get("scene_actors", []) if isinstance(actor, dict) and bool(actor.get("visible", True))
+        ]
+        for actor in visible_actors:
+            actor_name = self._clean(actor.get("display_name") or actor.get("name") or actor.get("short_label"))
+            role_text = self._clean(actor.get("short_label") or actor.get("role") or actor.get("type"))
+            role = self._extract_role_anchor(f"{actor_name} {role_text}")
+            if role:
+                role_anchors.append(role)
+                participants.append(f"{role} {actor_name or role}")
+            elif actor_name:
+                participants.append(actor_name)
+        for lite in scene_state.get("lightweight_npcs", []):
+            if not isinstance(lite, dict):
+                continue
+            name = self._clean(lite.get("display_name") or lite.get("name"))
+            role = self._extract_role_anchor(f"{name} {self._clean(lite.get('role_hint'))}")
+            if role:
+                role_anchors.append(role)
+                participants.append(f"{role} {name or role}")
+            elif name:
+                participants.append(name)
+        if action_target and not any(action_target.lower() in part.lower() for part in participants):
+            inferred_role = self._extract_role_anchor(action_target)
+            if inferred_role:
+                role_anchors.append(inferred_role)
+                participants.append(f"{inferred_role} {action_target}")
+            else:
+                participants.append(action_target)
+        role_anchors = self._dedupe_preserve_order(role_anchors)
+        participants = self._dedupe_preserve_order(participants)
+        return participants[:5], role_anchors[:3]
+
+    def _build_interaction_anchor(self, *, interaction_type: str, action: str, target: str, participants: list[str]) -> str:
+        target_label = target or (participants[1] if len(participants) > 1 else "counterpart")
+        if interaction_type == "combat":
+            return f"combat, confronting {target_label}, active combat stance"
+        if interaction_type == "negotiation":
+            return f"negotiation, negotiating terms with {target_label}, tense negotiation"
+        if interaction_type == "dialogue":
+            return f"dialogue, speaking face-to-face with {target_label}"
+        if interaction_type == "ritual":
+            return f"ritual, conducting a ritual with focused gestures toward {target_label}"
+        if interaction_type == "stealth":
+            return f"stealth, moving quietly while avoiding detection by {target_label}"
+        return f"exploration, surveying surroundings while moving through {target_label}"
+
+    def _derive_tone_anchors(self, *, narrator_response: str, scene_state: dict[str, Any]) -> tuple[list[str], bool]:
+        text = f"{narrator_response} {self._clean(scene_state.get('scene_summary'))} {self._clean(scene_state.get('tone'))}".lower()
+        if any(token in text for token in ["tension", "tense", "caution", "cautious", "threat", "suspicion", "suspicious", "guarded", "watchful"]):
+            return ["tense atmosphere", "cautious expressions", "guarded posture", "watchful presence"], True
+        if any(token in text for token in ["panic", "fear", "terrified", "danger"]):
+            return ["threat-charged atmosphere", "defensive posture"], True
+        return [], False
+
+    def _collect_environment_anchors(self, *, scene_state: dict[str, Any], narration: str) -> list[str]:
+        anchors: list[str] = []
+        for key in ("environmental_effects", "active_effects", "altered_environment", "environment_consequences"):
+            values = scene_state.get(key, [])
+            if isinstance(values, list):
+                anchors.extend(self._clean(v) for v in values if self._clean(v))
+        lower_narration = narration.lower()
+        if "flare" in lower_narration:
+            anchors.append("radiant flare lighting the scene")
+        if "magic" in lower_narration:
+            anchors.append("visible magical energy in the environment")
+        return self._dedupe_preserve_order(anchors)
+
+    def _extract_role_anchor(self, text: str) -> str:
+        lowered = self._clean(text).lower()
+        for role in ["merchant", "guard", "figure", "stranger", "captain", "priest", "bandit"]:
+            if role in lowered:
+                return "unknown figure" if role in {"figure", "stranger"} else role
+        return ""
+
+    def _role_visual_cues(self, roles: list[str]) -> list[str]:
+        cues: list[str] = []
+        for role in roles:
+            if role == "merchant":
+                cues.append("merchant with stall, goods, and trade posture")
+            elif role == "guard":
+                cues.append("guard in armor with vigilant stance")
+            elif role == "unknown figure":
+                cues.append("unknown figure with ambiguous, shadowed presence")
+        return self._dedupe_preserve_order(cues)
+
+    def _interaction_verbs(self) -> list[str]:
+        return ["negotiating", "speaking", "confronting", "bargaining", "questioning", "challenging"]
+
+    def _prompt_passes_anchor_validation(self, prompt: str, extraction: SceneExtraction) -> bool:
+        lowered = prompt.lower()
+        role_tokens = self._dedupe_preserve_order(extraction.role_anchors + ["merchant", "guard", "unknown figure"])
+        has_named_role = any(token and token in lowered for token in role_tokens)
+        has_interaction_verb = any(verb in lowered for verb in self._interaction_verbs())
+        return has_named_role and has_interaction_verb
 
     def _join_prompt_parts(self, parts: list[str], *, max_parts: int) -> str:
         clean_parts = [self._clean(part) for part in parts if self._clean(part)]
