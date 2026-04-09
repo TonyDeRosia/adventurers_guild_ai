@@ -13,7 +13,6 @@ import time
 import sys
 import urllib.request
 import zipfile
-import webbrowser
 from difflib import SequenceMatcher
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -47,6 +46,7 @@ from app.pathing import (
     static_dir,
 )
 from app.comfy_manager import ComfyProcessManager
+from app.desktop_capabilities import DesktopIntegration
 from app.runtime_config import AppRuntimeConfig, ImageRuntimeConfig, ModelRuntimeConfig, RuntimeConfigStore
 from engine.campaign_engine import CampaignEngine, TurnResult
 from engine.character_sheets import CharacterSheet, CharacterSheetAbilityEntry
@@ -87,6 +87,7 @@ class WebRuntime:
         self.scene_visual_store_path = self.paths.campaign_memory / "scene_visual_store.json"
         self.scene_visual_store = self._load_scene_visual_store()
         self.comfy_manager = ComfyProcessManager()
+        self.desktop = DesktopIntegration()
 
         self.engine = CampaignEngine(self._create_model_adapter(), data_dir=self.paths.content_data)
         self.image_adapter = self._create_image_adapter()
@@ -504,6 +505,8 @@ class WebRuntime:
             image_item["startup_status"] = dict(self.image_startup_status)
         return {
             "items": [model_provider_item, model_item, image_item],
+            "first_run_status": self.get_first_run_status(),
+            "desktop_capabilities": self.desktop.capabilities.to_dict(),
             "primary_actions": [
                 {"id": "setup_text_ai", "label": "Set Up Text AI"},
                 {"id": "setup_image_ai", "label": "Set Up Image AI"},
@@ -565,44 +568,16 @@ class WebRuntime:
         return shutil.which("ollama")
 
     def pick_folder(self, title: str, initial_path: str = "") -> dict[str, Any]:
-        try:
-            import tkinter as tk
-            from tkinter import filedialog
-        except Exception as exc:
-            return {"ok": False, "message": "Folder picker is unavailable in this environment.", "error": str(exc)}
-        try:
-            root = tk.Tk()
-            root.withdraw()
-            selected = filedialog.askdirectory(title=title, initialdir=initial_path or str(self.paths.user_data))
-            root.destroy()
-        except Exception as exc:
-            return {"ok": False, "message": "Folder picker could not be opened.", "error": str(exc)}
-        if not selected:
-            return {"ok": False, "message": "No folder selected."}
-        return {"ok": True, "path": selected}
+        return self.desktop.pick_folder(title=title, initial_path=initial_path or str(self.paths.user_data))
 
     def pick_file(self, title: str, initial_path: str = "", filters: list[str] | None = None) -> dict[str, Any]:
-        try:
-            import tkinter as tk
-            from tkinter import filedialog
-        except Exception as exc:
-            return {"ok": False, "message": "File picker is unavailable in this environment.", "error": str(exc)}
-        filter_list = filters or [".json"]
-        file_types = [("Allowed files", " ".join(f"*{suffix}" for suffix in filter_list)), ("All files", "*.*")]
-        try:
-            root = tk.Tk()
-            root.withdraw()
-            selected = filedialog.askopenfilename(
-                title=title,
-                initialdir=(str(Path(initial_path).parent) if initial_path else str(self.paths.user_data)),
-                filetypes=file_types,
-            )
-            root.destroy()
-        except Exception as exc:
-            return {"ok": False, "message": "File picker could not be opened.", "error": str(exc)}
-        if not selected:
-            return {"ok": False, "message": "No file selected."}
-        return {"ok": True, "path": selected}
+        return self.desktop.pick_file(title=title, initial_path=initial_path or str(self.paths.user_data), filters=filters)
+
+    def get_desktop_capabilities(self) -> dict[str, Any]:
+        return {"ok": True, "desktop": self.desktop.capabilities.to_dict()}
+
+    def open_external_url(self, url: str) -> dict[str, Any]:
+        return self.desktop.open_external_url(url)
 
     def get_image_setup_snapshot(self) -> dict[str, Any]:
         path_status = self.get_path_configuration_status().get("image", {})
@@ -610,6 +585,7 @@ class WebRuntime:
         bundled_path = self._default_comfyui_path()
         bundled_available = bundled_path.exists() and bundled_path.is_dir()
         checkpoint_dir = path_status.get("checkpoint_dir", {})
+        first_run = self.get_first_run_status()
         return {
             "ok": True,
             "image_provider": self.app_config.image.provider,
@@ -626,6 +602,7 @@ class WebRuntime:
             "text_only_fallback_available": True,
             "text_only_mode_active": self.app_config.image.provider == "null",
             "recommended_model_page": str(self.app_config.image.checkpoint_model_page or "").strip(),
+            "first_run_status": first_run,
         }
 
     def use_bundled_image_engine(self) -> dict[str, Any]:
@@ -635,6 +612,7 @@ class WebRuntime:
         self.app_config.image.provider = "comfyui"
         self.app_config.image.enabled = True
         self.app_config.image.comfyui_path = str(bundled)
+        self.app_config.image.comfyui_output_dir = str(self.generated_image_dir)
         default_workflow = self._default_workflow_path()
         if default_workflow.exists() and default_workflow.is_file():
             self.app_config.image.comfyui_workflow_path = str(default_workflow)
@@ -678,6 +656,52 @@ class WebRuntime:
             "ok": True,
             "message": "Image setup skipped. Text-only mode is active.",
             "snapshot": self.get_image_setup_snapshot(),
+        }
+
+    def get_first_run_status(self) -> dict[str, Any]:
+        model_status = self.get_model_status()
+        image_status = self.get_image_status()
+        path_status = self.get_path_configuration_status().get("image", {})
+        bundled_path = self._default_comfyui_path()
+        bundled_available = bundled_path.exists() and bundled_path.is_dir()
+        checkpoint_dir = path_status.get("checkpoint_dir", {})
+        text_ai_ready = bool(model_status.get("ready", False))
+        text_only_mode = self.app_config.image.provider == "null" or not self.app_config.image.enabled
+        return {
+            "app_installed": {
+                "state": "ready" if self.desktop.capabilities.mode.startswith("desktop_") else "not_packaged",
+                "message": (
+                    "Desktop packaged runtime detected."
+                    if self.desktop.capabilities.mode.startswith("desktop_")
+                    else "Running from source/developer mode."
+                ),
+            },
+            "text_ai": {
+                "state": "ready" if text_ai_ready else "not_ready",
+                "message": str(model_status.get("user_message", "")),
+            },
+            "image_engine_bundle": {
+                "state": "ready" if bundled_available else "missing",
+                "message": (
+                    "Bundled ComfyUI runtime detected."
+                    if bundled_available
+                    else "Bundled ComfyUI runtime not found in install/runtime_bundle/comfyui."
+                ),
+                "path": str(bundled_path) if bundled_available else "",
+            },
+            "model_folder": {
+                "state": "ready" if bool(checkpoint_dir.get("valid", False)) else "missing",
+                "message": str(checkpoint_dir.get("message", "Checkpoint folder is required.")),
+                "path": str(checkpoint_dir.get("resolved_path") or checkpoint_dir.get("path") or ""),
+            },
+            "text_only_mode": {
+                "state": "active" if text_only_mode else "inactive",
+                "message": "Text-only mode is active." if text_only_mode else "Image pipeline mode is active.",
+            },
+            "image_runtime": {
+                "state": "ready" if bool(image_status.get("ready", False)) else "not_ready",
+                "message": str(image_status.get("user_message", "")),
+            },
         }
 
     def connect_ollama_path(self, selected_path: str) -> dict[str, Any]:
@@ -1411,6 +1435,16 @@ class WebRuntime:
                 return candidate
         return None
 
+    def _resolve_image_engine_root_for_launch(self, path_config: dict[str, Any]) -> Path | None:
+        comfy_item = path_config.get("comfyui_root", {}) if isinstance(path_config, dict) else {}
+        resolved = str(comfy_item.get("resolved_path") or comfy_item.get("path") or "").strip()
+        if resolved and (Path(resolved) / "main.py").exists():
+            return Path(resolved)
+        fallback = self._find_comfyui_root()
+        if fallback and (fallback / "main.py").exists():
+            return fallback
+        return None
+
     def _validate_comfyui_root_config(self, configured_path: str) -> dict[str, Any]:
         raw = str(configured_path or "").strip()
         if not raw:
@@ -1622,7 +1656,7 @@ class WebRuntime:
                 }
         self.app_config.image.comfyui_path = str(target_dir)
         self.config_store.save(self.app_config)
-        webbrowser.open("https://github.com/comfyanonymous/ComfyUI")
+        self.open_external_url("https://github.com/comfyanonymous/ComfyUI")
         print("[setup-orchestrator] comfyui install success")
         print("[setup-action] install-image-engine success")
         return {
@@ -1678,7 +1712,7 @@ class WebRuntime:
                 "steps": [{"step": "wait-for-readiness", "state": "ready", "message": "Engine is already reachable."}],
             }
         print("[setup-orchestrator] setup-image step=detect-install-path")
-        comfyui_root = self._find_comfyui_root()
+        comfyui_root = self._resolve_image_engine_root_for_launch(path_config)
         if comfyui_root is None:
             print("[setup-action] start-image-engine failure reason=install-path-missing")
             print("[setup-orchestrator] setup-image failure stage=detect-install-path")
@@ -1764,8 +1798,24 @@ class WebRuntime:
         print("[setup-orchestrator] setup-image step=launch-engine")
         process: subprocess.Popen[str] | None = None
         log_handle = None
+        launch_target = str(launcher)
         try:
-            if os.name == "nt" and launcher_script.exists() and launcher_script.suffix == ".bat":
+            embedded_python = comfyui_root.parent / "python_embeded" / "python.exe"
+            if os.name == "nt" and embedded_python.exists():
+                command = [str(embedded_python), "main.py"]
+                launch_target = " ".join(command)
+                self._append_image_startup_log(startup_log_lines, f"Launching command: {' '.join(command)}")
+                with startup_log_file.open("w", encoding="utf-8") as handle:
+                    handle.write("")
+                log_handle = startup_log_file.open("a", encoding="utf-8")
+                process = subprocess.Popen(
+                    command,
+                    cwd=str(comfyui_root),
+                    stdout=log_handle,
+                    stderr=subprocess.STDOUT,
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,  # type: ignore[attr-defined]
+                )
+            elif os.name == "nt" and launcher_script.exists() and launcher_script.suffix == ".bat":
                 self._append_image_startup_log(startup_log_lines, f"Launching script: {launcher_script.name}")
                 with startup_log_file.open("w", encoding="utf-8") as handle:
                     handle.write("")
@@ -1827,8 +1877,8 @@ class WebRuntime:
             return {"ok": False, "message": "ComfyUI process launch did not initialize.", "failure_stage": "launch-engine", "failure_stage_message": "process launch failed"}
         if log_handle is not None:
             self.comfy_manager.bind_log_handle(log_handle)
-        self.comfy_manager.register(process, launch_target=str(launcher), startup_log_file=startup_log_file)
-        print(f"[setup-action] start-image-engine launch command={launcher}")
+        self.comfy_manager.register(process, launch_target=launch_target, startup_log_file=startup_log_file)
+        print(f"[setup-action] start-image-engine launch command={launch_target}")
         print("[setup-orchestrator] setup-image step=wait-for-readiness")
         expected_base = self.app_config.image.base_url
         expected = urlparse(expected_base)
@@ -1951,6 +2001,22 @@ class WebRuntime:
                 {"step": "wait-for-readiness", "state": "failed", "message": "Process launched but readiness check failed before timeout window closed."},
             ],
         }
+
+    def stop_image_engine(self) -> dict[str, Any]:
+        self.comfy_manager.clear_if_exited()
+        snapshot = self.comfy_manager.snapshot()
+        if not snapshot.running:
+            return {"ok": True, "message": "Image engine is not running.", "managed_process": False}
+        stopped = self.comfy_manager.shutdown()
+        if not stopped:
+            return {"ok": False, "message": "Image engine process could not be stopped cleanly.", "managed_process": True}
+        self.image_startup_status = {
+            "stage": "stopped",
+            "reason": "stopped-by-user",
+            "summary": "ComfyUI process stopped from setup controls.",
+            "managed_process": False,
+        }
+        return {"ok": True, "message": "Image engine stopped.", "managed_process": False, "readiness_refreshed": True}
 
     def _create_image_adapter(self) -> ImageGeneratorAdapter:
         cfg = self.app_config.image
@@ -4097,6 +4163,10 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     def providers_readiness() -> dict[str, Any]:
         return runtime.get_dependency_readiness()
 
+    @app.get("/api/desktop/capabilities")
+    def desktop_capabilities() -> dict[str, Any]:
+        return runtime.get_desktop_capabilities()
+
     @app.post("/api/setup/start-ollama")
     def setup_start_ollama() -> dict[str, Any]:
         print("[setup-action] route invoked endpoint=/api/setup/start-ollama")
@@ -4132,6 +4202,11 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
         print("[setup-action] route invoked endpoint=/api/setup/start-image-engine")
         return runtime.start_image_engine()
 
+    @app.post("/api/setup/stop-image-engine")
+    def setup_stop_image_engine() -> dict[str, Any]:
+        print("[setup-action] route invoked endpoint=/api/setup/stop-image-engine")
+        return runtime.stop_image_engine()
+
     @app.post("/api/setup/orchestrate-text")
     def setup_orchestrate_text(payload: dict[str, Any]) -> dict[str, Any]:
         model_name = str(payload.get("model", "")).strip() or None
@@ -4162,6 +4237,11 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
         filters = payload.get("filters", [".json"])
         safe_filters = [str(item) for item in filters if str(item).startswith(".")] if isinstance(filters, list) else [".json"]
         return runtime.pick_file(title=title, initial_path=initial_path, filters=safe_filters or [".json"])
+
+    @app.post("/api/setup/open-external-url")
+    def setup_open_external_url(payload: dict[str, Any]) -> dict[str, Any]:
+        url = str(payload.get("url", "")).strip()
+        return runtime.open_external_url(url)
 
     @app.post("/api/setup/connect-ollama-path")
     def setup_connect_ollama_path(payload: dict[str, Any]) -> dict[str, Any]:

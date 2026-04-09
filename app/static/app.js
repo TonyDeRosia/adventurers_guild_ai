@@ -2010,8 +2010,17 @@ async function connectComfyuiFolder() {
   }
 }
 
-function openOfficialDownload(url) {
-  window.open(url, '_blank', 'noopener,noreferrer');
+async function openOfficialDownload(url) {
+  try {
+    const result = await api('/api/setup/open-external-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    if (!result.ok) throw new Error(result.message || 'Could not open browser via desktop integration.');
+  } catch (error) {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
 }
 
 async function refreshComfyuiModelList() {
