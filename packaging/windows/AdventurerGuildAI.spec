@@ -5,7 +5,28 @@ from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
-ROOT = Path(__file__).resolve().parents[2]
+
+def _resolve_project_root() -> Path:
+    """Resolve repository root safely when executed by PyInstaller."""
+    spec_value = globals().get("SPEC")
+    candidates: list[Path] = [Path.cwd()]
+    if spec_value:
+        spec_path = Path(spec_value).resolve()
+        candidates.append(spec_path.parent)
+
+    for candidate in candidates:
+        current = candidate
+        for _ in range(8):
+            if (current / "run.py").exists() and (current / "packaging" / "windows").exists():
+                return current
+            if current.parent == current:
+                break
+            current = current.parent
+
+    raise RuntimeError("Unable to resolve Adventurers Guild AI project root for PyInstaller spec execution.")
+
+
+ROOT = _resolve_project_root()
 
 
 def _tree_entries(src: Path, dest: str) -> list[tuple[str, str]]:
