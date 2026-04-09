@@ -29,9 +29,9 @@ if errorlevel 1 (
 
 echo Cleaning prior build outputs...
 if exist "build" rmdir /s /q "build"
-if exist "dist\AdventurerGuildAI.exe" del /q "dist\AdventurerGuildAI.exe"
+if exist "dist\AdventurerGuildAI" rmdir /s /q "dist\AdventurerGuildAI"
 
-set "PYINSTALLER_CMD=%PYTHON_CMD% -m PyInstaller --noconfirm --clean --onefile --windowed --name AdventurerGuildAI run.py --add-data data;data --add-data app/static;app/static --collect-submodules app --collect-submodules engine --collect-submodules images --collect-submodules memory --collect-submodules models --collect-submodules prompts --collect-submodules rules --collect-all fastapi --collect-all uvicorn --collect-all starlette"
+set "PYINSTALLER_CMD=%PYTHON_CMD% -m PyInstaller --noconfirm --clean --onedir --windowed --name AdventurerGuildAI run.py --add-data data;data --add-data app/static;app/static --collect-submodules app --collect-submodules engine --collect-submodules images --collect-submodules memory --collect-submodules models --collect-submodules prompts --collect-submodules rules --collect-all fastapi --collect-all uvicorn --collect-all starlette"
 
 echo Building standalone executable with PyInstaller...
 echo %PYINSTALLER_CMD%
@@ -41,10 +41,15 @@ if errorlevel 1 (
     exit /b 1
 )
 
-if not exist "dist\AdventurerGuildAI.exe" (
-    echo Executable build did not produce dist\AdventurerGuildAI.exe.
+if not exist "dist\AdventurerGuildAI\AdventurerGuildAI.exe" (
+    echo Executable build did not produce dist\AdventurerGuildAI\AdventurerGuildAI.exe.
     exit /b 1
 )
 
-echo Build complete: dist\AdventurerGuildAI.exe
+if exist "packaging\windows\runtime_bundle" (
+    echo Copying runtime bundle scaffold...
+    xcopy /E /I /Y "packaging\windows\runtime_bundle" "dist\AdventurerGuildAI\runtime_bundle" >nul
+)
+
+echo Build complete: dist\AdventurerGuildAI\AdventurerGuildAI.exe
 exit /b 0
