@@ -6,8 +6,12 @@ cd /d "%ROOT_DIR%" || goto :fatal_startup
 
 title Adventurers Guild AI Build Launcher
 
-set "SCRIPT_EXIT_CODE=1"
-set "FAILURE_REASON=Build launcher did not complete."
+set "SCRIPT_EXIT_CODE=0"
+set "FAILURE_REASON="
+set "HAS_FAILURE=0"
+set "CURRENT_STAGE=Startup"
+set "LAST_COMPLETED_STAGE="
+set "FAILED_STAGE="
 set "BUILD_MODE="
 set "EXE_BUILD_STATUS=not_run"
 set "INSTALLER_BUILD_STATUS=not_run"
@@ -70,6 +74,7 @@ goto :finish
 
 :post_build
 if "%INSTALLER_BUILD_STATUS%"=="success" (
+    call :stage "Copy installer to output folder"
     call :copy_installer_to_output
     if errorlevel 1 goto :finish
 ) else if /i "%BUILD_MODE%"=="EXE" (
@@ -83,10 +88,14 @@ if "%INSTALLER_BUILD_STATUS%"=="success" (
 if "%SCRIPT_EXIT_CODE%"=="1" if "%EXE_BUILD_STATUS%"=="success" if /i "%BUILD_MODE%"=="EXE" (
     set "SCRIPT_EXIT_CODE=0"
     set "FAILURE_REASON="
+    set "HAS_FAILURE=0"
+    set "FAILED_STAGE="
 )
 if "%SCRIPT_EXIT_CODE%"=="1" if "%INSTALLER_BUILD_STATUS%"=="success" (
     set "SCRIPT_EXIT_CODE=0"
     set "FAILURE_REASON="
+    set "HAS_FAILURE=0"
+    set "FAILED_STAGE="
 )
 
 goto :finish
@@ -101,6 +110,7 @@ if not errorlevel 1 (
     if not errorlevel 1 (
         set "PYTHON_CMD=py -3"
         call :log "[OK] Python resolved via: py -3"
+        call :complete_stage "Resolving Python"
         exit /b 0
     ) else (
         call :log "[WARN] py found, but \"py -3\" did not execute successfully."
@@ -116,6 +126,7 @@ if not errorlevel 1 (
     if not errorlevel 1 (
         set "PYTHON_CMD=python"
         call :log "[OK] Python resolved via: python"
+        call :complete_stage "Resolving Python"
         exit /b 0
     ) else (
         call :log "[WARN] python found, but it does not appear to be usable Python 3."
@@ -124,7 +135,7 @@ if not errorlevel 1 (
     call :log "[INFO] Command not found in PATH: python"
 )
 
-call :fail "Python 3 was not found. Expected a working \"py -3\" or \"python\" in PATH."
+call :fail "Python 3 was not found. Expected a working py -3 or python in PATH."
 exit /b 1
 
 :pick_output_dir
@@ -206,7 +217,11 @@ if not defined SELECTED_OUTPUT_DIR (
 )
 
 if not defined SELECTED_OUTPUT_DIR (
-    call :fail "No output folder was selected."
+    if defined PICKER_FALLBACK_REASON (
+        call :fail "No output folder was selected. %PICKER_FALLBACK_REASON%"
+    ) else (
+        call :fail "No output folder was selected."
+    )
     exit /b 1
 )
 
@@ -220,6 +235,7 @@ if not exist "%SELECTED_OUTPUT_DIR%" (
 
 for %%I in ("%SELECTED_OUTPUT_DIR%") do set "SELECTED_OUTPUT_DIR=%%~fI"
 call :log "[OK] Output folder: %SELECTED_OUTPUT_DIR%"
+call :complete_stage "Selecting output folder"
 exit /b 0
 
 :verify_tools
@@ -241,6 +257,7 @@ if errorlevel 1 (
 if /i "%BUILD_MODE%"=="EXE" (
     call :log "[INFO] Skipping Inno Setup verification because EXE-only mode was selected."
     call :log "[OK] Tool verification complete."
+    call :complete_stage "Verifying tools"
     exit /b 0
 )
 
@@ -272,6 +289,7 @@ if not defined ISCC_PATH (
 
 call :log "[OK] Inno Setup compiler: %ISCC_PATH%"
 call :log "[OK] Tool verification complete."
+call :complete_stage "Verifying tools"
 exit /b 0
 
 :verify_packaging_inputs
@@ -295,6 +313,7 @@ call :require_path "packaging\windows\runtime_bundle\licenses\ComfyUI-LICENSE-MI
 if errorlevel 1 exit /b 1
 
 call :log "[OK] Packaging input verification complete."
+call :complete_stage "Verifying packaging inputs"
 exit /b 0
 
 :require_path
@@ -338,6 +357,7 @@ if "%BUILD_SELECTION%"=="1" (
 )
 
 call :log "[OK] Build mode: %BUILD_MODE%"
+call :complete_stage "Choosing build mode"
 exit /b 0
 
 :build_exe
@@ -355,6 +375,7 @@ if not exist "dist\AdventurerGuildAI\AdventurerGuildAI.exe" (
 )
 set "EXE_BUILD_STATUS=success"
 call :log "[OK] EXE build complete."
+call :complete_stage "Build EXE"
 exit /b 0
 
 :build_installer
@@ -373,6 +394,7 @@ if not exist "installer\Output\AdventurerGuildAI_Setup.exe" (
 set "INSTALLER_BUILD_STATUS=success"
 set "FINAL_INSTALLER_PATH=%ROOT_DIR%installer\Output\AdventurerGuildAI_Setup.exe"
 call :log "[OK] Installer build complete."
+call :complete_stage "Build Installer"
 exit /b 0
 
 :copy_installer_to_output
@@ -383,6 +405,7 @@ if errorlevel 1 (
     exit /b 1
 )
 call :log "[OK] Copied installer to: %COPIED_INSTALLER_PATH%"
+call :complete_stage "Copy installer to output folder"
 exit /b 0
 
 :finish
@@ -404,10 +427,13 @@ if "%INSTALLER_BUILD_STATUS%"=="success" (
 if "%SCRIPT_EXIT_CODE%"=="" set "SCRIPT_EXIT_CODE=1"
 if "%SCRIPT_EXIT_CODE%"=="0" (
     call :log "Status: SUCCESS"
+    if defined LAST_COMPLETED_STAGE call :log "Last completed stage: %LAST_COMPLETED_STAGE%"
 ) else (
     call :log "Status: FAILED (exit code %SCRIPT_EXIT_CODE%)"
-    if defined FAILURE_REASON call :log "Reason: %FAILURE_REASON%"
+    if defined FAILED_STAGE call :log "Failed stage: %FAILED_STAGE%"
+    if defined FAILURE_REASON call :log "Failure reason: %FAILURE_REASON%"
 )
+call :log "Log file: %LOG_FILE%"
 call :log "Finished: %DATE% %TIME%"
 call :log "================================================================"
 call :log_blank
@@ -418,12 +444,27 @@ rem Guard rail: do not fall through into helper labels.
 goto :eof
 
 :stage
+set "CURRENT_STAGE=%~1"
 call :log_blank
 call :log "---------------- %~1 ----------------"
 exit /b 0
 
+:complete_stage
+set "LAST_COMPLETED_STAGE=%~1"
+if not "%HAS_FAILURE%"=="1" (
+    set "FAILED_STAGE="
+    set "FAILURE_REASON="
+)
+exit /b 0
+
 :fail
 set "SCRIPT_EXIT_CODE=1"
+set "HAS_FAILURE=1"
+if defined CURRENT_STAGE (
+    set "FAILED_STAGE=%CURRENT_STAGE%"
+) else (
+    set "FAILED_STAGE=Unknown"
+)
 set "FAILURE_REASON=%~1"
 call :log "[ERROR] %~1"
 exit /b 1
