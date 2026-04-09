@@ -346,30 +346,6 @@ if errorlevel 1 (
 call :log "[OK] Copied installer to: %COPIED_INSTALLER_PATH%"
 exit /b 0
 
-:stage
-call :log ""
-call :log "---------------- %~1 ----------------"
-exit /b 0
-
-:fail
-set "SCRIPT_EXIT_CODE=1"
-set "FAILURE_REASON=%~1"
-call :log "[ERROR] %~1"
-exit /b 1
-
-:log
-set "LOG_LINE=%~1"
-echo %LOG_LINE%
->> "%LOG_FILE%" echo %LOG_LINE%
-exit /b 0
-
-:fatal_startup
-echo [ERROR] Failed to change directory to script root.
-echo [ERROR] Script path: %~dp0
-echo.
-pause
-exit /b 1
-
 :finish
 call :log ""
 call :log "================================================================"
@@ -398,3 +374,30 @@ call :log "================================================================"
 call :log ""
 pause
 exit /b %SCRIPT_EXIT_CODE%
+
+rem Guard rail: do not fall through into helper labels.
+goto :eof
+
+:stage
+call :log ""
+call :log "---------------- %~1 ----------------"
+exit /b 0
+
+:fail
+set "SCRIPT_EXIT_CODE=1"
+set "FAILURE_REASON=%~1"
+call :log "[ERROR] %~1"
+exit /b 1
+
+:log
+set "LOG_LINE=%~1"
+echo %LOG_LINE%
+>> "%LOG_FILE%" echo %LOG_LINE%
+exit /b 0
+
+:fatal_startup
+echo [ERROR] Failed to change directory to script root.
+echo [ERROR] Script path: %~dp0
+echo.
+pause
+exit /b 1
