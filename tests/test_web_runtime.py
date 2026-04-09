@@ -2285,6 +2285,35 @@ def test_pick_file_endpoint_returns_selected_path(tmp_path: Path, monkeypatch) -
     assert response.json()["path"].endswith("workflow.json")
 
 
+def test_guided_image_setup_endpoints_proxy_runtime_methods(tmp_path: Path, monkeypatch) -> None:
+    try:
+        from fastapi.testclient import TestClient
+    except RuntimeError as exc:
+        pytest.skip(str(exc))
+    runtime = _runtime(tmp_path, monkeypatch)
+    app = create_web_app(runtime, runtime.root / "app" / "static")
+    client = TestClient(app)
+
+    monkeypatch.setattr(runtime, "get_image_setup_snapshot", lambda: {"ready": False, "message": "snapshot"})
+    monkeypatch.setattr(runtime, "use_bundled_image_engine", lambda: {"ok": True, "message": "bundled"})
+    monkeypatch.setattr(runtime, "save_checkpoint_folder", lambda path: {"ok": True, "path": path})
+    monkeypatch.setattr(runtime, "skip_images_for_now", lambda: {"ok": True, "message": "skipped"})
+
+    snapshot_response = client.get("/api/setup/image-readiness-card")
+    bundled_response = client.post("/api/setup/use-bundled-image-engine", json={})
+    checkpoint_response = client.post("/api/setup/save-checkpoint-folder", json={"path": "/tmp/checkpoints"})
+    skip_response = client.post("/api/setup/skip-images", json={})
+
+    assert snapshot_response.status_code == 200
+    assert snapshot_response.json()["message"] == "snapshot"
+    assert bundled_response.status_code == 200
+    assert bundled_response.json()["message"] == "bundled"
+    assert checkpoint_response.status_code == 200
+    assert checkpoint_response.json()["path"] == "/tmp/checkpoints"
+    assert skip_response.status_code == 200
+    assert skip_response.json()["message"] == "skipped"
+
+
 def test_campaign_recalibrate_endpoint_invokes_runtime_recalibration(tmp_path: Path, monkeypatch) -> None:
     try:
         from fastapi.testclient import TestClient
