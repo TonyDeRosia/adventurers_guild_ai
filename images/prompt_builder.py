@@ -95,6 +95,10 @@ class TurnImagePromptBuilder:
         "deformed anatomy",
         "blurry",
         "low detail",
+        "solo character portrait",
+        "single hero shot",
+        "lone warrior pose",
+        "dramatic combat stance without opponent",
     ]
     _NON_PEACEFUL_NEGATIVE_TERMS = [
         "peaceful group scene",
@@ -265,6 +269,7 @@ class TurnImagePromptBuilder:
         if force_rebuild and extraction.role_anchors and not any(role in " ".join(participants).lower() for role in extraction.role_anchors):
             participants = [f"{participants[0]} ({extraction.role_anchors[0]})", *participants[1:]]
         who_is_present = f"who is present: {', '.join(participants)}"
+        character_composition = self._build_character_composition(participants)
 
         action_label = self._clean(extraction.immediate_action) or "holds position"
         target_label = f" toward {extraction.action_target}" if extraction.action_target else ""
@@ -324,6 +329,7 @@ class TurnImagePromptBuilder:
 
         parts = [
             who_is_present,
+            character_composition,
             what_they_are_doing,
             interaction_type,
             environment,
@@ -331,7 +337,7 @@ class TurnImagePromptBuilder:
             continuity_details,
             style_suffix,
         ]
-        return self._join_prompt_parts(parts, max_parts=7)
+        return self._join_prompt_parts(parts, max_parts=8)
 
     def _compose_negative_prompt(self, *, extraction: SceneExtraction, additions: list[str]) -> str:
         terms = list(self._DEFAULT_AUTO_NEGATIVE_TERMS)
@@ -670,7 +676,10 @@ class TurnImagePromptBuilder:
         if scene_type == "combat":
             return "cinematic fantasy combat, coherent anatomy, clear attacker/defender silhouettes, impact detail, dramatic lighting"
         if scene_type in {"dialogue", "negotiation"}:
-            return "cinematic fantasy dialogue scene, expressive body language, coherent anatomy, detailed environment"
+            return (
+                "cinematic fantasy dialogue scene, multiple characters interacting, grounded posture, "
+                "no combat stance, clear spatial relationship, expressive body language, coherent anatomy, detailed environment"
+            )
         if scene_type in {"ritual", "stealth"}:
             return "cinematic fantasy scene, environmental storytelling, coherent anatomy, detailed props, moody lighting"
         return "cinematic fantasy scene, coherent anatomy, detailed environment, dramatic lighting"
@@ -685,7 +694,7 @@ class TurnImagePromptBuilder:
         participants: list[str] = []
         role_anchors: list[str] = []
         player_label = self._clean(state.player.name) or "player"
-        participants.append(f"player {player_label}")
+        participants.append(f"player {player_label} clearly visible, all present in frame")
         visible_actors = [
             actor for actor in scene_state.get("scene_actors", []) if isinstance(actor, dict) and bool(actor.get("visible", True))
         ]
@@ -695,9 +704,9 @@ class TurnImagePromptBuilder:
             role = self._extract_role_anchor(f"{actor_name} {role_text}")
             if role:
                 role_anchors.append(role)
-                participants.append(f"{role} {actor_name or role}")
+                participants.append(f"{role} {actor_name or role} clearly visible, all present in frame")
             elif actor_name:
-                participants.append(actor_name)
+                participants.append(f"{actor_name} clearly visible, all present in frame")
         for lite in scene_state.get("lightweight_npcs", []):
             if not isinstance(lite, dict):
                 continue
@@ -705,16 +714,16 @@ class TurnImagePromptBuilder:
             role = self._extract_role_anchor(f"{name} {self._clean(lite.get('role_hint'))}")
             if role:
                 role_anchors.append(role)
-                participants.append(f"{role} {name or role}")
+                participants.append(f"{role} {name or role} clearly visible, all present in frame")
             elif name:
-                participants.append(name)
+                participants.append(f"{name} clearly visible, all present in frame")
         if action_target and not any(action_target.lower() in part.lower() for part in participants):
             inferred_role = self._extract_role_anchor(action_target)
             if inferred_role:
                 role_anchors.append(inferred_role)
-                participants.append(f"{inferred_role} {action_target}")
+                participants.append(f"{inferred_role} {action_target} clearly visible, all present in frame")
             else:
-                participants.append(action_target)
+                participants.append(f"{action_target} clearly visible, all present in frame")
         role_anchors = self._dedupe_preserve_order(role_anchors)
         participants = self._dedupe_preserve_order(participants)
         return participants[:5], role_anchors[:3]
@@ -724,9 +733,15 @@ class TurnImagePromptBuilder:
         if interaction_type == "combat":
             return f"combat, confronting {target_label}, active combat stance"
         if interaction_type == "negotiation":
-            return f"negotiation, negotiating terms with {target_label}, tense negotiation"
+            return (
+                f"negotiation, negotiating terms with {target_label}, tense negotiation, engaged in conversation, "
+                "standing or facing each other, conversational posture, no combat stance, no weapon raised for attack"
+            )
         if interaction_type == "dialogue":
-            return f"dialogue, speaking face-to-face with {target_label}"
+            return (
+                f"dialogue, speaking face-to-face with {target_label}, engaged in conversation, standing or facing each other, "
+                "conversational posture, no combat stance, no weapon raised for attack"
+            )
         if interaction_type == "ritual":
             return f"ritual, conducting a ritual with focused gestures toward {target_label}"
         if interaction_type == "stealth":
@@ -780,7 +795,34 @@ class TurnImagePromptBuilder:
         role_tokens = self._dedupe_preserve_order(extraction.role_anchors + ["merchant", "guard", "unknown figure"])
         has_named_role = any(token and token in lowered for token in role_tokens)
         has_interaction_verb = any(verb in lowered for verb in self._interaction_verbs())
+        participant_count = len(extraction.participant_anchors or [])
+        has_multi_character_composition = (
+            "multiple characters present" in lowered or f"{participant_count} characters present" in lowered
+        )
+        if participant_count > 1:
+            return has_named_role and has_interaction_verb and has_multi_character_composition
         return has_named_role and has_interaction_verb
+
+    def _build_character_composition(self, participants: list[str]) -> str:
+        if len(participants) <= 1:
+            return "character composition: single character present"
+        named_tokens = [self._clean(self._participant_core_name(participant)) for participant in participants[:4]]
+        named_tokens = [token for token in named_tokens if token]
+        if named_tokens:
+            return (
+                f"character composition: {len(participants)} characters present: {', '.join(named_tokens)}, "
+                "multiple characters present, multiple figures in frame, clearly visible and interacting, no single-character focus"
+            )
+        return (
+            f"character composition: {len(participants)} characters present, multiple characters present, "
+            "multiple figures in frame, clearly visible and interacting, no single-character focus"
+        )
+
+    def _participant_core_name(self, participant: str) -> str:
+        text = self._clean(participant)
+        text = text.replace("all present in frame", "").replace("clearly visible", "")
+        text = text.replace(", ,", ",")
+        return self._clean(text.strip(" ,"))
 
     def _join_prompt_parts(self, parts: list[str], *, max_parts: int) -> str:
         clean_parts = [self._clean(part) for part in parts if self._clean(part)]

@@ -159,6 +159,7 @@ def test_dialogue_prompt_does_not_collapse_into_combat_framing(tmp_path, monkeyp
     assert "dialogue scene" in packet.prompt
     assert "battle pose" in packet.negative_prompt
     assert "idle portrait only" not in packet.negative_prompt
+    assert "no combat stance" in packet.prompt
 
 
 def test_visual_continuity_persists_when_current_turn_omits_detail(tmp_path, monkeypatch) -> None:
@@ -241,6 +242,44 @@ def test_negative_prompt_additions_are_applied_deterministically(tmp_path, monke
 
     assert "lens flare" in packet.negative_prompt
     assert packet.negative_prompt.count("lens flare") == 1
+
+
+def test_negotiation_scene_enforces_multi_character_composition_and_non_combat_constraints(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("ADVENTURER_GUILD_AI_USER_DATA_DIR", str(tmp_path / "user_data"))
+    paths = initialize_user_data_paths()
+    state = GameStateManager(paths.content_data, paths.saves, paths.user_data).create_new_campaign(
+        player_name="Aria",
+        char_class="Ranger",
+        profile="classic_fantasy",
+        mature_content_enabled=False,
+        content_settings_enabled=True,
+    )
+    state.structured_state.runtime.scene_state = {
+        "lightweight_npcs": [
+            {"name": "Bren", "display_name": "Bren", "role_hint": "merchant"},
+            {"name": "Ilan", "display_name": "Ilan", "role_hint": "guard"},
+        ],
+        "combat_status": "",
+    }
+    builder = TurnImagePromptBuilder()
+    packet = builder.build_packet(
+        state,
+        player_action="negotiate prices with the merchant while the guard watches",
+        narrator_response="Bren keeps a careful hand over the ledgers as Ilan observes from nearby.",
+        stage="after_narration",
+    )
+
+    lowered_prompt = packet.prompt.lower()
+    lowered_negative = packet.negative_prompt.lower()
+    assert "merchant" in lowered_prompt
+    assert "guard" in lowered_prompt
+    assert "multiple characters present" in lowered_prompt
+    assert "negotiation" in lowered_prompt
+    assert "no combat stance" in lowered_prompt
+    assert "solo character portrait" in lowered_negative
+    assert "single hero shot" in lowered_negative
+    assert "lone warrior pose" in lowered_negative
+    assert "dramatic combat stance without opponent" in lowered_negative
 
 
 def test_structured_scene_fields_override_narration_heuristics_when_both_exist(tmp_path, monkeypatch) -> None:
