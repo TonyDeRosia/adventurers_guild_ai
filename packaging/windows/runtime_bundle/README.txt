@@ -1,9 +1,8 @@
-This folder is copied into the packaged Windows app as a managed runtime scaffold.
+This folder is copied into the packaged Windows app as a managed runtime bundle.
 
-Suggested optional contents for release engineering:
-- ComfyUI bootstrap files (if license/compliance allows)
-- curated workflow templates
-- helper scripts for first-run dependency setup
+Required release contents:
+- comfyui/ portable ComfyUI runtime files
+- workflows/ curated workflow templates shipped with the app
 
 Large models/checkpoints are intentionally not bundled by default.
 

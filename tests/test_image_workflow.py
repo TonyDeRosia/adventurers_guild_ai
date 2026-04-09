@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from images.base import ImageGenerationRequest
@@ -55,6 +56,25 @@ def test_scene_workflow_without_output_node_fails() -> None:
         assert 'output node' in str(exc).lower()
     else:
         raise AssertionError('Expected ValueError for incomplete workflow')
+
+
+def test_shipped_workflows_only_use_standard_comfyui_nodes() -> None:
+    allowed = {
+        "CLIPTextEncode",
+        "CheckpointLoaderSimple",
+        "EmptyLatentImage",
+        "KSampler",
+        "SaveImage",
+        "VAEDecode",
+    }
+    for workflow in Path("data/workflows").glob("*.json"):
+        payload = json.loads(workflow.read_text(encoding="utf-8"))
+        class_types = {
+            str(node.get("class_type", "")).strip()
+            for node in payload.values()
+            if isinstance(node, dict) and str(node.get("class_type", "")).strip()
+        }
+        assert class_types.issubset(allowed), f"{workflow.name} contains non-standard node(s): {sorted(class_types - allowed)}"
 
 
 def test_turn_prompt_builder_uses_visual_focus_from_narration(tmp_path, monkeypatch) -> None:

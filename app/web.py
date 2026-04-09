@@ -39,7 +39,13 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency in some te
     Request = Any
     uvicorn = None
 
-from app.pathing import initialize_user_data_paths, project_root, static_dir
+from app.pathing import (
+    bundled_comfyui_dir,
+    bundled_workflow_dir,
+    initialize_user_data_paths,
+    project_root,
+    static_dir,
+)
 from app.comfy_manager import ComfyProcessManager
 from app.runtime_config import AppRuntimeConfig, ImageRuntimeConfig, ModelRuntimeConfig, RuntimeConfigStore
 from engine.campaign_engine import CampaignEngine, TurnResult
@@ -93,6 +99,7 @@ class WebRuntime:
         self._active_turn_visual_jobs: set[tuple[str, int, str]] = set()
         self._model_install_lock = threading.Lock()
         self._model_install_jobs: dict[str, dict[str, Any]] = {}
+        self._apply_bundled_image_defaults()
         print("[web-runtime] session initialized")
 
     def shutdown_managed_services(self) -> None:
@@ -505,7 +512,7 @@ class WebRuntime:
             "setup_checklist": [
                 "Primary onboarding actions:",
                 "1) Click Set Up Text AI to install/start Ollama and install the selected model.",
-                "2) Click Set Up Image AI to bootstrap and start ComfyUI.",
+                "2) (Optional) Click Set Up Image AI to enable image generation with bundled ComfyUI.",
                 "3) Click Set Up Everything to run both in sequence.",
                 "Fallback actions:",
                 "Use Recheck and Copy command if a step fails and manual intervention is needed.",
@@ -516,8 +523,8 @@ class WebRuntime:
                 "Ollama is used for story narration when model provider is set to ollama.",
                 "Start Ollama before playing: ollama serve",
                 f"Install a missing model with: ollama pull {self.app_config.model.model_name}",
-                "ComfyUI is used when image provider is set to comfyui for image generation requests.",
-                "Image models are not bundled in this app package; connect existing folders or download from official sources.",
+                "ComfyUI is used when image provider is set to comfyui for image generation requests and is bundled in end-user installers.",
+                "Image models/checkpoints are not bundled; use an existing model folder or download from official model pages.",
                 "If providers are unavailable, the app still runs with local narrator fallback mode.",
             ],
         }
@@ -1185,7 +1192,34 @@ class WebRuntime:
         }
 
     def _default_comfyui_path(self) -> Path:
+        bundled = bundled_comfyui_dir()
+        if (bundled / "main.py").exists():
+            return bundled
         return self.paths.user_data / "tools" / "ComfyUI"
+
+    def _default_workflow_path(self) -> Path:
+        bundled = bundled_workflow_dir() / "scene_image.json"
+        if bundled.exists():
+            return bundled
+        user_default = self.paths.workflows / "scene_image.json"
+        if user_default.exists():
+            return user_default
+        return bundled
+
+    def _apply_bundled_image_defaults(self) -> None:
+        changed = False
+        if not str(self.app_config.image.comfyui_path or "").strip():
+            bundled = self._default_comfyui_path()
+            if bundled.exists():
+                self.app_config.image.comfyui_path = str(bundled)
+                changed = True
+        if not str(self.app_config.image.comfyui_workflow_path or "").strip():
+            default_workflow = self._default_workflow_path()
+            if default_workflow.exists():
+                self.app_config.image.comfyui_workflow_path = str(default_workflow)
+                changed = True
+        if changed:
+            self.config_store.save(self.app_config)
 
     def validate_comfyui_install(self, path: Path) -> dict[str, Any]:
         missing_files: list[str] = []
@@ -1290,6 +1324,9 @@ class WebRuntime:
         configured = str(self.app_config.image.comfyui_path or "").strip()
         if configured:
             candidates.append(Path(configured))
+        bundled = bundled_comfyui_dir()
+        if bundled.exists():
+            candidates.append(bundled)
         default_managed = self._default_comfyui_path()
         if default_managed.exists():
             candidates.append(default_managed)
@@ -1301,8 +1338,18 @@ class WebRuntime:
     def _validate_comfyui_root_config(self, configured_path: str) -> dict[str, Any]:
         raw = str(configured_path or "").strip()
         if not raw:
+            default_root = self._find_comfyui_root()
+            if default_root:
+                print("[path-config] comfyui_root configured=false using=default")
+                return {
+                    "configured": False,
+                    "valid": True,
+                    "path": "",
+                    "resolved_path": str(default_root),
+                    "message": "Using bundled ComfyUI runtime.",
+                }
             print("[path-config] comfyui_root configured=false")
-            return {"configured": False, "valid": False, "path": "", "message": "Set your ComfyUI folder."}
+            return {"configured": False, "valid": False, "path": "", "message": "ComfyUI runtime is not available."}
         candidate = Path(raw)
         if not candidate.exists() or not candidate.is_dir():
             print("[path-config] comfyui_root valid=false")
@@ -1324,8 +1371,18 @@ class WebRuntime:
     def _validate_workflow_path_config(self, configured_path: str) -> dict[str, Any]:
         raw = str(configured_path or "").strip()
         if not raw:
+            default_workflow = self._default_workflow_path()
+            if default_workflow.exists() and default_workflow.is_file():
+                print("[path-config] workflow_path configured=false using=default")
+                return {
+                    "configured": False,
+                    "valid": True,
+                    "path": "",
+                    "resolved_path": str(default_workflow),
+                    "message": "Using bundled workflow template.",
+                }
             print("[path-config] workflow_path configured=false")
-            return {"configured": False, "valid": False, "path": "", "message": "Set your workflow file (.json)."}
+            return {"configured": False, "valid": False, "path": "", "message": "Workflow file is not available."}
         candidate = Path(raw)
         if not candidate.exists() or not candidate.is_file():
             print("[path-config] workflow_path valid=false")
@@ -1376,9 +1433,10 @@ class WebRuntime:
         comfyui_root = self._validate_comfyui_root_config(self.app_config.image.comfyui_path)
         workflow_path = self._validate_workflow_path_config(self.app_config.image.comfyui_workflow_path)
         output_dir = self._validate_output_dir_config(self.app_config.image.comfyui_output_dir)
+        comfy_for_checkpoints = str(comfyui_root.get("resolved_path") or comfyui_root.get("path") or "")
         checkpoint_dir = self._validate_checkpoint_dir_config(
             self.app_config.image.checkpoint_folder,
-            self.app_config.image.comfyui_path,
+            comfy_for_checkpoints,
         )
         pipeline_ready = bool(comfyui_root["valid"] and workflow_path["valid"] and checkpoint_dir["valid"] and output_dir["valid"])
         return {
@@ -1516,15 +1574,6 @@ class WebRuntime:
                 "steps": [{"step": "provider-check", "state": "failed", "message": "Image provider is not set to comfyui."}],
             }
         path_config = self.get_path_configuration_status().get("image", {})
-        if not bool(path_config.get("workflow_path", {}).get("configured")):
-            return {
-                "ok": False,
-                "message": "Workflow JSON is not configured.",
-                "next_step": "Set workflow JSON in Visual Pipeline settings and click Apply Visual Pipeline Settings.",
-                "failure_stage": "path-check",
-                "failure_stage_message": "workflow json missing",
-                "steps": [{"step": "path-check", "state": "failed", "message": "Workflow JSON is not configured."}],
-            }
         if not bool(path_config.get("workflow_path", {}).get("valid")):
             return {
                 "ok": False,
@@ -1566,6 +1615,9 @@ class WebRuntime:
                 "steps": [{"step": "detect-install-path", "state": "failed", "message": "ComfyUI install path was not found."}],
             }
         self.app_config.image.comfyui_path = str(comfyui_root)
+        resolved_workflow = str(path_config.get("workflow_path", {}).get("resolved_path") or self.app_config.image.comfyui_workflow_path).strip()
+        if resolved_workflow:
+            self.app_config.image.comfyui_workflow_path = resolved_workflow
         self.config_store.save(self.app_config)
         self._append_image_startup_log(startup_log_lines, f"Using install path: {comfyui_root}")
         print("[setup-orchestrator] setup-image step=verify-install")
@@ -3458,6 +3510,7 @@ class WebRuntime:
         return True
 
     def get_global_settings(self) -> dict[str, Any]:
+        path_status = self.get_path_configuration_status()
         return {
             "model": {
                 "provider": self.app_config.model.provider,
@@ -3485,7 +3538,7 @@ class WebRuntime:
                 "preferred_launcher": self.app_config.image.preferred_launcher,
                 "auto_negative_prompt_additions": list(self.app_config.image.auto_negative_prompt_additions),
             },
-            "path_config": self.get_path_configuration_status(),
+            "path_config": path_status,
             "dependency_readiness": self.get_dependency_readiness(),
             "supported_models": self.get_supported_model_inventory(refresh=False),
         }
@@ -3772,9 +3825,9 @@ class WebRuntime:
             parameters=parameters,
         )
         workflow_manager = self.workflow_manager
-        configured_workflow = str(self.app_config.image.comfyui_workflow_path or "").strip()
-        if configured_workflow:
-            workflow_path = Path(configured_workflow)
+        resolved_workflow = str(path_config.get("workflow_path", {}).get("resolved_path") or self.app_config.image.comfyui_workflow_path).strip()
+        if resolved_workflow:
+            workflow_path = Path(resolved_workflow)
             request.workflow_id = workflow_path.stem
             workflow_manager = WorkflowManager(workflow_path.parent)
         result = self.image_adapter.generate(request, workflow_manager)

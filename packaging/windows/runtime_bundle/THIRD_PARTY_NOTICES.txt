@@ -1,8 +1,8 @@
 Third-Party Notices (Windows Runtime Bundle)
 ============================================
 
-This application is a first-party platform. Image-generation backends and models
-are external dependencies configured by the user.
+This application is a first-party platform. The Windows package may include a
+portable ComfyUI runtime as a bundled third-party dependency.
 
 Included notice:
 - ComfyUI (third-party project): MIT License.

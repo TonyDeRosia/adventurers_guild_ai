@@ -46,12 +46,14 @@ Bundled in PyInstaller output:
 - app runtime executable + Python runtime dependencies
 - `data/` authored game content
 - `app/static/` frontend assets
-- `runtime_bundle/` scaffold folder (optional managed assets area)
+- `runtime_bundle/` managed third-party/runtime area, including:
+  - `runtime_bundle/comfyui/` portable ComfyUI runtime (release-prep required)
+  - `runtime_bundle/workflows/` curated workflow JSON files used by default in ComfyUI mode
 
-Not bundled by default:
+Not bundled:
 
 - large checkpoint/model files (size + license constraints)
-- full ComfyUI runtime payload (user may connect existing install or run guided setup)
+- checkpoint/model binaries (must be user-provided from legal sources)
 
 Compliance assets bundled:
 
@@ -84,8 +86,8 @@ Installer output:
    - Launch app from Start Menu.
    - Confirm browser UI opens without terminal actions.
 2. ComfyUI auto-start path
-   - Configure image provider = `comfyui` and valid paths.
-   - Relaunch app and verify image backend is automatically started or detected.
+   - Set image provider = `comfyui`.
+   - Relaunch app and verify bundled ComfyUI is automatically started or detected.
 3. Text-only fallback
    - Leave image backend unconfigured.
    - Confirm campaign play remains usable and setup guidance appears in-app.
