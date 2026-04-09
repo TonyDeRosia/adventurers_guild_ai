@@ -350,6 +350,17 @@
             Image generation uses third-party open-source tools and models. Models are not included and may have separate
             licenses. Users are responsible for complying with model licenses.
           </p>
+          <section class="guided-image-setup-card">
+            <h5>First-run image setup</h5>
+            <div id="image-setup-card-status" class="setup-summary">Checking image setup status...</div>
+            <div class="button-row guided-image-setup-actions">
+              <button id="use-bundled-image-engine">Use Bundled Image Engine</button>
+              <button id="choose-existing-model-folder">Choose Existing Model Folder</button>
+              <button id="open-recommended-model-page">Open Recommended Model Page</button>
+              <button id="skip-images-for-now">Skip Images for Now</button>
+              <button id="recheck-image-setup">Recheck Setup</button>
+            </div>
+          </section>
           <div class="first-run-model-options">
             <strong>First-run image model setup (optional):</strong>
             <ul>
@@ -365,24 +376,6 @@
             <button id="start-image-engine-from-setup">Start ComfyUI</button>
             <button id="test-image-pipeline-from-setup">Test Image Pipeline</button>
           </div>
-          <label>ComfyUI folder path</label>
-          <div class="path-picker-row">
-            <input id="comfyui-path-input" type="text" placeholder="/path/to/ComfyUI" />
-            <button id="pick-comfyui-folder" type="button">Browse Folder</button>
-          </div>
-          <div id="comfyui-path-validation" class="field-validation">ComfyUI folder: not checked.</div>
-          <label>ComfyUI workflow JSON</label>
-          <div class="path-picker-row">
-            <input id="comfyui-workflow-path-input" type="text" placeholder="/path/to/workflow.json" />
-            <button id="pick-comfyui-workflow-file" type="button">Browse File</button>
-          </div>
-          <div id="comfyui-workflow-validation" class="field-validation">Workflow JSON: not checked.</div>
-          <label>ComfyUI output folder (optional)</label>
-          <div class="path-picker-row">
-            <input id="comfyui-output-dir-input" type="text" placeholder="/path/to/comfy/output" />
-            <button id="pick-comfyui-output-folder" type="button">Browse Folder</button>
-          </div>
-          <div id="comfyui-output-validation" class="field-validation">Output folder: optional, not checked.</div>
           <label>Checkpoint folder</label>
           <div class="path-picker-row">
             <input id="checkpoint-folder-input" type="text" placeholder="/path/to/ComfyUI/models/checkpoints" />
@@ -411,6 +404,27 @@
             <button id="apply-visual-pipeline-settings">Apply Visual Pipeline Settings</button>
             <button id="apply-settings">Apply settings</button>
           </div>
+          <details class="advanced-image-settings">
+            <summary>Advanced image settings</summary>
+            <label>ComfyUI folder path</label>
+            <div class="path-picker-row">
+              <input id="comfyui-path-input" type="text" placeholder="/path/to/ComfyUI" />
+              <button id="pick-comfyui-folder" type="button">Browse Folder</button>
+            </div>
+            <div id="comfyui-path-validation" class="field-validation">ComfyUI folder: not checked.</div>
+            <label>ComfyUI workflow JSON</label>
+            <div class="path-picker-row">
+              <input id="comfyui-workflow-path-input" type="text" placeholder="/path/to/workflow.json" />
+              <button id="pick-comfyui-workflow-file" type="button">Browse File</button>
+            </div>
+            <div id="comfyui-workflow-validation" class="field-validation">Workflow JSON: not checked.</div>
+            <label>ComfyUI output folder (optional)</label>
+            <div class="path-picker-row">
+              <input id="comfyui-output-dir-input" type="text" placeholder="/path/to/comfy/output" />
+              <button id="pick-comfyui-output-folder" type="button">Browse Folder</button>
+            </div>
+            <div id="comfyui-output-validation" class="field-validation">Output folder: optional, not checked.</div>
+          </details>
           <div id="path-config-status" class="setup-summary">Path validation will appear after loading settings.</div>
           <div id="comfyui-models-list" class="setup-model-list">Loading curated model guidance...</div>
         </section>

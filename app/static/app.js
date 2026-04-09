@@ -32,6 +32,12 @@ const checkpointPathValidation = document.getElementById('checkpoint-folder-vali
 const checkpointFolderInput = document.getElementById('checkpoint-folder-input');
 const checkpointSourceInput = document.getElementById('checkpoint-source');
 const preferredCheckpointInput = document.getElementById('preferred-checkpoint');
+const imageSetupCardStatus = document.getElementById('image-setup-card-status');
+const useBundledImageEngineButton = document.getElementById('use-bundled-image-engine');
+const chooseExistingModelFolderButton = document.getElementById('choose-existing-model-folder');
+const openRecommendedModelPageButton = document.getElementById('open-recommended-model-page');
+const skipImagesForNowButton = document.getElementById('skip-images-for-now');
+const recheckImageSetupButton = document.getElementById('recheck-image-setup');
 const preferredLauncherInput = document.getElementById('preferred-launcher');
 const manualImageEnabledInput = document.getElementById('manual-image-enabled');
 const suggestedMovesToggleInput = document.getElementById('suggested-moves-toggle');
@@ -141,6 +147,8 @@ let turnRequestInFlight = false;
 let currentInputMode = 'ic';
 let modelInventoryState = { active_model_id: '', models: [] };
 let modelInstallState = {};
+let latestGlobalSettings = null;
+let latestImageSetupSnapshot = null;
 let appliedVisualPipelinePaths = {
   comfyui_path: '',
   comfyui_workflow_path: '',
@@ -460,13 +468,17 @@ function renderSupportedModels(payload) {
 }
 
 function updateSetupButtonsBusyState() {
-  const managedButtons = document.querySelectorAll('#setup-text-ai, #setup-image-ai, #setup-everything, #recheck-readiness, #test-image-pipeline-from-setup, .readiness-action-btn');
+  const managedButtons = document.querySelectorAll('#setup-text-ai, #setup-image-ai, #setup-everything, #recheck-readiness, #test-image-pipeline-from-setup, #use-bundled-image-engine, #choose-existing-model-folder, #skip-images-for-now, #recheck-image-setup, .readiness-action-btn');
   managedButtons.forEach((button) => {
     const actionId = button.dataset.action || (button.id === 'setup-text-ai' ? 'setup_text_ai'
       : button.id === 'setup-image-ai' ? 'setup_image_ai'
       : button.id === 'setup-everything' ? 'setup_everything'
       : button.id === 'recheck-readiness' ? 'recheck'
+      : button.id === 'recheck-image-setup' ? 'recheck'
       : button.id === 'test-image-pipeline-from-setup' ? 'test_image_pipeline'
+      : button.id === 'use-bundled-image-engine' ? 'guided_image_action'
+      : button.id === 'choose-existing-model-folder' ? 'guided_image_action'
+      : button.id === 'skip-images-for-now' ? 'guided_image_action'
       : '');
     if (!actionId) return;
     if (!setupRunState.busy) {
@@ -1782,14 +1794,17 @@ async function pickFolder(title, inputElement) {
       body: JSON.stringify({ title, initial_path: inputElement.value.trim() }),
     });
     if (!result.ok) {
-      setStatus(result.message || 'Folder selection failed.', true);
-      return;
+      const fallbackUsed = await pickFolderBrowserFallback(title);
+      if (!fallbackUsed) setStatus(result.message || 'Folder selection failed.', true);
+      return '';
     }
     inputElement.value = result.path || '';
     console.log(`[path-config] draft_updated field=${inputElement.id}`);
     setStatus(`Selected folder: ${result.path}`);
+    return result.path || '';
   } catch (error) {
     setStatus(error.message, true);
+    return '';
   }
 }
 
@@ -1801,15 +1816,148 @@ async function pickFile(title, inputElement, filters = ['.json']) {
       body: JSON.stringify({ title, initial_path: inputElement.value.trim(), filters }),
     });
     if (!result.ok) {
-      setStatus(result.message || 'File selection failed.', true);
-      return;
+      const fallbackUsed = await pickFileBrowserFallback(filters);
+      if (!fallbackUsed) setStatus(result.message || 'File selection failed.', true);
+      return '';
     }
     inputElement.value = result.path || '';
     console.log(`[path-config] draft_updated field=${inputElement.id}`);
     setStatus(`Selected file: ${result.path}`);
+    return result.path || '';
   } catch (error) {
     setStatus(error.message, true);
+    return '';
   }
+}
+
+async function pickFolderBrowserFallback(title) {
+  if (typeof window.showDirectoryPicker === 'function') {
+    try {
+      const handle = await window.showDirectoryPicker({ mode: 'read' });
+      setStatus(`Selected folder "${handle.name}" in browser picker. Desktop/native mode is required to save the full system path.`, true);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.setAttribute('webkitdirectory', '');
+    input.style.display = 'none';
+    input.onchange = () => {
+      document.body.removeChild(input);
+      if (input.files && input.files.length) {
+        setStatus(`Folder selection was captured in browser fallback for "${title}". Desktop/native mode is required to save local paths.`, true);
+        resolve(true);
+      } else {
+        resolve(false);
+      }
+    };
+    document.body.appendChild(input);
+    input.click();
+  });
+}
+
+async function pickFileBrowserFallback(filters = ['.json']) {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = filters.join(',');
+    input.style.display = 'none';
+    input.onchange = () => {
+      document.body.removeChild(input);
+      if (input.files && input.files.length) {
+        setStatus(`Selected "${input.files[0].name}" in browser fallback. Desktop/native mode is required to save local file paths.`, true);
+        resolve(true);
+      } else {
+        resolve(false);
+      }
+    };
+    document.body.appendChild(input);
+    input.click();
+  });
+}
+
+function renderImageSetupCard(snapshot = latestImageSetupSnapshot) {
+  if (!imageSetupCardStatus) return;
+  const current = snapshot || {};
+  const readiness = current.image_readiness_state || {};
+  const readinessText = readiness.ready ? 'Ready' : 'Needs setup';
+  const bundledText = current.bundled_comfyui_available ? 'Bundled image engine detected' : 'Bundled image engine not detected';
+  let checkpointText = 'No model selected yet';
+  if (current.checkpoint_folder_valid) checkpointText = 'Model folder valid';
+  else if (current.checkpoint_folder_configured) checkpointText = 'Selected model folder is invalid';
+  const fallbackText = current.text_only_mode_active ? 'Image setup skipped, text-only mode active' : 'Text-only fallback available';
+  imageSetupCardStatus.innerHTML = `
+    <div><strong>Image readiness:</strong> ${escapeHtml(readinessText)}</div>
+    <div>${escapeHtml(bundledText)}</div>
+    <div>${escapeHtml(checkpointText)}</div>
+    <div>${escapeHtml(fallbackText)}</div>
+    <div>${escapeHtml(readiness.message || '')}</div>
+  `;
+}
+
+async function refreshImageSetupSnapshot() {
+  try {
+    const payload = await api('/api/setup/image-readiness-card');
+    latestImageSetupSnapshot = payload;
+    renderImageSetupCard(payload);
+    return payload;
+  } catch (error) {
+    setStatus(error.message, true);
+    return null;
+  }
+}
+
+async function useBundledImageEngine() {
+  const result = await api('/api/setup/use-bundled-image-engine', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+  setStatus(result.message || (result.ok ? 'Bundled image engine selected.' : 'Bundled image engine could not be selected.'), !result.ok);
+  if (result.path_config) renderPathConfigStatus(result.path_config);
+  if (result.snapshot) {
+    latestImageSetupSnapshot = result.snapshot;
+    renderImageSetupCard(result.snapshot);
+  }
+  await Promise.all([loadSettings(), refreshDependencyReadiness(), refreshComfyuiModelList()]);
+}
+
+async function chooseExistingModelFolder() {
+  const selectedPath = await pickFolder('Select checkpoint folder', checkpointFolderInput);
+  if (!selectedPath) return;
+  const result = await api('/api/setup/save-checkpoint-folder', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: selectedPath }),
+  });
+  setStatus(result.message || (result.ok ? 'Model folder saved.' : 'Model folder could not be saved.'), !result.ok);
+  if (result.ok) {
+    checkpointFolderInput.value = selectedPath;
+    appliedVisualPipelinePaths.checkpoint_folder = selectedPath;
+  }
+  if (result.path_config) renderPathConfigStatus(result.path_config);
+  if (result.snapshot) {
+    latestImageSetupSnapshot = result.snapshot;
+    renderImageSetupCard(result.snapshot);
+  }
+  await Promise.all([refreshDependencyReadiness(), refreshComfyuiModelList()]);
+}
+
+function openRecommendedModelPage() {
+  const modelPage = latestImageSetupSnapshot?.recommended_model_page
+    || latestGlobalSettings?.settings?.image?.checkpoint_model_page
+    || 'https://civitai.com/models/4384/dreamshaper';
+  openOfficialDownload(modelPage);
+}
+
+async function skipImagesForNow() {
+  const result = await api('/api/setup/skip-images', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+  setStatus(result.message || (result.ok ? 'Image setup skipped.' : 'Could not skip image setup.'), !result.ok);
+  if (result.snapshot) {
+    latestImageSetupSnapshot = result.snapshot;
+    renderImageSetupCard(result.snapshot);
+  }
+  await Promise.all([loadSettings(), refreshDependencyReadiness()]);
 }
 
 async function connectOllamaFolder() {
@@ -1880,6 +2028,7 @@ async function refreshComfyuiModelList() {
 
 function renderDependencyReadiness(payload) {
   latestDependencyReadiness = payload;
+  renderImageSetupCard(latestImageSetupSnapshot);
   readinessPanel.innerHTML = '';
   const byType = Object.fromEntries((payload.items || []).map((item) => [item.provider_type, item]));
   const primaryActions = payload.primary_actions || [
@@ -2400,6 +2549,7 @@ function renderPathConfigStatus(config) {
 
 async function loadSettings() {
   const data = await api('/api/settings/global');
+  latestGlobalSettings = data;
   document.getElementById('model-provider').value = data.settings.model.provider;
   document.getElementById('model-name').value = data.settings.model.model_name;
   document.getElementById('image-provider').value = data.settings.image.provider;
@@ -2433,12 +2583,14 @@ async function loadSettings() {
   }
   renderDependencyReadiness(data.settings?.dependency_readiness || { items: [], setup_guidance: [] });
   renderPathConfigStatus(data.settings?.path_config);
+  renderImageSetupCard(latestImageSetupSnapshot);
   if (data.settings?.supported_models) {
     modelInventoryState = data.settings.supported_models;
     renderSupportedModels(modelInventoryState);
   } else {
     await refreshSupportedModels(false);
   }
+  await refreshImageSetupSnapshot();
   await refreshComfyuiModelList();
 }
 
@@ -2464,12 +2616,22 @@ document.getElementById('setup-image-ai').onclick = () => runReadinessAction('se
 document.getElementById('setup-everything').onclick = () => runReadinessAction('setup_everything', {});
 document.getElementById('download-ollama').onclick = () => openOfficialDownload('https://ollama.com/download');
 document.getElementById('download-comfyui').onclick = () => openOfficialDownload('https://github.com/comfyanonymous/ComfyUI');
-document.getElementById('open-checkpoint-page').onclick = () => openOfficialDownload('https://civitai.com/models/4384/dreamshaper');
+document.getElementById('open-checkpoint-page').onclick = openRecommendedModelPage;
 document.getElementById('pick-ollama-folder').onclick = () => pickFolder('Select Ollama install folder', ollamaPathInput);
 document.getElementById('pick-comfyui-folder').onclick = () => pickFolder('Select ComfyUI folder', comfyuiPathInput);
 document.getElementById('pick-comfyui-workflow-file').onclick = () => pickFile('Select ComfyUI workflow JSON', comfyuiWorkflowPathInput, ['.json']);
 document.getElementById('pick-comfyui-output-folder').onclick = () => pickFolder('Select ComfyUI output folder', comfyuiOutputDirInput);
-document.getElementById('pick-checkpoint-folder').onclick = () => pickFolder('Select checkpoint folder', checkpointFolderInput);
+document.getElementById('pick-checkpoint-folder').onclick = chooseExistingModelFolder;
+if (useBundledImageEngineButton) useBundledImageEngineButton.onclick = () => useBundledImageEngine().catch((error) => setStatus(error.message, true));
+if (chooseExistingModelFolderButton) chooseExistingModelFolderButton.onclick = () => chooseExistingModelFolder().catch((error) => setStatus(error.message, true));
+if (openRecommendedModelPageButton) openRecommendedModelPageButton.onclick = openRecommendedModelPage;
+if (skipImagesForNowButton) skipImagesForNowButton.onclick = () => skipImagesForNow().catch((error) => setStatus(error.message, true));
+if (recheckImageSetupButton) {
+  recheckImageSetupButton.onclick = async () => {
+    await Promise.all([refreshDependencyReadiness(), refreshImageSetupSnapshot()]);
+    setStatus('Image setup rechecked.');
+  };
+}
 document.getElementById('connect-ollama-folder').onclick = connectOllamaFolder;
 document.getElementById('apply-visual-pipeline-settings').onclick = applyVisualPipelineSettings;
 document.getElementById('install-story-model').onclick = () => runReadinessAction('install_model', { selected_model: document.getElementById('model-name').value.trim() || 'llama3' });
