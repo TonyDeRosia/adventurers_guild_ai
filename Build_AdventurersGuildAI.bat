@@ -43,6 +43,7 @@ call :stage "Choosing build mode"
 call :choose_build_mode
 if errorlevel 1 goto :finish
 
+rem verify_tools must run after build mode selection (build-mode-aware checks)
 call :stage "Verifying tools"
 call :verify_tools
 if errorlevel 1 goto :finish
