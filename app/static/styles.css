@@ -436,6 +436,10 @@ button:disabled {
 .left-panel h2 { font-size: 1rem; margin-bottom: 6px; }
 .left-panel #open-campaign-browser { margin-bottom: 8px; }
 .left-panel .button-row button { padding: 8px; font-size: 0.82rem; }
+.app-bottom-left-setup-btn {
+  margin-top: auto;
+  align-self: flex-start;
+}
 
 .image-generation-panel { display: grid; gap: 8px; }
 .image-status-line {
