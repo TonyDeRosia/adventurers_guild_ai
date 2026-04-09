@@ -1,6 +1,6 @@
-"""Canonical spellbook category model and deterministic classification helpers.
+"""Canonical abilities model and deterministic normalization helpers.
 
-This module is the single authority for spellbook entry typing.
+This module is the single authority for learned ability entry typing.
 Creation/edit/load paths should normalize through :func:`normalize_spellbook_entry`.
 UI should render from persisted ``category`` (mirrored to ``type`` for compatibility),
 and must not re-infer categories from tags.
@@ -169,6 +169,14 @@ def normalize_spellbook_entry(entry: Any, *, index: int = 0, default_name: str =
             source_metadata = {"source_tags": source_tags}
 
     category = classification.category
+    explicit_category = str(entry.get("category", "")).strip().lower()
+    explicit_type = str(entry.get("type", "")).strip().lower()
+    hidden_subtype = str(entry.get("subtype", "")).strip()
+    if not hidden_subtype:
+        if explicit_type and explicit_type != category:
+            hidden_subtype = explicit_type
+        elif explicit_category and explicit_category != category:
+            hidden_subtype = explicit_category
     normalized = {
         "id": str(entry.get("id", "")).strip() or f"sb_{index}_{(name or default_name).lower().replace(' ', '_')}",
         "name": name,
@@ -185,7 +193,42 @@ def normalize_spellbook_entry(entry: Any, *, index: int = 0, default_name: str =
         "classifier_confidence": classification.confidence,
         "classifier_reason": classification.reason,
     }
-    subtype = str(entry.get("subtype", "")).strip()
-    if subtype:
-        normalized["subtype"] = subtype
+    if hidden_subtype:
+        normalized["subtype"] = hidden_subtype
+    return normalized
+
+
+def normalize_abilities_collection(raw_entries: Any) -> list[dict[str, Any]]:
+    """Normalize old/new spellbook payload shapes into one canonical abilities list.
+
+    Supported inputs:
+    - list[entry]
+    - dict with "abilities" list
+    - dict with "spellbook" list
+    - dict with legacy categorized buckets (spells/skills/passives/unclassified)
+    """
+
+    if isinstance(raw_entries, list):
+        candidate_entries = list(raw_entries)
+    elif isinstance(raw_entries, dict):
+        candidate_entries = []
+        for key in ("abilities", "spellbook", "spells", "skills", "passives", "unclassified"):
+            values = raw_entries.get(key, [])
+            if isinstance(values, list):
+                candidate_entries.extend(values)
+    else:
+        candidate_entries = []
+
+    normalized: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for index, entry in enumerate(candidate_entries):
+        clean = normalize_spellbook_entry(entry, index=index)
+        if not clean:
+            continue
+        name_key = str(clean.get("name", "")).strip().lower()
+        dedupe_key = name_key
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        normalized.append(clean)
     return normalized
