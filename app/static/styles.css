@@ -475,6 +475,23 @@ button:disabled {
   width: min(860px, 100%);
 }
 .setup-intro { color: var(--muted); margin-top: 0; }
+.compliance-notice {
+  border: 1px solid #5d4f22;
+  background: rgba(94, 78, 25, 0.2);
+  color: #ffe6a1;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: 8px 0 10px;
+}
+.first-run-model-options {
+  border: 1px solid #344c6d;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  background: rgba(20, 31, 46, 0.6);
+}
+.first-run-model-options strong { display: block; margin-bottom: 4px; }
+.first-run-model-options ul { margin: 0 0 0 18px; padding: 0; }
 .setup-main-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

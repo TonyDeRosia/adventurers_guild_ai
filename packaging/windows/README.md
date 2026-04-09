@@ -53,6 +53,17 @@ Not bundled by default:
 - large checkpoint/model files (size + license constraints)
 - full ComfyUI runtime payload (user may connect existing install or run guided setup)
 
+Compliance assets bundled:
+
+- `runtime_bundle/THIRD_PARTY_NOTICES.txt`
+- `runtime_bundle/licenses/ComfyUI-LICENSE-MIT.txt`
+
+Packaging guardrails:
+
+- `tools/audit_distribution.py` blocks known model/checkpoint artifacts from packaging paths.
+- Build scripts run audits before and/or after packaging steps.
+- Audit also verifies required third-party notice/license files are present.
+
 ## Build commands
 
 From repository root on Windows:

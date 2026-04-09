@@ -1,0 +1,16 @@
+Third-Party Notices (Windows Runtime Bundle)
+============================================
+
+This application is a first-party platform. Image-generation backends and models
+are external dependencies configured by the user.
+
+Included notice:
+- ComfyUI (third-party project): MIT License.
+  See: licenses/ComfyUI-LICENSE-MIT.txt
+
+Model distribution policy:
+- No image model checkpoints are bundled with this application.
+- Users may connect existing model folders or download models from official
+  third-party sources.
+- Third-party model licenses and terms are separate from this application's
+  license and must be reviewed by users before use.

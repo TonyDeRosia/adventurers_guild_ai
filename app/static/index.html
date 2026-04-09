@@ -346,6 +346,18 @@
         </section>
         <section class="panel-block">
           <h4>Visual Pipeline (ComfyUI)</h4>
+          <p class="compliance-notice">
+            Image generation uses third-party open-source tools and models. Models are not included and may have separate
+            licenses. Users are responsible for complying with model licenses.
+          </p>
+          <div class="first-run-model-options">
+            <strong>First-run image model setup (optional):</strong>
+            <ul>
+              <li>Connect an existing checkpoint folder with <em>Browse Folder</em>.</li>
+              <li>Open the recommended official model page and download manually.</li>
+              <li>Set Image Provider to <code>null</code> to skip image generation and continue gameplay.</li>
+            </ul>
+          </div>
           <label>Image Provider <select id="image-provider"><option value="local">local</option><option value="comfyui">comfyui</option><option value="null">null</option></select></label>
           <label><input id="image-enabled" type="checkbox" checked /> Campaign image generation enabled</label>
           <div class="button-row">

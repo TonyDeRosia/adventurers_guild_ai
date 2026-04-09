@@ -512,10 +512,12 @@ class WebRuntime:
                 "Fallback story mode stays available even when providers are missing.",
             ],
             "setup_guidance": [
+                "Adventurer Guild AI is the platform; external tools/models are user-managed dependencies.",
                 "Ollama is used for story narration when model provider is set to ollama.",
                 "Start Ollama before playing: ollama serve",
                 f"Install a missing model with: ollama pull {self.app_config.model.model_name}",
                 "ComfyUI is used when image provider is set to comfyui for image generation requests.",
+                "Image models are not bundled in this app package; connect existing folders or download from official sources.",
                 "If providers are unavailable, the app still runs with local narrator fallback mode.",
             ],
         }
