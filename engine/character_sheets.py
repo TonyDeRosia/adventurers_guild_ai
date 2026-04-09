@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 SheetType = Literal["main_character", "npc_or_mob", "party_member", "minion_or_summon"]
 GuidanceStrength = Literal["light", "strong"]
-AbilityType = Literal["spell", "skill", "ability", "passive"]
+AbilityType = Literal["spell", "skill", "ability", "passive", "technique", "trait", "item_power"]
 
 
 @dataclass
@@ -57,7 +57,7 @@ class CharacterSheetAbilityEntry:
     def from_payload(cls, payload: dict[str, Any]) -> "CharacterSheetAbilityEntry":
         raw_type = str(payload.get("type", "ability")).strip().lower()
         ability_type: AbilityType = (
-            raw_type if raw_type in {"spell", "skill", "ability", "passive"} else "ability"
+            raw_type if raw_type in {"spell", "skill", "ability", "passive", "technique", "trait", "item_power"} else "ability"
         )
         return cls(
             name=str(payload.get("name", "")).strip() or "Unnamed Ability",

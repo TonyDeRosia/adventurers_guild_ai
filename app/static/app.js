@@ -1467,15 +1467,23 @@ function formatQuestStatus(questStatus) {
 }
 
 function normalizeSpellbookEntry(entry = {}) {
+  const canonicalCategory = typeof entry.category === 'string' ? entry.category : entry.type;
+  const supportedCategories = ['spell', 'skill', 'ability', 'passive', 'technique', 'trait', 'item_power'];
+  const isKnownCategory = supportedCategories.includes(canonicalCategory);
+  const renderedCategory = isKnownCategory ? canonicalCategory : 'unclassified';
   return {
     id: entry.id || '',
     name: entry.name || '',
-    type: ['spell', 'skill', 'ability', 'passive'].includes(entry.type) ? entry.type : 'ability',
+    category: renderedCategory,
+    type: renderedCategory,
     description: entry.description || '',
     cost_or_resource: entry.cost_or_resource || '',
     cooldown: entry.cooldown || '',
     tags: Array.isArray(entry.tags) ? entry.tags : [],
+    flags: Array.isArray(entry.flags) ? entry.flags : [],
     notes: entry.notes || '',
+    classifier_confidence: entry.classifier_confidence || '',
+    classifier_reason: entry.classifier_reason || '',
   };
 }
 
@@ -1494,27 +1502,28 @@ function renderInventoryViewer() {
 
 function renderSpellbookViewer() {
   if (!runtimeSpellbookList) return;
-  const grouped = { spell: [], skill: [], ability: [], passive: [] };
+  const grouped = { spell: [], skill: [], ability: [], passive: [], unclassified: [] };
   runtimeSpellbookEntries.forEach((entry) => {
     const clean = normalizeSpellbookEntry(entry);
-    grouped[clean.type].push(clean);
+    grouped[clean.category].push(clean);
   });
-  runtimeSpellbookList.innerHTML = ['spell', 'skill', 'ability', 'passive'].map((type) => {
+  runtimeSpellbookList.innerHTML = ['spell', 'skill', 'ability', 'passive', 'unclassified'].map((type) => {
     const entries = grouped[type];
     const rows = entries.length ? entries.map((entry) => `
       <div class="spellbook-entry">
-        <strong>${escapeHtml(entry.name)}</strong> <small>(${escapeHtml(type)})</small>
+        <strong>${escapeHtml(entry.name)}</strong> <small>(${escapeHtml(entry.category)})</small>
         <div>${escapeHtml(entry.description || 'No description')}</div>
         <div>Cost: ${escapeHtml(entry.cost_or_resource || '-')} • Cooldown: ${escapeHtml(entry.cooldown || '-')}</div>
-        <div>Tags: ${escapeHtml((entry.tags || []).join(', ') || '-')}</div>
-        <div>Notes: ${escapeHtml(entry.notes || '-')}</div>
+        <div>Tags/Flags: ${escapeHtml([...(entry.tags || []), ...(entry.flags || [])].join(', ') || '-')}</div>
+        ${entry.notes ? `<div>Notes: ${escapeHtml(entry.notes)}</div>` : ''}
         <div class="button-row compact-row">
           <button type="button" data-spellbook-edit="${escapeHtml(entry.id)}">Edit</button>
           <button type="button" data-spellbook-delete="${escapeHtml(entry.id)}">Delete</button>
         </div>
       </div>
     `).join('') : '<div>None</div>';
-    return `<div class="spellbook-group"><h4>${escapeHtml(type[0].toUpperCase() + type.slice(1))}s</h4>${rows}</div>`;
+    const heading = type === 'unclassified' ? 'Unclassified' : `${type[0].toUpperCase() + type.slice(1)}s`;
+    return `<div class="spellbook-group"><h4>${escapeHtml(heading)}</h4>${rows}</div>`;
   }).join('');
   runtimeSpellbookList.querySelectorAll('button[data-spellbook-edit]').forEach((button) => {
     button.onclick = () => {
@@ -1522,7 +1531,7 @@ function renderSpellbookViewer() {
       if (!entry) return;
       document.getElementById('spellbook-entry-id').value = entry.id;
       document.getElementById('spellbook-entry-name').value = entry.name;
-      document.getElementById('spellbook-entry-type').value = entry.type;
+      document.getElementById('spellbook-entry-type').value = ['spell', 'skill', 'ability', 'passive'].includes(entry.category) ? entry.category : 'ability';
       document.getElementById('spellbook-entry-description').value = entry.description;
       document.getElementById('spellbook-entry-cost').value = entry.cost_or_resource;
       document.getElementById('spellbook-entry-cooldown').value = entry.cooldown;

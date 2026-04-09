@@ -6,6 +6,7 @@ from dataclasses import asdict
 
 from engine.character_sheets import CharacterSheet, CharacterSheetClassicAttributes, CharacterSheetStats
 from engine.entities import CampaignSceneState, CampaignState
+from engine.spellbook import normalize_spellbook_entry
 
 
 class CampaignStateOrchestrator:
@@ -255,47 +256,14 @@ class CampaignStateOrchestrator:
         normalized: list[dict[str, object]] = []
         seen: set[str] = set()
         for index, entry in enumerate(raw_entries):
-            if isinstance(entry, dict):
-                name = str(entry.get("name", "")).strip()
-                if not name:
-                    continue
-                ability_type = str(entry.get("type", "ability")).strip().lower()
-                if ability_type not in {"spell", "skill", "ability", "passive"}:
-                    ability_type = "ability"
-                dedupe_key = f"{ability_type}:{name.lower()}"
-                if dedupe_key in seen:
-                    continue
-                seen.add(dedupe_key)
-                normalized.append(
-                    {
-                        "id": str(entry.get("id", "")).strip() or f"sb_{index}_{name.lower().replace(' ', '_')}",
-                        "name": name,
-                        "type": ability_type,
-                        "description": str(entry.get("description", "")).strip(),
-                        "cost_or_resource": str(entry.get("cost_or_resource", "")).strip(),
-                        "cooldown": str(entry.get("cooldown", "")).strip(),
-                        "tags": [str(tag).strip() for tag in entry.get("tags", []) if str(tag).strip()],
-                        "notes": str(entry.get("notes", "")).strip(),
-                    }
-                )
-            else:
-                name = str(entry).strip()
-                if not name:
-                    continue
-                dedupe_key = f"ability:{name.lower()}"
-                if dedupe_key in seen:
-                    continue
-                seen.add(dedupe_key)
-                normalized.append(
-                    {
-                        "id": f"sb_{index}_{name.lower().replace(' ', '_')}",
-                        "name": name,
-                        "type": "ability",
-                        "description": "",
-                        "cost_or_resource": "",
-                        "cooldown": "",
-                        "tags": [],
-                        "notes": "",
-                    }
-                )
+            normalized_entry = normalize_spellbook_entry(entry, index=index)
+            if not normalized_entry:
+                continue
+            category = str(normalized_entry.get("category", "unclassified")).strip().lower()
+            name = str(normalized_entry.get("name", "")).strip().lower()
+            dedupe_key = f"{category}:{name}"
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            normalized.append(normalized_entry)
         return normalized

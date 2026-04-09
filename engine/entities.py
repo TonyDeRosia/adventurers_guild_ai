@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from engine.spellbook import normalize_spellbook_entry
+
 from engine.character_sheets import CharacterSheet, GuidanceStrength
 
 
@@ -649,41 +651,9 @@ class CampaignState:
     def _spellbook_from_payload(raw_spellbook: Any) -> list[dict[str, Any]]:
         entries: list[dict[str, Any]] = []
         for index, entry in enumerate(raw_spellbook if isinstance(raw_spellbook, list) else []):
-            if isinstance(entry, dict):
-                clean_name = str(entry.get("name", "")).strip()
-                if not clean_name:
-                    continue
-                clean_type = str(entry.get("type", "ability")).strip().lower()
-                if clean_type not in {"spell", "skill", "ability", "passive"}:
-                    clean_type = "ability"
-                entries.append(
-                    {
-                        "id": str(entry.get("id", "")).strip() or f"sb_{index}_{clean_name.lower().replace(' ', '_')}",
-                        "name": clean_name,
-                        "type": clean_type,
-                        "description": str(entry.get("description", "")).strip(),
-                        "cost_or_resource": str(entry.get("cost_or_resource", "")).strip(),
-                        "cooldown": str(entry.get("cooldown", "")).strip(),
-                        "tags": [str(tag).strip() for tag in entry.get("tags", []) if str(tag).strip()],
-                        "notes": str(entry.get("notes", "")).strip(),
-                    }
-                )
-                continue
-            clean_name = str(entry).strip()
-            if not clean_name:
-                continue
-            entries.append(
-                {
-                    "id": f"sb_{index}_{clean_name.lower().replace(' ', '_')}",
-                    "name": clean_name,
-                    "type": "ability",
-                    "description": "",
-                    "cost_or_resource": "",
-                    "cooldown": "",
-                    "tags": [],
-                    "notes": "",
-                }
-            )
+            normalized = normalize_spellbook_entry(entry, index=index)
+            if normalized:
+                entries.append(normalized)
         return entries
 
     @staticmethod
