@@ -9,10 +9,11 @@
   <body>
     <div class="app-shell">
       <aside class="sidebar left-panel">
-        <h2>Campaign Controls</h2>
+        <h2 class="panel-heading">Campaign Controls</h2>
+        <p class="panel-subheading">Manage saves, campaign state, and setup access.</p>
         <button id="open-campaign-browser" type="button">Campaigns</button>
         <p id="selected-save-label">Selected save: autosave</p>
-        <div id="selected-campaign-summary" class="selected-campaign-summary">
+        <div id="selected-campaign-summary" class="selected-campaign-summary status-card">
           <strong>autosave</strong>
           <small>Unknown world · Turn 0</small>
           <small>Display Mode: Story Mode</small>
@@ -26,7 +27,7 @@
           <button id="open-narrator-rules" type="button">Narrator Rules</button>
           <button id="open-world-building" type="button">World Building</button>
         </div>
-        <button id="open-setup-modal" class="app-bottom-left-setup-btn">AI Setup</button>
+        <button id="open-setup-modal" class="app-bottom-left-setup-btn btn-primary">AI Setup</button>
       </aside>
 
       <main class="chat-main">
@@ -54,18 +55,19 @@
           </div>
         </section>
         <section id="chat-thread" class="chat-thread"></section>
-        <footer class="input-bar">
+        <footer class="input-bar compose-bar">
           <button id="input-mode-toggle" type="button" aria-label="Toggle input mode">IC</button>
           <input id="chat-input" type="text" placeholder="Enter your action (look, talk <npc_id>, move <location_id>...)" />
-          <button id="send-btn">Send</button>
+          <button id="send-btn" class="btn-primary">Send</button>
         </footer>
         <div id="status-line" class="scene-visual-meta">Ready.</div>
       </main>
 
       <aside class="sidebar right-panel">
         <div class="panel-title-row">
-          <h2>Adventure Panel</h2>
+          <h2 class="panel-heading">Adventure Panel</h2>
         </div>
+        <p class="panel-subheading">Quick runtime tools and image generation controls.</p>
         <section class="panel-block">
           <h3>Runtime Tools</h3>
           <div class="button-row compact-row">
@@ -77,7 +79,7 @@
         <section id="manual-image-panel" class="panel-block image-generation-panel">
           <h3>Manual Image Prompt</h3>
           <textarea id="image-prompt-input" rows="3" placeholder="Describe the scene you want to generate."></textarea>
-          <button id="image-generate-submit">Generate Image with ComfyUI</button>
+          <button id="image-generate-submit" class="btn-primary">Generate Image with ComfyUI</button>
           <div id="image-status-line" class="image-status-line">Image generation ready state will appear here.</div>
         </section>
       </aside>
@@ -313,9 +315,9 @@
         <p class="setup-intro">Use this setup center to install dependencies, connect folders, and prepare models without crowding gameplay tools.</p>
         <div id="setup-progress" class="setup-progress" aria-live="polite"></div>
         <div class="setup-main-actions">
-          <button id="setup-text-ai">Set Up Text AI</button>
-          <button id="setup-image-ai">Set Up Image AI</button>
-          <button id="setup-everything">Set Up Everything</button>
+          <button id="setup-text-ai" class="btn-primary">Set Up Text AI</button>
+          <button id="setup-image-ai" class="btn-primary">Set Up Image AI</button>
+          <button id="setup-everything" class="btn-primary">Set Up Everything</button>
           <button id="recheck-readiness">Recheck dependencies</button>
         </div>
         <div id="dependency-readiness" class="readiness-panel">Checking providers...</div>
