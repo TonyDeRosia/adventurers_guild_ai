@@ -35,16 +35,16 @@ call :stage "Selecting output folder"
 call :pick_output_dir
 if errorlevel 1 goto :finish
 
-call :stage "Verifying tools"
-call :verify_tools
-if errorlevel 1 goto :finish
-
 call :stage "Verifying packaging inputs"
 call :verify_packaging_inputs
 if errorlevel 1 goto :finish
 
 call :stage "Choosing build mode"
 call :choose_build_mode
+if errorlevel 1 goto :finish
+
+call :stage "Verifying tools"
+call :verify_tools
 if errorlevel 1 goto :finish
 
 if /i "%BUILD_MODE%"=="EXE" (
@@ -235,6 +235,17 @@ if errorlevel 1 (
 ) else (
     set "POWERSHELL_CMD=powershell"
     call :log "[OK] powershell.exe available."
+)
+
+if /i "%BUILD_MODE%"=="EXE" (
+    call :log "[INFO] Skipping Inno Setup verification because EXE-only mode was selected."
+    call :log "[OK] Tool verification complete."
+    exit /b 0
+)
+
+if /i not "%BUILD_MODE%"=="INSTALLER" if /i not "%BUILD_MODE%"=="ALL" (
+    call :fail "Internal launcher error: build mode must be chosen before installer tool verification."
+    exit /b 1
 )
 
 set "ISCC_CANDIDATE_1=%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
