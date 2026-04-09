@@ -45,6 +45,7 @@ from engine.campaign_engine import CampaignEngine, TurnResult
 from engine.character_sheets import CharacterSheet, CharacterSheetAbilityEntry
 from engine.entities import CampaignSettings, CampaignState
 from engine.game_state_manager import GameStateManager
+from engine.spellbook import normalize_spellbook_entry
 from images.base import ImageGenerationRequest, ImageGenerationResult, ImageGeneratorAdapter, NullImageAdapter
 from images.comfyui_adapter import ComfyUIAdapter
 from images.local_adapter import LocalPlaceholderImageAdapter
@@ -2375,6 +2376,7 @@ class WebRuntime:
         runtime = self.session.state.structured_state.runtime
         if not isinstance(runtime.spellbook, list):
             runtime.spellbook = []
+        runtime.spellbook = self.engine.state_orchestrator._normalize_spellbook(runtime.spellbook)
         print(f"[spellbook] viewer_opened campaign={self.session.active_slot}")
         print(f"[spellbook] current_entry_count={len(runtime.spellbook)}")
         return runtime.spellbook
@@ -2388,20 +2390,21 @@ class WebRuntime:
             entry_id = str(payload.get("id", "")).strip()
             runtime.spellbook = [entry for entry in runtime.spellbook if str(entry.get("id", "")) != entry_id]
         else:
-            entry = {
+            raw_entry = {
                 "id": str(payload.get("id", "")).strip() or f"sb_{int(time.time() * 1000)}",
                 "name": str(payload.get("name", "")).strip(),
-                "type": str(payload.get("type", "ability")).strip().lower(),
+                "category": str(payload.get("category", payload.get("type", ""))).strip().lower(),
                 "description": str(payload.get("description", "")).strip(),
                 "cost_or_resource": str(payload.get("cost_or_resource", "")).strip(),
                 "cooldown": str(payload.get("cooldown", "")).strip(),
                 "tags": [str(tag).strip() for tag in payload.get("tags", []) if str(tag).strip()],
+                "flags": [str(flag).strip() for flag in payload.get("flags", []) if str(flag).strip()],
                 "notes": str(payload.get("notes", "")).strip(),
+                "source_metadata": dict(payload.get("source_metadata", {})) if isinstance(payload.get("source_metadata"), dict) else {},
             }
-            if not entry["name"]:
+            entry = normalize_spellbook_entry(raw_entry, index=len(runtime.spellbook)) or {}
+            if not entry.get("name"):
                 raise ValueError("Spellbook entry name is required.")
-            if entry["type"] not in {"spell", "skill", "ability", "passive"}:
-                entry["type"] = "ability"
             replaced = False
             for index, existing in enumerate(runtime.spellbook):
                 if str(existing.get("id", "")) == entry["id"]:
@@ -2821,6 +2824,7 @@ class WebRuntime:
         if self._is_ooc_behavior_rule_request(lowered):
             return "behavior_rule"
         authoring_verbs = {"add", "create", "generate", "make", "update", "set", "give", "write", "build"}
+        correction_verbs = {"should be", "correct", "fix", "change"}
         structured_targets = {
             "spellbook",
             "spell",
@@ -2838,7 +2842,8 @@ class WebRuntime:
         }
         has_authoring_verb = any(token in lowered for token in authoring_verbs)
         has_target = any(token in lowered for token in structured_targets)
-        return "structured_authoring" if has_authoring_verb and has_target else "clarify"
+        has_correction_verb = any(token in lowered for token in correction_verbs)
+        return "structured_authoring" if (has_authoring_verb or has_correction_verb) and has_target else "clarify"
 
     def _is_ooc_behavior_rule_request(self, lowered_text: str) -> bool:
         text = str(lowered_text or "").strip().lower()
@@ -2970,20 +2975,22 @@ class WebRuntime:
             name = str(raw.get("name", "")).strip()
             if not self._is_valid_structured_spell_name(name):
                 continue
-            entry_type = str(raw.get("type", "spell")).strip().lower()
-            if entry_type not in {"spell", "skill", "ability", "passive"}:
-                entry_type = "spell"
-            validated.append(
+            normalized = normalize_spellbook_entry(
                 {
                     "name": name,
-                    "type": entry_type,
+                    "category": str(raw.get("category", raw.get("type", ""))).strip().lower(),
                     "description": str(raw.get("description", "")).strip(),
                     "cost_or_resource": str(raw.get("cost_or_resource", raw.get("cost", raw.get("resource", "")))).strip(),
                     "cooldown": str(raw.get("cooldown", "")).strip(),
                     "tags": [str(tag).strip() for tag in raw.get("tags", []) if str(tag).strip()] if isinstance(raw.get("tags", []), list) else [],
+                    "flags": [str(flag).strip() for flag in raw.get("flags", []) if str(flag).strip()] if isinstance(raw.get("flags", []), list) else [],
                     "notes": str(raw.get("notes", "")).strip(),
-                }
+                    "source_metadata": {"source_type": "learned_ooc"},
+                },
+                index=len(validated),
             )
+            if normalized:
+                validated.append(normalized)
         return validated
 
     def _extract_world_entries_from_ooc_response(self, text: str) -> list[str]:
@@ -3065,6 +3072,39 @@ class WebRuntime:
         print(f"[cleanup] removed_invalid_spell_entries={removed}")
         return removed
 
+    def _apply_ooc_spellbook_category_correction(self, state: CampaignState, text: str) -> int:
+        runtime = state.structured_state.runtime
+        runtime.spellbook = runtime.spellbook if isinstance(runtime.spellbook, list) else []
+        pattern = re.compile(
+            r"['\"]?(?P<name>[a-z0-9][a-z0-9 '\-]{1,60})['\"]?\s+should be\s+(?:a|an)\s+(?P<category>spell|skill|ability|passive|technique|trait|item_power)\b",
+            flags=re.IGNORECASE,
+        )
+        match = pattern.search(text or "")
+        if not match:
+            return 0
+        target_name = str(match.group("name") or "").strip().lower()
+        target_category = str(match.group("category") or "").strip().lower()
+        updated = 0
+        for index, entry in enumerate(runtime.spellbook):
+            if str(entry.get("name", "")).strip().lower() != target_name:
+                continue
+            merged_tags = sorted(set([str(tag).strip() for tag in entry.get("tags", []) if str(tag).strip()] + ["corrected_by_gm", "learned_ooc"]))
+            normalized = normalize_spellbook_entry(
+                {
+                    **entry,
+                    "category": target_category,
+                    "tags": merged_tags,
+                    "source_metadata": {"source_type": "corrected_by_gm"},
+                },
+                index=index,
+            )
+            if normalized:
+                runtime.spellbook[index] = normalized
+                updated += 1
+        if updated:
+            runtime.spellbook = self.engine.state_orchestrator._normalize_spellbook(runtime.spellbook)
+        return updated
+
     def _apply_ooc_structured_updates(self, request_text: str, response_text: str, structured_payload: dict[str, Any] | None = None) -> dict[str, Any]:
         lowered_request = str(request_text or "").lower()
         state = self.session.state
@@ -3081,6 +3121,9 @@ class WebRuntime:
                 sync_summary = self._sync_ooc_spellbook_and_sheet(state, parsed_entries)
                 summary["spellbook_entries_added"] = int(sync_summary["spellbook_entries_added"])
                 summary["character_sheet_updated"] = bool(sync_summary["character_sheet_updated"])
+            else:
+                corrected = self._apply_ooc_spellbook_category_correction(state, request_text)
+                summary["character_sheet_updated"] = bool(summary["character_sheet_updated"] or corrected > 0)
         if any(token in lowered_request for token in {"title", "identity"}):
             main_sheet = self._find_main_character_sheet(state)
             title_match = re.search(r"(?:title|identity)[^A-Za-z0-9]*[:=]?\s*([A-Za-z][A-Za-z '\-]{2,60})", request_text, flags=re.I)

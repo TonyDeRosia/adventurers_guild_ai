@@ -14,6 +14,7 @@ from engine.content_registry import ContentRegistry
 from engine.dialogue_service import DialogueService
 from engine.entities import CampaignState, NPC
 from engine.inventory import InventoryService
+from engine.spellbook import normalize_spellbook_entry
 from memory.campaign_memory import CampaignMemory
 from memory.campaign_state_orchestrator import CampaignStateOrchestrator
 from memory.npc_memory import NPCMemoryTracker
@@ -992,17 +993,17 @@ class CampaignEngine:
         return any(marker in lowered for marker in success_markers)
 
     def _learn_ability_from_action(self, state: CampaignState, pending: PendingAbilityLearning) -> None:
-        ability_type = "spell" if pending.category == "magic" else "skill" if pending.category == "skill" else "ability"
-        entry = {
+        raw_entry = {
             "id": f"learned_{state.turn_count}_{pending.normalized_name.lower().replace(' ', '_')}",
             "name": pending.normalized_name,
-            "type": ability_type,
             "description": "Learned from successful in-play demonstration.",
             "cost_or_resource": "",
             "cooldown": "",
             "tags": ["learned_from_action", pending.category],
             "notes": f"confidence={pending.confidence}",
+            "source_metadata": {"source_type": pending.category},
         }
+        entry = normalize_spellbook_entry(raw_entry, index=len(state.structured_state.runtime.spellbook)) or raw_entry
         state.structured_state.runtime.spellbook.append(entry)
         state.structured_state.runtime.abilities_learned = sorted(
             set(state.structured_state.runtime.abilities_learned + [pending.normalized_name])
