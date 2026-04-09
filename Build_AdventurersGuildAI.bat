@@ -131,11 +131,19 @@ set "SELECTED_OUTPUT_DIR="
 set "PICKER_SCRIPT=%TEMP%\agai_pick_folder_%RANDOM%_%RANDOM%.ps1"
 set "PICKER_OUTPUT=%TEMP%\agai_pick_folder_%RANDOM%_%RANDOM%.out"
 set "PICKER_ERR=%TEMP%\agai_pick_folder_%RANDOM%_%RANDOM%.err"
+set "PICKER_TIMEOUT_SEC=45"
+set "PICKER_RC="
+set "PICKER_FALLBACK_REASON="
+set "PICKER_ERR_LINE="
 
 where powershell >nul 2>&1
 if not errorlevel 1 (
     set "POWERSHELL_CMD=powershell"
+    call :log "[INFO] powershell found in PATH: %POWERSHELL_CMD%"
     call :log "[INFO] Attempting folder picker using powershell."
+    call :log "[INFO] Picker script: %PICKER_SCRIPT%"
+    call :log "[INFO] Picker output file: %PICKER_OUTPUT%"
+    call :log "[INFO] Picker error file: %PICKER_ERR%"
 
     > "%PICKER_SCRIPT%" echo Add-Type -AssemblyName System.Windows.Forms ^> $null
     >> "%PICKER_SCRIPT%" echo $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
@@ -143,29 +151,49 @@ if not errorlevel 1 (
     >> "%PICKER_SCRIPT%" echo $dialog.ShowNewFolderButton = $true
     >> "%PICKER_SCRIPT%" echo if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Write($dialog.SelectedPath) }
 
-    "%POWERSHELL_CMD%" -NoProfile -ExecutionPolicy Bypass -File "%PICKER_SCRIPT%" > "%PICKER_OUTPUT%" 2> "%PICKER_ERR%"
+    "%POWERSHELL_CMD%" -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$scriptPath='%PICKER_SCRIPT%'; $outPath='%PICKER_OUTPUT%'; $errPath='%PICKER_ERR%'; $timeoutMs=%PICKER_TIMEOUT_SEC%*1000; " ^
+    "$p = Start-Process -FilePath 'powershell' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-STA','-File',$scriptPath) -PassThru -WindowStyle Normal -RedirectStandardOutput $outPath -RedirectStandardError $errPath; " ^
+    "if ($p.WaitForExit($timeoutMs)) { exit $p.ExitCode } else { try { $p.Kill() } catch {}; exit 124 }"
     set "PICKER_RC=%ERRORLEVEL%"
+    call :log "[INFO] Picker command exit code: %PICKER_RC%"
 
     if exist "%PICKER_OUTPUT%" (
+        call :log "[INFO] Picker output file created: yes"
         set /p "SELECTED_OUTPUT_DIR=" < "%PICKER_OUTPUT%"
+        if defined SELECTED_OUTPUT_DIR (
+            call :log "[INFO] Selected path read: yes"
+        ) else (
+            call :log "[INFO] Selected path read: no (file empty or unreadable)"
+        )
+    ) else (
+        call :log "[INFO] Picker output file created: no"
+        call :log "[INFO] Selected path read: no"
     )
 
     if "%PICKER_RC%"=="0" (
         if defined SELECTED_OUTPUT_DIR (
             call :log "[OK] Folder picker returned a path."
         ) else (
-            call :log "[WARN] Folder picker returned no folder (cancelled or closed)."
+            set "PICKER_FALLBACK_REASON=Folder picker returned no folder (cancelled/closed/empty)."
         )
+    ) else if "%PICKER_RC%"=="124" (
+        set "PICKER_FALLBACK_REASON=Folder picker timed out after %PICKER_TIMEOUT_SEC%s."
     ) else (
-        call :log "[WARN] Folder picker failed (powershell exit code %PICKER_RC%)."
+        set "PICKER_FALLBACK_REASON=Folder picker failed (powershell exit code %PICKER_RC%)."
+    )
+
+    if defined PICKER_FALLBACK_REASON (
         if exist "%PICKER_ERR%" (
-            set "PICKER_ERR_LINE="
             set /p "PICKER_ERR_LINE=" < "%PICKER_ERR%"
-            if defined PICKER_ERR_LINE call :log "[WARN] PowerShell: %PICKER_ERR_LINE%"
+            if defined PICKER_ERR_LINE call :log "[WARN] Picker error (first line): %PICKER_ERR_LINE%"
         )
+        call :log "[WARN] %PICKER_FALLBACK_REASON%"
+        call :log "[WARN] Falling back to manual output folder entry."
     )
 ) else (
-    call :log "[WARN] powershell not found in PATH; using manual folder entry."
+    call :log "[WARN] powershell not found in PATH."
+    call :log "[WARN] Falling back to manual output folder entry."
 )
 
 if exist "%PICKER_SCRIPT%" del /q "%PICKER_SCRIPT%" >nul 2>&1
@@ -173,7 +201,6 @@ if exist "%PICKER_OUTPUT%" del /q "%PICKER_OUTPUT%" >nul 2>&1
 if exist "%PICKER_ERR%" del /q "%PICKER_ERR%" >nul 2>&1
 
 if not defined SELECTED_OUTPUT_DIR (
-    call :log "[INFO] Falling back to manual output path entry."
     set /p "SELECTED_OUTPUT_DIR=Enter output folder path (leave blank to cancel): "
 )
 
@@ -347,7 +374,7 @@ call :log "[OK] Copied installer to: %COPIED_INSTALLER_PATH%"
 exit /b 0
 
 :finish
-call :log ""
+call :log_blank
 call :log "================================================================"
 if "%INSTALLER_BUILD_STATUS%"=="success" (
     call :log "Final installer artifact:"
@@ -371,7 +398,7 @@ if "%SCRIPT_EXIT_CODE%"=="0" (
 )
 call :log "Finished: %DATE% %TIME%"
 call :log "================================================================"
-call :log ""
+call :log_blank
 pause
 exit /b %SCRIPT_EXIT_CODE%
 
@@ -379,7 +406,7 @@ rem Guard rail: do not fall through into helper labels.
 goto :eof
 
 :stage
-call :log ""
+call :log_blank
 call :log "---------------- %~1 ----------------"
 exit /b 0
 
@@ -391,8 +418,18 @@ exit /b 1
 
 :log
 set "LOG_LINE=%~1"
-echo %LOG_LINE%
->> "%LOG_FILE%" echo %LOG_LINE%
+if defined LOG_LINE (
+    echo %LOG_LINE%
+    >> "%LOG_FILE%" echo %LOG_LINE%
+) else (
+    echo(
+    >> "%LOG_FILE%" echo(
+)
+exit /b 0
+
+:log_blank
+echo(
+>> "%LOG_FILE%" echo(
 exit /b 0
 
 :fatal_startup
