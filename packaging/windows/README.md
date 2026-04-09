@@ -22,6 +22,8 @@ Equivalent direct PyInstaller invocation (when debugging spec edits):
 py -3 -m PyInstaller --noconfirm --clean packaging\windows\AdventurerGuildAI.spec
 ```
 
+The spec resolves the repo root from PyInstaller's execution context (`SPEC`/working directory), so it does not depend on `__file__` being defined.
+
 
 ## One-click launcher (recommended for non-technical packaging)
 
