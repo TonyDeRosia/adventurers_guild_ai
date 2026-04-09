@@ -22,6 +22,25 @@ Equivalent direct PyInstaller invocation (when debugging spec edits):
 py -3 -m PyInstaller --noconfirm --clean packaging\windows\AdventurerGuildAI.spec
 ```
 
+
+## One-click launcher (recommended for non-technical packaging)
+
+Use the repository-root launcher:
+
+```bat
+Build_AdventurersGuildAI.bat
+```
+
+What it does:
+
+1. Prompts for an output folder where the final installer copy should be placed.
+2. Verifies required tools (Python and Inno Setup/ISCC).
+3. Verifies required packaging files/folders exist before running builds.
+4. Lets you choose EXE-only, installer-only, or full build (EXE then installer).
+5. Reuses `tools\build_exe.bat` and `tools\build_installer.bat` without replacing their packaging logic.
+6. Copies `installer\Output\AdventurerGuildAI_Setup.exe` to your selected output folder after a successful installer build.
+7. Keeps the terminal open and prints clear status/error messages and final installer location.
+
 ## PyInstaller bundle inputs
 
 The spec includes these required runtime/application assets:
