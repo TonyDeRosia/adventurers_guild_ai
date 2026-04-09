@@ -727,6 +727,7 @@ class CampaignEngine:
             quality_fallback_used = False
             print("[control-audit] preserved_generated_output=true")
             print("[narrative-quality] preserved_valid_output=true")
+        narrative = self._sanitize_narrator_actor_output(narrative, state, scene_state)
         if quality_fallback_used:
             scene_state["consecutive_repetition_count"] = 0
         elif dead_loop_detected:
@@ -1169,6 +1170,115 @@ class CampaignEngine:
         text = re.sub(r"[ \t]{2,}", " ", text)
         text = re.sub(r"\n{3,}", "\n\n", text).strip()
         return text, text != original
+
+    def _sanitize_narrator_actor_output(self, narrative: str, state: CampaignState, scene_state: dict[str, Any]) -> str:
+        text = narrative.strip()
+        if not text:
+            return text
+        replacement_map: dict[str, str] = {}
+        for actor in scene_state.get("scene_actors", []):
+            if not isinstance(actor, dict):
+                continue
+            replacement = self._resolve_player_facing_actor_name(actor, state)
+            raw_values = {
+                str(actor.get("actor_id", "")).strip(),
+                str(actor.get("display_name", "")).strip(),
+                str(actor.get("short_label", "")).strip(),
+            }
+            linked_npc_id = str(actor.get("linked_npc_id", "")).strip()
+            if linked_npc_id and linked_npc_id in state.npcs:
+                raw_values.add(str(state.npcs[linked_npc_id].name).strip())
+            for raw in raw_values:
+                if not raw or raw.lower() == replacement.lower():
+                    continue
+                replacement_map[raw] = replacement
+        for raw in sorted(replacement_map, key=len, reverse=True):
+            safe_replacement = replacement_map[raw]
+            pattern = re.compile(rf"\b{re.escape(raw)}\b", flags=re.IGNORECASE)
+            text = pattern.sub(safe_replacement, text)
+        text = re.sub(
+            r"\b([A-Za-z][A-Za-z0-9 _-]{1,80}?)(?:\s+Starting Location|_starting_location|_start)\b",
+            lambda match: self._fallback_actor_phrase_from_label(match.group(1)),
+            text,
+            flags=re.IGNORECASE,
+        )
+        text = re.sub(
+            r"\b(?:scene_actor|npc_lite|npc)_[a-z0-9_]+\b",
+            lambda match: self._fallback_actor_phrase_from_label(match.group(0)),
+            text,
+            flags=re.IGNORECASE,
+        )
+        return re.sub(r"[ \t]{2,}", " ", text).strip()
+
+    def _resolve_player_facing_actor_name(self, actor: dict[str, Any], state: CampaignState) -> str:
+        linked_npc_id = str(actor.get("linked_npc_id", "")).strip()
+        candidates: list[str] = []
+        if linked_npc_id and linked_npc_id in state.npcs:
+            candidates.append(str(state.npcs[linked_npc_id].name))
+        candidates.extend(
+            [
+                str(actor.get("proper_name", "")),
+                str(actor.get("display_name", "")),
+                str(actor.get("short_label", "")),
+            ]
+        )
+        for candidate in candidates:
+            sanitized = self._sanitize_internal_actor_label(candidate)
+            proper = self._extract_actor_proper_name(sanitized)
+            if proper:
+                return proper
+        role_hint = " ".join(candidates)
+        return self._fallback_actor_phrase_from_label(role_hint)
+
+    def _sanitize_internal_actor_label(self, value: str) -> str:
+        text = str(value or "").replace("_", " ").strip()
+        text = re.sub(r"\b(?:starting location|start location|starting_location|_starting_location|_start)\b", " ", text, flags=re.IGNORECASE)
+        text = re.sub(r"\b(?:scene actor|scene|actor|npc lite|npc id|actor id)\b", " ", text, flags=re.IGNORECASE)
+        text = re.sub(r"\b[a-z]*\d+\b", " ", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s{2,}", " ", text)
+        return text.strip(" -_")
+
+    def _extract_actor_proper_name(self, value: str) -> str:
+        cleaned = re.sub(r"\s+", " ", str(value or "").strip())
+        if not cleaned:
+            return ""
+        lowered = cleaned.lower()
+        generic_phrases = {
+            "merchant",
+            "guard",
+            "figure",
+            "hooded figure",
+            "shadowed figure",
+            "stranger",
+            "the merchant",
+            "the guard",
+            "the figure",
+            "the hooded figure",
+            "the shadowed figure",
+        }
+        if lowered in generic_phrases:
+            return ""
+        role_title_match = re.match(
+            r"^([A-Z][a-z]+(?:[-'][A-Z][a-z]+){0,2})\s+the\s+(?:merchant|guard|stranger|figure)\b",
+            cleaned,
+        )
+        if role_title_match:
+            return role_title_match.group(1)
+        if any(word in lowered for word in ("merchant", "guard", "figure", "stranger")) and len(cleaned.split()) <= 3:
+            return ""
+        return cleaned
+
+    def _fallback_actor_phrase_from_label(self, value: str) -> str:
+        lowered = self._sanitize_internal_actor_label(value).lower()
+        if "merchant" in lowered:
+            return "the merchant"
+        if "guard" in lowered or "sentry" in lowered:
+            return "the guard"
+        if "hooded" in lowered or "shadow" in lowered:
+            return "the shadowed figure"
+        if "stranger" in lowered or "figure" in lowered or not lowered:
+            return "the shadowed figure"
+        return "the figure"
 
     def _player_requested_guidance(self, action: str) -> bool:
         normalized = re.sub(r"\s+", " ", action.strip().lower())

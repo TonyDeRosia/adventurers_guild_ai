@@ -998,6 +998,20 @@ class _GuardThenNamedProvider(NarrationModelAdapter):
         return "The guard stays measured, watching for your intent before speaking again."
 
 
+class _LeakyMerchantLabelProvider(NarrationModelAdapter):
+    provider_name = "ollama"
+
+    def generate(self, prompt: str, system_prompt: str = "", history=None) -> str:
+        return "Merchant Starting Location watches you quietly from behind the stall."
+
+
+class _LeakyFigureLabelProvider(NarrationModelAdapter):
+    provider_name = "ollama"
+
+    def generate(self, prompt: str, system_prompt: str = "", history=None) -> str:
+        return "Figure Starting Location lingers beside the arch and says nothing."
+
+
 def test_turn_fallback_is_clean_when_provider_fails(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.engine.model = _FailingProvider()
@@ -1654,6 +1668,30 @@ def test_internal_thought_narration_is_not_engine_rewritten(tmp_path: Path, monk
     narrative = out["narrative"].lower()
 
     assert narrative != ""
+
+
+def test_narration_sanitizes_merchant_starting_location_label(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _LeakyMerchantLabelProvider()
+    out = runtime.handle_player_input("i approach the stall")
+    lowered = out["narrative"].lower()
+    assert "starting location" not in lowered
+    assert "_starting_location" not in lowered
+    assert "_start" not in lowered
+    assert "merchant starting location" not in lowered
+    assert "the merchant" in lowered
+
+
+def test_narration_sanitizes_figure_starting_location_label(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.engine.model = _LeakyFigureLabelProvider()
+    out = runtime.handle_player_input("i wait")
+    lowered = out["narrative"].lower()
+    assert "starting location" not in lowered
+    assert "_starting_location" not in lowered
+    assert "_start" not in lowered
+    assert "figure starting location" not in lowered
+    assert ("the shadowed figure" in lowered) or ("the figure" in lowered)
 
 
 def test_build_structured_messages_skips_blank_narrator_payload(tmp_path: Path, monkeypatch) -> None:
