@@ -1873,6 +1873,102 @@ def test_manual_visual_generation_works_when_scene_visual_mode_is_off(tmp_path: 
     assert scene_visual["source"] == "manual"
 
 
+def test_manual_prompt_override_is_forwarded_unchanged(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.set_campaign_settings({"play_style": {"scene_visual_mode": "off"}})
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"ready": True})
+    output_file = runtime.generated_image_dir / "manual_override.png"
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.write_bytes(b"fake")
+    captured_payload: dict[str, Any] = {}
+
+    def _fake_generate(payload: dict[str, Any]) -> ImageGenerationResult:
+        captured_payload.update(payload)
+        return ImageGenerationResult(
+            success=True,
+            workflow_id="scene_image",
+            result_path=str(output_file),
+            metadata={"image": {"filename": "manual_override.png", "type": "output"}},
+        )
+
+    monkeypatch.setattr(runtime, "generate_image", _fake_generate)
+    runtime._request_scene_visual_generation(
+        source="manual",
+        stage="manual",
+        player_action="",
+        narrator_response="",
+        prompt_override="manual custom prompt with exact wording",
+    )
+    assert captured_payload["prompt"] == "manual custom prompt with exact wording"
+    assert captured_payload.get("negative_prompt", "") == ""
+
+
+def test_after_narration_prompt_uses_full_scene_not_only_first_sentence(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.set_global_settings({"image": {"provider": "comfyui"}})
+    runtime.set_campaign_settings({"image_generation_enabled": True, "play_style": {"scene_visual_mode": "after_narration"}})
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"ready": True})
+    output_file = runtime.generated_image_dir / "full_scene.png"
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.write_bytes(b"fake")
+    captured_payload: dict[str, Any] = {}
+
+    def _fake_generate(payload: dict[str, Any]) -> ImageGenerationResult:
+        captured_payload.update(payload)
+        return ImageGenerationResult(
+            success=True,
+            workflow_id="scene_image",
+            result_path=str(output_file),
+            metadata={"image": {"filename": "full_scene.png", "type": "output"}},
+        )
+
+    monkeypatch.setattr(runtime, "generate_image", _fake_generate)
+    runtime._run_turn_visual_generation(
+        player_action="cast arc bolt at the raider",
+        narrator_response=(
+            "Aria hurls a crackling bolt across the hall. "
+            "The raider slams into a broken pillar as blue sparks scatter over the floor."
+        ),
+        stage="after_narration",
+    )
+
+    assert "broken pillar" in captured_payload["prompt"]
+    assert "blue sparks scatter" in captured_payload["prompt"]
+
+
+def test_auto_visual_continuity_state_is_persisted_in_scene_state(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.set_global_settings({"image": {"provider": "comfyui"}})
+    runtime.set_campaign_settings({"image_generation_enabled": True})
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"ready": True})
+    output_file = runtime.generated_image_dir / "continuity.png"
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.write_bytes(b"fake")
+    monkeypatch.setattr(
+        runtime,
+        "generate_image",
+        lambda payload: ImageGenerationResult(
+            success=True,
+            workflow_id="scene_image",
+            result_path=str(output_file),
+            metadata={"image": {"filename": "continuity.png", "type": "output"}},
+        ),
+    )
+    runtime.session.state.structured_state.runtime.scene_state = {
+        "location_name": "Old Chapel",
+        "scene_summary": "Moonlight and dust in a broken nave.",
+        "active_effects": ["violet aura around gauntlet"],
+    }
+    runtime._run_turn_visual_generation(
+        player_action="raise warding hand",
+        narrator_response="The ward flares and casts sharp shadows across cracked stone.",
+        stage="after_narration",
+    )
+    continuity = runtime.session.state.structured_state.runtime.scene_state.get("visual_continuity", {})
+    assert isinstance(continuity, dict)
+    assert continuity.get("lighting") in {"moonlight", "sharp shadows", ""}
+    assert "persistent_magic_effects" in continuity
+
 def test_auto_turn_visual_async_dedupes_same_slot_turn_and_stage(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.set_global_settings({"image": {"provider": "comfyui", "campaign_auto_visual_timing": "after_narration"}})
