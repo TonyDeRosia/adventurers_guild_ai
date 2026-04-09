@@ -10,6 +10,7 @@
     "base_url": "http://localhost:8188",
     "enabled": true,
     "manual_image_generation_enabled": true,
-    "campaign_auto_visual_timing": "after_narration"
+    "campaign_auto_visual_timing": "after_narration",
+    "auto_negative_prompt_additions": []
   }
 }

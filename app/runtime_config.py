@@ -31,6 +31,13 @@ class ImageRuntimeConfig:
     checkpoint_folder: str = ""
     preferred_checkpoint: str = "DreamShaper"
     preferred_launcher: str = "auto"
+    auto_negative_prompt_additions: list[str] = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.auto_negative_prompt_additions, list):
+            self.auto_negative_prompt_additions = []
+        else:
+            self.auto_negative_prompt_additions = [str(v).strip() for v in self.auto_negative_prompt_additions if str(v).strip()]
 
 
 @dataclass
@@ -99,6 +106,13 @@ class RuntimeConfigStore:
                 checkpoint_folder=str(image_payload.get("checkpoint_folder", "")),
                 preferred_checkpoint=str(image_payload.get("preferred_checkpoint", "DreamShaper")),
                 preferred_launcher=str(image_payload.get("preferred_launcher", "auto")),
+                auto_negative_prompt_additions=[
+                    str(v).strip()
+                    for v in image_payload.get("auto_negative_prompt_additions", [])
+                    if str(v).strip()
+                ]
+                if isinstance(image_payload.get("auto_negative_prompt_additions", []), list)
+                else [],
             ),
         )
 

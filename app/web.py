@@ -3283,16 +3283,29 @@ class WebRuntime:
         prompt_override: str | None = None,
     ) -> dict[str, Any]:
         log_source = "auto" if source in {"automatic", "auto_before", "auto_after"} else source
-        prompt = str(prompt_override or "").strip() or self.turn_image_prompts.build(
-            self.session.state,
-            player_action=player_action,
-            narrator_response=narrator_response,
-        )
+        prompt = str(prompt_override or "").strip()
+        negative_prompt = ""
+        if not prompt:
+            # Boundary: prompt extraction/composition happens in TurnImagePromptBuilder.
+            # Workflow token replacement/patching remains in WorkflowManager.
+            packet = self.turn_image_prompts.build_packet(
+                self.session.state,
+                player_action=player_action,
+                narrator_response=narrator_response,
+                stage=stage,
+                negative_prompt_additions=self.app_config.image.auto_negative_prompt_additions,
+            )
+            prompt = packet.prompt
+            negative_prompt = packet.negative_prompt
+            runtime_scene_state = self.session.state.structured_state.runtime.scene_state
+            if isinstance(runtime_scene_state, dict):
+                runtime_scene_state["visual_continuity"] = dict(packet.continuity_state)
         prompt_preview = " ".join(prompt.split())[:160]
         print(f"[turn-visual] prompt_preview={prompt_preview}")
         request_payload = {
             "workflow_id": "scene_image",
             "prompt": prompt,
+            "negative_prompt": negative_prompt,
             "parameters": {"checkpoint": self.app_config.image.preferred_checkpoint},
         }
         print(f"[turn-visual] image_request_started source={log_source}")
@@ -3371,6 +3384,7 @@ class WebRuntime:
                 "checkpoint_folder": self.app_config.image.checkpoint_folder,
                 "preferred_checkpoint": self.app_config.image.preferred_checkpoint,
                 "preferred_launcher": self.app_config.image.preferred_launcher,
+                "auto_negative_prompt_additions": list(self.app_config.image.auto_negative_prompt_additions),
             },
             "path_config": self.get_path_configuration_status(),
             "dependency_readiness": self.get_dependency_readiness(),
@@ -3414,6 +3428,15 @@ class WebRuntime:
             checkpoint_folder=str(image_payload.get("checkpoint_folder", self.app_config.image.checkpoint_folder)),
             preferred_checkpoint=str(image_payload.get("preferred_checkpoint", self.app_config.image.preferred_checkpoint)),
             preferred_launcher=str(image_payload.get("preferred_launcher", self.app_config.image.preferred_launcher)),
+            auto_negative_prompt_additions=[
+                str(v).strip()
+                for v in image_payload.get("auto_negative_prompt_additions", self.app_config.image.auto_negative_prompt_additions)
+                if str(v).strip()
+            ]
+            if isinstance(
+                image_payload.get("auto_negative_prompt_additions", self.app_config.image.auto_negative_prompt_additions), list
+            )
+            else list(self.app_config.image.auto_negative_prompt_additions),
         )
         self.config_store.save(self.app_config)
         self.engine.model = self._create_model_adapter()
