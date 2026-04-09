@@ -1803,6 +1803,8 @@ async function pickFolder(title, inputElement) {
     setStatus(`Selected folder: ${result.path}`);
     return result.path || '';
   } catch (error) {
+    const fallbackUsed = await pickFolderBrowserFallback(title);
+    if (fallbackUsed) return '';
     setStatus(error.message, true);
     return '';
   }
@@ -1825,6 +1827,8 @@ async function pickFile(title, inputElement, filters = ['.json']) {
     setStatus(`Selected file: ${result.path}`);
     return result.path || '';
   } catch (error) {
+    const fallbackUsed = await pickFileBrowserFallback(filters);
+    if (fallbackUsed) return '';
     setStatus(error.message, true);
     return '';
   }
@@ -1897,6 +1901,11 @@ function renderImageSetupCard(snapshot = latestImageSetupSnapshot) {
     <div>${escapeHtml(fallbackText)}</div>
     <div>${escapeHtml(readiness.message || '')}</div>
   `;
+}
+
+function bindClickOnce(element, handler) {
+  if (!element) return;
+  element.onclick = handler;
 }
 
 async function refreshImageSetupSnapshot() {
@@ -2616,22 +2625,19 @@ document.getElementById('setup-image-ai').onclick = () => runReadinessAction('se
 document.getElementById('setup-everything').onclick = () => runReadinessAction('setup_everything', {});
 document.getElementById('download-ollama').onclick = () => openOfficialDownload('https://ollama.com/download');
 document.getElementById('download-comfyui').onclick = () => openOfficialDownload('https://github.com/comfyanonymous/ComfyUI');
-document.getElementById('open-checkpoint-page').onclick = openRecommendedModelPage;
 document.getElementById('pick-ollama-folder').onclick = () => pickFolder('Select Ollama install folder', ollamaPathInput);
 document.getElementById('pick-comfyui-folder').onclick = () => pickFolder('Select ComfyUI folder', comfyuiPathInput);
 document.getElementById('pick-comfyui-workflow-file').onclick = () => pickFile('Select ComfyUI workflow JSON', comfyuiWorkflowPathInput, ['.json']);
 document.getElementById('pick-comfyui-output-folder').onclick = () => pickFolder('Select ComfyUI output folder', comfyuiOutputDirInput);
-document.getElementById('pick-checkpoint-folder').onclick = chooseExistingModelFolder;
-if (useBundledImageEngineButton) useBundledImageEngineButton.onclick = () => useBundledImageEngine().catch((error) => setStatus(error.message, true));
-if (chooseExistingModelFolderButton) chooseExistingModelFolderButton.onclick = () => chooseExistingModelFolder().catch((error) => setStatus(error.message, true));
-if (openRecommendedModelPageButton) openRecommendedModelPageButton.onclick = openRecommendedModelPage;
-if (skipImagesForNowButton) skipImagesForNowButton.onclick = () => skipImagesForNow().catch((error) => setStatus(error.message, true));
-if (recheckImageSetupButton) {
-  recheckImageSetupButton.onclick = async () => {
+bindClickOnce(document.getElementById('pick-checkpoint-folder'), () => chooseExistingModelFolder().catch((error) => setStatus(error.message, true)));
+bindClickOnce(useBundledImageEngineButton, () => useBundledImageEngine().catch((error) => setStatus(error.message, true)));
+bindClickOnce(chooseExistingModelFolderButton, () => chooseExistingModelFolder().catch((error) => setStatus(error.message, true)));
+bindClickOnce(openRecommendedModelPageButton, openRecommendedModelPage);
+bindClickOnce(skipImagesForNowButton, () => skipImagesForNow().catch((error) => setStatus(error.message, true)));
+bindClickOnce(recheckImageSetupButton, async () => {
     await Promise.all([refreshDependencyReadiness(), refreshImageSetupSnapshot()]);
     setStatus('Image setup rechecked.');
-  };
-}
+  });
 document.getElementById('connect-ollama-folder').onclick = connectOllamaFolder;
 document.getElementById('apply-visual-pipeline-settings').onclick = applyVisualPipelineSettings;
 document.getElementById('install-story-model').onclick = () => runReadinessAction('install_model', { selected_model: document.getElementById('model-name').value.trim() || 'llama3' });
