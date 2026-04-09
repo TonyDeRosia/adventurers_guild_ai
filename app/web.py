@@ -40,6 +40,7 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency in some te
     uvicorn = None
 
 from app.pathing import initialize_user_data_paths, project_root, static_dir
+from app.comfy_manager import ComfyProcessManager
 from app.runtime_config import AppRuntimeConfig, ImageRuntimeConfig, ModelRuntimeConfig, RuntimeConfigStore
 from engine.campaign_engine import CampaignEngine, TurnResult
 from engine.character_sheets import CharacterSheet, CharacterSheetAbilityEntry
@@ -79,6 +80,7 @@ class WebRuntime:
         self.history_store = self._load_history_store()
         self.scene_visual_store_path = self.paths.campaign_memory / "scene_visual_store.json"
         self.scene_visual_store = self._load_scene_visual_store()
+        self.comfy_manager = ComfyProcessManager()
 
         self.engine = CampaignEngine(self._create_model_adapter(), data_dir=self.paths.content_data)
         self.image_adapter = self._create_image_adapter()
@@ -92,6 +94,36 @@ class WebRuntime:
         self._model_install_lock = threading.Lock()
         self._model_install_jobs: dict[str, dict[str, Any]] = {}
         print("[web-runtime] session initialized")
+
+    def shutdown_managed_services(self) -> None:
+        """Shutdown managed local subprocesses owned by this runtime."""
+        self.comfy_manager.clear_if_exited()
+        if self.comfy_manager.snapshot().running:
+            print("[shutdown] stopping managed ComfyUI process...")
+            stopped = self.comfy_manager.shutdown()
+            if stopped:
+                print("[shutdown] managed ComfyUI process stopped")
+            else:
+                print("[shutdown] managed ComfyUI process could not be stopped cleanly")
+
+    def auto_start_image_backend_if_needed(self) -> None:
+        """Best-effort startup for packaged desktop mode.
+
+        If image generation is enabled with ComfyUI and paths are valid, attempt
+        to launch and manage ComfyUI automatically. Failures are surfaced via
+        normal readiness APIs so the UI can guide first-run setup.
+        """
+        if not self.app_config.image.enabled or self.app_config.image.provider != "comfyui":
+            return
+        if self.get_image_status().get("reachable", False):
+            return
+        path_status = self.get_path_configuration_status().get("image", {})
+        if not bool(path_status.get("pipeline_ready", False)):
+            return
+        print("[startup] attempting managed ComfyUI auto-start")
+        result = self.start_image_engine()
+        if not result.get("ok", False):
+            print(f"[startup] managed ComfyUI auto-start did not complete: {result.get('message', 'unknown')}")
 
     def _campaign_namespace(self, slot: str, state: CampaignState | None = None) -> str:
         scoped_state = state or self.session.state
@@ -269,6 +301,7 @@ class WebRuntime:
     def get_image_status(self) -> dict[str, Any]:
         provider = self.app_config.image.provider
         base_url = self.app_config.image.base_url
+        managed_running = self.comfy_manager.snapshot().running
         if provider == "comfyui":
             path_config = self.get_path_configuration_status()
             image_paths = path_config["image"]
@@ -325,6 +358,7 @@ class WebRuntime:
                     "status_code": "reachable",
                     "comfyui_path": str(comfyui_root or ""),
                     "launcher_mode": self._determine_launcher_mode(comfyui_root),
+                    "managed_process": managed_running,
                 }
             if installed:
                 return {
@@ -337,6 +371,7 @@ class WebRuntime:
                     "next_action": "Start Image Engine, then click Recheck.",
                     "comfyui_path": str(comfyui_root),
                     "launcher_mode": self._determine_launcher_mode(comfyui_root),
+                    "managed_process": managed_running,
                 }
             return {
                 **base_status,
@@ -348,6 +383,7 @@ class WebRuntime:
                 "next_action": "Install Image Engine, then click Recheck.",
                 "comfyui_path": "",
                 "launcher_mode": "none",
+                "managed_process": managed_running,
             }
         if provider == "null":
             return {
@@ -359,6 +395,7 @@ class WebRuntime:
                 "user_message": "Image provider is disabled.",
                 "next_action": "Set image provider to local or comfyui, then click Recheck.",
                 "error": "",
+                "managed_process": managed_running,
             }
         return {
             "provider": provider,
@@ -369,6 +406,7 @@ class WebRuntime:
             "user_message": f"{provider} image provider is ready.",
             "next_action": "No action needed.",
             "error": "",
+            "managed_process": managed_running,
         }
 
     def get_dependency_readiness(self) -> dict[str, Any]:
@@ -1464,6 +1502,7 @@ class WebRuntime:
         startup_log_file = self.paths.logs / "image_engine_startup.log"
         startup_log_file.parent.mkdir(parents=True, exist_ok=True)
         self.image_startup_status = {}
+        self.comfy_manager.clear_if_exited()
         if self.app_config.image.provider != "comfyui":
             print("[setup-action] start-image-engine failure reason=image provider is not comfyui")
             return {
@@ -1495,6 +1534,7 @@ class WebRuntime:
             }
         if self.get_image_status().get("reachable", False):
             print("[setup-action] start-image-engine success reason=already running")
+            managed_state = self.comfy_manager.snapshot()
             self.image_startup_status = {
                 "stage": "wait-for-readiness",
                 "reason": "already-reachable",
@@ -1502,10 +1542,12 @@ class WebRuntime:
                 "log_text": "",
                 "log_available": False,
                 "log_file": str(startup_log_file),
+                "managed_process": managed_state.running,
             }
             return {
                 "ok": True,
                 "message": "ComfyUI is already running.",
+                "managed_process": managed_state.running,
                 "steps": [{"step": "wait-for-readiness", "state": "ready", "message": "Engine is already reachable."}],
             }
         print("[setup-orchestrator] setup-image step=detect-install-path")
@@ -1591,19 +1633,23 @@ class WebRuntime:
             }
         print("[setup-orchestrator] setup-image step=launch-engine")
         process: subprocess.Popen[str] | None = None
+        log_handle = None
         try:
             if os.name == "nt" and launcher_script.exists() and launcher_script.suffix == ".bat":
                 self._append_image_startup_log(startup_log_lines, f"Launching script: {launcher_script.name}")
                 with startup_log_file.open("w", encoding="utf-8") as handle:
                     handle.write("")
+                log_handle = startup_log_file.open("a", encoding="utf-8")
                 process = subprocess.Popen(
                     [
                         "cmd.exe",
                         "/c",
-                        f"\"{launcher_script}\" 1>>\"{startup_log_file}\" 2>&1",
+                        f"\"{launcher_script}\"",
                     ],
                     cwd=str(comfyui_root),
-                    creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,  # type: ignore[attr-defined]
+                    stdout=log_handle,
+                    stderr=subprocess.STDOUT,
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,  # type: ignore[attr-defined]
                 )
             else:
                 python_exe = shutil.which("python") or shutil.which("py")
@@ -1649,6 +1695,9 @@ class WebRuntime:
             }
         if process is None:
             return {"ok": False, "message": "ComfyUI process launch did not initialize.", "failure_stage": "launch-engine", "failure_stage_message": "process launch failed"}
+        if log_handle is not None:
+            self.comfy_manager.bind_log_handle(log_handle)
+        self.comfy_manager.register(process, launch_target=str(launcher), startup_log_file=startup_log_file)
         print(f"[setup-action] start-image-engine launch command={launcher}")
         print("[setup-orchestrator] setup-image step=wait-for-readiness")
         expected_base = self.app_config.image.base_url
@@ -1675,7 +1724,9 @@ class WebRuntime:
                     "log_text": startup_log_text,
                     "log_available": bool(startup_log_text),
                     "log_file": str(startup_log_file),
+                    "managed_process": False,
                 }
+                self.comfy_manager.clear_if_exited()
                 return {
                     "ok": False,
                     "message": "Image AI failed: ComfyUI exited during startup.",
@@ -1700,10 +1751,12 @@ class WebRuntime:
                     "log_text": self._sanitize_image_startup_log(startup_log_lines + self._read_startup_log_tail(startup_log_file)),
                     "log_available": True,
                     "log_file": str(startup_log_file),
+                    "managed_process": self.comfy_manager.snapshot().running,
                 }
                 return {
                     "ok": True,
                     "message": "ComfyUI started and is reachable.",
+                    "managed_process": self.comfy_manager.snapshot().running,
                     "readiness_refreshed": True,
                     "steps": [
                         {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
@@ -1749,6 +1802,7 @@ class WebRuntime:
             "log_text": startup_log_text,
             "log_available": bool(startup_log_text),
             "log_file": str(startup_log_file),
+            "managed_process": self.comfy_manager.snapshot().running,
         }
         print("[setup-action] start-image-engine failure reason=timeout-waiting-for-comfyui")
         print("[setup-orchestrator] setup-image failure stage=wait-for-readiness")
@@ -3775,6 +3829,11 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     @app.on_event("startup")
     async def _log_server_ready() -> None:
         print("Server ready (health endpoint active)")
+        runtime.auto_start_image_backend_if_needed()
+
+    @app.on_event("shutdown")
+    async def _shutdown_managed_backends() -> None:
+        runtime.shutdown_managed_services()
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse:

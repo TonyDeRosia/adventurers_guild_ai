@@ -24,7 +24,7 @@ If startup fails, keep the console open and read the printed error details.
 
 These scripts are for packaging/distribution work and are **not** part of normal source running:
 
-- Build standalone executable (PyInstaller):
+- Build standalone executable bundle (PyInstaller onedir):
   ```bat
   tools\build_exe.bat
   ```
@@ -55,6 +55,13 @@ Typical folders:
 - `generated_images/`
 - `cache/`
 - `workflows/`
+
+## Managed image backend behavior (desktop mode)
+
+- If image provider is configured to `comfyui`, the app can auto-start ComfyUI when startup checks pass.
+- The app detects already-running ComfyUI and avoids duplicate launch.
+- If the app launched ComfyUI as a managed child process, it is stopped when the app exits.
+- If setup is incomplete (missing ComfyUI/workflow/checkpoint), the app keeps running in text mode and surfaces guided setup actions.
 
 ## Troubleshooting
 
