@@ -2358,8 +2358,21 @@ def test_first_run_status_exposes_packaging_and_setup_states(tmp_path: Path, mon
     )
     monkeypatch.setattr(
         runtime,
-        "_default_comfyui_path",
-        lambda: tmp_path / "missing_bundle",
+        "get_installer_layout_status",
+        lambda: {
+            "state": "invalid",
+            "valid": False,
+            "summary": "Installer layout is invalid.",
+            "missing_required": ["bundled_image_runtime", "workflow_scene_image"],
+            "packaged_app_files_present": False,
+            "bundled_image_runtime_present": False,
+            "bundled_workflows_present": False,
+            "embedded_python_present": False,
+            "checks": {
+                "runtime_bundle": {"message": "Missing required packaged folder: runtime_bundle."},
+                "bundled_image_runtime": {"path": str(tmp_path / "missing_bundle"), "present": False},
+            },
+        },
     )
 
     status = runtime.get_first_run_status()
@@ -2367,8 +2380,30 @@ def test_first_run_status_exposes_packaging_and_setup_states(tmp_path: Path, mon
     assert status["app_installed"]["state"] in {"ready", "not_packaged"}
     assert status["text_ai"]["state"] == "not_ready"
     assert status["image_engine_bundle"]["state"] == "missing"
+    assert status["bundled_workflows"]["state"] == "missing"
+    assert status["embedded_python"]["state"] == "missing"
+    assert status["installer_layout"]["state"] == "invalid"
+    assert status["packaged_app_files"]["state"] == "missing"
     assert status["model_folder"]["state"] == "missing"
     assert status["text_only_mode"]["state"] in {"active", "inactive"}
+
+
+def test_image_setup_snapshot_includes_installer_layout_payload(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    monkeypatch.setattr(runtime, "get_first_run_status", lambda: {"app_installed": {"state": "ready"}})
+    monkeypatch.setattr(
+        runtime,
+        "get_installer_layout_status",
+        lambda: {
+            "state": "invalid",
+            "valid": False,
+            "checks": {"bundled_image_runtime": {"present": False, "path": ""}},
+            "missing_required": ["bundled_image_runtime"],
+        },
+    )
+    snapshot = runtime.get_image_setup_snapshot()
+    assert snapshot["installer_layout"]["state"] == "invalid"
+    assert snapshot["bundled_comfyui_available"] is False
 
 
 def test_campaign_recalibrate_endpoint_invokes_runtime_recalibration(tmp_path: Path, monkeypatch) -> None:
@@ -2542,6 +2577,39 @@ def test_start_image_engine_detects_early_exit_and_exposes_startup_log(tmp_path:
     assert result["failure_stage_message"] == "ComfyUI exited during startup"
     assert result["startup_status"]["reason"] == "process-exited-immediately"
     assert "modulenotfounderror" in result["startup_status"]["runtime_error_hint"]
+
+
+def test_start_image_engine_validates_bundled_layout_before_launch_in_packaged_mode(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    bundled_comfy = tmp_path / "runtime_bundle" / "comfyui"
+    bundled_comfy.mkdir(parents=True, exist_ok=True)
+    (bundled_comfy / "main.py").write_text("print('ok')", encoding="utf-8")
+    (bundled_comfy / "run_cpu.bat").write_text("@echo off\r\npython main.py\r\n", encoding="utf-8")
+    (bundled_comfy / "custom_nodes").mkdir(exist_ok=True)
+    (bundled_comfy / "models" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    workflow = tmp_path / "scene.json"
+    workflow.write_text("{}", encoding="utf-8")
+    runtime.app_config.image.comfyui_path = str(bundled_comfy)
+    runtime.app_config.image.comfyui_workflow_path = str(workflow)
+    runtime.app_config.image.checkpoint_folder = str(bundled_comfy / "models" / "checkpoints")
+
+    monkeypatch.setattr(runtime.desktop, "_capabilities", runtime.desktop.capabilities.__class__(**{
+        **runtime.desktop.capabilities.to_dict(),
+        "mode": "desktop_packaged",
+    }))
+    monkeypatch.setattr("app.web.bundled_comfyui_dir", lambda: bundled_comfy)
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": False})
+    monkeypatch.setattr(
+        runtime,
+        "get_installer_layout_status",
+        lambda: {"valid": False, "state": "invalid", "missing_required": ["workflow_scene_image"], "summary": "invalid"},
+    )
+
+    result = runtime.start_image_engine()
+    assert result["ok"] is False
+    assert result["failure_stage"] == "layout-validation"
+    assert "workflow_scene_image" in result["missing_required"]
 
 
 def test_dependency_readiness_includes_image_startup_status(tmp_path: Path, monkeypatch) -> None:

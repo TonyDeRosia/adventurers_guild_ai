@@ -15,8 +15,16 @@ This document covers setup/runtime/desktop integration only. Gameplay systems ar
   - Uses app-controlled writable user data roots (`config`, `saves`, `logs`, `generated_images`) via `initialize_user_data_paths`.
 - **Bundled ComfyUI runtime detection**
   - Uses bundled runtime directory resolution and first-run status surfacing.
+- **Installer-layout validation**
+  - Runtime now validates packaged layout requirements for:
+    - `runtime_bundle/comfyui`
+    - `runtime_bundle/workflows/scene_image.json`
+    - `runtime_bundle/workflows/character_portrait.json`
+  - Runtime reports optional embedded Python (`runtime_bundle/python_embeded/python.exe`) as present/missing without marking layout invalid.
 - **Start/stop bundled image engine from app**
-  - Start path now resolves through validated/app-controlled configuration with explicit launch target logging.
+  - Bundled launch now performs packaged-layout validation before process spawn.
+  - Launch fails early with actionable setup messages when required packaged assets are missing.
+  - Start path still resolves through validated/app-controlled configuration with explicit launch target logging.
   - Stop endpoint is exposed to shutdown managed ComfyUI from setup UI flows.
 - **Native file/folder pickers**
   - Routed through desktop capability layer with environment-aware availability checks.
@@ -27,21 +35,28 @@ This document covers setup/runtime/desktop integration only. Gameplay systems ar
 The runtime now emits first-run state buckets:
 - app installed (packaged desktop detected / source mode)
 - text AI ready/not ready
-- image bundle ready/missing
+- packaged app files present/missing (`runtime_bundle`)
+- image bundle ready/missing (`runtime_bundle/comfyui`)
+- bundled workflows present/missing (scene + character workflow templates)
+- embedded Python present/missing (optional)
+- installer layout valid/invalid/not_packaged
 - model folder selected/missing
 - text-only mode active/inactive
 
 ## Installer work still required outside the app
-- Place bundled ComfyUI runtime under `<install_root>/runtime_bundle/comfyui`.
-- Place bundled workflow templates under `<install_root>/runtime_bundle/workflows`.
+- Place bundled ComfyUI runtime under `<install_root>/runtime_bundle/comfyui` (**required**).
+- Place bundled workflow templates under `<install_root>/runtime_bundle/workflows` (**required**):
+  - `scene_image.json`
+  - `character_portrait.json`
 - Ensure launcher executable and static assets are co-located per runtime expectations.
-- Optionally include embedded Python runtime adjacent to ComfyUI (`python_embeded/python.exe`) for robust no-PATH launch.
+- Optionally include embedded Python runtime under `<install_root>/runtime_bundle/python_embeded/python.exe` (**optional but recommended** for no-PATH launch).
 
 ## Future installer disk layout requirements
 - `<install_root>/AdventurerGuildAI(.exe)`
 - `<install_root>/runtime_bundle/comfyui/...`
 - `<install_root>/runtime_bundle/workflows/scene_image.json`
 - `<install_root>/runtime_bundle/workflows/character_portrait.json`
+- `<install_root>/runtime_bundle/python_embeded/python.exe` (optional)
 - User data root created at first run (or pre-created):
   - `<user_data>/config/app_config.json`
   - `<user_data>/saves/`

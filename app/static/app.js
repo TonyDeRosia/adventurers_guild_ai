@@ -1889,18 +1889,56 @@ function renderImageSetupCard(snapshot = latestImageSetupSnapshot) {
   if (!imageSetupCardStatus) return;
   const current = snapshot || {};
   const readiness = current.image_readiness_state || {};
+  const firstRun = current.first_run_status || {};
+  const layout = current.installer_layout || {};
+  const layoutChecks = layout.checks || {};
   const readinessText = readiness.ready ? 'Ready' : 'Needs setup';
-  const bundledText = current.bundled_comfyui_available ? 'Bundled image engine detected' : 'Bundled image engine not detected';
+  const appInstalled = firstRun.app_installed?.state === 'ready';
+  const appInstalledText = appInstalled ? 'App install mode: desktop packaged build detected' : 'App install mode: source/developer runtime';
+  const bundledText = current.bundled_comfyui_available ? 'Bundled image runtime: present' : 'Bundled image runtime: missing';
+  const workflowsText = firstRun.bundled_workflows?.state === 'ready'
+    ? 'Bundled workflows: present'
+    : 'Bundled workflows: missing required files';
+  const embeddedPythonText = firstRun.embedded_python?.state === 'ready'
+    ? 'Embedded Python runtime: present'
+    : 'Embedded Python runtime: not bundled (optional)';
   let checkpointText = 'No model selected yet';
   if (current.checkpoint_folder_valid) checkpointText = 'Model folder valid';
   else if (current.checkpoint_folder_configured) checkpointText = 'Selected model folder is invalid';
   const fallbackText = current.text_only_mode_active ? 'Image setup skipped, text-only mode active' : 'Text-only fallback available';
+  const modelActionText = current.checkpoint_folder_valid
+    ? 'Model files are configured.'
+    : 'Model files still need your action (select a checkpoints folder).';
+  const layoutValid = layout.state === 'valid';
+  const layoutText = appInstalled
+    ? `Installer layout: ${layoutValid ? 'valid' : 'invalid'}`
+    : 'Installer layout: informational (not in packaged mode)';
+  const layoutHint = layout.summary || '';
+  const advancedDebug = appInstalled ? `
+      <details class="startup-log">
+        <summary>Installer layout details</summary>
+        <pre>${escapeHtml([
+    `runtime_bundle: ${layoutChecks.runtime_bundle?.state || 'unknown'}`,
+    `comfyui: ${layoutChecks.bundled_image_runtime?.state || 'unknown'}`,
+    `scene workflow: ${layoutChecks.workflow_scene_image?.state || 'unknown'}`,
+    `portrait workflow: ${layoutChecks.workflow_character_portrait?.state || 'unknown'}`,
+    `embedded python: ${layoutChecks.embedded_python?.state || 'unknown'}`,
+  ].join('\n'))}</pre>
+      </details>
+  ` : '';
   imageSetupCardStatus.innerHTML = `
+    <div>${escapeHtml(appInstalledText)}</div>
+    <div>${escapeHtml(layoutText)}</div>
+    <div>${escapeHtml(layoutHint)}</div>
     <div><strong>Image readiness:</strong> ${escapeHtml(readinessText)}</div>
     <div>${escapeHtml(bundledText)}</div>
+    <div>${escapeHtml(workflowsText)}</div>
+    <div>${escapeHtml(embeddedPythonText)}</div>
     <div>${escapeHtml(checkpointText)}</div>
+    <div>${escapeHtml(modelActionText)}</div>
     <div>${escapeHtml(fallbackText)}</div>
     <div>${escapeHtml(readiness.message || '')}</div>
+    ${advancedDebug}
   `;
 }
 

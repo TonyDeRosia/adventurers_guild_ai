@@ -47,6 +47,7 @@ from app.pathing import (
 )
 from app.comfy_manager import ComfyProcessManager
 from app.desktop_capabilities import DesktopIntegration
+from app.installer_layout import InstallerLayoutValidator
 from app.runtime_config import AppRuntimeConfig, ImageRuntimeConfig, ModelRuntimeConfig, RuntimeConfigStore
 from engine.campaign_engine import CampaignEngine, TurnResult
 from engine.character_sheets import CharacterSheet, CharacterSheetAbilityEntry
@@ -582,8 +583,10 @@ class WebRuntime:
     def get_image_setup_snapshot(self) -> dict[str, Any]:
         path_status = self.get_path_configuration_status().get("image", {})
         image_status = self.get_image_status()
-        bundled_path = self._default_comfyui_path()
-        bundled_available = bundled_path.exists() and bundled_path.is_dir()
+        layout_status = self.get_installer_layout_status()
+        bundled_runtime = layout_status.get("checks", {}).get("bundled_image_runtime", {})
+        bundled_available = bool(bundled_runtime.get("present", False))
+        bundled_path = str(bundled_runtime.get("path", "")) if bundled_available else ""
         checkpoint_dir = path_status.get("checkpoint_dir", {})
         first_run = self.get_first_run_status()
         return {
@@ -595,18 +598,29 @@ class WebRuntime:
                 "message": str(image_status.get("user_message", "")),
             },
             "bundled_comfyui_available": bundled_available,
-            "bundled_comfyui_path": str(bundled_path) if bundled_available else "",
+            "bundled_comfyui_path": bundled_path,
             "checkpoint_folder_configured": bool(checkpoint_dir.get("configured", False) or checkpoint_dir.get("path", "")),
             "checkpoint_folder_valid": bool(checkpoint_dir.get("valid", False)),
             "checkpoint_folder_message": str(checkpoint_dir.get("message", "")),
             "text_only_fallback_available": True,
             "text_only_mode_active": self.app_config.image.provider == "null",
             "recommended_model_page": str(self.app_config.image.checkpoint_model_page or "").strip(),
+            "installer_layout": layout_status,
             "first_run_status": first_run,
         }
 
     def use_bundled_image_engine(self) -> dict[str, Any]:
-        bundled = self._default_comfyui_path()
+        bundled = bundled_comfyui_dir()
+        layout_status = self.get_installer_layout_status()
+        missing_required = list(layout_status.get("missing_required", []))
+        if missing_required:
+            return {
+                "ok": False,
+                "message": "Bundled runtime layout is incomplete.",
+                "next_step": "Reinstall or repair packaged app files under runtime_bundle, then click Recheck.",
+                "missing_required": missing_required,
+                "installer_layout": layout_status,
+            }
         if not bundled.exists() or not bundled.is_dir():
             return {"ok": False, "message": "Bundled ComfyUI runtime is not available in this install."}
         self.app_config.image.provider = "comfyui"
@@ -662,8 +676,10 @@ class WebRuntime:
         model_status = self.get_model_status()
         image_status = self.get_image_status()
         path_status = self.get_path_configuration_status().get("image", {})
-        bundled_path = self._default_comfyui_path()
-        bundled_available = bundled_path.exists() and bundled_path.is_dir()
+        layout_status = self.get_installer_layout_status()
+        checks = layout_status.get("checks", {})
+        bundled_runtime = checks.get("bundled_image_runtime", {})
+        bundled_available = bool(bundled_runtime.get("present", False))
         checkpoint_dir = path_status.get("checkpoint_dir", {})
         text_ai_ready = bool(model_status.get("ready", False))
         text_only_mode = self.app_config.image.provider == "null" or not self.app_config.image.enabled
@@ -687,7 +703,29 @@ class WebRuntime:
                     if bundled_available
                     else "Bundled ComfyUI runtime not found in install/runtime_bundle/comfyui."
                 ),
-                "path": str(bundled_path) if bundled_available else "",
+                "path": str(bundled_runtime.get("path", "")) if bundled_available else "",
+            },
+            "bundled_workflows": {
+                "state": "ready" if bool(layout_status.get("bundled_workflows_present", False)) else "missing",
+                "message": (
+                    "Bundled workflow templates are present."
+                    if bool(layout_status.get("bundled_workflows_present", False))
+                    else "Bundled workflows are missing required files (scene_image.json and/or character_portrait.json)."
+                ),
+            },
+            "embedded_python": {
+                "state": "ready" if bool(layout_status.get("embedded_python_present", False)) else "missing",
+                "message": (
+                    "Embedded Python runtime detected for bundled ComfyUI launch."
+                    if bool(layout_status.get("embedded_python_present", False))
+                    else "Embedded Python runtime is not bundled. Launch may require Python on PATH."
+                ),
+            },
+            "installer_layout": {
+                "state": str(layout_status.get("state", "invalid")),
+                "valid": bool(layout_status.get("valid", False)),
+                "message": str(layout_status.get("summary", "")),
+                "missing_required": list(layout_status.get("missing_required", [])),
             },
             "model_folder": {
                 "state": "ready" if bool(checkpoint_dir.get("valid", False)) else "missing",
@@ -702,6 +740,23 @@ class WebRuntime:
                 "state": "ready" if bool(image_status.get("ready", False)) else "not_ready",
                 "message": str(image_status.get("user_message", "")),
             },
+            "packaged_app_files": {
+                "state": "ready" if bool(layout_status.get("packaged_app_files_present", False)) else "missing",
+                "message": str(checks.get("runtime_bundle", {}).get("message", "Packaged runtime bundle status unavailable.")),
+            },
+        }
+
+    def get_installer_layout_status(self) -> dict[str, Any]:
+        validation = InstallerLayoutValidator().validate()
+        packaged_mode = self.desktop.capabilities.mode == "desktop_packaged"
+        if packaged_mode:
+            return validation
+        return {
+            **validation,
+            "state": "not_packaged",
+            "valid": False,
+            "summary": "Installer layout checks are informational in source/developer mode.",
+            "packaged_mode": False,
         }
 
     def connect_ollama_path(self, selected_path: str) -> dict[str, Any]:
@@ -1730,6 +1785,24 @@ class WebRuntime:
             self.app_config.image.comfyui_workflow_path = resolved_workflow
         self.config_store.save(self.app_config)
         self._append_image_startup_log(startup_log_lines, f"Using install path: {comfyui_root}")
+        bundled_root = bundled_comfyui_dir()
+        if self.desktop.capabilities.mode == "desktop_packaged" and comfyui_root.resolve() == bundled_root.resolve():
+            layout_status = self.get_installer_layout_status()
+            if not bool(layout_status.get("valid", False)):
+                missing_required = list(layout_status.get("missing_required", []))
+                return {
+                    "ok": False,
+                    "message": "Bundled image runtime layout is incomplete.",
+                    "next_step": "Reinstall or repair packaged runtime_bundle files, then retry Start Image Engine.",
+                    "failure_stage": "layout-validation",
+                    "failure_stage_message": "bundled runtime layout invalid",
+                    "missing_required": missing_required,
+                    "installer_layout": layout_status,
+                    "steps": [
+                        {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
+                        {"step": "layout-validation", "state": "failed", "message": f"Missing packaged assets: {', '.join(missing_required) or 'unknown'}"},
+                    ],
+                }
         print("[setup-orchestrator] setup-image step=verify-install")
         validation = self.validate_comfyui_install(comfyui_root)
         if not validation.get("ok"):
