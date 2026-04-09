@@ -1,99 +1,106 @@
-# Windows desktop packaging path (v1)
+# Windows desktop packaging path (v1 packaged-build baseline)
 
-This project now ships as a **single desktop application experience**:
+This document is the build/distribution contract for the first real Windows packaged desktop output.
 
-1. Build an onedir executable package with PyInstaller.
-2. Build an installer with Inno Setup.
-3. Install to `Program Files\AdventurerGuildAI`.
-4. Launch one executable (`AdventurerGuildAI.exe`) from Start Menu/Desktop.
+## Build pipeline
 
-## Architecture choices
+1. Run a packaging audit against `packaging/windows/runtime_bundle`.
+2. Build a PyInstaller **onedir** package from `packaging/windows/AdventurerGuildAI.spec`.
+3. Run a post-build distribution audit against `dist/AdventurerGuildAI`.
+4. Wrap `dist/AdventurerGuildAI` with Inno Setup.
 
-- **Freezing route:** PyInstaller `--onedir`.
-  - Chosen over `--onefile` because desktop-runtime dependencies and optional support files are easier to manage and update in-place.
-  - Enables bundling of app data/static assets and additional runtime scaffolding folders.
-- **Installer route:** Inno Setup.
-  - Already present in repo and practical for Windows end-user distribution with start menu + desktop shortcut support.
-
-## Runtime orchestration path
-
-`run.py` launches the web runtime. Inside `WebRuntime`:
-
-- A dedicated `ComfyProcessManager` owns any ComfyUI process started by the app.
-- Startup auto-check attempts managed ComfyUI auto-start **only when**:
-  - image provider is `comfyui`
-  - image features are enabled
-  - path/workflow/checkpoint pipeline checks pass
-- Existing running ComfyUI is detected through readiness checks; duplicate launch is avoided.
-- On app shutdown, managed ComfyUI child process is terminated.
-
-## First-run dependency flow (in-app)
-
-Dependency readiness APIs surface specific setup states:
-
-- ComfyUI missing / invalid path
-- workflow JSON missing / invalid path
-- checkpoint folder missing / invalid path
-- backend not reachable
-- image provider disabled (`null`) fallback
-
-The app remains usable in text mode even when image setup is incomplete.
-
-## What gets bundled
-
-Bundled in PyInstaller output:
-
-- app runtime executable + Python runtime dependencies
-- `data/` authored game content
-- `app/static/` frontend assets
-- `runtime_bundle/` managed third-party/runtime area, including:
-  - `runtime_bundle/comfyui/` portable ComfyUI runtime (release-prep required)
-  - `runtime_bundle/workflows/` curated workflow JSON files used by default in ComfyUI mode
-
-Not bundled:
-
-- large checkpoint/model files (size + license constraints)
-- checkpoint/model binaries (must be user-provided from legal sources)
-
-Compliance assets bundled:
-
-- `runtime_bundle/THIRD_PARTY_NOTICES.txt`
-- `runtime_bundle/licenses/ComfyUI-LICENSE-MIT.txt`
-
-Packaging guardrails:
-
-- `tools/audit_distribution.py` blocks known model/checkpoint artifacts from packaging paths.
-- Build scripts run audits before and/or after packaging steps.
-- Audit also verifies required third-party notice/license files are present.
-
-## Build commands
-
-From repository root on Windows:
+### Exact commands (from repo root)
 
 ```bat
 tools\build_exe.bat
 tools\build_installer.bat
 ```
 
-Installer output:
+Equivalent direct PyInstaller invocation (when debugging spec edits):
 
-- `installer\Output\AdventurerGuildAI_Setup.exe`
+```bat
+py -3 -m PyInstaller --noconfirm --clean packaging\windows\AdventurerGuildAI.spec
+```
 
-## Validation checklist
+## PyInstaller bundle inputs
 
-1. Fresh Windows machine / VM
-   - Run installer.
-   - Launch app from Start Menu.
-   - Confirm browser UI opens without terminal actions.
-2. ComfyUI auto-start path
-   - Set image provider = `comfyui`.
-   - Relaunch app and verify bundled ComfyUI is automatically started or detected.
-3. Text-only fallback
-   - Leave image backend unconfigured.
-   - Confirm campaign play remains usable and setup guidance appears in-app.
+The spec includes these required runtime/application assets:
 
-## Known limitations
+- `data/` (authored game/runtime content)
+- `app/static/` (frontend assets)
+- `packaging/windows/runtime_bundle/` (installer-aware runtime scaffolding)
 
-- Checkpoint/model files are intentionally out-of-band (download or locate existing models).
-- ComfyUI bootstrap may still require runtime dependencies and driver-specific setup on end-user machines.
-- Automatic model downloads must respect third-party licenses/terms per source.
+The spec intentionally does **not** include model checkpoints. `tools/audit_distribution.py` blocks checkpoint/model artifacts from packaged paths.
+
+## Expected `dist` output layout
+
+After `tools\build_exe.bat`, expect:
+
+- `dist/AdventurerGuildAI/AdventurerGuildAI.exe`
+- `dist/AdventurerGuildAI/app/static/*`
+- `dist/AdventurerGuildAI/data/*`
+- `dist/AdventurerGuildAI/runtime_bundle/README.txt`
+- `dist/AdventurerGuildAI/runtime_bundle/comfyui/README.txt`
+- `dist/AdventurerGuildAI/runtime_bundle/workflows/scene_image.json`
+- `dist/AdventurerGuildAI/runtime_bundle/workflows/character_portrait.json`
+- `dist/AdventurerGuildAI/runtime_bundle/THIRD_PARTY_NOTICES.txt`
+- `dist/AdventurerGuildAI/runtime_bundle/licenses/ComfyUI-LICENSE-MIT.txt`
+
+## Runtime pathing contract (source vs frozen)
+
+- Source mode resolves bundled runtime scaffolding at `packaging/windows/runtime_bundle`.
+- Frozen mode first resolves bundled runtime scaffolding at `<install_dir>/runtime_bundle`.
+- Frozen fallback allows `_MEIPASS/runtime_bundle` when running directly from raw PyInstaller output.
+- Bundled workflows resolve from bundled runtime first, then fall back to `data/workflows`.
+
+## Local packaged-mode verification before installer stage
+
+1. Build executable output:
+   - `tools\build_exe.bat`
+2. Launch packaged executable:
+   - `dist\AdventurerGuildAI\AdventurerGuildAI.exe`
+3. Verify startup log prints runtime root/user data and server starts.
+4. Open setup status (in app UI) and confirm installer-layout checks see:
+   - `runtime_bundle`
+   - `runtime_bundle/comfyui`
+   - both bundled workflow JSON files
+
+Optional portable-data smoke test:
+
+```bat
+set ADVENTURER_GUILD_AI_PORTABLE=1
+dist\AdventurerGuildAI\AdventurerGuildAI.exe
+```
+
+## Installer handoff prep (Inno Setup)
+
+Installer must copy the full `dist/AdventurerGuildAI/*` tree into:
+
+- `C:\Program Files\AdventurerGuildAI\`
+
+### Required files/folders to copy
+
+- `AdventurerGuildAI.exe`
+- `app/static/*`
+- `data/*`
+- `runtime_bundle/comfyui/*` (runtime scaffold; actual runtime payload may be populated during release prep)
+- `runtime_bundle/workflows/scene_image.json`
+- `runtime_bundle/workflows/character_portrait.json`
+- `runtime_bundle/THIRD_PARTY_NOTICES.txt`
+- `runtime_bundle/licenses/ComfyUI-LICENSE-MIT.txt`
+
+### Desktop/start-menu expectations
+
+Installer should create:
+
+- Start Menu shortcut to `AdventurerGuildAI.exe`
+- Optional desktop shortcut to `AdventurerGuildAI.exe`
+
+On launch, app should start web backend and open browser UI automatically.
+
+## What remains for installer-wrapper step
+
+- Finalize product metadata/versioning in `installer/AdventurerGuildAI.iss`.
+- Sign installer + executable (release policy dependent).
+- Package/ship any legally distributable external runtime payloads under `runtime_bundle/comfyui`.
+- Publish installer artifact from `installer/Output/AdventurerGuildAI_Setup.exe`.

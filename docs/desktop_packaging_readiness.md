@@ -67,3 +67,10 @@ The runtime now emits first-run state buckets:
 - No gameplay logic changes.
 - No image prompt generation logic changes.
 - No automatic third-party model downloads were introduced.
+
+## Packaged build implementation status
+- PyInstaller onedir build now uses a checked-in spec at `packaging/windows/AdventurerGuildAI.spec`.
+- Spec bundles `data/`, `app/static/`, and `packaging/windows/runtime_bundle/` into the desktop payload.
+- Build script now invokes the spec directly and keeps pre/post distribution audits in place.
+- Runtime bundled-path resolution in frozen mode now supports both `<install_dir>/runtime_bundle` and `_MEIPASS/runtime_bundle` fallback.
+- Added tests for packaged runtime path resolution behavior (`tests/test_pathing_packaged.py`).

@@ -47,7 +47,14 @@ def content_data_dir() -> Path:
 def bundled_runtime_dir() -> Path:
     """Return the bundled third-party runtime root."""
     if getattr(sys, "frozen", False):
-        return install_dir() / "runtime_bundle"
+        candidates = [
+            install_dir() / "runtime_bundle",
+            project_root() / "runtime_bundle",
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return candidates[0]
     return project_root() / "packaging" / "windows" / "runtime_bundle"
 
 
