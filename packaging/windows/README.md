@@ -25,21 +25,27 @@ py -3 -m PyInstaller --noconfirm --clean packaging\windows\AdventurerGuildAI.spe
 
 ## One-click launcher (recommended for non-technical packaging)
 
-Use the repository-root launcher:
+Use the repository-root GUI launcher:
+
+```bat
+Build_AdventurersGuildAI.py
+```
+
+Optional compatibility launcher:
 
 ```bat
 Build_AdventurersGuildAI.bat
 ```
 
-What it does:
+What the GUI launcher does:
 
-1. Prompts for an output folder where the final installer copy should be placed.
-2. Verifies required tools (Python and Inno Setup/ISCC).
-3. Verifies required packaging files/folders exist before running builds.
-4. Lets you choose EXE-only, installer-only, or full build (EXE then installer).
-5. Reuses `tools\build_exe.bat` and `tools\build_installer.bat` without replacing their packaging logic.
-6. Copies `installer\Output\AdventurerGuildAI_Setup.exe` to your selected output folder after a successful installer build.
-7. Keeps the terminal open and prints clear status/error messages and final installer location.
+1. Uses a native folder picker to choose the output folder.
+2. Exposes point-and-click actions for **Build EXE**, **Build Installer**, and **Build Everything**.
+3. Reuses `tools\build_exe.bat` and `tools\build_installer.bat` without replacing their packaging logic.
+4. Enforces build-mode prerequisites: EXE mode does not require Inno Setup, Installer/Everything do.
+5. Streams build output into a live scrolling GUI log and writes the same output to a persistent log file.
+6. Copies resulting build artifacts into the selected output folder and prints the final installer path clearly when produced.
+7. Shows clear success/error status in the app window and enables an **Open output folder** action after successful builds.
 
 ## PyInstaller bundle inputs
 

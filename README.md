@@ -41,6 +41,22 @@ These scripts are for packaging/distribution work and are **not** part of normal
   tools\setup_dev_env.bat
   ```
 
+## Packaging GUI launcher (Windows)
+
+For non-technical packaging workflows, use the GUI launcher from the repo root:
+
+```bat
+Build_AdventurersGuildAI.py
+```
+
+Optional compatibility launcher:
+
+```bat
+Build_AdventurersGuildAI.bat
+```
+
+The GUI provides output-folder selection, EXE/Installer/Everything build buttons, live logs, and clear success/error status while reusing the existing `tools\build_exe.bat` and `tools\build_installer.bat` scripts.
+
 ## Where user data is stored
 
 Writable user data is stored in the user profile:
