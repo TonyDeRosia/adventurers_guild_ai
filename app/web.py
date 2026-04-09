@@ -1620,12 +1620,14 @@ class WebRuntime:
         output_dir = str(payload.get("comfyui_output_dir", "")).strip()
         checkpoint_folder = str(payload.get("checkpoint_folder", "")).strip()
         print("[path-config] apply_requested")
+        comfy_status = self._validate_comfyui_root_config(comfyui_path)
+        resolved_comfy_for_checkpoints = str(comfy_status.get("resolved_path") or comfy_status.get("path") or "")
         status = {
             "image": {
-                "comfyui_root": self._validate_comfyui_root_config(comfyui_path),
+                "comfyui_root": comfy_status,
                 "workflow_path": self._validate_workflow_path_config(workflow_path),
                 "output_dir": self._validate_output_dir_config(output_dir),
-                "checkpoint_dir": self._validate_checkpoint_dir_config(checkpoint_folder, comfyui_path),
+                "checkpoint_dir": self._validate_checkpoint_dir_config(checkpoint_folder, resolved_comfy_for_checkpoints),
             }
         }
         image_status = status["image"]

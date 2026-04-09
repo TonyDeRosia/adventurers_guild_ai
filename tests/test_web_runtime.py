@@ -568,6 +568,34 @@ def test_empty_workflow_path_uses_bundled_default(tmp_path: Path, monkeypatch) -
     assert str(status.get("resolved_path", "")).endswith("scene_image.json")
 
 
+def test_visual_pipeline_validation_uses_auto_detected_comfyui_for_checkpoint_inference(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_root = tmp_path / "ComfyUI"
+    comfy_root.mkdir(parents=True, exist_ok=True)
+    (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_root / "custom_nodes").mkdir(exist_ok=True)
+    checkpoints = comfy_root / "models" / "checkpoints"
+    checkpoints.mkdir(parents=True, exist_ok=True)
+    (comfy_root / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
+    workflow = tmp_path / "scene.json"
+    workflow.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(runtime, "_find_comfyui_root", lambda: comfy_root)
+
+    status = runtime.validate_visual_pipeline_config(
+        {
+            "comfyui_path": "",
+            "comfyui_workflow_path": str(workflow),
+            "comfyui_output_dir": "",
+            "checkpoint_folder": "",
+        }
+    )["image"]
+
+    assert status["comfyui_root"]["valid"] is True
+    assert status["checkpoint_dir"]["valid"] is True
+    assert status["pipeline_ready"] is True
+
+
 def test_save_checkpoint_folder_validates_and_persists_selection(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     checkpoint_dir = tmp_path / "models" / "checkpoints"
