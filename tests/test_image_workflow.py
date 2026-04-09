@@ -318,3 +318,41 @@ def test_structured_target_actor_name_wins_over_narration_pattern_match(tmp_path
     )
 
     assert packet.extraction.action_target == "Captain Mirel"
+
+
+def test_prompt_regression_keeps_tense_merchant_negotiation_anchors(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("ADVENTURER_GUILD_AI_USER_DATA_DIR", str(tmp_path / "user_data"))
+    paths = initialize_user_data_paths()
+    state = GameStateManager(paths.content_data, paths.saves, paths.user_data).create_new_campaign(
+        player_name="Aria",
+        char_class="Ranger",
+        profile="classic_fantasy",
+        mature_content_enabled=False,
+        content_settings_enabled=True,
+    )
+    state.structured_state.runtime.scene_state = {
+        "location_name": "North Market Gate",
+        "location_description": "A narrow market lane lined with trade stalls and shuttered carts.",
+        "scene_summary": "A wary merchant faces Aria while a city guard watches the exchange.",
+        "scene_actors": [
+            {"actor_id": "merchant_1", "display_name": "Iven", "short_label": "merchant", "visible": True},
+            {"actor_id": "guard_1", "display_name": "Gate Guard", "short_label": "guard", "visible": True},
+        ],
+        "environmental_effects": ["radiant flare lighting the scene"],
+        "tone": "tense and suspicious",
+    }
+    builder = TurnImagePromptBuilder()
+    packet = builder.build_packet(
+        state,
+        player_action="negotiate passage fee with the merchant",
+        narrator_response="The merchant keeps a guarded posture while the nearby guard tracks every move with suspicion.",
+        stage="after_narration",
+    )
+
+    assert "merchant" in packet.prompt
+    assert "guard" in packet.prompt
+    assert ("negotiating" in packet.prompt) or ("speaking face-to-face" in packet.prompt)
+    assert ("tense atmosphere" in packet.prompt) or ("cautious expressions" in packet.prompt)
+    assert "peaceful group scene" in packet.negative_prompt
+    assert "casual reading" in packet.negative_prompt
+    assert "smiling group with no tension" in packet.negative_prompt
