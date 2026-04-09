@@ -2314,6 +2314,63 @@ def test_guided_image_setup_endpoints_proxy_runtime_methods(tmp_path: Path, monk
     assert skip_response.json()["message"] == "skipped"
 
 
+def test_desktop_setup_endpoints_proxy_runtime_methods(tmp_path: Path, monkeypatch) -> None:
+    try:
+        from fastapi.testclient import TestClient
+    except RuntimeError as exc:
+        pytest.skip(str(exc))
+    runtime = _runtime(tmp_path, monkeypatch)
+    app = create_web_app(runtime, runtime.root / "app" / "static")
+    client = TestClient(app)
+
+    monkeypatch.setattr(runtime, "get_desktop_capabilities", lambda: {"ok": True, "desktop": {"mode": "desktop_packaged"}})
+    monkeypatch.setattr(runtime, "open_external_url", lambda url: {"ok": True, "url": url, "method": "os.startfile"})
+    monkeypatch.setattr(runtime, "stop_image_engine", lambda: {"ok": True, "message": "stopped"})
+
+    capabilities_response = client.get("/api/desktop/capabilities")
+    open_url_response = client.post("/api/setup/open-external-url", json={"url": "https://example.com"})
+    stop_image_response = client.post("/api/setup/stop-image-engine", json={})
+
+    assert capabilities_response.status_code == 200
+    assert capabilities_response.json()["desktop"]["mode"] == "desktop_packaged"
+    assert open_url_response.status_code == 200
+    assert open_url_response.json()["url"] == "https://example.com"
+    assert stop_image_response.status_code == 200
+    assert stop_image_response.json()["message"] == "stopped"
+
+
+def test_first_run_status_exposes_packaging_and_setup_states(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        runtime,
+        "get_model_status",
+        lambda: {"provider": "ollama", "ready": False, "reachable": False, "model_exists": False, "user_message": "Ollama missing."},
+    )
+    monkeypatch.setattr(
+        runtime,
+        "get_image_status",
+        lambda: {"provider": "comfyui", "ready": False, "reachable": False, "user_message": "ComfyUI not running."},
+    )
+    monkeypatch.setattr(
+        runtime,
+        "get_path_configuration_status",
+        lambda: {"image": {"checkpoint_dir": {"valid": False, "message": "Checkpoint folder is required.", "path": ""}}},
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_default_comfyui_path",
+        lambda: tmp_path / "missing_bundle",
+    )
+
+    status = runtime.get_first_run_status()
+
+    assert status["app_installed"]["state"] in {"ready", "not_packaged"}
+    assert status["text_ai"]["state"] == "not_ready"
+    assert status["image_engine_bundle"]["state"] == "missing"
+    assert status["model_folder"]["state"] == "missing"
+    assert status["text_only_mode"]["state"] in {"active", "inactive"}
+
+
 def test_campaign_recalibrate_endpoint_invokes_runtime_recalibration(tmp_path: Path, monkeypatch) -> None:
     try:
         from fastapi.testclient import TestClient
