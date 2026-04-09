@@ -6,3 +6,8 @@ Suggested optional contents for release engineering:
 - helper scripts for first-run dependency setup
 
 Large models/checkpoints are intentionally not bundled by default.
+
+Legal-safe packaging policy:
+- Keep third-party notices in THIRD_PARTY_NOTICES.txt.
+- Keep third-party licenses in runtime_bundle/licenses/.
+- Do not place checkpoint/model binaries in this folder.
