@@ -460,7 +460,7 @@ def test_settings_persistence_and_runtime_effects(tmp_path: Path, monkeypatch) -
     payload = json.loads(config_path.read_text(encoding="utf-8"))
     assert payload["model"]["model_name"] == "llama3.2"
     assert payload["image"]["enabled"] is False
-    assert payload["image"]["comfyui_workflow_path"] == ""
+    assert payload["image"]["comfyui_workflow_path"].endswith("scene_image.json")
     assert payload["image"]["comfyui_output_dir"] == ""
     assert runtime.session.state.settings.content_settings.tone == "noir"
     assert runtime.session.state.settings.suggested_moves_active() is False
@@ -471,7 +471,7 @@ def test_missing_comfyui_paths_report_setup_needed(tmp_path: Path, monkeypatch) 
     runtime.set_global_settings({"image": {"provider": "comfyui", "comfyui_path": "", "comfyui_workflow_path": ""}})
     status = runtime.get_image_status()
     assert status["status_code"] == "setup_required"
-    assert "Set your ComfyUI folder" in status["user_message"]
+    assert "ComfyUI runtime is not available" in status["user_message"]
 
 
 def test_valid_external_workflow_path_enables_comfyui_generation_path(tmp_path: Path, monkeypatch) -> None:
@@ -559,22 +559,13 @@ def test_visual_pipeline_apply_saves_and_reloads_runtime(tmp_path: Path, monkeyp
     assert reloaded.app_config.image.comfyui_workflow_path == str(workflow)
 
 
-def test_start_image_engine_reports_missing_workflow_before_startup(tmp_path: Path, monkeypatch) -> None:
+def test_empty_workflow_path_uses_bundled_default(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
-    runtime.app_config.image.provider = "comfyui"
-    comfy_root = tmp_path / "ComfyUI"
-    comfy_root.mkdir(parents=True, exist_ok=True)
-    (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
-    (comfy_root / "custom_nodes").mkdir(exist_ok=True)
-    (comfy_root / "models").mkdir(exist_ok=True)
-    (comfy_root / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
-    runtime.app_config.image.comfyui_path = str(comfy_root)
     runtime.app_config.image.comfyui_workflow_path = ""
-    runtime.app_config.image.checkpoint_folder = str(comfy_root / "models" / "checkpoints")
-
-    result = runtime.start_image_engine()
-    assert result["ok"] is False
-    assert result["message"] == "Workflow JSON is not configured."
+    status = runtime.get_path_configuration_status()["image"]["workflow_path"]
+    assert status["configured"] is False
+    assert status["valid"] is True
+    assert str(status.get("resolved_path", "")).endswith("scene_image.json")
 
 
 def test_turn_flow_persists_memory_and_messages(tmp_path: Path, monkeypatch) -> None:

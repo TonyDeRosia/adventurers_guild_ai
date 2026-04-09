@@ -36,6 +36,8 @@ copy /y "%INSTALLER%" "%RELEASE_DIR%\AdventurerGuildAI_Setup.exe" >nul
 echo Running source-tree packaging audit...
 call %PYTHON_CMD% tools\audit_distribution.py ^
   --path packaging\windows\runtime_bundle ^
+  --require-file packaging\windows\runtime_bundle\comfyui\README.txt ^
+  --require-file packaging\windows\runtime_bundle\workflows\scene_image.json ^
   --require-file packaging\windows\runtime_bundle\THIRD_PARTY_NOTICES.txt ^
   --require-file packaging\windows\runtime_bundle\licenses\ComfyUI-LICENSE-MIT.txt
 if errorlevel 1 (

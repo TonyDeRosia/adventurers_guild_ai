@@ -44,6 +44,26 @@ def content_data_dir() -> Path:
     return project_root() / "data"
 
 
+def bundled_runtime_dir() -> Path:
+    """Return the bundled third-party runtime root."""
+    if getattr(sys, "frozen", False):
+        return install_dir() / "runtime_bundle"
+    return project_root() / "packaging" / "windows" / "runtime_bundle"
+
+
+def bundled_comfyui_dir() -> Path:
+    """Return the expected bundled portable ComfyUI runtime path."""
+    return bundled_runtime_dir() / "comfyui"
+
+
+def bundled_workflow_dir() -> Path:
+    """Return bundled workflow template directory for ComfyUI mode."""
+    bundled = bundled_runtime_dir() / "workflows"
+    if bundled.exists():
+        return bundled
+    return content_data_dir() / "workflows"
+
+
 def _default_user_data_dir() -> Path:
     override = os.getenv(USER_DATA_ENV)
     if override:

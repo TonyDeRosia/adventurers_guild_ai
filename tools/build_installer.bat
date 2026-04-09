@@ -47,6 +47,8 @@ if "%ISCC_CMD%"=="" (
 echo Auditing dist payload before installer build...
 call %PYTHON_CMD% tools\audit_distribution.py ^
   --path dist\AdventurerGuildAI ^
+  --require-file dist\AdventurerGuildAI\runtime_bundle\comfyui\README.txt ^
+  --require-file dist\AdventurerGuildAI\runtime_bundle\workflows\scene_image.json ^
   --require-file dist\AdventurerGuildAI\runtime_bundle\THIRD_PARTY_NOTICES.txt ^
   --require-file dist\AdventurerGuildAI\runtime_bundle\licenses\ComfyUI-LICENSE-MIT.txt
 if errorlevel 1 (

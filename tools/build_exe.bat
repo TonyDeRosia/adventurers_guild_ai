@@ -34,6 +34,8 @@ if exist "dist\AdventurerGuildAI" rmdir /s /q "dist\AdventurerGuildAI"
 echo Running pre-build packaging audit...
 call %PYTHON_CMD% tools\audit_distribution.py ^
   --path packaging\windows\runtime_bundle ^
+  --require-file packaging\windows\runtime_bundle\comfyui\README.txt ^
+  --require-file packaging\windows\runtime_bundle\workflows\scene_image.json ^
   --require-file packaging\windows\runtime_bundle\THIRD_PARTY_NOTICES.txt ^
   --require-file packaging\windows\runtime_bundle\licenses\ComfyUI-LICENSE-MIT.txt
 if errorlevel 1 (
@@ -64,6 +66,8 @@ if exist "packaging\windows\runtime_bundle" (
 echo Running post-build distribution audit...
 call %PYTHON_CMD% tools\audit_distribution.py ^
   --path dist\AdventurerGuildAI ^
+  --require-file dist\AdventurerGuildAI\runtime_bundle\comfyui\README.txt ^
+  --require-file dist\AdventurerGuildAI\runtime_bundle\workflows\scene_image.json ^
   --require-file dist\AdventurerGuildAI\runtime_bundle\THIRD_PARTY_NOTICES.txt ^
   --require-file dist\AdventurerGuildAI\runtime_bundle\licenses\ComfyUI-LICENSE-MIT.txt
 if errorlevel 1 (
