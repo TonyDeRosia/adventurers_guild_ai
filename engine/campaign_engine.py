@@ -1004,11 +1004,13 @@ class CampaignEngine:
             "notes": f"confidence={pending.confidence}",
             "source_metadata": {"source_type": pending.category},
         }
-        entry = normalize_spellbook_entry(raw_entry, index=len(state.structured_state.runtime.spellbook)) or raw_entry
-        state.structured_state.runtime.spellbook.append(entry)
-        state.structured_state.runtime.abilities_learned = sorted(
-            set(state.structured_state.runtime.abilities_learned + [pending.normalized_name])
-        )
+        runtime = state.structured_state.runtime
+        runtime.abilities = self.state_orchestrator._normalize_spellbook(getattr(runtime, "abilities", runtime.spellbook))
+        entry = normalize_spellbook_entry(raw_entry, index=len(runtime.abilities)) or raw_entry
+        runtime.abilities.append(entry)
+        runtime.abilities = self.state_orchestrator._normalize_spellbook(runtime.abilities)
+        runtime.spellbook = list(runtime.abilities)
+        runtime.abilities_learned = sorted(set(runtime.abilities_learned + [pending.normalized_name]))
         main_sheet = next((sheet for sheet in state.character_sheets if sheet.sheet_type == "main_character"), None)
         if main_sheet is not None:
             if not any(self._normalize_ability_name(name) == pending.normalized_name for name in main_sheet.abilities):

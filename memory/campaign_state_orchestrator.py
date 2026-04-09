@@ -6,7 +6,7 @@ from dataclasses import asdict
 
 from engine.character_sheets import CharacterSheet, CharacterSheetClassicAttributes, CharacterSheetStats
 from engine.entities import CampaignSceneState, CampaignState
-from engine.spellbook import normalize_spellbook_entry
+from engine.spellbook import normalize_abilities_collection
 
 
 class CampaignStateOrchestrator:
@@ -27,6 +27,8 @@ class CampaignStateOrchestrator:
         if not isinstance(structured.runtime.scene_state, dict):
             structured.runtime.scene_state = asdict(CampaignSceneState())
         scene_state = structured.runtime.scene_state
+        structured.runtime.abilities = self._normalize_spellbook(getattr(structured.runtime, "abilities", structured.runtime.spellbook))
+        structured.runtime.spellbook = list(structured.runtime.abilities)
         scene_state.setdefault("location_id", state.current_location_id or None)
         location = state.locations.get(state.current_location_id)
         scene_state.setdefault("location_name", location.name if location else None)
@@ -61,7 +63,8 @@ class CampaignStateOrchestrator:
         runtime.inventory = list(state.player.inventory)
         runtime.equipment = {"equipped_item_id": state.player.equipped_item_id}
         runtime.inventory_state = self._build_inventory_state(state)
-        runtime.spellbook = self._normalize_spellbook(runtime.spellbook)
+        runtime.abilities = self._normalize_spellbook(getattr(runtime, "abilities", runtime.spellbook))
+        runtime.spellbook = list(runtime.abilities)
         runtime.abilities_learned = sorted(set(runtime.abilities_learned + self._infer_abilities_from_messages(system_messages)))
         runtime.current_location_id = state.current_location_id
         runtime.discovered_locations = sorted(set(runtime.discovered_locations + list(state.locations.keys()) + [state.current_location_id]))
@@ -253,17 +256,4 @@ class CampaignStateOrchestrator:
         print(f"[character-sheets] auto_created_main_sheet=true id={auto_sheet.id}")
 
     def _normalize_spellbook(self, raw_entries: list[dict[str, object]] | list[object]) -> list[dict[str, object]]:
-        normalized: list[dict[str, object]] = []
-        seen: set[str] = set()
-        for index, entry in enumerate(raw_entries):
-            normalized_entry = normalize_spellbook_entry(entry, index=index)
-            if not normalized_entry:
-                continue
-            category = str(normalized_entry.get("category", "unclassified")).strip().lower()
-            name = str(normalized_entry.get("name", "")).strip().lower()
-            dedupe_key = f"{category}:{name}"
-            if dedupe_key in seen:
-                continue
-            seen.add(dedupe_key)
-            normalized.append(normalized_entry)
-        return normalized
+        return normalize_abilities_collection(raw_entries)

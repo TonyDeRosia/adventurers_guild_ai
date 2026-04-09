@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from engine.spellbook import normalize_spellbook_entry
+from engine.spellbook import normalize_abilities_collection, normalize_spellbook_entry
 
 from engine.character_sheets import CharacterSheet, GuidanceStrength
 
@@ -259,6 +259,7 @@ class CampaignRuntimeState:
     inventory: list[str] = field(default_factory=list)
     equipment: dict[str, str | None] = field(default_factory=dict)
     inventory_state: dict[str, Any] = field(default_factory=dict)
+    abilities: list[dict[str, Any]] = field(default_factory=list)
     spellbook: list[dict[str, Any]] = field(default_factory=list)
     abilities_learned: list[str] = field(default_factory=list)
     current_location_id: str = ""
@@ -577,7 +578,8 @@ class CampaignState:
                 inventory=[str(v) for v in raw_runtime.get("inventory", [])],
                 equipment={str(k): (None if v is None else str(v)) for k, v in raw_runtime.get("equipment", {}).items()},
                 inventory_state=dict(raw_runtime.get("inventory_state", {})),
-                spellbook=CampaignState._spellbook_from_payload(raw_runtime.get("spellbook", [])),
+                abilities=CampaignState._abilities_from_runtime_payload(raw_runtime),
+                spellbook=CampaignState._abilities_from_runtime_payload(raw_runtime),
                 abilities_learned=[str(v) for v in raw_runtime.get("abilities_learned", [])],
                 current_location_id=str(raw_runtime.get("current_location_id", "")),
                 discovered_locations=[str(v) for v in raw_runtime.get("discovered_locations", [])],
@@ -621,6 +623,8 @@ class CampaignState:
                 inventory=[str(v) for v in payload.get("player", {}).get("inventory", [])],
                 equipment={"equipped_item_id": payload.get("player", {}).get("equipped_item_id")},
                 inventory_state={},
+                abilities=CampaignState._abilities_from_runtime_payload(payload),
+                spellbook=CampaignState._abilities_from_runtime_payload(payload),
                 current_location_id=str(payload.get("current_location_id", "")),
                 discovered_locations=discovered_locations,
                 quest_state={str(k): str(v.get("status", "active")) for k, v in payload.get("quests", {}).items()},
@@ -648,13 +652,19 @@ class CampaignState:
         )
 
     @staticmethod
-    def _spellbook_from_payload(raw_spellbook: Any) -> list[dict[str, Any]]:
-        entries: list[dict[str, Any]] = []
-        for index, entry in enumerate(raw_spellbook if isinstance(raw_spellbook, list) else []):
-            normalized = normalize_spellbook_entry(entry, index=index)
-            if normalized:
-                entries.append(normalized)
-        return entries
+    def _abilities_from_runtime_payload(raw_runtime: Any) -> list[dict[str, Any]]:
+        if isinstance(raw_runtime, dict):
+            return normalize_abilities_collection(
+                {
+                    "abilities": raw_runtime.get("abilities", []),
+                    "spellbook": raw_runtime.get("spellbook", []),
+                    "spells": raw_runtime.get("spells", []),
+                    "skills": raw_runtime.get("skills", []),
+                    "passives": raw_runtime.get("passives", []),
+                    "unclassified": raw_runtime.get("unclassified", []),
+                }
+            )
+        return normalize_abilities_collection(raw_runtime)
 
     @staticmethod
     def _scene_state_from_payload(raw_scene_state: Any, payload: dict[str, Any]) -> dict[str, Any]:

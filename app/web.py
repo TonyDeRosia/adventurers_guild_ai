@@ -2238,6 +2238,7 @@ class WebRuntime:
                 for sheet in state.character_sheets
             ],
             "inventory_state": state.structured_state.runtime.inventory_state,
+            "abilities": getattr(state.structured_state.runtime, "abilities", state.structured_state.runtime.spellbook),
             "spellbook": state.structured_state.runtime.spellbook,
             "custom_narrator_rules": state.structured_state.canon.custom_narrator_rules,
             "active_slot": self.session.active_slot,
@@ -2521,7 +2522,8 @@ class WebRuntime:
         if not state.settings.play_style.auto_update_character_sheet_from_actions:
             return 0
         runtime = state.structured_state.runtime
-        runtime.spellbook = runtime.spellbook if isinstance(runtime.spellbook, list) else []
+        runtime.abilities = self.engine.state_orchestrator._normalize_spellbook(getattr(runtime, "abilities", runtime.spellbook))
+        runtime.spellbook = list(runtime.abilities)
         main_sheet = self._find_main_character_sheet(state)
         added = 0
         for turn in turns:
@@ -2532,9 +2534,9 @@ class WebRuntime:
             if existing_name:
                 continue
             ability_type = "spell" if detected.category == "magic" else "skill" if detected.category == "skill" else "ability"
-            runtime.spellbook.append(
+            runtime.abilities.append(
                 {
-                    "id": f"recal_{int(time.time() * 1000)}_{len(runtime.spellbook)}",
+                    "id": f"recal_{int(time.time() * 1000)}_{len(runtime.abilities)}",
                     "name": detected.normalized_name,
                     "type": ability_type,
                     "description": "Recovered from recent action history during recalibration.",
@@ -2549,7 +2551,8 @@ class WebRuntime:
             ):
                 main_sheet.abilities.append(detected.normalized_name)
             added += 1
-        runtime.spellbook = self.engine.state_orchestrator._normalize_spellbook(runtime.spellbook)
+        runtime.abilities = self.engine.state_orchestrator._normalize_spellbook(runtime.abilities)
+        runtime.spellbook = list(runtime.abilities)
         return added
 
     def _recalibration_merge_duplicate_npcs(self, state: CampaignState, scene_state: dict[str, Any]) -> int:
@@ -2661,9 +2664,9 @@ class WebRuntime:
                     state.structured_state.runtime.discovered_locations.append(location.id)
                     world_updates += 1
         merged_npcs = self._recalibration_merge_duplicate_npcs(state, scene_state)
-        state.structured_state.runtime.spellbook = self.engine.state_orchestrator._normalize_spellbook(
-            state.structured_state.runtime.spellbook
-        )
+        runtime = state.structured_state.runtime
+        runtime.abilities = self.engine.state_orchestrator._normalize_spellbook(getattr(runtime, "abilities", runtime.spellbook))
+        runtime.spellbook = list(runtime.abilities)
         removed_invalid_spell_entries = self._cleanup_invalid_spell_text_entries(state)
         print(f"[recalibration] abilities_synced={abilities_synced}")
         print(f"[recalibration] ooc_spellbook_backfill={ooc_backfill['spellbook_entries_added']}")
@@ -2697,21 +2700,20 @@ class WebRuntime:
 
     def get_spellbook_state(self) -> list[dict[str, Any]]:
         runtime = self.session.state.structured_state.runtime
-        if not isinstance(runtime.spellbook, list):
-            runtime.spellbook = []
-        runtime.spellbook = self.engine.state_orchestrator._normalize_spellbook(runtime.spellbook)
+        runtime.abilities = self.engine.state_orchestrator._normalize_spellbook(getattr(runtime, "abilities", runtime.spellbook))
+        runtime.spellbook = list(runtime.abilities)
         print(f"[spellbook] viewer_opened campaign={self.session.active_slot}")
-        print(f"[spellbook] current_entry_count={len(runtime.spellbook)}")
-        return runtime.spellbook
+        print(f"[spellbook] current_entry_count={len(runtime.abilities)}")
+        return runtime.abilities
 
     def upsert_spellbook_entry(self, payload: dict[str, Any]) -> dict[str, Any]:
         runtime = self.session.state.structured_state.runtime
         action = str(payload.get("action", "upsert")).strip().lower()
-        if not isinstance(runtime.spellbook, list):
-            runtime.spellbook = []
+        runtime.abilities = self.engine.state_orchestrator._normalize_spellbook(getattr(runtime, "abilities", runtime.spellbook))
+        runtime.spellbook = list(runtime.abilities)
         if action == "delete":
             entry_id = str(payload.get("id", "")).strip()
-            runtime.spellbook = [entry for entry in runtime.spellbook if str(entry.get("id", "")) != entry_id]
+            runtime.abilities = [entry for entry in runtime.abilities if str(entry.get("id", "")) != entry_id]
         else:
             raw_entry = {
                 "id": str(payload.get("id", "")).strip() or f"sb_{int(time.time() * 1000)}",
@@ -2725,21 +2727,22 @@ class WebRuntime:
                 "notes": str(payload.get("notes", "")).strip(),
                 "source_metadata": dict(payload.get("source_metadata", {})) if isinstance(payload.get("source_metadata"), dict) else {},
             }
-            entry = normalize_spellbook_entry(raw_entry, index=len(runtime.spellbook)) or {}
+            entry = normalize_spellbook_entry(raw_entry, index=len(runtime.abilities)) or {}
             if not entry.get("name"):
                 raise ValueError("Spellbook entry name is required.")
             replaced = False
-            for index, existing in enumerate(runtime.spellbook):
+            for index, existing in enumerate(runtime.abilities):
                 if str(existing.get("id", "")) == entry["id"]:
-                    runtime.spellbook[index] = entry
+                    runtime.abilities[index] = entry
                     replaced = True
                     break
             if not replaced:
-                runtime.spellbook.append(entry)
-        runtime.spellbook = self.engine.state_orchestrator._normalize_spellbook(runtime.spellbook)
+                runtime.abilities.append(entry)
+        runtime.abilities = self.engine.state_orchestrator._normalize_spellbook(runtime.abilities)
+        runtime.spellbook = list(runtime.abilities)
         self.save_active_campaign(self.session.active_slot)
-        print(f"[spellbook] current_entry_count={len(runtime.spellbook)}")
-        return {"spellbook": runtime.spellbook}
+        print(f"[spellbook] current_entry_count={len(runtime.abilities)}")
+        return {"abilities": runtime.abilities, "spellbook": runtime.spellbook}
 
     def get_narrator_rules(self) -> list[dict[str, str]]:
         canon = self.session.state.structured_state.canon
@@ -3332,18 +3335,20 @@ class WebRuntime:
 
     def _sync_ooc_spellbook_and_sheet(self, state: CampaignState, entries: list[dict[str, Any]]) -> dict[str, Any]:
         runtime = state.structured_state.runtime
-        runtime.spellbook = runtime.spellbook if isinstance(runtime.spellbook, list) else []
+        runtime.abilities = self.engine.state_orchestrator._normalize_spellbook(getattr(runtime, "abilities", runtime.spellbook))
+        runtime.spellbook = list(runtime.abilities)
         entries = [entry for entry in entries if self._is_valid_structured_spell_name(str(entry.get("name", "")))]
-        before_count = len(runtime.spellbook)
-        runtime.spellbook.extend(entries)
-        runtime.spellbook = self.engine.state_orchestrator._normalize_spellbook(runtime.spellbook)
-        spellbook_added = max(0, len(runtime.spellbook) - before_count)
+        before_count = len(runtime.abilities)
+        runtime.abilities.extend(entries)
+        runtime.abilities = self.engine.state_orchestrator._normalize_spellbook(runtime.abilities)
+        runtime.spellbook = list(runtime.abilities)
+        spellbook_added = max(0, len(runtime.abilities) - before_count)
         main_sheet = self._find_main_character_sheet(state)
         character_sheet_updated = False
         if main_sheet is not None:
             existing_names = {self.engine._normalize_ability_name(name) for name in main_sheet.abilities}
             existing_guaranteed = {self.engine._normalize_ability_name(entry.name) for entry in main_sheet.guaranteed_abilities}
-            for entry in runtime.spellbook:
+            for entry in runtime.abilities:
                 name = str(entry.get("name", "")).strip()
                 if not name:
                     continue
@@ -3363,14 +3368,16 @@ class WebRuntime:
     def _cleanup_invalid_spell_text_entries(self, state: CampaignState) -> int:
         removed = 0
         runtime = state.structured_state.runtime
-        runtime.spellbook = runtime.spellbook if isinstance(runtime.spellbook, list) else []
+        runtime.abilities = self.engine.state_orchestrator._normalize_spellbook(getattr(runtime, "abilities", runtime.spellbook))
+        runtime.spellbook = list(runtime.abilities)
         cleaned_spellbook: list[dict[str, Any]] = []
-        for entry in runtime.spellbook:
+        for entry in runtime.abilities:
             if isinstance(entry, dict) and self._is_valid_structured_spell_name(str(entry.get("name", ""))):
                 cleaned_spellbook.append(entry)
             else:
                 removed += 1
-        runtime.spellbook = self.engine.state_orchestrator._normalize_spellbook(cleaned_spellbook)
+        runtime.abilities = self.engine.state_orchestrator._normalize_spellbook(cleaned_spellbook)
+        runtime.spellbook = list(runtime.abilities)
 
         main_sheet = self._find_main_character_sheet(state)
         if main_sheet is None:
@@ -3397,7 +3404,8 @@ class WebRuntime:
 
     def _apply_ooc_spellbook_category_correction(self, state: CampaignState, text: str) -> int:
         runtime = state.structured_state.runtime
-        runtime.spellbook = runtime.spellbook if isinstance(runtime.spellbook, list) else []
+        runtime.abilities = self.engine.state_orchestrator._normalize_spellbook(getattr(runtime, "abilities", runtime.spellbook))
+        runtime.spellbook = list(runtime.abilities)
         pattern = re.compile(
             r"['\"]?(?P<name>[a-z0-9][a-z0-9 '\-]{1,60})['\"]?\s+should be\s+(?:a|an)\s+(?P<category>spell|skill|ability|passive|technique|trait|item_power)\b",
             flags=re.IGNORECASE,
@@ -3408,7 +3416,7 @@ class WebRuntime:
         target_name = str(match.group("name") or "").strip().lower()
         target_category = str(match.group("category") or "").strip().lower()
         updated = 0
-        for index, entry in enumerate(runtime.spellbook):
+        for index, entry in enumerate(runtime.abilities):
             if str(entry.get("name", "")).strip().lower() != target_name:
                 continue
             merged_tags = sorted(set([str(tag).strip() for tag in entry.get("tags", []) if str(tag).strip()] + ["corrected_by_gm", "learned_ooc"]))
@@ -3422,10 +3430,11 @@ class WebRuntime:
                 index=index,
             )
             if normalized:
-                runtime.spellbook[index] = normalized
+                runtime.abilities[index] = normalized
                 updated += 1
         if updated:
-            runtime.spellbook = self.engine.state_orchestrator._normalize_spellbook(runtime.spellbook)
+            runtime.abilities = self.engine.state_orchestrator._normalize_spellbook(runtime.abilities)
+            runtime.spellbook = list(runtime.abilities)
         return updated
 
     def _apply_ooc_structured_updates(self, request_text: str, response_text: str, structured_payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -4144,7 +4153,8 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
 
     @app.get("/api/campaign/spellbook")
     def campaign_spellbook() -> dict[str, Any]:
-        return {"spellbook": runtime.get_spellbook_state()}
+        abilities = runtime.get_spellbook_state()
+        return {"abilities": abilities, "spellbook": abilities}
 
     @app.get("/api/campaign/narrator-rules")
     def campaign_narrator_rules() -> dict[str, Any]:

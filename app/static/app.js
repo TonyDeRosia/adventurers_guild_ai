@@ -1481,14 +1481,13 @@ function formatQuestStatus(questStatus) {
 
 function normalizeSpellbookEntry(entry = {}) {
   const canonicalCategory = typeof entry.category === 'string' ? entry.category : entry.type;
-  const supportedCategories = ['spell', 'skill', 'ability', 'passive', 'technique', 'trait', 'item_power'];
-  const isKnownCategory = supportedCategories.includes(canonicalCategory);
-  const renderedCategory = isKnownCategory ? canonicalCategory : 'unclassified';
+  const hiddenSubtype = entry.subtype || canonicalCategory || '';
   return {
     id: entry.id || '',
     name: entry.name || '',
-    category: renderedCategory,
-    type: renderedCategory,
+    category: 'ability',
+    type: 'ability',
+    subtype: hiddenSubtype,
     description: entry.description || '',
     cost_or_resource: entry.cost_or_resource || '',
     cooldown: entry.cooldown || '',
@@ -1515,16 +1514,10 @@ function renderInventoryViewer() {
 
 function renderSpellbookViewer() {
   if (!runtimeSpellbookList) return;
-  const grouped = { spell: [], skill: [], ability: [], passive: [], unclassified: [] };
-  runtimeSpellbookEntries.forEach((entry) => {
-    const clean = normalizeSpellbookEntry(entry);
-    grouped[clean.category].push(clean);
-  });
-  runtimeSpellbookList.innerHTML = ['spell', 'skill', 'ability', 'passive', 'unclassified'].map((type) => {
-    const entries = grouped[type];
-    const rows = entries.length ? entries.map((entry) => `
+  const normalizedEntries = runtimeSpellbookEntries.map((entry) => normalizeSpellbookEntry(entry));
+  const rows = normalizedEntries.length ? normalizedEntries.map((entry) => `
       <div class="spellbook-entry">
-        <strong>${escapeHtml(entry.name)}</strong> <small>(${escapeHtml(entry.category)})</small>
+        <strong>${escapeHtml(entry.name)}</strong>
         <div>${escapeHtml(entry.description || 'No description')}</div>
         <div>Cost: ${escapeHtml(entry.cost_or_resource || '-')} • Cooldown: ${escapeHtml(entry.cooldown || '-')}</div>
         <div>Tags/Flags: ${escapeHtml([...(entry.tags || []), ...(entry.flags || [])].join(', ') || '-')}</div>
@@ -1535,16 +1528,13 @@ function renderSpellbookViewer() {
         </div>
       </div>
     `).join('') : '<div>None</div>';
-    const heading = type === 'unclassified' ? 'Unclassified' : `${type[0].toUpperCase() + type.slice(1)}s`;
-    return `<div class="spellbook-group"><h4>${escapeHtml(heading)}</h4>${rows}</div>`;
-  }).join('');
+  runtimeSpellbookList.innerHTML = `<div class="spellbook-group"><h4>Abilities</h4>${rows}</div>`;
   runtimeSpellbookList.querySelectorAll('button[data-spellbook-edit]').forEach((button) => {
     button.onclick = () => {
       const entry = runtimeSpellbookEntries.find((candidate) => candidate.id === button.dataset.spellbookEdit);
       if (!entry) return;
       document.getElementById('spellbook-entry-id').value = entry.id;
       document.getElementById('spellbook-entry-name').value = entry.name;
-      document.getElementById('spellbook-entry-type').value = ['spell', 'skill', 'ability', 'passive'].includes(entry.category) ? entry.category : 'ability';
       document.getElementById('spellbook-entry-description').value = entry.description;
       document.getElementById('spellbook-entry-cost').value = entry.cost_or_resource;
       document.getElementById('spellbook-entry-cooldown').value = entry.cooldown;
@@ -1573,7 +1563,8 @@ async function refreshInventory() {
 
 async function refreshSpellbook() {
   const payload = await api('/api/campaign/spellbook');
-  runtimeSpellbookEntries = Array.isArray(payload.spellbook) ? payload.spellbook.map(normalizeSpellbookEntry) : [];
+  const abilityPayload = Array.isArray(payload.abilities) ? payload.abilities : payload.spellbook;
+  runtimeSpellbookEntries = Array.isArray(abilityPayload) ? abilityPayload.map(normalizeSpellbookEntry) : [];
   renderSpellbookViewer();
 }
 
@@ -1700,7 +1691,8 @@ async function refreshState() {
   const world = state.world_meta || {};
   runtimeCharacterSheets = Array.isArray(state.character_sheets) ? state.character_sheets : [];
   runtimeInventoryState = state.inventory_state || runtimeInventoryState || {};
-  runtimeSpellbookEntries = Array.isArray(state.spellbook) ? state.spellbook.map(normalizeSpellbookEntry) : [];
+  const stateAbilities = Array.isArray(state.abilities) ? state.abilities : state.spellbook;
+  runtimeSpellbookEntries = Array.isArray(stateAbilities) ? stateAbilities.map(normalizeSpellbookEntry) : [];
   customNarratorRules = Array.isArray(state.custom_narrator_rules) ? state.custom_narrator_rules : [];
   renderRuntimeCharacterSheets();
   renderInventoryViewer();
@@ -2906,7 +2898,6 @@ document.getElementById('sheet-add-guaranteed-ability').onclick = () => addGuara
 document.getElementById('spellbook-entry-clear').onclick = () => {
   document.getElementById('spellbook-entry-id').value = '';
   document.getElementById('spellbook-entry-name').value = '';
-  document.getElementById('spellbook-entry-type').value = 'spell';
   document.getElementById('spellbook-entry-description').value = '';
   document.getElementById('spellbook-entry-cost').value = '';
   document.getElementById('spellbook-entry-cooldown').value = '';
@@ -2921,7 +2912,6 @@ document.getElementById('spellbook-entry-save').onclick = async () => {
       action: 'upsert',
       id: document.getElementById('spellbook-entry-id').value.trim(),
       name: document.getElementById('spellbook-entry-name').value.trim(),
-      type: document.getElementById('spellbook-entry-type').value,
       description: document.getElementById('spellbook-entry-description').value.trim(),
       cost_or_resource: document.getElementById('spellbook-entry-cost').value.trim(),
       cooldown: document.getElementById('spellbook-entry-cooldown').value.trim(),
