@@ -241,3 +241,80 @@ def test_negative_prompt_additions_are_applied_deterministically(tmp_path, monke
 
     assert "lens flare" in packet.negative_prompt
     assert packet.negative_prompt.count("lens flare") == 1
+
+
+def test_structured_scene_fields_override_narration_heuristics_when_both_exist(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("ADVENTURER_GUILD_AI_USER_DATA_DIR", str(tmp_path / "user_data"))
+    paths = initialize_user_data_paths()
+    state = GameStateManager(paths.content_data, paths.saves, paths.user_data).create_new_campaign(
+        player_name="Aria",
+        char_class="Ranger",
+        profile="classic_fantasy",
+        mature_content_enabled=False,
+        content_settings_enabled=True,
+    )
+    state.active_enemy_id = "bone_warden"
+    state.active_enemy_hp = 7
+    state.structured_state.runtime.equipment = {
+        "equipped_weapon": "sunsteel spear",
+        "equipped_armor": "lacquered lamellar",
+    }
+    state.structured_state.runtime.scene_state = {
+        "location_name": "Citadel Rampart",
+        "location_description": "Rain slick battlements above a shattered gate.",
+        "environment_type": "fortress battlement",
+        "weather": "hail",
+        "lighting": "stormlight",
+        "player_appearance": "scarred ranger with a crimson scarf",
+        "active_effects": ["warding glyph shimmer"],
+        "last_target_actor_id": "bone_warden",
+        "enemy_conditions": {"bone_warden": {"conditions": ["staggered", "injured"]}},
+        "recent_consequences": ["The Bone Warden staggers under the impact."],
+        "combat_status": "combat",
+    }
+    builder = TurnImagePromptBuilder()
+    packet = builder.build_packet(
+        state,
+        player_action="advance and attack",
+        narrator_response="In bright sunlight at the forest bridge, Aria misses and the raider laughs.",
+        stage="after_narration",
+    )
+
+    assert packet.extraction.location_name == "Citadel Rampart"
+    assert packet.extraction.location_description == "Rain slick battlements above a shattered gate."
+    assert packet.extraction.environment_type == "fortress battlement"
+    assert packet.extraction.weather == "hail"
+    assert packet.extraction.lighting == "stormlight"
+    assert packet.extraction.player_visible_appearance == "scarred ranger with a crimson scarf"
+    assert packet.extraction.action_target == "bone warden"
+    assert packet.extraction.scene_type == "combat"
+    assert packet.continuity_state["primary_weapon"] == "sunsteel spear"
+    assert packet.continuity_state["armor_clothing"] == "lacquered lamellar"
+    assert "staggered" in packet.extraction.visible_outcome
+
+
+def test_structured_target_actor_name_wins_over_narration_pattern_match(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("ADVENTURER_GUILD_AI_USER_DATA_DIR", str(tmp_path / "user_data"))
+    paths = initialize_user_data_paths()
+    state = GameStateManager(paths.content_data, paths.saves, paths.user_data).create_new_campaign(
+        player_name="Aria",
+        char_class="Ranger",
+        profile="classic_fantasy",
+        mature_content_enabled=False,
+        content_settings_enabled=True,
+    )
+    state.structured_state.runtime.scene_state = {
+        "scene_actors": [
+            {"actor_id": "scene_actor_start_1", "display_name": "Captain Mirel", "visible": True},
+        ],
+        "last_target_actor_id": "scene_actor_start_1",
+    }
+    builder = TurnImagePromptBuilder()
+    packet = builder.build_packet(
+        state,
+        player_action="speak to the guard at the table",
+        narrator_response="Aria turns toward the hooded stranger.",
+        stage="after_narration",
+    )
+
+    assert packet.extraction.action_target == "Captain Mirel"

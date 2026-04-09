@@ -117,43 +117,72 @@ class TurnImagePromptBuilder:
     # -------- extraction layer --------
     def _extract_scene(self, state: CampaignState, *, player_action: str, narrator_response: str) -> tuple[SceneExtraction, dict[str, Any]]:
         scene_state = self._scene_state(state)
+        scene_visual_state = self._scene_visual_state(state)
         continuity_prior = self._continuity_from_scene_state(scene_state.get("visual_continuity", {}))
 
         location = state.locations.get(state.current_location_id)
-        location_name = self._clean(scene_state.get("location_name") or (location.name if location else "") or state.world_meta.starting_location_name)
-        location_description = self._clean(scene_state.get("scene_summary") or (location.description if location else "") or state.current_location_id)
+        location_name = self._clean(
+            scene_state.get("location_name")
+            or scene_visual_state.get("location_name")
+            or (location.name if location else "")
+            or state.world_meta.starting_location_name
+        )
+        location_description = self._clean(
+            scene_state.get("location_description")
+            or scene_state.get("scene_summary")
+            or scene_visual_state.get("location_description")
+            or (location.description if location else "")
+            or state.current_location_id
+        )
         scene_summary = self._clean(scene_state.get("scene_summary"))
 
         npc_names = self._collect_companions(state, scene_state)
-        enemy_name = self._clean(state.active_enemy_id.replace("_", " ") if state.active_enemy_id else "")
-        enemies_present = [enemy_name] if enemy_name else self._collect_enemy_mentions(scene_state)
-        enemy_count = max(len(enemies_present), 1 if enemy_name else 0)
+        enemies_present = self._collect_enemy_mentions(state, scene_state)
+        enemy_count = len(enemies_present)
         enemy_condition = self._enemy_condition_label(state.active_enemy_hp)
 
         action_text = self._clean(player_action)
-        action_target = self._extract_action_target(action_text, narrator_response)
+        action_target = self._resolve_action_target(state, scene_state, action_text, narrator_response)
         visible_outcome = self._derive_visible_outcome(narrator_response, scene_state)
+        outcome_flags = self._collect_outcome_flags(scene_state, visible_outcome, narrator_response)
+        if outcome_flags:
+            visible_outcome = self._truncate(
+                ", ".join(self._dedupe_preserve_order([visible_outcome, ", ".join(outcome_flags)])),
+                140,
+            )
 
         raw_visual_text = " ".join(
             part for part in [location_description, scene_summary, narrator_response, state.world_meta.premise, state.world_meta.tone] if self._clean(part)
         )
-        environment_type = self._detect_environment_type(raw_visual_text)
+        environment_type = self._clean(
+            scene_state.get("environment_type")
+            or scene_visual_state.get("environment_type")
+            or self._detect_environment_type(raw_visual_text)
+        )
         time_of_day = self._detect_time_of_day(raw_visual_text)
-        weather = self._detect_weather(raw_visual_text)
-        lighting = self._detect_lighting(raw_visual_text)
+        weather = self._clean(
+            scene_state.get("weather")
+            or scene_visual_state.get("weather")
+            or self._detect_weather(raw_visual_text)
+        )
+        lighting = self._clean(
+            scene_state.get("lighting")
+            or scene_visual_state.get("lighting")
+            or self._detect_lighting(raw_visual_text)
+        )
 
         equipment = self._collect_player_equipment(state)
-        appearance = self._collect_player_appearance(state)
+        appearance = self._collect_player_appearance(state, scene_state, scene_visual_state)
         active_effects = self._collect_active_effects(scene_state)
         props = self._collect_notable_props(scene_state, location_description, narrator_response)
         combat_posture = self._derive_combat_posture(action_text, narrator_response, enemy_count)
         emotional_tone = self._derive_visual_emotion(narrator_response)
-        scene_type = self._classify_scene_type(action_text, narrator_response, enemy_count)
+        scene_type = self._classify_scene_type(action_text, narrator_response, enemy_count, scene_state)
 
         continuity = SceneVisualContinuity(
             player_appearance=appearance or continuity_prior.player_appearance,
-            armor_clothing=self._infer_armor_clothing(equipment) or continuity_prior.armor_clothing,
-            primary_weapon=self._infer_primary_weapon(equipment) or continuity_prior.primary_weapon,
+            armor_clothing=self._structured_armor_or_clothing(state, scene_state) or self._infer_armor_clothing(equipment) or continuity_prior.armor_clothing,
+            primary_weapon=self._structured_weapon(state, scene_state) or self._infer_primary_weapon(equipment) or continuity_prior.primary_weapon,
             companions_present=npc_names or continuity_prior.companions_present,
             active_enemy=(enemies_present[0] if enemies_present else "") or continuity_prior.active_enemy,
             location_identity=location_name or continuity_prior.location_identity,
@@ -286,6 +315,11 @@ class TurnImagePromptBuilder:
         scene_state = getattr(runtime_state, "scene_state", {}) if runtime_state else {}
         return scene_state if isinstance(scene_state, dict) else {}
 
+    def _scene_visual_state(self, state: CampaignState) -> dict[str, Any]:
+        runtime_state = getattr(getattr(state, "structured_state", None), "runtime", None)
+        visual_state = getattr(runtime_state, "scene_visual_state", {}) if runtime_state else {}
+        return visual_state if isinstance(visual_state, dict) else {}
+
     def _collect_companions(self, state: CampaignState, scene_state: dict[str, Any]) -> list[str]:
         names: list[str] = []
         for lite in scene_state.get("lightweight_npcs", []):
@@ -301,8 +335,15 @@ class TurnImagePromptBuilder:
                         names.append(name)
         return self._dedupe_preserve_order(names)[:4]
 
-    def _collect_enemy_mentions(self, scene_state: dict[str, Any]) -> list[str]:
+    def _collect_enemy_mentions(self, state: CampaignState, scene_state: dict[str, Any]) -> list[str]:
         mentions: list[str] = []
+        active_enemy = self._clean(state.active_enemy_id.replace("_", " ") if state.active_enemy_id else "")
+        if active_enemy:
+            mentions.append(active_enemy)
+        for key in ("visible_enemies", "enemies_present"):
+            values = scene_state.get(key, [])
+            if isinstance(values, list):
+                mentions.extend(self._clean(v) for v in values if self._clean(v))
         enemy_conditions = scene_state.get("enemy_conditions", {})
         if isinstance(enemy_conditions, dict):
             for enemy_id in enemy_conditions.keys():
@@ -332,7 +373,15 @@ class TurnImagePromptBuilder:
             values.extend(self._clean(item) for item in main_sheet.equipment if self._clean(item))
         return self._dedupe_preserve_order([v for v in values if v])[:5]
 
-    def _collect_player_appearance(self, state: CampaignState) -> str:
+    def _collect_player_appearance(self, state: CampaignState, scene_state: dict[str, Any], scene_visual_state: dict[str, Any]) -> str:
+        for candidate in (
+            scene_state.get("player_appearance"),
+            scene_state.get("player_visible_appearance"),
+            scene_visual_state.get("player_appearance"),
+        ):
+            clean = self._clean(candidate)
+            if clean:
+                return self._truncate(clean, 120)
         main_sheet = next((sheet for sheet in state.character_sheets if sheet.sheet_type == "main_character"), None)
         if main_sheet and self._clean(main_sheet.description):
             return self._truncate(self._clean(main_sheet.description), 120)
@@ -376,7 +425,12 @@ class TurnImagePromptBuilder:
             return "aggressive hostility"
         return ""
 
-    def _classify_scene_type(self, action: str, narration: str, enemy_count: int) -> str:
+    def _classify_scene_type(self, action: str, narration: str, enemy_count: int, scene_state: dict[str, Any]) -> str:
+        combat_status = self._clean(scene_state.get("combat_status")).lower()
+        if combat_status in {"combat", "active", "engaged", "in_combat"}:
+            return "combat"
+        if combat_status in {"dialogue", "social"}:
+            return "dialogue"
         text = f"{action} {narration}".lower()
         if enemy_count > 0 or any(token in text for token in ["attack", "strike", "parry", "slash", "cast"]):
             return "combat"
@@ -419,6 +473,29 @@ class TurnImagePromptBuilder:
                 return self._clean(match.group(1))
         return ""
 
+    def _resolve_action_target(self, state: CampaignState, scene_state: dict[str, Any], action: str, narration: str) -> str:
+        target_actor_id = self._clean(scene_state.get("last_target_actor_id"))
+        if target_actor_id:
+            for actor in scene_state.get("scene_actors", []):
+                if isinstance(actor, dict) and self._clean(actor.get("actor_id")) == target_actor_id:
+                    name = self._clean(actor.get("display_name") or actor.get("name") or actor.get("short_label"))
+                    if name:
+                        return name
+            for npc in scene_state.get("lightweight_npcs", []):
+                if isinstance(npc, dict) and self._clean(npc.get("linked_actor_id")) == target_actor_id:
+                    name = self._clean(npc.get("display_name") or npc.get("name"))
+                    if name:
+                        return name
+            enemy_conditions = scene_state.get("enemy_conditions", {})
+            if isinstance(enemy_conditions, dict) and target_actor_id in enemy_conditions:
+                return self._clean(target_actor_id.replace("_", " "))
+            if target_actor_id in state.npcs:
+                return self._clean(state.npcs[target_actor_id].name)
+        explicit_target = self._clean(scene_state.get("active_target_name") or scene_state.get("target_name") or scene_state.get("action_target"))
+        if explicit_target:
+            return explicit_target
+        return self._extract_action_target(action, narration)
+
     def _derive_visible_outcome(self, narration: str, scene_state: dict[str, Any]) -> str:
         recent = scene_state.get("recent_consequences", [])
         if isinstance(recent, list):
@@ -429,6 +506,61 @@ class TurnImagePromptBuilder:
         if scene_state.get("last_immediate_result"):
             return self._truncate(self._clean(scene_state.get("last_immediate_result")), 120)
         return self._truncate(self._clean(narration), 140)
+
+    def _collect_outcome_flags(self, scene_state: dict[str, Any], visible_outcome: str, narration: str) -> list[str]:
+        flags: list[str] = []
+        raw_flags = scene_state.get("outcome_flags")
+        if isinstance(raw_flags, dict):
+            for key, value in raw_flags.items():
+                if bool(value):
+                    flags.append(self._clean(key))
+        enemy_conditions = scene_state.get("enemy_conditions", {})
+        if isinstance(enemy_conditions, dict):
+            for payload in enemy_conditions.values():
+                if isinstance(payload, dict):
+                    conditions = payload.get("conditions", [])
+                    if isinstance(conditions, list):
+                        flags.extend(self._clean(v) for v in conditions if self._clean(v) in {"staggered", "injured"})
+        if flags:
+            return self._dedupe_preserve_order(flags)
+        lowered = f"{visible_outcome} {narration}".lower()
+        heuristics = {
+            "hit": (" hit ", "strikes", "lands"),
+            "miss": (" miss", " misses", "whiffs"),
+            "staggered": ("stagger", "reel"),
+            "knockback": ("knock back", "thrown back"),
+            "injured": ("injured", "wounded", "bleeding"),
+        }
+        for label, needles in heuristics.items():
+            if any(needle in lowered for needle in needles):
+                flags.append(label)
+        return self._dedupe_preserve_order(flags)
+
+    def _structured_weapon(self, state: CampaignState, scene_state: dict[str, Any]) -> str:
+        runtime = getattr(state.structured_state, "runtime", None)
+        if runtime and isinstance(runtime.equipment, dict):
+            for key in ("equipped_weapon", "weapon", "main_hand", "off_hand", "equipped_item_name"):
+                clean = self._clean(runtime.equipment.get(key))
+                if clean:
+                    return clean
+        for key in ("equipped_weapon", "weapon", "main_hand"):
+            clean = self._clean(scene_state.get(key))
+            if clean:
+                return clean
+        return ""
+
+    def _structured_armor_or_clothing(self, state: CampaignState, scene_state: dict[str, Any]) -> str:
+        runtime = getattr(state.structured_state, "runtime", None)
+        if runtime and isinstance(runtime.equipment, dict):
+            for key in ("equipped_armor", "armor", "clothing"):
+                clean = self._clean(runtime.equipment.get(key))
+                if clean:
+                    return clean
+        for key in ("equipped_armor", "armor", "clothing"):
+            clean = self._clean(scene_state.get(key))
+            if clean:
+                return clean
+        return ""
 
     def _detect_environment_type(self, text: str) -> str:
         lowered = text.lower()
