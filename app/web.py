@@ -604,6 +604,82 @@ class WebRuntime:
             return {"ok": False, "message": "No file selected."}
         return {"ok": True, "path": selected}
 
+    def get_image_setup_snapshot(self) -> dict[str, Any]:
+        path_status = self.get_path_configuration_status().get("image", {})
+        image_status = self.get_image_status()
+        bundled_path = self._default_comfyui_path()
+        bundled_available = bundled_path.exists() and bundled_path.is_dir()
+        checkpoint_dir = path_status.get("checkpoint_dir", {})
+        return {
+            "ok": True,
+            "image_provider": self.app_config.image.provider,
+            "image_readiness_state": {
+                "ready": bool(image_status.get("ready", False)),
+                "status_code": str(image_status.get("status_code", "")),
+                "message": str(image_status.get("user_message", "")),
+            },
+            "bundled_comfyui_available": bundled_available,
+            "bundled_comfyui_path": str(bundled_path) if bundled_available else "",
+            "checkpoint_folder_configured": bool(checkpoint_dir.get("configured", False) or checkpoint_dir.get("path", "")),
+            "checkpoint_folder_valid": bool(checkpoint_dir.get("valid", False)),
+            "checkpoint_folder_message": str(checkpoint_dir.get("message", "")),
+            "text_only_fallback_available": True,
+            "text_only_mode_active": self.app_config.image.provider == "null",
+            "recommended_model_page": str(self.app_config.image.checkpoint_model_page or "").strip(),
+        }
+
+    def use_bundled_image_engine(self) -> dict[str, Any]:
+        bundled = self._default_comfyui_path()
+        if not bundled.exists() or not bundled.is_dir():
+            return {"ok": False, "message": "Bundled ComfyUI runtime is not available in this install."}
+        self.app_config.image.provider = "comfyui"
+        self.app_config.image.enabled = True
+        self.app_config.image.comfyui_path = str(bundled)
+        default_workflow = self._default_workflow_path()
+        if default_workflow.exists() and default_workflow.is_file():
+            self.app_config.image.comfyui_workflow_path = str(default_workflow)
+        self.config_store.save(self.app_config)
+        self.image_adapter = self._create_image_adapter()
+        return {
+            "ok": True,
+            "message": "Bundled image engine selected. Choose your model folder to finish setup.",
+            "path_config": self.get_path_configuration_status(),
+            "snapshot": self.get_image_setup_snapshot(),
+        }
+
+    def save_checkpoint_folder(self, selected_path: str) -> dict[str, Any]:
+        candidate = str(selected_path or "").strip()
+        comfyui_status = self.get_path_configuration_status().get("image", {}).get("comfyui_root", {})
+        comfyui_path = str(comfyui_status.get("resolved_path") or comfyui_status.get("path") or "")
+        validation = self._validate_checkpoint_dir_config(candidate, comfyui_path)
+        if not validation.get("valid", False):
+            return {
+                "ok": False,
+                "message": str(validation.get("message", "Checkpoint folder is invalid.")),
+                "path_config": self.get_path_configuration_status(),
+                "snapshot": self.get_image_setup_snapshot(),
+            }
+        self.app_config.image.checkpoint_folder = candidate
+        self.config_store.save(self.app_config)
+        self.image_adapter = self._create_image_adapter()
+        return {
+            "ok": True,
+            "message": "Checkpoint folder saved and validated.",
+            "path_config": self.get_path_configuration_status(),
+            "snapshot": self.get_image_setup_snapshot(),
+        }
+
+    def skip_images_for_now(self) -> dict[str, Any]:
+        self.app_config.image.provider = "null"
+        self.app_config.image.enabled = False
+        self.config_store.save(self.app_config)
+        self.image_adapter = self._create_image_adapter()
+        return {
+            "ok": True,
+            "message": "Image setup skipped. Text-only mode is active.",
+            "snapshot": self.get_image_setup_snapshot(),
+        }
+
     def connect_ollama_path(self, selected_path: str) -> dict[str, Any]:
         candidate = Path(str(selected_path or "").strip())
         if not candidate.exists():
@@ -4096,6 +4172,23 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     def setup_connect_comfyui_path(payload: dict[str, Any]) -> dict[str, Any]:
         selected_path = str(payload.get("path", ""))
         return runtime.connect_comfyui_path(selected_path)
+
+    @app.get("/api/setup/image-readiness-card")
+    def setup_image_readiness_card() -> dict[str, Any]:
+        return runtime.get_image_setup_snapshot()
+
+    @app.post("/api/setup/use-bundled-image-engine")
+    def setup_use_bundled_image_engine() -> dict[str, Any]:
+        return runtime.use_bundled_image_engine()
+
+    @app.post("/api/setup/save-checkpoint-folder")
+    def setup_save_checkpoint_folder(payload: dict[str, Any]) -> dict[str, Any]:
+        selected_path = str(payload.get("path", ""))
+        return runtime.save_checkpoint_folder(selected_path)
+
+    @app.post("/api/setup/skip-images")
+    def setup_skip_images() -> dict[str, Any]:
+        return runtime.skip_images_for_now()
 
     @app.get("/api/setup/comfyui-models")
     def setup_comfyui_models() -> dict[str, Any]:

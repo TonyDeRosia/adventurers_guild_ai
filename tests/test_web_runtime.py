@@ -568,6 +568,31 @@ def test_empty_workflow_path_uses_bundled_default(tmp_path: Path, monkeypatch) -
     assert str(status.get("resolved_path", "")).endswith("scene_image.json")
 
 
+def test_save_checkpoint_folder_validates_and_persists_selection(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    checkpoint_dir = tmp_path / "models" / "checkpoints"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    result = runtime.save_checkpoint_folder(str(checkpoint_dir))
+
+    assert result["ok"] is True
+    assert runtime.app_config.image.checkpoint_folder == str(checkpoint_dir)
+    assert result["path_config"]["image"]["checkpoint_dir"]["valid"] is True
+
+
+def test_skip_images_for_now_switches_to_text_only_mode(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    runtime.app_config.image.enabled = True
+
+    result = runtime.skip_images_for_now()
+
+    assert result["ok"] is True
+    assert runtime.app_config.image.provider == "null"
+    assert runtime.app_config.image.enabled is False
+    assert result["snapshot"]["text_only_mode_active"] is True
+
+
 def test_turn_flow_persists_memory_and_messages(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
 
