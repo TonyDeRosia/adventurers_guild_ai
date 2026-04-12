@@ -21,6 +21,9 @@ call :log Log file: %LOG_FILE%
 call :log ============================================================
 
 set "PYTHON_CMD="
+set "FAILED_STEP="
+set "FAILED_REASON="
+
 call :step "[1/6] Resolve Python"
 where py >nul 2>&1
 if %errorlevel%==0 (
@@ -29,21 +32,23 @@ if %errorlevel%==0 (
     where python >nul 2>&1
     if %errorlevel%==0 set "PYTHON_CMD=python"
 )
-if "%PYTHON_CMD%"=="" (
-    call :fail "[1/6] Resolve Python" "Python 3.10+ was not found in PATH."
-    goto :build_failed
-)
+if "%PYTHON_CMD%"=="" call :fail_now "[1/6] Resolve Python" "Python 3.10+ was not found in PATH."
 call :pass "[1/6] Resolve Python" "Using %PYTHON_CMD%"
 
 call :step "[2/6] Install build dependencies"
 call %PYTHON_CMD% -m pip install --upgrade pip pyinstaller -r requirements.txt >>"%LOG_FILE%" 2>&1
-if errorlevel 1 call :fail "[2/6] Install build dependencies" "Dependency installation failed."
-if errorlevel 1 goto :build_failed
+if errorlevel 1 call :fail_now "[2/6] Install build dependencies" "Dependency installation failed."
 call :pass "[2/6] Install build dependencies" "Build dependencies are ready."
 
 call :step "[3/6] Clean old build output"
-if exist "build" rmdir /s /q "build" >>"%LOG_FILE%" 2>&1
-if exist "dist\AdventurerGuildAI" rmdir /s /q "dist\AdventurerGuildAI" >>"%LOG_FILE%" 2>&1
+if exist "build" (
+    rmdir /s /q "build" >>"%LOG_FILE%" 2>&1
+    if errorlevel 1 call :fail_now "[3/6] Clean old build output" "Failed to remove build directory."
+)
+if exist "dist\AdventurerGuildAI" (
+    rmdir /s /q "dist\AdventurerGuildAI" >>"%LOG_FILE%" 2>&1
+    if errorlevel 1 call :fail_now "[3/6] Clean old build output" "Failed to remove dist\\AdventurerGuildAI directory."
+)
 call :pass "[3/6] Clean old build output" "Old build output removed."
 
 call :step "[4/6] Run prebuild audit"
@@ -54,24 +59,16 @@ call %PYTHON_CMD% tools\audit_distribution.py ^
   --require-file packaging\windows\runtime_bundle\workflows\character_portrait.json ^
   --require-file packaging\windows\runtime_bundle\THIRD_PARTY_NOTICES.txt ^
   --require-file packaging\windows\runtime_bundle\licenses\ComfyUI-LICENSE-MIT.txt >>"%LOG_FILE%" 2>&1
-if errorlevel 1 call :fail "[4/6] Run prebuild audit" "Prebuild packaging audit failed."
-if errorlevel 1 goto :build_failed
+if errorlevel 1 call :fail_now "[4/6] Run prebuild audit" "Prebuild packaging audit failed."
 call :pass "[4/6] Run prebuild audit" "Packaging input audit passed."
 
 set "SPEC_FILE=packaging\windows\AdventurerGuildAI.spec"
-if not exist "%SPEC_FILE%" (
-    call :fail "[5/6] Run PyInstaller spec build" "Spec file is missing: %SPEC_FILE%."
-    goto :build_failed
-)
+if not exist "%SPEC_FILE%" call :fail_now "[5/6] Run PyInstaller spec build" "Spec file is missing: %SPEC_FILE%."
 
 call :step "[5/6] Run PyInstaller spec build"
 call %PYTHON_CMD% -m PyInstaller --noconfirm --clean "%SPEC_FILE%" >>"%LOG_FILE%" 2>&1
-if errorlevel 1 call :fail "[5/6] Run PyInstaller spec build" "PyInstaller build failed."
-if errorlevel 1 goto :build_failed
-if not exist "dist\AdventurerGuildAI\AdventurerGuildAI.exe" (
-    call :fail "[5/6] Run PyInstaller spec build" "Expected output EXE was not produced."
-    goto :build_failed
-)
+if errorlevel 1 call :fail_now "[5/6] Run PyInstaller spec build" "PyInstaller build failed."
+if not exist "dist\AdventurerGuildAI\AdventurerGuildAI.exe" call :fail_now "[5/6] Run PyInstaller spec build" "Expected output EXE was not produced."
 call :pass "[5/6] Run PyInstaller spec build" "PyInstaller build produced AdventurerGuildAI.exe."
 
 call :step "[6/6] Run post-build audit"
@@ -84,10 +81,17 @@ call %PYTHON_CMD% tools\audit_distribution.py ^
   --require-file dist\AdventurerGuildAI\runtime_bundle\workflows\character_portrait.json ^
   --require-file dist\AdventurerGuildAI\runtime_bundle\THIRD_PARTY_NOTICES.txt ^
   --require-file dist\AdventurerGuildAI\runtime_bundle\licenses\ComfyUI-LICENSE-MIT.txt >>"%LOG_FILE%" 2>&1
-if errorlevel 1 call :fail "[6/6] Run post-build audit" "Post-build distribution audit failed."
-if errorlevel 1 goto :build_failed
+if errorlevel 1 call :fail_now "[6/6] Run post-build audit" "Post-build distribution audit failed."
 call :pass "[6/6] Run post-build audit" "Distribution audit passed."
 
+goto :build_success
+
+:fail_now
+set "FAILED_STEP=%~1"
+set "FAILED_REASON=%~2"
+goto :build_failed
+
+:build_success
 call :log SUCCESS: Packaged EXE build complete.
 call :log Final EXE path: %ROOT_DIR%\dist\AdventurerGuildAI\AdventurerGuildAI.exe
 call :log Log file: %LOG_FILE%
@@ -95,6 +99,13 @@ if "%INTERACTIVE%"=="1" pause
 exit /b 0
 
 :build_failed
+call :log %FAILED_STEP% - FAILURE. %FAILED_REASON%
+call :log See log: %LOG_FILE%
+echo.
+echo ERROR: %FAILED_REASON%
+echo Step failed: %FAILED_STEP%
+echo Log file: %LOG_FILE%
+if "%INTERACTIVE%"=="1" pause
 exit /b 1
 
 :step
@@ -104,16 +115,6 @@ exit /b 0
 :pass
 call :log SUCCESS: %~2
 exit /b 0
-
-:fail
-call :log %~1 - FAILURE. %~2
-call :log See log: %LOG_FILE%
-echo.
-echo ERROR: %~2
-echo Step failed: %~1
-echo Log file: %LOG_FILE%
-if "%INTERACTIVE%"=="1" pause
-exit /b 1
 
 :log
 if "%~1"=="" exit /b 0
