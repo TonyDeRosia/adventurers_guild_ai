@@ -33,6 +33,16 @@ const checkpointFolderInput = document.getElementById('checkpoint-folder-input')
 const checkpointSourceInput = document.getElementById('checkpoint-source');
 const preferredCheckpointInput = document.getElementById('preferred-checkpoint');
 const imageSetupCardStatus = document.getElementById('image-setup-card-status');
+const imageBackendOverallState = document.getElementById('image-backend-overall-state');
+const imageBackendDiagnosticsSummary = document.getElementById('image-backend-diagnostics-summary');
+const imageBackendDiagnosticsLog = document.getElementById('image-backend-diagnostics-log');
+const verifyImageBackendButton = document.getElementById('verify-image-backend');
+const startImageBackendButton = document.getElementById('start-image-backend');
+const stopImageBackendButton = document.getElementById('stop-image-backend');
+const locateExistingComfyuiFolderButton = document.getElementById('locate-existing-comfyui-folder');
+const openImageBackendFolderButton = document.getElementById('open-image-backend-folder');
+const openWorkflowsFolderButton = document.getElementById('open-workflows-folder');
+const showImageDiagnosticsButton = document.getElementById('show-image-diagnostics');
 const useBundledImageEngineButton = document.getElementById('use-bundled-image-engine');
 const chooseExistingModelFolderButton = document.getElementById('choose-existing-model-folder');
 const openRecommendedModelPageButton = document.getElementById('open-recommended-model-page');
@@ -150,6 +160,7 @@ let modelInventoryState = { active_model_id: '', models: [] };
 let modelInstallState = {};
 let latestGlobalSettings = null;
 let latestImageSetupSnapshot = null;
+let latestImageBackendDiagnostics = null;
 let appliedVisualPipelinePaths = {
   comfyui_path: '',
   comfyui_workflow_path: '',
@@ -578,7 +589,7 @@ async function runReadinessAction(actionId, item) {
         steps: normalizeSetupSteps(result.steps),
         summary: result.summary || result.message || (result.ok ? 'Text AI is ready.' : 'Text AI setup failed.'),
       });
-      await refreshDependencyReadiness();
+      await Promise.all([refreshDependencyReadiness(), refreshImageBackendDiagnostics()]);
       console.log('[setup-action] readiness refresh triggered');
       setStatus(result.summary || result.message || (result.ok ? 'Text AI ready.' : 'Text AI setup failed.'), !result.ok);
       finishSetupRun({
@@ -600,7 +611,7 @@ async function runReadinessAction(actionId, item) {
         steps: normalizeSetupSteps(result.steps),
         summary: result.summary || result.message || (result.ok ? 'Image AI is ready.' : 'Image AI setup failed.'),
       });
-      await refreshDependencyReadiness();
+      await Promise.all([refreshDependencyReadiness(), refreshImageBackendDiagnostics()]);
       console.log('[setup-action] readiness refresh triggered');
       setStatus(result.summary || result.message || (result.ok ? 'Image AI ready.' : 'Image AI setup failed.'), !result.ok);
       finishSetupRun({
@@ -624,7 +635,7 @@ async function runReadinessAction(actionId, item) {
         steps: combinedSteps,
         summary: result.summary || result.message || (result.ok ? 'Text AI ready. Image AI ready.' : 'Setup Everything failed.'),
       });
-      await refreshDependencyReadiness();
+      await Promise.all([refreshDependencyReadiness(), refreshImageBackendDiagnostics()]);
       console.log('[setup-action] readiness refresh triggered');
       setStatus(result.summary || result.message || (result.ok ? 'Text AI ready. Image AI ready.' : 'Setup Everything failed.'), !result.ok);
       finishSetupRun({
@@ -676,7 +687,7 @@ async function runReadinessAction(actionId, item) {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
       });
       console.log(`[setup-action] start-ollama ${result.ok ? 'success' : 'failure'} reason=${result.message || 'unknown'}`);
-      await refreshDependencyReadiness();
+      await Promise.all([refreshDependencyReadiness(), refreshImageBackendDiagnostics()]);
       console.log('[setup-action] readiness refresh triggered');
       setStatus(result.ok ? (result.message || 'Ollama start request sent.') : (result.next_step ? `${result.message} ${result.next_step}` : result.message), !result.ok);
       return;
@@ -688,7 +699,7 @@ async function runReadinessAction(actionId, item) {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
       });
       console.log(`[setup-action] install-ollama ${result.ok ? 'success' : 'failure'} reason=${result.message || 'unknown'}`);
-      await refreshDependencyReadiness();
+      await Promise.all([refreshDependencyReadiness(), refreshImageBackendDiagnostics()]);
       console.log('[setup-action] readiness refresh triggered');
       setStatus(result.ok ? (result.message || 'Ollama installed.') : (result.next_step ? `${result.message} ${result.next_step}` : result.message), !result.ok);
       return;
@@ -1953,6 +1964,47 @@ async function refreshImageSetupSnapshot() {
   }
 }
 
+function renderImageBackendDiagnostics(payload = latestImageBackendDiagnostics) {
+  const diagnostics = payload?.diagnostics || {};
+  if (imageBackendOverallState) {
+    imageBackendOverallState.textContent = `Overall state: ${diagnostics.overall_state || 'Unknown'}`;
+  }
+  if (imageBackendDiagnosticsSummary) {
+    imageBackendDiagnosticsSummary.textContent = diagnostics.status_message || 'Image backend diagnostics unavailable.';
+  }
+  if (imageBackendDiagnosticsLog) {
+    const lines = [
+      `Image generation enabled: ${diagnostics.image_generation_enabled ? 'yes' : 'no'}`,
+      `Provider selected: ${diagnostics.provider_selected || 'unknown'}`,
+      `ComfyUI path: ${diagnostics.comfyui_path || '(not set)'}`,
+      `ComfyUI detected: ${diagnostics.comfyui_detected ? 'yes' : 'no'}`,
+      `ComfyUI process running: ${diagnostics.comfyui_process_running ? 'yes' : 'no'}`,
+      `API reachable: ${diagnostics.api_reachable ? 'yes' : 'no'}`,
+      `Workflow path: ${diagnostics.workflow_path || '(not set)'}`,
+      `Workflow files found: ${diagnostics.workflow_files_found ? 'yes' : 'no'}`,
+      `Checkpoint path: ${diagnostics.checkpoint_path || '(not set)'}`,
+      `Checkpoint present: ${diagnostics.checkpoint_present ? 'yes' : 'no'}`,
+      `Output path: ${diagnostics.output_path || '(app managed default)'}`,
+      `Custom node checks: ${diagnostics.custom_node_message || 'Not available'}`,
+      `Last error: ${diagnostics.last_error || '(none)'}`,
+      `Recommended next action: ${diagnostics.recommended_next_action || 'Recheck setup.'}`,
+    ];
+    imageBackendDiagnosticsLog.textContent = lines.join('\n');
+  }
+}
+
+async function refreshImageBackendDiagnostics() {
+  try {
+    const payload = await api('/api/setup/image-backend-diagnostics');
+    latestImageBackendDiagnostics = payload;
+    renderImageBackendDiagnostics(payload);
+    return payload;
+  } catch (error) {
+    setStatus(error.message, true);
+    return null;
+  }
+}
+
 async function useBundledImageEngine() {
   const result = await api('/api/setup/use-bundled-image-engine', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
   setStatus(result.message || (result.ok ? 'Bundled image engine selected.' : 'Bundled image engine could not be selected.'), !result.ok);
@@ -2000,6 +2052,45 @@ async function skipImagesForNow() {
     renderImageSetupCard(result.snapshot);
   }
   await Promise.all([loadSettings(), refreshDependencyReadiness()]);
+}
+
+async function stopImageBackend() {
+  const result = await api('/api/setup/stop-image-engine', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  setStatus(result.message || (result.ok ? 'Image backend stopped.' : 'Could not stop image backend.'), !result.ok);
+  await Promise.all([refreshDependencyReadiness(), refreshImageBackendDiagnostics()]);
+}
+
+async function locateExistingComfyuiFolder() {
+  const selectedPath = await pickFolder('Select existing ComfyUI folder', comfyuiPathInput);
+  if (!selectedPath) return;
+  const result = await api('/api/setup/connect-comfyui-path', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: selectedPath }),
+  });
+  setStatus(result.message || (result.ok ? 'ComfyUI folder connected.' : 'ComfyUI folder could not be connected.'), !result.ok);
+  await Promise.all([loadSettings(), refreshDependencyReadiness(), refreshImageBackendDiagnostics(), refreshComfyuiModelList()]);
+}
+
+async function openLocalPath(path, label) {
+  if (!path) {
+    setStatus(`${label} is not configured yet.`, true);
+    return;
+  }
+  const result = await api('/api/setup/open-local-path', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  });
+  if (!result.ok) {
+    setStatus(result.message || `Could not open ${label}.`, true);
+    return;
+  }
+  setStatus(`${label} opened.`);
 }
 
 async function connectOllamaFolder() {
@@ -2642,6 +2733,7 @@ async function loadSettings() {
     await refreshSupportedModels(false);
   }
   await refreshImageSetupSnapshot();
+  await refreshImageBackendDiagnostics();
   await refreshComfyuiModelList();
 }
 
@@ -2680,6 +2772,22 @@ bindClickOnce(recheckImageSetupButton, async () => {
     await Promise.all([refreshDependencyReadiness(), refreshImageSetupSnapshot()]);
     setStatus('Image setup rechecked.');
   });
+bindClickOnce(verifyImageBackendButton, async () => {
+  await Promise.all([refreshDependencyReadiness(), refreshImageSetupSnapshot(), refreshImageBackendDiagnostics()]);
+  setStatus('Image backend verified.');
+});
+bindClickOnce(startImageBackendButton, () => runReadinessAction('start_image_engine', {}).catch((error) => setStatus(error.message, true)));
+bindClickOnce(stopImageBackendButton, () => stopImageBackend().catch((error) => setStatus(error.message, true)));
+bindClickOnce(locateExistingComfyuiFolderButton, () => locateExistingComfyuiFolder().catch((error) => setStatus(error.message, true)));
+bindClickOnce(openImageBackendFolderButton, () => openLocalPath(latestImageBackendDiagnostics?.diagnostics?.comfyui_path, 'Image backend folder').catch((error) => setStatus(error.message, true)));
+bindClickOnce(openWorkflowsFolderButton, () => {
+  const workflowPath = latestImageBackendDiagnostics?.diagnostics?.workflow_path || '';
+  const folder = workflowPath.includes('/') || workflowPath.includes('\\')
+    ? workflowPath.replace(/[\\/][^\\/]+$/, '')
+    : '';
+  return openLocalPath(folder, 'Workflows folder').catch((error) => setStatus(error.message, true));
+});
+bindClickOnce(showImageDiagnosticsButton, () => refreshImageBackendDiagnostics().catch((error) => setStatus(error.message, true)));
 document.getElementById('connect-ollama-folder').onclick = connectOllamaFolder;
 document.getElementById('apply-visual-pipeline-settings').onclick = applyVisualPipelineSettings;
 document.getElementById('install-story-model').onclick = () => runReadinessAction('install_model', { selected_model: document.getElementById('model-name').value.trim() || 'llama3' });
