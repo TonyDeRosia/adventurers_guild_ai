@@ -32,11 +32,7 @@ What to click from repo root:
 - `run.bat` = run from source
 - `Build_AdventurersGuildAI.bat` = build packaged EXE
 
-Internal/developer scripts still exist for advanced packaging tasks and automation, but they are not the normal human entry point:
-- `tools\build_exe.bat` (internal worker called by `Build_AdventurersGuildAI.bat`)
-- `tools\build_installer.bat` (installer build)
-- `release\create_release_package.bat` (release handoff helper)
-- `tools\setup_dev_env.bat` (developer environment setup)
+There are no additional Windows batch build entry points in `tools/` or `release/`.
 
 ## Where user data is stored
 

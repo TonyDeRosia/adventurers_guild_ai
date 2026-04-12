@@ -17,13 +17,6 @@ Normal packaged EXE build entry point:
 Build_AdventurersGuildAI.bat
 ```
 
-Developer/internal scripts:
-
-```bat
-tools\build_exe.bat
-tools\build_installer.bat
-```
-
 Equivalent direct PyInstaller invocation (when debugging spec edits):
 
 ```bat
@@ -44,9 +37,9 @@ Build_AdventurersGuildAI.bat
 What it does:
 
 1. Prints a clear packaged-build banner and log path.
-2. Calls the existing `tools\build_exe.bat` PyInstaller/spec worker script.
-3. Builds via `packaging\windows\AdventurerGuildAI.spec` and runs pre/post build audits.
-4. Prints success/failure, output folder, and log file path, then pauses so the console stays readable.
+2. Installs/verifies dependencies, cleans old outputs, and runs the prebuild audit.
+3. Builds via `packaging\windows\AdventurerGuildAI.spec` and runs the post-build audit.
+4. Prints success/failure, final EXE path, and log file path, then pauses so the console stays readable.
 
 ## PyInstaller bundle inputs
 
@@ -60,7 +53,7 @@ The spec intentionally does **not** include model checkpoints. `tools/audit_dist
 
 ## Expected `dist` output layout
 
-After `tools\build_exe.bat`, expect:
+After `Build_AdventurersGuildAI.bat`, expect:
 
 - `dist/AdventurerGuildAI/AdventurerGuildAI.exe`
 - `dist/AdventurerGuildAI/app/static/*`
