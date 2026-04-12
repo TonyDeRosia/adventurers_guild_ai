@@ -11,6 +11,14 @@ This document is the build/distribution contract for the first real Windows pack
 
 ### Exact commands (from repo root)
 
+Normal packaged EXE build entry point:
+
+```bat
+Build_AdventurersGuildAI.bat
+```
+
+Developer/internal scripts:
+
 ```bat
 tools\build_exe.bat
 tools\build_installer.bat
@@ -25,29 +33,20 @@ py -3 -m PyInstaller --noconfirm --clean packaging\windows\AdventurerGuildAI.spe
 The spec resolves the repo root from PyInstaller's execution context (`SPEC`/working directory), so it does not depend on `__file__` being defined.
 
 
-## One-click launcher (recommended for non-technical packaging)
+## Single-click packaged EXE build
 
-Use the repository-root GUI launcher:
-
-```bat
-Build_AdventurersGuildAI.py
-```
-
-Optional compatibility launcher:
+Use the repository-root batch file:
 
 ```bat
 Build_AdventurersGuildAI.bat
 ```
 
-What the GUI launcher does:
+What it does:
 
-1. Uses a native folder picker to choose the output folder.
-2. Exposes point-and-click actions for **Build EXE**, **Build Installer**, and **Build Everything**.
-3. Reuses `tools\build_exe.bat` and `tools\build_installer.bat` without replacing their packaging logic.
-4. Enforces build-mode prerequisites: EXE mode does not require Inno Setup, Installer/Everything do.
-5. Streams build output into a live scrolling GUI log and writes the same output to a persistent log file.
-6. Copies resulting build artifacts into the selected output folder and prints the final installer path clearly when produced.
-7. Shows clear success/error status in the app window and enables an **Open output folder** action after successful builds.
+1. Prints a clear packaged-build banner and log path.
+2. Calls the existing `tools\build_exe.bat` PyInstaller/spec worker script.
+3. Builds via `packaging\windows\AdventurerGuildAI.spec` and runs pre/post build audits.
+4. Prints success/failure, output folder, and log file path, then pauses so the console stays readable.
 
 ## PyInstaller bundle inputs
 
@@ -83,7 +82,7 @@ After `tools\build_exe.bat`, expect:
 ## Local packaged-mode verification before installer stage
 
 1. Build executable output:
-   - `tools\build_exe.bat`
+   - `Build_AdventurersGuildAI.bat`
 2. Launch packaged executable:
    - `dist\AdventurerGuildAI\AdventurerGuildAI.exe`
 3. Verify startup log prints runtime root/user data and server starts.
