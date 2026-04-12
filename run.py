@@ -7,25 +7,18 @@ import json
 import os
 import platform
 import socket
+import subprocess
 import sys
-import threading
 import time
 import traceback
-import webbrowser
-from dataclasses import dataclass
+from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
 from app.pathing import initialize_user_data_paths, project_root, static_dir
 
 TERMINAL_ENABLE_ENV = "ADVENTURER_GUILD_AI_ENABLE_TERMINAL"
-
-
-@dataclass
-class BrowserLaunchResult:
-    success: bool
-    method: str
-    reason: str = ""
+BACKEND_READY_TIMEOUT_SECONDS = 30.0
 
 
 def _print_banner() -> None:
@@ -60,6 +53,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--host", default="127.0.0.1", help="Web host (web mode only)")
     parser.add_argument("--port", type=int, default=8000, help="Web port (web mode only)")
+    parser.add_argument("--backend-only", action="store_true", help=argparse.SUPPRESS)
     return parser.parse_args()
 
 
@@ -92,38 +86,60 @@ def _wait_for_web_health(base_url: str, timeout_seconds: float = 15.0) -> tuple[
     return False, last_reason
 
 
-def _try_launch_browser(url: str) -> BrowserLaunchResult:
-    if platform.system() == "Windows":
-        try:
-            os.startfile(url)  # type: ignore[attr-defined]
-            return BrowserLaunchResult(success=True, method="os.startfile")
-        except OSError as exc:
-            return BrowserLaunchResult(success=False, method="os.startfile", reason=str(exc))
-    try:
-        opened = webbrowser.open(url)
-        if opened:
-            return BrowserLaunchResult(success=True, method="webbrowser.open")
-        return BrowserLaunchResult(success=False, method="webbrowser.open", reason="browser reported open=False")
-    except webbrowser.Error as exc:
-        return BrowserLaunchResult(success=False, method="webbrowser.open", reason=str(exc))
+def _build_backend_command(host: str, port: int) -> list[str]:
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "--backend-only", "--host", host, "--port", str(port)]
+    launcher = Path(__file__).resolve()
+    return [sys.executable, str(launcher), "--backend-only", "--host", host, "--port", str(port)]
 
 
-def _launch_browser_when_ready(host: str, port: int) -> None:
-    browser_url = f"http://{_browser_host(host)}:{port}"
-    print(f"[startup] Waiting for readiness at {browser_url}/health ...")
-    ready, reason = _wait_for_web_health(browser_url)
-    if not ready:
-        print(f"[startup] Health check failed before browser launch: {reason}")
-        print(f"[startup] Open this URL manually: {browser_url}")
+def _spawn_backend_process(host: str, port: int) -> subprocess.Popen[bytes]:
+    command = _build_backend_command(host, port)
+    print(f"[startup] Launching backend process: {' '.join(command)}")
+    creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP if platform.system() == "Windows" else 0
+    return subprocess.Popen(command, creationflags=creation_flags)
+
+
+def _wait_for_backend_ready(process: subprocess.Popen[bytes], base_url: str, timeout_seconds: float) -> tuple[bool, str]:
+    deadline = time.time() + timeout_seconds
+    last_reason = "health endpoint unavailable"
+    while time.time() < deadline:
+        code = process.poll()
+        if code is not None:
+            return False, f"backend process exited with code {code} before readiness"
+        ready, reason = _wait_for_web_health(base_url, timeout_seconds=1.0)
+        if ready:
+            return True, "ready"
+        last_reason = reason
+        time.sleep(0.2)
+    return False, f"timed out after {timeout_seconds:.0f}s: {last_reason}"
+
+
+def _stop_backend_process(process: subprocess.Popen[bytes], timeout_seconds: float = 8.0) -> None:
+    if process.poll() is not None:
         return
-    print(f"[startup] Health ready at {browser_url}/health")
-    print(f"[startup] Attempting browser launch: {browser_url}")
-    result = _try_launch_browser(browser_url)
-    if result.success:
-        print(f"[startup] Opened browser via {result.method}: {browser_url}")
-    else:
-        print(f"[startup] Could not auto-open browser ({result.method}): {result.reason}")
-        print(f"[startup] Open this URL manually: {browser_url}")
+    print("[shutdown] Stopping backend process...")
+    process.terminate()
+    try:
+        process.wait(timeout=timeout_seconds)
+        print("[shutdown] Backend process stopped.")
+    except subprocess.TimeoutExpired:
+        print("[shutdown] Backend process did not exit in time; forcing termination.")
+        process.kill()
+        process.wait(timeout=2.0)
+
+
+def _launch_webview_window(url: str) -> None:
+    try:
+        import webview
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "PyWebView is required for desktop launch but is not installed. "
+            "Install dependencies (pip install -r requirements.txt) and try again."
+        ) from exc
+
+    webview.create_window("Adventurers Guild AI", url, width=1280, height=800, resizable=True)
+    webview.start()
 
 
 def _is_port_available(host: str, port: int) -> tuple[bool, str]:
@@ -134,6 +150,19 @@ def _is_port_available(host: str, port: int) -> tuple[bool, str]:
         except OSError as exc:
             return False, str(exc)
     return True, ""
+
+
+def _run_backend_server(host: str, port: int) -> int:
+    from app.web import FastAPI, WebRuntime, _resolve_static_root, create_web_app, uvicorn
+
+    if FastAPI is None or uvicorn is None:
+        raise RuntimeError("FastAPI/uvicorn is not installed. Install dependencies and try again.")
+
+    runtime = WebRuntime(project_root())
+    app = create_web_app(runtime=runtime, static_root=_resolve_static_root())
+    print(f"[startup] Starting backend (uvicorn) at http://{host}:{port} ...")
+    uvicorn.run(app, host=host, port=port, log_level="info")
+    return 0
 def main() -> int:
     _print_banner()
     print("[startup] Initializing systems...")
@@ -143,6 +172,9 @@ def main() -> int:
         _initialize_paths()
 
         launch_mode = "terminal" if args.terminal else args.mode
+        if args.backend_only:
+            return _run_backend_server(args.host, args.port)
+
         frozen = bool(getattr(sys, "frozen", False))
         terminal_enabled = os.getenv(TERMINAL_ENABLE_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
         if launch_mode == "terminal" and frozen and not terminal_enabled:
@@ -150,11 +182,6 @@ def main() -> int:
             launch_mode = "web"
 
         if launch_mode == "web":
-            from app.web import FastAPI, WebRuntime, _resolve_static_root, create_web_app, uvicorn
-
-            if FastAPI is None or uvicorn is None:
-                raise RuntimeError("FastAPI/uvicorn is not installed. Install dependencies and try again.")
-
             available, reason = _is_port_available(args.host, args.port)
             if not available:
                 print(
@@ -164,19 +191,23 @@ def main() -> int:
                 print(f"[startup] Port check detail: {reason}")
                 return 1
 
-            runtime = WebRuntime(project_root())
-            app = create_web_app(runtime=runtime, static_root=_resolve_static_root())
-
-            opener_thread = threading.Thread(
-                target=_launch_browser_when_ready,
-                args=(args.host, args.port),
-                daemon=True,
-                name="browser-launcher",
+            browser_url = f"http://{_browser_host(args.host)}:{args.port}"
+            backend_process = _spawn_backend_process(args.host, args.port)
+            print(f"[startup] Waiting for readiness at {browser_url}/health ...")
+            ready, reason = _wait_for_backend_ready(
+                backend_process, browser_url, timeout_seconds=BACKEND_READY_TIMEOUT_SECONDS
             )
-            opener_thread.start()
+            if not ready:
+                print(f"[startup] Backend failed to become ready: {reason}")
+                _stop_backend_process(backend_process)
+                return 1
 
-            print(f"[startup] Starting backend (uvicorn) at http://{args.host}:{args.port} ...")
-            uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+            print(f"[startup] Health ready at {browser_url}/health")
+            print(f"[startup] Opening desktop window at {browser_url}")
+            try:
+                _launch_webview_window(browser_url)
+            finally:
+                _stop_backend_process(backend_process)
             return 0
 
         from app.main import main as terminal_main

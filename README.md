@@ -1,6 +1,6 @@
 # Adventurer's Guild AI
 
-Adventurer's Guild AI is a local-first fantasy campaign application with a browser-first UI.
+Adventurer's Guild AI is a local-first fantasy campaign application with a desktop-window web UI.
 
 ## Run from source (normal path)
 
@@ -8,16 +8,16 @@ Adventurer's Guild AI is a local-first fantasy campaign application with a brows
 2. The script checks for Python (`py -3` first, then `python`).
 3. The script installs dependencies from `requirements.txt`.
 4. The script runs `python run.py`.
-5. `run.py` is the only runtime owner: it starts the backend once, waits for `/health`, and opens the browser UI.
+5. `run.py` is the only runtime owner: it starts the backend once, waits for `/health`, and opens the native desktop window (PyWebView) for the local UI.
 
 If startup fails, keep the console open and read the printed error details.
 
 ### Source startup behavior
 
-- Browser UI is the default interface.
+- Native desktop window UI is the default interface.
 - Terminal mode remains available only for fallback/debug usage.
 - If port `8000` is already in use, `run.py` prints a clear error and exits.
-- If browser auto-open fails, the launcher prints the manual URL.
+- If desktop window startup fails, the launcher prints a clear error and exits.
 - `app/web.py` is not a user launcher and is not part of the normal source startup path.
 
 ## Packaging and build workflows (developer-only)
@@ -81,5 +81,5 @@ Typical folders:
 
 ## Troubleshooting
 
-- If browser did not open, use the printed URL manually (default `http://127.0.0.1:8000`).
+- If the desktop window does not open, verify `pywebview` is installed and rerun `pip install -r requirements.txt`.
 - If a port conflict is reported, stop the other process or launch with a different port in developer mode.

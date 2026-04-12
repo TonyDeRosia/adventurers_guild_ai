@@ -123,7 +123,7 @@ Installer should create:
 - Start Menu shortcut to `AdventurerGuildAI.exe`
 - Optional desktop shortcut to `AdventurerGuildAI.exe`
 
-On launch, app should start web backend and open browser UI automatically.
+On launch, app should start web backend and open the native PyWebView desktop window automatically.
 
 ## What remains for installer-wrapper step
 
