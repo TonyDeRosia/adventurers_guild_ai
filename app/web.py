@@ -580,6 +580,9 @@ class WebRuntime:
     def open_external_url(self, url: str) -> dict[str, Any]:
         return self.desktop.open_external_url(url)
 
+    def open_local_path(self, path: str) -> dict[str, Any]:
+        return self.desktop.open_local_path(path)
+
     def get_image_setup_snapshot(self) -> dict[str, Any]:
         path_status = self.get_path_configuration_status().get("image", {})
         image_status = self.get_image_status()
@@ -608,6 +611,79 @@ class WebRuntime:
             "installer_layout": layout_status,
             "first_run_status": first_run,
         }
+
+    def get_image_backend_diagnostics(self) -> dict[str, Any]:
+        path_status = self.get_path_configuration_status().get("image", {})
+        image_status = self.get_image_status()
+        managed_state = self.comfy_manager.snapshot()
+        provider = str(self.app_config.image.provider or "").strip() or "null"
+        comfy_root = path_status.get("comfyui_root", {})
+        workflow_status = path_status.get("workflow_path", {})
+        output_status = path_status.get("output_dir", {})
+        checkpoint_status = path_status.get("checkpoint_dir", {})
+        startup_status = dict(self.image_startup_status or {})
+        workflow_parse_valid = None
+        workflow_parse_message = "Workflow parse was not checked."
+        resolved_workflow = str(workflow_status.get("resolved_path") or workflow_status.get("path") or "").strip()
+        if resolved_workflow:
+            try:
+                payload = json.loads(Path(resolved_workflow).read_text(encoding="utf-8"))
+                if isinstance(payload, dict):
+                    workflow_parse_valid = True
+                    workflow_parse_message = "Workflow JSON parsed successfully."
+                else:
+                    workflow_parse_valid = False
+                    workflow_parse_message = "Workflow JSON root must be an object."
+            except (json.JSONDecodeError, OSError, ValueError) as exc:
+                workflow_parse_valid = False
+                workflow_parse_message = f"Workflow JSON could not be parsed: {exc}"
+
+        diagnostics = {
+            "provider_selected": provider,
+            "image_generation_enabled": bool(self.app_config.image.enabled),
+            "text_only_mode_active": provider == "null" or not bool(self.app_config.image.enabled),
+            "comfyui_path_configured": bool(comfy_root.get("configured", False)),
+            "comfyui_path": str(comfy_root.get("resolved_path") or comfy_root.get("path") or ""),
+            "comfyui_path_exists": bool(comfy_root.get("valid", False)),
+            "comfyui_detected": bool(comfy_root.get("valid", False)),
+            "comfyui_process_running": bool(image_status.get("reachable", False) or managed_state.running),
+            "managed_process_running": bool(managed_state.running),
+            "managed_process_pid": managed_state.pid,
+            "api_reachable": bool(image_status.get("reachable", False)),
+            "workflow_path_configured": bool(workflow_status.get("configured", False) or workflow_status.get("resolved_path")),
+            "workflow_path": resolved_workflow,
+            "workflow_files_found": bool(workflow_status.get("valid", False)),
+            "workflow_parse_valid": workflow_parse_valid,
+            "workflow_parse_message": workflow_parse_message,
+            "output_path": str(output_status.get("resolved_path") or output_status.get("path") or ""),
+            "output_path_valid": bool(output_status.get("valid", False)),
+            "checkpoint_configured": bool(checkpoint_status.get("configured", False) or checkpoint_status.get("resolved_path")),
+            "checkpoint_path": str(checkpoint_status.get("resolved_path") or checkpoint_status.get("path") or ""),
+            "checkpoint_present": bool(checkpoint_status.get("valid", False)),
+            "custom_node_checks_supported": False,
+            "custom_node_checks_passed": None,
+            "custom_node_message": "Custom node checks are not currently defined by this app.",
+            "status_code": str(image_status.get("status_code", "")),
+            "status_message": str(image_status.get("user_message", "")),
+            "last_error": str(image_status.get("error", "")).strip() or str(startup_status.get("summary", "")).strip(),
+            "recommended_next_action": str(image_status.get("next_action", "Recheck setup and diagnostics.")),
+            "startup_status": startup_status,
+        }
+        state = "Not Configured"
+        if diagnostics["text_only_mode_active"]:
+            state = "Disabled"
+        elif diagnostics["api_reachable"]:
+            state = "Running"
+        elif diagnostics["comfyui_detected"] and diagnostics["workflow_files_found"] and diagnostics["checkpoint_present"]:
+            state = "Ready"
+        elif diagnostics["comfyui_detected"] or diagnostics["workflow_files_found"] or diagnostics["checkpoint_present"]:
+            state = "Partially Configured"
+        if diagnostics["status_code"] in {"setup_required", "workflow_required", "checkpoint_required"}:
+            state = "Partially Configured"
+        if diagnostics["status_code"] in {"not_installed"}:
+            state = "Not Configured"
+        diagnostics["overall_state"] = state
+        return {"ok": True, "diagnostics": diagnostics}
 
     def use_bundled_image_engine(self) -> dict[str, Any]:
         bundled = bundled_comfyui_dir()
@@ -4328,6 +4404,11 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
         url = str(payload.get("url", "")).strip()
         return runtime.open_external_url(url)
 
+    @app.post("/api/setup/open-local-path")
+    def setup_open_local_path(payload: dict[str, Any]) -> dict[str, Any]:
+        path = str(payload.get("path", "")).strip()
+        return runtime.open_local_path(path)
+
     @app.post("/api/setup/connect-ollama-path")
     def setup_connect_ollama_path(payload: dict[str, Any]) -> dict[str, Any]:
         selected_path = str(payload.get("path", ""))
@@ -4341,6 +4422,10 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     @app.get("/api/setup/image-readiness-card")
     def setup_image_readiness_card() -> dict[str, Any]:
         return runtime.get_image_setup_snapshot()
+
+    @app.get("/api/setup/image-backend-diagnostics")
+    def setup_image_backend_diagnostics() -> dict[str, Any]:
+        return runtime.get_image_backend_diagnostics()
 
     @app.post("/api/setup/use-bundled-image-engine")
     def setup_use_bundled_image_engine() -> dict[str, Any]:

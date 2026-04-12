@@ -1,0 +1,110 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from app.web import WebRuntime
+
+
+def _runtime(tmp_path: Path, monkeypatch) -> WebRuntime:
+    monkeypatch.setenv("ADVENTURER_GUILD_AI_USER_DATA_DIR", str(tmp_path / "user_data"))
+    return WebRuntime(Path.cwd())
+
+
+def test_image_backend_diagnostics_reports_missing_comfyui_path(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    runtime.app_config.image.comfyui_path = str(tmp_path / "missing_comfyui")
+    runtime.app_config.image.comfyui_workflow_path = ""
+    runtime.app_config.image.checkpoint_folder = ""
+
+    payload = runtime.get_image_backend_diagnostics()
+
+    assert payload["ok"] is True
+    diagnostics = payload["diagnostics"]
+    assert diagnostics["comfyui_detected"] is False
+    assert diagnostics["overall_state"] in {"Not Configured", "Partially Configured"}
+    assert diagnostics["recommended_next_action"]
+
+
+def test_image_backend_diagnostics_reports_running_when_api_reachable(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    monkeypatch.setattr(
+        runtime,
+        "get_path_configuration_status",
+        lambda: {
+            "image": {
+                "comfyui_root": {"configured": True, "valid": True, "path": "C:/ComfyUI"},
+                "workflow_path": {"configured": True, "valid": True, "path": "C:/ComfyUI/workflows/scene_image.json", "resolved_path": "C:/ComfyUI/workflows/scene_image.json"},
+                "checkpoint_dir": {"configured": True, "valid": True, "path": "C:/ComfyUI/models/checkpoints"},
+                "output_dir": {"configured": True, "valid": True, "path": "C:/ComfyUI/output"},
+                "pipeline_ready": True,
+            }
+        },
+    )
+    monkeypatch.setattr(
+        runtime,
+        "get_image_status",
+        lambda: {
+            "provider": "comfyui",
+            "reachable": True,
+            "ready": True,
+            "status_code": "reachable",
+            "user_message": "ComfyUI is reachable.",
+            "next_action": "No action needed.",
+        },
+    )
+
+    payload = runtime.get_image_backend_diagnostics()
+
+    diagnostics = payload["diagnostics"]
+    assert diagnostics["api_reachable"] is True
+    assert diagnostics["overall_state"] == "Running"
+
+
+def test_start_image_engine_returns_already_running_without_spawning_duplicate(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    monkeypatch.setattr(
+        runtime,
+        "get_path_configuration_status",
+        lambda: {
+            "image": {
+                "workflow_path": {"valid": True, "configured": True},
+                "comfyui_root": {"valid": True, "configured": True},
+                "checkpoint_dir": {"valid": True, "configured": True},
+                "output_dir": {"valid": True, "configured": True},
+                "pipeline_ready": True,
+            }
+        },
+    )
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": True})
+    monkeypatch.setattr(runtime.comfy_manager, "register", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("should not spawn")))
+
+    result = runtime.start_image_engine()
+
+    assert result["ok"] is True
+    assert "already running" in result["message"].lower()
+
+
+def test_start_image_engine_reports_missing_workflow_cleanly(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    monkeypatch.setattr(
+        runtime,
+        "get_path_configuration_status",
+        lambda: {
+            "image": {
+                "workflow_path": {"valid": False, "configured": True},
+                "comfyui_root": {"valid": True, "configured": True},
+                "checkpoint_dir": {"valid": True, "configured": True},
+                "output_dir": {"valid": True, "configured": True},
+                "pipeline_ready": False,
+            }
+        },
+    )
+
+    result = runtime.start_image_engine()
+
+    assert result["ok"] is False
+    assert "workflow" in result["message"].lower()

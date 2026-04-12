@@ -74,6 +74,27 @@ class DesktopIntegration:
             return {"ok": False, "message": "Browser launch was rejected by the host environment.", "method": "webbrowser.open", "url": target}
         return {"ok": True, "method": "webbrowser.open", "url": target}
 
+    def open_local_path(self, path: str) -> dict[str, Any]:
+        target = Path(str(path or "").strip())
+        if not str(target):
+            return {"ok": False, "message": "Path is required."}
+        if not target.exists():
+            return {"ok": False, "message": "Path was not found.", "path": str(target)}
+        system = platform.system().lower()
+        if system == "windows":
+            try:
+                os.startfile(str(target))  # type: ignore[attr-defined]
+                return {"ok": True, "method": "os.startfile", "path": str(target)}
+            except OSError as exc:
+                return {"ok": False, "message": f"Could not open path: {exc}", "method": "os.startfile", "path": str(target)}
+        try:
+            opened = webbrowser.open(target.as_uri())
+        except (ValueError, webbrowser.Error) as exc:
+            return {"ok": False, "message": f"Could not open path: {exc}", "method": "webbrowser.open", "path": str(target)}
+        if not opened:
+            return {"ok": False, "message": "Path launch was rejected by the host environment.", "method": "webbrowser.open", "path": str(target)}
+        return {"ok": True, "method": "webbrowser.open", "path": str(target)}
+
     def pick_folder(self, title: str, initial_path: str = "") -> dict[str, Any]:
         if not self.capabilities.native_file_dialogs:
             return {"ok": False, "message": "Folder picker is unavailable in this environment."}

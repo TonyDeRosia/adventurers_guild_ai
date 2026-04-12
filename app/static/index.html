@@ -343,6 +343,24 @@
         </section>
         <section class="panel-block">
           <h4>Visual Pipeline (ComfyUI)</h4>
+          <section class="guided-image-setup-card">
+            <h5>Image Backend</h5>
+            <div id="image-backend-overall-state" class="setup-summary">Checking image backend...</div>
+            <div id="image-backend-diagnostics-summary" class="setup-summary">Loading diagnostics...</div>
+            <div class="button-row guided-image-setup-actions">
+              <button id="verify-image-backend">Verify Image Backend</button>
+              <button id="start-image-backend">Start Image Backend</button>
+              <button id="stop-image-backend">Stop Image Backend</button>
+              <button id="locate-existing-comfyui-folder">Locate Existing ComfyUI Folder</button>
+              <button id="open-image-backend-folder">Open Image Backend Folder</button>
+              <button id="open-workflows-folder">Open Workflows Folder</button>
+              <button id="show-image-diagnostics">Show Diagnostics</button>
+            </div>
+            <details>
+              <summary>Diagnostics details</summary>
+              <pre id="image-backend-diagnostics-log">Diagnostics have not run yet.</pre>
+            </details>
+          </section>
           <p class="compliance-notice">
             Image generation uses third-party open-source tools and models. Models are not included and may have separate
             licenses. Users are responsible for complying with model licenses.
