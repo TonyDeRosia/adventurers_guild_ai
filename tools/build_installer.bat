@@ -80,7 +80,7 @@ call :log %~1
 exit /b 0
 
 :pass
-call :log %~1 - SUCCESS. %~2
+call :log SUCCESS: %~2
 exit /b 0
 
 :fail
@@ -94,6 +94,7 @@ if "%INTERACTIVE%"=="1" pause
 exit /b 1
 
 :log
-echo %~1
->>"%LOG_FILE%" echo %~1
+if "%~1"=="" exit /b 0
+echo(%*
+>>"%LOG_FILE%" echo(%*
 exit /b 0
