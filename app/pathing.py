@@ -138,16 +138,34 @@ def _copy_if_missing(src: Path, dst: Path) -> None:
 
 
 def _copy_tree_missing(src: Path, dst: Path) -> None:
+    if src.is_file():
+        _copy_if_missing(src, dst)
+        return
     if not src.is_dir():
+        return
+    if dst.exists() and not dst.is_dir():
         return
     dst.mkdir(parents=True, exist_ok=True)
     for path in src.glob("**/*"):
-        if not path.is_file():
-            continue
         rel = path.relative_to(src)
         target = dst / rel
+        if path.is_dir():
+            try:
+                if target.exists() and not target.is_dir():
+                    continue
+                target.mkdir(parents=True, exist_ok=True)
+            except (FileExistsError, NotADirectoryError):
+                continue
+            continue
+        if not path.is_file():
+            continue
+        if target.parent.exists() and not target.parent.is_dir():
+            continue
         if not target.exists():
-            target.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+            except (FileExistsError, NotADirectoryError):
+                continue
             shutil.copy2(path, target)
 
 

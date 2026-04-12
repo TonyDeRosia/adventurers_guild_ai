@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import subprocess
+import builtins
+from types import SimpleNamespace
 from urllib.error import URLError
 
 import run
@@ -126,3 +128,23 @@ def test_stop_backend_process_kills_when_terminate_times_out() -> None:
     fake = _FakeProcess()
     run._stop_backend_process(fake)  # type: ignore[arg-type]
     assert fake.killed is True
+
+
+def test_can_prompt_for_exit_requires_interactive_stdin(monkeypatch) -> None:
+    monkeypatch.setattr(run.sys, "stdin", None, raising=False)
+    assert run._can_prompt_for_exit() is False
+
+    monkeypatch.setattr(run.sys, "stdin", SimpleNamespace(closed=False, isatty=lambda: False), raising=False)
+    assert run._can_prompt_for_exit() is False
+
+    monkeypatch.setattr(run.sys, "stdin", SimpleNamespace(closed=False, isatty=lambda: True), raising=False)
+    assert run._can_prompt_for_exit() is True
+
+
+def test_main_startup_failure_skips_input_when_stdin_unavailable(monkeypatch) -> None:
+    monkeypatch.setattr(run, "_parse_args", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(run, "_can_prompt_for_exit", lambda: False)
+    monkeypatch.setattr(builtins, "input", lambda _: (_ for _ in ()).throw(AssertionError("input should not be called")))
+    monkeypatch.setattr(run, "_print_banner", lambda: None)
+
+    assert run.main() == 1

@@ -27,6 +27,21 @@ def _print_banner() -> None:
     print("=" * 36)
 
 
+def _can_prompt_for_exit() -> bool:
+    stdin = getattr(sys, "stdin", None)
+    if stdin is None:
+        return False
+    if getattr(stdin, "closed", False):
+        return False
+    isatty = getattr(stdin, "isatty", None)
+    if callable(isatty):
+        try:
+            return bool(isatty())
+        except OSError:
+            return False
+    return False
+
+
 def _initialize_paths() -> None:
     root = project_root()
     paths = initialize_user_data_paths()
@@ -223,10 +238,10 @@ def main() -> int:
         print(f"[startup] Error: {exc}")
         print("\nDebug trace:")
         print(traceback.format_exc())
-        if os.name == "nt":
+        if os.name == "nt" and _can_prompt_for_exit():
             try:
                 input("Press Enter to close...")
-            except EOFError:
+            except (EOFError, OSError, RuntimeError):
                 pass
         return 1
 
