@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import json
 import os
 import platform
@@ -25,6 +26,26 @@ def _print_banner() -> None:
     print("=" * 36)
     print("      Adventurer Guild AI")
     print("=" * 36)
+
+
+def _startup_log_file() -> Path:
+    try:
+        if getattr(sys, "frozen", False):
+            return initialize_user_data_paths().logs / "startup.log"
+        return project_root() / "logs" / "startup.log"
+    except Exception:
+        return Path.cwd() / "logs" / "startup.log"
+
+
+def _log_startup(message: str) -> None:
+    try:
+        log_path = _startup_log_file()
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        stamp = _dt.datetime.now().isoformat(timespec="seconds")
+        with log_path.open("a", encoding="utf-8") as handle:
+            handle.write(f"[{stamp}] {message}\n")
+    except Exception:
+        return
 
 
 def _can_prompt_for_exit() -> bool:
@@ -181,9 +202,11 @@ def _run_backend_server(host: str, port: int) -> int:
 def main() -> int:
     _print_banner()
     print("[startup] Initializing systems...")
+    _log_startup("Startup sequence started.")
 
     try:
         args = _parse_args()
+        _log_startup(f"Launch args parsed: mode={args.mode} terminal={args.terminal} host={args.host} port={args.port}")
         _initialize_paths()
 
         launch_mode = "terminal" if args.terminal else args.mode
@@ -204,6 +227,7 @@ def main() -> int:
                     f"Please stop the other process or choose a different port."
                 )
                 print(f"[startup] Port check detail: {reason}")
+                _log_startup(f"Port check failed: host={args.host} port={args.port} detail={reason}")
                 return 1
 
             browser_url = f"http://{_browser_host(args.host)}:{args.port}"
@@ -214,6 +238,7 @@ def main() -> int:
             )
             if not ready:
                 print(f"[startup] Backend failed to become ready: {reason}")
+                _log_startup(f"Backend readiness failed: {reason}")
                 _stop_backend_process(backend_process)
                 return 1
 
@@ -223,12 +248,14 @@ def main() -> int:
                 _launch_webview_window(browser_url)
             finally:
                 _stop_backend_process(backend_process)
+            _log_startup("Web mode exited cleanly.")
             return 0
 
         from app.main import main as terminal_main
 
         print("Starting terminal mode (fallback/debug)...")
         terminal_main()
+        _log_startup("Terminal mode exited cleanly.")
         return 0
     except KeyboardInterrupt:
         print("\n[startup] Shutdown requested. Goodbye.")
@@ -237,7 +264,11 @@ def main() -> int:
         print("\n[startup] Startup failed. The game could not be started.")
         print(f"[startup] Error: {exc}")
         print("\nDebug trace:")
-        print(traceback.format_exc())
+        trace = traceback.format_exc()
+        print(trace)
+        log_file = _startup_log_file()
+        _log_startup(f"Startup failed: {exc}\n{trace}")
+        print(f"[startup] Failure details were written to: {log_file}")
         if os.name == "nt" and _can_prompt_for_exit():
             try:
                 input("Press Enter to close...")
