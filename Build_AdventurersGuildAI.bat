@@ -32,22 +32,38 @@ if %errorlevel%==0 (
     where python >nul 2>&1
     if %errorlevel%==0 set "PYTHON_CMD=python"
 )
-if "%PYTHON_CMD%"=="" call :fail_now "[1/6] Resolve Python" "Python 3.10+ was not found in PATH."
+if "%PYTHON_CMD%"=="" (
+    set "FAILED_STEP=[1/6] Resolve Python"
+    set "FAILED_REASON=Python 3.10+ was not found in PATH."
+    goto :build_failed
+)
 call :pass "[1/6] Resolve Python" "Using %PYTHON_CMD%"
 
 call :step "[2/6] Install build dependencies"
 call %PYTHON_CMD% -m pip install --upgrade pip pyinstaller -r requirements.txt >>"%LOG_FILE%" 2>&1
-if errorlevel 1 call :fail_now "[2/6] Install build dependencies" "Dependency installation failed."
+if errorlevel 1 (
+    set "FAILED_STEP=[2/6] Install build dependencies"
+    set "FAILED_REASON=Dependency installation failed."
+    goto :build_failed
+)
 call :pass "[2/6] Install build dependencies" "Build dependencies are ready."
 
 call :step "[3/6] Clean old build output"
 if exist "build" (
     rmdir /s /q "build" >>"%LOG_FILE%" 2>&1
-    if errorlevel 1 call :fail_now "[3/6] Clean old build output" "Failed to remove build directory."
+    if errorlevel 1 (
+        set "FAILED_STEP=[3/6] Clean old build output"
+        set "FAILED_REASON=Failed to remove build directory."
+        goto :build_failed
+    )
 )
 if exist "dist\AdventurerGuildAI" (
     rmdir /s /q "dist\AdventurerGuildAI" >>"%LOG_FILE%" 2>&1
-    if errorlevel 1 call :fail_now "[3/6] Clean old build output" "Failed to remove dist\\AdventurerGuildAI directory."
+    if errorlevel 1 (
+        set "FAILED_STEP=[3/6] Clean old build output"
+        set "FAILED_REASON=Failed to remove dist\\AdventurerGuildAI directory."
+        goto :build_failed
+    )
 )
 call :pass "[3/6] Clean old build output" "Old build output removed."
 
@@ -59,16 +75,32 @@ call %PYTHON_CMD% tools\audit_distribution.py ^
   --require-file packaging\windows\runtime_bundle\workflows\character_portrait.json ^
   --require-file packaging\windows\runtime_bundle\THIRD_PARTY_NOTICES.txt ^
   --require-file packaging\windows\runtime_bundle\licenses\ComfyUI-LICENSE-MIT.txt >>"%LOG_FILE%" 2>&1
-if errorlevel 1 call :fail_now "[4/6] Run prebuild audit" "Prebuild packaging audit failed."
+if errorlevel 1 (
+    set "FAILED_STEP=[4/6] Run prebuild audit"
+    set "FAILED_REASON=Prebuild packaging audit failed."
+    goto :build_failed
+)
 call :pass "[4/6] Run prebuild audit" "Packaging input audit passed."
 
 set "SPEC_FILE=packaging\windows\AdventurerGuildAI.spec"
-if not exist "%SPEC_FILE%" call :fail_now "[5/6] Run PyInstaller spec build" "Spec file is missing: %SPEC_FILE%."
+if not exist "%SPEC_FILE%" (
+    set "FAILED_STEP=[5/6] Run PyInstaller spec build"
+    set "FAILED_REASON=Spec file is missing: %SPEC_FILE%."
+    goto :build_failed
+)
 
 call :step "[5/6] Run PyInstaller spec build"
 call %PYTHON_CMD% -m PyInstaller --noconfirm --clean "%SPEC_FILE%" >>"%LOG_FILE%" 2>&1
-if errorlevel 1 call :fail_now "[5/6] Run PyInstaller spec build" "PyInstaller build failed."
-if not exist "dist\AdventurerGuildAI\AdventurerGuildAI.exe" call :fail_now "[5/6] Run PyInstaller spec build" "Expected output EXE was not produced."
+if errorlevel 1 (
+    set "FAILED_STEP=[5/6] Run PyInstaller spec build"
+    set "FAILED_REASON=PyInstaller build failed."
+    goto :build_failed
+)
+if not exist "dist\AdventurerGuildAI\AdventurerGuildAI.exe" (
+    set "FAILED_STEP=[5/6] Run PyInstaller spec build"
+    set "FAILED_REASON=Expected output EXE was not produced."
+    goto :build_failed
+)
 call :pass "[5/6] Run PyInstaller spec build" "PyInstaller build produced AdventurerGuildAI.exe."
 
 call :step "[6/6] Run post-build audit"
@@ -81,15 +113,14 @@ call %PYTHON_CMD% tools\audit_distribution.py ^
   --require-file dist\AdventurerGuildAI\runtime_bundle\workflows\character_portrait.json ^
   --require-file dist\AdventurerGuildAI\runtime_bundle\THIRD_PARTY_NOTICES.txt ^
   --require-file dist\AdventurerGuildAI\runtime_bundle\licenses\ComfyUI-LICENSE-MIT.txt >>"%LOG_FILE%" 2>&1
-if errorlevel 1 call :fail_now "[6/6] Run post-build audit" "Post-build distribution audit failed."
+if errorlevel 1 (
+    set "FAILED_STEP=[6/6] Run post-build audit"
+    set "FAILED_REASON=Post-build distribution audit failed."
+    goto :build_failed
+)
 call :pass "[6/6] Run post-build audit" "Distribution audit passed."
 
 goto :build_success
-
-:fail_now
-set "FAILED_STEP=%~1"
-set "FAILED_REASON=%~2"
-goto :build_failed
 
 :build_success
 call :log SUCCESS: Packaged EXE build complete.

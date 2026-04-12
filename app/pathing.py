@@ -16,7 +16,12 @@ USER_DATA_ENV = "ADVENTURER_GUILD_AI_USER_DATA_DIR"
 def project_root() -> Path:
     """Return the project root in source mode or bundle root in frozen mode."""
     if getattr(sys, "frozen", False):
-        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+        executable_root = Path(sys.executable).resolve().parent
+        meipass_root = Path(getattr(sys, "_MEIPASS", executable_root))
+        for candidate in (executable_root, meipass_root):
+            if (candidate / "data").exists() or (candidate / "app" / "static").exists():
+                return candidate
+        return meipass_root
     return Path(__file__).resolve().parent.parent
 
 
