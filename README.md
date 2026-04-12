@@ -20,42 +20,23 @@ If startup fails, keep the console open and read the printed error details.
 - If desktop window startup fails, the launcher prints a clear error and exits.
 - `app/web.py` is not a user launcher and is not part of the normal source startup path.
 
-## Packaging and build workflows (developer-only)
+## Packaged EXE build workflow (Windows)
 
-These scripts are for packaging/distribution work and are **not** part of normal source running:
-
-- Build standalone executable bundle (PyInstaller onedir):
-  ```bat
-  tools\build_exe.bat
-  ```
-- Build Windows installer (Inno Setup):
-  ```bat
-  tools\build_installer.bat
-  ```
-- Optional release handoff package:
-  ```bat
-  release\create_release_package.bat
-  ```
-- Optional developer environment setup helper (not required for normal source run):
-  ```bat
-  tools\setup_dev_env.bat
-  ```
-
-## Packaging GUI launcher (Windows)
-
-For non-technical packaging workflows, use the GUI launcher from the repo root:
-
-```bat
-Build_AdventurersGuildAI.py
-```
-
-Optional compatibility launcher:
+For normal packaged EXE builds, use exactly one root script:
 
 ```bat
 Build_AdventurersGuildAI.bat
 ```
 
-The GUI provides output-folder selection, EXE/Installer/Everything build buttons, live logs, and clear success/error status while reusing the existing `tools\build_exe.bat` and `tools\build_installer.bat` scripts.
+What to click from repo root:
+- `run.bat` = run from source
+- `Build_AdventurersGuildAI.bat` = build packaged EXE
+
+Internal/developer scripts still exist for advanced packaging tasks and automation, but they are not the normal human entry point:
+- `tools\build_exe.bat` (internal worker called by `Build_AdventurersGuildAI.bat`)
+- `tools\build_installer.bat` (installer build)
+- `release\create_release_package.bat` (release handoff helper)
+- `tools\setup_dev_env.bat` (developer environment setup)
 
 ## Where user data is stored
 

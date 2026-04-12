@@ -1,92 +1,53 @@
 @echo off
-setlocal EnableExtensions EnableDelayedExpansion
+setlocal EnableExtensions
 
 set "ROOT_DIR=%~dp0"
 cd /d "%ROOT_DIR%"
 
-set "LOG_DIR=%ROOT_DIR%logs"
+set "LOG_DIR=%ROOT_DIR%logs\build"
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%" >nul 2>&1
-set "LAUNCH_LOG=%LOG_DIR%\build_launcher_bootstrap.log"
+for /f %%I in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set "STAMP=%%I"
+if not defined STAMP set "STAMP=%RANDOM%"
+set "LOG_FILE=%LOG_DIR%\Build_AdventurersGuildAI_%STAMP%.log"
 
-call :log ============================================================
-call :log [%date% %time%] Build_AdventurersGuildAI.bat invoked
-
-set "GUI_SCRIPT=%ROOT_DIR%Build_AdventurersGuildAI.py"
-if not exist "%GUI_SCRIPT%" (
-    call :log ERROR: GUI launcher script not found.
-    call :log Expected path: "%GUI_SCRIPT%"
+set "INTERNAL_BUILD_SCRIPT=%ROOT_DIR%tools\build_exe.bat"
+if not exist "%INTERNAL_BUILD_SCRIPT%" (
     echo.
-    echo ERROR: GUI launcher script not found:
-    echo   "%GUI_SCRIPT%"
-    echo.
-    pause
-    exit /b 1
-)
-
-set "PYTHON_EXE="
-set "PYTHON_ARGS="
-where pyw >nul 2>&1
-if %errorlevel%==0 (
-    set "PYTHON_EXE=pyw"
-    set "PYTHON_ARGS=-3"
-)
-if not defined PYTHON_EXE (
-    where pythonw >nul 2>&1
-    if %errorlevel%==0 (
-        set "PYTHON_EXE=pythonw"
-        set "PYTHON_ARGS="
-    )
-)
-if not defined PYTHON_EXE (
-    where py >nul 2>&1
-    if %errorlevel%==0 (
-        set "PYTHON_EXE=py"
-        set "PYTHON_ARGS=-3"
-    )
-)
-if not defined PYTHON_EXE (
-    where python >nul 2>&1
-    if %errorlevel%==0 (
-        set "PYTHON_EXE=python"
-        set "PYTHON_ARGS="
-    )
-)
-
-if not defined PYTHON_EXE (
-    call :log ERROR: Python not found (tried pyw/pythonw/py/python).
-    echo.
-    echo ERROR: Python 3 is required to open the GUI build launcher.
-    echo Install Python from: https://www.python.org/downloads/windows/
+    echo ============================================================
+    echo Adventurer Guild AI - Packaged EXE Builder
+    echo ============================================================
+    echo ERROR: Internal build worker script not found.
+    echo Expected: "%INTERNAL_BUILD_SCRIPT%"
     echo.
     pause
     exit /b 1
 )
 
-set "LAUNCH_CMD=%PYTHON_EXE% %PYTHON_ARGS% \"%GUI_SCRIPT%\""
-call :log Detected python command: %PYTHON_EXE% %PYTHON_ARGS%
-call :log GUI script path: "%GUI_SCRIPT%"
-call :log Launch command: %LAUNCH_CMD%
+echo.
+echo ============================================================
+echo Adventurer Guild AI - Packaged EXE Builder
+echo ============================================================
+echo Purpose: Build the packaged AdventurerGuildAI Windows EXE output.
+echo What this script does: Runs the official PyInstaller/spec build pipeline.
+echo Note: This is the packaged EXE build script. For source runs, use run.bat.
+echo Log file: "%LOG_FILE%"
+echo ============================================================
+echo.
 
-start "Adventurers Guild AI Build Launcher" /D "%ROOT_DIR%" cmd /c ""%PYTHON_EXE%" %PYTHON_ARGS% "%GUI_SCRIPT%" >> "%LAUNCH_LOG%" 2>&1"
-if errorlevel 1 (
-    call :log ERROR: GUI launch command failed to start. errorlevel=%errorlevel%
-    echo.
-    echo ERROR: Failed to launch GUI build launcher.
-    echo Command attempted:
-    echo   %LAUNCH_CMD%
-    echo.
-    echo See log for details: "%LAUNCH_LOG%"
-    echo.
-    pause
-    exit /b %errorlevel%
+set "BUILD_LOG_FILE=%LOG_FILE%"
+call "%INTERNAL_BUILD_SCRIPT%"
+set "BUILD_EXIT_CODE=%errorlevel%"
+
+echo.
+if "%BUILD_EXIT_CODE%"=="0" (
+    echo Build finished successfully.
+    echo Packaged EXE folder: "%ROOT_DIR%dist\AdventurerGuildAI"
+    echo Log file: "%LOG_FILE%"
+) else (
+    echo Build failed.
+    echo See failure phase details above.
+    echo Log file: "%LOG_FILE%"
 )
-
-call :log SUCCESS: GUI launched successfully.
-echo GUI launched successfully.
-exit /b 0
-
-:log
-if "%~1"=="" exit /b 0
-echo(%*
->>"%LAUNCH_LOG%" echo(%*
-exit /b 0
+echo.
+pause
+exit /b %BUILD_EXIT_CODE%
