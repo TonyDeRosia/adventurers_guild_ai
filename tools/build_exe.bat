@@ -20,10 +20,10 @@ if "%PYTHON_CMD%"=="" (
     exit /b 1
 )
 
-echo Installing/updating build tools...
-call %PYTHON_CMD% -m pip install --upgrade pip pyinstaller
+echo Installing/updating build and runtime dependencies...
+call %PYTHON_CMD% -m pip install --upgrade pip pyinstaller -r requirements.txt
 if errorlevel 1 (
-    echo Failed to install PyInstaller.
+    echo Failed to install build/runtime dependencies.
     exit /b 1
 )
 

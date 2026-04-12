@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import webbrowser
+import subprocess
 from urllib.error import URLError
 
 import run
@@ -54,69 +54,75 @@ def test_wait_for_web_health_times_out_on_invalid_payload(monkeypatch) -> None:
     assert reason == "health response did not include status ok"
 
 
-def test_try_launch_browser_windows_prefers_startfile(monkeypatch) -> None:
-    calls: list[str] = []
-    monkeypatch.setattr(run.platform, "system", lambda: "Windows")
-    monkeypatch.setattr(run.os, "startfile", lambda url: calls.append(url), raising=False)
+def test_build_backend_command_source_mode(monkeypatch) -> None:
+    monkeypatch.setattr(run.sys, "frozen", False, raising=False)
+    monkeypatch.setattr(run.sys, "executable", "/usr/bin/python3", raising=False)
 
-    result = run._try_launch_browser("http://127.0.0.1:8000")
+    command = run._build_backend_command("127.0.0.1", 8100)
 
-    assert result.success is True
-    assert result.method == "os.startfile"
-    assert calls == ["http://127.0.0.1:8000"]
-
-
-def test_try_launch_browser_windows_reports_startfile_failure(monkeypatch) -> None:
-    monkeypatch.setattr(run.platform, "system", lambda: "Windows")
-
-    def broken_startfile(_url: str) -> None:
-        raise OSError("shell association missing")
-
-    monkeypatch.setattr(run.os, "startfile", broken_startfile, raising=False)
-
-    result = run._try_launch_browser("http://127.0.0.1:8000")
-
-    assert result.success is False
-    assert result.method == "os.startfile"
-    assert "shell association missing" in result.reason
+    assert command[0] == "/usr/bin/python3"
+    assert command[1].endswith("run.py")
+    assert command[2:] == ["--backend-only", "--host", "127.0.0.1", "--port", "8100"]
 
 
-def test_try_launch_browser_reports_failure_reason(monkeypatch) -> None:
-    monkeypatch.setattr(run.platform, "system", lambda: "Windows")
+def test_build_backend_command_frozen_mode(monkeypatch) -> None:
+    monkeypatch.setattr(run.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(run.sys, "executable", "C:/App/AdventurerGuildAI.exe", raising=False)
 
-    def broken_startfile(_url: str) -> None:
-        raise OSError("startfile failed")
+    command = run._build_backend_command("127.0.0.1", 8000)
 
-    monkeypatch.setattr(run.os, "startfile", broken_startfile, raising=False)
-
-    result = run._try_launch_browser("http://127.0.0.1:8000")
-
-    assert result.success is False
-    assert result.method == "os.startfile"
-    assert "startfile failed" in result.reason
-
-
-def test_try_launch_browser_non_windows_uses_webbrowser(monkeypatch) -> None:
-    monkeypatch.setattr(run.platform, "system", lambda: "Linux")
-    monkeypatch.setattr(run.webbrowser, "open", lambda url: url == "http://127.0.0.1:8000")
-
-    result = run._try_launch_browser("http://127.0.0.1:8000")
-
-    assert result.success is True
-    assert result.method == "webbrowser.open"
+    assert command == [
+        "C:/App/AdventurerGuildAI.exe",
+        "--backend-only",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000",
+    ]
 
 
-def test_try_launch_browser_non_windows_reports_webbrowser_error(monkeypatch) -> None:
-    monkeypatch.setattr(run.platform, "system", lambda: "Linux")
+def test_stop_backend_process_terminates_running_process() -> None:
+    class _FakeProcess:
+        def __init__(self) -> None:
+            self.terminated = False
+            self._returncode = None
 
-    def broken_open(_url: str) -> bool:
-        raise webbrowser.Error("no browser registered")
+        def poll(self):
+            return self._returncode
 
-    monkeypatch.setattr(run.webbrowser, "open", broken_open)
+        def terminate(self):
+            self.terminated = True
+            self._returncode = 0
 
-    result = run._try_launch_browser("http://127.0.0.1:8000")
+        def wait(self, timeout: float):
+            return 0
 
-    assert result.success is False
-    assert result.method == "webbrowser.open"
-    assert "no browser registered" in result.reason
+    fake = _FakeProcess()
+    run._stop_backend_process(fake)  # type: ignore[arg-type]
+    assert fake.terminated is True
 
+
+def test_stop_backend_process_kills_when_terminate_times_out() -> None:
+    class _FakeProcess:
+        def __init__(self) -> None:
+            self.killed = False
+            self._returncode = None
+
+        def poll(self):
+            return self._returncode
+
+        def terminate(self):
+            return None
+
+        def wait(self, timeout: float):
+            if not self.killed:
+                raise subprocess.TimeoutExpired(cmd="fake", timeout=timeout)
+            self._returncode = 1
+            return 1
+
+        def kill(self):
+            self.killed = True
+
+    fake = _FakeProcess()
+    run._stop_backend_process(fake)  # type: ignore[arg-type]
+    assert fake.killed is True

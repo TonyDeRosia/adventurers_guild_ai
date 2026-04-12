@@ -52,10 +52,11 @@ hiddenimports.extend(collect_submodules("rules"))
 fastapi_data, fastapi_binaries, fastapi_hiddenimports = collect_all("fastapi")
 uvicorn_data, uvicorn_binaries, uvicorn_hiddenimports = collect_all("uvicorn")
 starlette_data, starlette_binaries, starlette_hiddenimports = collect_all("starlette")
+webview_data, webview_binaries, webview_hiddenimports = collect_all("webview")
 
-datas += fastapi_data + uvicorn_data + starlette_data
-binaries = fastapi_binaries + uvicorn_binaries + starlette_binaries
-hiddenimports += fastapi_hiddenimports + uvicorn_hiddenimports + starlette_hiddenimports
+datas += fastapi_data + uvicorn_data + starlette_data + webview_data
+binaries = fastapi_binaries + uvicorn_binaries + starlette_binaries + webview_binaries
+hiddenimports += fastapi_hiddenimports + uvicorn_hiddenimports + starlette_hiddenimports + webview_hiddenimports
 
 
 block_cipher = None
