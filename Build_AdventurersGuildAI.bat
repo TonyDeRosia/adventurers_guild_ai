@@ -86,6 +86,7 @@ echo GUI launched successfully.
 exit /b 0
 
 :log
-echo %~1
->>"%LAUNCH_LOG%" echo %~1
+if "%~1"=="" exit /b 0
+echo(%*
+>>"%LAUNCH_LOG%" echo(%*
 exit /b 0
