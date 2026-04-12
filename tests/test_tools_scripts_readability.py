@@ -30,3 +30,17 @@ def test_build_script_includes_failure_pause_behavior() -> None:
     content = Path("Build_AdventurersGuildAI.bat").read_text(encoding="utf-8")
     assert "if \"%INTERACTIVE%\"==\"1\" pause" in content
     assert "Step failed:" in content
+
+
+def test_build_script_exits_immediately_after_failures() -> None:
+    content = Path("Build_AdventurersGuildAI.bat").read_text(encoding="utf-8")
+    assert "goto :build_failed" in content
+    assert ":build_failed" in content
+    assert "call :log SUCCESS: Packaged EXE build complete." in content
+
+
+def test_build_script_post_build_audit_checks_runtime_startup_assets() -> None:
+    content = Path("Build_AdventurersGuildAI.bat").read_text(encoding="utf-8")
+    assert "dist\\AdventurerGuildAI\\data\\sample_campaign.json" in content
+    assert "dist\\AdventurerGuildAI\\app\\static\\index.html" in content
+    assert "dist\\AdventurerGuildAI\\runtime_bundle\\workflows\\character_portrait.json" in content

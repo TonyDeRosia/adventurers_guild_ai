@@ -29,12 +29,16 @@ if %errorlevel%==0 (
     where python >nul 2>&1
     if %errorlevel%==0 set "PYTHON_CMD=python"
 )
-if "%PYTHON_CMD%"=="" call :fail "[1/6] Resolve Python" "Python 3.10+ was not found in PATH."
+if "%PYTHON_CMD%"=="" (
+    call :fail "[1/6] Resolve Python" "Python 3.10+ was not found in PATH."
+    goto :build_failed
+)
 call :pass "[1/6] Resolve Python" "Using %PYTHON_CMD%"
 
 call :step "[2/6] Install build dependencies"
 call %PYTHON_CMD% -m pip install --upgrade pip pyinstaller -r requirements.txt >>"%LOG_FILE%" 2>&1
 if errorlevel 1 call :fail "[2/6] Install build dependencies" "Dependency installation failed."
+if errorlevel 1 goto :build_failed
 call :pass "[2/6] Install build dependencies" "Build dependencies are ready."
 
 call :step "[3/6] Clean old build output"
@@ -47,28 +51,41 @@ call %PYTHON_CMD% tools\audit_distribution.py ^
   --path packaging\windows\runtime_bundle ^
   --require-file packaging\windows\runtime_bundle\comfyui\README.txt ^
   --require-file packaging\windows\runtime_bundle\workflows\scene_image.json ^
+  --require-file packaging\windows\runtime_bundle\workflows\character_portrait.json ^
   --require-file packaging\windows\runtime_bundle\THIRD_PARTY_NOTICES.txt ^
   --require-file packaging\windows\runtime_bundle\licenses\ComfyUI-LICENSE-MIT.txt >>"%LOG_FILE%" 2>&1
 if errorlevel 1 call :fail "[4/6] Run prebuild audit" "Prebuild packaging audit failed."
+if errorlevel 1 goto :build_failed
 call :pass "[4/6] Run prebuild audit" "Packaging input audit passed."
 
 set "SPEC_FILE=packaging\windows\AdventurerGuildAI.spec"
-if not exist "%SPEC_FILE%" call :fail "[5/6] Run PyInstaller spec build" "Spec file is missing: %SPEC_FILE%."
+if not exist "%SPEC_FILE%" (
+    call :fail "[5/6] Run PyInstaller spec build" "Spec file is missing: %SPEC_FILE%."
+    goto :build_failed
+)
 
 call :step "[5/6] Run PyInstaller spec build"
 call %PYTHON_CMD% -m PyInstaller --noconfirm --clean "%SPEC_FILE%" >>"%LOG_FILE%" 2>&1
 if errorlevel 1 call :fail "[5/6] Run PyInstaller spec build" "PyInstaller build failed."
-if not exist "dist\AdventurerGuildAI\AdventurerGuildAI.exe" call :fail "[5/6] Run PyInstaller spec build" "Expected output EXE was not produced."
+if errorlevel 1 goto :build_failed
+if not exist "dist\AdventurerGuildAI\AdventurerGuildAI.exe" (
+    call :fail "[5/6] Run PyInstaller spec build" "Expected output EXE was not produced."
+    goto :build_failed
+)
 call :pass "[5/6] Run PyInstaller spec build" "PyInstaller build produced AdventurerGuildAI.exe."
 
 call :step "[6/6] Run post-build audit"
 call %PYTHON_CMD% tools\audit_distribution.py ^
   --path dist\AdventurerGuildAI ^
+  --require-file dist\AdventurerGuildAI\data\sample_campaign.json ^
+  --require-file dist\AdventurerGuildAI\app\static\index.html ^
   --require-file dist\AdventurerGuildAI\runtime_bundle\comfyui\README.txt ^
   --require-file dist\AdventurerGuildAI\runtime_bundle\workflows\scene_image.json ^
+  --require-file dist\AdventurerGuildAI\runtime_bundle\workflows\character_portrait.json ^
   --require-file dist\AdventurerGuildAI\runtime_bundle\THIRD_PARTY_NOTICES.txt ^
   --require-file dist\AdventurerGuildAI\runtime_bundle\licenses\ComfyUI-LICENSE-MIT.txt >>"%LOG_FILE%" 2>&1
 if errorlevel 1 call :fail "[6/6] Run post-build audit" "Post-build distribution audit failed."
+if errorlevel 1 goto :build_failed
 call :pass "[6/6] Run post-build audit" "Distribution audit passed."
 
 call :log SUCCESS: Packaged EXE build complete.
@@ -76,6 +93,9 @@ call :log Final EXE path: %ROOT_DIR%\dist\AdventurerGuildAI\AdventurerGuildAI.ex
 call :log Log file: %LOG_FILE%
 if "%INTERACTIVE%"=="1" pause
 exit /b 0
+
+:build_failed
+exit /b 1
 
 :step
 call :log %~1
