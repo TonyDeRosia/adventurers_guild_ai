@@ -26,8 +26,8 @@ class BuildLauncherApp:
         self.root.minsize(860, 560)
 
         self.repo_root = Path(__file__).resolve().parent
-        self.exe_script = self.repo_root / "tools" / "build_exe.bat"
-        self.installer_script = self.repo_root / "tools" / "build_installer.bat"
+        self.exe_script = self._resolve_script_path("Build_AdventurersGuildAI.bat", "tools/build_exe.bat")
+        self.installer_script = self._resolve_script_path("tools/build_installer.bat")
 
         self.output_dir_var = tk.StringVar(value=str((self.repo_root / "release").resolve()))
         self.status_var = tk.StringVar(value="Ready.")
@@ -35,6 +35,7 @@ class BuildLauncherApp:
         self.worker: threading.Thread | None = None
         self.prereq_status_vars: dict[str, tk.StringVar] = {}
         self.step_status_vars: dict[str, tk.StringVar] = {}
+        self._needs_installer_assets_for_prereq = False
 
         logs_dir = self.repo_root / "logs"
         logs_dir.mkdir(exist_ok=True)
@@ -49,6 +50,13 @@ class BuildLauncherApp:
         self._refresh_prerequisites(log_output=True)
         self._set_step_state("prereq", "ready")
         self.root.after(100, self._drain_log_queue)
+
+    def _resolve_script_path(self, *relative_candidates: str) -> Path:
+        for relative in relative_candidates:
+            candidate = self.repo_root / relative
+            if candidate.exists():
+                return candidate
+        return self.repo_root / relative_candidates[0]
 
     def _build_ui(self) -> None:
         top = tk.Frame(self.root, padx=12, pady=10)
@@ -326,25 +334,26 @@ class BuildLauncherApp:
             return False
         return completed.returncode == 0
 
-    def _has_packaging_assets(self) -> tuple[bool, list[str]]:
+    def _has_packaging_assets(self, *, include_installer_assets: bool = False) -> tuple[bool, list[str]]:
         required_paths = [
-            Path("tools/build_exe.bat"),
-            Path("tools/build_installer.bat"),
             Path("packaging/windows/AdventurerGuildAI.spec"),
-            Path("installer/AdventurerGuildAI.iss"),
             Path("packaging/windows/runtime_bundle/comfyui/README.txt"),
             Path("packaging/windows/runtime_bundle/workflows/scene_image.json"),
             Path("packaging/windows/runtime_bundle/THIRD_PARTY_NOTICES.txt"),
             Path("packaging/windows/runtime_bundle/licenses/ComfyUI-LICENSE-MIT.txt"),
         ]
+        if include_installer_assets:
+            required_paths.append(Path("installer/AdventurerGuildAI.iss"))
         missing = [str(path) for path in required_paths if not (self.repo_root / path).exists()]
         return not missing, missing
 
-    def _refresh_prerequisites(self, log_output: bool = False) -> dict[str, object]:
+    def _refresh_prerequisites(self, log_output: bool = False, *, include_installer_assets: bool = False) -> dict[str, object]:
         python_cmd = self._get_python_cmd()
         pyinstaller_ok = self._has_pyinstaller(python_cmd)
         inno_ok = self._has_inno_setup()
-        packaging_ok, missing_packaging = self._has_packaging_assets()
+        packaging_ok, missing_packaging = self._has_packaging_assets(
+            include_installer_assets=include_installer_assets,
+        )
 
         prereqs = {
             "python_ok": python_cmd is not None,
@@ -374,8 +383,9 @@ class BuildLauncherApp:
 
     def _ensure_prerequisites(self, mode: str) -> bool:
         self._set_step_state("prereq", "in_progress")
-        prereqs = self._refresh_prerequisites(log_output=True)
         needs_inno = mode in {"installer", "all"}
+        self._needs_installer_assets_for_prereq = needs_inno
+        prereqs = self._refresh_prerequisites(log_output=True, include_installer_assets=needs_inno)
         missing: list[tuple[str, str, str | None]] = []
 
         if not prereqs["python_ok"]:
@@ -384,6 +394,10 @@ class BuildLauncherApp:
             missing.append(("PyInstaller", "https://pyinstaller.org/en/stable/installation.html", None))
         if needs_inno and not prereqs["inno_ok"]:
             missing.append(("Inno Setup 6", "https://jrsoftware.org/isinfo.php", None))
+        if not self.exe_script.exists():
+            missing.append(("Build EXE script", "", str(self.exe_script.relative_to(self.repo_root))))
+        if mode in {"installer", "all"} and not self.installer_script.exists():
+            missing.append(("Build installer script", "", str(self.installer_script.relative_to(self.repo_root))))
         if not prereqs["packaging_ok"]:
             missing.append(("Required packaging files/folders", "", "\n".join(prereqs["missing_packaging"])))
 
@@ -418,12 +432,19 @@ class BuildLauncherApp:
                     self._append_log(f"No download page for {name}. Recheck after restoring missing files.")
                 continue
 
-            prereqs = self._refresh_prerequisites(log_output=True)
+            prereqs = self._refresh_prerequisites(
+                log_output=True,
+                include_installer_assets=self._needs_installer_assets_for_prereq,
+            )
             if name.startswith("Python") and prereqs["python_ok"]:
                 return True
             if name == "PyInstaller" and prereqs["pyinstaller_ok"]:
                 return True
             if name.startswith("Inno") and prereqs["inno_ok"]:
+                return True
+            if name.startswith("Build EXE script") and self.exe_script.exists():
+                return True
+            if name.startswith("Build installer script") and self.installer_script.exists():
                 return True
             if name.startswith("Required packaging") and prereqs["packaging_ok"]:
                 return True
