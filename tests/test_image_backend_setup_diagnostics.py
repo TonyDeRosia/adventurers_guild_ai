@@ -194,14 +194,34 @@ def test_managed_install_keeps_mode_managed(tmp_path: Path, monkeypatch) -> None
     assert runtime.app_config.image.comfyui_path == ""
 
 
-def test_windows_py_launcher_command_adds_python3_flag(tmp_path: Path, monkeypatch) -> None:
+def test_windows_embedded_python_command_is_preferred(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_root = tmp_path / "ComfyUI"
+    comfy_root.mkdir(parents=True, exist_ok=True)
+    embedded = comfy_root / "python_embeded" / "python.exe"
+    embedded.parent.mkdir(parents=True, exist_ok=True)
+    embedded.write_text("", encoding="utf-8")
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+    command, launcher = runtime._build_comfy_launch_command(comfy_root, "127.0.0.1", 8188)
+    assert launcher == "embedded_python"
+    assert command[0] == str(embedded)
+    assert command[1] == "main.py"
+
+
+def test_windows_system_python_requires_explicit_setting(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     comfy_root = tmp_path / "ComfyUI"
     comfy_root.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
     monkeypatch.setattr("shutil.which", lambda _name: "py")
+
     command, launcher = runtime._build_comfy_launch_command(comfy_root, "127.0.0.1", 8188)
-    assert launcher == "py_launcher"
+    assert command == []
+    assert launcher == "python_runtime_not_found"
+
+    runtime.app_config.image.preferred_launcher = "system_python"
+    command, launcher = runtime._build_comfy_launch_command(comfy_root, "127.0.0.1", 8188)
+    assert launcher == "system_python_explicit"
     assert command[:3] == ["py", "-3", "main.py"]
 
 
@@ -259,6 +279,7 @@ def test_start_image_engine_skips_launch_when_dependency_bootstrap_fails(tmp_pat
     monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": False})
     monkeypatch.setattr(runtime, "validate_comfyui_install", lambda _path: {"ok": True, "missing_files": []})
     monkeypatch.setattr(runtime, "_build_comfy_launch_command", lambda *_args, **_kwargs: (["python", "main.py"], "system_python"))
+    monkeypatch.setattr(runtime, "_validate_python_runtime", lambda *_args, **_kwargs: {"ok": True})
     monkeypatch.setattr(
         runtime,
         "_bootstrap_comfy_python_dependencies",
