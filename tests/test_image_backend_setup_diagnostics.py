@@ -108,3 +108,32 @@ def test_start_image_engine_reports_missing_workflow_cleanly(tmp_path: Path, mon
 
     assert result["ok"] is False
     assert "workflow" in result["message"].lower()
+
+
+def test_image_engine_service_status_reports_not_installed_state(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    runtime.app_config.image.comfyui_path = str(tmp_path / "missing")
+    runtime.app_config.image.comfyui_workflow_path = ""
+    runtime.app_config.image.checkpoint_folder = ""
+
+    payload = runtime.get_image_engine_service_status()
+
+    assert payload["ok"] is True
+    assert payload["state"] == "not_installed"
+    assert payload["api_url"].startswith("http://")
+
+
+def test_install_image_engine_does_not_force_browser_launch(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    monkeypatch.setattr(runtime, "_is_windows", lambda: True)
+    target_dir = tmp_path / "managed" / "ComfyUI"
+    monkeypatch.setattr(runtime, "_default_comfyui_path", lambda: target_dir)
+    monkeypatch.setattr(runtime, "_find_comfyui_root", lambda: None)
+    monkeypatch.setattr(runtime, "_download_and_extract_comfyui", lambda _target: (True, "ok"))
+    monkeypatch.setattr(runtime, "validate_comfyui_install", lambda _path: {"ok": True, "valid": True, "missing_files": []})
+    monkeypatch.setattr(runtime, "open_external_url", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("should not open browser")))
+
+    result = runtime.install_image_engine()
+
+    assert result["ok"] is True

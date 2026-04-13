@@ -39,8 +39,10 @@ const imageBackendOverallState = document.getElementById('image-backend-overall-
 const imageBackendDiagnosticsSummary = document.getElementById('image-backend-diagnostics-summary');
 const imageBackendDiagnosticsLog = document.getElementById('image-backend-diagnostics-log');
 const verifyImageBackendButton = document.getElementById('verify-image-backend');
+const checkImageEngineStatusButton = document.getElementById('check-image-engine-status');
 const startImageBackendButton = document.getElementById('start-image-backend');
 const stopImageBackendButton = document.getElementById('stop-image-backend');
+const openImageEngineUiButton = document.getElementById('open-image-engine-ui');
 const locateExistingComfyuiFolderButton = document.getElementById('locate-existing-comfyui-folder');
 const openImageBackendFolderButton = document.getElementById('open-image-backend-folder');
 const openWorkflowsFolderButton = document.getElementById('open-workflows-folder');
@@ -2070,6 +2072,14 @@ async function refreshImageBackendDiagnostics() {
   }
 }
 
+async function checkImageEngineStatus() {
+  const payload = await api('/api/setup/image-engine-status');
+  const state = payload.state || 'unknown';
+  const pid = payload.process_id ? ` (PID ${payload.process_id})` : '';
+  setStatus(`Image engine status: ${state}${pid}`);
+  return payload;
+}
+
 async function useBundledImageEngine() {
   const result = await api('/api/setup/use-bundled-image-engine', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
   setStatus(result.message || (result.ok ? 'Bundled image engine selected.' : 'Bundled image engine could not be selected.'), !result.ok);
@@ -2841,8 +2851,12 @@ bindClickOnce(verifyImageBackendButton, async () => {
   await Promise.all([refreshDependencyReadiness(), refreshImageSetupSnapshot(), refreshImageBackendDiagnostics()]);
   setStatus('Image backend verified.');
 });
+bindClickOnce(checkImageEngineStatusButton, () => checkImageEngineStatus().catch((error) => setStatus(error.message, true)));
 bindClickOnce(startImageBackendButton, () => runReadinessAction('start_image_engine', {}).catch((error) => setStatus(error.message, true)));
 bindClickOnce(stopImageBackendButton, () => stopImageBackend().catch((error) => setStatus(error.message, true)));
+bindClickOnce(openImageEngineUiButton, () => api('/api/setup/open-image-engine-ui', { method: 'POST' })
+  .then((result) => setStatus(result.message || (result.ok ? 'Opened ComfyUI debug UI.' : 'Could not open ComfyUI UI.'), !result.ok))
+  .catch((error) => setStatus(error.message, true)));
 bindClickOnce(locateExistingComfyuiFolderButton, () => locateExistingComfyuiFolder().catch((error) => setStatus(error.message, true)));
 bindClickOnce(openImageBackendFolderButton, () => openLocalPath(latestImageBackendDiagnostics?.diagnostics?.comfyui_path, 'Image backend folder').catch((error) => setStatus(error.message, true)));
 bindClickOnce(openWorkflowsFolderButton, () => {
