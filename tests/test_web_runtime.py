@@ -3471,6 +3471,58 @@ def test_unresolved_quoted_speech_stays_on_narrator_path(tmp_path: Path, monkeyp
     assert "Leave now" in payload["messages"][0]["text"]
 
 
+def test_single_quoted_npc_speech_splits_when_speaker_resolved(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_npc_split_single_quotes"})
+    state = runtime.session.state
+    npc = NPC(id="npc_archivist", name="Archivist Nera", location_id=state.current_location_id)
+    state.npcs[npc.id] = npc
+    state.active_dialogue_npc_id = npc.id
+
+    monkeypatch.setattr(
+        runtime.engine,
+        "run_turn",
+        lambda *_args, **_kwargs: TurnResult(
+            narrative="Nera steadies the scroll. 'The vault remembers every oath,' she says.",
+            system_messages=[],
+            messages=[{"type": "narrator", "text": "Nera steadies the scroll. 'The vault remembers every oath,' she says."}],
+        ),
+    )
+    payload = runtime.handle_player_input("I ask Nera about the vault.")
+    assert [message["type"] for message in payload["messages"]] == ["narrator", "npc", "narrator"]
+    assert payload["messages"][1]["speaker_name"] == "Archivist Nera"
+    assert payload["messages"][1]["text"] == "The vault remembers every oath,"
+
+
+def test_explicit_speaker_npc_id_metadata_is_used_for_narrator_split(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_npc_split_explicit_speaker"})
+    state = runtime.session.state
+    state.npcs["npc_guard"] = NPC(id="npc_guard", name="Captain Rovan", location_id=state.current_location_id)
+    state.npcs["npc_merchant"] = NPC(id="npc_merchant", name="Vera", location_id=state.current_location_id)
+    state.active_dialogue_npc_id = "npc_merchant"
+
+    monkeypatch.setattr(
+        runtime.engine,
+        "run_turn",
+        lambda *_args, **_kwargs: TurnResult(
+            narrative='The captain folds his arms and says, "No one enters after dusk."',
+            system_messages=[],
+            messages=[
+                {
+                    "type": "narrator",
+                    "text": 'The captain folds his arms and says, "No one enters after dusk."',
+                    "speaker_npc_id": "npc_guard",
+                }
+            ],
+        ),
+    )
+    payload = runtime.handle_player_input("I ask who can enter.")
+    assert payload["messages"][1]["type"] == "npc"
+    assert payload["messages"][1]["speaker_npc_id"] == "npc_guard"
+    assert payload["messages"][1]["speaker_name"] == "Captain Rovan"
+
+
 def test_npc_identity_registry_persists_through_save_reload(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.create_campaign({"slot": "slot_npc_persist"})
