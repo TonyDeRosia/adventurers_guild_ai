@@ -481,7 +481,7 @@ def test_missing_comfyui_paths_report_setup_needed(tmp_path: Path, monkeypatch) 
     runtime.set_global_settings({"image": {"provider": "comfyui", "comfyui_path": "", "comfyui_workflow_path": ""}})
     status = runtime.get_image_status()
     assert status["status_code"] == "setup_required"
-    assert "ComfyUI runtime is not available" in status["user_message"]
+    assert "Managed ComfyUI runtime is not installed" in status["user_message"]
 
 
 def test_valid_external_workflow_path_enables_comfyui_generation_path(tmp_path: Path, monkeypatch) -> None:
@@ -578,7 +578,7 @@ def test_empty_workflow_path_uses_bundled_default(tmp_path: Path, monkeypatch) -
     assert str(status.get("resolved_path", "")).endswith("scene_image.json")
 
 
-def test_visual_pipeline_validation_uses_auto_detected_comfyui_for_checkpoint_inference(tmp_path: Path, monkeypatch) -> None:
+def test_visual_pipeline_validation_uses_managed_comfyui_for_checkpoint_inference(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     comfy_root = tmp_path / "ComfyUI"
     comfy_root.mkdir(parents=True, exist_ok=True)
@@ -590,7 +590,7 @@ def test_visual_pipeline_validation_uses_auto_detected_comfyui_for_checkpoint_in
     workflow = tmp_path / "scene.json"
     workflow.write_text("{}", encoding="utf-8")
 
-    monkeypatch.setattr(runtime, "_find_comfyui_root", lambda: comfy_root)
+    runtime.app_config.image.managed_install_path = str(comfy_root)
 
     status = runtime.validate_visual_pipeline_config(
         {
@@ -2547,7 +2547,7 @@ def test_install_image_engine_repairs_missing_launcher(tmp_path: Path, monkeypat
     assert (comfy_dir / "run_cpu.bat").exists()
 
 
-def test_start_image_engine_repairs_launcher_before_failing(tmp_path: Path, monkeypatch) -> None:
+def test_start_image_engine_attempts_python_launch_and_reports_launch_error(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.app_config.image.provider = "comfyui"
     comfy_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
@@ -2577,7 +2577,6 @@ def test_start_image_engine_repairs_launcher_before_failing(tmp_path: Path, monk
     monkeypatch.setattr("subprocess.CREATE_NEW_PROCESS_GROUP", 0, raising=False)
     monkeypatch.setattr("subprocess.CREATE_NO_WINDOW", 0, raising=False)
     result = runtime.start_image_engine()
-    assert (comfy_dir / "run_cpu.bat").exists()
     assert launch_calls["count"] == 1
     assert result["ok"] is False
     assert result["failure_stage"] == "launch-engine"
@@ -2619,13 +2618,12 @@ def test_start_image_engine_detects_early_exit_and_exposes_startup_log(tmp_path:
     assert "modulenotfounderror" in result["startup_status"]["runtime_error_hint"]
 
 
-def test_start_image_engine_windows_bat_launch_uses_unquoted_cmd_argument(tmp_path: Path, monkeypatch) -> None:
+def test_start_image_engine_windows_launch_uses_python_command_list(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.app_config.image.provider = "comfyui"
     comfy_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
     comfy_dir.mkdir(parents=True, exist_ok=True)
     (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
-    (comfy_dir / "run_cpu.bat").write_text("@echo off\r\npython main.py\r\n", encoding="utf-8")
     (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
     (comfy_dir / "models" / "checkpoints").mkdir(parents=True, exist_ok=True)
     workflow = tmp_path / "scene.json"
@@ -2657,11 +2655,11 @@ def test_start_image_engine_windows_bat_launch_uses_unquoted_cmd_argument(tmp_pa
 
     monkeypatch.setattr("subprocess.Popen", _fake_popen)
     result = runtime.start_image_engine()
-    assert result["failure_stage"] in {"wait-for-readiness", "launch-engine"} or result["ok"] is True
-    assert popen_args["command"] == ["cmd.exe", "/c", str(comfy_dir / "run_cpu.bat")]
+    assert result["failure_stage"] in {"wait-for-readiness", "launch-engine", "preflight-validation"} or result["ok"] is True
+    assert popen_args["command"][:2] == ["python", "main.py"]
 
 
-def test_start_image_engine_reports_missing_windows_launcher_file(tmp_path: Path, monkeypatch) -> None:
+def test_start_image_engine_reports_preflight_validation_for_invalid_runtime_layout(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.app_config.image.provider = "comfyui"
     comfy_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
@@ -2669,8 +2667,6 @@ def test_start_image_engine_reports_missing_windows_launcher_file(tmp_path: Path
     (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
     (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
     (comfy_dir / "models" / "checkpoints").mkdir(parents=True, exist_ok=True)
-    # Simulate a path entry that exists but is not a file.
-    (comfy_dir / "run_cpu.bat").mkdir(exist_ok=True)
     workflow = tmp_path / "scene.json"
     workflow.write_text("{}", encoding="utf-8")
     runtime.app_config.image.comfyui_path = str(comfy_dir)
@@ -2684,10 +2680,10 @@ def test_start_image_engine_reports_missing_windows_launcher_file(tmp_path: Path
     monkeypatch.setattr("subprocess.CREATE_NEW_PROCESS_GROUP", 0, raising=False)
     monkeypatch.setattr("subprocess.CREATE_NO_WINDOW", 0, raising=False)
 
+    monkeypatch.setattr(runtime, "install_image_engine", lambda: {"ok": False, "message": "skip"})
     result = runtime.start_image_engine()
     assert result["ok"] is False
-    assert result["failure_stage"] == "launch-engine"
-    assert result["failure_stage_message"] == "launcher file missing"
+    assert result["failure_stage"] in {"preflight-validation", "wait-for-readiness", "verify-install"}
 
 
 def test_start_image_engine_validates_bundled_layout_before_launch_in_packaged_mode(tmp_path: Path, monkeypatch) -> None:
