@@ -3507,3 +3507,71 @@ def test_history_replay_prefers_structured_turn_messages_for_npc_cards(tmp_path:
     replayed = runtime._history_for_slot(runtime.session.active_slot)
     assert [message["type"] for message in replayed] == ["player", "narrator", "npc"]
     assert replayed[2]["speaker_name"] == "Vera"
+
+def test_play_view_separates_scene_from_dialogue(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_play_view_scene"})
+    state = runtime.session.state
+    npc = NPC(id="npc_scene", name="Warden Ilra", location_id=state.current_location_id)
+    state.npcs[npc.id] = npc
+    state.active_dialogue_npc_id = npc.id
+
+    monkeypatch.setattr(
+        runtime.engine,
+        "run_turn",
+        lambda *_args, **_kwargs: TurnResult(
+            narrative='Fog gathers around the gate as Ilra says, "Stay close."',
+            system_messages=[],
+            messages=[{"type": "narrator", "text": 'Fog gathers around the gate as Ilra says, "Stay close."'}],
+        ),
+    )
+    runtime.handle_player_input("I approach the gate.")
+    view = runtime.get_play_view()
+
+    assert "Fog gathers" in view["scene_state"]["narration"]
+    assert any(entry["type"] == "npc" and entry.get("speaker_name") == "Warden Ilra" for entry in view["dialogue_entries"])
+
+
+def test_play_view_visible_npc_includes_portrait_or_placeholder(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_play_view_npc"})
+    state = runtime.session.state
+    npc = NPC(id="npc_portrait", name="Seren Vale", location_id=state.current_location_id)
+    state.npcs[npc.id] = npc
+    registry = runtime._sync_npc_identities()
+
+    without_portrait = runtime.get_play_view()
+    npc_entry = next(item for item in without_portrait["visible_npcs"] if item["npc_id"] == npc.id)
+    assert npc_entry["display_name"] == "Seren Vale"
+    assert npc_entry["portrait_url"] == ""
+    assert npc_entry["avatar_fallback"] == "SV"
+
+    registry.bind_portrait_success(npc.id, portrait_path="/generated/seren.png", prompt="portrait")
+    with_portrait = runtime.get_play_view()
+    npc_entry_with_portrait = next(item for item in with_portrait["visible_npcs"] if item["npc_id"] == npc.id)
+    assert npc_entry_with_portrait["portrait_url"] == "/generated/seren.png"
+
+
+def test_play_view_remains_valid_with_narration_only_and_survives_reload(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_play_view_reload"})
+
+    monkeypatch.setattr(
+        runtime.engine,
+        "run_turn",
+        lambda *_args, **_kwargs: TurnResult(
+            narrative="The chapel stands quiet under moonlight.",
+            system_messages=[],
+            messages=[{"type": "narrator", "text": "The chapel stands quiet under moonlight."}],
+        ),
+    )
+    runtime.handle_player_input("look")
+    runtime.save_active_campaign("slot_play_view_reload")
+
+    reloaded = _runtime(tmp_path, monkeypatch)
+    reloaded.switch_campaign("slot_play_view_reload")
+    view = reloaded.get_play_view()
+
+    assert view["visible_npcs"] == []
+    assert any(entry["type"] == "narrator" for entry in view["dialogue_entries"])
+    assert "chapel" in view["scene_state"]["narration"].lower()
