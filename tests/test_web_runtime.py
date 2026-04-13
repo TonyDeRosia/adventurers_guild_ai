@@ -3309,6 +3309,131 @@ def test_handle_player_input_routes_npc_dialogue_cards_and_preserves_narrator(tm
     assert narrator_message["type"] == "narrator"
 
 
+def test_narrator_only_turn_stays_narrator_only_without_resolved_speaker(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_npc_split_narrator_only"})
+    runtime.session.state.active_dialogue_npc_id = None
+
+    monkeypatch.setattr(
+        runtime.engine,
+        "run_turn",
+        lambda *_args, **_kwargs: TurnResult(
+            narrative='The market rustles as someone says, "Fresh bread!"',
+            system_messages=[],
+            messages=[{"type": "narrator", "text": 'The market rustles as someone says, "Fresh bread!"'}],
+        ),
+    )
+
+    payload = runtime.handle_player_input("look around")
+    assert [message["type"] for message in payload["messages"]] == ["narrator"]
+    assert '"Fresh bread!"' in payload["messages"][0]["text"]
+
+
+def test_narration_plus_resolved_npc_line_splits_to_narrator_and_npc_and_reuses_identity(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_npc_split_resolved"})
+    state = runtime.session.state
+    npc = NPC(id="npc_merchant", name="Vera", location_id=state.current_location_id)
+    state.npcs[npc.id] = npc
+    state.active_dialogue_npc_id = npc.id
+
+    outputs = iter(
+        [
+            TurnResult(
+                narrative='The awning snaps in the wind as the merchant says, "Care to trade?"',
+                system_messages=[],
+                messages=[{"type": "narrator", "text": 'The awning snaps in the wind as the merchant says, "Care to trade?"'}],
+            ),
+            TurnResult(
+                narrative='"I can lower the price a little."',
+                system_messages=[],
+                messages=[{"type": "narrator", "text": '"I can lower the price a little."'}],
+            ),
+        ]
+    )
+    monkeypatch.setattr(runtime.engine, "run_turn", lambda *_args, **_kwargs: next(outputs))
+
+    first = runtime.handle_player_input("I ask the merchant about prices.")
+    second = runtime.handle_player_input("I wait.")
+    first_types = [message["type"] for message in first["messages"]]
+    assert first_types == ["narrator", "npc"]
+    assert first["messages"][1]["speaker_name"] == "Vera"
+    assert first["messages"][1]["speaker_npc_id"] == "npc_merchant"
+    assert second["messages"][0]["type"] == "npc"
+    assert second["messages"][0]["speaker_npc_id"] == "npc_merchant"
+    assert len(runtime.session.state.structured_state.runtime.npc_identity_registry) == 1
+
+
+def test_npc_message_attaches_portrait_metadata_when_available(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_npc_split_portrait"})
+    state = runtime.session.state
+    npc = NPC(id="npc_artist", name="Iria", location_id=state.current_location_id)
+    state.npcs[npc.id] = npc
+    state.active_dialogue_npc_id = npc.id
+    registry = runtime._sync_npc_identities()
+    registry.bind_portrait_success(npc.id, portrait_path="/generated/iria.png", prompt="portrait")
+
+    monkeypatch.setattr(
+        runtime.engine,
+        "run_turn",
+        lambda *_args, **_kwargs: TurnResult(
+            narrative='"Welcome to my gallery."',
+            system_messages=[],
+            messages=[{"type": "narrator", "text": '"Welcome to my gallery."'}],
+        ),
+    )
+    payload = runtime.handle_player_input("I greet Iria.")
+    npc_message = payload["messages"][0]
+    assert npc_message["type"] == "npc"
+    assert npc_message["speaker_name"] == "Iria"
+    assert npc_message["portrait_url"] == "/generated/iria.png"
+
+
+def test_npc_message_without_portrait_still_emits_card_fields(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_npc_split_no_portrait"})
+    state = runtime.session.state
+    npc = NPC(id="npc_scout", name="Deren", location_id=state.current_location_id)
+    state.npcs[npc.id] = npc
+    state.active_dialogue_npc_id = npc.id
+
+    monkeypatch.setattr(
+        runtime.engine,
+        "run_turn",
+        lambda *_args, **_kwargs: TurnResult(
+            narrative='"The road is clear ahead."',
+            system_messages=[],
+            messages=[{"type": "narrator", "text": '"The road is clear ahead."'}],
+        ),
+    )
+    payload = runtime.handle_player_input("Any scouts ahead?")
+    npc_message = payload["messages"][0]
+    assert npc_message["type"] == "npc"
+    assert npc_message["speaker_name"] == "Deren"
+    assert npc_message["portrait_url"] == ""
+
+
+def test_unresolved_quoted_speech_stays_on_narrator_path(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_npc_split_unresolved"})
+    runtime.session.state.active_dialogue_npc_id = None
+
+    monkeypatch.setattr(
+        runtime.engine,
+        "run_turn",
+        lambda *_args, **_kwargs: TurnResult(
+            narrative='A distant voice whispers, "Leave now."',
+            system_messages=[],
+            messages=[{"type": "narrator", "text": 'A distant voice whispers, "Leave now."'}],
+        ),
+    )
+    payload = runtime.handle_player_input("I listen.")
+    assert len(payload["messages"]) == 1
+    assert payload["messages"][0]["type"] == "narrator"
+    assert "Leave now" in payload["messages"][0]["text"]
+
+
 def test_npc_identity_registry_persists_through_save_reload(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.create_campaign({"slot": "slot_npc_persist"})

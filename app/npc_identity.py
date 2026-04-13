@@ -161,11 +161,12 @@ class NPCIdentityRegistry:
         text = str(message.get("text", "")).strip()
         if not text or self._looks_like_non_dialogue_npc_message(text):
             return message
-        npc_id = self.state.active_dialogue_npc_id or ""
+        npc_id = str(message.get("speaker_npc_id", "")).strip() or self.state.active_dialogue_npc_id or ""
         if not npc_id and len(self.records) == 1:
             npc_id = next(iter(self.records.keys()))
         record = self.records.get(npc_id)
         if record is None:
+            print("[npc-dialogue-card] left_in_npc_unenriched reason=record_missing")
             return message
         self.mark_seen(npc_id)
         print(f"[npc-dialogue-card] routed npc_id={npc_id}")
@@ -175,6 +176,10 @@ class NPCIdentityRegistry:
         portrait_path = str(record.get("portrait_path", "")).strip()
         enriched["portrait_url"] = portrait_path
         enriched["portrait_status"] = str(record.get("portrait_status", "none"))
+        if portrait_path:
+            print(f"[npc-dialogue-card] portrait_attached npc_id={npc_id}")
+        else:
+            print(f"[npc-dialogue-card] portrait_missing npc_id={npc_id}")
         return enriched
 
     def _is_notable_npc(self, npc: Any) -> bool:
