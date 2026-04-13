@@ -879,6 +879,40 @@ body {
   border-color: #4c6996;
 }
 
+.msg-npc-card {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  background: linear-gradient(160deg, #3d2b58, #2e2244);
+  border-color: #6c56a0;
+}
+
+.npc-card-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  border: 1px solid #68538f;
+  background: #221a33;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #d9cfff;
+  font-weight: 700;
+  font-size: 0.86rem;
+  overflow: hidden;
+  flex: 0 0 52px;
+}
+
+.npc-card-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.npc-card-content {
+  min-width: 0;
+}
+
 .input-bar.compose-bar {
   margin-top: 12px;
   padding: 8px;

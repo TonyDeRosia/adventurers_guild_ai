@@ -48,6 +48,7 @@ from app.pathing import (
 from app.comfy_manager import ComfyProcessManager
 from app.desktop_capabilities import DesktopIntegration
 from app.installer_layout import InstallerLayoutValidator
+from app.npc_identity import NPCIdentityRegistry
 from app.runtime_config import AppRuntimeConfig, ImageRuntimeConfig, ModelRuntimeConfig, RuntimeConfigStore
 from engine.campaign_engine import CampaignEngine, TurnResult
 from engine.character_sheets import CharacterSheet, CharacterSheetAbilityEntry
@@ -99,6 +100,8 @@ class WebRuntime:
         self._history_lock = threading.Lock()
         self._turn_visual_lock = threading.Lock()
         self._active_turn_visual_jobs: set[tuple[str, int, str]] = set()
+        self._npc_portrait_lock = threading.Lock()
+        self._active_npc_portrait_jobs: set[tuple[str, str]] = set()
         self._model_install_lock = threading.Lock()
         self._model_install_jobs: dict[str, dict[str, Any]] = {}
         self._apply_bundled_image_defaults()
@@ -3156,10 +3159,14 @@ class WebRuntime:
 
         engine_started = time.perf_counter()
         result = self.engine.run_turn(self.session.state, clean_text)
+        registry = self._sync_npc_identities()
+        self._maybe_queue_npc_portraits(registry)
         engine_ms = (time.perf_counter() - engine_started) * 1000
         message_append_started = time.perf_counter()
-        for message in result.messages:
-            self._append_message(message["type"], message["text"], persist=False)
+        routed_messages = [registry.route_npc_dialogue_message(message) for message in result.messages]
+        for message in routed_messages:
+            extra = {k: v for k, v in message.items() if k not in {"type", "text"}}
+            self._append_message(message["type"], message["text"], persist=False, **extra)
         message_append_ms = (time.perf_counter() - message_append_started) * 1000
         narrator_response = self._extract_narrator_response(result)
         background_image_queued = self._maybe_queue_auto_turn_visual(
@@ -3188,7 +3195,7 @@ class WebRuntime:
         return {
             "narrative": result.narrative,
             "system_messages": result.system_messages,
-            "messages": result.messages,
+            "messages": routed_messages,
             "should_exit": result.should_exit,
             "metadata": {**(result.metadata or {}), "model_status": model_status, "timing": turn_timing},
             "state": self.serialize_state(),
@@ -3726,6 +3733,72 @@ class WebRuntime:
                     return candidate
         return ""
 
+    def _sync_npc_identities(self) -> NPCIdentityRegistry:
+        registry = NPCIdentityRegistry(self.session.state)
+        registry.ensure_for_state()
+        return registry
+
+    def _maybe_queue_npc_portraits(self, registry: NPCIdentityRegistry) -> None:
+        if not self.session.state.settings.image_generation_enabled:
+            return
+        if self.app_config.image.provider != "comfyui":
+            return
+        for npc_id in list(registry.records.keys()):
+            should_generate, reason = registry.should_generate_portrait(npc_id)
+            if not should_generate:
+                if reason not in {"not_important", "portrait_ready", "portrait_requested", "visual_locked"}:
+                    print(f"[npc-portrait] generation_skipped npc_id={npc_id} reason={reason}")
+                continue
+            self._queue_npc_portrait_generation(npc_id=npc_id)
+
+    def _queue_npc_portrait_generation(self, *, npc_id: str) -> bool:
+        slot = self.session.active_slot
+        job_key = (slot, npc_id)
+        with self._npc_portrait_lock:
+            if job_key in self._active_npc_portrait_jobs:
+                return False
+            self._active_npc_portrait_jobs.add(job_key)
+        registry = self._sync_npc_identities()
+        if npc_id in registry.records:
+            registry.records[npc_id]["portrait_status"] = "queued"
+        print(f"[npc-portrait] generation_requested npc_id={npc_id}")
+
+        def _worker() -> None:
+            try:
+                self._generate_npc_portrait(npc_id=npc_id)
+            finally:
+                with self._npc_portrait_lock:
+                    self._active_npc_portrait_jobs.discard(job_key)
+
+        threading.Thread(target=_worker, name=f"npc-portrait-{slot}-{npc_id}", daemon=True).start()
+        return True
+
+    def _generate_npc_portrait(self, *, npc_id: str) -> None:
+        registry = self._sync_npc_identities()
+        if npc_id not in registry.records:
+            return
+        prompt = registry.portrait_prompt(npc_id)
+        registry.records[npc_id]["portrait_status"] = "requested"
+        registry.records[npc_id]["portrait_prompt"] = prompt
+        request_payload = {
+            "workflow_id": "character_portrait",
+            "prompt": prompt,
+            "negative_prompt": "full body, scene composition, environment panorama, text watermark",
+            "parameters": {"checkpoint": self.app_config.image.preferred_checkpoint},
+        }
+        result = self.generate_image(request_payload)
+        if not result.success:
+            print(f"[npc-portrait] generation_failed npc_id={npc_id} reason={result.error}")
+            registry.bind_portrait_failure(npc_id, str(result.error or "portrait_generation_failed"))
+            return
+        public_image_url = self.public_image_path(result.result_path)
+        if not public_image_url:
+            print(f"[npc-portrait] generation_failed npc_id={npc_id} reason=missing_public_image_url")
+            registry.bind_portrait_failure(npc_id, "missing_public_image_url")
+            return
+        registry.bind_portrait_success(npc_id, portrait_path=public_image_url, prompt=prompt)
+        print(f"[npc-portrait] generation_succeeded npc_id={npc_id}")
+
     def _request_scene_visual_generation(
         self,
         *,
@@ -4120,15 +4193,16 @@ class WebRuntime:
         parameters = dict(payload.get("parameters", {}))
         if self.app_config.image.preferred_checkpoint and "checkpoint" not in parameters:
             parameters["checkpoint"] = self.app_config.image.preferred_checkpoint
+        requested_workflow_id = str(payload.get("workflow_id", "scene_image")).strip() or "scene_image"
         request = ImageGenerationRequest(
-            workflow_id=str(payload.get("workflow_id", "scene_image")),
+            workflow_id=requested_workflow_id,
             prompt=str(payload.get("prompt", "")),
             negative_prompt=str(payload.get("negative_prompt", "")),
             parameters=parameters,
         )
         workflow_manager = self.workflow_manager
         resolved_workflow = str(path_config.get("workflow_path", {}).get("resolved_path") or self.app_config.image.comfyui_workflow_path).strip()
-        if resolved_workflow:
+        if resolved_workflow and requested_workflow_id in {"", "scene_image"}:
             workflow_path = Path(resolved_workflow)
             request.workflow_id = workflow_path.stem
             workflow_manager = WorkflowManager(workflow_path.parent)

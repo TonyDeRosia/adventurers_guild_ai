@@ -273,6 +273,7 @@ class CampaignRuntimeState:
     scene_visual_state: dict[str, Any] = field(default_factory=dict)
     scene_state: dict[str, Any] = field(default_factory=dict)
     last_narration: str = ""
+    npc_identity_registry: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass
@@ -592,6 +593,7 @@ class CampaignState:
                 scene_visual_state=dict(raw_runtime.get("scene_visual_state", {})),
                 scene_state=CampaignState._scene_state_from_payload(raw_runtime.get("scene_state", {}), payload),
                 last_narration=str(raw_runtime.get("last_narration", "")),
+                npc_identity_registry={str(k): dict(v) for k, v in raw_runtime.get("npc_identity_registry", {}).items() if isinstance(v, dict)},
             ),
             recent_turn_memory=CampaignRecentMemoryState(
                 last_major_actions=[str(v) for v in raw_recent.get("last_major_actions", [])],
@@ -643,6 +645,7 @@ class CampaignState:
                 },
                 scene_state=CampaignState._scene_state_from_payload({}, payload),
                 last_narration="",
+                npc_identity_registry={},
             ),
             recent_turn_memory=CampaignRecentMemoryState(
                 last_major_actions=[str(v) for v in payload.get("recent_memory", [])[-6:]],

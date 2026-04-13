@@ -11,6 +11,7 @@ import pytest
 
 from app.web import WebRuntime, create_web_app
 from engine.character_sheets import CharacterSheet, CharacterSheetAbilityEntry
+from engine.campaign_engine import TurnResult
 from engine.entities import CampaignState, ConversationTurn, NPC
 from images.base import ImageGenerationResult
 from models.base import NarrationModelAdapter, ProviderUnavailableError
@@ -3218,3 +3219,107 @@ def test_recalibration_does_not_overwrite_existing_personality_profile(tmp_path:
 
     assert state.npcs["npc_known"].personality_profile is not None
     assert state.npcs["npc_known"].personality_profile.archetype == "Watch Captain"
+
+
+def test_npc_identity_registry_reuses_record_for_repeat_npc(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_npc_registry"})
+    state = runtime.session.state
+    state.npcs["npc_watch"] = NPC(id="npc_watch", name="Captain Vey", location_id=state.current_location_id)
+
+    registry = runtime._sync_npc_identities()
+    first = dict(registry.records["npc_watch"])
+    registry_again = runtime._sync_npc_identities()
+    second = registry_again.records["npc_watch"]
+
+    assert second["npc_id"] == "npc_watch"
+    assert second["first_seen_turn"] == first["first_seen_turn"]
+
+
+def test_npc_portrait_generation_failure_is_non_blocking(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_npc_portrait_fail"})
+    state = runtime.session.state
+    npc = NPC(id="npc_companion", name="Seren", location_id=state.current_location_id, disposition=35, relationship_tier="friendly")
+    state.npcs[npc.id] = npc
+    registry = runtime._sync_npc_identities()
+
+    monkeypatch.setattr(
+        runtime,
+        "generate_image",
+        lambda payload: ImageGenerationResult(success=False, workflow_id="character_portrait", error="backend unavailable"),
+    )
+    runtime._generate_npc_portrait(npc_id=npc.id)
+
+    record = registry.records[npc.id]
+    assert record["portrait_status"] == "failed"
+    assert record.get("portrait_path", "") == ""
+
+
+def test_npc_portrait_generation_binds_to_npc_id(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_npc_portrait_bind"})
+    state = runtime.session.state
+    npc = NPC(id="npc_companion", name="Seren", location_id=state.current_location_id, disposition=35, relationship_tier="friendly")
+    state.npcs[npc.id] = npc
+    registry = runtime._sync_npc_identities()
+
+    monkeypatch.setattr(
+        runtime,
+        "generate_image",
+        lambda payload: ImageGenerationResult(success=True, workflow_id="character_portrait", result_path=str(runtime.generated_image_dir / "npc.png")),
+    )
+    monkeypatch.setattr(runtime, "public_image_path", lambda result_path: "/generated/npc.png")
+    runtime._generate_npc_portrait(npc_id=npc.id)
+
+    record = registry.records[npc.id]
+    assert record["portrait_status"] == "ready"
+    assert record["portrait_path"] == "/generated/npc.png"
+    assert record["visual_locked"] is True
+
+
+def test_handle_player_input_routes_npc_dialogue_cards_and_preserves_narrator(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_npc_message_routing"})
+    state = runtime.session.state
+    npc = NPC(id="npc_keeper", name="Keeper Thane", location_id=state.current_location_id)
+    state.npcs[npc.id] = npc
+    state.active_dialogue_npc_id = npc.id
+
+    monkeypatch.setattr(
+        runtime.engine,
+        "run_turn",
+        lambda *_args, **_kwargs: TurnResult(
+            narrative="Rain gathers over the square.",
+            system_messages=[],
+            messages=[
+                {"type": "npc", "text": "[calm/measured] Welcome back, traveler."},
+                {"type": "narrator", "text": "Rain gathers over the square."},
+            ],
+        ),
+    )
+
+    payload = runtime.handle_player_input("talk npc_keeper")
+    npc_message = payload["messages"][0]
+    narrator_message = payload["messages"][1]
+
+    assert npc_message["type"] == "npc"
+    assert npc_message["speaker_npc_id"] == "npc_keeper"
+    assert npc_message["speaker_name"] == "Keeper Thane"
+    assert narrator_message["type"] == "narrator"
+
+
+def test_npc_identity_registry_persists_through_save_reload(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_npc_persist"})
+    state = runtime.session.state
+    state.npcs["npc_persist"] = NPC(id="npc_persist", name="Iria", location_id=state.current_location_id, disposition=30, relationship_tier="friendly")
+    registry = runtime._sync_npc_identities()
+    registry.bind_portrait_success("npc_persist", portrait_path="/generated/iria.png", prompt="portrait prompt")
+    runtime.save_active_campaign("slot_npc_persist")
+
+    reloaded = _runtime(tmp_path, monkeypatch)
+    reloaded.switch_campaign("slot_npc_persist")
+    restored = reloaded.session.state.structured_state.runtime.npc_identity_registry
+    assert restored["npc_persist"]["portrait_path"] == "/generated/iria.png"
+    assert restored["npc_persist"]["display_name"] == "Iria"
