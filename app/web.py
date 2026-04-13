@@ -3352,7 +3352,7 @@ class WebRuntime:
         self._maybe_queue_npc_portraits(registry)
         engine_ms = (time.perf_counter() - engine_started) * 1000
         message_append_started = time.perf_counter()
-        split_messages = self._split_turn_messages_for_npc_dialogue(
+        split_messages = self._build_turn_display_segments(
             result.messages,
             player_input=clean_text,
             registry=registry,
@@ -3396,7 +3396,7 @@ class WebRuntime:
             "state": self.serialize_state(),
         }
 
-    def _split_turn_messages_for_npc_dialogue(
+    def _build_turn_display_segments(
         self,
         messages: list[dict[str, Any]],
         *,
@@ -3404,8 +3404,8 @@ class WebRuntime:
         registry: NPCIdentityRegistry,
     ) -> list[dict[str, Any]]:
         split: list[dict[str, Any]] = []
-        speaker_npc_id, resolution_source = self._resolve_turn_speaker_npc_id(registry)
-        print(f"[npc-dialogue-card] speaker_resolution source={resolution_source} npc_id={speaker_npc_id or 'none'}")
+        default_speaker_npc_id, resolution_source = self._resolve_turn_speaker_npc_id(registry)
+        print(f"[npc-dialogue-card] speaker_resolution source={resolution_source} npc_id={default_speaker_npc_id or 'none'}")
         for message in messages:
             msg_type = str(message.get("type", "")).strip().lower()
             if msg_type != "narrator":
@@ -3414,6 +3414,11 @@ class WebRuntime:
             text = str(message.get("text", "")).strip()
             if not text:
                 continue
+            speaker_npc_id = self._resolve_message_speaker_npc_id(
+                message=message,
+                registry=registry,
+                default_speaker_npc_id=default_speaker_npc_id,
+            )
             split_segments = self._extract_npc_speech_segments(
                 text=text,
                 player_input=player_input,
@@ -3433,6 +3438,38 @@ class WebRuntime:
                 else:
                     split.append({"type": "narrator", "text": segment_text})
         return split
+
+    def _resolve_message_speaker_npc_id(
+        self,
+        *,
+        message: dict[str, Any],
+        registry: NPCIdentityRegistry,
+        default_speaker_npc_id: str,
+    ) -> str:
+        explicit_npc_id = str(message.get("speaker_npc_id", "")).strip()
+        if explicit_npc_id and explicit_npc_id in registry.records:
+            return explicit_npc_id
+        explicit_actor_npc_id = str(message.get("actor_npc_id", "")).strip() or str(message.get("npc_id", "")).strip()
+        if explicit_actor_npc_id and explicit_actor_npc_id in registry.records:
+            return explicit_actor_npc_id
+        explicit_actor_id = str(message.get("actor_id", "")).strip()
+        if explicit_actor_id:
+            scene_state = self.session.state.structured_state.runtime.scene_state
+            scene_actors = scene_state.get("scene_actors", []) if isinstance(scene_state, dict) else []
+            for actor in scene_actors:
+                if not isinstance(actor, dict) or str(actor.get("actor_id", "")).strip() != explicit_actor_id:
+                    continue
+                linked_npc_id = str(actor.get("linked_npc_id", "")).strip()
+                if linked_npc_id and linked_npc_id in registry.records:
+                    return linked_npc_id
+        if default_speaker_npc_id:
+            return default_speaker_npc_id
+        explicit_name = str(message.get("speaker_name", "")).strip().lower()
+        if explicit_name:
+            for npc_id, record in registry.records.items():
+                if str(record.get("display_name", "")).strip().lower() == explicit_name:
+                    return npc_id
+        return ""
 
     def _resolve_turn_speaker_npc_id(self, registry: NPCIdentityRegistry) -> tuple[str, str]:
         active_id = str(self.session.state.active_dialogue_npc_id or "").strip()
@@ -3460,15 +3497,20 @@ class WebRuntime:
             print("[npc-dialogue-card] left_in_narrator reason=no_resolved_speaker")
             return [{"type": "narrator", "text": text}]
         normalized = re.sub(r"\s+", " ", text.strip())
-        matches = list(re.finditer(r"[\"“]([^\"”]{2,280})[\"”]", normalized))
+        quote_pattern = r"[\"“]([^\"”]{2,280})[\"”]|(?<![A-Za-z0-9])[\'‘]([^\'’]{2,280})[\'’](?![A-Za-z0-9])"
+        matches = list(re.finditer(quote_pattern, normalized))
         if not matches:
             print("[npc-dialogue-card] left_in_narrator reason=no_quoted_dialogue")
             return [{"type": "narrator", "text": text}]
-        player_quoted_segments = [m.group(1).strip().lower() for m in re.finditer(r"[\"“]([^\"”]{2,280})[\"”]", player_input)]
+        player_quoted_segments = [
+            str(m.group(1) or m.group(2) or "").strip().lower()
+            for m in re.finditer(quote_pattern, player_input)
+            if str(m.group(1) or m.group(2) or "").strip()
+        ]
         npc_spans: list[tuple[int, int, str]] = []
         cue_tokens = ("says", "said", "replies", "asks", "answers", "whispers", "murmurs", "growls", "calls")
         for match in matches:
-            quoted = str(match.group(1) or "").strip()
+            quoted = str(match.group(1) or match.group(2) or "").strip()
             if not quoted:
                 continue
             before = normalized[max(0, match.start() - 48):match.start()].lower()
