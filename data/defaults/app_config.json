@@ -11,6 +11,9 @@
     "enabled": true,
     "manual_image_generation_enabled": true,
     "campaign_auto_visual_timing": "after_narration",
-    "auto_negative_prompt_additions": []
+    "auto_negative_prompt_additions": [],
+    "managed_service_enabled": true,
+    "managed_install_path": "",
+    "managed_logs_path": ""
   }
 }

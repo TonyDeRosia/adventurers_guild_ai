@@ -97,6 +97,9 @@ class WebRuntime:
         self.session = WebSession(state=self._load_or_create(default_slot), active_slot=default_slot)
         self.session.message_history = self._history_for_slot(self.session.active_slot)
         self.image_startup_status: dict[str, Any] = {}
+        self._image_engine_state = "installed"
+        self._image_engine_last_error = ""
+        self._image_engine_last_health_check = ""
         self._history_lock = threading.Lock()
         self._turn_visual_lock = threading.Lock()
         self._active_turn_visual_jobs: set[tuple[str, int, str]] = set()
@@ -105,6 +108,7 @@ class WebRuntime:
         self._model_install_lock = threading.Lock()
         self._model_install_jobs: dict[str, dict[str, Any]] = {}
         self._apply_bundled_image_defaults()
+        self._apply_managed_image_engine_defaults()
         print("[web-runtime] session initialized")
 
     def shutdown_managed_services(self) -> None:
@@ -697,6 +701,38 @@ class WebRuntime:
             state = "Not Configured"
         diagnostics["overall_state"] = state
         return {"ok": True, "diagnostics": diagnostics}
+
+    def get_image_engine_service_status(self) -> dict[str, Any]:
+        path_status = self.get_path_configuration_status().get("image", {})
+        managed_state = self.comfy_manager.snapshot()
+        image_status = self.get_image_status() if self.app_config.image.provider == "comfyui" else {}
+        install_path = str(
+            self.app_config.image.managed_install_path
+            or path_status.get("comfyui_root", {}).get("resolved_path")
+            or path_status.get("comfyui_root", {}).get("path")
+            or self._default_comfyui_path()
+        )
+        api_url = str(self.app_config.image.base_url or "http://localhost:8188")
+        state = self._image_engine_state
+        if managed_state.running:
+            state = "running"
+        elif state not in {"starting", "stopping", "error"}:
+            installed = bool(path_status.get("comfyui_root", {}).get("valid", False))
+            state = "installed" if installed else "not_installed"
+        self._image_engine_last_health_check = datetime.now(timezone.utc).isoformat()
+        return {
+            "ok": True,
+            "state": state,
+            "install_path": install_path,
+            "process_id": managed_state.pid,
+            "api_url": api_url,
+            "last_error": self._image_engine_last_error,
+            "last_health_check": self._image_engine_last_health_check,
+            "managed_process": managed_state.running,
+            "workflow_available": bool(path_status.get("workflow_path", {}).get("valid", False)),
+            "model_available": bool(path_status.get("checkpoint_dir", {}).get("valid", False)),
+            "api_reachable": bool(image_status.get("reachable", False)),
+        }
 
     def use_bundled_image_engine(self) -> dict[str, Any]:
         bundled = bundled_comfyui_dir()
@@ -1465,6 +1501,17 @@ class WebRuntime:
         if changed:
             self.config_store.save(self.app_config)
 
+    def _apply_managed_image_engine_defaults(self) -> None:
+        changed = False
+        if not str(self.app_config.image.managed_install_path or "").strip():
+            self.app_config.image.managed_install_path = str(self._default_comfyui_path())
+            changed = True
+        if not str(self.app_config.image.managed_logs_path or "").strip():
+            self.app_config.image.managed_logs_path = str(self.paths.logs / "image_engine_startup.log")
+            changed = True
+        if changed:
+            self.config_store.save(self.app_config)
+
     def validate_comfyui_install(self, path: Path) -> dict[str, Any]:
         missing_files: list[str] = []
         if not (path / "main.py").exists():
@@ -1761,9 +1808,13 @@ class WebRuntime:
 
     def install_image_engine(self) -> dict[str, Any]:
         print("[setup-action] install-image-engine requested")
+        self._image_engine_state = "starting"
+        self._image_engine_last_error = ""
         if not self._is_windows():
             reason = "windows-only flow"
             print(f"[setup-action] install-image-engine failure reason={reason}")
+            self._image_engine_state = "error"
+            self._image_engine_last_error = reason
             return {
                 "ok": False,
                 "message": "Automatic ComfyUI setup is currently supported on Windows only.",
@@ -1775,7 +1826,9 @@ class WebRuntime:
             if validation.get("ok"):
                 print(f"[setup-action] install-image-engine success reason=already-installed path={existing}")
                 self.app_config.image.comfyui_path = str(existing)
+                self.app_config.image.managed_install_path = str(existing)
                 self.config_store.save(self.app_config)
+                self._image_engine_state = "installed"
                 return {"ok": True, "message": "ComfyUI is already installed.", "readiness_refreshed": True}
             print(f"[setup-orchestrator] comfyui install repair reason=existing-install-invalid missing={validation.get('missing_files')}")
         target_dir = self._default_comfyui_path()
@@ -1783,6 +1836,8 @@ class WebRuntime:
         print("[setup-orchestrator] comfyui install start")
         ok, install_message = self._download_and_extract_comfyui(target_dir)
         if not ok:
+            self._image_engine_state = "error"
+            self._image_engine_last_error = install_message
             return {
                 "ok": False,
                 "message": install_message,
@@ -1795,16 +1850,19 @@ class WebRuntime:
                 self._write_comfyui_cpu_launcher(target_dir)
             validation = self.validate_comfyui_install(target_dir)
             if not validation.get("ok"):
+                self._image_engine_state = "error"
+                self._image_engine_last_error = ",".join(validation.get("missing_files", []))
                 return {
                     "ok": False,
                     "message": f"ComfyUI install is incomplete: missing {', '.join(validation.get('missing_files', []))}.",
                     "next_step": "Retry installation, or install manually from the official repository.",
                 }
         self.app_config.image.comfyui_path = str(target_dir)
+        self.app_config.image.managed_install_path = str(target_dir)
         self.config_store.save(self.app_config)
-        self.open_external_url("https://github.com/comfyanonymous/ComfyUI")
         print("[setup-orchestrator] comfyui install success")
         print("[setup-action] install-image-engine success")
+        self._image_engine_state = "installed"
         return {
             "ok": True,
             "message": "ComfyUI install verified and ready to launch.",
@@ -1814,13 +1872,20 @@ class WebRuntime:
 
     def start_image_engine(self) -> dict[str, Any]:
         print("[setup-action] start-image-engine requested")
+        self._image_engine_state = "starting"
+        self._image_engine_last_error = ""
         startup_log_lines: list[str] = []
-        startup_log_file = self.paths.logs / "image_engine_startup.log"
+        startup_log_file = Path(str(self.app_config.image.managed_logs_path or "")).expanduser()
+        if not str(startup_log_file).strip() or str(startup_log_file) == ".":
+            startup_log_file = self.paths.logs / "image_engine_startup.log"
+        self.app_config.image.managed_logs_path = str(startup_log_file)
         startup_log_file.parent.mkdir(parents=True, exist_ok=True)
         self.image_startup_status = {}
         self.comfy_manager.clear_if_exited()
         if self.app_config.image.provider != "comfyui":
             print("[setup-action] start-image-engine failure reason=image provider is not comfyui")
+            self._image_engine_state = "error"
+            self._image_engine_last_error = "provider_not_comfyui"
             return {
                 "ok": False,
                 "message": "Image provider is not set to comfyui.",
@@ -1831,6 +1896,8 @@ class WebRuntime:
             }
         path_config = self.get_path_configuration_status().get("image", {})
         if not bool(path_config.get("workflow_path", {}).get("valid")):
+            self._image_engine_state = "error"
+            self._image_engine_last_error = "invalid_workflow_path"
             return {
                 "ok": False,
                 "message": "Workflow JSON path is invalid.",
@@ -1862,6 +1929,8 @@ class WebRuntime:
         if comfyui_root is None:
             print("[setup-action] start-image-engine failure reason=install-path-missing")
             print("[setup-orchestrator] setup-image failure stage=detect-install-path")
+            self._image_engine_state = "error"
+            self._image_engine_last_error = "install_path_missing"
             return {
                 "ok": False,
                 "message": "ComfyUI install path was not found.",
@@ -1871,6 +1940,7 @@ class WebRuntime:
                 "steps": [{"step": "detect-install-path", "state": "failed", "message": "ComfyUI install path was not found."}],
             }
         self.app_config.image.comfyui_path = str(comfyui_root)
+        self.app_config.image.managed_install_path = str(comfyui_root)
         resolved_workflow = str(path_config.get("workflow_path", {}).get("resolved_path") or self.app_config.image.comfyui_workflow_path).strip()
         if resolved_workflow:
             self.app_config.image.comfyui_workflow_path = resolved_workflow
@@ -2000,6 +2070,8 @@ class WebRuntime:
                 if not python_exe:
                     print("[setup-action] start-image-engine failure reason=python-not-found")
                     print("[setup-orchestrator] setup-image failure stage=launch-engine")
+                    self._image_engine_state = "error"
+                    self._image_engine_last_error = "python_not_found"
                     return {
                         "ok": False,
                         "message": "Python was not found on PATH.",
@@ -2025,6 +2097,8 @@ class WebRuntime:
         except OSError as exc:
             print(f"[setup-action] start-image-engine failure reason={exc}")
             print("[setup-orchestrator] setup-image failure stage=launch-engine")
+            self._image_engine_state = "error"
+            self._image_engine_last_error = str(exc)
             return {
                 "ok": False,
                 "message": f"Could not start ComfyUI: {exc}",
@@ -2038,6 +2112,8 @@ class WebRuntime:
                 ],
             }
         if process is None:
+            self._image_engine_state = "error"
+            self._image_engine_last_error = "process_launch_uninitialized"
             return {"ok": False, "message": "ComfyUI process launch did not initialize.", "failure_stage": "launch-engine", "failure_stage_message": "process launch failed"}
         if log_handle is not None:
             self.comfy_manager.bind_log_handle(log_handle)
@@ -2071,6 +2147,8 @@ class WebRuntime:
                     "managed_process": False,
                 }
                 self.comfy_manager.clear_if_exited()
+                self._image_engine_state = "error"
+                self._image_engine_last_error = "process_exited_immediately"
                 return {
                     "ok": False,
                     "message": "Image AI failed: ComfyUI exited during startup.",
@@ -2097,6 +2175,7 @@ class WebRuntime:
                     "log_file": str(startup_log_file),
                     "managed_process": self.comfy_manager.snapshot().running,
                 }
+                self._image_engine_state = "running"
                 return {
                     "ok": True,
                     "message": "ComfyUI started and is reachable.",
@@ -2150,6 +2229,8 @@ class WebRuntime:
         }
         print("[setup-action] start-image-engine failure reason=timeout-waiting-for-comfyui")
         print("[setup-orchestrator] setup-image failure stage=wait-for-readiness")
+        self._image_engine_state = "error"
+        self._image_engine_last_error = reason
         return {
             "ok": False,
             "message": message,
@@ -2167,12 +2248,16 @@ class WebRuntime:
         }
 
     def stop_image_engine(self) -> dict[str, Any]:
+        self._image_engine_state = "stopping"
         self.comfy_manager.clear_if_exited()
         snapshot = self.comfy_manager.snapshot()
         if not snapshot.running:
+            self._image_engine_state = "installed"
             return {"ok": True, "message": "Image engine is not running.", "managed_process": False}
         stopped = self.comfy_manager.shutdown()
         if not stopped:
+            self._image_engine_state = "error"
+            self._image_engine_last_error = "stop_failed"
             return {"ok": False, "message": "Image engine process could not be stopped cleanly.", "managed_process": True}
         self.image_startup_status = {
             "stage": "stopped",
@@ -2180,7 +2265,12 @@ class WebRuntime:
             "summary": "ComfyUI process stopped from setup controls.",
             "managed_process": False,
         }
+        self._image_engine_state = "installed"
         return {"ok": True, "message": "Image engine stopped.", "managed_process": False, "readiness_refreshed": True}
+
+    def open_image_engine_debug_ui(self) -> dict[str, Any]:
+        base_url = str(self.app_config.image.base_url or "").strip() or "http://localhost:8188"
+        return self.open_external_url(base_url)
 
     def _create_image_adapter(self) -> ImageGeneratorAdapter:
         cfg = self.app_config.image
@@ -4139,6 +4229,9 @@ class WebRuntime:
                 "preferred_checkpoint": self.app_config.image.preferred_checkpoint,
                 "preferred_launcher": self.app_config.image.preferred_launcher,
                 "auto_negative_prompt_additions": list(self.app_config.image.auto_negative_prompt_additions),
+                "managed_service_enabled": self.app_config.image.managed_service_enabled,
+                "managed_install_path": self.app_config.image.managed_install_path,
+                "managed_logs_path": self.app_config.image.managed_logs_path,
             },
             "path_config": path_status,
             "dependency_readiness": self.get_dependency_readiness(),
@@ -4191,6 +4284,9 @@ class WebRuntime:
                 image_payload.get("auto_negative_prompt_additions", self.app_config.image.auto_negative_prompt_additions), list
             )
             else list(self.app_config.image.auto_negative_prompt_additions),
+            managed_service_enabled=bool(image_payload.get("managed_service_enabled", self.app_config.image.managed_service_enabled)),
+            managed_install_path=str(image_payload.get("managed_install_path", self.app_config.image.managed_install_path)),
+            managed_logs_path=str(image_payload.get("managed_logs_path", self.app_config.image.managed_logs_path)),
         )
         self.config_store.save(self.app_config)
         self.engine.model = self._create_model_adapter()
@@ -4407,6 +4503,7 @@ class WebRuntime:
         if self.app_config.image.provider == "comfyui":
             image_status = self.get_image_status()
             if not bool(image_status.get("ready", False)):
+                print("[image-pipeline] request blocked reason=comfyui_service_unavailable")
                 return ImageGenerationResult(
                     success=False,
                     workflow_id=str(payload.get("workflow_id", "scene_image")),
@@ -4672,6 +4769,14 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     def setup_stop_image_engine() -> dict[str, Any]:
         print("[setup-action] route invoked endpoint=/api/setup/stop-image-engine")
         return runtime.stop_image_engine()
+
+    @app.get("/api/setup/image-engine-status")
+    def setup_image_engine_status() -> dict[str, Any]:
+        return runtime.get_image_engine_service_status()
+
+    @app.post("/api/setup/open-image-engine-ui")
+    def setup_open_image_engine_ui() -> dict[str, Any]:
+        return runtime.open_image_engine_debug_ui()
 
     @app.post("/api/setup/orchestrate-text")
     def setup_orchestrate_text(payload: dict[str, Any]) -> dict[str, Any]:

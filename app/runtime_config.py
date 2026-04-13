@@ -32,6 +32,9 @@ class ImageRuntimeConfig:
     preferred_checkpoint: str = "DreamShaper"
     preferred_launcher: str = "auto"
     auto_negative_prompt_additions: list[str] = None
+    managed_service_enabled: bool = True
+    managed_install_path: str = ""
+    managed_logs_path: str = ""
 
     def __post_init__(self) -> None:
         if not isinstance(self.auto_negative_prompt_additions, list):
@@ -113,6 +116,9 @@ class RuntimeConfigStore:
                 ]
                 if isinstance(image_payload.get("auto_negative_prompt_additions", []), list)
                 else [],
+                managed_service_enabled=bool(image_payload.get("managed_service_enabled", True)),
+                managed_install_path=str(image_payload.get("managed_install_path", "")),
+                managed_logs_path=str(image_payload.get("managed_logs_path", "")),
             ),
         )
 
