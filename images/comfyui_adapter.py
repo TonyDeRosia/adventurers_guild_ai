@@ -6,6 +6,7 @@ Keeps HTTP wiring isolated for easy replacement or extension.
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from datetime import datetime, timezone
@@ -198,9 +199,16 @@ class ComfyUIAdapter(ImageGeneratorAdapter):
             for item in available:
                 if item.lower() == preferred_lower:
                     return item, available
-        for item in available:
-            if "dreamshaper" in item.lower():
-                return item, available
+            preferred_stem = Path(preferred_checkpoint).stem.lower()
+            for item in available:
+                if Path(item).stem.lower() == preferred_stem:
+                    return item, available
+            normalized = re.sub(r"[^a-z0-9]+", "", preferred_stem)
+            if normalized:
+                for item in available:
+                    model_normalized = re.sub(r"[^a-z0-9]+", "", Path(item).stem.lower())
+                    if model_normalized.startswith(normalized):
+                        return item, available
         return available[0], available
 
     def _list_checkpoints(self) -> list[str]:

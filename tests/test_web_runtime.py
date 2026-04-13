@@ -491,11 +491,22 @@ def test_valid_external_workflow_path_enables_comfyui_generation_path(tmp_path: 
     (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
     (comfy_root / "custom_nodes").mkdir(exist_ok=True)
     (comfy_root / "models").mkdir(exist_ok=True)
+    checkpoints = comfy_root / "models" / "checkpoints"
+    checkpoints.mkdir(parents=True, exist_ok=True)
+    (checkpoints / "sd15.safetensors").write_text("model", encoding="utf-8")
     (comfy_root / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
     workflow_file = tmp_path / "custom_scene.json"
     workflow_file.write_text("{}", encoding="utf-8")
     runtime.set_global_settings(
-        {"image": {"provider": "comfyui", "comfyui_path": str(comfy_root), "comfyui_workflow_path": str(workflow_file), "enabled": True}}
+        {
+            "image": {
+                "provider": "comfyui",
+                "comfyui_path": str(comfy_root),
+                "comfyui_workflow_path": str(workflow_file),
+                "checkpoint_folder": str(checkpoints),
+                "enabled": True,
+            }
+        }
     )
     monkeypatch.setattr(runtime, "get_image_status", lambda: {"ready": True})
     monkeypatch.setattr(runtime.image_adapter, "generate", lambda request, _manager: ImageGenerationResult(success=True, workflow_id=request.workflow_id))
@@ -563,7 +574,8 @@ def test_visual_pipeline_apply_saves_and_reloads_runtime(tmp_path: Path, monkeyp
     )
     assert result["ok"] is True
     assert runtime.app_config.image.comfyui_workflow_path == str(workflow)
-    assert result["path_config"]["image"]["pipeline_ready"] is True
+    assert result["path_config"]["image"]["engine_ready"] is True
+    assert result["path_config"]["image"]["model_ready"] is False
 
     reloaded = _runtime(tmp_path, monkeypatch)
     assert reloaded.app_config.image.comfyui_workflow_path == str(workflow)
@@ -607,6 +619,105 @@ def test_visual_pipeline_validation_uses_managed_comfyui_for_checkpoint_inferenc
     assert status["checkpoint_dir"]["valid"] is True
     assert status["pipeline_ready"] is True
 
+
+def test_image_setup_succeeds_without_preferred_checkpoint(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    runtime.app_config.image.preferred_checkpoint = ""
+    comfy_root = tmp_path / "ComfyUI"
+    comfy_root.mkdir(parents=True, exist_ok=True)
+    (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_root / "custom_nodes").mkdir(exist_ok=True)
+    (comfy_root / "models").mkdir(exist_ok=True)
+
+    monkeypatch.setattr(runtime, "install_image_engine", lambda: {"ok": True, "message": "ComfyUI present"})
+    monkeypatch.setattr(runtime, "_resolve_image_engine_root_for_launch", lambda _cfg: comfy_root)
+    monkeypatch.setattr(runtime, "validate_comfyui_install", lambda _path: {"ok": True, "missing_files": []})
+    monkeypatch.setattr(
+        runtime,
+        "get_path_configuration_status",
+        lambda: {
+            "image": {
+                "workflow_path": {"valid": True, "configured": True},
+                "checkpoint_dir": {"valid": False, "model_ready": False, "model_message": "No checkpoint found."},
+            }
+        },
+    )
+    monkeypatch.setattr(runtime, "start_image_engine", lambda: {"ok": True, "steps": [{"step": "wait-for-readiness", "state": "ready", "message": "ok"}]})
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": True, "model_ready": False})
+    monkeypatch.setattr(runtime, "_refresh_readiness_snapshot", lambda: {})
+
+    result = runtime.orchestrate_setup_image_ai()
+
+    assert result["ok"] is True
+    assert result["engine_ready"] is True
+    assert result["model_ready"] is False
+
+
+def test_image_status_reports_engine_ready_model_missing_separately(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    monkeypatch.setattr(
+        runtime,
+        "get_path_configuration_status",
+        lambda: {
+            "image": {
+                "comfyui_root": {"valid": True, "configured": True},
+                "workflow_path": {"valid": True, "configured": True},
+                "checkpoint_dir": {
+                    "valid": True,
+                    "model_ready": False,
+                    "model_status_code": "preferred_checkpoint_missing",
+                    "model_message": "Preferred checkpoint 'DreamShaper' was not found in the selected checkpoint folder.",
+                },
+            }
+        },
+    )
+    monkeypatch.setattr("app.web.ComfyUIAdapter.check_readiness", lambda _self: {"reachable": True, "ready": True})
+    monkeypatch.setattr(runtime, "_find_comfyui_root", lambda: tmp_path)
+
+    status = runtime.get_image_status()
+
+    assert status["engine_ready"] is True
+    assert status["model_ready"] is False
+    assert status["status_code"] == "model_required"
+
+
+def test_checkpoint_validation_matches_preferred_label_to_filename(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.preferred_checkpoint = "DreamShaper"
+    checkpoint_dir = tmp_path / "models" / "checkpoints"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    (checkpoint_dir / "DreamShaper_v8.safetensors").write_text("model", encoding="utf-8")
+
+    status = runtime._validate_checkpoint_dir_config(str(checkpoint_dir))
+
+    assert status["valid"] is True
+    assert status["model_ready"] is True
+    assert status["preferred_checkpoint_match"] == "DreamShaper_v8.safetensors"
+
+
+def test_generate_image_returns_model_specific_error_when_checkpoint_missing(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    runtime.set_campaign_settings({"image_generation_enabled": True})
+    monkeypatch.setattr(
+        runtime,
+        "get_path_configuration_status",
+        lambda: {
+            "image": {
+                "comfyui_root": {"valid": True, "message": ""},
+                "workflow_path": {"valid": True, "message": ""},
+                "checkpoint_dir": {"model_ready": False, "model_message": "Preferred checkpoint 'DreamShaper' was not found in the selected checkpoint folder."},
+            }
+        },
+    )
+
+    result = runtime.generate_image({"workflow_id": "scene_image", "prompt": "ancient ruins"})
+
+    assert result.success is False
+    assert result.metadata.get("status_code") == "model_required"
+    assert "preferred checkpoint" in (result.error or "").lower()
 
 def test_save_checkpoint_folder_validates_and_persists_selection(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)

@@ -29,7 +29,7 @@ class ImageRuntimeConfig:
     checkpoint_source: str = "local"
     checkpoint_model_page: str = "https://civitai.com/models/4384/dreamshaper"
     checkpoint_folder: str = ""
-    preferred_checkpoint: str = "DreamShaper"
+    preferred_checkpoint: str = ""
     preferred_launcher: str = "auto"
     auto_negative_prompt_additions: list[str] = None
     managed_service_enabled: bool = True
@@ -107,7 +107,7 @@ class RuntimeConfigStore:
                 checkpoint_source=str(image_payload.get("checkpoint_source", "local")),
                 checkpoint_model_page=str(image_payload.get("checkpoint_model_page", "https://civitai.com/models/4384/dreamshaper")),
                 checkpoint_folder=str(image_payload.get("checkpoint_folder", "")),
-                preferred_checkpoint=str(image_payload.get("preferred_checkpoint", "DreamShaper")),
+                preferred_checkpoint=str(image_payload.get("preferred_checkpoint", "")),
                 preferred_launcher=str(image_payload.get("preferred_launcher", "auto")),
                 auto_negative_prompt_additions=[
                     str(v).strip()
