@@ -91,13 +91,18 @@ def test_start_image_engine_returns_already_running_without_spawning_duplicate(t
 def test_start_image_engine_reports_missing_workflow_cleanly(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.app_config.image.provider = "comfyui"
+    comfy_dir = tmp_path / "ComfyUI"
+    comfy_dir.mkdir(parents=True, exist_ok=True)
+    (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
+    (comfy_dir / "models").mkdir(exist_ok=True)
     monkeypatch.setattr(
         runtime,
         "get_path_configuration_status",
         lambda: {
             "image": {
                 "workflow_path": {"valid": False, "configured": True},
-                "comfyui_root": {"valid": True, "configured": True},
+                "comfyui_root": {"valid": True, "configured": True, "path": str(comfy_dir), "resolved_path": str(comfy_dir)},
                 "checkpoint_dir": {"valid": True, "configured": True},
                 "output_dir": {"valid": True, "configured": True},
                 "pipeline_ready": False,

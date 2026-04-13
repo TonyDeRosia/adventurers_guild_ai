@@ -341,7 +341,7 @@ class WebRuntime:
                     "ready": False,
                     "status_code": "setup_required",
                     "status_level": "error",
-                    "user_message": str(image_paths["comfyui_root"]["message"]),
+                    "user_message": str(image_paths["comfyui_root"].get("message", "ComfyUI path is not configured.")),
                     "next_action": "Set your ComfyUI folder in AI Setup, then click Recheck.",
                     "error": reason,
                 }
@@ -355,7 +355,7 @@ class WebRuntime:
                     "ready": False,
                     "status_code": "workflow_required",
                     "status_level": "error",
-                    "user_message": str(image_paths["workflow_path"]["message"]),
+                    "user_message": str(image_paths["workflow_path"].get("message", "Workflow path is invalid.")),
                     "next_action": "Set your workflow JSON file in AI Setup, then click Recheck.",
                     "error": reason,
                 }
@@ -369,7 +369,7 @@ class WebRuntime:
                     "ready": False,
                     "status_code": "checkpoint_required",
                     "status_level": "error",
-                    "user_message": str(image_paths["checkpoint_dir"]["message"]),
+                    "user_message": str(image_paths["checkpoint_dir"].get("message", "No checkpoint found. Select a model folder or download one.")),
                     "next_action": "Set your checkpoint folder in AI Setup, then click Recheck.",
                     "error": reason,
                 }
@@ -1402,29 +1402,58 @@ class WebRuntime:
                 "summary": "Image AI failed: provider is not comfyui.",
             }
         steps: list[dict[str, str]] = []
-        if self._find_comfyui_root() is None:
-            print("[setup-orchestrator] setup-image step=install-image-engine start")
-            result = self.install_image_engine()
-            if result.get("ok"):
-                print("[setup-orchestrator] setup-image step=install-image-engine success")
-                steps.append({"step": "install-image-engine", "state": "ready", "message": str(result.get("message", "ComfyUI installed."))})
-                self._refresh_readiness_snapshot()
-            else:
-                print("[setup-orchestrator] setup-image step=install-image-engine failure")
-                steps.append({"step": "install-image-engine", "state": "failed", "message": str(result.get("message", "Failed to install image engine."))})
-                return {"ok": False, "message": str(result.get("message", "Failed to install image engine.")), "next_step": result.get("next_step"), "steps": steps, "summary": "Image AI failed during install-image-engine."}
+        print("[setup-orchestrator] setup-image step=detect-or-install")
+        install_result = self.install_image_engine()
+        if not install_result.get("ok", False):
+            steps.append({"step": "detect-or-install", "state": "failed", "message": str(install_result.get("message", "Install failed."))})
+            return {
+                "ok": False,
+                "message": str(install_result.get("message", "Failed to install image engine.")),
+                "next_step": install_result.get("next_step"),
+                "steps": steps,
+                "summary": "Image AI failed: detect/install step failed.",
+            }
+        steps.append({"step": "detect-or-install", "state": "ready", "message": str(install_result.get("message", "ComfyUI install detected."))})
 
-        if not self.get_image_status().get("reachable", False):
-            print("[setup-orchestrator] setup-image step=start-image-engine start")
-            result = self.start_image_engine()
-            if result.get("ok"):
-                print("[setup-orchestrator] setup-image step=start-image-engine success")
-                steps.append({"step": "start-image-engine", "state": "ready", "message": str(result.get("message", "ComfyUI started."))})
-                self._refresh_readiness_snapshot()
-            else:
-                print("[setup-orchestrator] setup-image step=start-image-engine failure")
-                steps.append({"step": "start-image-engine", "state": "failed", "message": str(result.get("message", "Failed to start image engine."))})
-                return {"ok": False, "message": str(result.get("message", "Failed to start image engine.")), "next_step": result.get("next_step"), "steps": steps, "summary": "Image AI failed during start-image-engine."}
+        path_status = self.get_path_configuration_status().get("image", {})
+        comfyui_root = self._resolve_image_engine_root_for_launch(path_status)
+        print("[setup-orchestrator] setup-image step=validate-install")
+        if comfyui_root is None:
+            steps.append({"step": "validate-install", "state": "failed", "message": "ComfyUI failed: main.py not found."})
+            return {"ok": False, "message": "ComfyUI failed: main.py not found.", "next_step": "Reinstall ComfyUI and retry setup.", "steps": steps, "summary": "Image AI failed during install validation."}
+        validation = self.validate_comfyui_install(comfyui_root)
+        if not validation.get("ok", False):
+            missing = ", ".join(validation.get("missing_files", []))
+            steps.append({"step": "validate-install", "state": "failed", "message": f"ComfyUI failed: missing {missing}."})
+            return {"ok": False, "message": f"ComfyUI failed: missing {missing}.", "next_step": "Repair ComfyUI install/runtime, then retry.", "steps": steps, "summary": "Image AI failed during install validation."}
+        steps.append({"step": "validate-install", "state": "ready", "message": "ComfyUI install and runtime were verified."})
+
+        print("[setup-orchestrator] setup-image step=resolve-paths")
+        steps.append({"step": "resolve-paths", "state": "ready", "message": f"Using ComfyUI root: {comfyui_root}"})
+        workflow_status = path_status.get("workflow_path", {})
+        checkpoint_status = path_status.get("checkpoint_dir", {})
+        print("[setup-orchestrator] setup-image step=validate-workflow")
+        if not bool(workflow_status.get("valid", False)):
+            message = str(workflow_status.get("message", "Workflow JSON is invalid."))
+            steps.append({"step": "validate-workflow", "state": "failed", "message": message})
+            return {"ok": False, "message": message, "next_step": "Set a valid workflow JSON, then retry.", "steps": steps, "summary": "Image AI failed during workflow validation."}
+        steps.append({"step": "validate-workflow", "state": "ready", "message": "Workflow JSON is present and loadable."})
+        print("[setup-orchestrator] setup-image step=validate-checkpoint")
+        if not bool(checkpoint_status.get("valid", False)):
+            message = str(checkpoint_status.get("message", "No checkpoint found. Select a model folder or download one."))
+            steps.append({"step": "validate-checkpoint", "state": "failed", "message": message})
+            return {"ok": False, "message": message, "next_step": "Open AI Setup and choose a checkpoint folder with at least one model file.", "steps": steps, "summary": "Image AI setup needs a checkpoint before launch."}
+        steps.append({"step": "validate-checkpoint", "state": "ready", "message": "Checkpoint models were detected."})
+
+        print("[setup-orchestrator] setup-image step=start-engine")
+        result = self.start_image_engine()
+        if result.get("ok"):
+            steps.extend(result.get("steps", []))
+        else:
+            steps.extend(result.get("steps", []))
+            if not steps or steps[-1].get("step") != "start-engine":
+                steps.append({"step": "start-engine", "state": "failed", "message": str(result.get("message", "Failed to start image engine."))})
+            return {"ok": False, "message": str(result.get("message", "Failed to start image engine.")), "next_step": result.get("next_step"), "steps": steps, "summary": str(result.get("message", "Image AI failed to start."))}
 
         ready = bool(self.get_image_status().get("reachable", False))
         return {
@@ -1492,14 +1521,28 @@ class WebRuntime:
             missing_files.append("custom_nodes/")
         if not (path / "models").exists():
             missing_files.append("models/")
-        if not ((path / "run_cpu.bat").exists() or (path / "run_nvidia_gpu.bat").exists()):
-            missing_files.append("run_cpu.bat|run_nvidia_gpu.bat")
+        runtime_details = "python runtime not checked"
+        python_runtime_found = True
         if os.name == "nt":
             embedded_python = path.parent / "python_embeded" / "python.exe"
-            if not embedded_python.exists() and not shutil.which("python") and not shutil.which("py"):
+            python_runtime_found = bool(embedded_python.exists() or shutil.which("python") or shutil.which("py"))
+            runtime_details = (
+                f"embedded runtime found at {embedded_python}"
+                if embedded_python.exists()
+                else "using python from PATH"
+                if shutil.which("python") or shutil.which("py")
+                else "python runtime missing (no embedded python and no python/py on PATH)"
+            )
+            if not python_runtime_found:
                 missing_files.append("python-runtime")
         valid = len(missing_files) == 0
-        return {"ok": valid, "valid": valid, "missing_files": missing_files}
+        return {
+            "ok": valid,
+            "valid": valid,
+            "missing_files": missing_files,
+            "python_runtime_found": python_runtime_found,
+            "runtime_details": runtime_details,
+        }
 
     def _write_comfyui_cpu_launcher(self, comfyui_root: Path) -> bool:
         launcher = comfyui_root / "run_cpu.bat"
@@ -1757,6 +1800,14 @@ class WebRuntime:
         if candidate.suffix.lower() != ".json":
             print("[path-config] workflow_path valid=false")
             return {"configured": True, "valid": False, "path": raw, "message": "Workflow file must be a .json file."}
+        try:
+            payload = json.loads(candidate.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                print("[path-config] workflow_path valid=false")
+                return {"configured": True, "valid": False, "path": str(candidate), "message": "Workflow JSON root must be an object."}
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            print("[path-config] workflow_path valid=false")
+            return {"configured": True, "valid": False, "path": str(candidate), "message": f"Workflow JSON is invalid: {exc}"}
         print("[path-config] workflow_path valid=true")
         return {"configured": True, "valid": True, "path": str(candidate), "message": "Workflow path is valid."}
 
@@ -1779,22 +1830,75 @@ class WebRuntime:
 
     def _validate_checkpoint_dir_config(self, configured_path: str, comfyui_path: str = "") -> dict[str, Any]:
         raw = str(configured_path or "").strip()
+        model_suffixes = {".safetensors", ".ckpt", ".pt", ".pth", ".bin"}
+
+        def _discover_models(folder: Path) -> list[str]:
+            if not folder.exists() or not folder.is_dir():
+                return []
+            return sorted([item.name for item in folder.iterdir() if item.is_file() and item.suffix.lower() in model_suffixes])
+
         if not raw:
             comfy_root = Path(str(comfyui_path or "").strip()) if str(comfyui_path or "").strip() else None
             inferred = (comfy_root / "models" / "checkpoints") if comfy_root else None
             if inferred and inferred.exists() and inferred.is_dir():
+                models = _discover_models(inferred)
+                if not models:
+                    return {
+                        "configured": False,
+                        "valid": False,
+                        "path": "",
+                        "resolved_path": str(inferred),
+                        "message": "No checkpoint found. Select a model folder or download one.",
+                        "detected_models": [],
+                    }
                 return {
                     "configured": False,
                     "valid": True,
                     "path": "",
                     "resolved_path": str(inferred),
                     "message": "Using ComfyUI default checkpoints folder.",
+                    "detected_models": models,
                 }
-            return {"configured": False, "valid": False, "path": "", "message": "Checkpoint folder is required."}
+            return {
+                "configured": False,
+                "valid": False,
+                "path": "",
+                "message": "No checkpoint found. Select a model folder or download one.",
+                "detected_models": [],
+            }
         candidate = Path(raw)
         if not candidate.exists() or not candidate.is_dir():
             return {"configured": True, "valid": False, "path": raw, "message": "Folder not found."}
-        return {"configured": True, "valid": True, "path": str(candidate), "resolved_path": str(candidate), "message": "Checkpoint folder is valid."}
+        models = _discover_models(candidate)
+        if not models:
+            return {
+                "configured": True,
+                "valid": False,
+                "path": str(candidate),
+                "resolved_path": str(candidate),
+                "message": "No checkpoint found. Select a model folder or download one.",
+                "detected_models": [],
+            }
+        preferred = str(self.app_config.image.preferred_checkpoint or "").strip()
+        if preferred:
+            model_names = {name.lower() for name in models}
+            if preferred.lower() not in model_names:
+                return {
+                    "configured": True,
+                    "valid": False,
+                    "path": str(candidate),
+                    "resolved_path": str(candidate),
+                    "message": f"Preferred checkpoint '{preferred}' was not found in the selected folder.",
+                    "detected_models": models,
+                }
+        return {
+            "configured": True,
+            "valid": True,
+            "path": str(candidate),
+            "resolved_path": str(candidate),
+            "message": "Checkpoint folder is valid.",
+            "detected_models": models,
+        }
 
     def get_path_configuration_status(self) -> dict[str, Any]:
         resolved = self._resolve_image_backend_paths()
@@ -1924,18 +2028,13 @@ class WebRuntime:
             }
         validation = self.validate_comfyui_install(target_dir)
         if not validation.get("ok"):
-            print("[setup-orchestrator] comfyui install repair")
-            if "run_cpu.bat|run_nvidia_gpu.bat" in validation.get("missing_files", []):
-                self._write_comfyui_cpu_launcher(target_dir)
-            validation = self.validate_comfyui_install(target_dir)
-            if not validation.get("ok"):
-                self._image_engine_state = "error"
-                self._image_engine_last_error = ",".join(validation.get("missing_files", []))
-                return {
-                    "ok": False,
-                    "message": f"ComfyUI install is incomplete: missing {', '.join(validation.get('missing_files', []))}.",
-                    "next_step": "Retry installation, or install manually from the official repository.",
-                }
+            self._image_engine_state = "error"
+            self._image_engine_last_error = ",".join(validation.get("missing_files", []))
+            return {
+                "ok": False,
+                "message": f"ComfyUI install is incomplete: missing {', '.join(validation.get('missing_files', []))}.",
+                "next_step": "Retry installation, or install manually from the official repository.",
+            }
         self.app_config.image.comfyui_path = ""
         self.app_config.image.managed_install_path = str(target_dir)
         self.config_store.save(self.app_config)
@@ -1945,7 +2044,7 @@ class WebRuntime:
         return {
             "ok": True,
             "message": "ComfyUI install verified and ready to launch.",
-            "next_step": "Install Python dependencies in ComfyUI, then click Start Image Engine.",
+            "next_step": "Click Start Image Engine to run preflight validation and launch ComfyUI.",
             "readiness_refreshed": True,
         }
 
@@ -1973,18 +2072,6 @@ class WebRuntime:
                 "failure_stage_message": "image provider is not comfyui",
                 "steps": [{"step": "provider-check", "state": "failed", "message": "Image provider is not set to comfyui."}],
             }
-        path_config = self.get_path_configuration_status().get("image", {})
-        if not bool(path_config.get("workflow_path", {}).get("valid")):
-            self._image_engine_state = "error"
-            self._image_engine_last_error = "invalid_workflow_path"
-            return {
-                "ok": False,
-                "message": "Workflow JSON path is invalid.",
-                "next_step": "Choose a valid workflow .json file and apply settings.",
-                "failure_stage": "path-check",
-                "failure_stage_message": "workflow json invalid",
-                "steps": [{"step": "path-check", "state": "failed", "message": "Configured workflow file does not exist."}],
-            }
         if self.get_image_status().get("reachable", False):
             print("[setup-action] start-image-engine success reason=already running")
             managed_state = self.comfy_manager.snapshot()
@@ -2003,6 +2090,7 @@ class WebRuntime:
                 "managed_process": managed_state.running,
                 "steps": [{"step": "wait-for-readiness", "state": "ready", "message": "Engine is already reachable."}],
             }
+        path_config = self.get_path_configuration_status().get("image", {})
         print("[setup-orchestrator] setup-image step=detect-install-path")
         comfyui_root = self._resolve_image_engine_root_for_launch(path_config)
         if comfyui_root is None:
@@ -2050,43 +2138,42 @@ class WebRuntime:
         print("[setup-orchestrator] setup-image step=verify-install")
         validation = self.validate_comfyui_install(comfyui_root)
         if not validation.get("ok"):
-            print("[setup-orchestrator] setup-image step=repair-install")
-            self.install_image_engine()
-            comfyui_root = Path(str(self._resolve_image_backend_paths().get("comfyui_root", "")))
-            if not (comfyui_root / "main.py").exists():
-                return {
-                    "ok": False,
-                    "message": "ComfyUI install could not be repaired.",
-                    "next_step": "Re-run install or install ComfyUI manually.",
-                    "failure_stage": "launch-engine",
-                    "failure_stage_message": "launcher script missing and could not be repaired",
-                    "steps": [
-                        {"step": "detect-install-path", "state": "ready", "message": "Install path was found."},
-                        {"step": "verify-install", "state": "failed", "message": f"Missing files: {', '.join(validation.get('missing_files', []))}"},
-                    ],
-                }
-            if launch_mode == "managed":
-                self.app_config.image.comfyui_path = ""
-            else:
-                self.app_config.image.comfyui_path = str(comfyui_root)
-            self.config_store.save(self.app_config)
-            validation = self.validate_comfyui_install(comfyui_root)
-        if not validation.get("ok"):
-            missing_files = list(validation.get("missing_files", []))
-            unresolved = [item for item in missing_files if item != "run_cpu.bat|run_nvidia_gpu.bat"]
-            if unresolved:
-                missing = ", ".join(unresolved)
-                return {
-                    "ok": False,
-                    "message": f"ComfyUI install is incomplete: missing {missing}.",
-                    "next_step": "Repair the install/runtime, then retry Start Image Engine.",
-                    "failure_stage": "verify-install",
-                    "failure_stage_message": "required files/runtime missing",
-                    "steps": [
-                        {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
-                        {"step": "verify-install", "state": "failed", "message": f"Missing: {missing}"},
-                    ],
-                }
+            missing = ", ".join(validation.get("missing_files", []))
+            return {
+                "ok": False,
+                "message": f"ComfyUI failed: missing {missing}.",
+                "next_step": "Repair the install/runtime, then retry Start Image Engine.",
+                "failure_stage": "verify-install",
+                "failure_stage_message": "required files/runtime missing",
+                "steps": [
+                    {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
+                    {"step": "verify-install", "state": "failed", "message": f"Missing: {missing}"},
+                ],
+            }
+        if not bool(path_config.get("workflow_path", {}).get("valid")):
+            self._image_engine_state = "error"
+            self._image_engine_last_error = "invalid_workflow_path"
+            message = str(path_config.get("workflow_path", {}).get("message") or "Workflow JSON path is invalid.")
+            return {
+                "ok": False,
+                "message": message,
+                "next_step": "Choose a valid workflow .json file and apply settings.",
+                "failure_stage": "validate-workflow",
+                "failure_stage_message": "workflow json invalid",
+                "steps": [{"step": "validate-workflow", "state": "failed", "message": message}],
+            }
+        if not bool(path_config.get("checkpoint_dir", {}).get("valid")):
+            self._image_engine_state = "error"
+            self._image_engine_last_error = "invalid_checkpoint_folder"
+            message = str(path_config.get("checkpoint_dir", {}).get("message") or "No checkpoint found. Select a model folder or download one.")
+            return {
+                "ok": False,
+                "message": message,
+                "next_step": "Select a checkpoint folder containing at least one model file.",
+                "failure_stage": "validate-checkpoint",
+                "failure_stage_message": "checkpoint model missing",
+                "steps": [{"step": "validate-checkpoint", "state": "failed", "message": message}],
+            }
         preflight = self._validate_image_launch_requirements(comfyui_root, path_config)
         if not preflight.get("ok", False):
             self._image_engine_state = "error"
@@ -2180,12 +2267,14 @@ class WebRuntime:
                 self.comfy_manager.clear_if_exited()
                 self._image_engine_state = "error"
                 self._image_engine_last_error = "process_exited_immediately"
+                last_error_line = tail_lines[-1] if tail_lines else ""
+                detail = f", last error: {last_error_line}" if last_error_line else ""
                 return {
                     "ok": False,
-                    "message": f"Image AI failed: ComfyUI exited during startup (exit code {exit_code}).",
+                    "message": f"ComfyUI failed: Process exited (code {exit_code}){detail}",
                     "next_step": "Open setup details to review startup log and fix the runtime/dependency issue.",
                     "failure_stage": "wait-for-readiness",
-                    "failure_stage_message": "ComfyUI exited during startup",
+                    "failure_stage_message": "process exited during startup",
                     "startup_status": self.image_startup_status,
                     "steps": [
                         {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},

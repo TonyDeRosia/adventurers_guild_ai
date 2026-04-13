@@ -586,11 +586,13 @@ def test_visual_pipeline_validation_uses_managed_comfyui_for_checkpoint_inferenc
     (comfy_root / "custom_nodes").mkdir(exist_ok=True)
     checkpoints = comfy_root / "models" / "checkpoints"
     checkpoints.mkdir(parents=True, exist_ok=True)
+    (checkpoints / "test-model.safetensors").write_text("model", encoding="utf-8")
     (comfy_root / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
     workflow = tmp_path / "scene.json"
     workflow.write_text("{}", encoding="utf-8")
 
     runtime.app_config.image.managed_install_path = str(comfy_root)
+    runtime.app_config.image.preferred_checkpoint = ""
 
     status = runtime.validate_visual_pipeline_config(
         {
@@ -2152,12 +2154,14 @@ def test_dependency_readiness_comfyui_offline(tmp_path: Path, monkeypatch) -> No
     (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
     (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
     (comfy_dir / "models" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    ((comfy_dir / "models" / "checkpoints") / "test-model.safetensors").write_text("model", encoding="utf-8")
     (comfy_dir / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
     workflow = tmp_path / "scene.json"
     workflow.write_text("{}", encoding="utf-8")
     runtime.app_config.image.comfyui_path = str(comfy_dir)
     runtime.app_config.image.comfyui_workflow_path = str(workflow)
     runtime.app_config.image.checkpoint_folder = str(comfy_dir / "models" / "checkpoints")
+    runtime.app_config.image.preferred_checkpoint = ""
     monkeypatch.setattr(runtime, "_find_comfyui_root", lambda: comfy_dir)
     monkeypatch.setattr(
         "images.comfyui_adapter.ComfyUIAdapter.check_readiness",
@@ -2514,7 +2518,7 @@ def test_campaign_list_includes_unreadable_save_files(tmp_path: Path, monkeypatc
     assert match["loadable"] is False
 
 
-def test_validate_comfyui_install_reports_missing_launcher(tmp_path: Path, monkeypatch) -> None:
+def test_validate_comfyui_install_reports_missing_python_runtime(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     comfy_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
     comfy_dir.mkdir(parents=True, exist_ok=True)
@@ -2522,12 +2526,14 @@ def test_validate_comfyui_install_reports_missing_launcher(tmp_path: Path, monke
     (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
     (comfy_dir / "models").mkdir(exist_ok=True)
 
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr("shutil.which", lambda _name: None)
     validation = runtime.validate_comfyui_install(comfy_dir)
     assert validation["ok"] is False
-    assert "run_cpu.bat|run_nvidia_gpu.bat" in validation["missing_files"]
+    assert "python-runtime" in validation["missing_files"]
 
 
-def test_install_image_engine_repairs_missing_launcher(tmp_path: Path, monkeypatch) -> None:
+def test_install_image_engine_succeeds_without_launcher_bat_files(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.app_config.image.provider = "comfyui"
     monkeypatch.setattr(runtime, "_is_windows", lambda: True)
@@ -2541,10 +2547,9 @@ def test_install_image_engine_repairs_missing_launcher(tmp_path: Path, monkeypat
         return True, "ok"
 
     monkeypatch.setattr(runtime, "_download_and_extract_comfyui", _fake_download)
+    monkeypatch.setattr(runtime, "validate_comfyui_install", lambda *_args, **_kwargs: {"ok": True, "missing_files": []})
     result = runtime.install_image_engine()
     assert result["ok"] is True
-    comfy_dir = Path(runtime.app_config.image.managed_install_path)
-    assert (comfy_dir / "run_cpu.bat").exists()
 
 
 def test_start_image_engine_attempts_python_launch_and_reports_launch_error(tmp_path: Path, monkeypatch) -> None:
@@ -2561,8 +2566,10 @@ def test_start_image_engine_attempts_python_launch_and_reports_launch_error(tmp_
     workflow.write_text("{}", encoding="utf-8")
     checkpoint_dir = comfy_dir / "models" / "checkpoints"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    (checkpoint_dir / "test-model.safetensors").write_text("model", encoding="utf-8")
     runtime.app_config.image.comfyui_workflow_path = str(workflow)
     runtime.app_config.image.checkpoint_folder = str(checkpoint_dir)
+    runtime.app_config.image.preferred_checkpoint = ""
 
     monkeypatch.setattr(runtime, "_find_comfyui_root", lambda: comfy_dir)
     monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": False})
@@ -2593,11 +2600,13 @@ def test_start_image_engine_detects_early_exit_and_exposes_startup_log(tmp_path:
     (comfy_dir / "run_cpu.bat").write_text("@echo off\r\npython main.py\r\n", encoding="utf-8")
     (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
     (comfy_dir / "models" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    ((comfy_dir / "models" / "checkpoints") / "test-model.safetensors").write_text("model", encoding="utf-8")
     workflow = tmp_path / "scene.json"
     workflow.write_text("{}", encoding="utf-8")
     runtime.app_config.image.comfyui_path = str(comfy_dir)
     runtime.app_config.image.comfyui_workflow_path = str(workflow)
     runtime.app_config.image.checkpoint_folder = str(comfy_dir / "models" / "checkpoints")
+    runtime.app_config.image.preferred_checkpoint = ""
 
     monkeypatch.setattr(runtime, "_find_comfyui_root", lambda: comfy_dir)
     monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": False})
@@ -2616,7 +2625,7 @@ def test_start_image_engine_detects_early_exit_and_exposes_startup_log(tmp_path:
     monkeypatch.setattr("subprocess.Popen", lambda *_args, **_kwargs: _Proc())
     result = runtime.start_image_engine()
     assert result["ok"] is False
-    assert result["failure_stage_message"] == "ComfyUI exited during startup"
+    assert result["failure_stage_message"] == "process exited during startup"
     assert result["startup_status"]["reason"] == "process-exited-immediately"
     assert "modulenotfounderror" in result["startup_status"]["runtime_error_hint"]
 
@@ -2629,11 +2638,13 @@ def test_start_image_engine_windows_launch_uses_python_command_list(tmp_path: Pa
     (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
     (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
     (comfy_dir / "models" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    ((comfy_dir / "models" / "checkpoints") / "test-model.safetensors").write_text("model", encoding="utf-8")
     workflow = tmp_path / "scene.json"
     workflow.write_text("{}", encoding="utf-8")
     runtime.app_config.image.comfyui_path = str(comfy_dir)
     runtime.app_config.image.comfyui_workflow_path = str(workflow)
     runtime.app_config.image.checkpoint_folder = str(comfy_dir / "models" / "checkpoints")
+    runtime.app_config.image.preferred_checkpoint = ""
 
     monkeypatch.setattr(runtime, "_find_comfyui_root", lambda: comfy_dir)
     monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": False})
@@ -2697,12 +2708,14 @@ def test_start_image_engine_preflight_fails_when_python_runtime_unusable(tmp_pat
     (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
     (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
     (comfy_dir / "models" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    ((comfy_dir / "models" / "checkpoints") / "test-model.safetensors").write_text("model", encoding="utf-8")
     (comfy_dir / "run_cpu.bat").write_text("@echo off\r\npython main.py\r\n", encoding="utf-8")
     workflow = tmp_path / "scene.json"
     workflow.write_text("{}", encoding="utf-8")
     runtime.app_config.image.comfyui_path = str(comfy_dir)
     runtime.app_config.image.comfyui_workflow_path = str(workflow)
     runtime.app_config.image.checkpoint_folder = str(comfy_dir / "models" / "checkpoints")
+    runtime.app_config.image.preferred_checkpoint = ""
 
     monkeypatch.setattr(runtime, "_find_comfyui_root", lambda: comfy_dir)
     monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": False})
