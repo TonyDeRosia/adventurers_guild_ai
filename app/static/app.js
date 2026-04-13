@@ -1353,16 +1353,11 @@ function renderMessage(msg) {
   }
   const el = document.createElement('div');
   if (msg.type === 'npc' && msg.speaker_name) {
-    el.className = 'msg msg-npc-card';
+    el.className = 'msg msg-npc-inline';
     const ts = new Date(msg.timestamp).toLocaleTimeString();
-    const portraitUrl = typeof msg.portrait_url === 'string' ? msg.portrait_url.trim() : '';
-    const fallback = (msg.speaker_name || 'NPC').split(/\s+/).filter(Boolean).map((part) => part[0]?.toUpperCase() || '').join('').slice(0, 2) || 'NPC';
     el.innerHTML = `
-      <div class="npc-card-avatar">${portraitUrl ? `<img src="${escapeHtml(portraitUrl)}" alt="${escapeHtml(msg.speaker_name)} portrait" />` : `<span>${escapeHtml(fallback)}</span>`}</div>
-      <div class="npc-card-content">
-        <small>${escapeHtml(msg.speaker_name)} • ${ts}</small>
-        <div>${escapeHtml(msg.text || '')}</div>
-      </div>
+      <small>NPC • ${ts}</small>
+      <div><strong>${escapeHtml(msg.speaker_name)}:</strong> ${escapeHtml(msg.text || '')}</div>
     `;
     dialogueFeed.appendChild(el);
     dialogueFeed.scrollTop = dialogueFeed.scrollHeight;
