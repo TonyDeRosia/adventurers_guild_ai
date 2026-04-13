@@ -2013,6 +2013,21 @@ class WebRuntime:
         launcher_order = [nvidia_script, generic_gpu_script, amd_gpu_script, cpu_script]
         launcher_script = next((script for script in launcher_order if script.exists()), comfyui_root / "main.py")
         launcher = launcher_script
+        if launcher_script.suffix == ".bat" and not launcher_script.is_file():
+            print("[setup-action] start-image-engine failure reason=launcher-file-missing")
+            print("[setup-orchestrator] setup-image failure stage=launch-engine")
+            return {
+                "ok": False,
+                "message": f"ComfyUI launcher file does not exist: {launcher_script.name}.",
+                "next_step": "Repair or reinstall ComfyUI, then retry Start Image Engine.",
+                "failure_stage": "launch-engine",
+                "failure_stage_message": "launcher file missing",
+                "steps": [
+                    {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
+                    {"step": "verify-install", "state": "ready", "message": "Install verification completed."},
+                    {"step": "launch-engine", "state": "failed", "message": f"Launcher file missing: {launcher_script.name}"},
+                ],
+            }
         if os.name == "nt" and launcher_script == comfyui_root / "main.py":
             print("[setup-action] start-image-engine failure reason=launcher-script-missing")
             print("[setup-orchestrator] setup-image failure stage=launch-engine")
@@ -2054,12 +2069,10 @@ class WebRuntime:
                 with startup_log_file.open("w", encoding="utf-8") as handle:
                     handle.write("")
                 log_handle = startup_log_file.open("a", encoding="utf-8")
+                launch_command = ["cmd.exe", "/c", str(launcher_script)]
+                launch_target = " ".join(launch_command)
                 process = subprocess.Popen(
-                    [
-                        "cmd.exe",
-                        "/c",
-                        f"\"{launcher_script}\"",
-                    ],
+                    launch_command,
                     cwd=str(comfyui_root),
                     stdout=log_handle,
                     stderr=subprocess.STDOUT,

@@ -34,33 +34,10 @@ def _tree_entries(src: Path, dest: str) -> list[tuple[str, str]]:
         return []
     return [(str(path), str(Path(dest) / path.relative_to(src))) for path in src.rglob("*") if path.is_file()]
 
-def _existing_entries(entries: list[tuple[Path, str]]) -> list[tuple[str, str]]:
-    return [(str(src), dest) for src, dest in entries if src.exists()]
-
-
 datas = []
 datas.extend(_tree_entries(ROOT / "data", "data"))
 datas.extend(_tree_entries(ROOT / "app" / "static", "app/static"))
 datas.extend(_tree_entries(ROOT / "packaging" / "windows" / "runtime_bundle", "runtime_bundle"))
-datas.extend(
-    _existing_entries(
-        [
-            (ROOT / "data" / "dialogues.json", "data/dialogues.json"),
-            (ROOT / "data" / "enemies.json", "data/enemies.json"),
-            (ROOT / "data" / "items.json", "data/items.json"),
-            (ROOT / "data" / "factions.json", "data/factions.json"),
-            (ROOT / "data" / "npc_personalities.json", "data/npc_personalities.json"),
-            (ROOT / "data" / "defaults" / "app_config.json", "data/defaults/app_config.json"),
-            (ROOT / "data" / "workflows" / "scene_image.json", "data/workflows/scene_image.json"),
-            (ROOT / "data" / "workflows" / "character_portrait.json", "data/workflows/character_portrait.json"),
-            (ROOT / "app" / "static" / "index.html", "app/static/index.html"),
-            (ROOT / "packaging" / "windows" / "runtime_bundle" / "THIRD_PARTY_NOTICES.txt", "runtime_bundle/THIRD_PARTY_NOTICES.txt"),
-            (ROOT / "packaging" / "windows" / "runtime_bundle" / "workflows" / "scene_image.json", "runtime_bundle/workflows/scene_image.json"),
-            (ROOT / "packaging" / "windows" / "runtime_bundle" / "workflows" / "character_portrait.json", "runtime_bundle/workflows/character_portrait.json"),
-            (ROOT / "packaging" / "windows" / "runtime_bundle" / "comfyui" / "README.txt", "runtime_bundle/comfyui/README.txt"),
-        ]
-    )
-)
 
 hiddenimports = []
 hiddenimports.extend(collect_submodules("app"))
