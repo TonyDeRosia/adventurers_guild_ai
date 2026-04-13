@@ -373,6 +373,15 @@ def test_runtime_character_sheet_browser_uses_dedicated_create_modal_markup() ->
     assert "No character sheets attached yet." in app_js
 
 
+def test_campaign_log_renders_npc_dialogue_inline_without_faceplate_markup() -> None:
+    app_js = Path("app/static/app.js").read_text(encoding="utf-8")
+    styles_css = Path("app/static/styles.css").read_text(encoding="utf-8")
+    assert "msg-npc-inline" in app_js
+    assert "npc-card-avatar" not in app_js
+    assert ".msg-npc-inline" in styles_css
+    assert ".msg-npc-card" not in styles_css
+
+
 def test_campaign_panel_removes_quick_load_autosave_and_hides_display_mode_controls() -> None:
     index_html = Path("app/static/index.html").read_text(encoding="utf-8")
     app_js = Path("app/static/app.js").read_text(encoding="utf-8")
@@ -3523,6 +3532,31 @@ def test_explicit_speaker_npc_id_metadata_is_used_for_narrator_split(tmp_path: P
     assert payload["messages"][1]["speaker_name"] == "Captain Rovan"
 
 
+def test_multiple_explicit_npc_speakers_preserve_dialogue_order(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_npc_split_multiple_speakers"})
+    state = runtime.session.state
+    state.npcs["npc_guard"] = NPC(id="npc_guard", name="Captain Rovan", location_id=state.current_location_id)
+    state.npcs["npc_mage"] = NPC(id="npc_mage", name="Iria", location_id=state.current_location_id)
+
+    monkeypatch.setattr(
+        runtime.engine,
+        "run_turn",
+        lambda *_args, **_kwargs: TurnResult(
+            narrative='The guard steps forward and says, "Hold there." The mage raises a hand and says, "Let them pass."',
+            system_messages=[],
+            messages=[
+                {"type": "narrator", "text": 'The guard steps forward and says, "Hold there."', "speaker_npc_id": "npc_guard"},
+                {"type": "narrator", "text": 'The mage raises a hand and says, "Let them pass."', "speaker_npc_id": "npc_mage"},
+            ],
+        ),
+    )
+    payload = runtime.handle_player_input("I approach the gate.")
+    dialogue_lines = [m for m in payload["messages"] if m["type"] == "npc"]
+    assert [m["speaker_name"] for m in dialogue_lines] == ["Captain Rovan", "Iria"]
+    assert [m["text"] for m in dialogue_lines] == ["Hold there.", "Let them pass."]
+
+
 def test_npc_identity_registry_persists_through_save_reload(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.create_campaign({"slot": "slot_npc_persist"})
@@ -3559,6 +3593,33 @@ def test_history_replay_prefers_structured_turn_messages_for_npc_cards(tmp_path:
     replayed = runtime._history_for_slot(runtime.session.active_slot)
     assert [message["type"] for message in replayed] == ["player", "narrator", "npc"]
     assert replayed[2]["speaker_name"] == "Vera"
+
+
+def test_display_messages_survive_save_load_and_replay(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_npc_replay_save_load"})
+    runtime.session.state.conversation_turns = [
+        ConversationTurn(
+            turn=1,
+            player_input="I listen.",
+            system_messages=[],
+            narrator_response='The old scout says, "Keep low."',
+            display_messages=[
+                {"type": "narrator", "text": "The old scout studies the ridge."},
+                {"type": "npc", "text": "Keep low.", "speaker_npc_id": "npc_scout", "speaker_name": "Deren"},
+                {"type": "narrator", "text": "He points toward the pass."},
+            ],
+        )
+    ]
+    runtime.save_active_campaign("slot_npc_replay_save_load")
+
+    reloaded = _runtime(tmp_path, monkeypatch)
+    reloaded.switch_campaign("slot_npc_replay_save_load")
+    replayed = reloaded._history_for_slot("slot_npc_replay_save_load")
+    assert [message["type"] for message in replayed] == ["player", "narrator", "npc", "narrator"]
+    assert replayed[2]["speaker_name"] == "Deren"
+    assert replayed[2]["text"] == "Keep low."
+
 
 def test_play_view_separates_scene_from_dialogue(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
