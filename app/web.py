@@ -331,6 +331,9 @@ class WebRuntime:
         if provider == "comfyui":
             path_config = self.get_path_configuration_status()
             image_paths = path_config["image"]
+            checkpoint_state = image_paths["checkpoint_dir"]
+            model_ready = bool(checkpoint_state.get("model_ready", checkpoint_state.get("valid", False)))
+            model_message = str(checkpoint_state.get("model_message") or checkpoint_state.get("message") or "")
             if not bool(image_paths["comfyui_root"]["valid"]):
                 reason = "missing_path" if not image_paths["comfyui_root"]["configured"] else "invalid_path"
                 print(f"[path-config] image_features_disabled reason={reason}")
@@ -359,20 +362,6 @@ class WebRuntime:
                     "next_action": "Set your workflow JSON file in AI Setup, then click Recheck.",
                     "error": reason,
                 }
-            if not bool(image_paths["checkpoint_dir"]["valid"]):
-                reason = "missing_checkpoint_folder" if not image_paths["checkpoint_dir"]["configured"] else "invalid_checkpoint_folder"
-                print(f"[path-config] image_features_disabled reason={reason}")
-                return {
-                    "provider": "comfyui",
-                    "base_url": base_url,
-                    "reachable": False,
-                    "ready": False,
-                    "status_code": "checkpoint_required",
-                    "status_level": "error",
-                    "user_message": str(image_paths["checkpoint_dir"].get("message", "No checkpoint found. Select a model folder or download one.")),
-                    "next_action": "Set your checkpoint folder in AI Setup, then click Recheck.",
-                    "error": reason,
-                }
             base_status = ComfyUIAdapter(base_url=base_url).check_readiness()
             comfyui_root = self._find_comfyui_root()
             installed = comfyui_root is not None
@@ -381,10 +370,17 @@ class WebRuntime:
                     **base_status,
                     "installed": True,
                     "running": True,
-                    "status_code": "reachable",
+                    "ready": model_ready,
+                    "status_code": "reachable" if model_ready else "model_required",
+                    "status_level": "ready" if model_ready else "warning",
+                    "user_message": "ComfyUI engine is ready." if model_ready else model_message,
+                    "next_action": "No action needed." if model_ready else "Choose a valid checkpoint or clear preferred checkpoint, then click Recheck.",
                     "comfyui_path": str(comfyui_root or ""),
                     "launcher_mode": self._determine_launcher_mode(comfyui_root),
                     "managed_process": managed_running,
+                    "engine_ready": True,
+                    "model_ready": model_ready,
+                    "model_status_code": str(checkpoint_state.get("model_status_code", "")),
                 }
             if installed:
                 return {
@@ -398,6 +394,9 @@ class WebRuntime:
                     "comfyui_path": str(comfyui_root),
                     "launcher_mode": self._determine_launcher_mode(comfyui_root),
                     "managed_process": managed_running,
+                    "engine_ready": False,
+                    "model_ready": model_ready,
+                    "model_status_code": str(checkpoint_state.get("model_status_code", "")),
                 }
             return {
                 **base_status,
@@ -410,6 +409,9 @@ class WebRuntime:
                 "comfyui_path": "",
                 "launcher_mode": "none",
                 "managed_process": managed_running,
+                "engine_ready": False,
+                "model_ready": model_ready,
+                "model_status_code": str(checkpoint_state.get("model_status_code", "")),
             }
         if provider == "null":
             return {
@@ -554,7 +556,7 @@ class WebRuntime:
         if self.app_config.image.provider != "comfyui":
             return [{"id": "recheck", "label": "Recheck"}]
         status_code = str(image_status.get("status_code", ""))
-        if status_code in {"setup_required", "workflow_required", "checkpoint_required"}:
+        if status_code in {"setup_required", "workflow_required", "checkpoint_required", "model_required"}:
             return [{"id": "recheck", "label": "Recheck"}]
         if status_code == "not_installed":
             return [{"id": "install_image_engine", "label": "Install Image Engine"}, {"id": "recheck", "label": "Recheck"}]
@@ -614,6 +616,8 @@ class WebRuntime:
             "image_provider": self.app_config.image.provider,
             "image_readiness_state": {
                 "ready": bool(image_status.get("ready", False)),
+                "engine_ready": bool(image_status.get("engine_ready", False)),
+                "model_ready": bool(image_status.get("model_ready", False)),
                 "status_code": str(image_status.get("status_code", "")),
                 "message": str(image_status.get("user_message", "")),
             },
@@ -622,6 +626,8 @@ class WebRuntime:
             "checkpoint_folder_configured": bool(checkpoint_dir.get("configured", False) or checkpoint_dir.get("path", "")),
             "checkpoint_folder_valid": bool(checkpoint_dir.get("valid", False)),
             "checkpoint_folder_message": str(checkpoint_dir.get("message", "")),
+            "checkpoint_model_ready": bool(checkpoint_dir.get("model_ready", False)),
+            "checkpoint_model_message": str(checkpoint_dir.get("model_message", "")),
             "text_only_fallback_available": True,
             "text_only_mode_active": self.app_config.image.provider == "null",
             "recommended_model_page": str(self.app_config.image.checkpoint_model_page or "").strip(),
@@ -678,6 +684,12 @@ class WebRuntime:
             "checkpoint_configured": bool(checkpoint_status.get("configured", False) or checkpoint_status.get("resolved_path")),
             "checkpoint_path": str(checkpoint_status.get("resolved_path") or checkpoint_status.get("path") or ""),
             "checkpoint_present": bool(checkpoint_status.get("valid", False)),
+            "model_ready": bool(checkpoint_status.get("model_ready", checkpoint_status.get("valid", False))),
+            "model_status_code": str(checkpoint_status.get("model_status_code", "")),
+            "model_status_message": str(checkpoint_status.get("model_message", "")),
+            "preferred_checkpoint": str(checkpoint_status.get("preferred_checkpoint", "")),
+            "preferred_checkpoint_found": checkpoint_status.get("preferred_checkpoint_found"),
+            "preferred_checkpoint_match": str(checkpoint_status.get("preferred_checkpoint_match", "")),
             "custom_node_checks_supported": False,
             "custom_node_checks_passed": None,
             "custom_node_message": "Custom node checks are not currently defined by this app.",
@@ -692,8 +704,10 @@ class WebRuntime:
         state = "Not Configured"
         if diagnostics["text_only_mode_active"]:
             state = "Disabled"
-        elif diagnostics["api_reachable"]:
+        elif diagnostics["api_reachable"] and diagnostics["model_ready"]:
             state = "Running"
+        elif diagnostics["api_reachable"] and not diagnostics["model_ready"]:
+            state = "Engine Ready, Model Pending"
         elif diagnostics["comfyui_detected"] and diagnostics["workflow_files_found"] and diagnostics["checkpoint_present"]:
             state = "Ready"
         elif diagnostics["comfyui_detected"] or diagnostics["workflow_files_found"] or diagnostics["checkpoint_present"]:
@@ -733,7 +747,7 @@ class WebRuntime:
             "last_health_check": self._image_engine_last_health_check,
             "managed_process": managed_state.running,
             "workflow_available": bool(path_status.get("workflow_path", {}).get("valid", False)),
-            "model_available": bool(path_status.get("checkpoint_dir", {}).get("valid", False)),
+            "model_available": bool(path_status.get("checkpoint_dir", {}).get("model_ready", False)),
             "api_reachable": bool(image_status.get("reachable", False)),
         }
 
@@ -1431,19 +1445,12 @@ class WebRuntime:
         print("[setup-orchestrator] setup-image step=resolve-paths")
         steps.append({"step": "resolve-paths", "state": "ready", "message": f"Using ComfyUI root: {comfyui_root}"})
         workflow_status = path_status.get("workflow_path", {})
-        checkpoint_status = path_status.get("checkpoint_dir", {})
         print("[setup-orchestrator] setup-image step=validate-workflow")
         if not bool(workflow_status.get("valid", False)):
             message = str(workflow_status.get("message", "Workflow JSON is invalid."))
             steps.append({"step": "validate-workflow", "state": "failed", "message": message})
             return {"ok": False, "message": message, "next_step": "Set a valid workflow JSON, then retry.", "steps": steps, "summary": "Image AI failed during workflow validation."}
         steps.append({"step": "validate-workflow", "state": "ready", "message": "Workflow JSON is present and loadable."})
-        print("[setup-orchestrator] setup-image step=validate-checkpoint")
-        if not bool(checkpoint_status.get("valid", False)):
-            message = str(checkpoint_status.get("message", "No checkpoint found. Select a model folder or download one."))
-            steps.append({"step": "validate-checkpoint", "state": "failed", "message": message})
-            return {"ok": False, "message": message, "next_step": "Open AI Setup and choose a checkpoint folder with at least one model file.", "steps": steps, "summary": "Image AI setup needs a checkpoint before launch."}
-        steps.append({"step": "validate-checkpoint", "state": "ready", "message": "Checkpoint models were detected."})
 
         print("[setup-orchestrator] setup-image step=start-engine")
         result = self.start_image_engine()
@@ -1455,13 +1462,30 @@ class WebRuntime:
                 steps.append({"step": "start-engine", "state": "failed", "message": str(result.get("message", "Failed to start image engine."))})
             return {"ok": False, "message": str(result.get("message", "Failed to start image engine.")), "next_step": result.get("next_step"), "steps": steps, "summary": str(result.get("message", "Image AI failed to start."))}
 
-        ready = bool(self.get_image_status().get("reachable", False))
+        refreshed_paths = self.get_path_configuration_status().get("image", {})
+        checkpoint_status = refreshed_paths.get("checkpoint_dir", {})
+        if bool(checkpoint_status.get("model_ready", False)):
+            steps.append({"step": "validate-checkpoint", "state": "ready", "message": "Checkpoint model validation passed."})
+        else:
+            steps.append(
+                {
+                    "step": "validate-checkpoint",
+                    "state": "warning",
+                    "message": str(checkpoint_status.get("model_message") or "Checkpoint model is not ready yet."),
+                }
+            )
+        image_status = self.get_image_status()
+        engine_ready = bool(image_status.get("reachable", False))
+        model_ready = bool(image_status.get("model_ready", checkpoint_status.get("model_ready", False)))
+        ready = bool(engine_ready)
         return {
             "ok": ready,
-            "message": "Image AI setup complete." if ready else "Image AI setup did not complete.",
+            "message": "Image AI setup complete." if ready and model_ready else "ComfyUI engine is ready, but model setup still needs attention." if ready else "Image AI setup did not complete.",
             "steps": steps,
-            "summary": "Image AI ready." if ready else "Image AI failed: readiness check did not pass.",
+            "summary": "Image AI engine ready." if ready and not model_ready else "Image AI ready." if ready else "Image AI setup did not complete.",
             "readiness": self._refresh_readiness_snapshot(),
+            "engine_ready": engine_ready,
+            "model_ready": model_ready,
         }
 
     def orchestrate_setup_everything(self, model_name: str | None = None) -> dict[str, Any]:
@@ -1604,10 +1628,8 @@ class WebRuntime:
     def _validate_image_launch_requirements(self, comfyui_root: Path, path_config: dict[str, Any]) -> dict[str, Any]:
         workflow_item = path_config.get("workflow_path", {})
         output_item = path_config.get("output_dir", {})
-        checkpoint_item = path_config.get("checkpoint_dir", {})
         resolved_workflow = str(workflow_item.get("resolved_path") or workflow_item.get("path") or "").strip()
         resolved_output = str(output_item.get("resolved_path") or output_item.get("path") or self.generated_image_dir).strip()
-        resolved_checkpoints = str(checkpoint_item.get("resolved_path") or checkpoint_item.get("path") or "").strip()
         if not comfyui_root.exists():
             return {"ok": False, "message": "ComfyUI root does not exist.", "failure_stage_message": "missing ComfyUI root"}
         main_py = comfyui_root / "main.py"
@@ -1615,8 +1637,6 @@ class WebRuntime:
             return {"ok": False, "message": "ComfyUI launcher main.py is missing.", "failure_stage_message": "missing main.py"}
         if not resolved_workflow or not Path(resolved_workflow).exists():
             return {"ok": False, "message": "Workflow file is missing.", "failure_stage_message": "missing workflow file"}
-        if resolved_checkpoints and not Path(resolved_checkpoints).exists():
-            return {"ok": False, "message": "Checkpoint folder does not exist.", "failure_stage_message": "missing checkpoint folder"}
         try:
             Path(resolved_output).mkdir(parents=True, exist_ok=True)
         except OSError:
@@ -1828,14 +1848,72 @@ class WebRuntime:
             return {"configured": True, "valid": False, "path": raw, "message": "Output folder does not exist and cannot be created."}
         return {"configured": True, "valid": True, "path": str(candidate), "resolved_path": str(candidate), "message": "Output folder is valid."}
 
+    def _match_preferred_checkpoint(self, preferred_checkpoint: str, available_models: list[str]) -> str | None:
+        preferred = str(preferred_checkpoint or "").strip()
+        if not preferred:
+            return None
+        preferred_lower = preferred.lower()
+        for model in available_models:
+            if model.lower() == preferred_lower:
+                return model
+        preferred_stem = Path(preferred).stem.lower()
+        for model in available_models:
+            if Path(model).stem.lower() == preferred_stem:
+                return model
+        normalized = re.sub(r"[^a-z0-9]+", "", preferred_stem)
+        if normalized:
+            for model in available_models:
+                model_normalized = re.sub(r"[^a-z0-9]+", "", Path(model).stem.lower())
+                if model_normalized.startswith(normalized):
+                    return model
+        return None
+
     def _validate_checkpoint_dir_config(self, configured_path: str, comfyui_path: str = "") -> dict[str, Any]:
         raw = str(configured_path or "").strip()
         model_suffixes = {".safetensors", ".ckpt", ".pt", ".pth", ".bin"}
+        preferred = str(self.app_config.image.preferred_checkpoint or "").strip()
 
         def _discover_models(folder: Path) -> list[str]:
             if not folder.exists() or not folder.is_dir():
                 return []
             return sorted([item.name for item in folder.iterdir() if item.is_file() and item.suffix.lower() in model_suffixes])
+
+        def _status(
+            *,
+            configured: bool,
+            valid: bool,
+            path: str,
+            resolved_path: str = "",
+            message: str,
+            detected_models: list[str] | None = None,
+        ) -> dict[str, Any]:
+            models = detected_models or []
+            matched_preferred = self._match_preferred_checkpoint(preferred, models) if preferred else None
+            preferred_found = bool(matched_preferred) if preferred else None
+            model_ready = bool(models) and (not preferred or bool(matched_preferred))
+            model_status_code = "model_ready" if model_ready else "no_models_detected"
+            model_message = "Checkpoint models are available."
+            if not models:
+                model_message = "No checkpoint found. Select a model folder or download one."
+            elif preferred and not matched_preferred:
+                model_status_code = "preferred_checkpoint_missing"
+                model_message = f"Preferred checkpoint '{preferred}' was not found in the selected checkpoint folder."
+            elif preferred and matched_preferred:
+                model_message = f"Preferred checkpoint '{preferred}' matched '{matched_preferred}'."
+            return {
+                "configured": configured,
+                "valid": valid,
+                "path": path,
+                "resolved_path": resolved_path,
+                "message": message,
+                "detected_models": models,
+                "model_ready": model_ready,
+                "model_status_code": model_status_code,
+                "model_message": model_message,
+                "preferred_checkpoint": preferred,
+                "preferred_checkpoint_found": preferred_found,
+                "preferred_checkpoint_match": matched_preferred or "",
+            }
 
         if not raw:
             comfy_root = Path(str(comfyui_path or "").strip()) if str(comfyui_path or "").strip() else None
@@ -1843,62 +1921,41 @@ class WebRuntime:
             if inferred and inferred.exists() and inferred.is_dir():
                 models = _discover_models(inferred)
                 if not models:
-                    return {
-                        "configured": False,
-                        "valid": False,
-                        "path": "",
-                        "resolved_path": str(inferred),
-                        "message": "No checkpoint found. Select a model folder or download one.",
-                        "detected_models": [],
-                    }
-                return {
-                    "configured": False,
-                    "valid": True,
-                    "path": "",
-                    "resolved_path": str(inferred),
-                    "message": "Using ComfyUI default checkpoints folder.",
-                    "detected_models": models,
-                }
-            return {
-                "configured": False,
-                "valid": False,
-                "path": "",
-                "message": "No checkpoint found. Select a model folder or download one.",
-                "detected_models": [],
-            }
+                    return _status(
+                        configured=False,
+                        valid=True,
+                        path="",
+                        resolved_path=str(inferred),
+                        message="Using ComfyUI default checkpoints folder.",
+                        detected_models=[],
+                    )
+                return _status(
+                    configured=False,
+                    valid=True,
+                    path="",
+                    resolved_path=str(inferred),
+                    message="Using ComfyUI default checkpoints folder.",
+                    detected_models=models,
+                )
+            return _status(
+                configured=False,
+                valid=False,
+                path="",
+                message="Checkpoint folder not configured.",
+                detected_models=[],
+            )
         candidate = Path(raw)
         if not candidate.exists() or not candidate.is_dir():
-            return {"configured": True, "valid": False, "path": raw, "message": "Folder not found."}
+            return _status(configured=True, valid=False, path=raw, message="Folder not found.", detected_models=[])
         models = _discover_models(candidate)
-        if not models:
-            return {
-                "configured": True,
-                "valid": False,
-                "path": str(candidate),
-                "resolved_path": str(candidate),
-                "message": "No checkpoint found. Select a model folder or download one.",
-                "detected_models": [],
-            }
-        preferred = str(self.app_config.image.preferred_checkpoint or "").strip()
-        if preferred:
-            model_names = {name.lower() for name in models}
-            if preferred.lower() not in model_names:
-                return {
-                    "configured": True,
-                    "valid": False,
-                    "path": str(candidate),
-                    "resolved_path": str(candidate),
-                    "message": f"Preferred checkpoint '{preferred}' was not found in the selected folder.",
-                    "detected_models": models,
-                }
-        return {
-            "configured": True,
-            "valid": True,
-            "path": str(candidate),
-            "resolved_path": str(candidate),
-            "message": "Checkpoint folder is valid.",
-            "detected_models": models,
-        }
+        return _status(
+            configured=True,
+            valid=True,
+            path=str(candidate),
+            resolved_path=str(candidate),
+            message="Checkpoint folder is valid.",
+            detected_models=models,
+        )
 
     def get_path_configuration_status(self) -> dict[str, Any]:
         resolved = self._resolve_image_backend_paths()
@@ -1912,7 +1969,9 @@ class WebRuntime:
             self.app_config.image.checkpoint_folder,
             comfy_for_checkpoints,
         )
-        pipeline_ready = bool(comfyui_root["valid"] and workflow_path["valid"] and checkpoint_dir["valid"] and output_dir["valid"])
+        engine_ready = bool(comfyui_root["valid"] and workflow_path["valid"] and output_dir["valid"])
+        model_ready = bool(checkpoint_dir.get("model_ready", False))
+        pipeline_ready = bool(engine_ready and model_ready)
         return {
             "image": {
                 "mode": str(resolved.get("mode", "managed")),
@@ -1921,6 +1980,8 @@ class WebRuntime:
                 "workflow_path": workflow_path,
                 "checkpoint_dir": checkpoint_dir,
                 "output_dir": output_dir,
+                "engine_ready": engine_ready,
+                "model_ready": model_ready,
                 "pipeline_ready": pipeline_ready,
             }
         }
@@ -1943,12 +2004,13 @@ class WebRuntime:
             }
         }
         image_status = status["image"]
-        image_status["pipeline_ready"] = bool(
+        image_status["engine_ready"] = bool(
             image_status["comfyui_root"]["valid"]
             and image_status["workflow_path"]["valid"]
             and image_status["output_dir"]["valid"]
-            and image_status["checkpoint_dir"]["valid"]
         )
+        image_status["model_ready"] = bool(image_status["checkpoint_dir"].get("model_ready", False))
+        image_status["pipeline_ready"] = bool(image_status["engine_ready"] and image_status["model_ready"])
         return status
 
     def apply_visual_pipeline_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -1963,7 +2025,7 @@ class WebRuntime:
         invalid_key = next(
             (
                 key
-                for key in ("comfyui_root", "workflow_path", "checkpoint_dir", "output_dir")
+                for key in ("comfyui_root", "workflow_path", "output_dir")
                 if not bool(image_status.get(key, {}).get("valid", False))
             ),
             None,
@@ -2161,18 +2223,6 @@ class WebRuntime:
                 "failure_stage": "validate-workflow",
                 "failure_stage_message": "workflow json invalid",
                 "steps": [{"step": "validate-workflow", "state": "failed", "message": message}],
-            }
-        if not bool(path_config.get("checkpoint_dir", {}).get("valid")):
-            self._image_engine_state = "error"
-            self._image_engine_last_error = "invalid_checkpoint_folder"
-            message = str(path_config.get("checkpoint_dir", {}).get("message") or "No checkpoint found. Select a model folder or download one.")
-            return {
-                "ok": False,
-                "message": message,
-                "next_step": "Select a checkpoint folder containing at least one model file.",
-                "failure_stage": "validate-checkpoint",
-                "failure_stage_message": "checkpoint model missing",
-                "steps": [{"step": "validate-checkpoint", "state": "failed", "message": message}],
             }
         preflight = self._validate_image_launch_requirements(comfyui_root, path_config)
         if not preflight.get("ok", False):
@@ -3323,7 +3373,8 @@ class WebRuntime:
         if not checkpoints:
             return fail("checkpoint_available", "No checkpoints are available in ComfyUI.")
         preferred = str(self.app_config.image.preferred_checkpoint or "").strip()
-        if preferred and preferred.lower() not in {item.lower() for item in checkpoints}:
+        matched_preferred = self._match_preferred_checkpoint(preferred, checkpoints) if preferred else None
+        if preferred and not matched_preferred:
             return fail("checkpoint_available", f"Preferred checkpoint '{preferred}' is not available in ComfyUI.")
 
         print("[image-test] step=prompt_submission")
@@ -3331,7 +3382,7 @@ class WebRuntime:
             workflow_id=workflow_path.stem or "scene_image",
             prompt=prompt,
             negative_prompt="",
-            parameters=({"checkpoint": preferred} if preferred else {}),
+            parameters=({"checkpoint": matched_preferred} if matched_preferred else {}),
         )
         result = adapter.generate(request, WorkflowManager(workflow_path.parent))
         if not result.success:
@@ -4662,9 +4713,20 @@ class WebRuntime:
                     error=str(path_config["workflow_path"]["message"]),
                     metadata={"provider": "comfyui", "status_code": "workflow_required"},
                 )
+            if not bool(path_config.get("checkpoint_dir", {}).get("model_ready", False)):
+                model_message = str(
+                    path_config.get("checkpoint_dir", {}).get("model_message")
+                    or "No checkpoint found. Select a model folder or download one."
+                )
+                return ImageGenerationResult(
+                    success=False,
+                    workflow_id=str(payload.get("workflow_id", "scene_image")),
+                    error=model_message,
+                    metadata={"provider": "comfyui", "status_code": "model_required"},
+                )
         if self.app_config.image.provider == "comfyui":
             image_status = self.get_image_status()
-            if not bool(image_status.get("ready", False)):
+            if not bool(image_status.get("engine_ready", image_status.get("ready", False))):
                 print("[image-pipeline] request blocked reason=comfyui_service_unavailable")
                 return ImageGenerationResult(
                     success=False,

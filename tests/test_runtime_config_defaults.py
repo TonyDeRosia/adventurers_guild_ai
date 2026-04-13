@@ -32,6 +32,7 @@ def test_default_app_config_round_trips_through_runtime_store(tmp_path: Path) ->
     assert loaded.model.provider == "null"
     assert loaded.model.model_name == "llama3"
     assert loaded.image.provider == "local"
+    assert loaded.image.preferred_checkpoint == ""
     assert loaded.image.campaign_auto_visual_timing == "after_narration"
     assert loaded.image.managed_service_enabled is True
     assert loaded.image.managed_install_path == ""

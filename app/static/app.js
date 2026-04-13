@@ -1941,6 +1941,8 @@ function renderImageSetupCard(snapshot = latestImageSetupSnapshot) {
   const layout = current.installer_layout || {};
   const layoutChecks = layout.checks || {};
   const readinessText = readiness.ready ? 'Ready' : 'Needs setup';
+  const engineText = readiness.engine_ready ? 'Engine: Ready' : 'Engine: Needs setup';
+  const modelText = readiness.model_ready ? 'Model: Ready' : 'Model: Missing or not selected';
   const appInstalled = firstRun.app_installed?.state === 'ready';
   const appInstalledText = appInstalled ? 'App install mode: desktop packaged build detected' : 'App install mode: source/developer runtime';
   const bundledText = current.bundled_comfyui_available ? 'Bundled image runtime: present' : 'Bundled image runtime: missing';
@@ -1979,6 +1981,8 @@ function renderImageSetupCard(snapshot = latestImageSetupSnapshot) {
     <div>${escapeHtml(layoutText)}</div>
     <div>${escapeHtml(layoutHint)}</div>
     <div><strong>Image readiness:</strong> ${escapeHtml(readinessText)}</div>
+    <div>${escapeHtml(engineText)}</div>
+    <div>${escapeHtml(modelText)}</div>
     <div>${escapeHtml(bundledText)}</div>
     <div>${escapeHtml(workflowsText)}</div>
     <div>${escapeHtml(embeddedPythonText)}</div>
@@ -2655,7 +2659,7 @@ async function applySettings() {
           campaign_auto_visual_timing: campaignAutoVisualTiming,
           checkpoint_source: checkpointSourceInput?.value || 'local',
           checkpoint_folder: appliedVisualPipelinePaths.checkpoint_folder || '',
-          preferred_checkpoint: preferredCheckpointInput?.value.trim() || 'DreamShaper',
+          preferred_checkpoint: preferredCheckpointInput?.value.trim() || '',
           preferred_launcher: preferredLauncherInput?.value || 'auto',
         },
       }),
@@ -2708,6 +2712,8 @@ function renderPathConfigStatus(config) {
   const output = imageConfig.output_dir || {};
   const checkpoint = imageConfig.checkpoint_dir || {};
   const pipelineReady = !!imageConfig.pipeline_ready;
+  const engineReady = !!imageConfig.engine_ready;
+  const modelReady = !!imageConfig.model_ready;
   const lineFor = (field, item, { optional = false } = {}) => {
     let status = 'Missing';
     if (item?.valid) status = 'Valid';
@@ -2736,6 +2742,8 @@ function renderPathConfigStatus(config) {
     `Workflow file: ${workflow.valid ? 'valid' : (workflow.configured ? 'invalid' : 'not configured')}`,
     `Checkpoint folder: ${checkpoint.valid ? 'valid' : (checkpoint.configured ? 'invalid' : 'not configured')}`,
     `Output folder: ${output.valid ? 'valid' : (output.configured ? 'invalid' : 'optional')}`,
+    `Engine: ${engineReady ? 'ready' : 'not ready'}`,
+    `Model: ${modelReady ? 'ready' : 'not ready'}`,
     `Image pipeline: ${pipelineReady ? 'ready' : 'not ready'}`,
   ];
   const details = [comfy.message, workflow.message, checkpoint.message, output.message].filter(Boolean).join(' | ');
@@ -2761,7 +2769,7 @@ async function loadSettings() {
     checkpoint_folder: data.settings.image.checkpoint_folder || '',
   };
   if (checkpointSourceInput) checkpointSourceInput.value = data.settings.image.checkpoint_source || 'local';
-  if (preferredCheckpointInput) preferredCheckpointInput.value = data.settings.image.preferred_checkpoint || 'DreamShaper';
+  if (preferredCheckpointInput) preferredCheckpointInput.value = data.settings.image.preferred_checkpoint || '';
   if (preferredLauncherInput) preferredLauncherInput.value = data.settings.image.preferred_launcher || 'auto';
   ingestPersistedCampaignSettings(
     {
