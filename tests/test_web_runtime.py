@@ -2543,7 +2543,7 @@ def test_install_image_engine_repairs_missing_launcher(tmp_path: Path, monkeypat
     monkeypatch.setattr(runtime, "_download_and_extract_comfyui", _fake_download)
     result = runtime.install_image_engine()
     assert result["ok"] is True
-    comfy_dir = Path(runtime.app_config.image.comfyui_path)
+    comfy_dir = Path(runtime.app_config.image.managed_install_path)
     assert (comfy_dir / "run_cpu.bat").exists()
 
 
@@ -2555,6 +2555,7 @@ def test_start_image_engine_attempts_python_launch_and_reports_launch_error(tmp_
     (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
     (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
     (comfy_dir / "models").mkdir(exist_ok=True)
+    (comfy_dir / "run_cpu.bat").write_text("@echo off\r\npython main.py\r\n", encoding="utf-8")
     runtime.app_config.image.comfyui_path = str(comfy_dir)
     workflow = tmp_path / "scene.json"
     workflow.write_text("{}", encoding="utf-8")
@@ -2566,6 +2567,7 @@ def test_start_image_engine_attempts_python_launch_and_reports_launch_error(tmp_
     monkeypatch.setattr(runtime, "_find_comfyui_root", lambda: comfy_dir)
     monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": False})
     monkeypatch.setattr("shutil.which", lambda _name: "python")
+    monkeypatch.setattr(runtime, "_validate_python_runtime", lambda *_args, **_kwargs: {"ok": True})
 
     launch_calls = {"count": 0}
 
@@ -2600,6 +2602,7 @@ def test_start_image_engine_detects_early_exit_and_exposes_startup_log(tmp_path:
     monkeypatch.setattr(runtime, "_find_comfyui_root", lambda: comfy_dir)
     monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": False})
     monkeypatch.setattr("time.sleep", lambda _seconds: None)
+    monkeypatch.setattr(runtime, "_validate_python_runtime", lambda *_args, **_kwargs: {"ok": True})
 
     class _Proc:
         stdout = True
@@ -2637,6 +2640,7 @@ def test_start_image_engine_windows_launch_uses_python_command_list(tmp_path: Pa
     monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
     monkeypatch.setattr("time.sleep", lambda _seconds: None)
     monkeypatch.setattr("shutil.which", lambda _name: "python")
+    monkeypatch.setattr(runtime, "_validate_python_runtime", lambda *_args, **_kwargs: {"ok": True})
     monkeypatch.setattr("subprocess.CREATE_NEW_PROCESS_GROUP", 0, raising=False)
     monkeypatch.setattr("subprocess.CREATE_NO_WINDOW", 0, raising=False)
 
@@ -2683,6 +2687,32 @@ def test_start_image_engine_reports_preflight_validation_for_invalid_runtime_lay
     monkeypatch.setattr(runtime, "install_image_engine", lambda: {"ok": False, "message": "skip"})
     result = runtime.start_image_engine()
     assert result["ok"] is False
+
+
+def test_start_image_engine_preflight_fails_when_python_runtime_unusable(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    comfy_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
+    comfy_dir.mkdir(parents=True, exist_ok=True)
+    (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
+    (comfy_dir / "models" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (comfy_dir / "run_cpu.bat").write_text("@echo off\r\npython main.py\r\n", encoding="utf-8")
+    workflow = tmp_path / "scene.json"
+    workflow.write_text("{}", encoding="utf-8")
+    runtime.app_config.image.comfyui_path = str(comfy_dir)
+    runtime.app_config.image.comfyui_workflow_path = str(workflow)
+    runtime.app_config.image.checkpoint_folder = str(comfy_dir / "models" / "checkpoints")
+
+    monkeypatch.setattr(runtime, "_find_comfyui_root", lambda: comfy_dir)
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": False})
+    monkeypatch.setattr("shutil.which", lambda _name: "python")
+    monkeypatch.setattr(runtime, "_validate_python_runtime", lambda *_args, **_kwargs: {"ok": False, "message": "bad python"})
+
+    result = runtime.start_image_engine()
+    assert result["ok"] is False
+    assert result["failure_stage"] == "preflight-validation"
+    assert "bad python" in result["message"]
     assert result["failure_stage"] in {"preflight-validation", "wait-for-readiness", "verify-install"}
 
 
