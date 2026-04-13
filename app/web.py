@@ -1581,14 +1581,18 @@ class WebRuntime:
         runtime_details = "python runtime not checked"
         python_runtime_found = True
         if os.name == "nt":
-            embedded_python = path.parent / "python_embeded" / "python.exe"
-            python_runtime_found = bool(embedded_python.exists() or shutil.which("python") or shutil.which("py"))
+            embedded_python = path / "python_embeded" / "python.exe"
+            venv_python = path / ".venv" / "Scripts" / "python.exe"
+            allow_system = str(self.app_config.image.preferred_launcher or "").strip().lower() in {"system", "system_python"}
+            python_runtime_found = bool(embedded_python.exists() or venv_python.exists() or (allow_system and (shutil.which("python") or shutil.which("py"))))
             runtime_details = (
                 f"embedded runtime found at {embedded_python}"
                 if embedded_python.exists()
-                else "using python from PATH"
-                if shutil.which("python") or shutil.which("py")
-                else "python runtime missing (no embedded python and no python/py on PATH)"
+                else f"venv runtime found at {venv_python}"
+                if venv_python.exists()
+                else "system python fallback explicitly enabled"
+                if allow_system and (shutil.which("python") or shutil.which("py"))
+                else "python runtime missing (expected ComfyUI python_embeded or .venv runtime)"
             )
             if not python_runtime_found:
                 missing_files.append("python-runtime")
@@ -1603,9 +1607,11 @@ class WebRuntime:
 
     def _write_comfyui_cpu_launcher(self, comfyui_root: Path) -> bool:
         launcher = comfyui_root / "run_cpu.bat"
-        embedded_python = comfyui_root.parent / "python_embeded" / "python.exe"
+        embedded_python = comfyui_root / "python_embeded" / "python.exe"
         if embedded_python.exists():
-            command = "..\\python_embeded\\python.exe main.py"
+            command = ".\\python_embeded\\python.exe main.py"
+        elif (comfyui_root / ".venv" / "Scripts" / "python.exe").exists():
+            command = ".\\.venv\\Scripts\\python.exe main.py"
         else:
             command = "python main.py"
         content = f"@echo off\r\ncd /d %~dp0\r\n{command}\r\npause\r\n"
@@ -1703,19 +1709,22 @@ class WebRuntime:
         }
 
     def _build_comfy_launch_command(self, comfyui_root: Path, host: str, port: int) -> tuple[list[str], str]:
-        embedded_python = comfyui_root.parent / "python_embeded" / "python.exe"
+        embedded_python = comfyui_root / "python_embeded" / "python.exe"
         if os.name == "nt" and embedded_python.exists():
-            command = [str(embedded_python), "main.py", "--listen", host, "--port", str(port)]
-            return command, "embedded_python"
+            return [str(embedded_python), "main.py", "--listen", host, "--port", str(port)], "embedded_python"
+        venv_python = comfyui_root / ".venv" / "Scripts" / "python.exe"
+        if os.name == "nt" and venv_python.exists():
+            return [str(venv_python), "main.py", "--listen", host, "--port", str(port)], "venv_python"
+        allow_system = str(self.app_config.image.preferred_launcher or "").strip().lower() in {"system", "system_python"}
+        if not allow_system:
+            return [], "python_runtime_not_found"
         python_exe = shutil.which("python") or shutil.which("py")
         if not python_exe:
             return [], "python_not_found"
         python_name = Path(python_exe).name.lower()
         if os.name == "nt" and python_name in {"py", "py.exe"}:
-            command = [python_exe, "-3", "main.py", "--listen", host, "--port", str(port)]
-            return command, "py_launcher"
-        command = [python_exe, "main.py", "--listen", host, "--port", str(port)]
-        return command, "system_python"
+            return [python_exe, "-3", "main.py", "--listen", host, "--port", str(port)], "system_python_explicit"
+        return [python_exe, "main.py", "--listen", host, "--port", str(port)], "system_python_explicit"
 
     def _validate_python_runtime(self, executable: str, launcher_type: str) -> dict[str, Any]:
         command = [executable, "--version"]
@@ -1741,11 +1750,21 @@ class WebRuntime:
         runtime_command = [executable]
         if launcher_type == "py_launcher":
             runtime_command.append("-3")
+        runtime_kind = (
+            "embedded"
+            if launcher_type == "embedded_python"
+            else "venv"
+            if launcher_type == "venv_python"
+            else "system"
+            if "system_python" in launcher_type
+            else "unknown"
+        )
         return {
             "ok": True,
             "executable": executable,
             "launcher_type": launcher_type,
             "runtime_command": runtime_command,
+            "runtime_kind": runtime_kind,
         }
 
     def _required_comfyui_python_packages(self, comfyui_root: Path) -> dict[str, Any]:
@@ -1780,7 +1799,10 @@ class WebRuntime:
             return runtime
         runtime_command = list(runtime["runtime_command"])
         python_executable = str(runtime.get("executable", ""))
-        print(f"[setup-deps] resolved-python executable={python_executable} launcher_type={launcher_type}")
+        print(
+            f"[setup-deps] resolved-python executable={python_executable} "
+            f"launcher_type={launcher_type} runtime_kind={runtime.get('runtime_kind', 'unknown')}"
+        )
 
         pip_check = self._run_runtime_python_capture(runtime_command, ["-m", "pip", "--version"], timeout_seconds=30)
         if pip_check.returncode != 0:
@@ -2350,6 +2372,18 @@ class WebRuntime:
             self.app_config.image.comfyui_workflow_path = resolved_workflow
         self.config_store.save(self.app_config)
         self._append_image_startup_log(startup_log_lines, f"Using install path: {comfyui_root}")
+        if not bool(path_config.get("workflow_path", {}).get("valid")):
+            self._image_engine_state = "error"
+            self._image_engine_last_error = "invalid_workflow_path"
+            message = str(path_config.get("workflow_path", {}).get("message") or "Workflow JSON path is invalid.")
+            return {
+                "ok": False,
+                "message": message,
+                "next_step": "Choose a valid workflow .json file and apply settings.",
+                "failure_stage": "validate-workflow",
+                "failure_stage_message": "workflow json invalid",
+                "steps": [{"step": "validate-workflow", "state": "failed", "message": message}],
+            }
         bundled_root = bundled_comfyui_dir()
         if self.desktop.capabilities.mode == "desktop_packaged" and comfyui_root.resolve() == bundled_root.resolve():
             layout_status = self.get_installer_layout_status()
@@ -2398,8 +2432,34 @@ class WebRuntime:
                     {"step": "resolve-python-runtime", "state": "failed", "message": str(runtime_resolution.get("message", "Python runtime resolution failed."))},
                 ],
             }
-        self._append_image_startup_log(startup_log_lines, f"Resolved ComfyUI Python runtime: {runtime_resolution.get('executable', '')}")
+        self._append_image_startup_log(
+            startup_log_lines,
+            (
+                "Resolved ComfyUI Python runtime: "
+                f"{runtime_resolution.get('executable', '')} "
+                f"(type={runtime_resolution.get('runtime_kind', 'unknown')})"
+            ),
+        )
 
+        checkpoint_status = path_config.get("checkpoint_dir", {})
+        if not bool(checkpoint_status.get("model_ready", False)):
+            self._append_image_startup_log(
+                startup_log_lines,
+                f"Checkpoint validation warning: {checkpoint_status.get('model_message', 'Checkpoint model is not ready.')}",
+            )
+        preflight = self._validate_image_launch_requirements(comfyui_root, path_config)
+        if not preflight.get("ok", False):
+            self._image_engine_state = "error"
+            self._image_engine_last_error = str(preflight.get("failure_stage_message", "preflight failed"))
+            return {
+                "ok": False,
+                "message": str(preflight.get("message", "ComfyUI validation failed before launch.")),
+                "next_step": "Fix the reported path/runtime issue, then retry.",
+                "failure_stage": "preflight-validation",
+                "failure_stage_message": str(preflight.get("failure_stage_message", "preflight validation failed")),
+            }
+        launch_command = list(preflight.get("launch_command", []))
+        launcher_type = str(preflight.get("launcher_type", "unknown"))
         print("[setup-orchestrator] setup-image step=dependency-bootstrap")
         dependency_bootstrap = self._bootstrap_comfy_python_dependencies(comfyui_root, launch_command, launcher_type)
         if not dependency_bootstrap.get("ok", False):
@@ -2432,38 +2492,6 @@ class WebRuntime:
             self._append_image_startup_log(startup_log_lines, f"Dependency bootstrap installed: {', '.join(installed_packages)}")
         else:
             self._append_image_startup_log(startup_log_lines, "Dependency bootstrap verified required modules are already available.")
-
-        if not bool(path_config.get("workflow_path", {}).get("valid")):
-            self._image_engine_state = "error"
-            self._image_engine_last_error = "invalid_workflow_path"
-            message = str(path_config.get("workflow_path", {}).get("message") or "Workflow JSON path is invalid.")
-            return {
-                "ok": False,
-                "message": message,
-                "next_step": "Choose a valid workflow .json file and apply settings.",
-                "failure_stage": "validate-workflow",
-                "failure_stage_message": "workflow json invalid",
-                "steps": [{"step": "validate-workflow", "state": "failed", "message": message}],
-            }
-        checkpoint_status = path_config.get("checkpoint_dir", {})
-        if not bool(checkpoint_status.get("model_ready", False)):
-            self._append_image_startup_log(
-                startup_log_lines,
-                f"Checkpoint validation warning: {checkpoint_status.get('model_message', 'Checkpoint model is not ready.')}",
-            )
-        preflight = self._validate_image_launch_requirements(comfyui_root, path_config)
-        if not preflight.get("ok", False):
-            self._image_engine_state = "error"
-            self._image_engine_last_error = str(preflight.get("failure_stage_message", "preflight failed"))
-            return {
-                "ok": False,
-                "message": str(preflight.get("message", "ComfyUI validation failed before launch.")),
-                "next_step": "Fix the reported path/runtime issue, then retry.",
-                "failure_stage": "preflight-validation",
-                "failure_stage_message": str(preflight.get("failure_stage_message", "preflight validation failed")),
-            }
-        launch_command = list(preflight.get("launch_command", []))
-        launcher_type = str(preflight.get("launcher_type", "unknown"))
         print("[setup-orchestrator] setup-image step=launch-engine")
         process: subprocess.Popen[str] | None = None
         log_handle = None
