@@ -54,7 +54,20 @@
             <div id="scene-image-progress-fill" class="scene-image-progress-fill"></div>
           </div>
         </section>
-        <section id="chat-thread" class="chat-thread"></section>
+        <section class="play-layout" aria-label="Gameplay layout">
+          <section id="scene-panel" class="play-panel scene-panel">
+            <div class="play-panel-header"><h3>Scene</h3></div>
+            <div id="scene-panel-body" class="scene-panel-body">Waiting for narration...</div>
+          </section>
+          <section id="npc-panel" class="play-panel npc-panel">
+            <div class="play-panel-header"><h3>NPCs Nearby</h3></div>
+            <div id="npc-panel-list" class="npc-panel-list">No active NPCs in scene.</div>
+          </section>
+          <section id="dialogue-panel" class="play-panel dialogue-panel">
+            <div class="play-panel-header"><h3>Dialogue</h3></div>
+            <section id="dialogue-feed" class="dialogue-feed"></section>
+          </section>
+        </section>
         <footer class="input-bar compose-bar">
           <button id="input-mode-toggle" type="button" aria-label="Toggle input mode">IC</button>
           <input id="chat-input" type="text" placeholder="Enter your action (look, talk <npc_id>, move <location_id>...)" />

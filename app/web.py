@@ -2225,6 +2225,95 @@ class WebRuntime:
             return "npc"
         return "system"
 
+    @staticmethod
+    def _avatar_fallback(name: str) -> str:
+        parts = [part for part in str(name or "").split() if part]
+        initials = "".join(part[0].upper() for part in parts[:2])
+        return initials or "NPC"
+
+    def get_play_view(self, limit: int = 200) -> dict[str, Any]:
+        state = self.session.state
+        runtime = state.structured_state.runtime
+        scene_state = runtime.scene_state if isinstance(runtime.scene_state, dict) else {}
+        history = self.session.message_history[-max(limit, 1):]
+
+        latest_narration = next(
+            (str(entry.get("text", "")).strip() for entry in reversed(history) if str(entry.get("type", "")).lower() == "narrator"),
+            "",
+        )
+        location = state.locations.get(state.current_location_id)
+        location_name = str(location.name if location else state.current_location_id or "Unknown location")
+        location_description = str(location.description if location else "")
+        scene_summary = "; ".join(self._clean_list(scene_state.get("recent_consequences", []))[:2])
+        scene_payload = {
+            "location_id": state.current_location_id,
+            "location_name": location_name,
+            "atmosphere": str(state.world_meta.tone or "").strip(),
+            "narration": latest_narration or location_description or "No scene narration yet.",
+            "summary": scene_summary,
+            "turn": state.turn_count,
+        }
+
+        registry = self._sync_npc_identities()
+        visible_ids: list[str] = []
+
+        def add_visible(npc_id: str) -> None:
+            clean_id = str(npc_id or "").strip()
+            if clean_id and clean_id not in visible_ids:
+                visible_ids.append(clean_id)
+
+        for npc in state.npcs.values():
+            if npc.location_id == state.current_location_id:
+                add_visible(npc.id)
+        for actor in scene_state.get("scene_actors", []) if isinstance(scene_state, dict) else []:
+            if isinstance(actor, dict):
+                add_visible(str(actor.get("linked_npc_id", "")))
+        for lite in scene_state.get("lightweight_npcs", []) if isinstance(scene_state, dict) else []:
+            if isinstance(lite, dict):
+                add_visible(str(lite.get("npc_id", "")))
+        for entry in history[-20:]:
+            if str(entry.get("type", "")).lower() == "npc":
+                add_visible(str(entry.get("speaker_npc_id", "")))
+
+        visible_npcs: list[dict[str, Any]] = []
+        for npc_id in visible_ids[:12]:
+            record = registry.records.get(npc_id, {}) if isinstance(registry.records, dict) else {}
+            npc = state.npcs.get(npc_id)
+            display_name = str(record.get("display_name") or (npc.name if npc else npc_id) or npc_id).strip() or "Unknown NPC"
+            descriptor = str(record.get("role_or_archetype") or (npc.personality_archetype if npc else "") or "").strip()
+            portrait_url = str(record.get("portrait_path", "")).strip()
+            relationship = str(getattr(npc, "relationship_tier", "")).strip() if npc else ""
+            portrait_status = str(record.get("portrait_status", "none")).strip() or "none"
+            state_tags = [tag for tag in [relationship, portrait_status] if tag and tag != "none"]
+            notable = bool(record.get("important", False))
+            visible_npcs.append(
+                {
+                    "npc_id": npc_id,
+                    "display_name": display_name,
+                    "portrait_url": portrait_url,
+                    "avatar_fallback": self._avatar_fallback(display_name),
+                    "role_or_archetype": descriptor,
+                    "notable": notable,
+                    "state_tags": state_tags,
+                }
+            )
+
+        dialogue_entries = [
+            dict(entry)
+            for entry in history
+            if str(entry.get("type", "")).lower() in {"npc", "player", "ooc_player", "ooc_gm", "system", "error", "narrator"}
+        ]
+        for entry in dialogue_entries:
+            if str(entry.get("type", "")).lower() == "npc":
+                name = str(entry.get("speaker_name") or "NPC")
+                entry["avatar_fallback"] = self._avatar_fallback(name)
+
+        return {
+            "scene_state": scene_payload,
+            "visible_npcs": visible_npcs,
+            "dialogue_entries": dialogue_entries,
+        }
+
     def serialize_state(self) -> dict[str, Any]:
         state = self.session.state
         return {
@@ -4432,6 +4521,10 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     def campaign_messages(limit: int = 200) -> dict[str, Any]:
         safe_limit = max(limit, 1)
         return {"messages": runtime.session.message_history[-safe_limit:]}
+
+    @app.get("/api/campaign/play-view")
+    def campaign_play_view(limit: int = 200) -> dict[str, Any]:
+        return runtime.get_play_view(limit=limit)
 
     @app.get("/api/campaign/scene-visual")
     def campaign_scene_visual() -> dict[str, Any]:

@@ -1,4 +1,6 @@
-const chatThread = document.getElementById('chat-thread');
+const dialogueFeed = document.getElementById('dialogue-feed');
+const scenePanelBody = document.getElementById('scene-panel-body');
+const npcPanelList = document.getElementById('npc-panel-list');
 const campaignMeta = document.getElementById('campaign-meta');
 const campaignDisplayModeIndicator = document.getElementById('campaign-display-mode-indicator');
 const saveList = document.getElementById('save-list');
@@ -1345,6 +1347,7 @@ async function api(path, options = {}) {
 }
 
 function renderMessage(msg) {
+  if (!dialogueFeed) return;
   if (msg.type === 'image') {
     msg = { ...msg, type: 'system', text: msg.text || 'Scene visual updated.' };
   }
@@ -1361,15 +1364,15 @@ function renderMessage(msg) {
         <div>${escapeHtml(msg.text || '')}</div>
       </div>
     `;
-    chatThread.appendChild(el);
-    chatThread.scrollTop = chatThread.scrollHeight;
+    dialogueFeed.appendChild(el);
+    dialogueFeed.scrollTop = dialogueFeed.scrollHeight;
     return;
   }
   el.className = `msg msg-${msg.type}`;
   const ts = new Date(msg.timestamp).toLocaleTimeString();
   el.innerHTML = `<small>${labelForType(msg.type)} • ${ts}</small>${escapeHtml(msg.text || '')}`;
-  chatThread.appendChild(el);
-  chatThread.scrollTop = chatThread.scrollHeight;
+  dialogueFeed.appendChild(el);
+  dialogueFeed.scrollTop = dialogueFeed.scrollHeight;
 }
 
 function labelForType(type) {
@@ -1430,11 +1433,57 @@ function clearSceneImage(message = 'Scene image will appear here.') {
   if (sceneVisualMeta) sceneVisualMeta.textContent = 'Generate an image to view the current scene.';
 }
 
+function renderScenePanel(sceneState = {}) {
+  if (!scenePanelBody) return;
+  const locationName = escapeHtml(sceneState.location_name || 'Unknown location');
+  const atmosphere = escapeHtml(sceneState.atmosphere || '');
+  const narration = escapeHtml(sceneState.narration || 'No scene narration yet.');
+  const summary = escapeHtml(sceneState.summary || '');
+  scenePanelBody.innerHTML = `
+    <div class="scene-location">${locationName}</div>
+    ${atmosphere ? `<div class="scene-atmosphere">${atmosphere}</div>` : ''}
+    <p>${narration}</p>
+    ${summary ? `<p class="scene-summary">${summary}</p>` : ''}
+  `;
+}
+
+function renderNpcPanel(npcs = []) {
+  if (!npcPanelList) return;
+  if (!Array.isArray(npcs) || !npcs.length) {
+    npcPanelList.textContent = 'No active NPCs in scene.';
+    return;
+  }
+  npcPanelList.innerHTML = npcs.map((npc) => {
+    const fallback = escapeHtml(npc.avatar_fallback || 'NPC');
+    const portrait = typeof npc.portrait_url === 'string' ? npc.portrait_url.trim() : '';
+    const descriptor = escapeHtml(npc.role_or_archetype || '');
+    const tags = Array.isArray(npc.state_tags) ? npc.state_tags.filter(Boolean).slice(0, 3) : [];
+    return `
+      <article class="npc-panel-card">
+        <div class="npc-panel-avatar">${portrait ? `<img src="${escapeHtml(portrait)}" alt="${escapeHtml(npc.display_name || 'NPC')} portrait" />` : `<span>${fallback}</span>`}</div>
+        <div>
+          <strong>${escapeHtml(npc.display_name || 'Unknown NPC')}</strong>
+          ${descriptor ? `<small>${descriptor}</small>` : ''}
+          ${tags.length ? `<div class="npc-tags">${tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>` : ''}
+        </div>
+      </article>
+    `;
+  }).join('');
+}
+
 async function refreshMessages() {
-  const data = await api('/api/campaign/messages');
-  chatThread.innerHTML = '';
-  const messages = data.messages || [];
-  messages.forEach(renderMessage);
+  const data = await api('/api/campaign/play-view');
+  renderScenePanel(data.scene_state || {});
+  renderNpcPanel(data.visible_npcs || []);
+  if (dialogueFeed) {
+    dialogueFeed.innerHTML = '';
+    const messages = data.dialogue_entries || [];
+    if (!messages.length) {
+      dialogueFeed.innerHTML = '<div class="dialogue-empty">No dialogue yet.</div>';
+    } else {
+      messages.forEach(renderMessage);
+    }
+  }
 }
 
 async function refreshSceneVisual() {
