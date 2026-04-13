@@ -78,7 +78,19 @@ class ContentRegistry:
         return json.loads(path.read_text(encoding="utf-8"))
 
     def _read_json(self, filename: str) -> dict[str, Any]:
-        return json.loads((self.data_dir / filename).read_text(encoding="utf-8"))
+        path = self.data_dir / filename
+        resolved = self._resolve_json_path(path)
+        return json.loads(resolved.read_text(encoding="utf-8"))
+
+    def _resolve_json_path(self, path: Path) -> Path:
+        """Resolve JSON file path with a compatibility fallback for mispackaged builds."""
+        if path.is_file():
+            return path
+        if path.is_dir():
+            nested = path / path.name
+            if nested.is_file():
+                return nested
+        raise FileNotFoundError(f"Content file is missing or invalid: {path}")
 
     def _load_dialogues(self) -> dict[str, DialogueTree]:
         payload = self._read_json("dialogues.json")
