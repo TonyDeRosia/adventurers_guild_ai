@@ -1,6 +1,4 @@
 const dialogueFeed = document.getElementById('dialogue-feed');
-const scenePanelBody = document.getElementById('scene-panel-body');
-const npcPanelList = document.getElementById('npc-panel-list');
 const campaignMeta = document.getElementById('campaign-meta');
 const campaignDisplayModeIndicator = document.getElementById('campaign-display-mode-indicator');
 const saveList = document.getElementById('save-list');
@@ -1435,53 +1433,38 @@ function clearSceneImage(message = 'Scene image will appear here.') {
   if (sceneVisualMeta) sceneVisualMeta.textContent = 'Generate an image to view the current scene.';
 }
 
-function renderScenePanel(sceneState = {}) {
-  if (!scenePanelBody) return;
+function renderSceneContext(sceneState = {}) {
+  if (!dialogueFeed) return;
   const locationName = escapeHtml(sceneState.location_name || 'Unknown location');
   const atmosphere = escapeHtml(sceneState.atmosphere || '');
-  const narration = escapeHtml(sceneState.narration || 'No scene narration yet.');
   const summary = escapeHtml(sceneState.summary || '');
-  scenePanelBody.innerHTML = `
+  const context = document.createElement('section');
+  context.className = 'scene-context';
+  context.innerHTML = `
     <div class="scene-location">${locationName}</div>
     ${atmosphere ? `<div class="scene-atmosphere">${atmosphere}</div>` : ''}
-    <p>${narration}</p>
-    ${summary ? `<p class="scene-summary">${summary}</p>` : ''}
+    ${summary ? `<div class="scene-summary">${summary}</div>` : ''}
   `;
-}
-
-function renderNpcPanel(npcs = []) {
-  if (!npcPanelList) return;
-  if (!Array.isArray(npcs) || !npcs.length) {
-    npcPanelList.textContent = 'No active NPCs in scene.';
-    return;
-  }
-  npcPanelList.innerHTML = npcs.map((npc) => {
-    const fallback = escapeHtml(npc.avatar_fallback || 'NPC');
-    const portrait = typeof npc.portrait_url === 'string' ? npc.portrait_url.trim() : '';
-    const descriptor = escapeHtml(npc.role_or_archetype || '');
-    const tags = Array.isArray(npc.state_tags) ? npc.state_tags.filter(Boolean).slice(0, 3) : [];
-    return `
-      <article class="npc-panel-card">
-        <div class="npc-panel-avatar">${portrait ? `<img src="${escapeHtml(portrait)}" alt="${escapeHtml(npc.display_name || 'NPC')} portrait" />` : `<span>${fallback}</span>`}</div>
-        <div>
-          <strong>${escapeHtml(npc.display_name || 'Unknown NPC')}</strong>
-          ${descriptor ? `<small>${descriptor}</small>` : ''}
-          ${tags.length ? `<div class="npc-tags">${tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>` : ''}
-        </div>
-      </article>
-    `;
-  }).join('');
+  dialogueFeed.appendChild(context);
 }
 
 async function refreshMessages() {
   const data = await api('/api/campaign/play-view');
-  renderScenePanel(data.scene_state || {});
-  renderNpcPanel(data.visible_npcs || []);
   if (dialogueFeed) {
     dialogueFeed.innerHTML = '';
+    renderSceneContext(data.scene_state || {});
     const messages = data.dialogue_entries || [];
     if (!messages.length) {
-      dialogueFeed.innerHTML = '<div class="dialogue-empty">No dialogue yet.</div>';
+      const fallbackNarration = String(data.scene_state?.narration || '').trim();
+      if (fallbackNarration) {
+        renderMessage({
+          type: 'narrator',
+          text: fallbackNarration,
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        dialogueFeed.innerHTML += '<div class="dialogue-empty">No dialogue yet.</div>';
+      }
     } else {
       messages.forEach(renderMessage);
     }

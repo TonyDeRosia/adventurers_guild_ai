@@ -42,3 +42,11 @@ def test_comfyui_path_controls_live_only_in_advanced_image_settings() -> None:
     assert 'id="checkpoint-folder-input"' in html
     assert 'id="pick-checkpoint-folder"' in html
     assert 'id="open-checkpoint-page"' not in html
+
+
+def test_play_layout_uses_single_campaign_log_without_npc_sidebar() -> None:
+    html = _index_html()
+    assert 'id="dialogue-panel"' in html
+    assert 'id="dialogue-feed"' in html
+    assert 'id="npc-panel"' not in html
+    assert 'id="npc-panel-list"' not in html
