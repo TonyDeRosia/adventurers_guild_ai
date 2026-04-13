@@ -137,3 +137,27 @@ def test_install_image_engine_does_not_force_browser_launch(tmp_path: Path, monk
     result = runtime.install_image_engine()
 
     assert result["ok"] is True
+
+
+def test_managed_mode_resolves_to_app_managed_paths(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.comfyui_path = ""
+    status = runtime.get_path_configuration_status()["image"]
+    resolved = status["resolved_paths"]
+    assert status["mode"] == "managed"
+    assert resolved["external_comfyui_root"] == ""
+    assert str(tmp_path / "user_data") in resolved["managed_comfyui_root"]
+
+
+def test_external_mode_uses_selected_external_path(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_root = tmp_path / "external" / "ComfyUI"
+    comfy_root.mkdir(parents=True, exist_ok=True)
+    (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_root / "custom_nodes").mkdir(exist_ok=True)
+    (comfy_root / "models").mkdir(exist_ok=True)
+    (comfy_root / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
+    runtime.app_config.image.comfyui_path = str(comfy_root)
+    status = runtime.get_path_configuration_status()["image"]
+    assert status["mode"] == "external"
+    assert status["comfyui_root"]["path"] == str(comfy_root)
