@@ -3364,6 +3364,43 @@ def test_narration_plus_resolved_npc_line_splits_to_narrator_and_npc_and_reuses_
     assert len(runtime.session.state.structured_state.runtime.npc_identity_registry) == 1
 
 
+def test_mixed_narration_quote_and_trailing_narration_splits_into_three_messages(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_npc_split_mixed"})
+    state = runtime.session.state
+    npc = NPC(id="npc_gorvoth", name="Gorvoth", location_id=state.current_location_id)
+    state.npcs[npc.id] = npc
+    state.active_dialogue_npc_id = npc.id
+
+    monkeypatch.setattr(
+        runtime.engine,
+        "run_turn",
+        lambda *_args, **_kwargs: TurnResult(
+            narrative=(
+                'As you approach Gorvoth, he studies you carefully. '
+                '"You seek my history?" he asks. '
+                "His posture remains measured and guarded."
+            ),
+            system_messages=[],
+            messages=[
+                {
+                    "type": "narrator",
+                    "text": (
+                        'As you approach Gorvoth, he studies you carefully. '
+                        '"You seek my history?" he asks. '
+                        "His posture remains measured and guarded."
+                    ),
+                }
+            ],
+        ),
+    )
+
+    payload = runtime.handle_player_input("I ask Gorvoth what happened here.")
+    assert [message["type"] for message in payload["messages"]] == ["narrator", "npc", "narrator"]
+    assert payload["messages"][1]["speaker_name"] == "Gorvoth"
+    assert "You seek my history?" in payload["messages"][1]["text"]
+
+
 def test_npc_message_attaches_portrait_metadata_when_available(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.create_campaign({"slot": "slot_npc_split_portrait"})
@@ -3448,3 +3485,25 @@ def test_npc_identity_registry_persists_through_save_reload(tmp_path: Path, monk
     restored = reloaded.session.state.structured_state.runtime.npc_identity_registry
     assert restored["npc_persist"]["portrait_path"] == "/generated/iria.png"
     assert restored["npc_persist"]["display_name"] == "Iria"
+
+
+def test_history_replay_prefers_structured_turn_messages_for_npc_cards(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_npc_replay_structured"})
+    state = runtime.session.state
+    state.conversation_turns = [
+        ConversationTurn(
+            turn=1,
+            player_input="I greet Vera.",
+            system_messages=[],
+            narrator_response='The trader smiles. "Welcome back."',
+            display_messages=[
+                {"type": "narrator", "text": "The trader smiles."},
+                {"type": "npc", "text": "Welcome back.", "speaker_npc_id": "npc_merchant", "speaker_name": "Vera"},
+            ],
+        )
+    ]
+    runtime.history_store = {}
+    replayed = runtime._history_for_slot(runtime.session.active_slot)
+    assert [message["type"] for message in replayed] == ["player", "narrator", "npc"]
+    assert replayed[2]["speaker_name"] == "Vera"

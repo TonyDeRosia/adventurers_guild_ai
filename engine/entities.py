@@ -233,6 +233,7 @@ class ConversationTurn:
     player_input: str
     system_messages: list[str] = field(default_factory=list)
     narrator_response: str = ""
+    display_messages: list[dict[str, Any]] = field(default_factory=list)
     requested_mode: str = "play"
     location_id: str = ""
 
