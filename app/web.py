@@ -1444,6 +1444,40 @@ class WebRuntime:
 
         print("[setup-orchestrator] setup-image step=resolve-paths")
         steps.append({"step": "resolve-paths", "state": "ready", "message": f"Using ComfyUI root: {comfyui_root}"})
+        launch_command, launcher_type = self._build_comfy_launch_command(comfyui_root, "127.0.0.1", 8188)
+        runtime_resolution = self._resolve_comfy_python_runtime(launch_command, launcher_type)
+        if not runtime_resolution.get("ok", False):
+            steps.append({"step": "resolve-python-runtime", "state": "failed", "message": str(runtime_resolution.get("message", "Python runtime resolution failed."))})
+            return {
+                "ok": False,
+                "message": str(runtime_resolution.get("message", "Python runtime resolution failed.")),
+                "next_step": "Repair ComfyUI Python runtime, then retry.",
+                "steps": steps,
+                "summary": "Image AI failed during Python runtime resolution.",
+            }
+        steps.append(
+            {
+                "step": "resolve-python-runtime",
+                "state": "ready",
+                "message": f"ComfyUI Python runtime: {runtime_resolution.get('executable', '')}",
+            }
+        )
+        print("[setup-orchestrator] setup-image step=dependency-bootstrap")
+        dep_result = self._bootstrap_comfy_python_dependencies(comfyui_root, launch_command, launcher_type)
+        if not dep_result.get("ok", False):
+            steps.append({"step": "dependency-bootstrap", "state": "failed", "message": str(dep_result.get("message", "Dependency bootstrap failed."))})
+            return {
+                "ok": False,
+                "message": str(dep_result.get("message", "Dependency bootstrap failed.")),
+                "next_step": "Install/repair the reported Python dependency in the ComfyUI runtime, then retry.",
+                "steps": steps,
+                "summary": "Image AI failed during dependency bootstrap.",
+            }
+        dep_installed = list(dep_result.get("installed_packages", []))
+        dep_message = "Dependencies verified."
+        if dep_installed:
+            dep_message = f"Dependencies installed/updated: {', '.join(dep_installed)}."
+        steps.append({"step": "dependency-bootstrap", "state": "ready", "message": dep_message})
         workflow_status = path_status.get("workflow_path", {})
         print("[setup-orchestrator] setup-image step=validate-workflow")
         if not bool(workflow_status.get("valid", False)):
@@ -1451,6 +1485,17 @@ class WebRuntime:
             steps.append({"step": "validate-workflow", "state": "failed", "message": message})
             return {"ok": False, "message": message, "next_step": "Set a valid workflow JSON, then retry.", "steps": steps, "summary": "Image AI failed during workflow validation."}
         steps.append({"step": "validate-workflow", "state": "ready", "message": "Workflow JSON is present and loadable."})
+        checkpoint_status = path_status.get("checkpoint_dir", {})
+        if bool(checkpoint_status.get("model_ready", False)):
+            steps.append({"step": "validate-checkpoint", "state": "ready", "message": "Checkpoint model validation passed."})
+        else:
+            steps.append(
+                {
+                    "step": "validate-checkpoint",
+                    "state": "warning",
+                    "message": str(checkpoint_status.get("model_message") or "Checkpoint model is not ready yet."),
+                }
+            )
 
         print("[setup-orchestrator] setup-image step=start-engine")
         result = self.start_image_engine()
@@ -1462,18 +1507,6 @@ class WebRuntime:
                 steps.append({"step": "start-engine", "state": "failed", "message": str(result.get("message", "Failed to start image engine."))})
             return {"ok": False, "message": str(result.get("message", "Failed to start image engine.")), "next_step": result.get("next_step"), "steps": steps, "summary": str(result.get("message", "Image AI failed to start."))}
 
-        refreshed_paths = self.get_path_configuration_status().get("image", {})
-        checkpoint_status = refreshed_paths.get("checkpoint_dir", {})
-        if bool(checkpoint_status.get("model_ready", False)):
-            steps.append({"step": "validate-checkpoint", "state": "ready", "message": "Checkpoint model validation passed."})
-        else:
-            steps.append(
-                {
-                    "step": "validate-checkpoint",
-                    "state": "warning",
-                    "message": str(checkpoint_status.get("model_message") or "Checkpoint model is not ready yet."),
-                }
-            )
         image_status = self.get_image_status()
         engine_ready = bool(image_status.get("reachable", False))
         model_ready = bool(image_status.get("model_ready", checkpoint_status.get("model_ready", False)))
@@ -1698,6 +1731,144 @@ class WebRuntime:
             suffix = f" ({tail})" if tail else ""
             return {"ok": False, "message": f"Python runtime check failed with exit code {completed.returncode}{suffix}"}
         return {"ok": True}
+
+    def _resolve_comfy_python_runtime(self, launch_command: list[str], launcher_type: str) -> dict[str, Any]:
+        if not launch_command:
+            return {"ok": False, "message": "ComfyUI launch command is empty."}
+        executable = str(launch_command[0]).strip()
+        if not executable:
+            return {"ok": False, "message": "ComfyUI Python executable is empty."}
+        runtime_command = [executable]
+        if launcher_type == "py_launcher":
+            runtime_command.append("-3")
+        return {
+            "ok": True,
+            "executable": executable,
+            "launcher_type": launcher_type,
+            "runtime_command": runtime_command,
+        }
+
+    def _required_comfyui_python_packages(self, comfyui_root: Path) -> dict[str, Any]:
+        requirements_file = comfyui_root / "requirements.txt"
+        baseline_packages = ["sqlalchemy"]
+        requirements_from_file: list[str] = []
+        if requirements_file.exists() and requirements_file.is_file():
+            try:
+                for raw_line in requirements_file.read_text(encoding="utf-8", errors="replace").splitlines():
+                    line = raw_line.strip()
+                    if not line or line.startswith("#") or line.startswith("-"):
+                        continue
+                    normalized = re.split(r"[<>=!~;\[]", line, maxsplit=1)[0].strip()
+                    if normalized:
+                        requirements_from_file.append(normalized.lower())
+            except OSError:
+                pass
+        required = sorted(set([*baseline_packages, *requirements_from_file]))
+        return {
+            "requirements_file": str(requirements_file),
+            "requirements_file_present": requirements_file.exists(),
+            "required_packages": required,
+            "baseline_packages": baseline_packages,
+        }
+
+    def _run_runtime_python_capture(self, runtime_command: list[str], args: list[str], timeout_seconds: int = 60) -> subprocess.CompletedProcess[str]:
+        return self._run_command_capture([*runtime_command, *args], timeout_seconds=timeout_seconds)
+
+    def _bootstrap_comfy_python_dependencies(self, comfyui_root: Path, launch_command: list[str], launcher_type: str) -> dict[str, Any]:
+        runtime = self._resolve_comfy_python_runtime(launch_command, launcher_type)
+        if not runtime.get("ok", False):
+            return runtime
+        runtime_command = list(runtime["runtime_command"])
+        python_executable = str(runtime.get("executable", ""))
+        print(f"[setup-deps] resolved-python executable={python_executable} launcher_type={launcher_type}")
+
+        pip_check = self._run_runtime_python_capture(runtime_command, ["-m", "pip", "--version"], timeout_seconds=30)
+        if pip_check.returncode != 0:
+            print("[setup-deps] pip unavailable, attempting ensurepip")
+            ensurepip = self._run_runtime_python_capture(runtime_command, ["-m", "ensurepip", "--upgrade"], timeout_seconds=180)
+            if ensurepip.returncode != 0:
+                detail = (ensurepip.stderr or ensurepip.stdout or pip_check.stderr or pip_check.stdout or "").strip()
+                return {
+                    "ok": False,
+                    "stage": "dependency-bootstrap",
+                    "message": "pip unavailable in managed runtime.",
+                    "detail": detail,
+                    "python_executable": python_executable,
+                }
+            pip_check = self._run_runtime_python_capture(runtime_command, ["-m", "pip", "--version"], timeout_seconds=30)
+            if pip_check.returncode != 0:
+                detail = (pip_check.stderr or pip_check.stdout or "").strip()
+                return {
+                    "ok": False,
+                    "stage": "dependency-bootstrap",
+                    "message": "pip unavailable in managed runtime.",
+                    "detail": detail,
+                    "python_executable": python_executable,
+                }
+        print("[setup-deps] pip available")
+
+        package_info = self._required_comfyui_python_packages(comfyui_root)
+        requirements_file = Path(str(package_info.get("requirements_file", "")))
+        installed_packages: list[str] = []
+        if bool(package_info.get("requirements_file_present", False)) and requirements_file.exists():
+            print(f"[setup-deps] installing requirements file={requirements_file}")
+            install_requirements = self._run_runtime_python_capture(
+                runtime_command,
+                ["-m", "pip", "install", "-r", str(requirements_file)],
+                timeout_seconds=60 * 10,
+            )
+            if install_requirements.returncode != 0:
+                detail = (install_requirements.stderr or install_requirements.stdout or "").strip()
+                return {
+                    "ok": False,
+                    "stage": "dependency-bootstrap",
+                    "message": f"Failed to install dependency requirements from {requirements_file.name}.",
+                    "detail": detail,
+                    "python_executable": python_executable,
+                }
+            installed_packages.append(f"-r {requirements_file.name}")
+
+        import_targets = {"sqlalchemy": "sqlalchemy"}
+        missing_imports: list[str] = []
+        for module_name, package_name in import_targets.items():
+            probe = self._run_runtime_python_capture(runtime_command, ["-c", f"import {module_name}"], timeout_seconds=20)
+            if probe.returncode != 0:
+                missing_imports.append(package_name)
+        for package_name in missing_imports:
+            print(f"[setup-deps] installing missing package={package_name}")
+            install_one = self._run_runtime_python_capture(runtime_command, ["-m", "pip", "install", package_name], timeout_seconds=180)
+            if install_one.returncode != 0:
+                detail = (install_one.stderr or install_one.stdout or "").strip()
+                return {
+                    "ok": False,
+                    "stage": "dependency-bootstrap",
+                    "message": f"Failed to install dependency: {package_name}",
+                    "detail": detail,
+                    "python_executable": python_executable,
+                    "missing_dependency": package_name,
+                }
+            installed_packages.append(package_name)
+
+        for module_name, package_name in import_targets.items():
+            probe = self._run_runtime_python_capture(runtime_command, ["-c", f"import {module_name}"], timeout_seconds=20)
+            if probe.returncode != 0:
+                detail = (probe.stderr or probe.stdout or "").strip()
+                return {
+                    "ok": False,
+                    "stage": "dependency-validation",
+                    "message": f"Missing dependency in ComfyUI runtime: {package_name}",
+                    "detail": detail,
+                    "python_executable": python_executable,
+                    "missing_dependency": package_name,
+                }
+        print(f"[setup-deps] dependency validation passed installed={installed_packages}")
+        return {
+            "ok": True,
+            "python_executable": python_executable,
+            "runtime_command": runtime_command,
+            "installed_packages": installed_packages,
+            "required_packages": package_info.get("required_packages", []),
+        }
 
     def _download_and_extract_comfyui(self, target_dir: Path) -> tuple[bool, str]:
         archive_path = Path(tempfile.gettempdir()) / "ComfyUI-master.zip"
@@ -2212,6 +2383,56 @@ class WebRuntime:
                     {"step": "verify-install", "state": "failed", "message": f"Missing: {missing}"},
                 ],
             }
+        launch_command, launcher_type = self._build_comfy_launch_command(comfyui_root, "127.0.0.1", 8188)
+        runtime_resolution = self._resolve_comfy_python_runtime(launch_command, launcher_type)
+        if not runtime_resolution.get("ok", False):
+            return {
+                "ok": False,
+                "message": str(runtime_resolution.get("message", "No usable Python runtime was found.")),
+                "next_step": "Install/repair Python runtime for ComfyUI and retry setup.",
+                "failure_stage": "resolve-python-runtime",
+                "failure_stage_message": "python runtime resolution failed",
+                "steps": [
+                    {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
+                    {"step": "verify-install", "state": "ready", "message": "Install verification completed."},
+                    {"step": "resolve-python-runtime", "state": "failed", "message": str(runtime_resolution.get("message", "Python runtime resolution failed."))},
+                ],
+            }
+        self._append_image_startup_log(startup_log_lines, f"Resolved ComfyUI Python runtime: {runtime_resolution.get('executable', '')}")
+
+        print("[setup-orchestrator] setup-image step=dependency-bootstrap")
+        dependency_bootstrap = self._bootstrap_comfy_python_dependencies(comfyui_root, launch_command, launcher_type)
+        if not dependency_bootstrap.get("ok", False):
+            message = str(dependency_bootstrap.get("message", "Dependency bootstrap failed for ComfyUI runtime."))
+            detail = str(dependency_bootstrap.get("detail", "")).strip()
+            missing_dep = str(dependency_bootstrap.get("missing_dependency", "")).strip()
+            if missing_dep and "missing dependency" not in message.lower():
+                message = f"Missing dependency in ComfyUI runtime: {missing_dep}"
+            self._image_engine_state = "error"
+            self._image_engine_last_error = missing_dep or "dependency_bootstrap_failed"
+            if detail:
+                self._append_image_startup_log(startup_log_lines, f"Dependency bootstrap error: {detail}")
+            return {
+                "ok": False,
+                "message": message,
+                "next_step": "Install/repair the reported dependency in the ComfyUI runtime, then retry.",
+                "failure_stage": "dependency-bootstrap",
+                "failure_stage_message": "python dependency bootstrap failed",
+                "missing_dependency": missing_dep,
+                "python_executable": dependency_bootstrap.get("python_executable", ""),
+                "steps": [
+                    {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
+                    {"step": "verify-install", "state": "ready", "message": "Install verification completed."},
+                    {"step": "resolve-python-runtime", "state": "ready", "message": f"Resolved runtime: {runtime_resolution.get('executable', '')}"},
+                    {"step": "dependency-bootstrap", "state": "failed", "message": message},
+                ],
+            }
+        installed_packages = dependency_bootstrap.get("installed_packages", [])
+        if installed_packages:
+            self._append_image_startup_log(startup_log_lines, f"Dependency bootstrap installed: {', '.join(installed_packages)}")
+        else:
+            self._append_image_startup_log(startup_log_lines, "Dependency bootstrap verified required modules are already available.")
+
         if not bool(path_config.get("workflow_path", {}).get("valid")):
             self._image_engine_state = "error"
             self._image_engine_last_error = "invalid_workflow_path"
@@ -2224,6 +2445,12 @@ class WebRuntime:
                 "failure_stage_message": "workflow json invalid",
                 "steps": [{"step": "validate-workflow", "state": "failed", "message": message}],
             }
+        checkpoint_status = path_config.get("checkpoint_dir", {})
+        if not bool(checkpoint_status.get("model_ready", False)):
+            self._append_image_startup_log(
+                startup_log_lines,
+                f"Checkpoint validation warning: {checkpoint_status.get('model_message', 'Checkpoint model is not ready.')}",
+            )
         preflight = self._validate_image_launch_requirements(comfyui_root, path_config)
         if not preflight.get("ok", False):
             self._image_engine_state = "error"

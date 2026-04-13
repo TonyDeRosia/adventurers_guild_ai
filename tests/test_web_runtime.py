@@ -633,6 +633,12 @@ def test_image_setup_succeeds_without_preferred_checkpoint(tmp_path: Path, monke
     monkeypatch.setattr(runtime, "install_image_engine", lambda: {"ok": True, "message": "ComfyUI present"})
     monkeypatch.setattr(runtime, "_resolve_image_engine_root_for_launch", lambda _cfg: comfy_root)
     monkeypatch.setattr(runtime, "validate_comfyui_install", lambda _path: {"ok": True, "missing_files": []})
+    monkeypatch.setattr(runtime, "_build_comfy_launch_command", lambda *_args, **_kwargs: (["python", "main.py"], "system_python"))
+    monkeypatch.setattr(
+        runtime,
+        "_bootstrap_comfy_python_dependencies",
+        lambda *_args, **_kwargs: {"ok": True, "installed_packages": [], "python_executable": "python"},
+    )
     monkeypatch.setattr(
         runtime,
         "get_path_configuration_status",
