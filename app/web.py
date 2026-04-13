@@ -1587,7 +1587,24 @@ class WebRuntime:
             probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             if probe.connect_ex((host, port)) == 0:
                 return {"ok": False, "message": f"ComfyUI port is already in use at {host}:{port}.", "failure_stage_message": "port already in use"}
-        return {"ok": True, "host": host, "port": port, "main_py": str(main_py)}
+        launch_command, launcher_type = self._build_comfy_launch_command(comfyui_root, host, port)
+        if not launch_command:
+            return {"ok": False, "message": "No usable Python runtime was found.", "failure_stage_message": "missing python runtime"}
+        runtime_check = self._validate_python_runtime(launch_command[0], launcher_type)
+        if not runtime_check.get("ok", False):
+            return {
+                "ok": False,
+                "message": str(runtime_check.get("message", "Python runtime is not usable.")),
+                "failure_stage_message": "python runtime check failed",
+            }
+        return {
+            "ok": True,
+            "host": host,
+            "port": port,
+            "main_py": str(main_py),
+            "launch_command": launch_command,
+            "launcher_type": launcher_type,
+        }
 
     def _build_comfy_launch_command(self, comfyui_root: Path, host: str, port: int) -> tuple[list[str], str]:
         embedded_python = comfyui_root.parent / "python_embeded" / "python.exe"
@@ -1597,8 +1614,27 @@ class WebRuntime:
         python_exe = shutil.which("python") or shutil.which("py")
         if not python_exe:
             return [], "python_not_found"
+        python_name = Path(python_exe).name.lower()
+        if os.name == "nt" and python_name in {"py", "py.exe"}:
+            command = [python_exe, "-3", "main.py", "--listen", host, "--port", str(port)]
+            return command, "py_launcher"
         command = [python_exe, "main.py", "--listen", host, "--port", str(port)]
         return command, "system_python"
+
+    def _validate_python_runtime(self, executable: str, launcher_type: str) -> dict[str, Any]:
+        command = [executable, "--version"]
+        if launcher_type == "py_launcher":
+            command = [executable, "-3", "--version"]
+        try:
+            completed = self._run_command_capture(command, timeout_seconds=10)
+        except (OSError, subprocess.SubprocessError) as exc:
+            return {"ok": False, "message": f"Python runtime could not be executed: {exc}"}
+        if completed.returncode != 0:
+            details = (completed.stderr or completed.stdout or "").strip()
+            tail = details.splitlines()[-1] if details else ""
+            suffix = f" ({tail})" if tail else ""
+            return {"ok": False, "message": f"Python runtime check failed with exit code {completed.returncode}{suffix}"}
+        return {"ok": True}
 
     def _download_and_extract_comfyui(self, target_dir: Path) -> tuple[bool, str]:
         archive_path = Path(tempfile.gettempdir()) / "ComfyUI-master.zip"
@@ -1631,6 +1667,11 @@ class WebRuntime:
             return comfy
         return None
 
+    def _resolve_image_backend_mode(self, payload: dict[str, Any] | None = None) -> str:
+        source = payload or {}
+        configured_root = str(source.get("comfyui_path", self.app_config.image.comfyui_path) or "").strip()
+        return "external" if configured_root else "managed"
+
     def _resolve_image_backend_paths(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         source = payload or {}
         configured_root = str(source.get("comfyui_path", self.app_config.image.comfyui_path) or "").strip()
@@ -1638,7 +1679,7 @@ class WebRuntime:
         configured_output = str(source.get("comfyui_output_dir", self.app_config.image.comfyui_output_dir) or "").strip()
         configured_checkpoint = str(source.get("checkpoint_folder", self.app_config.image.checkpoint_folder) or "").strip()
         managed_root = Path(str(self.app_config.image.managed_install_path or "").strip() or str(self._default_comfyui_path()))
-        mode = "external" if configured_root else "managed"
+        mode = self._resolve_image_backend_mode(source)
         comfyui_root = Path(configured_root) if configured_root else managed_root
         workflow_path = Path(configured_workflow) if configured_workflow else self._default_workflow_path()
         output_dir = Path(configured_output) if configured_output else self.generated_image_dir
@@ -1661,10 +1702,10 @@ class WebRuntime:
             return Path(resolved)
         return None
 
-    def _validate_comfyui_root_config(self, configured_path: str) -> dict[str, Any]:
+    def _validate_comfyui_root_config(self, configured_path: str, managed_root: str = "") -> dict[str, Any]:
         raw = str(configured_path or "").strip()
         if not raw:
-            default_root = Path(self._resolve_image_backend_paths().get("managed_comfyui_root", ""))
+            default_root = Path(str(managed_root or self._resolve_image_backend_paths().get("managed_comfyui_root", "")))
             if (default_root / "main.py").exists():
                 print("[path-config] comfyui_root configured=false using=managed")
                 return {
@@ -1757,7 +1798,9 @@ class WebRuntime:
 
     def get_path_configuration_status(self) -> dict[str, Any]:
         resolved = self._resolve_image_backend_paths()
-        comfyui_root = self._validate_comfyui_root_config(str(resolved.get("external_comfyui_root", "")))
+        mode = str(resolved.get("mode", "managed"))
+        configured_root = str(resolved.get("external_comfyui_root", "")) if mode == "external" else ""
+        comfyui_root = self._validate_comfyui_root_config(configured_root, str(resolved.get("managed_comfyui_root", "")))
         workflow_path = self._validate_workflow_path_config(self.app_config.image.comfyui_workflow_path)
         output_dir = self._validate_output_dir_config(self.app_config.image.comfyui_output_dir)
         comfy_for_checkpoints = str(comfyui_root.get("resolved_path") or comfyui_root.get("path") or "")
@@ -1781,7 +1824,9 @@ class WebRuntime:
     def validate_visual_pipeline_config(self, payload: dict[str, Any]) -> dict[str, Any]:
         resolved = self._resolve_image_backend_paths(payload)
         print("[path-config] apply_requested")
-        comfy_status = self._validate_comfyui_root_config(str(resolved.get("external_comfyui_root", "")))
+        mode = str(resolved.get("mode", "managed"))
+        configured_root = str(resolved.get("external_comfyui_root", "")) if mode == "external" else ""
+        comfy_status = self._validate_comfyui_root_config(configured_root, str(resolved.get("managed_comfyui_root", "")))
         resolved_comfy_for_checkpoints = str(comfy_status.get("resolved_path") or comfy_status.get("path") or "")
         status = {
             "image": {
@@ -1860,7 +1905,7 @@ class WebRuntime:
             validation = self.validate_comfyui_install(existing)
             if validation.get("ok"):
                 print(f"[setup-action] install-image-engine success reason=already-installed path={existing}")
-                self.app_config.image.comfyui_path = str(existing)
+                self.app_config.image.comfyui_path = ""
                 self.app_config.image.managed_install_path = str(existing)
                 self.config_store.save(self.app_config)
                 self._image_engine_state = "installed"
@@ -1891,7 +1936,7 @@ class WebRuntime:
                     "message": f"ComfyUI install is incomplete: missing {', '.join(validation.get('missing_files', []))}.",
                     "next_step": "Retry installation, or install manually from the official repository.",
                 }
-        self.app_config.image.comfyui_path = str(target_dir)
+        self.app_config.image.comfyui_path = ""
         self.app_config.image.managed_install_path = str(target_dir)
         self.config_store.save(self.app_config)
         print("[setup-orchestrator] comfyui install success")
@@ -1973,7 +2018,11 @@ class WebRuntime:
                 "failure_stage_message": "install path missing",
                 "steps": [{"step": "detect-install-path", "state": "failed", "message": "ComfyUI install path was not found."}],
             }
-        self.app_config.image.comfyui_path = str(comfyui_root)
+        launch_mode = self._resolve_image_backend_mode()
+        if launch_mode == "managed":
+            self.app_config.image.comfyui_path = ""
+        else:
+            self.app_config.image.comfyui_path = str(comfyui_root)
         self.app_config.image.managed_install_path = str(comfyui_root)
         resolved_workflow = str(path_config.get("workflow_path", {}).get("resolved_path") or self.app_config.image.comfyui_workflow_path).strip()
         if resolved_workflow:
@@ -2016,7 +2065,10 @@ class WebRuntime:
                         {"step": "verify-install", "state": "failed", "message": f"Missing files: {', '.join(validation.get('missing_files', []))}"},
                     ],
                 }
-            self.app_config.image.comfyui_path = str(comfyui_root)
+            if launch_mode == "managed":
+                self.app_config.image.comfyui_path = ""
+            else:
+                self.app_config.image.comfyui_path = str(comfyui_root)
             self.config_store.save(self.app_config)
             validation = self.validate_comfyui_install(comfyui_root)
         if not validation.get("ok"):
@@ -2046,21 +2098,8 @@ class WebRuntime:
                 "failure_stage": "preflight-validation",
                 "failure_stage_message": str(preflight.get("failure_stage_message", "preflight validation failed")),
             }
-        launch_command, launcher_type = self._build_comfy_launch_command(
-            comfyui_root,
-            str(preflight.get("host", "127.0.0.1")),
-            int(preflight.get("port", 8188)),
-        )
-        if not launch_command:
-            self._image_engine_state = "error"
-            self._image_engine_last_error = "python_not_found"
-            return {
-                "ok": False,
-                "message": "No Python runtime was found for ComfyUI launch.",
-                "next_step": "Install Python or bundled embedded Python, then retry.",
-                "failure_stage": "preflight-validation",
-                "failure_stage_message": "missing python runtime",
-            }
+        launch_command = list(preflight.get("launch_command", []))
+        launcher_type = str(preflight.get("launcher_type", "unknown"))
         print("[setup-orchestrator] setup-image step=launch-engine")
         process: subprocess.Popen[str] | None = None
         log_handle = None
@@ -2132,6 +2171,7 @@ class WebRuntime:
                     "runtime_error_hint": runtime_error,
                     "exit_code": exit_code,
                     "last_log_lines": tail_lines[-20:],
+                    "last_error_line": tail_lines[-1] if tail_lines else "",
                     "log_text": startup_log_text,
                     "log_available": bool(startup_log_text),
                     "log_file": str(startup_log_file),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from app.web import WebRuntime
 
@@ -161,3 +162,51 @@ def test_external_mode_uses_selected_external_path(tmp_path: Path, monkeypatch) 
     status = runtime.get_path_configuration_status()["image"]
     assert status["mode"] == "external"
     assert status["comfyui_root"]["path"] == str(comfy_root)
+
+
+def test_managed_install_keeps_mode_managed(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    monkeypatch.setattr(runtime, "_is_windows", lambda: True)
+
+    def _fake_download(target_dir: Path) -> tuple[bool, str]:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        (target_dir / "main.py").write_text("print('ok')", encoding="utf-8")
+        (target_dir / "custom_nodes").mkdir(exist_ok=True)
+        (target_dir / "models").mkdir(exist_ok=True)
+        return True, "ok"
+
+    monkeypatch.setattr(runtime, "_download_and_extract_comfyui", _fake_download)
+    assert runtime.install_image_engine()["ok"] is True
+    status = runtime.get_path_configuration_status()["image"]
+    assert status["mode"] == "managed"
+    assert runtime.app_config.image.comfyui_path == ""
+
+
+def test_windows_py_launcher_command_adds_python3_flag(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_root = tmp_path / "ComfyUI"
+    comfy_root.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr("shutil.which", lambda _name: "py")
+    command, launcher = runtime._build_comfy_launch_command(comfy_root, "127.0.0.1", 8188)
+    assert launcher == "py_launcher"
+    assert command[:3] == ["py", "-3", "main.py"]
+
+
+def test_diagnostics_resolved_path_matches_launch_path_source_of_truth(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    runtime.app_config.image.comfyui_path = ""
+    runtime.app_config.image.managed_install_path = str(tmp_path / "managed" / "ComfyUI")
+    managed = Path(runtime.app_config.image.managed_install_path)
+    managed.mkdir(parents=True, exist_ok=True)
+    (managed / "main.py").write_text("print('ok')", encoding="utf-8")
+    (managed / "custom_nodes").mkdir(exist_ok=True)
+    (managed / "models").mkdir(exist_ok=True)
+    (managed / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
+    payload = runtime.get_image_backend_diagnostics()
+    diagnostics = payload["diagnostics"]
+    assert diagnostics["image_backend_mode"] == "managed"
+    assert diagnostics["comfyui_path"] == str(managed)
+    assert diagnostics["resolved_paths"]["comfyui_root"] == str(managed)
