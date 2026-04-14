@@ -310,11 +310,66 @@ def test_import_image_ai_accepts_comfyui_zip_source(tmp_path: Path, monkeypatch)
     model_src = tmp_path / "model.safetensors"
     model_src.write_text("model", encoding="utf-8")
     monkeypatch.setattr(runtime, "start_image_engine", lambda **_kwargs: {"ok": True, "message": "started"})
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": True, "ready": True})
 
     result = runtime.import_and_setup_image_ai(str(zip_path), str(model_src))
 
     assert result["ok"] is True
     assert (tmp_path / "user_data" / "tools" / "ComfyUI" / "main.py").exists()
+
+
+def test_import_image_ai_zip_replaces_stale_managed_runtime_files(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    managed_root = tmp_path / "user_data" / "tools" / "ComfyUI"
+    managed_root.mkdir(parents=True, exist_ok=True)
+    (managed_root / "stale.txt").write_text("stale", encoding="utf-8")
+    comfy_src = _make_comfy_source_folder(tmp_path)
+    zip_path = tmp_path / "ComfyUI-portable.zip"
+    import zipfile
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        for path in comfy_src.rglob("*"):
+            archive.write(path, arcname=f"ComfyUI_windows_portable/ComfyUI/{path.relative_to(comfy_src)}")
+    model_src = tmp_path / "stale_replace_model.safetensors"
+    model_src.write_text("model", encoding="utf-8")
+    monkeypatch.setattr(runtime, "start_image_engine", lambda **_kwargs: {"ok": True, "message": "started"})
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": True, "ready": True})
+
+    result = runtime.import_and_setup_image_ai(str(zip_path), str(model_src))
+
+    assert result["ok"] is True
+    assert not (managed_root / "stale.txt").exists()
+    assert (managed_root / "main.py").exists()
+
+
+def test_import_image_ai_no_runtime_dependency_on_source_after_copy(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_src = _make_comfy_source_folder(tmp_path)
+    model_src = tmp_path / "independent_model.safetensors"
+    model_src.write_text("model", encoding="utf-8")
+    monkeypatch.setattr(runtime, "start_image_engine", lambda **_kwargs: {"ok": True, "message": "started"})
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": True, "ready": True})
+
+    result = runtime.import_and_setup_image_ai(str(comfy_src), str(model_src))
+    shutil.rmtree(comfy_src, ignore_errors=True)
+
+    managed_root = tmp_path / "user_data" / "tools" / "ComfyUI"
+    assert result["ok"] is True
+    assert runtime.app_config.image.comfyui_path == ""
+    assert runtime.app_config.image.managed_install_path == str(managed_root)
+    assert (managed_root / "main.py").exists()
+    assert (managed_root / "models" / "checkpoints" / model_src.name).exists()
+
+
+def test_validate_comfyui_zip_rejects_unsafe_member_paths(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    bad_zip = tmp_path / "unsafe.zip"
+    import zipfile
+    with zipfile.ZipFile(bad_zip, "w") as archive:
+        archive.writestr("../escape.txt", "unsafe")
+        archive.writestr("ComfyUI/main.py", "print('ok')")
+    validation = runtime._validate_comfyui_import_source(bad_zip)
+    assert validation["ok"] is False
+    assert validation["error_code"] == "comfyui_zip_unsafe_paths"
 
 
 def test_import_image_ai_rejects_invalid_sources(tmp_path: Path, monkeypatch) -> None:
@@ -339,6 +394,7 @@ def test_import_image_ai_model_folder_imports_supported_files(tmp_path: Path, mo
     (model_dir / "b.ckpt").write_text("b", encoding="utf-8")
     (model_dir / "ignore.txt").write_text("x", encoding="utf-8")
     monkeypatch.setattr(runtime, "start_image_engine", lambda **_kwargs: {"ok": True, "message": "started"})
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": True, "ready": True})
 
     result = runtime.import_and_setup_image_ai(str(comfy_src), str(model_dir))
 
@@ -390,6 +446,7 @@ def test_import_comfyui_source_returns_structured_error_on_copy_failure(tmp_path
 def test_import_image_ai_retry_works_after_invalid_attempt(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     monkeypatch.setattr(runtime, "start_image_engine", lambda **_kwargs: {"ok": True, "message": "started"})
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": True, "ready": True})
     first = runtime.import_and_setup_image_ai(str(tmp_path / "missing"), str(tmp_path / "missing-model"))
     assert first["ok"] is False
 
