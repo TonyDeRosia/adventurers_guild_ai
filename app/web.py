@@ -699,6 +699,10 @@ class WebRuntime:
             "recommended_next_action": str(image_status.get("next_action", "Recheck setup and diagnostics.")),
             "startup_status": startup_status,
             "resolved_paths": path_status.get("resolved_paths", {}),
+            "comfyui_root_exists": bool(Path(str(comfy_root.get("resolved_path") or comfy_root.get("path") or "")).exists())
+            if str(comfy_root.get("resolved_path") or comfy_root.get("path") or "").strip()
+            else False,
+            "comfyui_root_structurally_valid": bool(comfy_root.get("valid", False)),
             "last_launch_target": managed_state.launch_target,
         }
         state = "Not Configured"
@@ -914,6 +918,12 @@ class WebRuntime:
         candidate = Path(str(selected_path or "").strip())
         if not candidate.exists():
             return {"ok": False, "message": "Selected ComfyUI folder does not exist."}
+        if self._looks_like_checkpoint_folder(candidate):
+            return {
+                "ok": False,
+                "message": "Selected folder looks like a checkpoint folder, not a ComfyUI root.",
+                "next_step": "Select the ComfyUI root folder that contains main.py.",
+            }
         validation = self.validate_comfyui_install(candidate)
         if not validation.get("ok", False):
             missing = ", ".join(validation.get("missing_files", []))
@@ -923,6 +933,7 @@ class WebRuntime:
                 "validation": validation,
             }
         self.app_config.image.comfyui_path = str(candidate)
+        self.app_config.image.managed_install_path = str(self._default_comfyui_path())
         self.app_config.image.provider = "comfyui"
         self.app_config.image.enabled = True
         self.config_store.save(self.app_config)
@@ -1958,6 +1969,86 @@ class WebRuntime:
             return Path(resolved)
         return None
 
+    def _detect_install_path_status(self, path_config: dict[str, Any]) -> dict[str, Any]:
+        image_config = path_config if isinstance(path_config, dict) else {}
+        resolved_paths = image_config.get("resolved_paths", {}) if isinstance(image_config.get("resolved_paths", {}), dict) else {}
+        comfy_item = image_config.get("comfyui_root", {}) if isinstance(image_config.get("comfyui_root", {}), dict) else {}
+        mode = str(image_config.get("mode", "managed"))
+        configured_root = str(resolved_paths.get("external_comfyui_root", "")).strip() if mode == "external" else ""
+        resolved_root = str(comfy_item.get("resolved_path") or comfy_item.get("path") or "").strip()
+
+        if mode == "external" and not configured_root:
+            return {
+                "ok": False,
+                "mode": mode,
+                "status_code": "no_path_configured",
+                "message": "No external ComfyUI install path is configured.",
+                "failure_stage_message": "no install path configured",
+                "next_step": "Locate an existing ComfyUI folder or select Use Bundled Image Engine.",
+                "resolved_root": resolved_root,
+                "configured_root": configured_root,
+            }
+        if not resolved_root:
+            return {
+                "ok": False,
+                "mode": mode,
+                "status_code": "no_path_resolved",
+                "message": "ComfyUI install path could not be resolved.",
+                "failure_stage_message": "install path could not be resolved",
+                "next_step": "Re-select bundled or external ComfyUI path, then retry.",
+                "resolved_root": resolved_root,
+                "configured_root": configured_root,
+            }
+        candidate = Path(resolved_root)
+        if not candidate.exists() or not candidate.is_dir():
+            return {
+                "ok": False,
+                "mode": mode,
+                "status_code": "configured_path_missing",
+                "message": f"Configured ComfyUI root does not exist: {candidate}",
+                "failure_stage_message": "configured root missing",
+                "next_step": "Repair the path or reinstall ComfyUI.",
+                "resolved_root": resolved_root,
+                "configured_root": configured_root,
+            }
+        validation = self.validate_comfyui_install(candidate)
+        if not validation.get("ok", False):
+            missing = ", ".join(validation.get("missing_files", []))
+            return {
+                "ok": False,
+                "mode": mode,
+                "status_code": "invalid_root_structure",
+                "message": f"Configured ComfyUI root is invalid: missing {missing}.",
+                "failure_stage_message": "invalid ComfyUI root structure",
+                "next_step": "Select a valid ComfyUI root folder (the one containing main.py), then retry.",
+                "resolved_root": resolved_root,
+                "configured_root": configured_root,
+                "validation": validation,
+            }
+        return {
+            "ok": True,
+            "mode": mode,
+            "status_code": "valid_root",
+            "message": f"Using install path: {candidate}",
+            "resolved_root": str(candidate),
+            "configured_root": configured_root,
+            "validation": validation,
+        }
+
+    @staticmethod
+    def _looks_like_checkpoint_folder(path: Path) -> bool:
+        lowered_parts = {part.lower() for part in path.parts}
+        if "checkpoints" in lowered_parts:
+            return True
+        model_suffixes = {".safetensors", ".ckpt", ".pt", ".pth", ".bin"}
+        try:
+            for item in path.iterdir():
+                if item.is_file() and item.suffix.lower() in model_suffixes:
+                    return True
+        except OSError:
+            return False
+        return False
+
     def _validate_comfyui_root_config(self, configured_path: str, managed_root: str = "") -> dict[str, Any]:
         raw = str(configured_path or "").strip()
         if not raw:
@@ -2347,26 +2438,30 @@ class WebRuntime:
             }
         path_config = self.get_path_configuration_status().get("image", {})
         print("[setup-orchestrator] setup-image step=detect-install-path")
-        comfyui_root = self._resolve_image_engine_root_for_launch(path_config)
+        install_status = self._detect_install_path_status(path_config)
+        comfyui_root = Path(str(install_status.get("resolved_root", "")).strip()) if install_status.get("ok") else None
         if comfyui_root is None:
             print("[setup-action] start-image-engine failure reason=install-path-missing")
             print("[setup-orchestrator] setup-image failure stage=detect-install-path")
             self._image_engine_state = "error"
-            self._image_engine_last_error = "install_path_missing"
+            self._image_engine_last_error = str(install_status.get("status_code", "install_path_missing"))
             return {
                 "ok": False,
-                "message": "ComfyUI install path was not found.",
-                "next_step": "Install Image Engine first.",
+                "message": str(install_status.get("message", "ComfyUI install path was not found.")),
+                "next_step": str(install_status.get("next_step", "Install Image Engine first.")),
                 "failure_stage": "detect-install-path",
-                "failure_stage_message": "install path missing",
-                "steps": [{"step": "detect-install-path", "state": "failed", "message": "ComfyUI install path was not found."}],
+                "failure_stage_message": str(install_status.get("failure_stage_message", "install path missing")),
+                "status_code": str(install_status.get("status_code", "install_path_missing")),
+                "steps": [{"step": "detect-install-path", "state": "failed", "message": str(install_status.get("message", "ComfyUI install path was not found."))}],
             }
         launch_mode = self._resolve_image_backend_mode()
         if launch_mode == "managed":
             self.app_config.image.comfyui_path = ""
+            self.app_config.image.managed_install_path = str(comfyui_root)
         else:
             self.app_config.image.comfyui_path = str(comfyui_root)
-        self.app_config.image.managed_install_path = str(comfyui_root)
+            if not str(self.app_config.image.managed_install_path or "").strip():
+                self.app_config.image.managed_install_path = str(self._default_comfyui_path())
         resolved_workflow = str(path_config.get("workflow_path", {}).get("resolved_path") or self.app_config.image.comfyui_workflow_path).strip()
         if resolved_workflow:
             self.app_config.image.comfyui_workflow_path = resolved_workflow
