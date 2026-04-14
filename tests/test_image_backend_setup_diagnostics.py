@@ -690,7 +690,7 @@ def test_diagnostics_resolved_path_matches_launch_path_source_of_truth(tmp_path:
     assert diagnostics["resolved_paths"]["comfyui_root"] == str(managed)
 
 
-def test_managed_launch_attempts_prefer_nvidia_for_auto_and_gpu_first(tmp_path: Path, monkeypatch) -> None:
+def test_managed_launch_attempts_use_only_nvidia_gpu_launcher(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     comfy_root = tmp_path / "ComfyUI"
     comfy_root.mkdir(parents=True, exist_ok=True)
@@ -699,27 +699,17 @@ def test_managed_launch_attempts_prefer_nvidia_for_auto_and_gpu_first(tmp_path: 
     monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
 
     runtime.app_config.image.preferred_launcher = "auto"
-    auto_attempts = runtime._build_managed_launch_attempts(
+    attempts = runtime._build_managed_launch_attempts(
         comfy_root,
         "127.0.0.1",
         8188,
         launch_command=["python", "main.py"],
         launcher_type="venv_python",
     )
-    assert [attempt["mode"] for attempt in auto_attempts] == ["nvidia_gpu", "cpu", "python_main"]
-
-    runtime.app_config.image.preferred_launcher = "gpu-first"
-    gpu_first_attempts = runtime._build_managed_launch_attempts(
-        comfy_root,
-        "127.0.0.1",
-        8188,
-        launch_command=["python", "main.py"],
-        launcher_type="venv_python",
-    )
-    assert [attempt["mode"] for attempt in gpu_first_attempts] == ["nvidia_gpu", "cpu", "python_main"]
+    assert [attempt["mode"] for attempt in attempts] == ["nvidia_gpu"]
 
 
-def test_classify_nvidia_launch_failure_cuda_patterns_are_fallback_eligible(tmp_path: Path, monkeypatch) -> None:
+def test_classify_nvidia_launch_failure_cuda_patterns_disable_fallback(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     cases = [
         "AssertionError: Torch not compiled with CUDA enabled",
@@ -729,10 +719,10 @@ def test_classify_nvidia_launch_failure_cuda_patterns_are_fallback_eligible(tmp_
     ]
     for detail in cases:
         classification = runtime._classify_nvidia_launch_failure(detail, exit_code=1, launcher_exists=True)
-        assert classification["fallback_eligible"] == "true"
+        assert classification["fallback_eligible"] == "false"
 
 
-def test_start_image_engine_cuda_failure_falls_back_to_cpu_and_reports_ready_cpu_mode(tmp_path: Path, monkeypatch) -> None:
+def test_start_image_engine_nvidia_failure_returns_structured_error_without_cpu_fallback(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.app_config.image.provider = "comfyui"
     runtime.app_config.image.preferred_launcher = "auto"
@@ -810,17 +800,23 @@ def test_start_image_engine_cuda_failure_falls_back_to_cpu_and_reports_ready_cpu
     )
 
     result = runtime.start_image_engine()
-    assert result["ok"] is True
-    assert launched_modes == ["nvidia_gpu", "cpu"]
-    assert result["message"] == "Image AI ready (CPU mode)."
+    assert result["ok"] is False
+    assert launched_modes == ["nvidia_gpu"]
+    assert "requires NVIDIA GPU mode" in result["message"]
+    assert "CPU fallback is disabled" in result["message"]
+    assert result["selected_launcher"] == "nvidia_gpu"
+    assert result["no_cpu_fallback"] is True
+    assert result["failure_reason"] == "torch-cuda-disabled"
     launch_diagnostics = result["startup_status"]["launch_diagnostics"]
     assert launch_diagnostics["primary_launch_attempt"] == "nvidia_gpu"
-    assert launch_diagnostics["fallback_launch_used"] == "cpu"
+    assert launch_diagnostics["selected_launcher"] == "nvidia_gpu"
+    assert launch_diagnostics["fallback_launch_used"] == ""
+    assert launch_diagnostics["no_cpu_fallback"] is True
     assert launch_diagnostics["nvidia_failure_reason"] == "torch-cuda-disabled"
-    assert launch_diagnostics["final_running_mode"] == "cpu"
+    assert launch_diagnostics["final_running_mode"] == ""
 
 
-def test_start_image_engine_fails_only_when_gpu_and_cpu_attempts_fail(tmp_path: Path, monkeypatch) -> None:
+def test_start_image_engine_missing_nvidia_launcher_fails_fast_without_cpu_fallback(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.app_config.image.provider = "comfyui"
     runtime.app_config.image.preferred_launcher = "auto"
@@ -829,7 +825,6 @@ def test_start_image_engine_fails_only_when_gpu_and_cpu_attempts_fail(tmp_path: 
     (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
     (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
     (comfy_dir / "models").mkdir(exist_ok=True)
-    (comfy_dir / "run_nvidia_gpu.bat").write_text("@echo off", encoding="utf-8")
     (comfy_dir / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
     workflow = tmp_path / "scene.json"
     workflow.write_text("{}", encoding="utf-8")
@@ -865,25 +860,27 @@ def test_start_image_engine_fails_only_when_gpu_and_cpu_attempts_fail(tmp_path: 
         lambda *_args, **_kwargs: ["AssertionError: Torch not compiled with CUDA enabled"],
     )
 
-    class _FailingProcess:
-        stdout = None
-
-        def __init__(self, mode: str) -> None:
-            self.mode = mode
-            self.pid = 2234 if mode == "cpu" else 2233
-
-        def poll(self):
-            return 1
-
-        def communicate(self, timeout: float | None = None):
-            return ("", "")
-
-    monkeypatch.setattr(
-        "subprocess.Popen",
-        lambda command, **kwargs: _FailingProcess("nvidia_gpu" if "run_nvidia_gpu.bat" in " ".join(command) else "cpu"),
-    )
+    monkeypatch.setattr("subprocess.Popen", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("should not launch")))
 
     result = runtime.start_image_engine()
     assert result["ok"] is False
-    assert result["failure_stage"] == "wait-for-readiness"
-    assert result["startup_status"]["launch_diagnostics"]["fallback_launch_used"] == "cpu"
+    assert result["failure_stage"] == "launch-engine"
+    assert "requires NVIDIA GPU mode" in result["message"]
+    assert result["failure_reason"] == "launcher-file-missing"
+    assert result["no_cpu_fallback"] is True
+    assert result["startup_status"]["launch_diagnostics"]["selected_launcher"] == "nvidia_gpu"
+    assert result["startup_status"]["launch_diagnostics"]["no_cpu_fallback"] is True
+
+
+def test_text_gameplay_remains_usable_after_image_ai_nvidia_failure(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    monkeypatch.setattr(runtime, "start_image_engine", lambda: {"ok": False, "message": "Image AI requires NVIDIA GPU mode and CPU fallback is disabled."})
+
+    image_result = runtime.start_image_engine()
+    runtime.create_campaign({"player_name": "TextOnly", "slot": "slot_text_only"})
+    turn_result = runtime.handle_player_input("look around")
+
+    assert image_result["ok"] is False
+    assert "state" in turn_result
+    assert turn_result["messages"]
