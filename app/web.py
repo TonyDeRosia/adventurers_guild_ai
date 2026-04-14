@@ -12,6 +12,7 @@ import tempfile
 import threading
 import time
 import sys
+import urllib.error
 import urllib.request
 import zipfile
 from difflib import SequenceMatcher
@@ -650,6 +651,32 @@ class WebRuntime:
             if resolved_comfy_path and Path(resolved_comfy_path).exists()
             else {"ok": False, "missing_files": ["comfyui-root"], "python_runtime_found": False}
         )
+        runtime_pip = {"checked": False, "available": False, "version": "", "detail": "", "runtime_command": []}
+        if install_validation.get("ok", False) and resolved_comfy_path:
+            launch_command, launcher_type = self._build_comfy_launch_command(Path(resolved_comfy_path), "127.0.0.1", 8188)
+            runtime_resolution = self._resolve_comfy_python_runtime(launch_command, launcher_type)
+            if runtime_resolution.get("ok", False):
+                runtime_command = list(runtime_resolution.get("runtime_command", []))
+                try:
+                    pip_check = self._run_runtime_python_capture(runtime_command, ["-m", "pip", "--version"], timeout_seconds=20)
+                    runtime_pip = {
+                        "checked": True,
+                        "available": pip_check.returncode == 0,
+                        "version": (pip_check.stdout or pip_check.stderr or "").strip() if pip_check.returncode == 0 else "",
+                        "detail": self._command_output_snippet(pip_check),
+                        "runtime_command": runtime_command,
+                    }
+                except (OSError, subprocess.SubprocessError) as exc:
+                    runtime_pip = {
+                        "checked": True,
+                        "available": False,
+                        "version": "",
+                        "detail": str(exc),
+                        "runtime_command": runtime_command,
+                    }
+        runtime_missing_items = list(install_validation.get("missing_files", []))
+        if runtime_pip.get("checked") and not runtime_pip.get("available"):
+            runtime_missing_items.append("pip")
         startup_status = dict(self.image_startup_status or {})
         workflow_parse_valid = None
         workflow_parse_message = "Workflow parse was not checked."
@@ -709,9 +736,16 @@ class WebRuntime:
             "resolved_paths": path_status.get("resolved_paths", {}),
             "python_runtime_path": str((Path(resolved_comfy_path) / "python_embeded" / "python.exe") if resolved_comfy_path else ""),
             "python_runtime_found": bool(install_validation.get("python_runtime_found", False)),
-            "runtime_complete": bool(install_validation.get("ok", False)),
-            "runtime_missing_items": list(install_validation.get("missing_files", [])),
-            "install_repairable": bool("main.py" in install_validation.get("missing_files", []) or "python-runtime" in install_validation.get("missing_files", [])),
+            "pip_available": bool(runtime_pip.get("available", False)),
+            "pip_version": str(runtime_pip.get("version", "")),
+            "pip_check_detail": str(runtime_pip.get("detail", "")),
+            "runtime_complete": bool(install_validation.get("ok", False) and (not runtime_pip.get("checked") or runtime_pip.get("available"))),
+            "runtime_missing_items": runtime_missing_items,
+            "install_repairable": bool(
+                "main.py" in install_validation.get("missing_files", [])
+                or "python-runtime" in install_validation.get("missing_files", [])
+                or "pip" in runtime_missing_items
+            ),
             "comfyui_root_exists": bool(Path(str(comfy_root.get("resolved_path") or comfy_root.get("path") or "")).exists())
             if str(comfy_root.get("resolved_path") or comfy_root.get("path") or "").strip()
             else False,
@@ -1923,6 +1957,100 @@ class WebRuntime:
     def _run_runtime_python_capture(self, runtime_command: list[str], args: list[str], timeout_seconds: int = 60) -> subprocess.CompletedProcess[str]:
         return self._run_command_capture([*runtime_command, *args], timeout_seconds=timeout_seconds)
 
+    @staticmethod
+    def _command_output_snippet(result: subprocess.CompletedProcess[str], max_chars: int = 400) -> str:
+        text = (result.stderr or result.stdout or "").strip()
+        if len(text) <= max_chars:
+            return text
+        return text[:max_chars] + "...(truncated)"
+
+    def _bootstrap_runtime_pip(self, runtime_command: list[str], *, python_executable: str) -> dict[str, Any]:
+        pip_check = self._run_runtime_python_capture(runtime_command, ["-m", "pip", "--version"], timeout_seconds=30)
+        pip_initially_available = pip_check.returncode == 0
+        print(
+            f"[setup-deps] pip-check-initial available={pip_initially_available} "
+            f"python={python_executable}"
+        )
+        if pip_initially_available:
+            pip_version = (pip_check.stdout or pip_check.stderr or "").strip()
+            print(f"[setup-deps] pip-ready version={pip_version}")
+            return {
+                "ok": True,
+                "pip_initially_available": True,
+                "ensurepip_attempted": False,
+                "fallback_attempted": False,
+                "pip_version": pip_version,
+            }
+
+        print(f"[setup-deps] pip-check-initial-failure detail={self._command_output_snippet(pip_check)}")
+        print("[setup-deps] ensurepip-attempt start")
+        ensurepip = self._run_runtime_python_capture(runtime_command, ["-m", "ensurepip", "--upgrade"], timeout_seconds=180)
+        if ensurepip.returncode != 0:
+            ensurepip_detail = self._command_output_snippet(ensurepip)
+            print(f"[setup-deps] ensurepip-attempt failed detail={ensurepip_detail}")
+            print("[setup-deps] get-pip-fallback-attempt start")
+            get_pip_path = Path(tempfile.gettempdir()) / "adventurer_guild_get_pip.py"
+            try:
+                with urllib.request.urlopen("https://bootstrap.pypa.io/get-pip.py", timeout=60) as response:
+                    get_pip_path.write_bytes(response.read())
+            except (OSError, urllib.error.URLError) as exc:
+                return {
+                    "ok": False,
+                    "stage": "dependency-bootstrap",
+                    "message": "get-pip bootstrap failed",
+                    "detail": f"ensurepip unavailable in managed runtime. ensurepip detail: {ensurepip_detail}. get-pip download failed: {exc}",
+                    "python_executable": python_executable,
+                    "pip_initially_available": False,
+                    "ensurepip_attempted": True,
+                    "fallback_attempted": True,
+                }
+            get_pip = self._run_runtime_python_capture(runtime_command, [str(get_pip_path), "--upgrade"], timeout_seconds=240)
+            if get_pip.returncode != 0:
+                get_pip_detail = self._command_output_snippet(get_pip)
+                print(f"[setup-deps] get-pip-fallback-attempt failed detail={get_pip_detail}")
+                return {
+                    "ok": False,
+                    "stage": "dependency-bootstrap",
+                    "message": "get-pip bootstrap failed",
+                    "detail": (
+                        "ensurepip unavailable in managed runtime. "
+                        f"ensurepip detail: {ensurepip_detail}. get-pip detail: {get_pip_detail}"
+                    ),
+                    "python_executable": python_executable,
+                    "pip_initially_available": False,
+                    "ensurepip_attempted": True,
+                    "fallback_attempted": True,
+                }
+            print("[setup-deps] get-pip-fallback-attempt success")
+            fallback_attempted = True
+        else:
+            print("[setup-deps] ensurepip-attempt success")
+            fallback_attempted = False
+
+        pip_verify = self._run_runtime_python_capture(runtime_command, ["-m", "pip", "--version"], timeout_seconds=30)
+        if pip_verify.returncode != 0:
+            verify_detail = self._command_output_snippet(pip_verify)
+            print(f"[setup-deps] pip-verify failed detail={verify_detail}")
+            return {
+                "ok": False,
+                "stage": "dependency-bootstrap",
+                "message": "pip verification failed after bootstrap",
+                "detail": verify_detail,
+                "python_executable": python_executable,
+                "pip_initially_available": False,
+                "ensurepip_attempted": True,
+                "fallback_attempted": fallback_attempted,
+            }
+        pip_version = (pip_verify.stdout or pip_verify.stderr or "").strip()
+        print(f"[setup-deps] pip-ready version={pip_version}")
+        return {
+            "ok": True,
+            "pip_initially_available": False,
+            "ensurepip_attempted": True,
+            "fallback_attempted": fallback_attempted,
+            "pip_version": pip_version,
+        }
+
     def _bootstrap_comfy_python_dependencies(self, comfyui_root: Path, launch_command: list[str], launcher_type: str) -> dict[str, Any]:
         runtime = self._resolve_comfy_python_runtime(launch_command, launcher_type)
         if not runtime.get("ok", False):
@@ -1933,31 +2061,15 @@ class WebRuntime:
             f"[setup-deps] resolved-python executable={python_executable} "
             f"launcher_type={launcher_type} runtime_kind={runtime.get('runtime_kind', 'unknown')}"
         )
-
-        pip_check = self._run_runtime_python_capture(runtime_command, ["-m", "pip", "--version"], timeout_seconds=30)
-        if pip_check.returncode != 0:
-            print("[setup-deps] pip unavailable, attempting ensurepip")
-            ensurepip = self._run_runtime_python_capture(runtime_command, ["-m", "ensurepip", "--upgrade"], timeout_seconds=180)
-            if ensurepip.returncode != 0:
-                detail = (ensurepip.stderr or ensurepip.stdout or pip_check.stderr or pip_check.stdout or "").strip()
-                return {
-                    "ok": False,
-                    "stage": "dependency-bootstrap",
-                    "message": "pip unavailable in managed runtime.",
-                    "detail": detail,
-                    "python_executable": python_executable,
-                }
-            pip_check = self._run_runtime_python_capture(runtime_command, ["-m", "pip", "--version"], timeout_seconds=30)
-            if pip_check.returncode != 0:
-                detail = (pip_check.stderr or pip_check.stdout or "").strip()
-                return {
-                    "ok": False,
-                    "stage": "dependency-bootstrap",
-                    "message": "pip unavailable in managed runtime.",
-                    "detail": detail,
-                    "python_executable": python_executable,
-                }
-        print("[setup-deps] pip available")
+        pip_bootstrap = self._bootstrap_runtime_pip(runtime_command, python_executable=python_executable)
+        if not pip_bootstrap.get("ok", False):
+            return pip_bootstrap
+        print(
+            "[setup-deps] pip-bootstrap-status "
+            f"initial={pip_bootstrap.get('pip_initially_available')} "
+            f"ensurepip_attempted={pip_bootstrap.get('ensurepip_attempted')} "
+            f"fallback_attempted={pip_bootstrap.get('fallback_attempted')}"
+        )
 
         package_info = self._required_comfyui_python_packages(comfyui_root)
         requirements_file = Path(str(package_info.get("requirements_file", "")))
@@ -2020,6 +2132,10 @@ class WebRuntime:
             "runtime_command": runtime_command,
             "installed_packages": installed_packages,
             "required_packages": package_info.get("required_packages", []),
+            "pip_initially_available": pip_bootstrap.get("pip_initially_available"),
+            "pip_version": pip_bootstrap.get("pip_version", ""),
+            "ensurepip_attempted": pip_bootstrap.get("ensurepip_attempted"),
+            "fallback_attempted": pip_bootstrap.get("fallback_attempted"),
         }
 
     def _download_and_extract_comfyui(self, target_dir: Path) -> tuple[bool, str]:
