@@ -3096,14 +3096,13 @@ def test_managed_launcher_attempts_prefer_nvidia_first_for_auto_and_gpu_first(tm
     assert gpu_first_attempts[0]["mode"] == "nvidia_gpu"
 
 
-def test_managed_launcher_attempts_use_cpu_directly_when_preference_is_cpu(tmp_path: Path, monkeypatch) -> None:
+def test_managed_launcher_attempts_use_nvidia_then_cpu_when_scripts_exist(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
     managed = tmp_path / "ComfyUI"
     managed.mkdir(parents=True, exist_ok=True)
     (managed / "run_nvidia_gpu.bat").write_text("@echo off\r\n", encoding="utf-8")
     (managed / "run_cpu.bat").write_text("@echo off\r\n", encoding="utf-8")
-    runtime.app_config.image.preferred_launcher = "cpu"
 
     attempts = runtime._build_managed_launch_attempts(
         managed,
@@ -3112,7 +3111,23 @@ def test_managed_launcher_attempts_use_cpu_directly_when_preference_is_cpu(tmp_p
         launch_command=["python", "main.py"],
         launcher_type="venv_python",
     )
-    assert [item["mode"] for item in attempts] == ["cpu"]
+    assert [item["mode"] for item in attempts] == ["nvidia_gpu", "cpu"]
+
+
+def test_managed_launcher_attempts_use_python_main_only_as_last_resort(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+    managed = tmp_path / "ComfyUI"
+    managed.mkdir(parents=True, exist_ok=True)
+
+    attempts = runtime._build_managed_launch_attempts(
+        managed,
+        "127.0.0.1",
+        8188,
+        launch_command=["python", "main.py", "--listen", "127.0.0.1", "--port", "8188"],
+        launcher_type="venv_python",
+    )
+    assert [item["mode"] for item in attempts] == ["python_main"]
 
 
 def test_start_image_engine_falls_back_from_nvidia_to_cpu(tmp_path: Path, monkeypatch) -> None:
@@ -3178,10 +3193,97 @@ def test_start_image_engine_falls_back_from_nvidia_to_cpu(tmp_path: Path, monkey
     assert len(popen_calls) == 2
     assert "run_nvidia_gpu.bat" in popen_calls[0][-1].lower()
     assert "run_cpu.bat" in popen_calls[1][-1].lower()
-    launch_diagnostics = result["startup_status"]["launch_diagnostics"]
-    assert launch_diagnostics["primary_launch_attempt"] == "nvidia_gpu"
-    assert launch_diagnostics["fallback_launch_used"] == "cpu"
-    assert launch_diagnostics["final_running_mode"] == "cpu"
+
+
+def test_orchestrate_setup_image_ai_attaches_when_setup_already_active(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.image_startup_status = {"state": "repairing install", "summary": "installing"}
+    assert runtime._image_setup_flow_lock.acquire(blocking=False)
+    try:
+        result = runtime.orchestrate_setup_image_ai()
+    finally:
+        runtime._image_setup_flow_lock.release()
+    assert result["ok"] is True
+    assert result["status"] == "running"
+    assert result["startup_status"]["state"] == "repairing install"
+
+
+def test_start_image_engine_attaches_instead_of_running_duplicate_dependency_bootstrap(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    runtime.image_startup_status = {"state": "dependency-bootstrap", "summary": "installing dependencies"}
+    assert runtime._image_setup_flow_lock.acquire(blocking=False)
+    try:
+        result = runtime.start_image_engine()
+    finally:
+        runtime._image_setup_flow_lock.release()
+    assert result["ok"] is True
+    assert result["status"] == "running"
+    assert result["startup_status"]["state"] == "dependency-bootstrap"
+
+
+def test_background_bootstrap_attaches_when_setup_flow_already_owned(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    runtime.app_config.image.enabled = True
+    runtime.image_startup_status = {"state": "launch-engine", "summary": "launching"}
+    assert runtime._image_setup_flow_lock.acquire(blocking=False)
+    try:
+        result = runtime.start_image_bootstrap_background(trigger="startup")
+    finally:
+        runtime._image_setup_flow_lock.release()
+    assert result["ok"] is True
+    assert result["status"] == "running"
+    assert result["startup_status"]["state"] == "launch-engine"
+
+
+def test_start_image_engine_logs_missing_launcher_scripts_before_python_fallback(tmp_path: Path, monkeypatch, capsys) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    comfy_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
+    comfy_dir.mkdir(parents=True, exist_ok=True)
+    (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
+    embedded = comfy_dir / ".venv" / "Scripts" / "python.exe"
+    embedded.parent.mkdir(parents=True, exist_ok=True)
+    embedded.write_text("", encoding="utf-8")
+    for folder in ("custom_nodes", "output", "input", "user"):
+        (comfy_dir / folder).mkdir(exist_ok=True)
+    checkpoints = comfy_dir / "models" / "checkpoints"
+    checkpoints.mkdir(parents=True, exist_ok=True)
+    (checkpoints / "test-model.safetensors").write_text("model", encoding="utf-8")
+    workflow = tmp_path / "scene.json"
+    workflow.write_text("{}", encoding="utf-8")
+    runtime.app_config.image.comfyui_path = ""
+    runtime.app_config.image.managed_install_path = str(comfy_dir)
+    runtime.app_config.image.comfyui_workflow_path = str(workflow)
+    runtime.app_config.image.checkpoint_folder = str(checkpoints)
+    runtime.app_config.image.preferred_checkpoint = ""
+
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr("time.sleep", lambda _seconds: None)
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": False})
+    monkeypatch.setattr(runtime, "_validate_python_runtime", lambda *_args, **_kwargs: {"ok": True})
+    monkeypatch.setattr(
+        runtime,
+        "_bootstrap_comfy_python_dependencies",
+        lambda *_args, **_kwargs: {"ok": True, "installed_packages": [], "python_executable": str(embedded)},
+    )
+    monkeypatch.setattr("subprocess.CREATE_NEW_PROCESS_GROUP", 0, raising=False)
+    monkeypatch.setattr("subprocess.CREATE_NO_WINDOW", 0, raising=False)
+
+    class _Proc:
+        pid = 4242
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr("subprocess.Popen", lambda *_args, **_kwargs: _Proc())
+
+    runtime.start_image_engine()
+    captured = capsys.readouterr()
+    assert "managed-launcher-check run_nvidia_gpu.bat=False run_cpu.bat=False" in captured.out
+    assert "managed-launcher-fallback reason=missing-run_nvidia_gpu.bat" in captured.out
+    assert "managed-launcher-fallback reason=missing-run_cpu.bat" in captured.out
 
 
 def test_start_image_engine_fails_only_after_nvidia_and_cpu_fail(tmp_path: Path, monkeypatch) -> None:
