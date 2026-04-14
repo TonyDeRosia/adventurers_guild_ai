@@ -640,7 +640,7 @@ def test_managed_launch_attempts_prefer_nvidia_for_auto_and_gpu_first(tmp_path: 
         launch_command=["python", "main.py"],
         launcher_type="venv_python",
     )
-    assert [attempt["mode"] for attempt in auto_attempts] == ["nvidia_gpu", "cpu"]
+    assert [attempt["mode"] for attempt in auto_attempts] == ["nvidia_gpu", "cpu", "python_main"]
 
     runtime.app_config.image.preferred_launcher = "gpu-first"
     gpu_first_attempts = runtime._build_managed_launch_attempts(
@@ -650,7 +650,7 @@ def test_managed_launch_attempts_prefer_nvidia_for_auto_and_gpu_first(tmp_path: 
         launch_command=["python", "main.py"],
         launcher_type="venv_python",
     )
-    assert [attempt["mode"] for attempt in gpu_first_attempts] == ["nvidia_gpu", "cpu"]
+    assert [attempt["mode"] for attempt in gpu_first_attempts] == ["nvidia_gpu", "cpu", "python_main"]
 
 
 def test_classify_nvidia_launch_failure_cuda_patterns_are_fallback_eligible(tmp_path: Path, monkeypatch) -> None:
