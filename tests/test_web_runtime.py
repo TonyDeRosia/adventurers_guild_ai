@@ -3781,6 +3781,90 @@ def test_start_image_engine_windows_batch_selects_nvidia_first(tmp_path: Path, m
     assert [item["mode"] for item in attempts] == ["nvidia_gpu", "cpu"]
 
 
+def test_probe_comfy_readiness_detects_dynamic_port_from_launcher_output(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    startup_log = "To see the GUI go to: http://127.0.0.1:8199"
+    observed_targets: list[str] = []
+
+    def _fake_probe(base_url: str, timeout_seconds: float = 1.0) -> bool:
+        observed_targets.append(base_url)
+        return base_url.endswith(":8199")
+
+    monkeypatch.setattr(runtime, "_quick_comfy_readiness_probe", _fake_probe)
+    reachable, base_url = runtime._probe_comfy_readiness("http://127.0.0.1:8188", startup_log)
+    assert reachable is True
+    assert base_url == "http://127.0.0.1:8199"
+    assert observed_targets[0] == "http://127.0.0.1:8188"
+
+
+def test_candidate_readiness_bases_include_detected_binding_when_expected_port_wrong(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    startup_log = "listening on 0.0.0.0:8282"
+    candidates = runtime._candidate_readiness_bases("http://127.0.0.1:8188", startup_log)
+    assert "http://127.0.0.1:8188" in candidates
+    assert "http://127.0.0.1:8282" in candidates
+    assert "http://localhost:8282" in candidates
+
+
+def test_start_image_engine_updates_base_url_when_dynamic_endpoint_is_detected(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    runtime.app_config.image.comfyui_path = ""
+    runtime.app_config.image.preferred_launcher = "auto"
+    runtime.app_config.image.base_url = "http://127.0.0.1:8188"
+    comfy_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
+    comfy_dir.mkdir(parents=True, exist_ok=True)
+    (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_dir / "run_nvidia_gpu.bat").write_text("@echo off\r\n", encoding="utf-8")
+    embedded = comfy_dir / ".venv" / "Scripts" / "python.exe"
+    embedded.parent.mkdir(parents=True, exist_ok=True)
+    embedded.write_text("", encoding="utf-8")
+    for folder in ("custom_nodes", "output", "input", "user"):
+        (comfy_dir / folder).mkdir(exist_ok=True)
+    checkpoint_dir = comfy_dir / "models" / "checkpoints"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    (checkpoint_dir / "test-model.safetensors").write_text("model", encoding="utf-8")
+    workflow = tmp_path / "scene.json"
+    workflow.write_text("{}", encoding="utf-8")
+    runtime.app_config.image.managed_install_path = str(comfy_dir)
+    runtime.app_config.image.comfyui_workflow_path = str(workflow)
+    runtime.app_config.image.checkpoint_folder = str(checkpoint_dir)
+
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr("time.sleep", lambda _seconds: None)
+    monkeypatch.setattr(runtime, "_validate_python_runtime", lambda *_args, **_kwargs: {"ok": True})
+    monkeypatch.setattr(
+        runtime,
+        "_bootstrap_comfy_python_dependencies",
+        lambda *_args, **_kwargs: {"ok": True, "installed_packages": [], "python_executable": str(embedded)},
+    )
+    monkeypatch.setattr("subprocess.CREATE_NEW_PROCESS_GROUP", 0, raising=False)
+    monkeypatch.setattr("subprocess.CREATE_NO_WINDOW", 0, raising=False)
+    monkeypatch.setattr(
+        runtime,
+        "_read_startup_log_tail",
+        lambda *_args, **_kwargs: ["To see the GUI go to: http://127.0.0.1:8291"],
+    )
+    monkeypatch.setattr(runtime, "_is_port_listening", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        runtime,
+        "_quick_comfy_readiness_probe",
+        lambda base_url, timeout_seconds=1.0: str(base_url).endswith(":8291"),
+    )
+
+    class _ProcRun:
+        pid = 9100
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr("subprocess.Popen", lambda *_args, **_kwargs: _ProcRun())
+    result = runtime.start_image_engine()
+    assert result["ok"] is True
+    assert runtime.app_config.image.base_url == "http://127.0.0.1:8291"
+    assert result["startup_status"]["ready_base_url"] == "http://127.0.0.1:8291"
+
+
 def test_start_image_engine_stalled_nvidia_falls_back_to_cpu_and_marks_ready(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.app_config.image.provider = "comfyui"

@@ -2548,11 +2548,52 @@ class WebRuntime:
         req = urllib.request.Request(target)
         try:
             with urllib.request.urlopen(req, timeout=timeout_seconds) as response:
-                return int(getattr(response, "status", 200) or 200) < 500
+                status_code = int(getattr(response, "status", 200) or 200)
+                if status_code >= 500:
+                    return False
+                body = response.read().decode("utf-8", errors="replace")
+                if not body.strip():
+                    return False
+                try:
+                    payload = json.loads(body)
+                except json.JSONDecodeError:
+                    return False
+                return isinstance(payload, dict)
         except urllib.error.HTTPError as exc:
             return int(getattr(exc, "code", 500) or 500) < 500
         except (urllib.error.URLError, ValueError, OSError):
             return False
+
+    def _extract_comfyui_host_port_candidates(self, startup_log_text: str) -> list[tuple[str, int]]:
+        candidates: list[tuple[str, int]] = []
+
+        def _append(host: str, port: int) -> None:
+            host_clean = str(host or "").strip().strip("[]")
+            if not host_clean:
+                return
+            if port < 1 or port > 65535:
+                return
+            item = (host_clean, port)
+            if item not in candidates:
+                candidates.append(item)
+
+        for raw in self._extract_comfyui_bind_urls(startup_log_text):
+            parsed = urlparse(raw)
+            if parsed.hostname and parsed.port:
+                _append(parsed.hostname, parsed.port)
+
+        patterns = [
+            r"(?:listening on|running on|bind(?:ing)? to|server(?: started)? at|gui go to|access at)\s+(?:https?://)?([a-zA-Z0-9\.\-_:]+):(\d{2,5})",
+        ]
+        for pattern in patterns:
+            for host, port_text in re.findall(pattern, startup_log_text, flags=re.IGNORECASE):
+                try:
+                    port = int(port_text)
+                except ValueError:
+                    continue
+                _append(host, port)
+
+        return candidates
 
     def _candidate_readiness_bases(self, expected_base: str, startup_log_text: str) -> list[str]:
         candidates: list[str] = []
@@ -2562,25 +2603,33 @@ class WebRuntime:
             if clean and clean not in candidates:
                 candidates.append(clean)
 
-        _append(expected_base)
-        parsed_expected = urlparse(str(expected_base or "").strip() or "http://127.0.0.1:8188")
-        expected_host = parsed_expected.hostname or "127.0.0.1"
-        expected_port = parsed_expected.port or 8188
-        _append(f"http://{expected_host}:{expected_port}")
-        _append(f"http://127.0.0.1:{expected_port}")
-        _append(f"http://localhost:{expected_port}")
-        _append("http://127.0.0.1:8188")
-        _append("http://localhost:8188")
+        parsed_expected = urlparse(str(expected_base or "").strip())
+        expected_host = parsed_expected.hostname or ""
+        expected_port = parsed_expected.port
 
-        for raw in self._extract_comfyui_bind_urls(startup_log_text):
-            parsed = urlparse(raw)
-            port = parsed.port or expected_port
-            host = parsed.hostname or expected_host
+        if expected_host and expected_port:
+            _append(f"http://{expected_host}:{expected_port}")
+            if expected_host in {"0.0.0.0", "::"}:
+                _append(f"http://127.0.0.1:{expected_port}")
+                _append(f"http://localhost:{expected_port}")
+        elif str(expected_base or "").strip():
+            _append(expected_base)
+
+        detected_bindings = self._extract_comfyui_host_port_candidates(startup_log_text)
+        for host, port in detected_bindings:
             if host in {"0.0.0.0", "::"}:
                 _append(f"http://127.0.0.1:{port}")
                 _append(f"http://localhost:{port}")
             else:
                 _append(f"http://{host}:{port}")
+                if host in {"127.0.0.1", "localhost"}:
+                    _append(f"http://127.0.0.1:{port}")
+                    _append(f"http://localhost:{port}")
+
+        # Fallback probe when launcher output does not include endpoint details.
+        if not detected_bindings and not expected_port:
+            _append("http://127.0.0.1:8188")
+            _append("http://localhost:8188")
         return candidates
 
     def _probe_comfy_readiness(self, expected_base: str, startup_log_text: str, timeout_seconds: float = 1.0) -> tuple[bool, str]:
@@ -2596,9 +2645,13 @@ class WebRuntime:
         except OSError:
             return False
 
-    def _detect_comfy_child_process(self, host: str, port: int, process: subprocess.Popen[str]) -> bool:
-        if self._is_port_listening(host, port, timeout_seconds=0.5):
-            return True
+    def _detect_comfy_child_process(self, process: subprocess.Popen[str], readiness_bases: list[str]) -> bool:
+        for candidate in readiness_bases:
+            parsed = urlparse(candidate)
+            host = str(parsed.hostname or "").strip()
+            port = parsed.port
+            if host and port and self._is_port_listening(host, port, timeout_seconds=0.35):
+                return True
         return process.poll() is None
 
     def _detect_runtime_error(self, startup_log_text: str) -> str:
@@ -2664,10 +2717,6 @@ class WebRuntime:
                 "/d",
                 "/c",
                 "run_nvidia_gpu.bat",
-                "--listen",
-                str(host),
-                "--port",
-                str(port),
             ], "portable_nvidia_launcher"
         return [], "python_runtime_not_found"
 
@@ -2718,6 +2767,7 @@ class WebRuntime:
         launcher_type: str,
     ) -> list[dict[str, Any]]:
         nvidia_script = comfyui_root / "run_nvidia_gpu.bat"
+        cpu_script = comfyui_root / "run_cpu.bat"
         attempts: list[dict[str, Any]] = []
         if os.name == "nt" and nvidia_script.exists():
             attempts.append(
@@ -2728,13 +2778,23 @@ class WebRuntime:
                         "/d",
                         "/c",
                         str(nvidia_script),
-                        "--listen",
-                        str(host),
-                        "--port",
-                        str(port),
                     ],
                     "launcher_type": "windows_batch",
                     "label": "nvidia_gpu",
+                }
+            )
+        if os.name == "nt" and cpu_script.exists():
+            attempts.append(
+                {
+                    "mode": "cpu",
+                    "command": [
+                        "cmd.exe",
+                        "/d",
+                        "/c",
+                        str(cpu_script),
+                    ],
+                    "launcher_type": "windows_batch",
+                    "label": "cpu",
                 }
             )
         return attempts
@@ -3710,6 +3770,9 @@ class WebRuntime:
                     "run_cpu.bat": cpu_launcher_exists,
                 },
                 "expected_readiness_url": expected_base,
+                "readiness_probe_targets": [],
+                "detected_bindings": [],
+                "launcher_output_snippet": "",
             }
             if not launch_attempts:
                 message = "Image AI requires NVIDIA GPU mode (run_nvidia_gpu.bat). CPU fallback is disabled."
@@ -3842,19 +3905,22 @@ class WebRuntime:
                 self._update_image_bootstrap_progress(state="starting ComfyUI", step="wait-for-readiness", summary="Waiting for ComfyUI readiness endpoint.")
                 print("[setup-orchestrator] setup-image step=wait-for-readiness")
                 attempt_result: dict[str, Any] = {"mode": attempt_mode, "result": "timeout"}
-                max_poll_cycles = 240 if attempt_mode == "nvidia_gpu" else 20
+                max_poll_cycles = 18 if attempt_mode == "nvidia_gpu" else 18
                 for poll_index in range(max_poll_cycles):
                     time.sleep(0.75)
                     tail_lines = self._read_startup_log_tail(startup_log_file)
                     startup_log_lines.extend(tail_lines)
                     startup_log_text = self._sanitize_image_startup_log(startup_log_lines)
                     runtime_error = self._detect_runtime_error(startup_log_text)
+                    readiness_targets = self._candidate_readiness_bases(expected_base, startup_log_text)
+                    detected_bindings = self._extract_comfyui_host_port_candidates(startup_log_text)
+                    launch_diagnostics["readiness_probe_targets"] = readiness_targets[:10]
+                    launch_diagnostics["detected_bindings"] = [
+                        {"host": host, "port": port} for host, port in detected_bindings[:10]
+                    ]
+                    launch_diagnostics["launcher_output_snippet"] = "\n".join(tail_lines[-8:])
                     readiness_reachable, ready_base = self._probe_comfy_readiness(expected_base, startup_log_text, timeout_seconds=1.0)
-                    child_process_detected = self._detect_comfy_child_process(
-                        expected.hostname or "127.0.0.1",
-                        expected.port or 8188,
-                        process,
-                    )
+                    child_process_detected = self._detect_comfy_child_process(process, readiness_targets)
                     if process.poll() is not None:
                         exit_code = process.poll()
                         if getattr(process, "stdout", None) is not None:
@@ -3891,8 +3957,13 @@ class WebRuntime:
                                 log_file=str(startup_log_file),
                                 managed_process=self.comfy_manager.snapshot().running,
                                 ready_base_url=ready_base,
+                                readiness_probe_targets=readiness_targets,
+                                detected_bindings=detected_bindings,
                                 launch_diagnostics=launch_diagnostics,
                             )
+                            if ready_base and ready_base != self.app_config.image.base_url:
+                                self.app_config.image.base_url = ready_base
+                                self.config_store.save(self.app_config)
                             self._image_engine_state = "running"
                             return {
                                 "ok": True,
@@ -3918,6 +3989,9 @@ class WebRuntime:
                                 launcher_exists=(comfyui_root / "run_nvidia_gpu.bat").exists(),
                             )
                             launch_diagnostics["nvidia_failure_reason"] = classification["reason"]
+                            if can_try_next_attempt and not runtime_error:
+                                launch_diagnostics["fallback_launch_used"] = next_attempt_label
+                                break
                             exact_error = tail_lines[-1] if tail_lines else startup_log_text.splitlines()[-1] if startup_log_text else ""
                             message = "Image AI requires NVIDIA GPU mode and CPU fallback is disabled. NVIDIA startup exited before ComfyUI was ready."
                             if exact_error:
@@ -4003,7 +4077,8 @@ class WebRuntime:
                     print(
                         "[setup-action] readiness-probe "
                         f"mode={attempt_mode} cycle={poll_index + 1}/{max_poll_cycles} reachable={readiness_reachable} "
-                        f"child_process_detected={child_process_detected} runtime_error={bool(runtime_error)}"
+                        f"child_process_detected={child_process_detected} runtime_error={bool(runtime_error)} "
+                        f"targets={readiness_targets[:4]}"
                     )
                     if readiness_reachable:
                         launch_diagnostics["ready_base_url"] = ready_base
@@ -4029,8 +4104,13 @@ class WebRuntime:
                             degraded=dependency_degraded,
                             degraded_details=degraded_details,
                             ready_base_url=ready_base,
+                            readiness_probe_targets=readiness_targets,
+                            detected_bindings=detected_bindings,
                             launch_diagnostics=launch_diagnostics,
                         )
+                        if ready_base and ready_base != self.app_config.image.base_url:
+                            self.app_config.image.base_url = ready_base
+                            self.config_store.save(self.app_config)
                         self._image_engine_state = "running"
                         return {
                             "ok": True,
@@ -4097,7 +4177,15 @@ class WebRuntime:
                 startup_log_text = self._sanitize_image_startup_log(startup_log_lines)
                 bound_urls = self._extract_comfyui_bind_urls(startup_log_text)
                 readiness_candidates = self._candidate_readiness_bases(expected_base, startup_log_text)
+                detected_bindings = self._extract_comfyui_host_port_candidates(startup_log_text)
                 runtime_error = self._detect_runtime_error(startup_log_text)
+                process_alive = process.poll() is None
+                any_candidate_listening = any(
+                    parsed.hostname
+                    and parsed.port
+                    and self._is_port_listening(str(parsed.hostname), int(parsed.port), timeout_seconds=0.3)
+                    for parsed in [urlparse(item) for item in readiness_candidates]
+                )
                 reason = "timeout-waiting-for-comfyui"
                 message = "ComfyUI launch command was sent, but readiness timed out."
                 stage_message = "timeout waiting for ComfyUI"
@@ -4105,13 +4193,22 @@ class WebRuntime:
                     reason = "runtime-error-in-launcher-output"
                     message = "Image AI failed: launcher output reported a runtime/dependency error."
                     stage_message = "runtime/dependency error in launcher output"
-                elif bound_urls and not any(expected.netloc in url for url in bound_urls):
+                elif not process_alive:
+                    reason = "process-not-started"
+                    message = "Image AI failed: launcher process is not running."
+                    stage_message = "process not started"
+                elif process_alive and not any_candidate_listening:
+                    reason = "process-running-not-bound"
+                    message = "Image AI failed: process is running but no ComfyUI bind port was detected."
+                    stage_message = "process running but not bound"
+                elif detected_bindings and not any_candidate_listening:
                     reason = "bound-to-unexpected-address"
-                    message = "Image AI failed: ComfyUI appears to be running on a different address/port."
-                    stage_message = "ComfyUI bound to unexpected address/port"
+                    message = "Image AI failed: ComfyUI reported a bind endpoint, but readiness probes could not verify it."
+                    stage_message = "bound endpoint not responding"
                 else:
-                    message = "Image AI failed: ComfyUI is still running but not reachable yet."
-                    stage_message = "ComfyUI still running but not reachable"
+                    reason = "bound-but-endpoint-not-responding"
+                    message = "Image AI failed: ComfyUI appears bound, but API endpoint did not return valid readiness response."
+                    stage_message = "endpoint not responding"
                 if attempt_mode == "nvidia_gpu":
                     classification = self._classify_nvidia_launch_failure(
                         startup_log_text,
@@ -4119,6 +4216,9 @@ class WebRuntime:
                         launcher_exists=(comfyui_root / "run_nvidia_gpu.bat").exists(),
                     )
                     launch_diagnostics["nvidia_failure_reason"] = launch_diagnostics["nvidia_failure_reason"] or classification["reason"]
+                    if can_try_next_attempt and not runtime_error:
+                        launch_diagnostics["fallback_launch_used"] = next_attempt_label
+                        continue
                     if runtime_error:
                         message = "Image AI requires NVIDIA GPU mode and CPU fallback is disabled. NVIDIA launch reported a runtime/CUDA error before readiness."
                         stage_message = "nvidia runtime/cuda error before readiness"
@@ -4143,6 +4243,7 @@ class WebRuntime:
                     current_step="wait-for-readiness",
                     runtime_error_hint=runtime_error,
                     detected_bind_urls=bound_urls,
+                    detected_bindings=detected_bindings,
                     readiness_candidates=readiness_candidates,
                     expected_base_url=expected_base,
                     launch_command=launch_target,
