@@ -86,6 +86,39 @@ def test_image_backend_diagnostics_reports_running_when_api_reachable(tmp_path: 
     assert diagnostics["overall_state"] == "Running"
 
 
+def test_image_backend_diagnostics_exposes_launch_strategy_details(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.image_startup_status = {
+        "launch_diagnostics": {
+            "primary_launch_attempt": "nvidia_gpu",
+            "fallback_launch_used": "cpu",
+            "nvidia_failure_reason": "torch-cuda-disabled",
+            "final_running_mode": "cpu",
+        }
+    }
+    monkeypatch.setattr(
+        runtime,
+        "get_path_configuration_status",
+        lambda: {
+            "image": {
+                "mode": "managed",
+                "comfyui_root": {"configured": False, "valid": False, "path": ""},
+                "workflow_path": {"configured": False, "valid": False, "path": ""},
+                "output_dir": {"configured": False, "valid": True, "path": ""},
+                "checkpoint_dir": {"configured": False, "valid": False, "path": "", "model_ready": False},
+                "resolved_paths": {},
+            }
+        },
+    )
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": False, "status_code": "setup_required", "user_message": "", "next_action": ""})
+    payload = runtime.get_image_backend_diagnostics()
+    diagnostics = payload["diagnostics"]
+    assert diagnostics["primary_launch_attempt"] == "nvidia_gpu"
+    assert diagnostics["fallback_launch_used"] == "cpu"
+    assert diagnostics["nvidia_failure_reason"] == "torch-cuda-disabled"
+    assert diagnostics["final_running_mode"] == "cpu"
+
+
 def test_start_image_engine_returns_already_running_without_spawning_duplicate(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.app_config.image.provider = "comfyui"
