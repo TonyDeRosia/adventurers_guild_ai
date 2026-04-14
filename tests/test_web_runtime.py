@@ -218,6 +218,112 @@ def test_display_mode_can_be_changed_from_campaign_settings_and_persists(tmp_pat
     assert switched["state"]["settings"]["display_mode"] == "rpg"
 
 
+def _make_comfy_source_folder(base: Path) -> Path:
+    root = base / "ComfyUI-src"
+    (root / "models" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    for folder in ("custom_nodes", "output", "input", "user"):
+        (root / folder).mkdir(parents=True, exist_ok=True)
+    (root / "main.py").write_text("print('comfy')", encoding="utf-8")
+    (root / ".venv" / "Scripts").mkdir(parents=True, exist_ok=True)
+    (root / ".venv" / "Scripts" / "python.exe").write_text("python", encoding="utf-8")
+    return root
+
+
+def test_import_image_ai_accepts_comfyui_folder_and_model_file(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_src = _make_comfy_source_folder(tmp_path)
+    model_src = tmp_path / "DreamShaper_v8.safetensors"
+    model_src.write_text("model", encoding="utf-8")
+    monkeypatch.setattr(runtime, "start_image_engine", lambda **_kwargs: {"ok": True, "message": "started"})
+
+    result = runtime.import_and_setup_image_ai(str(comfy_src), str(model_src))
+
+    managed_root = tmp_path / "user_data" / "tools" / "ComfyUI"
+    managed_checkpoint = managed_root / "models" / "checkpoints" / model_src.name
+    assert result["ok"] is True
+    assert managed_root.exists()
+    assert managed_checkpoint.exists()
+    assert runtime.app_config.image.comfyui_path == ""
+    assert runtime.app_config.image.managed_install_path == str(managed_root)
+
+
+def test_import_image_ai_accepts_comfyui_zip_source(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_src = _make_comfy_source_folder(tmp_path)
+    zip_path = tmp_path / "ComfyUI.zip"
+    import zipfile
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        for path in comfy_src.rglob("*"):
+            archive.write(path, arcname=str(path.relative_to(comfy_src)))
+    model_src = tmp_path / "model.safetensors"
+    model_src.write_text("model", encoding="utf-8")
+    monkeypatch.setattr(runtime, "start_image_engine", lambda **_kwargs: {"ok": True, "message": "started"})
+
+    result = runtime.import_and_setup_image_ai(str(zip_path), str(model_src))
+
+    assert result["ok"] is True
+    assert (tmp_path / "user_data" / "tools" / "ComfyUI" / "main.py").exists()
+
+
+def test_import_image_ai_rejects_invalid_sources(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    bad_comfy = tmp_path / "not_comfy"
+    bad_comfy.mkdir(parents=True, exist_ok=True)
+    bad_model = tmp_path / "bad.txt"
+    bad_model.write_text("x", encoding="utf-8")
+
+    result = runtime.import_and_setup_image_ai(str(bad_comfy), str(bad_model))
+
+    assert result["ok"] is False
+    assert "main.py" in result["message"] or "Model" in result["message"]
+
+
+def test_import_image_ai_model_folder_imports_supported_files(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_src = _make_comfy_source_folder(tmp_path)
+    model_dir = tmp_path / "models"
+    model_dir.mkdir(parents=True, exist_ok=True)
+    (model_dir / "a.safetensors").write_text("a", encoding="utf-8")
+    (model_dir / "b.ckpt").write_text("b", encoding="utf-8")
+    (model_dir / "ignore.txt").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(runtime, "start_image_engine", lambda **_kwargs: {"ok": True, "message": "started"})
+
+    result = runtime.import_and_setup_image_ai(str(comfy_src), str(model_dir))
+
+    checkpoint_dir = tmp_path / "user_data" / "tools" / "ComfyUI" / "models" / "checkpoints"
+    assert result["ok"] is True
+    assert (checkpoint_dir / "a.safetensors").exists()
+    assert (checkpoint_dir / "b.ckpt").exists()
+
+
+def test_import_image_ai_retry_works_after_invalid_attempt(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    monkeypatch.setattr(runtime, "start_image_engine", lambda **_kwargs: {"ok": True, "message": "started"})
+    first = runtime.import_and_setup_image_ai(str(tmp_path / "missing"), str(tmp_path / "missing-model"))
+    assert first["ok"] is False
+
+    comfy_src = _make_comfy_source_folder(tmp_path)
+    model_src = tmp_path / "good.safetensors"
+    model_src.write_text("good", encoding="utf-8")
+    second = runtime.import_and_setup_image_ai(str(comfy_src), str(model_src))
+    assert second["ok"] is True
+
+
+def test_image_setup_snapshot_reports_guided_status(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    snapshot = runtime.get_image_setup_snapshot()
+    assert snapshot["setup_status"] in {"not configured", "error", "ComfyUI selected", "model selected", "ready", "importing"}
+
+
+def test_text_mode_remains_usable_when_image_setup_incomplete(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "null"
+    runtime.app_config.image.enabled = False
+    runtime.image_adapter = runtime._create_image_adapter()
+    result = runtime.handle_player_input("look around")
+    assert "messages" in result
+
+
 def test_campaign_listing_includes_display_mode_for_selected_campaign_summary(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.create_campaign({"player_name": "ListStory", "slot": "slot_story_list", "display_mode": "story"})
@@ -2562,11 +2668,13 @@ def test_guided_image_setup_endpoints_proxy_runtime_methods(tmp_path: Path, monk
     monkeypatch.setattr(runtime, "get_image_setup_snapshot", lambda: {"ready": False, "message": "snapshot"})
     monkeypatch.setattr(runtime, "use_bundled_image_engine", lambda: {"ok": True, "message": "bundled"})
     monkeypatch.setattr(runtime, "save_checkpoint_folder", lambda path: {"ok": True, "path": path})
+    monkeypatch.setattr(runtime, "import_and_setup_image_ai", lambda comfyui_source, model_source: {"ok": True, "comfyui_source": comfyui_source, "model_source": model_source})
     monkeypatch.setattr(runtime, "skip_images_for_now", lambda: {"ok": True, "message": "skipped"})
 
     snapshot_response = client.get("/api/setup/image-readiness-card")
     bundled_response = client.post("/api/setup/use-bundled-image-engine", json={})
     checkpoint_response = client.post("/api/setup/save-checkpoint-folder", json={"path": "/tmp/checkpoints"})
+    import_response = client.post("/api/setup/import-image-ai", json={"comfyui_source": "/tmp/comfy.zip", "model_source": "/tmp/model.safetensors"})
     skip_response = client.post("/api/setup/skip-images", json={})
 
     assert snapshot_response.status_code == 200
@@ -2575,6 +2683,8 @@ def test_guided_image_setup_endpoints_proxy_runtime_methods(tmp_path: Path, monk
     assert bundled_response.json()["message"] == "bundled"
     assert checkpoint_response.status_code == 200
     assert checkpoint_response.json()["path"] == "/tmp/checkpoints"
+    assert import_response.status_code == 200
+    assert import_response.json()["comfyui_source"] == "/tmp/comfy.zip"
     assert skip_response.status_code == 200
     assert skip_response.json()["message"] == "skipped"
 

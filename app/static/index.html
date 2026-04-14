@@ -367,9 +367,29 @@
           <h4>Visual Pipeline (ComfyUI)</h4>
           <section class="guided-image-setup-card">
             <h5>Image AI</h5>
+            <p class="setup-intro">1) Download ComfyUI. 2) Download the recommended model. 3) Select both sources below. 4) Click Import and Set Up Image AI.</p>
             <div id="image-ai-simple-status" class="setup-summary">Status: Checking...</div>
             <div id="image-ai-simple-error" class="setup-summary hidden"></div>
             <div class="button-row guided-image-setup-actions">
+              <button id="open-comfyui-download-page" type="button">Open ComfyUI Download Page</button>
+              <button id="open-model-download-page" type="button">Open Preferred Model Download Page</button>
+            </div>
+            <label>Downloaded ComfyUI package/folder
+              <input id="image-import-comfy-source" type="text" placeholder="Select ComfyUI .zip or extracted folder" />
+            </label>
+            <div class="button-row guided-image-setup-actions">
+              <button id="pick-image-import-comfy-file" type="button">Pick ComfyUI Zip</button>
+              <button id="pick-image-import-comfy-folder" type="button">Pick ComfyUI Folder</button>
+            </div>
+            <label>Downloaded model/checkpoint file/folder
+              <input id="image-import-model-source" type="text" placeholder="Select model file (.safetensors/.ckpt) or folder" />
+            </label>
+            <div class="button-row guided-image-setup-actions">
+              <button id="pick-image-import-model-file" type="button">Pick Model File</button>
+              <button id="pick-image-import-model-folder" type="button">Pick Model Folder</button>
+            </div>
+            <div class="button-row guided-image-setup-actions">
+              <button id="import-image-ai" class="btn-primary" type="button">Import and Set Up Image AI</button>
               <button id="setup-image-ai" class="btn-primary">Set Up Image AI</button>
               <button id="retry-image-ai-setup" class="hidden">Retry Setup</button>
               <button id="disable-image-ai">Disable Image AI</button>

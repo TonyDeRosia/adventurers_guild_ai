@@ -34,6 +34,8 @@ const checkpointSourceInput = document.getElementById('checkpoint-source');
 const preferredCheckpointInput = document.getElementById('preferred-checkpoint');
 const imageAiSimpleStatus = document.getElementById('image-ai-simple-status');
 const imageAiSimpleError = document.getElementById('image-ai-simple-error');
+const imageImportComfySourceInput = document.getElementById('image-import-comfy-source');
+const imageImportModelSourceInput = document.getElementById('image-import-model-source');
 const imageBackendOverallState = document.getElementById('image-backend-overall-state');
 const imageBackendDiagnosticsSummary = document.getElementById('image-backend-diagnostics-summary');
 const imageBackendDiagnosticsLog = document.getElementById('image-backend-diagnostics-log');
@@ -1976,13 +1978,15 @@ function renderImageSetupCard(snapshot = latestImageSetupSnapshot) {
   const hasError = readiness.status_code === 'error' || startup.state === 'failed';
   const isReady = !!readiness.ready;
   const notInstalled = ['not_installed', 'setup_required'].includes(readiness.status_code) || (!isReady && !hasError && !isSettingUp);
-  const statusLabel = isSettingUp
-    ? 'Setting up'
-    : isReady
-      ? 'Ready'
-      : hasError
-        ? 'Error'
-        : (notInstalled ? 'Not installed' : 'Not installed');
+  const setupStatus = String(current.setup_status || '').trim();
+  const statusLabel = setupStatus
+    || (isSettingUp
+      ? 'Importing'
+      : isReady
+        ? 'Ready'
+        : hasError
+          ? 'Error'
+          : (notInstalled ? 'Not configured' : 'Not configured'));
   imageAiSimpleStatus.textContent = `Status: ${statusLabel}`;
   if (imageAiSimpleError) {
     const errorText = String(startup.error_line || startup.summary || readiness.message || '').trim();
@@ -1997,6 +2001,22 @@ function renderImageSetupCard(snapshot = latestImageSetupSnapshot) {
   if (retryImageAiSetupButton) {
     retryImageAiSetupButton.classList.toggle('hidden', statusLabel !== 'Error');
   }
+}
+
+async function importAndSetupImageAi() {
+  const comfySource = imageImportComfySourceInput?.value.trim() || '';
+  const modelSource = imageImportModelSourceInput?.value.trim() || '';
+  if (!comfySource || !modelSource) {
+    setStatus('Select both a ComfyUI source and a model source before importing.', true);
+    return;
+  }
+  const result = await api('/api/setup/import-image-ai', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ comfyui_source: comfySource, model_source: modelSource }),
+  });
+  setStatus(result.message || (result.ok ? 'Image AI import complete.' : 'Image AI import failed.'), !result.ok);
+  await Promise.all([loadSettings(), refreshDependencyReadiness(), refreshImageSetupSnapshot(), refreshImageBackendDiagnostics(), refreshComfyuiModelList()]);
 }
 
 function bindClickOnce(element, handler) {
@@ -2847,6 +2867,13 @@ bindClickById('open-setup-modal', openSetupModal);
 bindClickById('close-setup-modal', closeSetupModal);
 bindClickById('setup-text-ai', () => runReadinessAction('setup_text_ai', {}));
 bindClickById('setup-image-ai', () => runReadinessAction('setup_image_ai', {}).catch((error) => setStatus(error.message, true)), { once: true });
+bindClickById('open-comfyui-download-page', () => openOfficialDownload('https://github.com/comfyanonymous/ComfyUI/releases'));
+bindClickById('open-model-download-page', () => openOfficialDownload('https://civitai.com/models/4384/dreamshaper'));
+bindClickById('pick-image-import-comfy-file', () => pickFile('Select ComfyUI zip file', imageImportComfySourceInput, ['.zip']));
+bindClickById('pick-image-import-comfy-folder', () => pickFolder('Select extracted ComfyUI folder', imageImportComfySourceInput));
+bindClickById('pick-image-import-model-file', () => pickFile('Select model/checkpoint file', imageImportModelSourceInput, ['.safetensors', '.ckpt', '.pt', '.pth', '.bin']));
+bindClickById('pick-image-import-model-folder', () => pickFolder('Select model/checkpoint folder', imageImportModelSourceInput));
+bindClickById('import-image-ai', () => importAndSetupImageAi().catch((error) => setStatus(error.message, true)));
 bindClickById('setup-everything', () => runReadinessAction('setup_everything', {}));
 bindClickById('download-ollama', () => openOfficialDownload('https://ollama.com/download'));
 bindClickById('pick-ollama-folder', () => pickFolder('Select Ollama install folder', ollamaPathInput));
