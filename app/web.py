@@ -797,22 +797,68 @@ class WebRuntime:
         return {"ok": False, "message": "ComfyUI source must be a file or folder."}
 
     def _import_comfyui_source(self, source: Path, target_dir: Path) -> dict[str, Any]:
+        ignored_names = {
+            ".git",
+            ".github",
+            ".gitignore",
+            "__pycache__",
+            ".pytest_cache",
+            ".mypy_cache",
+            ".ruff_cache",
+            ".vscode",
+            ".idea",
+        }
+
+        def _copy_ignore(_src: str, names: list[str]) -> set[str]:
+            return {name for name in names if name in ignored_names}
+
+        def _remove_dev_artifacts(root: Path) -> None:
+            for relative in (
+                Path(".git"),
+                Path(".github"),
+                Path(".gitignore"),
+                Path("__pycache__"),
+                Path(".pytest_cache"),
+                Path(".mypy_cache"),
+                Path(".ruff_cache"),
+                Path(".vscode"),
+                Path(".idea"),
+            ):
+                target = root / relative
+                if target.is_dir():
+                    shutil.rmtree(target, ignore_errors=True)
+                elif target.exists():
+                    target.unlink(missing_ok=True)
+
         validation = self._validate_comfyui_import_source(source)
         if not validation.get("ok", False):
             return validation
         if target_dir.exists():
             shutil.rmtree(target_dir, ignore_errors=True)
         target_dir.parent.mkdir(parents=True, exist_ok=True)
-        if validation.get("kind") == "zip":
-            with zipfile.ZipFile(source, "r") as archive:
-                archive.extractall(target_dir)
-            nested_main = next((p.parent for p in target_dir.rglob("main.py")), None)
-            if nested_main and nested_main != target_dir:
-                for item in list(nested_main.iterdir()):
-                    shutil.move(str(item), str(target_dir / item.name))
-        else:
-            normalized_source = Path(str(validation.get("resolved_source_dir") or source))
-            shutil.copytree(normalized_source, target_dir, dirs_exist_ok=True)
+        try:
+            if validation.get("kind") == "zip":
+                with zipfile.ZipFile(source, "r") as archive:
+                    archive.extractall(target_dir)
+                nested_main = next((p.parent for p in target_dir.rglob("main.py")), None)
+                if nested_main and nested_main != target_dir:
+                    for item in list(nested_main.iterdir()):
+                        shutil.move(str(item), str(target_dir / item.name))
+                _remove_dev_artifacts(target_dir)
+            else:
+                normalized_source = Path(str(validation.get("resolved_source_dir") or source))
+                shutil.copytree(normalized_source, target_dir, dirs_exist_ok=True, ignore=_copy_ignore)
+                _remove_dev_artifacts(target_dir)
+        except (OSError, PermissionError, shutil.Error, zipfile.BadZipFile) as exc:
+            return {
+                "ok": False,
+                "message": (
+                    "ComfyUI import failed while copying source files. "
+                    "Development metadata such as .git is not required and will now be skipped."
+                ),
+                "error_code": "comfyui_import_copy_failed",
+                "detail": str(exc),
+            }
         self._ensure_comfyui_runtime_folders(target_dir)
         install_validation = self.validate_comfyui_install(target_dir)
         if not install_validation.get("ok", False):
@@ -6692,7 +6738,18 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     def setup_import_image_ai(payload: dict[str, Any]) -> dict[str, Any]:
         comfyui_source = str(payload.get("comfyui_source", ""))
         model_source = str(payload.get("model_source", ""))
-        return runtime.import_and_setup_image_ai(comfyui_source, model_source)
+        try:
+            return runtime.import_and_setup_image_ai(comfyui_source, model_source)
+        except Exception as exc:
+            return JSONResponse(
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                content={
+                    "ok": False,
+                    "message": "Image AI import failed unexpectedly. Please retry and verify source folder permissions.",
+                    "error_code": "image_ai_import_unexpected_error",
+                    "detail": str(exc),
+                },
+            )
 
     @app.post("/api/setup/skip-images")
     def setup_skip_images() -> dict[str, Any]:

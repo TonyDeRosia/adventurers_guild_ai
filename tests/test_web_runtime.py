@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import time
 from types import SimpleNamespace
@@ -344,6 +345,45 @@ def test_import_image_ai_model_folder_imports_supported_files(tmp_path: Path, mo
     assert result["ok"] is True
     assert (checkpoint_dir / "a.safetensors").exists()
     assert (checkpoint_dir / "b.ckpt").exists()
+
+
+def test_import_comfyui_source_ignores_git_metadata_and_dev_cache_dirs(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_src = _make_comfy_source_folder(tmp_path)
+    (comfy_src / ".git" / "objects" / "pack").mkdir(parents=True, exist_ok=True)
+    (comfy_src / ".git" / "objects" / "pack" / "pack-test").write_text("x", encoding="utf-8")
+    (comfy_src / ".github" / "workflows").mkdir(parents=True, exist_ok=True)
+    (comfy_src / ".github" / "workflows" / "ci.yml").write_text("name: ci", encoding="utf-8")
+    (comfy_src / ".gitignore").write_text("*.pyc", encoding="utf-8")
+    (comfy_src / "__pycache__").mkdir(parents=True, exist_ok=True)
+    (comfy_src / "__pycache__" / "main.cpython-311.pyc").write_text("cache", encoding="utf-8")
+
+    managed_root = tmp_path / "user_data" / "tools" / "ComfyUI"
+    result = runtime._import_comfyui_source(comfy_src, managed_root)
+
+    assert result["ok"] is True
+    assert (managed_root / "main.py").exists()
+    assert not (managed_root / ".git").exists()
+    assert not (managed_root / ".github").exists()
+    assert not (managed_root / ".gitignore").exists()
+    assert not (managed_root / "__pycache__").exists()
+
+
+def test_import_comfyui_source_returns_structured_error_on_copy_failure(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_src = _make_comfy_source_folder(tmp_path)
+    managed_root = tmp_path / "user_data" / "tools" / "ComfyUI"
+
+    def _raise_copytree(*_args, **_kwargs):
+        raise PermissionError("access denied while reading .git/objects/pack")
+
+    monkeypatch.setattr(shutil, "copytree", _raise_copytree)
+
+    result = runtime._import_comfyui_source(comfy_src, managed_root)
+
+    assert result["ok"] is False
+    assert result["error_code"] == "comfyui_import_copy_failed"
+    assert "Development metadata such as .git is not required" in result["message"]
 
 
 def test_import_image_ai_retry_works_after_invalid_attempt(tmp_path: Path, monkeypatch) -> None:
@@ -2783,6 +2823,29 @@ def test_guided_image_setup_endpoints_proxy_runtime_methods(tmp_path: Path, monk
     assert import_response.json()["comfyui_source"] == "/tmp/comfy.zip"
     assert skip_response.status_code == 200
     assert skip_response.json()["message"] == "skipped"
+
+
+def test_import_image_ai_endpoint_returns_json_error_instead_of_unhandled_500(tmp_path: Path, monkeypatch) -> None:
+    try:
+        from fastapi.testclient import TestClient
+    except RuntimeError as exc:
+        pytest.skip(str(exc))
+    runtime = _runtime(tmp_path, monkeypatch)
+    app = create_web_app(runtime, runtime.root / "app" / "static")
+    client = TestClient(app)
+
+    def _explode(_comfyui_source: str, _model_source: str) -> dict[str, Any]:
+        raise RuntimeError("copy crashed")
+
+    monkeypatch.setattr(runtime, "import_and_setup_image_ai", _explode)
+
+    response = client.post("/api/setup/import-image-ai", json={"comfyui_source": "/tmp/comfy", "model_source": "/tmp/model.safetensors"})
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["ok"] is False
+    assert payload["error_code"] == "image_ai_import_unexpected_error"
+    assert "failed unexpectedly" in payload["message"]
 
 
 def test_desktop_setup_endpoints_proxy_runtime_methods(tmp_path: Path, monkeypatch) -> None:
