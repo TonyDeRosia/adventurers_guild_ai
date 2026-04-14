@@ -32,24 +32,15 @@ const checkpointPathValidation = document.getElementById('checkpoint-folder-vali
 const checkpointFolderInput = document.getElementById('checkpoint-folder-input');
 const checkpointSourceInput = document.getElementById('checkpoint-source');
 const preferredCheckpointInput = document.getElementById('preferred-checkpoint');
-const imageSetupCardStatus = document.getElementById('image-setup-card-status');
+const imageAiSimpleStatus = document.getElementById('image-ai-simple-status');
+const imageAiSimpleError = document.getElementById('image-ai-simple-error');
 const imageBackendOverallState = document.getElementById('image-backend-overall-state');
 const imageBackendDiagnosticsSummary = document.getElementById('image-backend-diagnostics-summary');
 const imageBackendDiagnosticsLog = document.getElementById('image-backend-diagnostics-log');
-const verifyImageBackendButton = document.getElementById('verify-image-backend');
-const checkImageEngineStatusButton = document.getElementById('check-image-engine-status');
-const startImageBackendButton = document.getElementById('start-image-backend');
-const stopImageBackendButton = document.getElementById('stop-image-backend');
-const openImageEngineUiButton = document.getElementById('open-image-engine-ui');
-const locateExistingComfyuiFolderButton = document.getElementById('locate-existing-comfyui-folder');
 const openImageBackendFolderButton = document.getElementById('open-image-backend-folder');
-const openWorkflowsFolderButton = document.getElementById('open-workflows-folder');
 const showImageDiagnosticsButton = document.getElementById('show-image-diagnostics');
-const useBundledImageEngineButton = document.getElementById('use-bundled-image-engine');
-const chooseExistingModelFolderButton = document.getElementById('choose-existing-model-folder');
-const openRecommendedModelPageButton = document.getElementById('open-recommended-model-page');
-const skipImagesForNowButton = document.getElementById('skip-images-for-now');
-const recheckImageSetupButton = document.getElementById('recheck-image-setup');
+const retryImageAiSetupButton = document.getElementById('retry-image-ai-setup');
+const disableImageAiButton = document.getElementById('disable-image-ai');
 const pickCheckpointFolderButton = document.getElementById('pick-checkpoint-folder');
 const preferredLauncherInput = document.getElementById('preferred-launcher');
 const manualImageEnabledInput = document.getElementById('manual-image-enabled');
@@ -487,17 +478,14 @@ function renderSupportedModels(payload) {
 }
 
 function updateSetupButtonsBusyState() {
-  const managedButtons = document.querySelectorAll('#setup-text-ai, #setup-image-ai, #setup-everything, #recheck-readiness, #test-image-pipeline-from-setup, #use-bundled-image-engine, #choose-existing-model-folder, #skip-images-for-now, #recheck-image-setup, .readiness-action-btn');
+  const managedButtons = document.querySelectorAll('#setup-text-ai, #setup-image-ai, #retry-image-ai-setup, #setup-everything, #recheck-readiness, #disable-image-ai, .readiness-action-btn');
   managedButtons.forEach((button) => {
     const actionId = button.dataset.action || (button.id === 'setup-text-ai' ? 'setup_text_ai'
       : button.id === 'setup-image-ai' ? 'setup_image_ai'
       : button.id === 'setup-everything' ? 'setup_everything'
       : button.id === 'recheck-readiness' ? 'recheck'
-      : button.id === 'recheck-image-setup' ? 'recheck'
-      : button.id === 'test-image-pipeline-from-setup' ? 'test_image_pipeline'
-      : button.id === 'use-bundled-image-engine' ? 'guided_image_action'
-      : button.id === 'choose-existing-model-folder' ? 'guided_image_action'
-      : button.id === 'skip-images-for-now' ? 'guided_image_action'
+      : button.id === 'retry-image-ai-setup' ? 'recheck'
+      : button.id === 'disable-image-ai' ? 'guided_image_action'
       : '');
     if (!actionId) return;
     if (!setupRunState.busy) {
@@ -625,7 +613,12 @@ async function runReadinessAction(actionId, item) {
       });
       await Promise.all([refreshDependencyReadiness(), refreshImageBackendDiagnostics()]);
       console.log('[setup-action] readiness refresh triggered');
-      setStatus(result.summary || result.message || (result.ok ? 'Image AI ready.' : 'Image AI setup failed.'), !result.ok);
+      setStatus(
+        result.ok
+          ? (result.summary || result.message || 'Image AI ready.')
+          : withFailureDetail(result, 'Image AI setup failed.'),
+        !result.ok,
+      );
       finishSetupRun({
         summary: result.summary || result.message || (result.ok ? 'Image AI is ready.' : 'Image AI setup failed.'),
         isError: !result.ok,
@@ -1974,64 +1967,36 @@ async function pickFileBrowserFallback(filters = ['.json']) {
 }
 
 function renderImageSetupCard(snapshot = latestImageSetupSnapshot) {
-  if (!imageSetupCardStatus) return;
+  if (!imageAiSimpleStatus) return;
   const current = snapshot || {};
   const readiness = current.image_readiness_state || {};
-  const firstRun = current.first_run_status || {};
-  const layout = current.installer_layout || {};
-  const layoutChecks = layout.checks || {};
-  const readinessText = readiness.ready ? 'Ready' : 'Needs setup';
-  const engineText = readiness.engine_ready ? 'Engine: Ready' : 'Engine: Needs setup';
-  const modelText = readiness.model_ready ? 'Model: Ready' : 'Model: Missing or not selected';
-  const appInstalled = firstRun.app_installed?.state === 'ready';
-  const appInstalledText = appInstalled ? 'App install mode: desktop packaged build detected' : 'App install mode: source/developer runtime';
-  const bundledText = current.bundled_comfyui_available ? 'Bundled image runtime: present' : 'Bundled image runtime: missing';
-  const workflowsText = firstRun.bundled_workflows?.state === 'ready'
-    ? 'Bundled workflows: present'
-    : 'Bundled workflows: missing required files';
-  const embeddedPythonText = firstRun.embedded_python?.state === 'ready'
-    ? 'Embedded Python runtime: present'
-    : 'Embedded Python runtime: not bundled (optional)';
-  let checkpointText = 'No model selected yet';
-  if (current.checkpoint_folder_valid) checkpointText = 'Model folder valid';
-  else if (current.checkpoint_folder_configured) checkpointText = 'Selected model folder is invalid';
-  const fallbackText = current.text_only_mode_active ? 'Image setup skipped, text-only mode active' : 'Text-only fallback available';
-  const modelActionText = current.checkpoint_folder_valid
-    ? 'Model files are configured.'
-    : 'Model files still need your action (select a checkpoints folder).';
-  const layoutValid = layout.state === 'valid';
-  const layoutText = appInstalled
-    ? `Installer layout: ${layoutValid ? 'valid' : 'invalid'}`
-    : 'Installer layout: informational (not in packaged mode)';
-  const layoutHint = layout.summary || '';
-  const advancedDebug = appInstalled ? `
-      <details class="startup-log">
-        <summary>Installer layout details</summary>
-        <pre>${escapeHtml([
-    `runtime_bundle: ${layoutChecks.runtime_bundle?.state || 'unknown'}`,
-    `comfyui: ${layoutChecks.bundled_image_runtime?.state || 'unknown'}`,
-    `scene workflow: ${layoutChecks.workflow_scene_image?.state || 'unknown'}`,
-    `portrait workflow: ${layoutChecks.workflow_character_portrait?.state || 'unknown'}`,
-    `embedded python: ${layoutChecks.embedded_python?.state || 'unknown'}`,
-  ].join('\n'))}</pre>
-      </details>
-  ` : '';
-  imageSetupCardStatus.innerHTML = `
-    <div>${escapeHtml(appInstalledText)}</div>
-    <div>${escapeHtml(layoutText)}</div>
-    <div>${escapeHtml(layoutHint)}</div>
-    <div><strong>Image readiness:</strong> ${escapeHtml(readinessText)}</div>
-    <div>${escapeHtml(engineText)}</div>
-    <div>${escapeHtml(modelText)}</div>
-    <div>${escapeHtml(bundledText)}</div>
-    <div>${escapeHtml(workflowsText)}</div>
-    <div>${escapeHtml(embeddedPythonText)}</div>
-    <div>${escapeHtml(checkpointText)}</div>
-    <div>${escapeHtml(modelActionText)}</div>
-    <div>${escapeHtml(fallbackText)}</div>
-    <div>${escapeHtml(readiness.message || '')}</div>
-    ${advancedDebug}
-  `;
+  const diagnostics = latestImageBackendDiagnostics?.diagnostics || {};
+  const startup = diagnostics.startup_status || {};
+  const isSettingUp = setupRunState.busy && ['setup_image_ai', 'start_image_engine', 'recheck'].includes(setupRunState.actionId);
+  const hasError = readiness.status_code === 'error' || startup.state === 'failed';
+  const isReady = !!readiness.ready;
+  const notInstalled = ['not_installed', 'setup_required'].includes(readiness.status_code) || (!isReady && !hasError && !isSettingUp);
+  const statusLabel = isSettingUp
+    ? 'Setting up'
+    : isReady
+      ? 'Ready'
+      : hasError
+        ? 'Error'
+        : (notInstalled ? 'Not installed' : 'Not installed');
+  imageAiSimpleStatus.textContent = `Status: ${statusLabel}`;
+  if (imageAiSimpleError) {
+    const errorText = String(startup.error_line || startup.summary || readiness.message || '').trim();
+    if (statusLabel === 'Error' && errorText) {
+      imageAiSimpleError.classList.remove('hidden');
+      imageAiSimpleError.textContent = `Error: ${errorText}`;
+    } else {
+      imageAiSimpleError.classList.add('hidden');
+      imageAiSimpleError.textContent = '';
+    }
+  }
+  if (retryImageAiSetupButton) {
+    retryImageAiSetupButton.classList.toggle('hidden', statusLabel !== 'Error');
+  }
 }
 
 function bindClickOnce(element, handler) {
@@ -2273,11 +2238,10 @@ function renderDependencyReadiness(payload) {
   renderImageSetupCard(latestImageSetupSnapshot);
   readinessPanel.innerHTML = '';
   const byType = Object.fromEntries((payload.items || []).map((item) => [item.provider_type, item]));
-  const primaryActions = payload.primary_actions || [
+  const primaryActions = (payload.primary_actions || [
     { id: 'setup_text_ai', label: 'Set Up Text AI' },
-    { id: 'setup_image_ai', label: 'Set Up Image AI' },
     { id: 'setup_everything', label: 'Set Up Everything' },
-  ];
+  ]).filter((action) => action.id !== 'setup_image_ai');
   const summary = document.createElement('div');
   summary.className = 'readiness-summary';
   const textReady = byType.model_provider?.status_level === 'ready' && byType.selected_model?.status_level === 'ready';
@@ -2323,7 +2287,7 @@ function renderDependencyReadiness(payload) {
     const selectedModel = item.selected_model ? `<div>Selected model: <code>${escapeHtml(item.selected_model)}</code></div>` : '';
     const command = commandFromAction(item.next_action);
     const copyButton = command ? `<button class="copy-cmd-btn" data-command="${escapeHtml(command)}">Copy command</button>` : '';
-    const actionButtons = (item.actions || [])
+    const actionButtons = (item.provider_type === 'image_provider' ? [] : (item.actions || []))
       .map((action) => `<button class="readiness-action-btn" data-action="${escapeHtml(action.id)}">${escapeHtml(action.label)}</button>`)
       .join('');
     const statusCode = item.status_code ? `<div>Status: <code>${escapeHtml(toTitle(item.status_code))}</code></div>` : '<div>Status: <code>connected</code></div>';
@@ -2346,7 +2310,7 @@ function renderDependencyReadiness(payload) {
       <div>${escapeHtml(item.user_message || '')}</div>
       ${startupInfo}
       ${startupStep}
-      <div>Next step: ${escapeHtml(item.next_action || 'No action needed.')}</div>
+      <div>Next step: ${escapeHtml(item.provider_type === 'image_provider' ? 'Use Set Up Image AI in Visual Pipeline.' : (item.next_action || 'No action needed.'))}</div>
       ${fallbackInfo}
       ${startupLog}
       <div class="readiness-action-row">${actionButtons}${copyButton}</div>
@@ -2863,45 +2827,15 @@ document.getElementById('apply-settings').onclick = applySettings;
 document.getElementById('open-setup-modal').onclick = openSetupModal;
 document.getElementById('close-setup-modal').onclick = closeSetupModal;
 document.getElementById('setup-text-ai').onclick = () => runReadinessAction('setup_text_ai', {});
-document.getElementById('setup-image-ai').onclick = () => runReadinessAction('setup_image_ai', {});
+bindClickOnce(document.getElementById('setup-image-ai'), () => runReadinessAction('setup_image_ai', {}).catch((error) => setStatus(error.message, true)));
 document.getElementById('setup-everything').onclick = () => runReadinessAction('setup_everything', {});
 document.getElementById('download-ollama').onclick = () => openOfficialDownload('https://ollama.com/download');
-document.getElementById('download-comfyui').onclick = () => openOfficialDownload('https://github.com/comfyanonymous/ComfyUI');
 document.getElementById('pick-ollama-folder').onclick = () => pickFolder('Select Ollama install folder', ollamaPathInput);
-document.getElementById('pick-comfyui-folder').onclick = () => pickFolder('Select ComfyUI folder', comfyuiPathInput);
-document.getElementById('pick-comfyui-workflow-file').onclick = () => pickFile('Select ComfyUI workflow JSON', comfyuiWorkflowPathInput, ['.json']);
-document.getElementById('pick-comfyui-output-folder').onclick = () => pickFolder('Select ComfyUI output folder', comfyuiOutputDirInput);
-bindClickOnce(pickCheckpointFolderButton, () => chooseExistingModelFolder().catch((error) => setStatus(error.message, true)));
-bindClickOnce(useBundledImageEngineButton, () => useBundledImageEngine().catch((error) => setStatus(error.message, true)));
-bindClickOnce(chooseExistingModelFolderButton, () => chooseExistingModelFolder().catch((error) => setStatus(error.message, true)));
-bindClickOnce(openRecommendedModelPageButton, openRecommendedModelPage);
-bindClickOnce(skipImagesForNowButton, () => skipImagesForNow().catch((error) => setStatus(error.message, true)));
-bindClickOnce(recheckImageSetupButton, async () => {
-    await Promise.all([refreshDependencyReadiness(), refreshImageSetupSnapshot()]);
-    setStatus('Image setup rechecked.');
-  });
-bindClickOnce(verifyImageBackendButton, async () => {
-  await Promise.all([refreshDependencyReadiness(), refreshImageSetupSnapshot(), refreshImageBackendDiagnostics()]);
-  setStatus('Image backend verified.');
-});
-bindClickOnce(checkImageEngineStatusButton, () => checkImageEngineStatus().catch((error) => setStatus(error.message, true)));
-bindClickOnce(startImageBackendButton, () => runReadinessAction('start_image_engine', {}).catch((error) => setStatus(error.message, true)));
-bindClickOnce(stopImageBackendButton, () => stopImageBackend().catch((error) => setStatus(error.message, true)));
-bindClickOnce(openImageEngineUiButton, () => api('/api/setup/open-image-engine-ui', { method: 'POST' })
-  .then((result) => setStatus(result.message || (result.ok ? 'Opened ComfyUI debug UI.' : 'Could not open ComfyUI UI.'), !result.ok))
-  .catch((error) => setStatus(error.message, true)));
-bindClickOnce(locateExistingComfyuiFolderButton, () => locateExistingComfyuiFolder().catch((error) => setStatus(error.message, true)));
+bindClickOnce(disableImageAiButton, () => skipImagesForNow().catch((error) => setStatus(error.message, true)));
+bindClickOnce(retryImageAiSetupButton, () => runReadinessAction('setup_image_ai', {}).catch((error) => setStatus(error.message, true)));
 bindClickOnce(openImageBackendFolderButton, () => openLocalPath(latestImageBackendDiagnostics?.diagnostics?.comfyui_path, 'Image backend folder').catch((error) => setStatus(error.message, true)));
-bindClickOnce(openWorkflowsFolderButton, () => {
-  const workflowPath = latestImageBackendDiagnostics?.diagnostics?.workflow_path || '';
-  const folder = workflowPath.includes('/') || workflowPath.includes('\\')
-    ? workflowPath.replace(/[\\/][^\\/]+$/, '')
-    : '';
-  return openLocalPath(folder, 'Workflows folder').catch((error) => setStatus(error.message, true));
-});
 bindClickOnce(showImageDiagnosticsButton, () => refreshImageBackendDiagnostics().catch((error) => setStatus(error.message, true)));
 document.getElementById('connect-ollama-folder').onclick = connectOllamaFolder;
-document.getElementById('apply-visual-pipeline-settings').onclick = applyVisualPipelineSettings;
 document.getElementById('install-story-model').onclick = () => runReadinessAction('install_model', { selected_model: document.getElementById('model-name').value.trim() || 'llama3' });
 document.getElementById('refresh-supported-models').onclick = async () => {
   try {
@@ -2911,8 +2845,6 @@ document.getElementById('refresh-supported-models').onclick = async () => {
     setStatus(error.message, true);
   }
 };
-document.getElementById('start-image-engine-from-setup').onclick = () => runReadinessAction('start_image_engine', {});
-document.getElementById('test-image-pipeline-from-setup').onclick = () => runReadinessAction('test_image_pipeline', {});
 document.getElementById('recheck-readiness').onclick = async () => {
   try {
     await runReadinessAction('recheck', {});
