@@ -151,7 +151,7 @@ def test_main_startup_failure_skips_input_when_stdin_unavailable(monkeypatch) ->
     assert run.main() == 1
 
 
-def test_startup_log_file_uses_project_logs_in_source_mode(monkeypatch, tmp_path: Path) -> None:
+def test_startup_log_file_uses_user_data_logs_in_source_mode(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("ADVENTURER_GUILD_AI_USER_DATA_DIR", str(tmp_path / "user_data"))
     monkeypatch.setattr(run.sys, "frozen", False, raising=False)
-    monkeypatch.setattr(run, "project_root", lambda: tmp_path)
-    assert run._startup_log_file() == tmp_path / "logs" / "startup.log"
+    assert run._startup_log_file() == tmp_path / "user_data" / "logs" / "startup.log"
