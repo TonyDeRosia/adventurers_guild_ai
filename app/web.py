@@ -1646,7 +1646,16 @@ class WebRuntime:
         dep_message = "Dependencies verified."
         if dep_installed:
             dep_message = f"Dependencies installed/updated: {', '.join(dep_installed)}."
-        steps.append({"step": "install-requirements", "state": "ready", "message": dep_message})
+        dep_degraded = bool(dep_result.get("degraded", False))
+        if dep_degraded:
+            degraded_detail = " ".join(str(item) for item in dep_result.get("degraded_details", []) if str(item).strip())
+            steps.append({
+                "step": "install-requirements",
+                "state": "warning",
+                "message": f"{dep_message} Optional dependency issues detected. {degraded_detail}".strip(),
+            })
+        else:
+            steps.append({"step": "install-requirements", "state": "ready", "message": dep_message})
         workflow_status = path_status.get("workflow_path", {})
         print("[setup-orchestrator] setup-image step=validate-workflow")
         if not bool(workflow_status.get("valid", False)):
@@ -1682,12 +1691,14 @@ class WebRuntime:
         ready = bool(engine_ready)
         return {
             "ok": ready,
-            "message": "Image AI setup complete." if ready and model_ready else "ComfyUI engine is ready, but model setup still needs attention." if ready else "Image AI setup did not complete.",
+            "message": "Image AI setup complete." if ready and model_ready and not dep_degraded else "Image AI setup complete in degraded mode." if ready and dep_degraded else "ComfyUI engine is ready, but model setup still needs attention." if ready else "Image AI setup did not complete.",
             "steps": steps,
-            "summary": "Image AI engine ready." if ready and not model_ready else "Image AI ready." if ready else "Image AI setup did not complete.",
+            "summary": "Image AI ready (degraded mode)." if ready and dep_degraded else "Image AI engine ready." if ready and not model_ready else "Image AI ready." if ready else "Image AI setup did not complete.",
             "readiness": self._refresh_readiness_snapshot(),
             "engine_ready": engine_ready,
             "model_ready": model_ready,
+            "degraded": dep_degraded,
+            "degraded_details": dep_result.get("degraded_details", []),
         }
 
     def orchestrate_setup_everything(self, model_name: str | None = None) -> dict[str, Any]:
@@ -2096,6 +2107,72 @@ class WebRuntime:
 
         return {"category": category, "summary": summary, "matched_line": matched_line}
 
+    def _run_pip_install_with_retries(
+        self,
+        runtime_command: list[str],
+        pip_args: list[str],
+        *,
+        cwd: Path,
+        timeout_seconds: int,
+        attempts: int = 2,
+    ) -> dict[str, Any]:
+        pip_command = [*runtime_command, "-m", "pip", *pip_args]
+        attempt_outputs: list[str] = []
+        last_result: subprocess.CompletedProcess[str] | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                try:
+                    result = self._run_runtime_python_capture(
+                        runtime_command,
+                        ["-m", "pip", *pip_args],
+                        timeout_seconds=timeout_seconds,
+                        cwd=cwd,
+                    )
+                except TypeError:
+                    result = self._run_runtime_python_capture(
+                        runtime_command,
+                        ["-m", "pip", *pip_args],
+                        timeout_seconds=timeout_seconds,
+                    )
+            except subprocess.TimeoutExpired:
+                detail = f"pip timed out after {timeout_seconds}s on attempt {attempt}/{attempts}."
+                attempt_outputs.append(detail)
+                if attempt < attempts:
+                    continue
+                classification = self._classify_pip_install_error(detail)
+                return {
+                    "ok": False,
+                    "detail": "\n\n".join(attempt_outputs),
+                    "error_category": classification["category"] or "network",
+                    "error_line": detail,
+                    "pip_command": self._format_command(pip_command),
+                    "returncode": None,
+                    "attempts": attempts,
+                }
+            last_result = result
+            output_text = (result.stderr or result.stdout or "").strip()
+            if output_text:
+                attempt_outputs.append(f"[attempt {attempt}/{attempts}]\n{output_text}")
+            if result.returncode == 0:
+                return {
+                    "ok": True,
+                    "detail": "\n\n".join(attempt_outputs),
+                    "pip_command": self._format_command(pip_command),
+                    "returncode": 0,
+                    "attempts": attempt,
+                }
+        detail = "\n\n".join(attempt_outputs).strip()
+        classification = self._classify_pip_install_error(detail)
+        return {
+            "ok": False,
+            "detail": detail,
+            "error_category": classification["category"],
+            "error_line": classification["matched_line"],
+            "pip_command": self._format_command(pip_command),
+            "returncode": last_result.returncode if last_result else None,
+            "attempts": attempts,
+        }
+
     def _bootstrap_runtime_pip(self, runtime_command: list[str], *, python_executable: str) -> dict[str, Any]:
         self._update_image_bootstrap_progress(
             state="verifying pip",
@@ -2154,6 +2231,59 @@ class WebRuntime:
         package_info = self._required_comfyui_python_packages(comfyui_root)
         requirements_file = Path(str(package_info.get("requirements_file", "")))
         installed_packages: list[str] = []
+        degraded_details: list[str] = []
+
+        self._update_image_bootstrap_progress(
+            state="upgrading pip",
+            step="upgrading-pip",
+            summary="Upgrading pip, setuptools, and wheel in the managed ComfyUI runtime.",
+        )
+        pip_upgrade = self._run_pip_install_with_retries(
+            runtime_command,
+            ["install", "--upgrade", "pip", "setuptools", "wheel"],
+            cwd=comfyui_root,
+            timeout_seconds=180,
+            attempts=2,
+        )
+        if not pip_upgrade.get("ok", False):
+            degraded_details.append(
+                f"pip tooling upgrade failed; continuing with existing pip. error_line={str(pip_upgrade.get('error_line', '')).strip()}"
+            )
+        else:
+            installed_packages.append("pip setuptools wheel (upgraded)")
+
+        critical_dependencies = ["sqlalchemy"]
+        for package_name in critical_dependencies:
+            self._update_image_bootstrap_progress(
+                state="installing requirements",
+                step="installing-critical-dependencies",
+                summary=f"Installing critical dependency: {package_name}.",
+            )
+            install_critical = self._run_pip_install_with_retries(
+                runtime_command,
+                ["install", package_name],
+                cwd=comfyui_root,
+                timeout_seconds=240,
+                attempts=2,
+            )
+            if not install_critical.get("ok", False):
+                detail = str(install_critical.get("detail", "")).strip()
+                classification = self._classify_pip_install_error(detail)
+                return {
+                    "ok": False,
+                    "stage": "dependency-bootstrap",
+                    "message": f"Failed to install dependency: {package_name}",
+                    "detail": detail,
+                    "error_category": str(install_critical.get("error_category") or classification["category"]),
+                    "error_line": str(install_critical.get("error_line") or classification["matched_line"]),
+                    "pip_command": str(install_critical.get("pip_command", "")),
+                    "working_directory": str(comfyui_root),
+                    "returncode": install_critical.get("returncode"),
+                    "python_executable": python_executable,
+                    "missing_dependency": package_name,
+                }
+            installed_packages.append(package_name)
+
         if bool(package_info.get("requirements_file_present", False)) and requirements_file.exists():
             self._update_image_bootstrap_progress(
                 state="installing requirements",
@@ -2161,33 +2291,42 @@ class WebRuntime:
                 summary=f"Installing ComfyUI requirements from {requirements_file.name}.",
             )
             print(f"[setup-deps] installing requirements file={requirements_file}")
-            pip_install_command = [*runtime_command, "-m", "pip", "install", "-r", str(requirements_file)]
-            install_requirements = self._run_runtime_python_capture(
+            install_requirements = self._run_pip_install_with_retries(
                 runtime_command,
-                ["-m", "pip", "install", "-r", str(requirements_file)],
+                ["install", "-r", str(requirements_file)],
                 timeout_seconds=60 * 10,
                 cwd=comfyui_root,
+                attempts=2,
             )
-            if install_requirements.returncode != 0:
-                detail = (install_requirements.stderr or install_requirements.stdout or "").strip()
+            if not install_requirements.get("ok", False):
+                detail = str(install_requirements.get("detail", "")).strip()
                 classification = self._classify_pip_install_error(detail)
-                return {
-                    "ok": False,
-                    "stage": "dependency-bootstrap",
-                    "message": (
-                        f"{classification['summary']} "
-                        f"pip exited with code {install_requirements.returncode} while installing {requirements_file.name}."
-                    ),
-                    "detail": detail,
-                    "error_category": classification["category"],
-                    "error_line": classification["matched_line"],
-                    "pip_command": self._format_command(pip_install_command),
-                    "working_directory": str(comfyui_root),
-                    "requirements_file": str(requirements_file),
-                    "returncode": install_requirements.returncode,
-                    "python_executable": python_executable,
-                }
-            installed_packages.append(f"-r {requirements_file.name}")
+                error_line = str(install_requirements.get("error_line") or classification["matched_line"])
+                optional_markers = ("xformers", "triton", "onnxruntime-gpu", "insightface", "opencv-contrib-python")
+                is_optional_failure = any(marker in error_line.lower() for marker in optional_markers)
+                if not is_optional_failure:
+                    return {
+                        "ok": False,
+                        "stage": "dependency-bootstrap",
+                        "message": (
+                            f"{classification['summary']} "
+                            f"pip exited with code {install_requirements.get('returncode')} while installing {requirements_file.name}."
+                        ),
+                        "detail": detail,
+                        "error_category": str(install_requirements.get("error_category") or classification["category"]),
+                        "error_line": error_line,
+                        "pip_command": str(install_requirements.get("pip_command", "")),
+                        "working_directory": str(comfyui_root),
+                        "requirements_file": str(requirements_file),
+                        "returncode": install_requirements.get("returncode"),
+                        "python_executable": python_executable,
+                    }
+                degraded_details.append(
+                    f"{classification['summary']} requirements install had optional package failures; continuing in degraded mode."
+                )
+                degraded_details.append(f"error_line={error_line}")
+            else:
+                installed_packages.append(f"-r {requirements_file.name}")
 
         import_targets = {"sqlalchemy": "sqlalchemy"}
         missing_imports: list[str] = []
@@ -2238,6 +2377,8 @@ class WebRuntime:
             "pip_version": pip_bootstrap.get("pip_version", ""),
             "ensurepip_attempted": pip_bootstrap.get("ensurepip_attempted"),
             "fallback_attempted": pip_bootstrap.get("fallback_attempted"),
+            "degraded": bool(degraded_details),
+            "degraded_details": degraded_details,
         }
 
     def _download_and_extract_comfyui(self, target_dir: Path) -> tuple[bool, str]:
@@ -2989,6 +3130,9 @@ class WebRuntime:
             self._append_image_startup_log(startup_log_lines, f"Dependency bootstrap installed: {', '.join(installed_packages)}")
         else:
             self._append_image_startup_log(startup_log_lines, "Dependency bootstrap verified required modules are already available.")
+        if bool(dependency_bootstrap.get("degraded", False)):
+            degraded_detail = " ".join(str(item) for item in dependency_bootstrap.get("degraded_details", []) if str(item).strip())
+            self._append_image_startup_log(startup_log_lines, f"Dependency bootstrap degraded: {degraded_detail}")
         self._update_image_bootstrap_progress(state="starting ComfyUI", step="launch-engine", summary="Starting ComfyUI process.")
         print("[setup-orchestrator] setup-image step=launch-engine")
         process: subprocess.Popen[str] | None = None
@@ -3092,23 +3236,29 @@ class WebRuntime:
                 }
             if self.get_image_status().get("reachable", False):
                 print("[setup-action] start-image-engine success")
+                dependency_degraded = bool(dependency_bootstrap.get("degraded", False))
+                degraded_details = list(dependency_bootstrap.get("degraded_details", []))
                 self._set_image_startup_status(
                     state="ready",
                     stage="wait-for-readiness",
                     reason="ready",
-                    summary="ComfyUI started and is reachable.",
+                    summary="ComfyUI started and is reachable." if not dependency_degraded else "ComfyUI started (degraded dependency mode).",
                     current_step="ready",
                     log_text=self._sanitize_image_startup_log(startup_log_lines + self._read_startup_log_tail(startup_log_file)),
                     log_available=True,
                     log_file=str(startup_log_file),
                     managed_process=self.comfy_manager.snapshot().running,
+                    degraded=dependency_degraded,
+                    degraded_details=degraded_details,
                 )
                 self._image_engine_state = "running"
                 return {
                     "ok": True,
-                    "message": "ComfyUI started and is reachable.",
+                    "message": "ComfyUI started and is reachable." if not dependency_degraded else "ComfyUI started (degraded dependency mode).",
                     "managed_process": self.comfy_manager.snapshot().running,
                     "readiness_refreshed": True,
+                    "degraded": dependency_degraded,
+                    "degraded_details": degraded_details,
                     "steps": [
                         {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
                         {"step": "verify-install", "state": "ready", "message": "Install verification completed."},
