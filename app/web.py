@@ -743,57 +743,141 @@ class WebRuntime:
     def _is_supported_model_file(path: Path) -> bool:
         return path.is_file() and path.suffix.lower() in {".safetensors", ".ckpt", ".pt", ".pth", ".bin"}
 
+    @staticmethod
+    def _zip_member_is_safe(member_name: str) -> bool:
+        normalized = str(member_name or "").replace("\\", "/")
+        if not normalized or normalized.endswith("/"):
+            return True
+        member_path = Path(normalized)
+        if member_path.is_absolute():
+            return False
+        return ".." not in member_path.parts
+
+    def _resolve_comfyui_source_layout(self, source_root: Path) -> dict[str, Any]:
+        resolved_source = source_root.resolve()
+        selected_source_type = "source_folder"
+        resolved_import_root = resolved_source
+        resolved_source_dir = resolved_source
+
+        def _has_required_layout(candidate: Path) -> bool:
+            required_dirs = ["models", "custom_nodes", "input", "output", "user"]
+            return (candidate / "main.py").is_file() and all((candidate / item).exists() for item in required_dirs)
+
+        def _is_portable_root(candidate: Path) -> bool:
+            return _has_required_layout(candidate / "ComfyUI")
+
+        if _has_required_layout(resolved_source):
+            parent = resolved_source.parent
+            if parent.exists() and _is_portable_root(parent):
+                selected_source_type = "portable_root"
+                resolved_import_root = parent.resolve()
+        elif _is_portable_root(resolved_source):
+            selected_source_type = "portable_root"
+            resolved_import_root = resolved_source
+            resolved_source_dir = (resolved_source / "ComfyUI").resolve()
+        else:
+            missing: list[str] = []
+            source_main = (resolved_source / "main.py").is_file()
+            nested_main = (resolved_source / "ComfyUI" / "main.py").is_file()
+            if not source_main and not nested_main:
+                missing.append("main.py (either in selected folder or in selected folder/ComfyUI)")
+            required_dirs = ["models", "custom_nodes", "input", "output", "user"]
+            if source_main:
+                source_dir = resolved_source
+            elif nested_main:
+                source_dir = resolved_source / "ComfyUI"
+            else:
+                source_dir = None
+            if source_dir is not None:
+                missing_required = [folder for folder in required_dirs if not (source_dir / folder).exists()]
+                if missing_required:
+                    missing.append(f"runtime folders ({', '.join(missing_required)})")
+            launchers = ["run_cpu.bat", "run_nvidia_gpu.bat"]
+            if not any((resolved_source / launcher).is_file() for launcher in launchers):
+                missing.append("portable launch script (run_cpu.bat or run_nvidia_gpu.bat)")
+            runtimes = ["python_embeded", ".venv"]
+            if not any((resolved_source / runtime).exists() for runtime in runtimes):
+                missing.append("python runtime folder (python_embeded or .venv)")
+            missing_text = "; ".join(missing) if missing else "required ComfyUI files"
+            return {
+                "ok": False,
+                "message": (
+                    "Selected folder is not a valid ComfyUI source. "
+                    "Expected either a ComfyUI source folder containing main.py or a portable root containing "
+                    f"ComfyUI/main.py. Missing: {missing_text}."
+                ),
+            }
+
+        return {
+            "ok": True,
+            "kind": "folder",
+            "selected_source_type": selected_source_type,
+            "resolved_import_root": str(resolved_import_root),
+            "resolved_source_dir": str(resolved_source_dir),
+        }
+
+    def _extract_comfyui_zip_to_temp(self, source: Path) -> dict[str, Any]:
+        try:
+            with zipfile.ZipFile(source, "r") as archive:
+                members = archive.namelist()
+                if not members:
+                    return {"ok": False, "message": "ComfyUI zip archive is empty.", "error_code": "comfyui_zip_empty"}
+                unsafe = [member for member in members if not self._zip_member_is_safe(member)]
+                if unsafe:
+                    return {
+                        "ok": False,
+                        "message": "ComfyUI zip archive contains unsafe paths.",
+                        "error_code": "comfyui_zip_unsafe_paths",
+                        "detail": ", ".join(unsafe[:5]),
+                    }
+                temp_root = Path(tempfile.mkdtemp(prefix="agai-comfyui-import-"))
+                archive.extractall(temp_root)
+        except zipfile.BadZipFile:
+            return {"ok": False, "message": "Selected file is not a valid zip archive.", "error_code": "comfyui_zip_invalid"}
+        except (OSError, PermissionError) as exc:
+            return {
+                "ok": False,
+                "message": "ComfyUI zip extraction failed.",
+                "error_code": "comfyui_zip_extract_failed",
+                "detail": str(exc),
+            }
+
+        candidates = sorted({path.parent.resolve() for path in temp_root.rglob("main.py") if path.is_file()}, key=lambda item: len(item.parts))
+        for candidate in candidates:
+            layout = self._resolve_comfyui_source_layout(candidate)
+            if layout.get("ok", False):
+                return {
+                    "ok": True,
+                    "temp_root": str(temp_root),
+                    "resolved_source_dir": str(layout.get("resolved_source_dir", "")),
+                    "selected_source_type": str(layout.get("selected_source_type", "source_folder")),
+                }
+        shutil.rmtree(temp_root, ignore_errors=True)
+        return {
+            "ok": False,
+            "message": "Zip archive does not contain a valid ComfyUI runtime layout.",
+            "error_code": "comfyui_zip_missing_runtime",
+        }
+
     def _validate_comfyui_import_source(self, source: Path) -> dict[str, Any]:
         if not source.exists():
             return {"ok": False, "message": "ComfyUI source path does not exist."}
         if source.is_file():
             if source.suffix.lower() != ".zip":
                 return {"ok": False, "message": "ComfyUI source file must be a .zip archive."}
-            return {"ok": True, "kind": "zip"}
-        if source.is_dir():
-            resolved_source = source.resolve()
-            selected_source_type = "source_folder"
-            resolved_import_root = resolved_source
-            resolved_source_dir = resolved_source
-
-            def _is_portable_root(candidate: Path) -> bool:
-                return (candidate / "ComfyUI" / "main.py").is_file()
-
-            if (resolved_source / "main.py").is_file():
-                parent = resolved_source.parent
-                if parent.exists() and _is_portable_root(parent):
-                    selected_source_type = "portable_root"
-                    resolved_import_root = parent.resolve()
-            elif _is_portable_root(resolved_source):
-                selected_source_type = "portable_root"
-                resolved_import_root = resolved_source
-                resolved_source_dir = (resolved_source / "ComfyUI").resolve()
-            else:
-                missing: list[str] = []
-                if not (resolved_source / "main.py").is_file() and not (resolved_source / "ComfyUI" / "main.py").is_file():
-                    missing.append("main.py (either in selected folder or in selected folder/ComfyUI)")
-                launchers = ["run_cpu.bat", "run_nvidia_gpu.bat"]
-                if not any((resolved_source / launcher).is_file() for launcher in launchers):
-                    missing.append("portable launch script (run_cpu.bat or run_nvidia_gpu.bat)")
-                runtimes = ["python_embeded", ".venv"]
-                if not any((resolved_source / runtime).exists() for runtime in runtimes):
-                    missing.append("python runtime folder (python_embeded or .venv)")
-                missing_text = "; ".join(missing) if missing else "required ComfyUI files"
+            zip_validation = self._extract_comfyui_zip_to_temp(source)
+            temp_root = Path(str(zip_validation.get("temp_root", ""))).resolve() if zip_validation.get("temp_root") else None
+            if temp_root is not None and temp_root.exists():
+                shutil.rmtree(temp_root, ignore_errors=True)
+            if not zip_validation.get("ok", False):
                 return {
                     "ok": False,
-                    "message": (
-                        "Selected folder is not a valid ComfyUI source. "
-                        "Expected either a ComfyUI source folder containing main.py or a portable root containing "
-                        f"ComfyUI/main.py. Missing: {missing_text}."
-                    ),
+                    "message": str(zip_validation.get("message", "ComfyUI zip is invalid.")),
+                    "error_code": str(zip_validation.get("error_code", "comfyui_zip_invalid")),
                 }
-            return {
-                "ok": True,
-                "kind": "folder",
-                "selected_source_type": selected_source_type,
-                "resolved_import_root": str(resolved_import_root),
-                "resolved_source_dir": str(resolved_source_dir),
-            }
+            return {"ok": True, "kind": "zip"}
+        if source.is_dir():
+            return self._resolve_comfyui_source_layout(source)
         return {"ok": False, "message": "ComfyUI source must be a file or folder."}
 
     def _import_comfyui_source(self, source: Path, target_dir: Path) -> dict[str, Any]:
@@ -836,19 +920,30 @@ class WebRuntime:
         if target_dir.exists():
             shutil.rmtree(target_dir, ignore_errors=True)
         target_dir.parent.mkdir(parents=True, exist_ok=True)
+        import_source_dir: Path | None = None
+        temp_extract_root: Path | None = None
         try:
             if validation.get("kind") == "zip":
-                with zipfile.ZipFile(source, "r") as archive:
-                    archive.extractall(target_dir)
-                nested_main = next((p.parent for p in target_dir.rglob("main.py")), None)
-                if nested_main and nested_main != target_dir:
-                    for item in list(nested_main.iterdir()):
-                        shutil.move(str(item), str(target_dir / item.name))
-                _remove_dev_artifacts(target_dir)
+                zip_extract = self._extract_comfyui_zip_to_temp(source)
+                if not zip_extract.get("ok", False):
+                    return {
+                        "ok": False,
+                        "message": str(zip_extract.get("message", "ComfyUI zip extraction failed.")),
+                        "error_code": str(zip_extract.get("error_code", "comfyui_zip_extract_failed")),
+                        "detail": str(zip_extract.get("detail", "")),
+                    }
+                temp_extract_root = Path(str(zip_extract.get("temp_root", "")))
+                import_source_dir = Path(str(zip_extract.get("resolved_source_dir", "")))
             else:
-                normalized_source = Path(str(validation.get("resolved_source_dir") or source))
-                shutil.copytree(normalized_source, target_dir, dirs_exist_ok=True, ignore=_copy_ignore)
-                _remove_dev_artifacts(target_dir)
+                import_source_dir = Path(str(validation.get("resolved_source_dir") or source))
+            if import_source_dir is None or not import_source_dir.exists():
+                return {
+                    "ok": False,
+                    "message": "ComfyUI import source could not be resolved after normalization.",
+                    "error_code": "comfyui_import_source_unresolved",
+                }
+            shutil.copytree(import_source_dir, target_dir, dirs_exist_ok=True, ignore=_copy_ignore)
+            _remove_dev_artifacts(target_dir)
         except (OSError, PermissionError, shutil.Error, zipfile.BadZipFile) as exc:
             return {
                 "ok": False,
@@ -859,6 +954,9 @@ class WebRuntime:
                 "error_code": "comfyui_import_copy_failed",
                 "detail": str(exc),
             }
+        finally:
+            if temp_extract_root is not None and temp_extract_root.exists():
+                shutil.rmtree(temp_extract_root, ignore_errors=True)
         self._ensure_comfyui_runtime_folders(target_dir)
         install_validation = self.validate_comfyui_install(target_dir)
         if not install_validation.get("ok", False):
@@ -6939,6 +7037,8 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
                     "ok": False,
                     "message": "Image AI import failed unexpectedly. Please retry and verify source folder permissions.",
                     "error_code": "image_ai_import_unexpected_error",
+                    "failure_stage": "import-and-setup-image-ai",
+                    "next_step": "Retry import. If it keeps failing, choose a new ComfyUI zip/folder and model source.",
                     "detail": str(exc),
                 },
             )
