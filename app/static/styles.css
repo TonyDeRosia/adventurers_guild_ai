@@ -512,8 +512,17 @@ button:disabled {
   margin: 0;
   color: #9fd2ff;
 }
+.guided-image-stage-title {
+  margin: 6px 0 0;
+  font-size: 0.9rem;
+  color: #c7e3ff;
+}
 .guided-image-setup-actions {
   margin-top: 0;
+}
+.guided-source-path-input {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 .advanced-image-settings {
   border: 1px solid #2f4665;

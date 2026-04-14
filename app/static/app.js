@@ -202,7 +202,7 @@ function commandFromAction(actionText) {
 function actionTitle(actionId) {
   return {
     setup_text_ai: 'Set Up Text AI',
-    setup_image_ai: 'Set Up Image AI',
+    setup_image_ai: 'Import, Set Up, and Start Image AI',
     setup_everything: 'Set Up Everything',
     start_ollama: 'Start Ollama',
     install_ollama: 'Install Ollama',
@@ -480,13 +480,13 @@ function renderSupportedModels(payload) {
 }
 
 function updateSetupButtonsBusyState() {
-  const managedButtons = document.querySelectorAll('#setup-text-ai, #setup-image-ai, #retry-image-ai-setup, #setup-everything, #recheck-readiness, #disable-image-ai, .readiness-action-btn');
+  const managedButtons = document.querySelectorAll('#setup-text-ai, #import-image-ai, #retry-image-ai-setup, #setup-everything, #recheck-readiness, #disable-image-ai, .readiness-action-btn');
   managedButtons.forEach((button) => {
     const actionId = button.dataset.action || (button.id === 'setup-text-ai' ? 'setup_text_ai'
-      : button.id === 'setup-image-ai' ? 'setup_image_ai'
+      : button.id === 'import-image-ai' ? 'setup_image_ai'
       : button.id === 'setup-everything' ? 'setup_everything'
       : button.id === 'recheck-readiness' ? 'recheck'
-      : button.id === 'retry-image-ai-setup' ? 'recheck'
+      : button.id === 'retry-image-ai-setup' ? 'setup_image_ai'
       : button.id === 'disable-image-ai' ? 'guided_image_action'
       : '');
     if (!actionId) return;
@@ -602,10 +602,10 @@ async function runReadinessAction(actionId, item) {
       return;
     }
     if (actionId === 'setup_image_ai') {
-      startSetupRun(actionId, 'Starting Image AI setup...', [
-        { step: 'detect-install-path', label: 'Detect install path', state: 'running', message: 'Checking ComfyUI install path...' },
+      startSetupRun(actionId, 'Starting Image AI guided setup...', [
+        { step: 'validate-comfyui-source', label: 'Validate ComfyUI source', state: 'running', message: 'Checking selected ComfyUI source...' },
       ]);
-      setStatus('Set Up Image AI: installing / starting / waiting for readiness...');
+      setStatus('Import, Set Up, and Start Image AI: validating / importing / starting...');
       const result = await api('/api/setup/orchestrate-image', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
       });
@@ -1981,16 +1981,16 @@ function renderImageSetupCard(snapshot = latestImageSetupSnapshot) {
   const setupStatus = String(current.setup_status || '').trim();
   const statusLabel = setupStatus
     || (isSettingUp
-      ? 'Importing'
+      ? 'starting image ai'
       : isReady
-        ? 'Ready'
+        ? 'connected'
         : hasError
-          ? 'Error'
-          : (notInstalled ? 'Not configured' : 'Not configured'));
+          ? 'failed'
+          : (notInstalled ? 'waiting for comfyui source' : 'waiting for comfyui source'));
   imageAiSimpleStatus.textContent = `Status: ${statusLabel}`;
   if (imageAiSimpleError) {
     const errorText = String(startup.error_line || startup.summary || readiness.message || '').trim();
-    if (statusLabel === 'Error' && errorText) {
+    if (statusLabel === 'failed' && errorText) {
       imageAiSimpleError.classList.remove('hidden');
       imageAiSimpleError.textContent = `Error: ${errorText}`;
     } else {
@@ -1999,23 +1999,42 @@ function renderImageSetupCard(snapshot = latestImageSetupSnapshot) {
     }
   }
   if (retryImageAiSetupButton) {
-    retryImageAiSetupButton.classList.toggle('hidden', statusLabel !== 'Error');
+    retryImageAiSetupButton.classList.toggle('hidden', statusLabel !== 'failed');
   }
 }
 
-async function importAndSetupImageAi() {
+async function importAndSetupImageAi({ allowExisting = false } = {}) {
   const comfySource = imageImportComfySourceInput?.value.trim() || '';
   const modelSource = imageImportModelSourceInput?.value.trim() || '';
-  if (!comfySource || !modelSource) {
-    setStatus('Select both a ComfyUI source and a model source before importing.', true);
+  const hasSources = !!(comfySource && modelSource);
+  if (!hasSources && !allowExisting) {
+    setStatus('Select both a ComfyUI source and a model source before starting setup.', true);
     return;
   }
-  const result = await api('/api/setup/import-image-ai', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ comfyui_source: comfySource, model_source: modelSource }),
+  startSetupRun('setup_image_ai', 'Running guided Image AI setup flow...', [
+    { step: 'validate-comfyui-source', label: 'Validate ComfyUI source', state: 'running', message: hasSources ? 'Checking ComfyUI source path...' : 'Using existing managed ComfyUI runtime...' },
+  ]);
+  const result = hasSources
+    ? await api('/api/setup/import-image-ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ comfyui_source: comfySource, model_source: modelSource }),
+    })
+    : await api('/api/setup/orchestrate-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+  updateSetupRun({
+    steps: normalizeSetupSteps(result.steps),
+    summary: result.summary || result.message || (result.ok ? 'Image AI is ready.' : 'Image AI setup failed.'),
   });
-  setStatus(result.message || (result.ok ? 'Image AI import complete.' : 'Image AI import failed.'), !result.ok);
+  finishSetupRun({
+    summary: result.summary || result.message || (result.ok ? 'Image AI is ready.' : 'Image AI setup failed.'),
+    isError: !result.ok,
+    steps: normalizeSetupSteps(result.steps),
+  });
+  setStatus(result.message || (result.ok ? 'Image AI imported, set up, and started.' : 'Image AI setup failed.'), !result.ok);
   await Promise.all([loadSettings(), refreshDependencyReadiness(), refreshImageSetupSnapshot(), refreshImageBackendDiagnostics(), refreshComfyuiModelList()]);
 }
 
@@ -2866,7 +2885,6 @@ bindClickById('apply-settings', applySettings);
 bindClickById('open-setup-modal', openSetupModal);
 bindClickById('close-setup-modal', closeSetupModal);
 bindClickById('setup-text-ai', () => runReadinessAction('setup_text_ai', {}));
-bindClickById('setup-image-ai', () => runReadinessAction('setup_image_ai', {}).catch((error) => setStatus(error.message, true)), { once: true });
 bindClickById('open-comfyui-download-page', () => openOfficialDownload('https://github.com/comfyanonymous/ComfyUI/releases'));
 bindClickById('open-model-download-page', () => openOfficialDownload('https://civitai.com/models/4384/dreamshaper'));
 bindClickById('pick-image-import-comfy-file', () => pickFile('Select ComfyUI zip file', imageImportComfySourceInput, ['.zip']));
@@ -2878,7 +2896,7 @@ bindClickById('setup-everything', () => runReadinessAction('setup_everything', {
 bindClickById('download-ollama', () => openOfficialDownload('https://ollama.com/download'));
 bindClickById('pick-ollama-folder', () => pickFolder('Select Ollama install folder', ollamaPathInput));
 bindClickOnce(disableImageAiButton, () => skipImagesForNow().catch((error) => setStatus(error.message, true)));
-bindClickOnce(retryImageAiSetupButton, () => runReadinessAction('setup_image_ai', {}).catch((error) => setStatus(error.message, true)));
+bindClickOnce(retryImageAiSetupButton, () => importAndSetupImageAi({ allowExisting: true }).catch((error) => setStatus(error.message, true)));
 bindClickOnce(openImageBackendFolderButton, () => openLocalPath(latestImageBackendDiagnostics?.diagnostics?.comfyui_path, 'Image backend folder').catch((error) => setStatus(error.message, true)));
 bindClickOnce(showImageDiagnosticsButton, () => refreshImageBackendDiagnostics().catch((error) => setStatus(error.message, true)));
 bindClickById('connect-ollama-folder', connectOllamaFolder);

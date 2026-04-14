@@ -616,13 +616,13 @@ class WebRuntime:
             "desktop_capabilities": self.desktop.capabilities.to_dict(),
             "primary_actions": [
                 {"id": "setup_text_ai", "label": "Set Up Text AI"},
-                {"id": "setup_image_ai", "label": "Set Up Image AI"},
+                {"id": "setup_image_ai", "label": "Import, Set Up, and Start Image AI"},
                 {"id": "setup_everything", "label": "Set Up Everything"},
             ],
             "setup_checklist": [
                 "Primary onboarding actions:",
                 "1) Click Set Up Text AI to install/start Ollama and install the selected model.",
-                "2) (Optional) Click Set Up Image AI to enable image generation with bundled ComfyUI.",
+                "2) (Optional) Use Import, Set Up, and Start Image AI in Visual Pipeline to enable image generation with bundled ComfyUI.",
                 "3) Click Set Up Everything to run both in sequence.",
                 "Fallback actions:",
                 "Use Recheck and Copy command if a step fails and manual intervention is needed.",
@@ -699,17 +699,20 @@ class WebRuntime:
         checkpoint_dir = path_status.get("checkpoint_dir", {})
         comfy_resolved = str(path_status.get("comfyui_root", {}).get("resolved_path") or "").strip()
         model_resolved = str(checkpoint_dir.get("resolved_path") or "").strip()
-        setup_status = "not configured"
+        setup_status = "waiting for ComfyUI source"
         if comfy_resolved and model_resolved:
-            setup_status = "ready" if bool(image_status.get("ready", False)) else "model selected"
+            setup_status = "connected" if bool(image_status.get("ready", False)) else "preparing runtime"
         elif comfy_resolved:
-            setup_status = "ComfyUI selected"
+            setup_status = "waiting for model source"
         elif model_resolved:
-            setup_status = "model selected"
-        if str(self.image_startup_status.get("state", "")).lower() in {"starting comfyui", "repairing install", "queued"}:
-            setup_status = "importing"
+            setup_status = "waiting for ComfyUI source"
+        startup_state = str(self.image_startup_status.get("state", "")).lower()
+        if startup_state in {"starting comfyui", "queued"}:
+            setup_status = "starting Image AI"
+        if startup_state in {"repairing install"}:
+            setup_status = "preparing runtime"
         if str(image_status.get("status_code", "")) == "error":
-            setup_status = "error"
+            setup_status = "failed"
         first_run = self.get_first_run_status()
         return {
             "ok": True,
@@ -804,18 +807,35 @@ class WebRuntime:
     def import_and_setup_image_ai(self, comfyui_source: str, model_source: str) -> dict[str, Any]:
         comfy_source_path = Path(str(comfyui_source or "").strip())
         model_source_path = Path(str(model_source or "").strip())
+        steps: list[dict[str, str]] = []
         if not str(comfy_source_path):
-            return {"ok": False, "message": "ComfyUI source is required."}
+            return {"ok": False, "message": "ComfyUI source is required.", "summary": "Image AI failed.", "steps": [{"step": "validate-comfyui-source", "state": "failed", "message": "ComfyUI source is required."}]}
         if not str(model_source_path):
-            return {"ok": False, "message": "Model source is required."}
+            return {"ok": False, "message": "Model source is required.", "summary": "Image AI failed.", "steps": [{"step": "validate-model-source", "state": "failed", "message": "Model source is required."}]}
+        comfy_validation = self._validate_comfyui_import_source(comfy_source_path)
+        if not comfy_validation.get("ok", False):
+            return {"ok": False, "message": str(comfy_validation.get("message", "ComfyUI source is invalid.")), "summary": "Image AI failed.", "steps": [{"step": "validate-comfyui-source", "state": "failed", "message": str(comfy_validation.get("message", "ComfyUI source is invalid."))}]}
+        steps.append({"step": "validate-comfyui-source", "state": "ready", "message": "ComfyUI source validated."})
+        if not model_source_path.exists():
+            return {"ok": False, "message": "Model source path does not exist.", "summary": "Image AI failed.", "steps": steps + [{"step": "validate-model-source", "state": "failed", "message": "Model source path does not exist."}]}
+        if model_source_path.is_file() and not self._is_supported_model_file(model_source_path):
+            return {"ok": False, "message": "Model file must be .safetensors, .ckpt, .pt, .pth, or .bin.", "summary": "Image AI failed.", "steps": steps + [{"step": "validate-model-source", "state": "failed", "message": "Model file format is not supported."}]}
+        steps.append({"step": "validate-model-source", "state": "ready", "message": "Model source validated."})
         managed_root = self._coerce_managed_install_path()
         comfy_result = self._import_comfyui_source(comfy_source_path, managed_root)
         if not comfy_result.get("ok", False):
-            return {"ok": False, "message": str(comfy_result.get("message", "ComfyUI import failed."))}
+            return {"ok": False, "message": str(comfy_result.get("message", "ComfyUI import failed.")), "summary": "Image AI failed.", "steps": steps + [{"step": "import-comfyui", "state": "failed", "message": str(comfy_result.get("message", "ComfyUI import failed."))}]}
+        steps.append({"step": "import-comfyui", "state": "ready", "message": "ComfyUI imported into managed runtime."})
         checkpoint_target = managed_root / "models" / "checkpoints"
         model_result = self._import_model_source(model_source_path, checkpoint_target)
         if not model_result.get("ok", False):
-            return {"ok": False, "message": str(model_result.get("message", "Model import failed."))}
+            return {"ok": False, "message": str(model_result.get("message", "Model import failed.")), "summary": "Image AI failed.", "steps": steps + [{"step": "import-model", "state": "failed", "message": str(model_result.get("message", "Model import failed."))}]}
+        steps.append({"step": "import-model", "state": "ready", "message": "Model imported into managed checkpoint folder."})
+        install_validation = self.validate_comfyui_install(managed_root)
+        if not install_validation.get("ok", False):
+            missing = ", ".join(install_validation.get("missing_files", []))
+            return {"ok": False, "message": f"Managed ComfyUI install is missing required files: {missing}.", "summary": "Image AI failed.", "steps": steps + [{"step": "validate-managed-install", "state": "failed", "message": f"Missing required files: {missing}."}]}
+        steps.append({"step": "validate-managed-install", "state": "ready", "message": "Managed ComfyUI install structure is valid."})
         self.app_config.image.provider = "comfyui"
         self.app_config.image.enabled = True
         self.app_config.image.comfyui_path = ""
@@ -828,17 +848,34 @@ class WebRuntime:
             self.app_config.image.comfyui_workflow_path = str(default_workflow)
         self.config_store.save(self.app_config)
         self.image_adapter = self._create_image_adapter()
+        steps.append({"step": "prepare-runtime", "state": "ready", "message": "Runtime configuration prepared."})
         start_result = self.start_image_engine()
         if not start_result.get("ok", False):
             return {
                 "ok": False,
                 "message": str(start_result.get("message", "Import succeeded but launch failed.")),
+                "summary": "Image AI failed.",
+                "steps": steps + [{"step": "start-image-ai", "state": "failed", "message": str(start_result.get("message", "Import succeeded but launch failed."))}],
                 "managed_comfyui_path": str(managed_root),
                 "managed_checkpoint_path": str(checkpoint_target),
             }
+        steps.append({"step": "start-image-ai", "state": "ready", "message": str(start_result.get("message", "ComfyUI started."))})
+        ready = bool(self.get_image_status().get("reachable", False))
+        if not ready:
+            return {
+                "ok": False,
+                "message": "Image AI startup completed but readiness check did not pass.",
+                "summary": "Image AI failed.",
+                "steps": steps + [{"step": "readiness-check", "state": "failed", "message": "ComfyUI is not reachable yet."}],
+                "managed_comfyui_path": str(managed_root),
+                "managed_checkpoint_path": str(checkpoint_target),
+            }
+        steps.append({"step": "readiness-check", "state": "ready", "message": "ComfyUI is reachable and connected."})
         return {
             "ok": True,
-            "message": "Image AI imported into managed runtime and started in background.",
+            "message": "Image AI imported, set up, started in background, and connected.",
+            "summary": "Image AI connected.",
+            "steps": steps,
             "managed_comfyui_path": str(managed_root),
             "managed_checkpoint_path": str(checkpoint_target),
             "preferred_checkpoint": self.app_config.image.preferred_checkpoint,
@@ -1725,7 +1762,7 @@ class WebRuntime:
                 return {
                     "ok": False,
                     "message": "Image AI setup requires image provider set to comfyui.",
-                    "next_step": "Set image provider to comfyui, then click Set Up Image AI.",
+                    "next_step": "Set image provider to comfyui, then run Import, Set Up, and Start Image AI.",
                     "summary": "Image AI failed: provider is not comfyui.",
                 }
             steps: list[dict[str, str]] = []
