@@ -521,6 +521,81 @@ def test_validate_comfyui_install_marks_missing_pyvenv_cfg_as_broken_runtime(tmp
     assert "python-runtime-broken" in validation["missing_files"]
 
 
+def test_install_embedded_python_runtime_cleans_broken_runtime_remnants(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    target_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
+    venv_scripts = target_dir / ".venv" / "Scripts"
+    venv_scripts.mkdir(parents=True, exist_ok=True)
+    (venv_scripts / "python.exe").write_text("", encoding="utf-8")
+    (target_dir / "python-runtime-broken").write_text("1", encoding="utf-8")
+    (target_dir / "python_embeded").mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr("shutil.which", lambda name: "python" if name == "python" else None)
+
+    def _fake_run_command(cmd: list[str], timeout_seconds: int = 0):
+        if "-m" in cmd and "venv" in cmd:
+            rebuilt_scripts = target_dir / ".venv" / "Scripts"
+            rebuilt_scripts.mkdir(parents=True, exist_ok=True)
+            (rebuilt_scripts / "python.exe").write_text("", encoding="utf-8")
+            (target_dir / ".venv" / "pyvenv.cfg").write_text("home = C:\\Python311", encoding="utf-8")
+            return subprocess.CompletedProcess(cmd, 0, stdout="ok", stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout="pip 25.0", stderr="")
+
+    monkeypatch.setattr(runtime, "_run_command_capture", _fake_run_command)
+    def _validate_runtime(*_args, **_kwargs):
+        if (target_dir / ".venv" / "pyvenv.cfg").exists():
+            return {"ok": True, "message": "ok"}
+        return {"ok": False, "message": "Python runtime check failed with exit code 106 (No pyvenv.cfg file)"}
+
+    monkeypatch.setattr(runtime, "_validate_python_runtime", _validate_runtime)
+
+    ok, message = runtime._install_embedded_python_runtime(target_dir)
+
+    assert ok is True
+    assert "venv runtime ready" in message
+    assert not (target_dir / "python-runtime-broken").exists()
+    assert not (target_dir / "python_embeded").exists()
+    assert (target_dir / ".venv" / "pyvenv.cfg").exists()
+
+
+def test_install_embedded_python_runtime_detects_missing_pyvenv_and_rebuilds(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    target_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
+    broken_runtime = target_dir / ".venv" / "Scripts" / "python.exe"
+    broken_runtime.parent.mkdir(parents=True, exist_ok=True)
+    broken_runtime.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr("shutil.which", lambda name: "python" if name == "python" else None)
+    calls: list[tuple[str, ...]] = []
+
+    def _fake_run_command(cmd: list[str], timeout_seconds: int = 0):
+        calls.append(tuple(cmd))
+        if "-m" in cmd and "venv" in cmd:
+            rebuilt_scripts = target_dir / ".venv" / "Scripts"
+            rebuilt_scripts.mkdir(parents=True, exist_ok=True)
+            (rebuilt_scripts / "python.exe").write_text("", encoding="utf-8")
+            (target_dir / ".venv" / "pyvenv.cfg").write_text("home = C:\\Python311", encoding="utf-8")
+            return subprocess.CompletedProcess(cmd, 0, stdout="ok", stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout="pip 25.0", stderr="")
+
+    monkeypatch.setattr(runtime, "_run_command_capture", _fake_run_command)
+    def _validate_runtime(*_args, **_kwargs):
+        if (target_dir / ".venv" / "pyvenv.cfg").exists():
+            return {"ok": True, "message": "ok"}
+        return {"ok": False, "message": "Python runtime check failed with exit code 106 (No pyvenv.cfg file)"}
+
+    monkeypatch.setattr(runtime, "_validate_python_runtime", _validate_runtime)
+
+    ok, _message = runtime._install_embedded_python_runtime(target_dir)
+    recreated = [cmd for cmd in calls if "-m" in cmd and "venv" in cmd]
+
+    assert ok is True
+    assert recreated
+    assert (target_dir / ".venv" / "pyvenv.cfg").exists()
+
+
 def test_install_image_engine_recreates_broken_managed_venv(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.app_config.image.provider = "comfyui"
@@ -585,6 +660,21 @@ def test_import_image_ai_repairs_broken_managed_runtime_before_startup(tmp_path:
 
     assert result["ok"] is True
     assert repaired == ["repair"]
+
+
+def test_import_comfyui_source_ignores_stale_runtime_and_allows_clean_repair(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    source_root = _make_comfy_source_folder(tmp_path)
+    broken_python = source_root / ".venv" / "Scripts" / "python.exe"
+    broken_python.parent.mkdir(parents=True, exist_ok=True)
+    broken_python.write_text("", encoding="utf-8")
+    target_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
+
+    result = runtime._import_comfyui_source(source_root, target_dir)
+
+    assert result["ok"] is True
+    assert (target_dir / "main.py").exists()
+    assert (target_dir / ".venv" / "Scripts" / "python.exe").exists()
 
 
 def test_image_setup_snapshot_reports_guided_status(tmp_path: Path, monkeypatch) -> None:

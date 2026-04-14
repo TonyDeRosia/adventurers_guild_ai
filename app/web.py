@@ -958,9 +958,9 @@ class WebRuntime:
             if temp_extract_root is not None and temp_extract_root.exists():
                 shutil.rmtree(temp_extract_root, ignore_errors=True)
         self._ensure_comfyui_runtime_folders(target_dir)
-        install_validation = self.validate_comfyui_install(target_dir)
-        if not install_validation.get("ok", False):
-            missing = ", ".join(install_validation.get("missing_files", []))
+        source_validation = self._validate_comfyui_source_structure(target_dir)
+        if not source_validation.get("ok", False):
+            missing = ", ".join(source_validation.get("missing_files", []))
             return {"ok": False, "message": f"Imported ComfyUI content is incomplete: {missing}."}
         return {"ok": True, "message": "ComfyUI source imported.", "managed_path": str(target_dir)}
 
@@ -2305,6 +2305,19 @@ class WebRuntime:
         for folder in ("custom_nodes", "models", "output", "input", "user"):
             (target_dir / folder).mkdir(parents=True, exist_ok=True)
 
+    def _validate_comfyui_source_structure(self, target_dir: Path) -> dict[str, Any]:
+        missing_files: list[str] = []
+        required_dirs = ["custom_nodes", "models", "output", "input", "user"]
+        if not target_dir.exists() or not target_dir.is_dir():
+            missing_files.append("comfyui-root")
+        if not (target_dir / "main.py").is_file():
+            missing_files.append("main.py")
+        for required in required_dirs:
+            if not (target_dir / required).is_dir():
+                missing_files.append(f"{required}/")
+        valid = len(missing_files) == 0
+        return {"ok": valid, "valid": valid, "missing_files": missing_files, "required_dirs": required_dirs}
+
     @staticmethod
     def _venv_python_executable(venv_dir: Path) -> Path:
         return venv_dir / "Scripts" / "python.exe" if os.name == "nt" else venv_dir / "bin" / "python"
@@ -2373,6 +2386,40 @@ class WebRuntime:
             ),
         }
 
+    def _detect_broken_managed_runtime_state(self, target_dir: Path) -> tuple[bool, list[str]]:
+        reasons: list[str] = []
+        runtime_assessment = self._assess_managed_venv_runtime(target_dir)
+        if runtime_assessment.get("python_executable") and not runtime_assessment.get("ok", False):
+            reasons.extend([str(item) for item in runtime_assessment.get("reasons", []) if str(item)])
+        marker = target_dir / "python-runtime-broken"
+        if marker.exists():
+            reasons.append("python-runtime-broken-marker")
+        partial_python_roots = (
+            target_dir / "python.exe",
+            target_dir / "pythonw.exe",
+            target_dir / "python_embeded",
+            target_dir / "python_embedded",
+        )
+        for candidate in partial_python_roots:
+            if candidate.exists():
+                reasons.append(f"partial-runtime-remnant:{candidate.name}")
+        return (len(reasons) > 0, sorted(set(reasons)))
+
+    def _cleanup_managed_runtime_remnants(self, target_dir: Path) -> None:
+        cleanup_targets = (
+            target_dir / ".venv",
+            target_dir / "python-runtime-broken",
+            target_dir / "python_embeded",
+            target_dir / "python_embedded",
+            target_dir / "python.exe",
+            target_dir / "pythonw.exe",
+        )
+        for cleanup_target in cleanup_targets:
+            if cleanup_target.is_dir():
+                shutil.rmtree(cleanup_target, ignore_errors=True)
+            elif cleanup_target.exists():
+                cleanup_target.unlink(missing_ok=True)
+
     def _install_embedded_python_runtime(self, target_dir: Path) -> tuple[bool, str]:
         """Compatibility shim: managed runtime now uses a local .venv."""
         venv_dir = target_dir / ".venv"
@@ -2385,10 +2432,14 @@ class WebRuntime:
                 summary="Managed .venv detected. Verifying pip availability.",
             )
             return True, f"venv runtime ready: {venv_python}"
-        if venv_dir.exists():
+        has_broken_runtime, runtime_reasons = self._detect_broken_managed_runtime_state(target_dir)
+        if has_broken_runtime:
+            reason = ", ".join(runtime_reasons) or "existing runtime invalid"
+            print(f"[setup-orchestrator] runtime-repair cleanup-remnants reason={reason}")
+            self._cleanup_managed_runtime_remnants(target_dir)
+        elif venv_dir.exists():
             reason = ", ".join(runtime_assessment.get("reasons", [])) or "existing runtime invalid"
             print(f"[setup-orchestrator] runtime-repair removing managed .venv reason={reason}")
-        if venv_dir.exists():
             shutil.rmtree(venv_dir, ignore_errors=True)
         python_exe = shutil.which("python") or shutil.which("py")
         if not python_exe:
@@ -2404,7 +2455,7 @@ class WebRuntime:
         create = self._run_command_capture(create_cmd, timeout_seconds=180)
         if create.returncode != 0:
             detail = self._command_output_snippet(create)
-            return False, f"Failed to create ComfyUI .venv runtime: {detail}"
+            return False, f"Failed to rebuild managed ComfyUI .venv runtime: {detail}"
         if not venv_python.exists():
             return False, f"ComfyUI .venv creation did not produce runtime executable at {venv_python}."
         pyvenv_cfg = venv_dir / "pyvenv.cfg"
@@ -2412,7 +2463,7 @@ class WebRuntime:
             return False, "ComfyUI .venv creation did not produce pyvenv.cfg."
         runtime_check = self._validate_python_runtime(str(venv_python), "venv_python")
         if not runtime_check.get("ok", False):
-            return False, str(runtime_check.get("message", "ComfyUI .venv runtime check failed."))
+            return False, str(runtime_check.get("message", "ComfyUI .venv runtime rebuild check failed."))
         self._update_image_bootstrap_progress(
             state="verifying pip",
             step="verifying-pip",
@@ -2421,7 +2472,7 @@ class WebRuntime:
         pip_check = self._run_command_capture([str(venv_python), "-m", "pip", "--version"], timeout_seconds=30)
         if pip_check.returncode != 0:
             detail = self._command_output_snippet(pip_check)
-            return False, f"ComfyUI .venv was created, but pip is unavailable: {detail}"
+            return False, f"ComfyUI .venv was rebuilt, but pip is unavailable: {detail}"
         return True, f"venv runtime ready: {venv_python}"
 
     def _repair_managed_comfyui_install(self, target_dir: Path) -> tuple[bool, str]:
