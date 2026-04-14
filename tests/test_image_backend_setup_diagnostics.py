@@ -606,6 +606,72 @@ def test_start_image_engine_skips_launch_when_dependency_bootstrap_fails(tmp_pat
     assert result["working_directory"] == str(comfy_dir)
 
 
+def test_start_image_engine_recreates_runtime_once_on_exit_106_dependency_failure(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    comfy_dir = tmp_path / "ComfyUI"
+    comfy_dir.mkdir(parents=True, exist_ok=True)
+    (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
+    for folder in ("custom_nodes", "models", "output", "input", "user"):
+        (comfy_dir / folder).mkdir(exist_ok=True)
+    workflow = tmp_path / "scene.json"
+    workflow.write_text("{}", encoding="utf-8")
+    output_dir = tmp_path / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(
+        runtime,
+        "get_path_configuration_status",
+        lambda: {
+            "image": {
+                "mode": "managed",
+                "workflow_path": {"valid": True, "configured": True, "resolved_path": str(workflow)},
+                "comfyui_root": {"valid": True, "configured": True, "path": str(comfy_dir), "resolved_path": str(comfy_dir)},
+                "checkpoint_dir": {"valid": True, "configured": True, "model_ready": True},
+                "output_dir": {"valid": True, "configured": True, "resolved_path": str(output_dir)},
+                "pipeline_ready": True,
+            }
+        },
+    )
+    reachable = {"value": False}
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": reachable["value"], "status_code": "reachable" if reachable["value"] else "setup_required"})
+    monkeypatch.setattr(runtime, "validate_comfyui_install", lambda _path: {"ok": True, "missing_files": []})
+    monkeypatch.setattr(runtime, "_build_comfy_launch_command", lambda *_args, **_kwargs: (["python", "main.py"], "venv_python"))
+    monkeypatch.setattr(runtime, "_validate_python_runtime", lambda *_args, **_kwargs: {"ok": True})
+
+    calls = {"count": 0}
+
+    def _bootstrap(*_args, **_kwargs):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return {"ok": False, "message": "pip exited with code 106", "detail": "No pyvenv.cfg file", "returncode": 106, "error_line": "No pyvenv.cfg file"}
+        return {"ok": True, "installed_packages": []}
+
+    monkeypatch.setattr(runtime, "_bootstrap_comfy_python_dependencies", _bootstrap)
+    monkeypatch.setattr(runtime, "_cleanup_managed_runtime_remnants", lambda _root: None)
+    monkeypatch.setattr(runtime, "_install_embedded_python_runtime", lambda _root: (True, "venv runtime ready"))
+    monkeypatch.setattr(runtime, "_build_managed_launch_attempts", lambda *_args, **_kwargs: [{"mode": "python_main", "command": ["python", "main.py"], "launcher_type": "venv_python", "label": "python_main"}])
+    monkeypatch.setattr("app.web.time.sleep", lambda *_args, **_kwargs: None)
+
+    class _FakeProcess:
+        stdout = None
+        pid = 1234
+
+        def poll(self):
+            return None
+
+    def _fake_popen(*_args, **_kwargs):
+        reachable["value"] = True
+        return _FakeProcess()
+
+    monkeypatch.setattr("subprocess.Popen", _fake_popen)
+    monkeypatch.setattr(runtime.comfy_manager, "register", lambda *args, **kwargs: None)
+    monkeypatch.setattr(runtime.comfy_manager, "bind_log_handle", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runtime, "_read_startup_log_tail", lambda *_args, **_kwargs: [])
+    result = runtime.start_image_engine()
+    assert result["failure_stage"] in {"wait-for-readiness", "launch-engine"}
+    assert calls["count"] == 2
+
+
 def test_diagnostics_resolved_path_matches_launch_path_source_of_truth(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.app_config.image.provider = "comfyui"
