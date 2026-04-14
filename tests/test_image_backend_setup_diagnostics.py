@@ -159,6 +159,8 @@ def test_managed_mode_resolves_to_app_managed_paths(tmp_path: Path, monkeypatch)
     assert status["mode"] == "managed"
     assert resolved["external_comfyui_root"] == ""
     assert str(tmp_path / "user_data") in resolved["managed_comfyui_root"]
+    assert Path(resolved["managed_comfyui_root"]).name == "ComfyUI"
+    assert Path(resolved["managed_comfyui_root"]).parent.name == "tools"
 
 
 def test_external_mode_uses_selected_external_path(tmp_path: Path, monkeypatch) -> None:
@@ -173,6 +175,68 @@ def test_external_mode_uses_selected_external_path(tmp_path: Path, monkeypatch) 
     status = runtime.get_path_configuration_status()["image"]
     assert status["mode"] == "external"
     assert status["comfyui_root"]["path"] == str(comfy_root)
+
+
+def test_external_mode_persists_selected_root_across_restart(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_root = tmp_path / "external" / "ComfyUI"
+    comfy_root.mkdir(parents=True, exist_ok=True)
+    (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_root / "custom_nodes").mkdir(exist_ok=True)
+    (comfy_root / "models").mkdir(exist_ok=True)
+    connect = runtime.connect_comfyui_path(str(comfy_root))
+    assert connect["ok"] is True
+
+    restarted = _runtime(tmp_path, monkeypatch)
+    status = restarted.get_path_configuration_status()["image"]
+    assert status["mode"] == "external"
+    assert status["resolved_paths"]["external_comfyui_root"] == str(comfy_root)
+    assert status["comfyui_root"]["path"] == str(comfy_root)
+
+
+def test_checkpoint_folder_is_rejected_as_comfyui_root(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    checkpoint_dir = tmp_path / "models" / "checkpoints"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    (checkpoint_dir / "dreamshaper.safetensors").write_text("", encoding="utf-8")
+
+    result = runtime.connect_comfyui_path(str(checkpoint_dir))
+
+    assert result["ok"] is False
+    assert "checkpoint folder" in result["message"].lower()
+
+
+def test_start_image_engine_reports_missing_root_with_precise_error(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    runtime.app_config.image.comfyui_path = str(tmp_path / "missing_external" / "ComfyUI")
+    workflow = tmp_path / "scene.json"
+    workflow.write_text("{}", encoding="utf-8")
+    runtime.app_config.image.comfyui_workflow_path = str(workflow)
+
+    result = runtime.start_image_engine()
+
+    assert result["ok"] is False
+    assert result["failure_stage"] == "detect-install-path"
+    assert result["status_code"] == "configured_path_missing"
+    assert "does not exist" in result["message"].lower()
+
+
+def test_detect_install_path_passes_for_valid_root(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_root = tmp_path / "managed" / "ComfyUI"
+    comfy_root.mkdir(parents=True, exist_ok=True)
+    (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_root / "custom_nodes").mkdir(exist_ok=True)
+    (comfy_root / "models").mkdir(exist_ok=True)
+    runtime.app_config.image.comfyui_path = ""
+    runtime.app_config.image.managed_install_path = str(comfy_root)
+
+    status = runtime._detect_install_path_status(runtime.get_path_configuration_status()["image"])
+
+    assert status["ok"] is True
+    assert status["status_code"] == "valid_root"
+    assert status["resolved_root"] == str(comfy_root)
 
 
 def test_managed_install_keeps_mode_managed(tmp_path: Path, monkeypatch) -> None:
