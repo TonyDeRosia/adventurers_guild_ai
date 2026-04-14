@@ -34,8 +34,11 @@ def test_image_backend_diagnostics_includes_managed_runtime_details(tmp_path: Pa
     comfy_root = tmp_path / "user_data" / "tools" / "ComfyUI"
     comfy_root.mkdir(parents=True, exist_ok=True)
     (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
-    (comfy_root / "custom_nodes").mkdir(exist_ok=True)
-    (comfy_root / "models").mkdir(exist_ok=True)
+    for folder in ("custom_nodes", "models", "output", "input", "user"):
+        (comfy_root / folder).mkdir(exist_ok=True)
+    runtime_exe = comfy_root / ".venv" / "Scripts" / "python.exe"
+    runtime_exe.parent.mkdir(parents=True, exist_ok=True)
+    runtime_exe.write_text("", encoding="utf-8")
     runtime.app_config.image.managed_install_path = str(comfy_root)
 
     monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
@@ -114,8 +117,8 @@ def test_start_image_engine_reports_missing_workflow_cleanly(tmp_path: Path, mon
     comfy_dir = tmp_path / "ComfyUI"
     comfy_dir.mkdir(parents=True, exist_ok=True)
     (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
-    (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
-    (comfy_dir / "models").mkdir(exist_ok=True)
+    for folder in ("custom_nodes", "models", "output", "input", "user"):
+        (comfy_dir / folder).mkdir(exist_ok=True)
     monkeypatch.setattr(
         runtime,
         "get_path_configuration_status",
@@ -162,7 +165,7 @@ def test_install_image_engine_does_not_force_browser_launch(tmp_path: Path, monk
     monkeypatch.setattr(runtime, "_default_comfyui_path", lambda: target_dir)
     monkeypatch.setattr(runtime, "_find_comfyui_root", lambda: None)
     monkeypatch.setattr(runtime, "_download_and_extract_comfyui", lambda _target: (True, "ok"))
-    monkeypatch.setattr(runtime, "_install_embedded_python_runtime", lambda _target: (True, "embedded python ready"))
+    monkeypatch.setattr(runtime, "_install_embedded_python_runtime", lambda _target: (True, "venv runtime ready"))
     monkeypatch.setattr(runtime, "validate_comfyui_install", lambda _path: {"ok": True, "valid": True, "missing_files": []})
     monkeypatch.setattr(runtime, "open_external_url", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("should not open browser")))
 
@@ -188,8 +191,11 @@ def test_external_mode_uses_selected_external_path(tmp_path: Path, monkeypatch) 
     comfy_root = tmp_path / "external" / "ComfyUI"
     comfy_root.mkdir(parents=True, exist_ok=True)
     (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
-    (comfy_root / "custom_nodes").mkdir(exist_ok=True)
-    (comfy_root / "models").mkdir(exist_ok=True)
+    for folder in ("custom_nodes", "models", "output", "input", "user"):
+        (comfy_root / folder).mkdir(exist_ok=True)
+    runtime_exe = comfy_root / ".venv" / "Scripts" / "python.exe"
+    runtime_exe.parent.mkdir(parents=True, exist_ok=True)
+    runtime_exe.write_text("", encoding="utf-8")
     (comfy_root / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
     runtime.app_config.image.comfyui_path = str(comfy_root)
     status = runtime.get_path_configuration_status()["image"]
@@ -202,8 +208,11 @@ def test_external_mode_persists_selected_root_across_restart(tmp_path: Path, mon
     comfy_root = tmp_path / "external" / "ComfyUI"
     comfy_root.mkdir(parents=True, exist_ok=True)
     (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
-    (comfy_root / "custom_nodes").mkdir(exist_ok=True)
-    (comfy_root / "models").mkdir(exist_ok=True)
+    for folder in ("custom_nodes", "models", "output", "input", "user"):
+        (comfy_root / folder).mkdir(exist_ok=True)
+    runtime_exe = comfy_root / ".venv" / "Scripts" / "python.exe"
+    runtime_exe.parent.mkdir(parents=True, exist_ok=True)
+    runtime_exe.write_text("", encoding="utf-8")
     connect = runtime.connect_comfyui_path(str(comfy_root))
     assert connect["ok"] is True
 
@@ -247,8 +256,11 @@ def test_detect_install_path_passes_for_valid_root(tmp_path: Path, monkeypatch) 
     comfy_root = tmp_path / "managed" / "ComfyUI"
     comfy_root.mkdir(parents=True, exist_ok=True)
     (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
-    (comfy_root / "custom_nodes").mkdir(exist_ok=True)
-    (comfy_root / "models").mkdir(exist_ok=True)
+    for folder in ("custom_nodes", "models", "output", "input", "user"):
+        (comfy_root / folder).mkdir(exist_ok=True)
+    runtime_exe = comfy_root / ".venv" / "Scripts" / "python.exe"
+    runtime_exe.parent.mkdir(parents=True, exist_ok=True)
+    runtime_exe.write_text("", encoding="utf-8")
     runtime.app_config.image.comfyui_path = ""
     runtime.app_config.image.managed_install_path = str(comfy_root)
 
@@ -272,23 +284,23 @@ def test_managed_install_keeps_mode_managed(tmp_path: Path, monkeypatch) -> None
         return True, "ok"
 
     monkeypatch.setattr(runtime, "_download_and_extract_comfyui", _fake_download)
-    monkeypatch.setattr(runtime, "_install_embedded_python_runtime", lambda _target: (True, "embedded python ready"))
+    monkeypatch.setattr(runtime, "_install_embedded_python_runtime", lambda _target: (True, "venv runtime ready"))
     assert runtime.install_image_engine()["ok"] is True
     status = runtime.get_path_configuration_status()["image"]
     assert status["mode"] == "managed"
     assert runtime.app_config.image.comfyui_path == ""
 
 
-def test_windows_embedded_python_command_is_preferred(tmp_path: Path, monkeypatch) -> None:
+def test_windows_venv_python_command_is_preferred(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     comfy_root = tmp_path / "ComfyUI"
     comfy_root.mkdir(parents=True, exist_ok=True)
-    embedded = comfy_root / "python_embeded" / "python.exe"
+    embedded = comfy_root / ".venv" / "Scripts" / "python.exe"
     embedded.parent.mkdir(parents=True, exist_ok=True)
     embedded.write_text("", encoding="utf-8")
     monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
     command, launcher = runtime._build_comfy_launch_command(comfy_root, "127.0.0.1", 8188)
-    assert launcher == "embedded_python"
+    assert launcher == "venv_python"
     assert command[0] == str(embedded)
     assert command[1] == "main.py"
 
@@ -304,10 +316,9 @@ def test_windows_system_python_requires_explicit_setting(tmp_path: Path, monkeyp
     assert command == []
     assert launcher == "python_runtime_not_found"
 
-    runtime.app_config.image.preferred_launcher = "system_python"
     command, launcher = runtime._build_comfy_launch_command(comfy_root, "127.0.0.1", 8188)
-    assert launcher == "system_python_explicit"
-    assert command[:3] == ["py", "-3", "main.py"]
+    assert command == []
+    assert launcher == "python_runtime_not_found"
 
 
 def test_resolve_comfy_python_runtime_uses_py_launcher_prefix(tmp_path: Path, monkeypatch) -> None:
@@ -332,13 +343,13 @@ def test_dependency_bootstrap_reports_missing_sqlalchemy_when_install_fails(tmp_
         return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="", stderr="")
 
     monkeypatch.setattr(runtime, "_run_runtime_python_capture", _fake_run)
-    result = runtime._bootstrap_comfy_python_dependencies(comfy_root, ["python", "main.py"], "system_python")
+    result = runtime._bootstrap_comfy_python_dependencies(comfy_root, ["python", "main.py"], "venv_python")
     assert result["ok"] is False
     assert result["missing_dependency"] == "sqlalchemy"
     assert "Failed to install dependency: sqlalchemy" in result["message"]
 
 
-def test_dependency_bootstrap_missing_pip_triggers_ensurepip(tmp_path: Path, monkeypatch) -> None:
+def test_dependency_bootstrap_missing_pip_fails_cleanly(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     comfy_root = tmp_path / "ComfyUI"
     comfy_root.mkdir(parents=True, exist_ok=True)
@@ -348,69 +359,49 @@ def test_dependency_bootstrap_missing_pip_triggers_ensurepip(tmp_path: Path, mon
     def _fake_run(runtime_command: list[str], args: list[str], timeout_seconds: int = 60):
         calls.append(args)
         if args[:3] == ["-m", "pip", "--version"]:
-            if sum(1 for item in calls if item[:3] == ["-m", "pip", "--version"]) == 1:
-                return subprocess.CompletedProcess([*runtime_command, *args], 1, stdout="", stderr="No module named pip")
-            return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="pip 24.0", stderr="")
-        if args[:3] == ["-m", "ensurepip", "--upgrade"]:
-            return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="bootstrapped", stderr="")
+            return subprocess.CompletedProcess([*runtime_command, *args], 1, stdout="", stderr="No module named pip")
         if args[:2] == ["-c", "import sqlalchemy"]:
             return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="", stderr="")
         return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="", stderr="")
 
     monkeypatch.setattr(runtime, "_run_runtime_python_capture", _fake_run)
-    result = runtime._bootstrap_comfy_python_dependencies(comfy_root, ["python", "main.py"], "system_python")
-    assert result["ok"] is True
+    result = runtime._bootstrap_comfy_python_dependencies(comfy_root, ["python", "main.py"], "venv_python")
+    assert result["ok"] is False
     assert result["pip_initially_available"] is False
-    assert result["ensurepip_attempted"] is True
-    assert ["-m", "ensurepip", "--upgrade"] in calls
+    assert result["ensurepip_attempted"] is False
 
 
-def test_dependency_bootstrap_ensurepip_success_sets_pip_version(tmp_path: Path, monkeypatch) -> None:
+def test_dependency_bootstrap_pip_available_sets_pip_version(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     comfy_root = tmp_path / "ComfyUI"
     comfy_root.mkdir(parents=True, exist_ok=True)
 
-    state = {"pip_calls": 0}
-
     def _fake_run(runtime_command: list[str], args: list[str], timeout_seconds: int = 60):
         if args[:3] == ["-m", "pip", "--version"]:
-            state["pip_calls"] += 1
-            if state["pip_calls"] == 1:
-                return subprocess.CompletedProcess([*runtime_command, *args], 1, stdout="", stderr="No module named pip")
             return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="pip 24.0 from managed", stderr="")
-        if args[:3] == ["-m", "ensurepip", "--upgrade"]:
-            return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="bootstrapped", stderr="")
         if args[:2] == ["-c", "import sqlalchemy"]:
             return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="", stderr="")
         return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="", stderr="")
 
     monkeypatch.setattr(runtime, "_run_runtime_python_capture", _fake_run)
-    result = runtime._bootstrap_comfy_python_dependencies(comfy_root, ["python", "main.py"], "system_python")
+    result = runtime._bootstrap_comfy_python_dependencies(comfy_root, ["python", "main.py"], "venv_python")
     assert result["ok"] is True
     assert "pip 24.0 from managed" in result["pip_version"]
 
 
-def test_dependency_bootstrap_reports_precise_error_when_ensurepip_and_get_pip_fail(tmp_path: Path, monkeypatch) -> None:
+def test_dependency_bootstrap_reports_precise_error_when_pip_missing(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
 
     def _fake_run(runtime_command: list[str], args: list[str], timeout_seconds: int = 60):
         if args[:3] == ["-m", "pip", "--version"]:
             return subprocess.CompletedProcess([*runtime_command, *args], 1, stdout="", stderr="No module named pip")
-        if args[:3] == ["-m", "ensurepip", "--upgrade"]:
-            return subprocess.CompletedProcess([*runtime_command, *args], 1, stdout="", stderr="No module named ensurepip")
         raise AssertionError(f"unexpected command: {args}")
 
-    class _FailDownload:
-        def __call__(self, *_args, **_kwargs):
-            raise OSError("network blocked")
-
     monkeypatch.setattr(runtime, "_run_runtime_python_capture", _fake_run)
-    monkeypatch.setattr("app.web.urllib.request.urlopen", _FailDownload())
-
     result = runtime._bootstrap_runtime_pip(["python"], python_executable="python")
     assert result["ok"] is False
-    assert result["message"] == "get-pip bootstrap failed"
-    assert "ensurepip unavailable in managed runtime" in result["detail"]
+    assert result["message"] == "ComfyUI .venv is missing pip"
+    assert "No module named pip" in result["detail"]
 
 
 def test_dependency_bootstrap_does_not_install_requirements_if_pip_unavailable(tmp_path: Path, monkeypatch) -> None:
@@ -425,13 +416,10 @@ def test_dependency_bootstrap_does_not_install_requirements_if_pip_unavailable(t
         calls.append(args)
         if args[:3] == ["-m", "pip", "--version"]:
             return subprocess.CompletedProcess([*runtime_command, *args], 1, stdout="", stderr="No module named pip")
-        if args[:3] == ["-m", "ensurepip", "--upgrade"]:
-            return subprocess.CompletedProcess([*runtime_command, *args], 1, stdout="", stderr="ensurepip missing")
         raise AssertionError(f"unexpected command: {args}")
 
     monkeypatch.setattr(runtime, "_run_runtime_python_capture", _fake_run)
-    monkeypatch.setattr("app.web.urllib.request.urlopen", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("offline")))
-    result = runtime._bootstrap_comfy_python_dependencies(comfy_root, ["python", "main.py"], "system_python")
+    result = runtime._bootstrap_comfy_python_dependencies(comfy_root, ["python", "main.py"], "venv_python")
     assert result["ok"] is False
     assert not any(args[:3] == ["-m", "pip", "install"] for args in calls)
 
@@ -444,13 +432,13 @@ def test_diagnostics_include_pip_availability_status(tmp_path: Path, monkeypatch
     (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
     for folder in ("custom_nodes", "models", "output", "input", "user"):
         (comfy_root / folder).mkdir(exist_ok=True)
-    embedded = comfy_root / "python_embeded" / "python.exe"
+    embedded = comfy_root / ".venv" / "Scripts" / "python.exe"
     embedded.parent.mkdir(parents=True, exist_ok=True)
     embedded.write_text("", encoding="utf-8")
     runtime.app_config.image.managed_install_path = str(comfy_root)
 
     monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
-    monkeypatch.setattr(runtime, "_build_comfy_launch_command", lambda *_args, **_kwargs: ([str(embedded), "main.py"], "embedded_python"))
+    monkeypatch.setattr(runtime, "_build_comfy_launch_command", lambda *_args, **_kwargs: ([str(embedded), "main.py"], "venv_python"))
     monkeypatch.setattr(runtime, "_resolve_comfy_python_runtime", lambda *_args, **_kwargs: {"ok": True, "runtime_command": [str(embedded)], "executable": str(embedded)})
     monkeypatch.setattr(
         runtime,

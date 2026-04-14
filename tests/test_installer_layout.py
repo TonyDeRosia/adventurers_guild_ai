@@ -20,15 +20,15 @@ def test_installer_layout_reports_missing_required_assets(tmp_path: Path, monkey
     assert "bundled_image_runtime" in status["missing_required"]
     assert "workflow_scene_image" in status["missing_required"]
     assert "workflow_character_portrait" in status["missing_required"]
-    assert status["checks"]["embedded_python"]["required"] is False
-    assert status["embedded_python_present"] is False
+    assert status["checks"]["venv_runtime"]["required"] is False
+    assert status["venv_runtime_present"] is False
 
 
 def test_installer_layout_reports_valid_when_required_assets_exist(tmp_path: Path, monkeypatch) -> None:
     runtime_root = tmp_path / "runtime_bundle"
     comfy_root = runtime_root / "comfyui"
     workflow_root = runtime_root / "workflows"
-    embedded_python = runtime_root / "python_embeded" / "python.exe"
+    embedded_python = comfy_root / ".venv" / "Scripts" / "python.exe"
 
     comfy_root.mkdir(parents=True, exist_ok=True)
     workflow_root.mkdir(parents=True, exist_ok=True)
@@ -50,4 +50,4 @@ def test_installer_layout_reports_valid_when_required_assets_exist(tmp_path: Pat
     assert status["packaged_app_files_present"] is True
     assert status["bundled_image_runtime_present"] is True
     assert status["bundled_workflows_present"] is True
-    assert status["embedded_python_present"] is True
+    assert status["venv_runtime_present"] is True

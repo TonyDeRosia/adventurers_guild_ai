@@ -489,8 +489,8 @@ def test_valid_external_workflow_path_enables_comfyui_generation_path(tmp_path: 
     comfy_root = tmp_path / "ComfyUI"
     comfy_root.mkdir(parents=True, exist_ok=True)
     (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
-    (comfy_root / "custom_nodes").mkdir(exist_ok=True)
-    (comfy_root / "models").mkdir(exist_ok=True)
+    for folder in ("custom_nodes", "models", "output", "input", "user"):
+        (comfy_root / folder).mkdir(exist_ok=True)
     checkpoints = comfy_root / "models" / "checkpoints"
     checkpoints.mkdir(parents=True, exist_ok=True)
     (checkpoints / "sd15.safetensors").write_text("model", encoding="utf-8")
@@ -531,8 +531,8 @@ def test_visual_pipeline_apply_rejects_invalid_workflow_path(tmp_path: Path, mon
     comfy_root = tmp_path / "ComfyUI"
     comfy_root.mkdir(parents=True, exist_ok=True)
     (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
-    (comfy_root / "custom_nodes").mkdir(exist_ok=True)
-    (comfy_root / "models").mkdir(exist_ok=True)
+    for folder in ("custom_nodes", "models", "output", "input", "user"):
+        (comfy_root / folder).mkdir(exist_ok=True)
     (comfy_root / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
     checkpoints = comfy_root / "models" / "checkpoints"
     checkpoints.mkdir(parents=True, exist_ok=True)
@@ -556,8 +556,8 @@ def test_visual_pipeline_apply_saves_and_reloads_runtime(tmp_path: Path, monkeyp
     comfy_root = tmp_path / "ComfyUI"
     comfy_root.mkdir(parents=True, exist_ok=True)
     (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
-    (comfy_root / "custom_nodes").mkdir(exist_ok=True)
-    (comfy_root / "models").mkdir(exist_ok=True)
+    for folder in ("custom_nodes", "models", "output", "input", "user"):
+        (comfy_root / folder).mkdir(exist_ok=True)
     (comfy_root / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
     workflow = tmp_path / "scene.json"
     workflow.write_text("{}", encoding="utf-8")
@@ -2269,8 +2269,12 @@ def test_dependency_readiness_comfyui_offline(tmp_path: Path, monkeypatch) -> No
     comfy_dir = tmp_path / "ComfyUI"
     comfy_dir.mkdir(parents=True, exist_ok=True)
     (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
-    (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
+    for folder in ("custom_nodes", "output", "input", "user"):
+        (comfy_dir / folder).mkdir(exist_ok=True)
     (comfy_dir / "models" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    runtime_exe = comfy_dir / ".venv" / "Scripts" / "python.exe"
+    runtime_exe.parent.mkdir(parents=True, exist_ok=True)
+    runtime_exe.write_text("", encoding="utf-8")
     ((comfy_dir / "models" / "checkpoints") / "test-model.safetensors").write_text("model", encoding="utf-8")
     (comfy_dir / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
     workflow = tmp_path / "scene.json"
@@ -2405,8 +2409,8 @@ def test_visual_pipeline_endpoints_apply_and_validate(tmp_path: Path, monkeypatc
     comfy_root = tmp_path / "ComfyUI"
     comfy_root.mkdir(parents=True, exist_ok=True)
     (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
-    (comfy_root / "custom_nodes").mkdir(exist_ok=True)
-    (comfy_root / "models").mkdir(exist_ok=True)
+    for folder in ("custom_nodes", "models", "output", "input", "user"):
+        (comfy_root / folder).mkdir(exist_ok=True)
     (comfy_root / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
     workflow = tmp_path / "scene.json"
     workflow.write_text("{}", encoding="utf-8")
@@ -2526,7 +2530,7 @@ def test_first_run_status_exposes_packaging_and_setup_states(tmp_path: Path, mon
             "packaged_app_files_present": False,
             "bundled_image_runtime_present": False,
             "bundled_workflows_present": False,
-            "embedded_python_present": False,
+            "venv_runtime_present": False,
             "checks": {
                 "runtime_bundle": {"message": "Missing required packaged folder: runtime_bundle."},
                 "bundled_image_runtime": {"path": str(tmp_path / "missing_bundle"), "present": False},
@@ -2540,7 +2544,7 @@ def test_first_run_status_exposes_packaging_and_setup_states(tmp_path: Path, mon
     assert status["text_ai"]["state"] == "not_ready"
     assert status["image_engine_bundle"]["state"] == "missing"
     assert status["bundled_workflows"]["state"] == "missing"
-    assert status["embedded_python"]["state"] == "missing"
+    assert status["venv_runtime"]["state"] == "missing"
     assert status["installer_layout"]["state"] == "invalid"
     assert status["packaged_app_files"]["state"] == "missing"
     assert status["model_folder"]["state"] == "missing"
@@ -2665,7 +2669,7 @@ def test_install_image_engine_succeeds_without_launcher_bat_files(tmp_path: Path
         return True, "ok"
 
     monkeypatch.setattr(runtime, "_download_and_extract_comfyui", _fake_download)
-    monkeypatch.setattr(runtime, "_install_embedded_python_runtime", lambda _target: (True, "embedded python ready"))
+    monkeypatch.setattr(runtime, "_install_embedded_python_runtime", lambda _target: (True, "venv runtime ready"))
     monkeypatch.setattr(runtime, "validate_comfyui_install", lambda *_args, **_kwargs: {"ok": True, "missing_files": []})
     result = runtime.install_image_engine()
     assert result["ok"] is True
@@ -2683,17 +2687,17 @@ def test_install_image_engine_repairs_missing_python_runtime(tmp_path: Path, mon
     monkeypatch.setattr(runtime, "_default_comfyui_path", lambda: target_dir)
     monkeypatch.setattr(runtime, "_download_and_extract_comfyui", lambda _target: (True, "ok"))
     def _fake_python_runtime(target: Path) -> tuple[bool, str]:
-        runtime_exe = target / "python_embeded" / "python.exe"
+        runtime_exe = target / ".venv" / "Scripts" / "python.exe"
         runtime_exe.parent.mkdir(parents=True, exist_ok=True)
         runtime_exe.write_text("", encoding="utf-8")
-        return True, "embedded python ready"
+        return True, "venv runtime ready"
 
     monkeypatch.setattr(runtime, "_install_embedded_python_runtime", _fake_python_runtime)
     monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
 
     result = runtime.install_image_engine()
     assert result["ok"] is True
-    assert "embedded python runtime" in result["message"].lower()
+    assert "venv runtime" in result["message"].lower()
 
 
 def test_managed_mode_never_uses_system_python_fallback(tmp_path: Path, monkeypatch) -> None:
@@ -2719,7 +2723,7 @@ def test_validate_comfyui_install_requires_resolvable_launch_target(tmp_path: Pa
     (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
     for folder in ("custom_nodes", "models", "output", "input", "user"):
         (comfy_dir / folder).mkdir(exist_ok=True)
-    embedded = comfy_dir / "python_embeded" / "python.exe"
+    embedded = comfy_dir / ".venv" / "Scripts" / "python.exe"
     embedded.parent.mkdir(parents=True, exist_ok=True)
     embedded.write_text("", encoding="utf-8")
     monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
@@ -2737,14 +2741,14 @@ def test_orchestrate_image_setup_reports_full_sequence_steps(tmp_path: Path, mon
     comfy_root = tmp_path / "ComfyUI"
     comfy_root.mkdir(parents=True, exist_ok=True)
     (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
-    (comfy_root / "python_embeded").mkdir(exist_ok=True)
-    ((comfy_root / "python_embeded") / "python.exe").write_text("", encoding="utf-8")
+    (comfy_root / ".venv").mkdir(exist_ok=True)
+    ((comfy_root / ".venv") / "python.exe").write_text("", encoding="utf-8")
     for folder in ("custom_nodes", "models", "output", "input", "user"):
         (comfy_root / folder).mkdir(exist_ok=True)
     monkeypatch.setattr(runtime, "install_image_engine", lambda: {"ok": True, "message": "installed"})
     monkeypatch.setattr(runtime, "_resolve_image_engine_root_for_launch", lambda _cfg: comfy_root)
     monkeypatch.setattr(runtime, "validate_comfyui_install", lambda _path: {"ok": True, "missing_files": []})
-    monkeypatch.setattr(runtime, "_build_comfy_launch_command", lambda *_args, **_kwargs: ([str(comfy_root / "python_embeded" / "python.exe"), "main.py"], "embedded_python"))
+    monkeypatch.setattr(runtime, "_build_comfy_launch_command", lambda *_args, **_kwargs: ([str(comfy_root / ".venv" / "Scripts" / "python.exe"), "main.py"], "venv_python"))
     monkeypatch.setattr(runtime, "_bootstrap_comfy_python_dependencies", lambda *_args, **_kwargs: {"ok": True, "installed_packages": []})
     monkeypatch.setattr(
         runtime,
@@ -2772,11 +2776,11 @@ def test_orchestrate_image_setup_reports_full_sequence_steps(tmp_path: Path, mon
 def test_orchestrate_image_setup_returns_precise_error_when_repair_fails(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.app_config.image.provider = "comfyui"
-    monkeypatch.setattr(runtime, "install_image_engine", lambda: {"ok": False, "message": "Failed to download or extract embedded Python runtime for managed ComfyUI.", "next_step": "Retry setup."})
+    monkeypatch.setattr(runtime, "install_image_engine", lambda: {"ok": False, "message": "Failed to create ComfyUI .venv runtime.", "next_step": "Retry setup."})
 
     result = runtime.orchestrate_setup_image_ai()
     assert result["ok"] is False
-    assert "embedded python runtime" in result["message"].lower()
+    assert "venv runtime" in result["message"].lower()
 
 
 def test_start_image_engine_attempts_python_launch_and_reports_launch_error(tmp_path: Path, monkeypatch) -> None:
@@ -2785,11 +2789,11 @@ def test_start_image_engine_attempts_python_launch_and_reports_launch_error(tmp_
     comfy_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
     comfy_dir.mkdir(parents=True, exist_ok=True)
     (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
-    embedded = comfy_dir / "python_embeded" / "python.exe"
+    embedded = comfy_dir / ".venv" / "Scripts" / "python.exe"
     embedded.parent.mkdir(parents=True, exist_ok=True)
     embedded.write_text("", encoding="utf-8")
-    (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
-    (comfy_dir / "models").mkdir(exist_ok=True)
+    for folder in ("custom_nodes", "models", "output", "input", "user"):
+        (comfy_dir / folder).mkdir(exist_ok=True)
     (comfy_dir / "run_cpu.bat").write_text("@echo off\r\npython main.py\r\n", encoding="utf-8")
     runtime.app_config.image.comfyui_path = str(comfy_dir)
     workflow = tmp_path / "scene.json"
@@ -2832,11 +2836,12 @@ def test_start_image_engine_detects_early_exit_and_exposes_startup_log(tmp_path:
     comfy_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
     comfy_dir.mkdir(parents=True, exist_ok=True)
     (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
-    embedded = comfy_dir / "python_embeded" / "python.exe"
+    embedded = comfy_dir / ".venv" / "Scripts" / "python.exe"
     embedded.parent.mkdir(parents=True, exist_ok=True)
     embedded.write_text("", encoding="utf-8")
     (comfy_dir / "run_cpu.bat").write_text("@echo off\r\npython main.py\r\n", encoding="utf-8")
-    (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
+    for folder in ("custom_nodes", "output", "input", "user"):
+        (comfy_dir / folder).mkdir(exist_ok=True)
     (comfy_dir / "models" / "checkpoints").mkdir(parents=True, exist_ok=True)
     ((comfy_dir / "models" / "checkpoints") / "test-model.safetensors").write_text("model", encoding="utf-8")
     workflow = tmp_path / "scene.json"
@@ -2887,10 +2892,11 @@ def test_start_image_engine_windows_launch_uses_python_command_list(tmp_path: Pa
     comfy_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
     comfy_dir.mkdir(parents=True, exist_ok=True)
     (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
-    embedded = comfy_dir / "python_embeded" / "python.exe"
+    embedded = comfy_dir / ".venv" / "Scripts" / "python.exe"
     embedded.parent.mkdir(parents=True, exist_ok=True)
     embedded.write_text("", encoding="utf-8")
-    (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
+    for folder in ("custom_nodes", "output", "input", "user"):
+        (comfy_dir / folder).mkdir(exist_ok=True)
     (comfy_dir / "models" / "checkpoints").mkdir(parents=True, exist_ok=True)
     ((comfy_dir / "models" / "checkpoints") / "test-model.safetensors").write_text("model", encoding="utf-8")
     workflow = tmp_path / "scene.json"
@@ -2965,10 +2971,11 @@ def test_start_image_engine_preflight_fails_when_python_runtime_unusable(tmp_pat
     comfy_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
     comfy_dir.mkdir(parents=True, exist_ok=True)
     (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
-    embedded = comfy_dir / "python_embeded" / "python.exe"
+    embedded = comfy_dir / ".venv" / "Scripts" / "python.exe"
     embedded.parent.mkdir(parents=True, exist_ok=True)
     embedded.write_text("", encoding="utf-8")
-    (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
+    for folder in ("custom_nodes", "output", "input", "user"):
+        (comfy_dir / folder).mkdir(exist_ok=True)
     (comfy_dir / "models" / "checkpoints").mkdir(parents=True, exist_ok=True)
     ((comfy_dir / "models" / "checkpoints") / "test-model.safetensors").write_text("model", encoding="utf-8")
     (comfy_dir / "run_cpu.bat").write_text("@echo off\r\npython main.py\r\n", encoding="utf-8")
@@ -2997,8 +3004,12 @@ def test_start_image_engine_validates_bundled_layout_before_launch_in_packaged_m
     bundled_comfy.mkdir(parents=True, exist_ok=True)
     (bundled_comfy / "main.py").write_text("print('ok')", encoding="utf-8")
     (bundled_comfy / "run_cpu.bat").write_text("@echo off\r\npython main.py\r\n", encoding="utf-8")
-    (bundled_comfy / "custom_nodes").mkdir(exist_ok=True)
+    for folder in ("custom_nodes", "output", "input", "user"):
+        (bundled_comfy / folder).mkdir(exist_ok=True)
     (bundled_comfy / "models" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    bundled_python = bundled_comfy / ".venv" / "Scripts" / "python.exe"
+    bundled_python.parent.mkdir(parents=True, exist_ok=True)
+    bundled_python.write_text("", encoding="utf-8")
     workflow = tmp_path / "scene.json"
     workflow.write_text("{}", encoding="utf-8")
     runtime.app_config.image.comfyui_path = str(bundled_comfy)
@@ -3211,8 +3222,12 @@ def test_image_pipeline_test_action_succeeds_when_configured(tmp_path: Path, mon
     comfy_root = tmp_path / "ComfyUI"
     comfy_root.mkdir(parents=True, exist_ok=True)
     (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
-    (comfy_root / "custom_nodes").mkdir(exist_ok=True)
+    for folder in ("custom_nodes", "output", "input", "user"):
+        (comfy_root / folder).mkdir(exist_ok=True)
     (comfy_root / "models" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    runtime_exe = comfy_root / ".venv" / "Scripts" / "python.exe"
+    runtime_exe.parent.mkdir(parents=True, exist_ok=True)
+    runtime_exe.write_text("", encoding="utf-8")
     (comfy_root / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
     workflow = tmp_path / "scene.json"
     workflow.write_text("{}", encoding="utf-8")
@@ -3246,8 +3261,12 @@ def test_image_pipeline_test_action_fails_when_workflow_path_missing(tmp_path: P
     comfy_root = tmp_path / "ComfyUI"
     comfy_root.mkdir(parents=True, exist_ok=True)
     (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
-    (comfy_root / "custom_nodes").mkdir(exist_ok=True)
+    for folder in ("custom_nodes", "output", "input", "user"):
+        (comfy_root / folder).mkdir(exist_ok=True)
     (comfy_root / "models" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    runtime_exe = comfy_root / ".venv" / "Scripts" / "python.exe"
+    runtime_exe.parent.mkdir(parents=True, exist_ok=True)
+    runtime_exe.write_text("", encoding="utf-8")
     (comfy_root / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
 
     runtime.set_global_settings(
