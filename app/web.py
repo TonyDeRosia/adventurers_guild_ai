@@ -751,10 +751,49 @@ class WebRuntime:
                 return {"ok": False, "message": "ComfyUI source file must be a .zip archive."}
             return {"ok": True, "kind": "zip"}
         if source.is_dir():
-            main_py = source / "main.py"
-            if not main_py.exists():
-                return {"ok": False, "message": "Selected ComfyUI folder must contain main.py."}
-            return {"ok": True, "kind": "folder"}
+            resolved_source = source.resolve()
+            selected_source_type = "source_folder"
+            resolved_import_root = resolved_source
+            resolved_source_dir = resolved_source
+
+            def _is_portable_root(candidate: Path) -> bool:
+                return (candidate / "ComfyUI" / "main.py").is_file()
+
+            if (resolved_source / "main.py").is_file():
+                parent = resolved_source.parent
+                if parent.exists() and _is_portable_root(parent):
+                    selected_source_type = "portable_root"
+                    resolved_import_root = parent.resolve()
+            elif _is_portable_root(resolved_source):
+                selected_source_type = "portable_root"
+                resolved_import_root = resolved_source
+                resolved_source_dir = (resolved_source / "ComfyUI").resolve()
+            else:
+                missing: list[str] = []
+                if not (resolved_source / "main.py").is_file() and not (resolved_source / "ComfyUI" / "main.py").is_file():
+                    missing.append("main.py (either in selected folder or in selected folder/ComfyUI)")
+                launchers = ["run_cpu.bat", "run_nvidia_gpu.bat"]
+                if not any((resolved_source / launcher).is_file() for launcher in launchers):
+                    missing.append("portable launch script (run_cpu.bat or run_nvidia_gpu.bat)")
+                runtimes = ["python_embeded", ".venv"]
+                if not any((resolved_source / runtime).exists() for runtime in runtimes):
+                    missing.append("python runtime folder (python_embeded or .venv)")
+                missing_text = "; ".join(missing) if missing else "required ComfyUI files"
+                return {
+                    "ok": False,
+                    "message": (
+                        "Selected folder is not a valid ComfyUI source. "
+                        "Expected either a ComfyUI source folder containing main.py or a portable root containing "
+                        f"ComfyUI/main.py. Missing: {missing_text}."
+                    ),
+                }
+            return {
+                "ok": True,
+                "kind": "folder",
+                "selected_source_type": selected_source_type,
+                "resolved_import_root": str(resolved_import_root),
+                "resolved_source_dir": str(resolved_source_dir),
+            }
         return {"ok": False, "message": "ComfyUI source must be a file or folder."}
 
     def _import_comfyui_source(self, source: Path, target_dir: Path) -> dict[str, Any]:
@@ -772,7 +811,8 @@ class WebRuntime:
                 for item in list(nested_main.iterdir()):
                     shutil.move(str(item), str(target_dir / item.name))
         else:
-            shutil.copytree(source, target_dir, dirs_exist_ok=True)
+            normalized_source = Path(str(validation.get("resolved_source_dir") or source))
+            shutil.copytree(normalized_source, target_dir, dirs_exist_ok=True)
         self._ensure_comfyui_runtime_folders(target_dir)
         install_validation = self.validate_comfyui_install(target_dir)
         if not install_validation.get("ok", False):

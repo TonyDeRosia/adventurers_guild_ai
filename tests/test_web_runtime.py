@@ -229,6 +229,56 @@ def _make_comfy_source_folder(base: Path) -> Path:
     return root
 
 
+def _make_comfy_portable_root(base: Path) -> Path:
+    root = base / "ComfyUI_windows_portable"
+    source_dir = root / "ComfyUI"
+    (source_dir / "models" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    for folder in ("custom_nodes", "output", "input", "user"):
+        (source_dir / folder).mkdir(parents=True, exist_ok=True)
+    (source_dir / "main.py").write_text("print('comfy')", encoding="utf-8")
+    (root / "run_cpu.bat").write_text("@echo off\r\npython main.py\r\n", encoding="utf-8")
+    (root / "python_embeded").mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def test_validate_comfyui_import_source_accepts_portable_root(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    portable_root = _make_comfy_portable_root(tmp_path)
+
+    validation = runtime._validate_comfyui_import_source(portable_root)
+
+    assert validation["ok"] is True
+    assert validation["kind"] == "folder"
+    assert validation["selected_source_type"] == "portable_root"
+    assert Path(validation["resolved_import_root"]) == portable_root.resolve()
+    assert Path(validation["resolved_source_dir"]) == (portable_root / "ComfyUI").resolve()
+
+
+def test_validate_comfyui_import_source_normalizes_inner_source_to_portable_parent(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    portable_root = _make_comfy_portable_root(tmp_path)
+    inner_source = portable_root / "ComfyUI"
+
+    validation = runtime._validate_comfyui_import_source(inner_source)
+
+    assert validation["ok"] is True
+    assert validation["selected_source_type"] == "portable_root"
+    assert Path(validation["resolved_import_root"]) == portable_root.resolve()
+    assert Path(validation["resolved_source_dir"]) == inner_source.resolve()
+
+
+def test_validate_comfyui_import_source_rejects_incomplete_folder_with_precise_missing_details(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    incomplete = tmp_path / "ComfyUI_windows_portable"
+    (incomplete / "ComfyUI").mkdir(parents=True, exist_ok=True)
+
+    validation = runtime._validate_comfyui_import_source(incomplete)
+
+    assert validation["ok"] is False
+    assert "run_cpu.bat or run_nvidia_gpu.bat" in validation["message"]
+    assert "python_embeded or .venv" in validation["message"]
+
+
 def test_import_image_ai_accepts_comfyui_folder_and_model_file(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     comfy_src = _make_comfy_source_folder(tmp_path)
