@@ -734,7 +734,7 @@ class WebRuntime:
             "recommended_next_action": str(image_status.get("next_action", "Recheck setup and diagnostics.")),
             "startup_status": startup_status,
             "resolved_paths": path_status.get("resolved_paths", {}),
-            "python_runtime_path": str((Path(resolved_comfy_path) / "python_embeded" / "python.exe") if resolved_comfy_path else ""),
+            "python_runtime_path": str((Path(resolved_comfy_path) / ".venv" / "Scripts" / "python.exe") if resolved_comfy_path else ""),
             "python_runtime_found": bool(install_validation.get("python_runtime_found", False)),
             "pip_available": bool(runtime_pip.get("available", False)),
             "pip_version": str(runtime_pip.get("version", "")),
@@ -894,12 +894,12 @@ class WebRuntime:
                     else "Bundled workflows are missing required files (scene_image.json and/or character_portrait.json)."
                 ),
             },
-            "embedded_python": {
-                "state": "ready" if bool(layout_status.get("embedded_python_present", False)) else "missing",
+            "venv_runtime": {
+                "state": "ready" if bool(layout_status.get("venv_runtime_present", False)) else "missing",
                 "message": (
-                    "Embedded Python runtime detected for bundled ComfyUI launch."
-                    if bool(layout_status.get("embedded_python_present", False))
-                    else "Embedded Python runtime is not bundled. Launch may require Python on PATH."
+                    "Managed ComfyUI virtual environment runtime is present."
+                    if bool(layout_status.get("venv_runtime_present", False))
+                    else "Managed ComfyUI virtual environment runtime is missing."
                 ),
             },
             "installer_layout": {
@@ -1652,19 +1652,12 @@ class WebRuntime:
         launch_target_resolvable = True
         launch_target = ""
         if os.name == "nt":
-            embedded_python = path / "python_embeded" / "python.exe"
             venv_python = path / ".venv" / "Scripts" / "python.exe"
-            managed_mode = self._is_managed_install_root(path) and not str(self.app_config.image.comfyui_path or "").strip()
-            allow_system = (not managed_mode) and str(self.app_config.image.preferred_launcher or "").strip().lower() in {"system", "system_python"}
-            python_runtime_found = bool(embedded_python.exists() or venv_python.exists() or (allow_system and (shutil.which("python") or shutil.which("py"))))
+            python_runtime_found = bool(venv_python.exists())
             runtime_details = (
-                f"embedded runtime found at {embedded_python}"
-                if embedded_python.exists()
-                else f"venv runtime found at {venv_python}"
+                f"venv runtime found at {venv_python}"
                 if venv_python.exists()
-                else "system python fallback explicitly enabled"
-                if allow_system and (shutil.which("python") or shutil.which("py"))
-                else "python runtime missing (expected ComfyUI python_embeded or .venv runtime)"
+                else "python runtime missing (expected ComfyUI .venv runtime)"
             )
             if not python_runtime_found:
                 missing_files.append("python-runtime")
@@ -1689,63 +1682,37 @@ class WebRuntime:
         for folder in ("custom_nodes", "models", "output", "input", "user"):
             (target_dir / folder).mkdir(parents=True, exist_ok=True)
 
-    def _resolve_embedded_python_urls(self) -> list[str]:
-        preferred = str(os.getenv("ADVENTURER_GUILD_AI_COMFY_PYTHON_EMBED_URL", "")).strip()
-        urls = [
-            "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip",
-            "https://www.python.org/ftp/python/3.11.8/python-3.11.8-embed-amd64.zip",
-        ]
-        if preferred:
-            return [preferred, *[item for item in urls if item != preferred]]
-        return urls
-
-    def _enable_embedded_python_site_packages(self, python_embed_dir: Path) -> None:
-        for pth_file in sorted(python_embed_dir.glob("python*._pth")):
-            try:
-                lines = pth_file.read_text(encoding="utf-8", errors="replace").splitlines()
-            except OSError:
-                continue
-            normalized: list[str] = []
-            has_import_site = False
-            for raw in lines:
-                line = raw.strip()
-                if line == "import site":
-                    has_import_site = True
-                if line.startswith("#import site"):
-                    line = "import site"
-                    has_import_site = True
-                normalized.append(line)
-            if not has_import_site:
-                normalized.append("import site")
-            try:
-                pth_file.write_text("\n".join(normalized).strip() + "\n", encoding="utf-8")
-            except OSError:
-                continue
-
     def _install_embedded_python_runtime(self, target_dir: Path) -> tuple[bool, str]:
-        python_embed_dir = target_dir / "python_embeded"
-        python_zip = Path(tempfile.gettempdir()) / "adventurer_guild_python_embed.zip"
-        for url in self._resolve_embedded_python_urls():
-            print(f"[setup-action] install-image-engine python-runtime-download url={url}")
-            try:
-                with urllib.request.urlopen(url, timeout=90) as response:
-                    python_zip.write_bytes(response.read())
-                if python_embed_dir.exists():
-                    shutil.rmtree(python_embed_dir, ignore_errors=True)
-                python_embed_dir.mkdir(parents=True, exist_ok=True)
-                with zipfile.ZipFile(python_zip, "r") as archive:
-                    archive.extractall(python_embed_dir)
-                self._enable_embedded_python_site_packages(python_embed_dir)
-                python_exe = python_embed_dir / "python.exe"
-                if python_exe.exists():
-                    return True, f"embedded python ready: {python_exe}"
-            except (OSError, zipfile.BadZipFile):
-                continue
-        return False, "Failed to download or extract embedded Python runtime for managed ComfyUI."
+        """Compatibility shim: managed runtime now uses a local .venv."""
+        venv_dir = target_dir / ".venv"
+        venv_python = venv_dir / "Scripts" / "python.exe"
+        if venv_python.exists():
+            pip_check = self._run_command_capture([str(venv_python), "-m", "pip", "--version"], timeout_seconds=30)
+            if pip_check.returncode == 0:
+                return True, f"venv runtime ready: {venv_python}"
+        if venv_dir.exists():
+            shutil.rmtree(venv_dir, ignore_errors=True)
+        python_exe = shutil.which("python") or shutil.which("py")
+        if not python_exe:
+            return False, "System Python is required to create ComfyUI .venv runtime."
+        create_cmd = [python_exe, "-m", "venv", str(venv_dir)]
+        if Path(python_exe).name.lower() in {"py", "py.exe"}:
+            create_cmd = [python_exe, "-3", "-m", "venv", str(venv_dir)]
+        create = self._run_command_capture(create_cmd, timeout_seconds=180)
+        if create.returncode != 0:
+            detail = self._command_output_snippet(create)
+            return False, f"Failed to create ComfyUI .venv runtime: {detail}"
+        if not venv_python.exists():
+            return False, "ComfyUI .venv creation did not produce Scripts/python.exe."
+        pip_check = self._run_command_capture([str(venv_python), "-m", "pip", "--version"], timeout_seconds=30)
+        if pip_check.returncode != 0:
+            detail = self._command_output_snippet(pip_check)
+            return False, f"ComfyUI .venv was created, but pip is unavailable: {detail}"
+        return True, f"venv runtime ready: {venv_python}"
 
     def _repair_managed_comfyui_install(self, target_dir: Path) -> tuple[bool, str]:
         self._ensure_comfyui_runtime_folders(target_dir)
-        if (target_dir / "main.py").exists() and (target_dir / "python_embeded" / "python.exe").exists():
+        if (target_dir / "main.py").exists() and (target_dir / ".venv" / "Scripts" / "python.exe").exists():
             return True, "Managed ComfyUI runtime already complete."
         if not (target_dir / "main.py").exists():
             bundled_root = bundled_comfyui_dir()
@@ -1757,7 +1724,7 @@ class WebRuntime:
                     self._ensure_comfyui_runtime_folders(target_dir)
                 except OSError:
                     pass
-            if (target_dir / "main.py").exists() and (target_dir / "python_embeded" / "python.exe").exists():
+            if (target_dir / "main.py").exists() and (target_dir / ".venv" / "Scripts" / "python.exe").exists():
                 return True, "Installed managed ComfyUI from bundled runtime."
             ok, msg = self._download_and_extract_comfyui(target_dir)
             if not ok:
@@ -1770,13 +1737,10 @@ class WebRuntime:
 
     def _write_comfyui_cpu_launcher(self, comfyui_root: Path) -> bool:
         launcher = comfyui_root / "run_cpu.bat"
-        embedded_python = comfyui_root / "python_embeded" / "python.exe"
-        if embedded_python.exists():
-            command = ".\\python_embeded\\python.exe main.py"
-        elif (comfyui_root / ".venv" / "Scripts" / "python.exe").exists():
+        if (comfyui_root / ".venv" / "Scripts" / "python.exe").exists():
             command = ".\\.venv\\Scripts\\python.exe main.py"
         else:
-            command = "python main.py"
+            command = "REM Missing .venv\\Scripts\\python.exe"
         content = f"@echo off\r\ncd /d %~dp0\r\n{command}\r\npause\r\n"
         try:
             launcher.write_text(content, encoding="utf-8")
@@ -1872,23 +1836,10 @@ class WebRuntime:
         }
 
     def _build_comfy_launch_command(self, comfyui_root: Path, host: str, port: int) -> tuple[list[str], str]:
-        embedded_python = comfyui_root / "python_embeded" / "python.exe"
-        if os.name == "nt" and embedded_python.exists():
-            return [str(embedded_python), "main.py", "--listen", host, "--port", str(port)], "embedded_python"
         venv_python = comfyui_root / ".venv" / "Scripts" / "python.exe"
         if os.name == "nt" and venv_python.exists():
             return [str(venv_python), "main.py", "--listen", host, "--port", str(port)], "venv_python"
-        managed_mode = self._is_managed_install_root(comfyui_root) and not str(self.app_config.image.comfyui_path or "").strip()
-        allow_system = (not managed_mode) and str(self.app_config.image.preferred_launcher or "").strip().lower() in {"system", "system_python"}
-        if not allow_system:
-            return [], "python_runtime_not_found"
-        python_exe = shutil.which("python") or shutil.which("py")
-        if not python_exe:
-            return [], "python_not_found"
-        python_name = Path(python_exe).name.lower()
-        if os.name == "nt" and python_name in {"py", "py.exe"}:
-            return [python_exe, "-3", "main.py", "--listen", host, "--port", str(port)], "system_python_explicit"
-        return [python_exe, "main.py", "--listen", host, "--port", str(port)], "system_python_explicit"
+        return [], "python_runtime_not_found"
 
     def _validate_python_runtime(self, executable: str, launcher_type: str) -> dict[str, Any]:
         command = [executable, "--version"]
@@ -1914,15 +1865,7 @@ class WebRuntime:
         runtime_command = [executable]
         if launcher_type == "py_launcher":
             runtime_command.append("-3")
-        runtime_kind = (
-            "embedded"
-            if launcher_type == "embedded_python"
-            else "venv"
-            if launcher_type == "venv_python"
-            else "system"
-            if "system_python" in launcher_type
-            else "unknown"
-        )
+        runtime_kind = "venv" if launcher_type == "venv_python" else "unknown"
         return {
             "ok": True,
             "executable": executable,
@@ -1982,73 +1925,16 @@ class WebRuntime:
                 "pip_version": pip_version,
             }
 
-        print(f"[setup-deps] pip-check-initial-failure detail={self._command_output_snippet(pip_check)}")
-        print("[setup-deps] ensurepip-attempt start")
-        ensurepip = self._run_runtime_python_capture(runtime_command, ["-m", "ensurepip", "--upgrade"], timeout_seconds=180)
-        if ensurepip.returncode != 0:
-            ensurepip_detail = self._command_output_snippet(ensurepip)
-            print(f"[setup-deps] ensurepip-attempt failed detail={ensurepip_detail}")
-            print("[setup-deps] get-pip-fallback-attempt start")
-            get_pip_path = Path(tempfile.gettempdir()) / "adventurer_guild_get_pip.py"
-            try:
-                with urllib.request.urlopen("https://bootstrap.pypa.io/get-pip.py", timeout=60) as response:
-                    get_pip_path.write_bytes(response.read())
-            except (OSError, urllib.error.URLError) as exc:
-                return {
-                    "ok": False,
-                    "stage": "dependency-bootstrap",
-                    "message": "get-pip bootstrap failed",
-                    "detail": f"ensurepip unavailable in managed runtime. ensurepip detail: {ensurepip_detail}. get-pip download failed: {exc}",
-                    "python_executable": python_executable,
-                    "pip_initially_available": False,
-                    "ensurepip_attempted": True,
-                    "fallback_attempted": True,
-                }
-            get_pip = self._run_runtime_python_capture(runtime_command, [str(get_pip_path), "--upgrade"], timeout_seconds=240)
-            if get_pip.returncode != 0:
-                get_pip_detail = self._command_output_snippet(get_pip)
-                print(f"[setup-deps] get-pip-fallback-attempt failed detail={get_pip_detail}")
-                return {
-                    "ok": False,
-                    "stage": "dependency-bootstrap",
-                    "message": "get-pip bootstrap failed",
-                    "detail": (
-                        "ensurepip unavailable in managed runtime. "
-                        f"ensurepip detail: {ensurepip_detail}. get-pip detail: {get_pip_detail}"
-                    ),
-                    "python_executable": python_executable,
-                    "pip_initially_available": False,
-                    "ensurepip_attempted": True,
-                    "fallback_attempted": True,
-                }
-            print("[setup-deps] get-pip-fallback-attempt success")
-            fallback_attempted = True
-        else:
-            print("[setup-deps] ensurepip-attempt success")
-            fallback_attempted = False
-
-        pip_verify = self._run_runtime_python_capture(runtime_command, ["-m", "pip", "--version"], timeout_seconds=30)
-        if pip_verify.returncode != 0:
-            verify_detail = self._command_output_snippet(pip_verify)
-            print(f"[setup-deps] pip-verify failed detail={verify_detail}")
-            return {
-                "ok": False,
-                "stage": "dependency-bootstrap",
-                "message": "pip verification failed after bootstrap",
-                "detail": verify_detail,
-                "python_executable": python_executable,
-                "pip_initially_available": False,
-                "ensurepip_attempted": True,
-                "fallback_attempted": fallback_attempted,
-            }
-        pip_version = (pip_verify.stdout or pip_verify.stderr or "").strip()
-        print(f"[setup-deps] pip-ready version={pip_version}")
         return {
-            "ok": True,
+            "ok": False,
+            "stage": "dependency-bootstrap",
+            "message": "ComfyUI .venv is missing pip",
+            "detail": self._command_output_snippet(pip_check),
+            "python_executable": python_executable,
             "pip_initially_available": False,
-            "ensurepip_attempted": True,
-            "fallback_attempted": fallback_attempted,
-            "pip_version": pip_version,
+            "ensurepip_attempted": False,
+            "fallback_attempted": False,
+            "pip_version": "",
         }
 
     def _bootstrap_comfy_python_dependencies(self, comfyui_root: Path, launch_command: list[str], launcher_type: str) -> dict[str, Any]:
@@ -2606,7 +2492,7 @@ class WebRuntime:
             return {
                 "ok": False,
                 "message": install_message,
-                "next_step": "Retry setup to repair runtime, or install ComfyUI portable with embedded Python manually.",
+                "next_step": "Retry setup to recreate the ComfyUI .venv runtime.",
             }
         validation = self.validate_comfyui_install(target_dir)
         if not validation.get("ok"):
@@ -2626,7 +2512,7 @@ class WebRuntime:
         self._image_engine_state = "installed"
         return {
             "ok": True,
-            "message": "ComfyUI install verified, including embedded Python runtime.",
+            "message": "ComfyUI install verified, including .venv runtime.",
             "next_step": "Click Start Image Engine to run preflight validation and launch ComfyUI.",
             "readiness_refreshed": True,
         }

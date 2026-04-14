@@ -60,11 +60,11 @@ class InstallerLayoutValidator:
                 "Bundled character portrait workflow template is present.",
             ),
             (
-                "embedded_python",
+                "venv_runtime",
                 False,
-                runtime_root / "python_embeded" / "python.exe",
+                bundled_comfyui_dir() / ".venv" / "Scripts" / "python.exe",
                 False,
-                "Embedded Python runtime detected for bundled launch.",
+                "Managed ComfyUI .venv runtime detected for bundled launch.",
             ),
         ]
 
@@ -79,7 +79,7 @@ class InstallerLayoutValidator:
                 message = self._required_missing_message(check_id)
                 missing_required.append(check_id)
             else:
-                message = "Embedded Python runtime is optional and was not found. System Python fallback may be required."
+                message = "Managed ComfyUI .venv runtime is optional for packaged checks and was not found."
             checks.append(
                 LayoutCheck(
                     id=check_id,
@@ -108,7 +108,7 @@ class InstallerLayoutValidator:
             "bundled_workflows_present": bool(
                 by_id["workflow_scene_image"]["present"] and by_id["workflow_character_portrait"]["present"]
             ),
-            "embedded_python_present": by_id["embedded_python"]["present"],
+            "venv_runtime_present": by_id["venv_runtime"]["present"],
         }
 
     def _required_missing_message(self, check_id: str) -> str:
