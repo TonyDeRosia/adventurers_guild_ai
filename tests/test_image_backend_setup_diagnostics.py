@@ -28,6 +28,25 @@ def test_image_backend_diagnostics_reports_missing_comfyui_path(tmp_path: Path, 
     assert diagnostics["recommended_next_action"]
 
 
+def test_image_backend_diagnostics_includes_managed_runtime_details(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    comfy_root = tmp_path / "user_data" / "tools" / "ComfyUI"
+    comfy_root.mkdir(parents=True, exist_ok=True)
+    (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_root / "custom_nodes").mkdir(exist_ok=True)
+    (comfy_root / "models").mkdir(exist_ok=True)
+    runtime.app_config.image.managed_install_path = str(comfy_root)
+
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+    payload = runtime.get_image_backend_diagnostics()
+    diagnostics = payload["diagnostics"]
+    assert diagnostics["managed_mode_active"] is True
+    assert diagnostics["managed_comfyui_root"] == str(comfy_root)
+    assert diagnostics["python_runtime_found"] is False
+    assert "python-runtime" in diagnostics["runtime_missing_items"]
+
+
 def test_image_backend_diagnostics_reports_running_when_api_reachable(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.app_config.image.provider = "comfyui"
@@ -143,6 +162,7 @@ def test_install_image_engine_does_not_force_browser_launch(tmp_path: Path, monk
     monkeypatch.setattr(runtime, "_default_comfyui_path", lambda: target_dir)
     monkeypatch.setattr(runtime, "_find_comfyui_root", lambda: None)
     monkeypatch.setattr(runtime, "_download_and_extract_comfyui", lambda _target: (True, "ok"))
+    monkeypatch.setattr(runtime, "_install_embedded_python_runtime", lambda _target: (True, "embedded python ready"))
     monkeypatch.setattr(runtime, "validate_comfyui_install", lambda _path: {"ok": True, "valid": True, "missing_files": []})
     monkeypatch.setattr(runtime, "open_external_url", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("should not open browser")))
 
@@ -252,6 +272,7 @@ def test_managed_install_keeps_mode_managed(tmp_path: Path, monkeypatch) -> None
         return True, "ok"
 
     monkeypatch.setattr(runtime, "_download_and_extract_comfyui", _fake_download)
+    monkeypatch.setattr(runtime, "_install_embedded_python_runtime", lambda _target: (True, "embedded python ready"))
     assert runtime.install_image_engine()["ok"] is True
     status = runtime.get_path_configuration_status()["image"]
     assert status["mode"] == "managed"
