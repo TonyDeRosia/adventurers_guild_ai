@@ -338,6 +338,133 @@ def test_dependency_bootstrap_reports_missing_sqlalchemy_when_install_fails(tmp_
     assert "Failed to install dependency: sqlalchemy" in result["message"]
 
 
+def test_dependency_bootstrap_missing_pip_triggers_ensurepip(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_root = tmp_path / "ComfyUI"
+    comfy_root.mkdir(parents=True, exist_ok=True)
+
+    calls: list[list[str]] = []
+
+    def _fake_run(runtime_command: list[str], args: list[str], timeout_seconds: int = 60):
+        calls.append(args)
+        if args[:3] == ["-m", "pip", "--version"]:
+            if sum(1 for item in calls if item[:3] == ["-m", "pip", "--version"]) == 1:
+                return subprocess.CompletedProcess([*runtime_command, *args], 1, stdout="", stderr="No module named pip")
+            return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="pip 24.0", stderr="")
+        if args[:3] == ["-m", "ensurepip", "--upgrade"]:
+            return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="bootstrapped", stderr="")
+        if args[:2] == ["-c", "import sqlalchemy"]:
+            return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="", stderr="")
+        return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="", stderr="")
+
+    monkeypatch.setattr(runtime, "_run_runtime_python_capture", _fake_run)
+    result = runtime._bootstrap_comfy_python_dependencies(comfy_root, ["python", "main.py"], "system_python")
+    assert result["ok"] is True
+    assert result["pip_initially_available"] is False
+    assert result["ensurepip_attempted"] is True
+    assert ["-m", "ensurepip", "--upgrade"] in calls
+
+
+def test_dependency_bootstrap_ensurepip_success_sets_pip_version(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_root = tmp_path / "ComfyUI"
+    comfy_root.mkdir(parents=True, exist_ok=True)
+
+    state = {"pip_calls": 0}
+
+    def _fake_run(runtime_command: list[str], args: list[str], timeout_seconds: int = 60):
+        if args[:3] == ["-m", "pip", "--version"]:
+            state["pip_calls"] += 1
+            if state["pip_calls"] == 1:
+                return subprocess.CompletedProcess([*runtime_command, *args], 1, stdout="", stderr="No module named pip")
+            return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="pip 24.0 from managed", stderr="")
+        if args[:3] == ["-m", "ensurepip", "--upgrade"]:
+            return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="bootstrapped", stderr="")
+        if args[:2] == ["-c", "import sqlalchemy"]:
+            return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="", stderr="")
+        return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="", stderr="")
+
+    monkeypatch.setattr(runtime, "_run_runtime_python_capture", _fake_run)
+    result = runtime._bootstrap_comfy_python_dependencies(comfy_root, ["python", "main.py"], "system_python")
+    assert result["ok"] is True
+    assert "pip 24.0 from managed" in result["pip_version"]
+
+
+def test_dependency_bootstrap_reports_precise_error_when_ensurepip_and_get_pip_fail(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+
+    def _fake_run(runtime_command: list[str], args: list[str], timeout_seconds: int = 60):
+        if args[:3] == ["-m", "pip", "--version"]:
+            return subprocess.CompletedProcess([*runtime_command, *args], 1, stdout="", stderr="No module named pip")
+        if args[:3] == ["-m", "ensurepip", "--upgrade"]:
+            return subprocess.CompletedProcess([*runtime_command, *args], 1, stdout="", stderr="No module named ensurepip")
+        raise AssertionError(f"unexpected command: {args}")
+
+    class _FailDownload:
+        def __call__(self, *_args, **_kwargs):
+            raise OSError("network blocked")
+
+    monkeypatch.setattr(runtime, "_run_runtime_python_capture", _fake_run)
+    monkeypatch.setattr("app.web.urllib.request.urlopen", _FailDownload())
+
+    result = runtime._bootstrap_runtime_pip(["python"], python_executable="python")
+    assert result["ok"] is False
+    assert result["message"] == "get-pip bootstrap failed"
+    assert "ensurepip unavailable in managed runtime" in result["detail"]
+
+
+def test_dependency_bootstrap_does_not_install_requirements_if_pip_unavailable(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_root = tmp_path / "ComfyUI"
+    comfy_root.mkdir(parents=True, exist_ok=True)
+    (comfy_root / "requirements.txt").write_text("sqlalchemy\n", encoding="utf-8")
+
+    calls: list[list[str]] = []
+
+    def _fake_run(runtime_command: list[str], args: list[str], timeout_seconds: int = 60):
+        calls.append(args)
+        if args[:3] == ["-m", "pip", "--version"]:
+            return subprocess.CompletedProcess([*runtime_command, *args], 1, stdout="", stderr="No module named pip")
+        if args[:3] == ["-m", "ensurepip", "--upgrade"]:
+            return subprocess.CompletedProcess([*runtime_command, *args], 1, stdout="", stderr="ensurepip missing")
+        raise AssertionError(f"unexpected command: {args}")
+
+    monkeypatch.setattr(runtime, "_run_runtime_python_capture", _fake_run)
+    monkeypatch.setattr("app.web.urllib.request.urlopen", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("offline")))
+    result = runtime._bootstrap_comfy_python_dependencies(comfy_root, ["python", "main.py"], "system_python")
+    assert result["ok"] is False
+    assert not any(args[:3] == ["-m", "pip", "install"] for args in calls)
+
+
+def test_diagnostics_include_pip_availability_status(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    comfy_root = tmp_path / "user_data" / "tools" / "ComfyUI"
+    comfy_root.mkdir(parents=True, exist_ok=True)
+    (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
+    for folder in ("custom_nodes", "models", "output", "input", "user"):
+        (comfy_root / folder).mkdir(exist_ok=True)
+    embedded = comfy_root / "python_embeded" / "python.exe"
+    embedded.parent.mkdir(parents=True, exist_ok=True)
+    embedded.write_text("", encoding="utf-8")
+    runtime.app_config.image.managed_install_path = str(comfy_root)
+
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(runtime, "_build_comfy_launch_command", lambda *_args, **_kwargs: ([str(embedded), "main.py"], "embedded_python"))
+    monkeypatch.setattr(runtime, "_resolve_comfy_python_runtime", lambda *_args, **_kwargs: {"ok": True, "runtime_command": [str(embedded)], "executable": str(embedded)})
+    monkeypatch.setattr(
+        runtime,
+        "_run_runtime_python_capture",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(["python", "-m", "pip", "--version"], 1, stdout="", stderr="No module named pip"),
+    )
+
+    payload = runtime.get_image_backend_diagnostics()
+    diagnostics = payload["diagnostics"]
+    assert diagnostics["pip_available"] is False
+    assert "pip" in diagnostics["runtime_missing_items"]
+    assert diagnostics["runtime_complete"] is False
+
+
 def test_start_image_engine_skips_launch_when_dependency_bootstrap_fails(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.app_config.image.provider = "comfyui"
