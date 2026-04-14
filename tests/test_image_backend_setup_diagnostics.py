@@ -332,7 +332,7 @@ def test_windows_venv_python_command_is_preferred(tmp_path: Path, monkeypatch) -
     monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
     command, launcher = runtime._build_comfy_launch_command(comfy_root, "127.0.0.1", 8188)
     assert launcher == "portable_nvidia_launcher"
-    assert command == ["cmd.exe", "/d", "/c", "run_nvidia_gpu.bat"]
+    assert command == ["cmd.exe", "/d", "/c", "run_nvidia_gpu.bat", "--listen", "127.0.0.1", "--port", "8188"]
 
 
 def test_windows_system_python_requires_explicit_setting(tmp_path: Path, monkeypatch) -> None:
@@ -780,3 +780,117 @@ def test_text_gameplay_remains_usable_after_image_ai_nvidia_failure(tmp_path: Pa
     assert image_result["ok"] is False
     assert "state" in turn_result
     assert turn_result["messages"]
+
+
+def test_start_image_engine_nvidia_waits_for_delayed_readiness(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    comfy_dir = tmp_path / "ComfyUI"
+    comfy_dir.mkdir(parents=True, exist_ok=True)
+    (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
+    (comfy_dir / "models").mkdir(exist_ok=True)
+    (comfy_dir / "run_nvidia_gpu.bat").write_text("@echo off", encoding="utf-8")
+    workflow = tmp_path / "scene.json"
+    workflow.write_text("{}", encoding="utf-8")
+    output_dir = tmp_path / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    runtime.app_config.image.managed_install_path = str(comfy_dir)
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt", path=os.path))
+    monkeypatch.setattr("app.web.time.sleep", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("app.web.subprocess.CREATE_NEW_PROCESS_GROUP", 0, raising=False)
+    monkeypatch.setattr("app.web.subprocess.CREATE_NO_WINDOW", 0, raising=False)
+    monkeypatch.setattr(
+        runtime,
+        "get_path_configuration_status",
+        lambda: {
+            "image": {
+                "mode": "managed",
+                "workflow_path": {"valid": True, "configured": True, "resolved_path": str(workflow)},
+                "comfyui_root": {"valid": True, "configured": True, "path": str(comfy_dir), "resolved_path": str(comfy_dir)},
+                "checkpoint_dir": {"valid": True, "configured": True, "model_ready": True},
+                "output_dir": {"valid": True, "configured": True, "resolved_path": str(output_dir)},
+                "pipeline_ready": True,
+            }
+        },
+    )
+    monkeypatch.setattr(runtime, "validate_comfyui_install", lambda _path: {"ok": True, "missing_files": []})
+    monkeypatch.setattr(runtime, "_read_startup_log_tail", lambda *_args, **_kwargs: ["ComfyUI startup..."])
+
+    class _FakeProcess:
+        pid = 1001
+        stdout = None
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr("subprocess.Popen", lambda *_args, **_kwargs: _FakeProcess())
+    probe_calls = {"count": 0}
+
+    def _fake_probe(_expected_base: str, _startup_log_text: str, timeout_seconds: float = 1.0):
+        probe_calls["count"] += 1
+        return (probe_calls["count"] >= 18, "http://127.0.0.1:8188" if probe_calls["count"] >= 18 else "")
+
+    monkeypatch.setattr(runtime, "_probe_comfy_readiness", _fake_probe)
+    monkeypatch.setattr(runtime, "_detect_comfy_child_process", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": False, "status_code": "setup_required"})
+
+    result = runtime.start_image_engine()
+    assert result["ok"] is True
+    assert probe_calls["count"] >= 18
+    assert result["startup_status"]["ready_base_url"] == "http://127.0.0.1:8188"
+
+
+def test_start_image_engine_timeout_includes_launcher_output_tail(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    comfy_dir = tmp_path / "ComfyUI"
+    comfy_dir.mkdir(parents=True, exist_ok=True)
+    (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
+    (comfy_dir / "models").mkdir(exist_ok=True)
+    (comfy_dir / "run_nvidia_gpu.bat").write_text("@echo off", encoding="utf-8")
+    workflow = tmp_path / "scene.json"
+    workflow.write_text("{}", encoding="utf-8")
+    output_dir = tmp_path / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    runtime.app_config.image.managed_install_path = str(comfy_dir)
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt", path=os.path))
+    monkeypatch.setattr("app.web.time.sleep", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("app.web.subprocess.CREATE_NEW_PROCESS_GROUP", 0, raising=False)
+    monkeypatch.setattr("app.web.subprocess.CREATE_NO_WINDOW", 0, raising=False)
+    monkeypatch.setattr(
+        runtime,
+        "get_path_configuration_status",
+        lambda: {
+            "image": {
+                "mode": "managed",
+                "workflow_path": {"valid": True, "configured": True, "resolved_path": str(workflow)},
+                "comfyui_root": {"valid": True, "configured": True, "path": str(comfy_dir), "resolved_path": str(comfy_dir)},
+                "checkpoint_dir": {"valid": True, "configured": True, "model_ready": True},
+                "output_dir": {"valid": True, "configured": True, "resolved_path": str(output_dir)},
+                "pipeline_ready": True,
+            }
+        },
+    )
+    monkeypatch.setattr(runtime, "validate_comfyui_install", lambda _path: {"ok": True, "missing_files": []})
+    monkeypatch.setattr(runtime, "_read_startup_log_tail", lambda *_args, **_kwargs: ["loading cuda kernels", "still initializing..."])
+
+    class _FakeProcess:
+        pid = 2002
+        stdout = None
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr("subprocess.Popen", lambda *_args, **_kwargs: _FakeProcess())
+    monkeypatch.setattr(runtime, "_probe_comfy_readiness", lambda *_args, **_kwargs: (False, ""))
+    monkeypatch.setattr(runtime, "_detect_comfy_child_process", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": False, "status_code": "setup_required"})
+
+    result = runtime.start_image_engine()
+    assert result["ok"] is False
+    assert result["failure_stage"] == "wait-for-readiness"
+    assert "Last output: still initializing..." in result["message"]
+    assert result["exact_error"] == "still initializing..."
+    assert result["launcher_output_tail"][-1] == "still initializing..."
