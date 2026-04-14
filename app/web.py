@@ -697,6 +697,19 @@ class WebRuntime:
         bundled_available = bool(bundled_runtime.get("present", False))
         bundled_path = str(bundled_runtime.get("path", "")) if bundled_available else ""
         checkpoint_dir = path_status.get("checkpoint_dir", {})
+        comfy_resolved = str(path_status.get("comfyui_root", {}).get("resolved_path") or "").strip()
+        model_resolved = str(checkpoint_dir.get("resolved_path") or "").strip()
+        setup_status = "not configured"
+        if comfy_resolved and model_resolved:
+            setup_status = "ready" if bool(image_status.get("ready", False)) else "model selected"
+        elif comfy_resolved:
+            setup_status = "ComfyUI selected"
+        elif model_resolved:
+            setup_status = "model selected"
+        if str(self.image_startup_status.get("state", "")).lower() in {"starting comfyui", "repairing install", "queued"}:
+            setup_status = "importing"
+        if str(image_status.get("status_code", "")) == "error":
+            setup_status = "error"
         first_run = self.get_first_run_status()
         return {
             "ok": True,
@@ -715,11 +728,121 @@ class WebRuntime:
             "checkpoint_folder_message": str(checkpoint_dir.get("message", "")),
             "checkpoint_model_ready": bool(checkpoint_dir.get("model_ready", False)),
             "checkpoint_model_message": str(checkpoint_dir.get("model_message", "")),
+            "setup_status": setup_status,
             "text_only_fallback_available": True,
             "text_only_mode_active": self.app_config.image.provider == "null",
             "recommended_model_page": str(self.app_config.image.checkpoint_model_page or "").strip(),
             "installer_layout": layout_status,
             "first_run_status": first_run,
+        }
+
+    @staticmethod
+    def _is_supported_model_file(path: Path) -> bool:
+        return path.is_file() and path.suffix.lower() in {".safetensors", ".ckpt", ".pt", ".pth", ".bin"}
+
+    def _validate_comfyui_import_source(self, source: Path) -> dict[str, Any]:
+        if not source.exists():
+            return {"ok": False, "message": "ComfyUI source path does not exist."}
+        if source.is_file():
+            if source.suffix.lower() != ".zip":
+                return {"ok": False, "message": "ComfyUI source file must be a .zip archive."}
+            return {"ok": True, "kind": "zip"}
+        if source.is_dir():
+            main_py = source / "main.py"
+            if not main_py.exists():
+                return {"ok": False, "message": "Selected ComfyUI folder must contain main.py."}
+            return {"ok": True, "kind": "folder"}
+        return {"ok": False, "message": "ComfyUI source must be a file or folder."}
+
+    def _import_comfyui_source(self, source: Path, target_dir: Path) -> dict[str, Any]:
+        validation = self._validate_comfyui_import_source(source)
+        if not validation.get("ok", False):
+            return validation
+        if target_dir.exists():
+            shutil.rmtree(target_dir, ignore_errors=True)
+        target_dir.parent.mkdir(parents=True, exist_ok=True)
+        if validation.get("kind") == "zip":
+            with zipfile.ZipFile(source, "r") as archive:
+                archive.extractall(target_dir)
+            nested_main = next((p.parent for p in target_dir.rglob("main.py")), None)
+            if nested_main and nested_main != target_dir:
+                for item in list(nested_main.iterdir()):
+                    shutil.move(str(item), str(target_dir / item.name))
+        else:
+            shutil.copytree(source, target_dir, dirs_exist_ok=True)
+        self._ensure_comfyui_runtime_folders(target_dir)
+        install_validation = self.validate_comfyui_install(target_dir)
+        if not install_validation.get("ok", False):
+            missing = ", ".join(install_validation.get("missing_files", []))
+            return {"ok": False, "message": f"Imported ComfyUI content is incomplete: {missing}."}
+        return {"ok": True, "message": "ComfyUI source imported.", "managed_path": str(target_dir)}
+
+    def _import_model_source(self, source: Path, checkpoint_target: Path) -> dict[str, Any]:
+        if not source.exists():
+            return {"ok": False, "message": "Model source path does not exist."}
+        checkpoint_target.mkdir(parents=True, exist_ok=True)
+        copied: list[str] = []
+        if source.is_file():
+            if not self._is_supported_model_file(source):
+                return {"ok": False, "message": "Model file must be .safetensors, .ckpt, .pt, .pth, or .bin."}
+            destination = checkpoint_target / source.name
+            shutil.copy2(source, destination)
+            copied.append(destination.name)
+        elif source.is_dir():
+            for item in source.iterdir():
+                if self._is_supported_model_file(item):
+                    destination = checkpoint_target / item.name
+                    shutil.copy2(item, destination)
+                    copied.append(destination.name)
+            if not copied:
+                return {"ok": False, "message": "No supported model/checkpoint files were found in the selected folder."}
+        else:
+            return {"ok": False, "message": "Model source must be a file or folder."}
+        copied.sort()
+        return {"ok": True, "copied": copied, "active_model": copied[0]}
+
+    def import_and_setup_image_ai(self, comfyui_source: str, model_source: str) -> dict[str, Any]:
+        comfy_source_path = Path(str(comfyui_source or "").strip())
+        model_source_path = Path(str(model_source or "").strip())
+        if not str(comfy_source_path):
+            return {"ok": False, "message": "ComfyUI source is required."}
+        if not str(model_source_path):
+            return {"ok": False, "message": "Model source is required."}
+        managed_root = self._coerce_managed_install_path()
+        comfy_result = self._import_comfyui_source(comfy_source_path, managed_root)
+        if not comfy_result.get("ok", False):
+            return {"ok": False, "message": str(comfy_result.get("message", "ComfyUI import failed."))}
+        checkpoint_target = managed_root / "models" / "checkpoints"
+        model_result = self._import_model_source(model_source_path, checkpoint_target)
+        if not model_result.get("ok", False):
+            return {"ok": False, "message": str(model_result.get("message", "Model import failed."))}
+        self.app_config.image.provider = "comfyui"
+        self.app_config.image.enabled = True
+        self.app_config.image.comfyui_path = ""
+        self.app_config.image.managed_install_path = str(managed_root)
+        self.app_config.image.checkpoint_folder = str(checkpoint_target)
+        self.app_config.image.preferred_checkpoint = str(model_result.get("active_model", ""))
+        self.app_config.image.comfyui_output_dir = str(self.generated_image_dir)
+        default_workflow = self._default_workflow_path()
+        if default_workflow.exists():
+            self.app_config.image.comfyui_workflow_path = str(default_workflow)
+        self.config_store.save(self.app_config)
+        self.image_adapter = self._create_image_adapter()
+        start_result = self.start_image_engine()
+        if not start_result.get("ok", False):
+            return {
+                "ok": False,
+                "message": str(start_result.get("message", "Import succeeded but launch failed.")),
+                "managed_comfyui_path": str(managed_root),
+                "managed_checkpoint_path": str(checkpoint_target),
+            }
+        return {
+            "ok": True,
+            "message": "Image AI imported into managed runtime and started in background.",
+            "managed_comfyui_path": str(managed_root),
+            "managed_checkpoint_path": str(checkpoint_target),
+            "preferred_checkpoint": self.app_config.image.preferred_checkpoint,
+            "startup": start_result,
         }
 
     def get_image_backend_diagnostics(self) -> dict[str, Any]:
@@ -6487,6 +6610,12 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     def setup_save_checkpoint_folder(payload: dict[str, Any]) -> dict[str, Any]:
         selected_path = str(payload.get("path", ""))
         return runtime.save_checkpoint_folder(selected_path)
+
+    @app.post("/api/setup/import-image-ai")
+    def setup_import_image_ai(payload: dict[str, Any]) -> dict[str, Any]:
+        comfyui_source = str(payload.get("comfyui_source", ""))
+        model_source = str(payload.get("model_source", ""))
+        return runtime.import_and_setup_image_ai(comfyui_source, model_source)
 
     @app.post("/api/setup/skip-images")
     def setup_skip_images() -> dict[str, Any]:

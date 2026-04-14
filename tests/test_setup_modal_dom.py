@@ -50,3 +50,20 @@ def test_play_layout_uses_single_campaign_log_without_npc_sidebar() -> None:
     assert 'id="dialogue-feed"' in html
     assert 'id="npc-panel"' not in html
     assert 'id="npc-panel-list"' not in html
+
+
+def test_guided_image_import_controls_are_present() -> None:
+    html = _index_html()
+    required_ids = [
+        "open-comfyui-download-page",
+        "open-model-download-page",
+        "image-import-comfy-source",
+        "pick-image-import-comfy-file",
+        "pick-image-import-comfy-folder",
+        "image-import-model-source",
+        "pick-image-import-model-file",
+        "pick-image-import-model-folder",
+        "import-image-ai",
+    ]
+    for element_id in required_ids:
+        assert f'id="{element_id}"' in html
