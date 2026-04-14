@@ -118,6 +118,11 @@ const runtimeCharacterSheetCreateSave = document.getElementById('runtime-charact
 const runtimeCharacterSheetCreateCancel = document.getElementById('runtime-character-sheet-create-cancel');
 const runtimeInventoryModal = document.getElementById('runtime-inventory-modal');
 const runtimeInventoryDetail = document.getElementById('runtime-inventory-detail');
+const inventoryEntryIdInput = document.getElementById('inventory-entry-id');
+const inventoryEntryNameInput = document.getElementById('inventory-entry-name');
+const inventoryEntryCategoryInput = document.getElementById('inventory-entry-category');
+const inventoryEntryQuantityInput = document.getElementById('inventory-entry-quantity');
+const inventoryEntryNotesInput = document.getElementById('inventory-entry-notes');
 const runtimeSpellbookModal = document.getElementById('runtime-spellbook-modal');
 const runtimeSpellbookList = document.getElementById('runtime-spellbook-list');
 const narratorRulesModal = document.getElementById('narrator-rules-modal');
@@ -1558,14 +1563,44 @@ function normalizeSpellbookEntry(entry = {}) {
 function renderInventoryViewer() {
   if (!runtimeInventoryDetail) return;
   const state = runtimeInventoryState || {};
-  const groups = ['items', 'weapons', 'armor', 'consumables', 'key_items'];
-  runtimeInventoryDetail.innerHTML = groups.map((group) => {
-    const entries = Array.isArray(state[group]) ? state[group] : [];
-    return `<div class="spellbook-group"><strong>${escapeHtml(group.replace('_', ' ').toUpperCase())}</strong><div>${escapeHtml(entries.join(', ') || 'None')}</div></div>`;
-  }).join('') + `
+  const entries = Array.isArray(state.entries) ? state.entries : [];
+  const rows = entries.length ? entries.map((entry) => `
+      <div class="spellbook-entry">
+        <strong>${escapeHtml(entry.name || '')}</strong>
+        <div>Category: ${escapeHtml(entry.category || 'items')} • Quantity: ${escapeHtml(String(entry.quantity || 1))}</div>
+        ${entry.notes ? `<div>Notes: ${escapeHtml(entry.notes)}</div>` : ''}
+        <div class="button-row compact-row">
+          <button type="button" data-inventory-edit="${escapeHtml(entry.id || '')}">Edit</button>
+          <button type="button" data-inventory-delete="${escapeHtml(entry.id || '')}">Delete</button>
+        </div>
+      </div>
+    `).join('') : '<div>None</div>';
+  runtimeInventoryDetail.innerHTML = `
+    <div class="spellbook-group"><h4>Items</h4>${rows}</div>
     <div class="spellbook-group"><strong>CURRENCY</strong><div>${escapeHtml(JSON.stringify(state.currency || { gold: 0, silver: 0, copper: 0 }))}</div></div>
     <div class="spellbook-group"><strong>EQUIPPED</strong><div>${escapeHtml(JSON.stringify(state.equipped || {}))}</div></div>
   `;
+  runtimeInventoryDetail.querySelectorAll('button[data-inventory-edit]').forEach((button) => {
+    button.onclick = () => {
+      const entry = entries.find((candidate) => candidate.id === button.dataset.inventoryEdit);
+      if (!entry) return;
+      inventoryEntryIdInput.value = entry.id || '';
+      inventoryEntryNameInput.value = entry.name || '';
+      inventoryEntryCategoryInput.value = entry.category || 'items';
+      inventoryEntryQuantityInput.value = String(entry.quantity || 1);
+      inventoryEntryNotesInput.value = entry.notes || '';
+    };
+  });
+  runtimeInventoryDetail.querySelectorAll('button[data-inventory-delete]').forEach((button) => {
+    button.onclick = async () => {
+      await api('/api/campaign/inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', id: button.dataset.inventoryDelete }),
+      });
+      await refreshInventory();
+    };
+  });
 }
 
 function renderSpellbookViewer() {
@@ -3076,6 +3111,33 @@ document.getElementById('spellbook-entry-clear').onclick = () => {
   document.getElementById('spellbook-entry-cooldown').value = '';
   document.getElementById('spellbook-entry-tags').value = '';
   document.getElementById('spellbook-entry-notes').value = '';
+};
+document.getElementById('inventory-entry-clear').onclick = () => {
+  inventoryEntryIdInput.value = '';
+  inventoryEntryNameInput.value = '';
+  inventoryEntryCategoryInput.value = 'items';
+  inventoryEntryQuantityInput.value = '1';
+  inventoryEntryNotesInput.value = '';
+};
+document.getElementById('inventory-entry-save').onclick = async () => {
+  try {
+    await api('/api/campaign/inventory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'upsert',
+        id: inventoryEntryIdInput.value.trim(),
+        name: inventoryEntryNameInput.value.trim(),
+        category: inventoryEntryCategoryInput.value,
+        quantity: Number(inventoryEntryQuantityInput.value || '1'),
+        notes: inventoryEntryNotesInput.value.trim(),
+      }),
+    });
+    document.getElementById('inventory-entry-clear').click();
+    await refreshInventory();
+  } catch (error) {
+    setStatus(error.message, true);
+  }
 };
 document.getElementById('spellbook-entry-save').onclick = async () => {
   await api('/api/campaign/spellbook', {
