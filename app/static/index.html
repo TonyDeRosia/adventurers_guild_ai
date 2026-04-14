@@ -189,6 +189,26 @@
           <button id="close-runtime-inventory" type="button">Close</button>
         </div>
         <div id="runtime-inventory-detail" class="runtime-sheet-detail">Loading inventory...</div>
+        <h4>Edit Item</h4>
+        <div class="modal-grid">
+          <input id="inventory-entry-id" type="hidden" />
+          <label>Name <input id="inventory-entry-name" type="text" /></label>
+          <label>Category
+            <select id="inventory-entry-category">
+              <option value="items">Items</option>
+              <option value="weapons">Weapons</option>
+              <option value="armor">Armor</option>
+              <option value="consumables">Consumables</option>
+              <option value="key_items">Key Items</option>
+            </select>
+          </label>
+          <label>Quantity <input id="inventory-entry-quantity" type="number" min="1" value="1" /></label>
+          <label>Notes <textarea id="inventory-entry-notes" rows="2"></textarea></label>
+        </div>
+        <div class="button-row">
+          <button id="inventory-entry-save" type="button">Save Item</button>
+          <button id="inventory-entry-clear" type="button">Clear Form</button>
+        </div>
       </div>
     </div>
 

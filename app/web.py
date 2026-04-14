@@ -3309,41 +3309,9 @@ class WebRuntime:
             break
 
     def _recalibration_sync_abilities(self, state: CampaignState, turns: list[Any]) -> int:
-        if not state.settings.play_style.auto_update_character_sheet_from_actions:
-            return 0
-        runtime = state.structured_state.runtime
-        runtime.abilities = self.engine.state_orchestrator._normalize_spellbook(getattr(runtime, "abilities", runtime.spellbook))
-        runtime.spellbook = list(runtime.abilities)
-        main_sheet = self._find_main_character_sheet(state)
-        added = 0
-        for turn in turns:
-            detected = self.engine._detect_action_ability(str(turn.player_input or ""))
-            if detected is None:
-                continue
-            existing_name = self.engine._find_existing_ability_name(state, detected.normalized_name)
-            if existing_name:
-                continue
-            ability_type = "spell" if detected.category == "magic" else "skill" if detected.category == "skill" else "ability"
-            runtime.abilities.append(
-                {
-                    "id": f"recal_{int(time.time() * 1000)}_{len(runtime.abilities)}",
-                    "name": detected.normalized_name,
-                    "type": ability_type,
-                    "description": "Recovered from recent action history during recalibration.",
-                    "cost_or_resource": "",
-                    "cooldown": "",
-                    "tags": ["recalibrated"],
-                    "notes": "",
-                }
-            )
-            if main_sheet is not None and not any(
-                self.engine._normalize_ability_name(name) == detected.normalized_name for name in main_sheet.abilities
-            ):
-                main_sheet.abilities.append(detected.normalized_name)
-            added += 1
-        runtime.abilities = self.engine.state_orchestrator._normalize_spellbook(runtime.abilities)
-        runtime.spellbook = list(runtime.abilities)
-        return added
+        # Ownership rule: spellbook remains player-managed. Recalibration should not
+        # auto-generate abilities from gameplay history.
+        return 0
 
     def _recalibration_merge_duplicate_npcs(self, state: CampaignState, scene_state: dict[str, Any]) -> int:
         by_name: dict[str, list[str]] = {}
@@ -3485,8 +3453,99 @@ class WebRuntime:
                 system_messages=[],
                 narrative="",
             )
+        self._normalize_inventory_state(runtime.inventory_state)
         print(f"[inventory] viewer_opened campaign={self.session.active_slot}")
         return runtime.inventory_state
+
+    def upsert_inventory_entry(self, payload: dict[str, Any]) -> dict[str, Any]:
+        runtime = self.session.state.structured_state.runtime
+        inventory_state = self.get_inventory_state()
+        # Ownership rule: inventory is player-managed by default; system writes are
+        # only allowed through explicit OOC structured-authoring requests.
+        self._normalize_inventory_state(inventory_state)
+        action = str(payload.get("action", "upsert")).strip().lower()
+        entries = list(inventory_state.get("entries", []))
+        if action == "delete":
+            entry_id = str(payload.get("id", "")).strip()
+            entries = [entry for entry in entries if str(entry.get("id", "")).strip() != entry_id]
+        else:
+            entry_id = str(payload.get("id", "")).strip() or f"inv_{int(time.time() * 1000)}"
+            normalized_entry = {
+                "id": entry_id,
+                "name": str(payload.get("name", "")).strip(),
+                "category": str(payload.get("category", "items")).strip().lower() or "items",
+                "quantity": max(1, int(payload.get("quantity", 1) or 1)),
+                "notes": str(payload.get("notes", payload.get("description", ""))).strip(),
+            }
+            if not normalized_entry["name"]:
+                raise ValueError("Inventory entry name is required.")
+            replaced = False
+            for index, existing in enumerate(entries):
+                if str(existing.get("id", "")).strip() == entry_id:
+                    entries[index] = normalized_entry
+                    replaced = True
+                    break
+            if not replaced:
+                entries.append(normalized_entry)
+        inventory_state["entries"] = entries
+        self._normalize_inventory_state(inventory_state)
+        runtime.inventory = [str(entry.get("name", "")).strip() for entry in inventory_state.get("entries", []) if str(entry.get("name", "")).strip()]
+        self.save_active_campaign(self.session.active_slot)
+        return {"inventory": inventory_state}
+
+    def _normalize_inventory_state(self, inventory_state: dict[str, Any]) -> None:
+        entries = inventory_state.get("entries", [])
+        normalized_entries: list[dict[str, Any]] = []
+        if isinstance(entries, list):
+            for index, raw in enumerate(entries):
+                if not isinstance(raw, dict):
+                    continue
+                name = str(raw.get("name", "")).strip()
+                if not name:
+                    continue
+                normalized_entries.append(
+                    {
+                        "id": str(raw.get("id", "")).strip() or f"inv_{index}_{name.lower().replace(' ', '_')}",
+                        "name": name,
+                        "category": str(raw.get("category", "items")).strip().lower() or "items",
+                        "quantity": max(1, int(raw.get("quantity", 1) or 1)),
+                        "notes": str(raw.get("notes", raw.get("description", ""))).strip(),
+                    }
+                )
+        if not normalized_entries:
+            legacy: list[dict[str, Any]] = []
+            for category in ("items", "weapons", "armor", "consumables", "key_items"):
+                values = inventory_state.get(category, [])
+                if not isinstance(values, list):
+                    continue
+                for value in values:
+                    name = str(value).strip()
+                    if not name:
+                        continue
+                    legacy.append(
+                        {
+                            "id": f"inv_{len(legacy)}_{name.lower().replace(' ', '_')}",
+                            "name": name,
+                            "category": category,
+                            "quantity": 1,
+                            "notes": "",
+                        }
+                    )
+            normalized_entries = legacy
+        inventory_state["entries"] = normalized_entries
+        grouped: dict[str, list[str]] = {"items": [], "weapons": [], "armor": [], "consumables": [], "key_items": []}
+        for entry in normalized_entries:
+            category = str(entry.get("category", "items")).strip().lower()
+            if category not in grouped:
+                category = "items"
+            grouped[category].append(str(entry.get("name", "")).strip())
+        inventory_state.update(grouped)
+        currency = inventory_state.get("currency")
+        if not isinstance(currency, dict):
+            inventory_state["currency"] = {"gold": 0, "silver": 0, "copper": 0}
+        equipped = inventory_state.get("equipped")
+        if not isinstance(equipped, dict):
+            inventory_state["equipped"] = {"equipped_item_id": self.session.state.player.equipped_item_id}
 
     def get_spellbook_state(self) -> list[dict[str, Any]]:
         runtime = self.session.state.structured_state.runtime
@@ -4284,6 +4343,32 @@ class WebRuntime:
                 validated.append(normalized)
         return validated
 
+    def _validate_structured_inventory_entries(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        raw_entries = payload.get("inventory_entries", payload.get("inventory_items", []))
+        if not isinstance(raw_entries, list):
+            return []
+        validated: list[dict[str, Any]] = []
+        for raw in raw_entries:
+            if isinstance(raw, str):
+                candidate = {"name": raw}
+            elif isinstance(raw, dict):
+                candidate = raw
+            else:
+                continue
+            name = str(candidate.get("name", "")).strip()
+            if not name:
+                continue
+            validated.append(
+                {
+                    "id": str(candidate.get("id", "")).strip() or f"inv_ooc_{len(validated)}_{name.lower().replace(' ', '_')}",
+                    "name": name,
+                    "category": str(candidate.get("category", candidate.get("type", "items"))).strip().lower() or "items",
+                    "quantity": max(1, int(candidate.get("quantity", 1) or 1)),
+                    "notes": str(candidate.get("notes", candidate.get("description", ""))).strip(),
+                }
+            )
+        return validated
+
     def _extract_world_entries_from_ooc_response(self, text: str) -> list[str]:
         entries: list[str] = []
         for raw_line in str(text or "").splitlines():
@@ -4329,6 +4414,32 @@ class WebRuntime:
                     existing_guaranteed.add(normalized)
                     character_sheet_updated = True
         return {"spellbook_entries_added": spellbook_added, "character_sheet_updated": character_sheet_updated}
+
+    def _sync_ooc_inventory_entries(self, state: CampaignState, entries: list[dict[str, Any]]) -> dict[str, Any]:
+        runtime = state.structured_state.runtime
+        if not isinstance(runtime.inventory_state, dict):
+            runtime.inventory_state = {}
+        self._normalize_inventory_state(runtime.inventory_state)
+        current_entries = list(runtime.inventory_state.get("entries", []))
+        by_name = {str(entry.get("name", "")).strip().lower(): entry for entry in current_entries if str(entry.get("name", "")).strip()}
+        added = 0
+        updated = 0
+        for entry in entries:
+            key = str(entry.get("name", "")).strip().lower()
+            if not key:
+                continue
+            if key in by_name:
+                merged = dict(by_name[key])
+                merged.update(entry)
+                by_name[key] = merged
+                updated += 1
+            else:
+                by_name[key] = entry
+                added += 1
+        runtime.inventory_state["entries"] = list(by_name.values())
+        self._normalize_inventory_state(runtime.inventory_state)
+        runtime.inventory = [str(entry.get("name", "")).strip() for entry in runtime.inventory_state.get("entries", []) if str(entry.get("name", "")).strip()]
+        return {"inventory_entries_added": added, "inventory_entries_updated": updated}
 
     def _cleanup_invalid_spell_text_entries(self, state: CampaignState) -> int:
         removed = 0
@@ -4410,6 +4521,8 @@ class WebRuntime:
             "spellbook_entries_added": 0,
             "character_sheet_updated": False,
             "world_entries_added": 0,
+            "inventory_entries_added": 0,
+            "inventory_entries_updated": 0,
             "mutated": False,
         }
         if any(token in lowered_request for token in {"spellbook", "spell", "abilities", "ability", "character sheet"}):
@@ -4440,10 +4553,18 @@ class WebRuntime:
                         lore.append(entry)
                         existing.add(key)
                         summary["world_entries_added"] += 1
+        if "inventory" in lowered_request:
+            inventory_entries = self._validate_structured_inventory_entries(payload)
+            if inventory_entries:
+                inventory_sync = self._sync_ooc_inventory_entries(state, inventory_entries)
+                summary["inventory_entries_added"] = int(inventory_sync["inventory_entries_added"])
+                summary["inventory_entries_updated"] = int(inventory_sync["inventory_entries_updated"])
         summary["mutated"] = bool(
             summary["spellbook_entries_added"] > 0
             or summary["character_sheet_updated"]
             or summary["world_entries_added"] > 0
+            or summary["inventory_entries_added"] > 0
+            or summary["inventory_entries_updated"] > 0
         )
         return summary
 
@@ -4516,7 +4637,7 @@ class WebRuntime:
             "If the user explicitly asks to create or update structured campaign data (spellbook, character sheet, world notes), "
             "you may provide structured content suitable for persistence.\n"
             "When providing structured content, include a machine-only JSON object between "
-            "[STRUCTURED_SYNC_PAYLOAD] and [/STRUCTURED_SYNC_PAYLOAD] with keys like spellbook_entries.\n"
+            "[STRUCTURED_SYNC_PAYLOAD] and [/STRUCTURED_SYNC_PAYLOAD] with keys like spellbook_entries or inventory_entries.\n"
             "Never include conversational text inside this JSON payload."
         )
         started = time.perf_counter()
@@ -5204,6 +5325,13 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     @app.get("/api/campaign/inventory")
     def campaign_inventory() -> dict[str, Any]:
         return {"inventory": runtime.get_inventory_state()}
+
+    @app.post("/api/campaign/inventory")
+    def campaign_inventory_update(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return runtime.upsert_inventory_entry(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(exc)) from exc
 
     @app.get("/api/campaign/spellbook")
     def campaign_spellbook() -> dict[str, Any]:

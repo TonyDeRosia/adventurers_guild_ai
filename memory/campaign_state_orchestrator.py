@@ -60,9 +60,13 @@ class CampaignStateOrchestrator:
             "attack_bonus": state.player.attack_bonus,
             "energy_or_mana": state.player.energy_or_mana,
         }
-        runtime.inventory = list(state.player.inventory)
+        # Ownership rule: inventory is player-managed reference data by default.
+        # Runtime/system reads remain available, but we avoid rewriting player-authored
+        # inventory_state during normal gameplay turns.
+        runtime.inventory = self._flatten_inventory_names(runtime.inventory_state) or list(state.player.inventory)
         runtime.equipment = {"equipped_item_id": state.player.equipped_item_id}
-        runtime.inventory_state = self._build_inventory_state(state)
+        if not runtime.inventory_state:
+            runtime.inventory_state = self._build_inventory_state(state)
         runtime.abilities = self._normalize_spellbook(getattr(runtime, "abilities", runtime.spellbook))
         runtime.spellbook = list(runtime.abilities)
         runtime.abilities_learned = sorted(set(runtime.abilities_learned + self._infer_abilities_from_messages(system_messages)))
@@ -212,11 +216,47 @@ class CampaignStateOrchestrator:
                 categories["key_items"].append(label)
             else:
                 categories["items"].append(label)
-        return {
+        state_payload = {
             **categories,
+            "entries": [
+                {"id": f"inv_{index}", "name": item_id, "category": self._category_for_item(item_id), "quantity": 1, "notes": ""}
+                for index, item_id in enumerate(state.player.inventory)
+            ],
             "currency": {"gold": 0, "silver": 0, "copper": 0},
             "equipped": {"equipped_item_id": state.player.equipped_item_id},
         }
+        return state_payload
+
+    def _category_for_item(self, item_id: str) -> str:
+        lowered = str(item_id or "").lower()
+        if any(token in lowered for token in ["sword", "blade", "bow", "axe", "staff"]):
+            return "weapons"
+        if any(token in lowered for token in ["armor", "shield", "helm", "mail"]):
+            return "armor"
+        if any(token in lowered for token in ["draught", "potion", "elixir"]):
+            return "consumables"
+        if any(token in lowered for token in ["key", "sigil", "relic", "lantern"]):
+            return "key_items"
+        return "items"
+
+    def _flatten_inventory_names(self, inventory_state: dict[str, object] | None) -> list[str]:
+        if not isinstance(inventory_state, dict):
+            return []
+        names: list[str] = []
+        for entry in inventory_state.get("entries", []):
+            if not isinstance(entry, dict):
+                continue
+            name = str(entry.get("name", "")).strip()
+            if name:
+                names.append(name)
+        if names:
+            return names
+        legacy: list[str] = []
+        for key in ("items", "weapons", "armor", "consumables", "key_items"):
+            values = inventory_state.get(key, [])
+            if isinstance(values, list):
+                legacy.extend(str(v).strip() for v in values if str(v).strip())
+        return legacy
 
     def _ensure_main_character_sheet(self, state: CampaignState) -> None:
         main_sheet = next((sheet for sheet in state.character_sheets if sheet.sheet_type == "main_character"), None)

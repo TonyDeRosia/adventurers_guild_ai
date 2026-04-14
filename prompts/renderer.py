@@ -463,7 +463,8 @@ class PromptRenderer:
         narration_mode = state.settings.play_style.narration_format_mode
         strict_sheet = state.settings.play_style.strict_sheet_enforcement
         freeform = state.settings.play_style.allow_freeform_powers
-        auto_update = state.settings.play_style.auto_update_character_sheet_from_actions
+        # Player-managed spellbook policy: keep read access, disable in-play auto-write.
+        auto_update = False
         mode_instruction = {
             "compact": "Prefer shorter, tighter narration with minimal flourish and rapid turn pacing.",
             "dialogue_focused": "Prioritize character dialogue and conversational exchange while still resolving action consequences.",

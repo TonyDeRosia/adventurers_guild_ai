@@ -795,22 +795,11 @@ class CampaignEngine:
         action: str,
         system_messages: list[str],
     ) -> PendingAbilityLearning | None:
-        detected = self._detect_action_ability(action)
-        print(f"[ability-learn] detected={str(detected is not None).lower()}")
-        if detected is None:
-            return None
-        existing_name = self._find_existing_ability_name(state, detected.normalized_name)
-        print(f'[ability-learn] raw="{detected.raw_name}"')
-        print(f'[ability-learn] normalized="{detected.normalized_name}"')
-        if existing_name is not None:
-            print(f'[ability-learn] reused_existing="{existing_name}"')
-            print("[ability-learn] added_to_spellbook=false")
-            return None
-        if not state.settings.play_style.auto_update_character_sheet_from_actions:
-            print("[ability-learn] added_to_spellbook=false")
-            return None
-        print("[ability-learn] added_to_spellbook=pending")
-        return detected
+        # Ownership rule: spellbook is player-managed by default.
+        # Normal gameplay narration/actions never auto-write spellbook entries.
+        # Explicit OOC structured-authoring remains the only system write path.
+        print("[ability-learn] added_to_spellbook=false reason=player_managed_spellbook")
+        return None
 
     def _assess_ability_resolution(
         self,
@@ -823,7 +812,9 @@ class CampaignEngine:
             return None
         play_style = state.settings.play_style
         strict_sheet = bool(play_style.strict_sheet_enforcement)
-        learning_mode = bool(play_style.auto_update_character_sheet_from_actions)
+        # Spellbook ownership policy disables in-play auto-learning, regardless of
+        # the legacy setting value kept for compatibility in existing saves/UI.
+        learning_mode = False
         freeform = bool(play_style.allow_freeform_powers)
         print(f"[settings] strict_sheet_enforcement={str(strict_sheet).lower()}")
         print(f"[settings] auto_update_character_sheet_from_actions={str(learning_mode).lower()}")
