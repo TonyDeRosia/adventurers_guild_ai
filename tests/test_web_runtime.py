@@ -4685,3 +4685,37 @@ def test_play_view_remains_valid_with_narration_only_and_survives_reload(tmp_pat
     assert view["visible_npcs"] == []
     assert any(entry["type"] == "narrator" for entry in view["dialogue_entries"])
     assert "chapel" in view["scene_state"]["narration"].lower()
+
+
+def test_managed_paths_are_sanitized_to_user_data_root(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.managed_install_path = "C:/Users/someone/Desktop/ComfyUI"
+    runtime.app_config.image.managed_logs_path = "C:/Users/someone/Desktop/image.log"
+
+    runtime._apply_managed_image_engine_defaults()
+
+    assert runtime.app_config.image.managed_install_path == str(runtime.paths.user_data / "tools" / "ComfyUI")
+    assert runtime.app_config.image.managed_logs_path == str(runtime.paths.logs / "image_engine_startup.log")
+
+
+def test_resolved_managed_paths_ignore_machine_specific_config(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.comfyui_path = ""
+    runtime.app_config.image.managed_install_path = "C:/Users/someone/Desktop/ComfyUI"
+    resolved = runtime.get_path_configuration_status()["image"]["resolved_paths"]
+
+    assert resolved["mode"] == "managed"
+    assert resolved["managed_comfyui_root"] == str(runtime.paths.user_data / "tools" / "ComfyUI")
+    assert resolved["comfyui_root"] == str(runtime.paths.user_data / "tools" / "ComfyUI")
+
+
+def test_install_image_engine_attaches_when_setup_flow_already_owned(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.image_startup_status = {"state": "repairing-install", "summary": "setup in progress"}
+
+    with runtime._image_setup_flow_lock:
+        result = runtime.install_image_engine()
+
+    assert result["ok"] is True
+    assert result["status"] == "running"
+    assert result["startup_status"]["state"] == "repairing-install"

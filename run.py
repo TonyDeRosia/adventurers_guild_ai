@@ -30,9 +30,7 @@ def _print_banner() -> None:
 
 def _startup_log_file() -> Path:
     try:
-        if getattr(sys, "frozen", False):
-            return initialize_user_data_paths().logs / "startup.log"
-        return project_root() / "logs" / "startup.log"
+        return initialize_user_data_paths().logs / "startup.log"
     except Exception:
         return Path.cwd() / "logs" / "startup.log"
 

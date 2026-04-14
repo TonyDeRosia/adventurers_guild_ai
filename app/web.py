@@ -801,6 +801,7 @@ class WebRuntime:
                 workflow_parse_message = f"Workflow JSON could not be parsed: {exc}"
 
         diagnostics = {
+            "runtime_mode": self.desktop.capabilities.mode,
             "provider_selected": provider,
             "image_backend_mode": str(path_status.get("mode", "managed")),
             "managed_mode_active": str(path_status.get("mode", "managed")) == "managed",
@@ -844,6 +845,7 @@ class WebRuntime:
             "nvidia_failure_reason": str(launch_diagnostics.get("nvidia_failure_reason", "")),
             "final_running_mode": str(launch_diagnostics.get("final_running_mode", "")),
             "resolved_paths": path_status.get("resolved_paths", {}),
+            "managed_logs_path": str(self.app_config.image.managed_logs_path or self._default_managed_logs_path()),
             "python_runtime_path": str((Path(resolved_comfy_path) / ".venv" / "Scripts" / "python.exe") if resolved_comfy_path else ""),
             "python_runtime_found": bool(install_validation.get("python_runtime_found", False)),
             "pip_available": bool(runtime_pip.get("available", False)),
@@ -893,10 +895,13 @@ class WebRuntime:
         managed_state = self.comfy_manager.snapshot()
         image_status = self.get_image_status() if self.app_config.image.provider == "comfyui" else {}
         install_path = str(
-            self.app_config.image.managed_install_path
-            or path_status.get("comfyui_root", {}).get("resolved_path")
-            or path_status.get("comfyui_root", {}).get("path")
-            or self._default_comfyui_path()
+            self._coerce_managed_install_path()
+            if str(path_status.get("mode", "managed")) == "managed"
+            else (
+                path_status.get("comfyui_root", {}).get("resolved_path")
+                or path_status.get("comfyui_root", {}).get("path")
+                or self._coerce_managed_install_path()
+            )
         )
         api_url = str(self.app_config.image.base_url or "http://localhost:8188")
         state = self._image_engine_state
@@ -909,8 +914,11 @@ class WebRuntime:
         startup_status = dict(self.image_startup_status or {})
         return {
             "ok": True,
+            "runtime_mode": self.desktop.capabilities.mode,
             "state": state,
             "install_path": install_path,
+            "managed_venv_path": str(Path(install_path) / ".venv"),
+            "managed_logs_path": str(self.app_config.image.managed_logs_path or self._default_managed_logs_path()),
             "process_id": managed_state.pid,
             "api_url": api_url,
             "last_error": self._image_engine_last_error,
@@ -1601,7 +1609,7 @@ class WebRuntime:
             print("[setup-orchestrator] setup-image step=detect-install-path")
             steps.append({"step": "detect-install-path", "state": "ready", "message": f"Managed install path: {self._default_comfyui_path()}"})
             print("[setup-orchestrator] setup-image step=install-or-repair")
-            install_result = self.install_image_engine()
+            install_result = self.install_image_engine(setup_lock_owned=True)
             if not install_result.get("ok", False):
                 steps.append({"step": "install-or-repair", "state": "failed", "message": str(install_result.get("message", "Install failed."))})
                 return {
@@ -1759,9 +1767,16 @@ class WebRuntime:
     def _default_comfyui_path(self) -> Path:
         return self.paths.user_data / "tools" / "ComfyUI"
 
+    def _default_managed_logs_path(self) -> Path:
+        return self.paths.logs / "image_engine_startup.log"
+
+    def _coerce_managed_install_path(self) -> Path:
+        """Managed installs are always app-owned and user-writable."""
+        return self._default_comfyui_path()
+
     def _is_managed_install_root(self, path: Path) -> bool:
         try:
-            return path.resolve() == Path(str(self.app_config.image.managed_install_path or self._default_comfyui_path())).resolve()
+            return path.resolve() == self._coerce_managed_install_path().resolve()
         except OSError:
             return False
 
@@ -1773,11 +1788,17 @@ class WebRuntime:
 
     def _apply_managed_image_engine_defaults(self) -> None:
         changed = False
-        if not str(self.app_config.image.managed_install_path or "").strip():
-            self.app_config.image.managed_install_path = str(self._default_comfyui_path())
+        default_install_path = self._coerce_managed_install_path()
+        if Path(str(self.app_config.image.managed_install_path or "").strip() or str(default_install_path)) != default_install_path:
+            print(
+                "[path-config] managed_install_path_sanitized "
+                f"old={self.app_config.image.managed_install_path} new={default_install_path}"
+            )
+            self.app_config.image.managed_install_path = str(default_install_path)
             changed = True
-        if not str(self.app_config.image.managed_logs_path or "").strip():
-            self.app_config.image.managed_logs_path = str(self.paths.logs / "image_engine_startup.log")
+        default_logs_path = self._default_managed_logs_path()
+        if Path(str(self.app_config.image.managed_logs_path or "").strip() or str(default_logs_path)) != default_logs_path:
+            self.app_config.image.managed_logs_path = str(default_logs_path)
             changed = True
         if changed:
             self.config_store.save(self.app_config)
@@ -2579,7 +2600,7 @@ class WebRuntime:
         configured_workflow = str(source.get("comfyui_workflow_path", self.app_config.image.comfyui_workflow_path) or "").strip()
         configured_output = str(source.get("comfyui_output_dir", self.app_config.image.comfyui_output_dir) or "").strip()
         configured_checkpoint = str(source.get("checkpoint_folder", self.app_config.image.checkpoint_folder) or "").strip()
-        managed_root = Path(str(self.app_config.image.managed_install_path or "").strip() or str(self._default_comfyui_path()))
+        managed_root = self._coerce_managed_install_path()
         mode = self._resolve_image_backend_mode(source)
         comfyui_root = Path(configured_root) if configured_root else managed_root
         workflow_path = Path(configured_workflow) if configured_workflow else self._default_workflow_path()
@@ -2969,67 +2990,74 @@ class WebRuntime:
         print("[path-config] runtime_config_reloaded")
         return {"ok": True, "message": "Visual pipeline settings applied.", "path_config": self.get_path_configuration_status()}
 
-    def install_image_engine(self) -> dict[str, Any]:
+    def install_image_engine(self, *, setup_lock_owned: bool = False) -> dict[str, Any]:
         print("[setup-action] install-image-engine requested")
+        acquired_setup_lock = setup_lock_owned or self._image_setup_flow_lock.acquire(blocking=False)
+        if not acquired_setup_lock:
+            return self._image_setup_busy_response(requester="install-image-engine")
         self._image_engine_state = "starting"
         self._image_engine_last_error = ""
-        if not self._is_windows():
-            reason = "windows-only flow"
-            print(f"[setup-action] install-image-engine failure reason={reason}")
-            self._image_engine_state = "error"
-            self._image_engine_last_error = reason
+        try:
+            if not self._is_windows():
+                reason = "windows-only flow"
+                print(f"[setup-action] install-image-engine failure reason={reason}")
+                self._image_engine_state = "error"
+                self._image_engine_last_error = reason
+                return {
+                    "ok": False,
+                    "message": "Automatic ComfyUI setup is currently supported on Windows only.",
+                    "next_step": "Install ComfyUI manually and set image provider to comfyui.",
+                }
+            target_dir = self._coerce_managed_install_path()
+            existing = target_dir if (target_dir / "main.py").exists() else None
+            if existing is not None:
+                validation = self.validate_comfyui_install(existing)
+                if validation.get("ok"):
+                    self._ensure_managed_comfyui_launchers(existing)
+                    print(f"[setup-action] install-image-engine success reason=already-installed path={existing}")
+                    self.app_config.image.comfyui_path = ""
+                    self.app_config.image.managed_install_path = str(existing)
+                    self.config_store.save(self.app_config)
+                    self._image_engine_state = "installed"
+                    return {"ok": True, "message": "ComfyUI is already installed.", "readiness_refreshed": True}
+                print(f"[setup-orchestrator] comfyui install repair reason=existing-install-invalid missing={validation.get('missing_files')}")
+            target_dir.parent.mkdir(parents=True, exist_ok=True)
+            print("[setup-orchestrator] comfyui install start")
+            ok, install_message = self._repair_managed_comfyui_install(target_dir)
+            if not ok:
+                self._image_engine_state = "error"
+                self._image_engine_last_error = install_message
+                return {
+                    "ok": False,
+                    "message": install_message,
+                    "next_step": "Retry setup to recreate the ComfyUI .venv runtime.",
+                }
+            validation = self.validate_comfyui_install(target_dir)
+            if not validation.get("ok"):
+                self._image_engine_state = "error"
+                self._image_engine_last_error = ",".join(validation.get("missing_files", []))
+                return {
+                    "ok": False,
+                    "message": f"ComfyUI install is incomplete: missing {', '.join(validation.get('missing_files', []))}.",
+                    "next_step": "Retry setup to repair missing runtime files, or install ComfyUI portable manually.",
+                    "validation": validation,
+                }
+            self._ensure_managed_comfyui_launchers(target_dir)
+            self.app_config.image.comfyui_path = ""
+            self.app_config.image.managed_install_path = str(target_dir)
+            self.config_store.save(self.app_config)
+            print("[setup-orchestrator] comfyui install success")
+            print("[setup-action] install-image-engine success")
+            self._image_engine_state = "installed"
             return {
-                "ok": False,
-                "message": "Automatic ComfyUI setup is currently supported on Windows only.",
-                "next_step": "Install ComfyUI manually and set image provider to comfyui.",
+                "ok": True,
+                "message": "ComfyUI install verified, including .venv runtime.",
+                "next_step": "Click Start Image Engine to run preflight validation and launch ComfyUI.",
+                "readiness_refreshed": True,
             }
-        target_dir = self._default_comfyui_path()
-        existing = target_dir if (target_dir / "main.py").exists() else None
-        if existing is not None:
-            validation = self.validate_comfyui_install(existing)
-            if validation.get("ok"):
-                self._ensure_managed_comfyui_launchers(existing)
-                print(f"[setup-action] install-image-engine success reason=already-installed path={existing}")
-                self.app_config.image.comfyui_path = ""
-                self.app_config.image.managed_install_path = str(existing)
-                self.config_store.save(self.app_config)
-                self._image_engine_state = "installed"
-                return {"ok": True, "message": "ComfyUI is already installed.", "readiness_refreshed": True}
-            print(f"[setup-orchestrator] comfyui install repair reason=existing-install-invalid missing={validation.get('missing_files')}")
-        target_dir.parent.mkdir(parents=True, exist_ok=True)
-        print("[setup-orchestrator] comfyui install start")
-        ok, install_message = self._repair_managed_comfyui_install(target_dir)
-        if not ok:
-            self._image_engine_state = "error"
-            self._image_engine_last_error = install_message
-            return {
-                "ok": False,
-                "message": install_message,
-                "next_step": "Retry setup to recreate the ComfyUI .venv runtime.",
-            }
-        validation = self.validate_comfyui_install(target_dir)
-        if not validation.get("ok"):
-            self._image_engine_state = "error"
-            self._image_engine_last_error = ",".join(validation.get("missing_files", []))
-            return {
-                "ok": False,
-                "message": f"ComfyUI install is incomplete: missing {', '.join(validation.get('missing_files', []))}.",
-                "next_step": "Retry setup to repair missing runtime files, or install ComfyUI portable manually.",
-                "validation": validation,
-            }
-        self._ensure_managed_comfyui_launchers(target_dir)
-        self.app_config.image.comfyui_path = ""
-        self.app_config.image.managed_install_path = str(target_dir)
-        self.config_store.save(self.app_config)
-        print("[setup-orchestrator] comfyui install success")
-        print("[setup-action] install-image-engine success")
-        self._image_engine_state = "installed"
-        return {
-            "ok": True,
-            "message": "ComfyUI install verified, including .venv runtime.",
-            "next_step": "Click Start Image Engine to run preflight validation and launch ComfyUI.",
-            "readiness_refreshed": True,
-        }
+        finally:
+            if not setup_lock_owned:
+                self._image_setup_flow_lock.release()
 
     def start_image_engine(self, *, startup_mode: str = "manual", setup_lock_owned: bool = False) -> dict[str, Any]:
         print("[setup-action] start-image-engine requested")
@@ -3040,9 +3068,7 @@ class WebRuntime:
         self._image_engine_last_error = ""
         try:
             startup_log_lines: list[str] = []
-            startup_log_file = Path(str(self.app_config.image.managed_logs_path or "")).expanduser()
-            if not str(startup_log_file).strip() or str(startup_log_file) == ".":
-                startup_log_file = self.paths.logs / "image_engine_startup.log"
+            startup_log_file = self._default_managed_logs_path()
             self.app_config.image.managed_logs_path = str(startup_log_file)
             startup_log_file.parent.mkdir(parents=True, exist_ok=True)
             if startup_mode != "background":
@@ -3094,7 +3120,7 @@ class WebRuntime:
             comfyui_root = Path(str(install_status.get("resolved_root", "")).strip()) if install_status.get("ok") else None
             if comfyui_root is None:
                 if str(path_config.get("mode", "managed")) == "managed":
-                    repair = self.install_image_engine()
+                    repair = self.install_image_engine(setup_lock_owned=True)
                     if repair.get("ok", False):
                         path_config = self.get_path_configuration_status().get("image", {})
                         install_status = self._detect_install_path_status(path_config)
@@ -3163,7 +3189,7 @@ class WebRuntime:
             validation = self.validate_comfyui_install(comfyui_root)
             if not validation.get("ok"):
                 if str(path_config.get("mode", "managed")) == "managed":
-                    repair = self.install_image_engine()
+                    repair = self.install_image_engine(setup_lock_owned=True)
                     if repair.get("ok", False):
                         validation = self.validate_comfyui_install(comfyui_root)
                 missing = ", ".join(validation.get("missing_files", []))

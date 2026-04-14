@@ -48,6 +48,16 @@ def test_bundled_workflow_dir_falls_back_to_content_data_workflows(tmp_path: Pat
     assert pathing.bundled_workflow_dir() == root / "data" / "workflows"
 
 
+def test_user_data_dir_defaults_to_localappdata(monkeypatch, tmp_path: Path) -> None:
+    local_appdata = tmp_path / "LocalAppData"
+    monkeypatch.setenv("LOCALAPPDATA", str(local_appdata))
+    monkeypatch.delenv("APPDATA", raising=False)
+    monkeypatch.delenv("ADVENTURER_GUILD_AI_USER_DATA_DIR", raising=False)
+    monkeypatch.setattr(pathing.sys, "frozen", True, raising=False)
+
+    assert pathing.user_data_dir() == local_appdata / "AdventurerGuildAI"
+
+
 def test_copy_tree_missing_copies_file_when_destination_directory_exists(tmp_path: Path) -> None:
     src = tmp_path / "src"
     dst = tmp_path / "dst"
