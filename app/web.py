@@ -767,6 +767,7 @@ class WebRuntime:
         if runtime_dependency_probe.get("checked") and not runtime_dependency_probe.get("ok"):
             runtime_missing_items.append(f"dependency:{runtime_dependency_probe.get('module', 'unknown')}")
         startup_status = dict(self.image_startup_status or {})
+        launch_diagnostics = startup_status.get("launch_diagnostics", {}) if isinstance(startup_status.get("launch_diagnostics", {}), dict) else {}
         workflow_parse_valid = None
         workflow_parse_message = "Workflow parse was not checked."
         resolved_workflow = str(workflow_status.get("resolved_path") or workflow_status.get("path") or "").strip()
@@ -822,6 +823,10 @@ class WebRuntime:
             "last_error": str(image_status.get("error", "")).strip() or str(startup_status.get("summary", "")).strip(),
             "recommended_next_action": str(image_status.get("next_action", "Recheck setup and diagnostics.")),
             "startup_status": startup_status,
+            "primary_launch_attempt": str(launch_diagnostics.get("primary_launch_attempt", "")),
+            "fallback_launch_used": str(launch_diagnostics.get("fallback_launch_used", "")),
+            "nvidia_failure_reason": str(launch_diagnostics.get("nvidia_failure_reason", "")),
+            "final_running_mode": str(launch_diagnostics.get("final_running_mode", "")),
             "resolved_paths": path_status.get("resolved_paths", {}),
             "python_runtime_path": str((Path(resolved_comfy_path) / ".venv" / "Scripts" / "python.exe") if resolved_comfy_path else ""),
             "python_runtime_found": bool(install_validation.get("python_runtime_found", False)),
@@ -2013,6 +2018,98 @@ class WebRuntime:
             "runtime_kind": runtime_kind,
         }
 
+    def _is_gpu_first_launcher_preference(self) -> bool:
+        preference = str(self.app_config.image.preferred_launcher or "auto").strip().lower()
+        return preference in {"", "auto", "gpu-first", "nvidia_gpu", "nvidia"}
+
+    def _build_managed_launch_attempts(
+        self,
+        comfyui_root: Path,
+        host: str,
+        port: int,
+        *,
+        launch_command: list[str],
+        launcher_type: str,
+    ) -> list[dict[str, Any]]:
+        preference = str(self.app_config.image.preferred_launcher or "auto").strip().lower()
+        nvidia_script = comfyui_root / "run_nvidia_gpu.bat"
+        cpu_script = comfyui_root / "run_cpu.bat"
+        attempts: list[dict[str, Any]] = []
+        if os.name == "nt" and self._is_gpu_first_launcher_preference() and nvidia_script.exists():
+            attempts.append(
+                {
+                    "mode": "nvidia_gpu",
+                    "command": ["cmd.exe", "/d", "/c", str(nvidia_script)],
+                    "launcher_type": "windows_batch",
+                    "label": "nvidia_gpu",
+                }
+            )
+        if preference in {"cpu", "cpu_only"}:
+            if os.name == "nt" and cpu_script.exists():
+                attempts.append(
+                    {
+                        "mode": "cpu",
+                        "command": ["cmd.exe", "/d", "/c", str(cpu_script)],
+                        "launcher_type": "windows_batch",
+                        "label": "cpu",
+                    }
+                )
+            else:
+                attempts.append(
+                    {
+                        "mode": "cpu",
+                        "command": list(launch_command),
+                        "launcher_type": launcher_type,
+                        "label": "cpu",
+                    }
+                )
+            return attempts
+        if os.name == "nt" and cpu_script.exists():
+            attempts.append(
+                {
+                    "mode": "cpu",
+                    "command": ["cmd.exe", "/d", "/c", str(cpu_script)],
+                    "launcher_type": "windows_batch",
+                    "label": "cpu",
+                }
+            )
+        else:
+            attempts.append(
+                {
+                    "mode": "cpu",
+                    "command": list(launch_command),
+                    "launcher_type": launcher_type,
+                    "label": "cpu",
+                }
+            )
+        if not attempts:
+            attempts.append(
+                {
+                    "mode": "python_main",
+                    "command": list(launch_command),
+                    "launcher_type": launcher_type,
+                    "label": "python_main",
+                }
+            )
+        return attempts
+
+    @staticmethod
+    def _classify_nvidia_launch_failure(detail_text: str, *, exit_code: int | None, launcher_exists: bool) -> dict[str, str]:
+        lowered = str(detail_text or "").lower()
+        if not launcher_exists:
+            return {"reason": "launcher-file-missing", "summary": "NVIDIA launcher file is missing."}
+        if "torch not compiled with cuda enabled" in lowered:
+            return {"reason": "torch-cuda-disabled", "summary": "Torch runtime is not compiled with CUDA support."}
+        if "no nvidia driver" in lowered or "no cuda gpus are available" in lowered or "no nvidia gpu" in lowered:
+            return {"reason": "nvidia-gpu-not-detected", "summary": "No NVIDIA GPU was detected for CUDA launch."}
+        if "cuda initialization" in lowered or "cuda error" in lowered:
+            return {"reason": "cuda-initialization-failed", "summary": "CUDA failed to initialize."}
+        if "cudart" in lowered or "cublas" in lowered or "cudnn" in lowered:
+            return {"reason": "cuda-runtime-missing", "summary": "Required CUDA runtime libraries are missing."}
+        if exit_code is not None:
+            return {"reason": "process-exited-immediately", "summary": "NVIDIA launch process exited immediately."}
+        return {"reason": "nvidia-launch-failed", "summary": "NVIDIA launch failed."}
+
     def _required_comfyui_python_packages(self, comfyui_root: Path) -> dict[str, Any]:
         requirements_file = comfyui_root / "requirements.txt"
         baseline_packages = ["sqlalchemy"]
@@ -3135,196 +3232,261 @@ class WebRuntime:
             self._append_image_startup_log(startup_log_lines, f"Dependency bootstrap degraded: {degraded_detail}")
         self._update_image_bootstrap_progress(state="starting ComfyUI", step="launch-engine", summary="Starting ComfyUI process.")
         print("[setup-orchestrator] setup-image step=launch-engine")
-        process: subprocess.Popen[str] | None = None
-        log_handle = None
-        launch_target = " ".join(launch_command)
-        try:
-            self._append_image_startup_log(startup_log_lines, f"Launching mode: {launcher_type}")
-            self._append_image_startup_log(startup_log_lines, f"Launching command: {launch_target}")
-            self._append_image_startup_log(startup_log_lines, f"Working directory: {comfyui_root}")
-            with startup_log_file.open("w", encoding="utf-8") as handle:
-                handle.write("")
-            log_handle = startup_log_file.open("a", encoding="utf-8")
-            kwargs: dict[str, Any] = {
-                "cwd": str(comfyui_root),
-                "stdout": log_handle,
-                "stderr": subprocess.STDOUT,
-            }
-            if os.name == "nt":
-                kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
-            else:
-                kwargs["start_new_session"] = True
-            process = subprocess.Popen(launch_command, **kwargs)
-        except OSError as exc:
-            print(f"[setup-action] start-image-engine failure reason={exc}")
-            print("[setup-orchestrator] setup-image failure stage=launch-engine")
-            self._image_engine_state = "error"
-            self._image_engine_last_error = str(exc)
-            return {
-                "ok": False,
-                "message": f"Could not start ComfyUI: {exc}",
-                "next_step": "Start ComfyUI manually, then click Recheck.",
-                "failure_stage": "launch-engine",
-                "failure_stage_message": "process launch failed",
-                "steps": [
-                    {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
-                    {"step": "verify-install", "state": "ready", "message": "Install verification completed."},
-                    {"step": "launch-engine", "state": "failed", "message": f"Process launch failed: {exc}"},
-                ],
-            }
-        if process is None:
-            self._image_engine_state = "error"
-            self._image_engine_last_error = "process_launch_uninitialized"
-            return {"ok": False, "message": "ComfyUI process launch did not initialize.", "failure_stage": "launch-engine", "failure_stage_message": "process launch failed"}
-        if log_handle is not None:
-            self.comfy_manager.bind_log_handle(log_handle)
-        self.comfy_manager.register(process, launch_target=launch_target, startup_log_file=startup_log_file)
-        print(f"[setup-action] start-image-engine launch command={launch_target}")
-        self._update_image_bootstrap_progress(state="starting ComfyUI", step="wait-for-readiness", summary="Waiting for ComfyUI readiness endpoint.")
-        print("[setup-orchestrator] setup-image step=wait-for-readiness")
+        launch_attempts = (
+            self._build_managed_launch_attempts(comfyui_root, "127.0.0.1", 8188, launch_command=launch_command, launcher_type=launcher_type)
+            if launch_mode == "managed"
+            else [{"mode": launcher_type, "command": list(launch_command), "launcher_type": launcher_type, "label": launcher_type}]
+        )
         expected_base = self.app_config.image.base_url
         expected = urlparse(expected_base)
-        for _ in range(20):
-            time.sleep(0.75)
-            if process.poll() is not None:
-                exit_code = process.poll()
-                if getattr(process, "stdout", None) is not None:
-                    try:
-                        captured, _ = process.communicate(timeout=0.2)
-                        if captured:
-                            startup_log_lines.extend(str(captured).splitlines()[-80:])
-                    except (OSError, subprocess.SubprocessError):
-                        pass
-                tail_lines = self._read_startup_log_tail(startup_log_file)
-                startup_log_lines.extend(tail_lines)
-                startup_log_text = self._sanitize_image_startup_log(startup_log_lines)
-                runtime_error = self._detect_runtime_error(startup_log_text)
-                self._set_image_startup_status(
-                    state="failed",
-                    stage="wait-for-readiness",
-                    reason="process-exited-immediately",
-                    summary=f"Image AI failed: ComfyUI exited during startup (exit code {exit_code}).",
-                    current_step="wait-for-readiness",
-                    runtime_error_hint=runtime_error,
-                    exit_code=exit_code,
-                    last_log_lines=tail_lines[-20:],
-                    last_error_line=tail_lines[-1] if tail_lines else "",
-                    log_text=startup_log_text,
-                    log_available=bool(startup_log_text),
-                    log_file=str(startup_log_file),
-                    managed_process=False,
+        launch_diagnostics: dict[str, Any] = {
+            "primary_launch_attempt": launch_attempts[0]["label"] if launch_attempts else "",
+            "fallback_launch_used": "",
+            "nvidia_failure_reason": "",
+            "launch_attempts": [],
+            "final_running_mode": "",
+        }
+        with startup_log_file.open("w", encoding="utf-8") as handle:
+            handle.write("")
+        for attempt_index, attempt in enumerate(launch_attempts):
+            process: subprocess.Popen[str] | None = None
+            log_handle = None
+            attempt_mode = str(attempt.get("mode", "unknown"))
+            attempt_command = list(attempt.get("command", []))
+            launch_target = " ".join(attempt_command)
+            if attempt_mode == "nvidia_gpu":
+                self._update_image_bootstrap_progress(
+                    state="starting ComfyUI",
+                    step="launch-engine",
+                    summary="Starting Image AI with NVIDIA acceleration...",
                 )
-                self.comfy_manager.clear_if_exited()
+            try:
+                self._append_image_startup_log(startup_log_lines, f"Launching mode: {attempt_mode}")
+                self._append_image_startup_log(startup_log_lines, f"Launching command: {launch_target}")
+                self._append_image_startup_log(startup_log_lines, f"Working directory: {comfyui_root}")
+                log_handle = startup_log_file.open("a", encoding="utf-8")
+                kwargs: dict[str, Any] = {
+                    "cwd": str(comfyui_root),
+                    "stdout": log_handle,
+                    "stderr": subprocess.STDOUT,
+                }
+                if os.name == "nt":
+                    kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
+                else:
+                    kwargs["start_new_session"] = True
+                process = subprocess.Popen(attempt_command, **kwargs)
+            except OSError as exc:
+                launch_diagnostics["launch_attempts"].append({"mode": attempt_mode, "result": "launch-error", "detail": str(exc)})
+                if attempt_mode == "nvidia_gpu" and attempt_index + 1 < len(launch_attempts):
+                    launch_diagnostics["nvidia_failure_reason"] = "process-launch-failed"
+                    self._append_image_startup_log(startup_log_lines, f"NVIDIA launch failed: {exc}")
+                    self._update_image_bootstrap_progress(
+                        state="starting ComfyUI",
+                        step="launch-engine",
+                        summary="NVIDIA launch unavailable, running Image AI in CPU mode.",
+                    )
+                    continue
+                print(f"[setup-action] start-image-engine failure reason={exc}")
+                print("[setup-orchestrator] setup-image failure stage=launch-engine")
                 self._image_engine_state = "error"
-                self._image_engine_last_error = "process_exited_immediately"
-                last_error_line = tail_lines[-1] if tail_lines else ""
-                detail = f", last error: {last_error_line}" if last_error_line else ""
+                self._image_engine_last_error = str(exc)
                 return {
                     "ok": False,
-                    "message": f"ComfyUI failed: Process exited (code {exit_code}){detail}",
-                    "next_step": "Open setup details to review startup log and fix the runtime/dependency issue.",
-                    "failure_stage": "wait-for-readiness",
-                    "failure_stage_message": "process exited during startup",
+                    "message": f"Could not start ComfyUI: {exc}",
+                    "next_step": "Start ComfyUI manually, then click Recheck.",
+                    "failure_stage": "launch-engine",
+                    "failure_stage_message": "process launch failed",
                     "startup_status": self.image_startup_status,
                     "steps": [
                         {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
                         {"step": "verify-install", "state": "ready", "message": "Install verification completed."},
-                        {"step": "repair-launcher", "state": "ready", "message": "Launcher verified or repaired."},
-                        {"step": "launch-engine", "state": "ready", "message": "ComfyUI launch command sent."},
-                        {"step": "wait-for-readiness", "state": "failed", "message": "ComfyUI process exited before readiness endpoint was reachable."},
+                        {"step": "launch-engine", "state": "failed", "message": f"Process launch failed: {exc}"},
                     ],
                 }
-            if self.get_image_status().get("reachable", False):
-                print("[setup-action] start-image-engine success")
-                dependency_degraded = bool(dependency_bootstrap.get("degraded", False))
-                degraded_details = list(dependency_bootstrap.get("degraded_details", []))
-                self._set_image_startup_status(
-                    state="ready",
-                    stage="wait-for-readiness",
-                    reason="ready",
-                    summary="ComfyUI started and is reachable." if not dependency_degraded else "ComfyUI started (degraded dependency mode).",
-                    current_step="ready",
-                    log_text=self._sanitize_image_startup_log(startup_log_lines + self._read_startup_log_tail(startup_log_file)),
-                    log_available=True,
-                    log_file=str(startup_log_file),
-                    managed_process=self.comfy_manager.snapshot().running,
-                    degraded=dependency_degraded,
-                    degraded_details=degraded_details,
-                )
-                self._image_engine_state = "running"
-                return {
-                    "ok": True,
-                    "message": "ComfyUI started and is reachable." if not dependency_degraded else "ComfyUI started (degraded dependency mode).",
-                    "managed_process": self.comfy_manager.snapshot().running,
-                    "readiness_refreshed": True,
-                    "degraded": dependency_degraded,
-                    "degraded_details": degraded_details,
-                    "steps": [
-                        {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
-                        {"step": "verify-install", "state": "ready", "message": "Install verification completed."},
-                        {"step": "repair-launcher", "state": "ready", "message": "Launcher verified or repaired."},
-                        {"step": "launch-engine", "state": "ready", "message": "ComfyUI launch command sent."},
-                        {"step": "wait-for-readiness", "state": "ready", "message": "ComfyUI responded to readiness probe."},
-                    ],
-                }
-        tail_lines = self._read_startup_log_tail(startup_log_file)
-        if getattr(process, "stdout", None) is not None:
-            try:
-                captured, _ = process.communicate(timeout=0.2)
-                if captured:
-                    startup_log_lines.extend(str(captured).splitlines()[-80:])
-            except (OSError, subprocess.SubprocessError):
-                pass
-        startup_log_lines.extend(tail_lines)
-        startup_log_text = self._sanitize_image_startup_log(startup_log_lines)
-        bound_urls = self._extract_comfyui_bind_urls(startup_log_text)
-        runtime_error = self._detect_runtime_error(startup_log_text)
-        reason = "timeout-waiting-for-comfyui"
-        message = "ComfyUI launch command was sent, but readiness timed out."
-        stage_message = "timeout waiting for ComfyUI"
-        if runtime_error:
-            reason = "runtime-error-in-launcher-output"
-            message = "Image AI failed: launcher output reported a runtime/dependency error."
-            stage_message = "runtime/dependency error in launcher output"
-        elif bound_urls and not any(expected.netloc in url for url in bound_urls):
-            reason = "bound-to-unexpected-address"
-            message = "Image AI failed: ComfyUI appears to be running on a different address/port."
-            stage_message = "ComfyUI bound to unexpected address/port"
-        else:
-            message = "Image AI failed: ComfyUI is still running but not reachable yet."
-            stage_message = "ComfyUI still running but not reachable"
-        self._set_image_startup_status(
-            state="failed",
-            stage="wait-for-readiness",
-            reason=reason,
-            summary=message,
-            current_step="wait-for-readiness",
-            runtime_error_hint=runtime_error,
-            detected_bind_urls=bound_urls,
-            expected_base_url=expected_base,
-            log_text=startup_log_text,
-            log_available=bool(startup_log_text),
-            log_file=str(startup_log_file),
-            managed_process=self.comfy_manager.snapshot().running,
-        )
-        print("[setup-action] start-image-engine failure reason=timeout-waiting-for-comfyui")
-        print("[setup-orchestrator] setup-image failure stage=wait-for-readiness")
+            if process is None:
+                self._image_engine_state = "error"
+                self._image_engine_last_error = "process_launch_uninitialized"
+                return {"ok": False, "message": "ComfyUI process launch did not initialize.", "failure_stage": "launch-engine", "failure_stage_message": "process launch failed"}
+            if log_handle is not None:
+                self.comfy_manager.bind_log_handle(log_handle)
+            self.comfy_manager.register(process, launch_target=launch_target, startup_log_file=startup_log_file)
+            print(f"[setup-action] start-image-engine launch command={launch_target}")
+            self._update_image_bootstrap_progress(state="starting ComfyUI", step="wait-for-readiness", summary="Waiting for ComfyUI readiness endpoint.")
+            print("[setup-orchestrator] setup-image step=wait-for-readiness")
+            attempt_result: dict[str, Any] = {"mode": attempt_mode, "result": "timeout"}
+            for _ in range(20):
+                time.sleep(0.75)
+                if process.poll() is not None:
+                    exit_code = process.poll()
+                    if getattr(process, "stdout", None) is not None:
+                        try:
+                            captured, _ = process.communicate(timeout=0.2)
+                            if captured:
+                                startup_log_lines.extend(str(captured).splitlines()[-80:])
+                        except (OSError, subprocess.SubprocessError):
+                            pass
+                    tail_lines = self._read_startup_log_tail(startup_log_file)
+                    startup_log_lines.extend(tail_lines)
+                    startup_log_text = self._sanitize_image_startup_log(startup_log_lines)
+                    runtime_error = self._detect_runtime_error(startup_log_text)
+                    attempt_result = {
+                        "mode": attempt_mode,
+                        "result": "process-exited-immediately",
+                        "exit_code": exit_code,
+                        "runtime_error_hint": runtime_error,
+                    }
+                    self.comfy_manager.clear_if_exited()
+                    if attempt_mode == "nvidia_gpu" and attempt_index + 1 < len(launch_attempts):
+                        classification = self._classify_nvidia_launch_failure(
+                            startup_log_text,
+                            exit_code=exit_code,
+                            launcher_exists=(comfyui_root / "run_nvidia_gpu.bat").exists(),
+                        )
+                        launch_diagnostics["nvidia_failure_reason"] = classification["reason"]
+                        self._append_image_startup_log(startup_log_lines, f"NVIDIA attempt failed: {classification['summary']}")
+                        self._update_image_bootstrap_progress(
+                            state="starting ComfyUI",
+                            step="launch-engine",
+                            summary="NVIDIA launch unavailable, running Image AI in CPU mode.",
+                        )
+                        break
+                    launch_diagnostics["launch_attempts"].append(attempt_result)
+                    self._set_image_startup_status(
+                        state="failed",
+                        stage="wait-for-readiness",
+                        reason="process-exited-immediately",
+                        summary=f"Image AI failed: ComfyUI exited during startup (exit code {exit_code}).",
+                        current_step="wait-for-readiness",
+                        runtime_error_hint=runtime_error,
+                        exit_code=exit_code,
+                        last_log_lines=tail_lines[-20:],
+                        last_error_line=tail_lines[-1] if tail_lines else "",
+                        log_text=startup_log_text,
+                        log_available=bool(startup_log_text),
+                        log_file=str(startup_log_file),
+                        managed_process=False,
+                        launch_diagnostics=launch_diagnostics,
+                    )
+                    self._image_engine_state = "error"
+                    self._image_engine_last_error = "process_exited_immediately"
+                    last_error_line = tail_lines[-1] if tail_lines else ""
+                    detail = f", last error: {last_error_line}" if last_error_line else ""
+                    return {
+                        "ok": False,
+                        "message": f"ComfyUI failed: Process exited (code {exit_code}){detail}",
+                        "next_step": "Open setup details to review startup log and fix the runtime/dependency issue.",
+                        "failure_stage": "wait-for-readiness",
+                        "failure_stage_message": "process exited during startup",
+                        "startup_status": self.image_startup_status,
+                        "steps": [
+                            {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
+                            {"step": "verify-install", "state": "ready", "message": "Install verification completed."},
+                            {"step": "repair-launcher", "state": "ready", "message": "Launcher verified or repaired."},
+                            {"step": "launch-engine", "state": "ready", "message": "ComfyUI launch command sent."},
+                            {"step": "wait-for-readiness", "state": "failed", "message": "ComfyUI process exited before readiness endpoint was reachable."},
+                        ],
+                    }
+                if self.get_image_status().get("reachable", False):
+                    print("[setup-action] start-image-engine success")
+                    dependency_degraded = bool(dependency_bootstrap.get("degraded", False))
+                    degraded_details = list(dependency_bootstrap.get("degraded_details", []))
+                    launch_diagnostics["final_running_mode"] = attempt_mode
+                    self._set_image_startup_status(
+                        state="ready",
+                        stage="wait-for-readiness",
+                        reason="ready",
+                        summary="ComfyUI started and is reachable." if not dependency_degraded else "ComfyUI started (degraded dependency mode).",
+                        current_step="ready",
+                        log_text=self._sanitize_image_startup_log(startup_log_lines + self._read_startup_log_tail(startup_log_file)),
+                        log_available=True,
+                        log_file=str(startup_log_file),
+                        managed_process=self.comfy_manager.snapshot().running,
+                        degraded=dependency_degraded,
+                        degraded_details=degraded_details,
+                        launch_diagnostics=launch_diagnostics,
+                    )
+                    self._image_engine_state = "running"
+                    return {
+                        "ok": True,
+                        "message": "ComfyUI started and is reachable." if not dependency_degraded else "ComfyUI started (degraded dependency mode).",
+                        "managed_process": self.comfy_manager.snapshot().running,
+                        "readiness_refreshed": True,
+                        "degraded": dependency_degraded,
+                        "degraded_details": degraded_details,
+                        "startup_status": self.image_startup_status,
+                        "steps": [
+                            {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
+                            {"step": "verify-install", "state": "ready", "message": "Install verification completed."},
+                            {"step": "repair-launcher", "state": "ready", "message": "Launcher verified or repaired."},
+                            {"step": "launch-engine", "state": "ready", "message": "ComfyUI launch command sent."},
+                            {"step": "wait-for-readiness", "state": "ready", "message": "ComfyUI responded to readiness probe."},
+                        ],
+                    }
+            launch_diagnostics["launch_attempts"].append(attempt_result)
+            if attempt_mode == "nvidia_gpu" and attempt_index + 1 < len(launch_attempts):
+                launch_diagnostics["fallback_launch_used"] = str(launch_attempts[attempt_index + 1].get("label", ""))
+                continue
+            tail_lines = self._read_startup_log_tail(startup_log_file)
+            startup_log_lines.extend(tail_lines)
+            startup_log_text = self._sanitize_image_startup_log(startup_log_lines)
+            bound_urls = self._extract_comfyui_bind_urls(startup_log_text)
+            runtime_error = self._detect_runtime_error(startup_log_text)
+            reason = "timeout-waiting-for-comfyui"
+            message = "ComfyUI launch command was sent, but readiness timed out."
+            stage_message = "timeout waiting for ComfyUI"
+            if runtime_error:
+                reason = "runtime-error-in-launcher-output"
+                message = "Image AI failed: launcher output reported a runtime/dependency error."
+                stage_message = "runtime/dependency error in launcher output"
+            elif bound_urls and not any(expected.netloc in url for url in bound_urls):
+                reason = "bound-to-unexpected-address"
+                message = "Image AI failed: ComfyUI appears to be running on a different address/port."
+                stage_message = "ComfyUI bound to unexpected address/port"
+            else:
+                message = "Image AI failed: ComfyUI is still running but not reachable yet."
+                stage_message = "ComfyUI still running but not reachable"
+            self._set_image_startup_status(
+                state="failed",
+                stage="wait-for-readiness",
+                reason=reason,
+                summary=message,
+                current_step="wait-for-readiness",
+                runtime_error_hint=runtime_error,
+                detected_bind_urls=bound_urls,
+                expected_base_url=expected_base,
+                log_text=startup_log_text,
+                log_available=bool(startup_log_text),
+                log_file=str(startup_log_file),
+                managed_process=self.comfy_manager.snapshot().running,
+                launch_diagnostics=launch_diagnostics,
+            )
+            print("[setup-action] start-image-engine failure reason=timeout-waiting-for-comfyui")
+            print("[setup-orchestrator] setup-image failure stage=wait-for-readiness")
+            self._image_engine_state = "error"
+            self._image_engine_last_error = reason
+            return {
+                "ok": False,
+                "message": message,
+                "next_step": "Wait for startup to finish, then click Recheck.",
+                "failure_stage": "wait-for-readiness",
+                "failure_stage_message": stage_message,
+                "startup_status": self.image_startup_status,
+                "steps": [
+                    {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
+                    {"step": "verify-install", "state": "ready", "message": "Install verification completed."},
+                    {"step": "repair-launcher", "state": "ready", "message": "Launcher verified or repaired."},
+                    {"step": "launch-engine", "state": "ready", "message": "ComfyUI launch command sent."},
+                    {"step": "wait-for-readiness", "state": "failed", "message": "Process launched but readiness check failed before timeout window closed."},
+                ],
+            }
         self._image_engine_state = "error"
-        self._image_engine_last_error = reason
+        self._image_engine_last_error = "all-launch-attempts-failed"
         return {
             "ok": False,
-            "message": message,
-            "next_step": "Wait for startup to finish, then click Recheck.",
-            "failure_stage": "wait-for-readiness",
-            "failure_stage_message": stage_message,
+            "message": "Image AI launch failed for all available launch modes.",
+            "failure_stage": "launch-engine",
+            "failure_stage_message": "all launch attempts failed",
             "startup_status": self.image_startup_status,
-            "steps": [
-                {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
-                {"step": "verify-install", "state": "ready", "message": "Install verification completed."},
-                {"step": "repair-launcher", "state": "ready", "message": "Launcher verified or repaired."},
-                {"step": "launch-engine", "state": "ready", "message": "ComfyUI launch command sent."},
-                {"step": "wait-for-readiness", "state": "failed", "message": "Process launched but readiness check failed before timeout window closed."},
-            ],
         }
 
     def stop_image_engine(self) -> dict[str, Any]:
