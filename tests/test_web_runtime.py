@@ -286,6 +286,7 @@ def test_import_image_ai_accepts_comfyui_folder_and_model_file(tmp_path: Path, m
     model_src = tmp_path / "DreamShaper_v8.safetensors"
     model_src.write_text("model", encoding="utf-8")
     monkeypatch.setattr(runtime, "start_image_engine", lambda **_kwargs: {"ok": True, "message": "started"})
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": True, "ready": True})
 
     result = runtime.import_and_setup_image_ai(str(comfy_src), str(model_src))
 
@@ -415,8 +416,10 @@ def test_import_image_ai_primary_flow_reports_import_setup_launch_steps(tmp_path
         "validate-comfyui-source",
         "validate-model-source",
         "import-comfyui",
-        "import-model",
+        "validate-launchers",
+        "repair-managed-runtime",
         "validate-managed-install",
+        "import-model",
         "prepare-runtime",
         "start-image-ai",
         "readiness-check",
@@ -436,6 +439,95 @@ def test_import_image_ai_returns_precise_stage_failure_on_launch_error(tmp_path:
     assert result["steps"][-1]["step"] == "start-image-ai"
     assert result["steps"][-1]["state"] == "failed"
     assert "launch failed at runtime" in result["message"]
+    assert result["failure_stage"] == "start-image-ai"
+    assert result["error_code"] == "image_import_startup_failed"
+
+
+def test_validate_comfyui_install_marks_missing_pyvenv_cfg_as_broken_runtime(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
+    comfy_dir.mkdir(parents=True, exist_ok=True)
+    (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
+    for folder in ("custom_nodes", "models", "output", "input", "user"):
+        (comfy_dir / folder).mkdir(exist_ok=True)
+    runtime_exe = comfy_dir / ".venv" / "Scripts" / "python.exe"
+    runtime_exe.parent.mkdir(parents=True, exist_ok=True)
+    runtime_exe.write_text("", encoding="utf-8")
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(runtime, "_build_comfy_launch_command", lambda *_args, **_kwargs: ([str(runtime_exe), "main.py"], "venv_python"))
+    monkeypatch.setattr(runtime, "_validate_python_runtime", lambda *_args, **_kwargs: {"ok": False, "message": "Python runtime check failed with exit code 106 (No pyvenv.cfg file)"})
+
+    validation = runtime.validate_comfyui_install(comfy_dir)
+
+    assert validation["ok"] is False
+    assert "pyvenv.cfg" in validation["missing_files"]
+    assert "python-runtime-broken" in validation["missing_files"]
+
+
+def test_install_image_engine_recreates_broken_managed_venv(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    monkeypatch.setattr(runtime, "_is_windows", lambda: True)
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+    target_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    (target_dir / "main.py").write_text("print('ok')", encoding="utf-8")
+    for folder in ("custom_nodes", "models", "output", "input", "user"):
+        (target_dir / folder).mkdir(exist_ok=True)
+    broken_python = target_dir / ".venv" / "Scripts" / "python.exe"
+    broken_python.parent.mkdir(parents=True, exist_ok=True)
+    broken_python.write_text("", encoding="utf-8")
+
+    calls: list[str] = []
+
+    def _fake_runtime_install(_target: Path) -> tuple[bool, str]:
+        calls.append("runtime-recreated")
+        venv_root = target_dir / ".venv"
+        (venv_root / "Scripts").mkdir(parents=True, exist_ok=True)
+        (venv_root / "Scripts" / "python.exe").write_text("", encoding="utf-8")
+        (venv_root / "pyvenv.cfg").write_text("home = C:\\Python311", encoding="utf-8")
+        return True, "venv runtime ready: recreated"
+
+    validation_states = iter(
+        [
+            {"ok": False, "missing_files": ["pyvenv.cfg", "python-runtime-broken"], "runtime_structurally_valid": False},
+            {"ok": True, "missing_files": [], "runtime_structurally_valid": True},
+        ]
+    )
+    monkeypatch.setattr(runtime, "validate_comfyui_install", lambda *_args, **_kwargs: next(validation_states))
+    monkeypatch.setattr(runtime, "_install_embedded_python_runtime", _fake_runtime_install)
+
+    result = runtime.install_image_engine()
+
+    assert result["ok"] is True
+    assert calls == ["runtime-recreated"]
+
+
+def test_import_image_ai_repairs_broken_managed_runtime_before_startup(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_src = _make_comfy_source_folder(tmp_path)
+    model_src = tmp_path / "repair_model.safetensors"
+    model_src.write_text("model", encoding="utf-8")
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+    def _write_launchers(root: Path) -> None:
+        (root / "run_cpu.bat").write_text("@echo off\r\n", encoding="utf-8")
+        (root / "run_nvidia_gpu.bat").write_text("@echo off\r\n", encoding="utf-8")
+
+    monkeypatch.setattr(runtime, "_ensure_managed_comfyui_launchers", _write_launchers)
+    repaired: list[str] = []
+    monkeypatch.setattr(runtime, "_repair_managed_comfyui_install", lambda _root: (repaired.append("repair") or True, "runtime repaired"))
+    monkeypatch.setattr(
+        runtime,
+        "validate_comfyui_install",
+        lambda _root: {"ok": True, "missing_files": [], "runtime_structurally_valid": True},
+    )
+    monkeypatch.setattr(runtime, "start_image_engine", lambda **_kwargs: {"ok": True, "message": "started"})
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": True, "ready": True})
+
+    result = runtime.import_and_setup_image_ai(str(comfy_src), str(model_src))
+
+    assert result["ok"] is True
+    assert repaired == ["repair"]
 
 
 def test_image_setup_snapshot_reports_guided_status(tmp_path: Path, monkeypatch) -> None:
@@ -2848,6 +2940,14 @@ def test_import_image_ai_endpoint_returns_json_error_instead_of_unhandled_500(tm
     assert "failed unexpectedly" in payload["message"]
 
 
+def test_text_gameplay_remains_usable_after_image_import_setup_failure(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    failure = runtime.import_and_setup_image_ai("", "")
+    assert failure["ok"] is False
+    result = runtime.handle_player_input("look around")
+    assert "messages" in result
+
+
 def test_desktop_setup_endpoints_proxy_runtime_methods(tmp_path: Path, monkeypatch) -> None:
     try:
         from fastapi.testclient import TestClient
@@ -3065,6 +3165,13 @@ def test_install_image_engine_repairs_missing_python_runtime(tmp_path: Path, mon
 
     monkeypatch.setattr(runtime, "_install_embedded_python_runtime", _fake_python_runtime)
     monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+    validations = iter(
+        [
+            {"ok": False, "missing_files": ["python-runtime", "launch-target"]},
+            {"ok": True, "missing_files": []},
+        ]
+    )
+    monkeypatch.setattr(runtime, "validate_comfyui_install", lambda *_args, **_kwargs: next(validations))
 
     result = runtime.install_image_engine()
     assert result["ok"] is True

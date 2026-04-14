@@ -890,38 +890,137 @@ class WebRuntime:
         copied.sort()
         return {"ok": True, "copied": copied, "active_model": copied[0]}
 
+    @staticmethod
+    def _image_import_failure(
+        *,
+        steps: list[dict[str, str]],
+        stage: str,
+        message: str,
+        next_step: str,
+        error_code: str,
+        detail: str = "",
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "ok": False,
+            "message": message,
+            "summary": "Image AI failed.",
+            "failure_stage": stage,
+            "failure_stage_message": message,
+            "next_step": next_step,
+            "error_code": error_code,
+            "steps": [*steps, {"step": stage, "state": "failed", "message": message}],
+        }
+        if detail:
+            payload["detail"] = detail
+        return payload
+
     def import_and_setup_image_ai(self, comfyui_source: str, model_source: str) -> dict[str, Any]:
         comfy_source_path = Path(str(comfyui_source or "").strip())
         model_source_path = Path(str(model_source or "").strip())
         steps: list[dict[str, str]] = []
         if not str(comfy_source_path):
-            return {"ok": False, "message": "ComfyUI source is required.", "summary": "Image AI failed.", "steps": [{"step": "validate-comfyui-source", "state": "failed", "message": "ComfyUI source is required."}]}
+            return self._image_import_failure(
+                steps=[],
+                stage="validate-comfyui-source",
+                message="ComfyUI source is required.",
+                next_step="Select a ComfyUI source folder or .zip and retry import.",
+                error_code="image_import_missing_comfyui_source",
+            )
         if not str(model_source_path):
-            return {"ok": False, "message": "Model source is required.", "summary": "Image AI failed.", "steps": [{"step": "validate-model-source", "state": "failed", "message": "Model source is required."}]}
+            return self._image_import_failure(
+                steps=[],
+                stage="validate-model-source",
+                message="Model source is required.",
+                next_step="Select a model file/folder and retry import.",
+                error_code="image_import_missing_model_source",
+            )
         comfy_validation = self._validate_comfyui_import_source(comfy_source_path)
         if not comfy_validation.get("ok", False):
-            return {"ok": False, "message": str(comfy_validation.get("message", "ComfyUI source is invalid.")), "summary": "Image AI failed.", "steps": [{"step": "validate-comfyui-source", "state": "failed", "message": str(comfy_validation.get("message", "ComfyUI source is invalid."))}]}
+            return self._image_import_failure(
+                steps=[],
+                stage="validate-comfyui-source",
+                message=str(comfy_validation.get("message", "ComfyUI source is invalid.")),
+                next_step="Choose a valid ComfyUI source folder (with main.py) or portable .zip.",
+                error_code="image_import_invalid_comfyui_source",
+            )
         steps.append({"step": "validate-comfyui-source", "state": "ready", "message": "ComfyUI source validated."})
         if not model_source_path.exists():
-            return {"ok": False, "message": "Model source path does not exist.", "summary": "Image AI failed.", "steps": steps + [{"step": "validate-model-source", "state": "failed", "message": "Model source path does not exist."}]}
+            return self._image_import_failure(
+                steps=steps,
+                stage="validate-model-source",
+                message="Model source path does not exist.",
+                next_step="Pick an existing model file or folder and retry import.",
+                error_code="image_import_model_source_missing",
+            )
         if model_source_path.is_file() and not self._is_supported_model_file(model_source_path):
-            return {"ok": False, "message": "Model file must be .safetensors, .ckpt, .pt, .pth, or .bin.", "summary": "Image AI failed.", "steps": steps + [{"step": "validate-model-source", "state": "failed", "message": "Model file format is not supported."}]}
+            return self._image_import_failure(
+                steps=steps,
+                stage="validate-model-source",
+                message="Model file must be .safetensors, .ckpt, .pt, .pth, or .bin.",
+                next_step="Select a supported checkpoint/model file and retry import.",
+                error_code="image_import_model_source_unsupported",
+            )
         steps.append({"step": "validate-model-source", "state": "ready", "message": "Model source validated."})
         managed_root = self._coerce_managed_install_path()
         comfy_result = self._import_comfyui_source(comfy_source_path, managed_root)
         if not comfy_result.get("ok", False):
-            return {"ok": False, "message": str(comfy_result.get("message", "ComfyUI import failed.")), "summary": "Image AI failed.", "steps": steps + [{"step": "import-comfyui", "state": "failed", "message": str(comfy_result.get("message", "ComfyUI import failed."))}]}
+            return self._image_import_failure(
+                steps=steps,
+                stage="import-comfyui",
+                message=str(comfy_result.get("message", "ComfyUI import failed.")),
+                next_step="Verify the source path permissions and retry import.",
+                error_code=str(comfy_result.get("error_code", "image_import_comfyui_copy_failed")),
+                detail=str(comfy_result.get("detail", "")),
+            )
         steps.append({"step": "import-comfyui", "state": "ready", "message": "ComfyUI imported into managed runtime."})
-        checkpoint_target = managed_root / "models" / "checkpoints"
-        model_result = self._import_model_source(model_source_path, checkpoint_target)
-        if not model_result.get("ok", False):
-            return {"ok": False, "message": str(model_result.get("message", "Model import failed.")), "summary": "Image AI failed.", "steps": steps + [{"step": "import-model", "state": "failed", "message": str(model_result.get("message", "Model import failed."))}]}
-        steps.append({"step": "import-model", "state": "ready", "message": "Model imported into managed checkpoint folder."})
+        self._ensure_managed_comfyui_launchers(managed_root)
+        if os.name == "nt":
+            launchers_missing = [
+                launcher
+                for launcher in ("run_cpu.bat", "run_nvidia_gpu.bat")
+                if not (managed_root / launcher).is_file()
+            ]
+            if launchers_missing:
+                return self._image_import_failure(
+                    steps=steps,
+                    stage="validate-launchers",
+                    message=f"Managed ComfyUI launchers are missing: {', '.join(launchers_missing)}.",
+                    next_step="Retry import/setup to recreate launcher files.",
+                    error_code="image_import_launchers_missing",
+                )
+        steps.append({"step": "validate-launchers", "state": "ready", "message": "Managed launcher files validated."})
+        repair_ok, repair_message = self._repair_managed_comfyui_install(managed_root)
+        if not repair_ok:
+            return self._image_import_failure(
+                steps=steps,
+                stage="repair-managed-runtime",
+                message=repair_message,
+                next_step="Retry setup to rebuild the managed Python runtime.",
+                error_code="image_import_runtime_repair_failed",
+            )
+        steps.append({"step": "repair-managed-runtime", "state": "ready", "message": repair_message})
         install_validation = self.validate_comfyui_install(managed_root)
         if not install_validation.get("ok", False):
             missing = ", ".join(install_validation.get("missing_files", []))
-            return {"ok": False, "message": f"Managed ComfyUI install is missing required files: {missing}.", "summary": "Image AI failed.", "steps": steps + [{"step": "validate-managed-install", "state": "failed", "message": f"Missing required files: {missing}."}]}
+            return self._image_import_failure(
+                steps=steps,
+                stage="validate-managed-install",
+                message=f"Managed ComfyUI install is missing required files: {missing}.",
+                next_step="Retry setup to repair the managed install/runtime.",
+                error_code="image_import_managed_install_invalid",
+            )
         steps.append({"step": "validate-managed-install", "state": "ready", "message": "Managed ComfyUI install structure is valid."})
+        checkpoint_target = managed_root / "models" / "checkpoints"
+        model_result = self._import_model_source(model_source_path, checkpoint_target)
+        if not model_result.get("ok", False):
+            return self._image_import_failure(
+                steps=steps,
+                stage="import-model",
+                message=str(model_result.get("message", "Model import failed.")),
+                next_step="Select a supported model file/folder and retry import.",
+                error_code="image_import_model_copy_failed",
+            )
+        steps.append({"step": "import-model", "state": "ready", "message": "Model imported into managed checkpoint folder."})
         self.app_config.image.provider = "comfyui"
         self.app_config.image.enabled = True
         self.app_config.image.comfyui_path = ""
@@ -937,25 +1036,30 @@ class WebRuntime:
         steps.append({"step": "prepare-runtime", "state": "ready", "message": "Runtime configuration prepared."})
         start_result = self.start_image_engine()
         if not start_result.get("ok", False):
-            return {
-                "ok": False,
-                "message": str(start_result.get("message", "Import succeeded but launch failed.")),
-                "summary": "Image AI failed.",
-                "steps": steps + [{"step": "start-image-ai", "state": "failed", "message": str(start_result.get("message", "Import succeeded but launch failed."))}],
-                "managed_comfyui_path": str(managed_root),
-                "managed_checkpoint_path": str(checkpoint_target),
-            }
+            payload = self._image_import_failure(
+                steps=steps,
+                stage="start-image-ai",
+                message=str(start_result.get("message", "Import succeeded but launch failed.")),
+                next_step=str(start_result.get("next_step", "Open setup details, fix the reported stage, then retry.")),
+                error_code="image_import_startup_failed",
+            )
+            payload["managed_comfyui_path"] = str(managed_root)
+            payload["managed_checkpoint_path"] = str(checkpoint_target)
+            payload["startup"] = start_result
+            return payload
         steps.append({"step": "start-image-ai", "state": "ready", "message": str(start_result.get("message", "ComfyUI started."))})
         ready = bool(self.get_image_status().get("reachable", False))
         if not ready:
-            return {
-                "ok": False,
-                "message": "Image AI startup completed but readiness check did not pass.",
-                "summary": "Image AI failed.",
-                "steps": steps + [{"step": "readiness-check", "state": "failed", "message": "ComfyUI is not reachable yet."}],
-                "managed_comfyui_path": str(managed_root),
-                "managed_checkpoint_path": str(checkpoint_target),
-            }
+            payload = self._image_import_failure(
+                steps=steps,
+                stage="readiness-check",
+                message="Image AI startup completed but readiness check did not pass.",
+                next_step="Wait for ComfyUI startup to finish, then click Recheck.",
+                error_code="image_import_readiness_failed",
+            )
+            payload["managed_comfyui_path"] = str(managed_root)
+            payload["managed_checkpoint_path"] = str(checkpoint_target)
+            return payload
         steps.append({"step": "readiness-check", "state": "ready", "message": "ComfyUI is reachable and connected."})
         return {
             "ok": True,
@@ -2061,18 +2165,25 @@ class WebRuntime:
                 missing_files.append(f"{required}/")
         runtime_details = "python runtime not checked"
         python_runtime_found = True
+        runtime_structurally_valid = True
+        runtime_structure_reasons: list[str] = []
         launch_target_resolvable = True
         launch_target = ""
         if os.name == "nt":
-            venv_python = path / ".venv" / "Scripts" / "python.exe"
+            runtime_assessment = self._assess_managed_venv_runtime(path)
+            venv_python = Path(str(runtime_assessment.get("python_executable", "")))
             python_runtime_found = bool(venv_python.exists())
-            runtime_details = (
-                f"venv runtime found at {venv_python}"
-                if venv_python.exists()
-                else "python runtime missing (expected ComfyUI .venv runtime)"
-            )
+            runtime_structurally_valid = bool(runtime_assessment.get("ok", False))
+            runtime_structure_reasons = list(runtime_assessment.get("reasons", []))
+            runtime_details = str(runtime_assessment.get("detail", "python runtime not checked"))
             if not python_runtime_found:
                 missing_files.append("python-runtime")
+            if python_runtime_found and not bool(runtime_assessment.get("pyvenv_cfg_exists", False)):
+                missing_files.append("pyvenv.cfg")
+            if python_runtime_found and not runtime_structurally_valid:
+                missing_files.append("python-runtime-broken")
+            if python_runtime_found and bool(runtime_assessment.get("pip_checked", False)) and not bool(runtime_assessment.get("pip_available", False)):
+                missing_files.append("pip")
             launch_command, _launcher_type = self._build_comfy_launch_command(path, "127.0.0.1", 8188)
             launch_target_resolvable = bool(launch_command)
             launch_target = " ".join(launch_command)
@@ -2086,6 +2197,8 @@ class WebRuntime:
             "required_dirs": required_dirs,
             "python_runtime_found": python_runtime_found,
             "runtime_details": runtime_details,
+            "runtime_structurally_valid": runtime_structurally_valid,
+            "runtime_structure_reasons": runtime_structure_reasons,
             "launch_target_resolvable": launch_target_resolvable,
             "launch_target": launch_target,
         }
@@ -2094,19 +2207,89 @@ class WebRuntime:
         for folder in ("custom_nodes", "models", "output", "input", "user"):
             (target_dir / folder).mkdir(parents=True, exist_ok=True)
 
+    @staticmethod
+    def _venv_python_executable(venv_dir: Path) -> Path:
+        return venv_dir / "Scripts" / "python.exe" if os.name == "nt" else venv_dir / "bin" / "python"
+
+    def _assess_managed_venv_runtime(self, target_dir: Path) -> dict[str, Any]:
+        venv_dir = target_dir / ".venv"
+        venv_python = self._venv_python_executable(venv_dir)
+        pyvenv_cfg = venv_dir / "pyvenv.cfg"
+        if not venv_python.exists():
+            return {
+                "ok": False,
+                "python_executable": str(venv_python),
+                "pyvenv_cfg": str(pyvenv_cfg),
+                "pyvenv_cfg_exists": pyvenv_cfg.exists(),
+                "pip_checked": False,
+                "pip_available": False,
+                "reasons": ["python-executable-missing"],
+                "detail": "python runtime missing (expected ComfyUI .venv runtime)",
+            }
+
+        reasons: list[str] = []
+        if not pyvenv_cfg.exists():
+            reasons.append("pyvenv.cfg-missing")
+
+        runtime_probe = self._validate_python_runtime(str(venv_python), "venv_python")
+        if not runtime_probe.get("ok", False):
+            failure_message = str(runtime_probe.get("message", "Python runtime check failed."))
+            lowered_failure = failure_message.lower()
+            if "exit code 106" in lowered_failure or "pyvenv.cfg" in lowered_failure:
+                reasons.append("invalid-venv-structure")
+            reasons.append("python-runtime-check-failed")
+            detail = (
+                f"python runtime check failed for managed .venv ({failure_message})"
+                if not reasons or reasons[0] != "pyvenv.cfg-missing"
+                else f"python runtime check failed for managed .venv ({failure_message})"
+            )
+            return {
+                "ok": False,
+                "python_executable": str(venv_python),
+                "pyvenv_cfg": str(pyvenv_cfg),
+                "pyvenv_cfg_exists": pyvenv_cfg.exists(),
+                "pip_checked": False,
+                "pip_available": False,
+                "runtime_probe_message": failure_message,
+                "reasons": reasons,
+                "detail": detail,
+            }
+
+        pip_check = self._run_command_capture([str(venv_python), "-m", "pip", "--version"], timeout_seconds=30)
+        pip_available = pip_check.returncode == 0
+        if not pip_available:
+            reasons.append("pip-unavailable")
+        return {
+            "ok": len(reasons) == 0,
+            "python_executable": str(venv_python),
+            "pyvenv_cfg": str(pyvenv_cfg),
+            "pyvenv_cfg_exists": pyvenv_cfg.exists(),
+            "pip_checked": True,
+            "pip_available": pip_available,
+            "pip_detail": self._command_output_snippet(pip_check),
+            "reasons": reasons,
+            "detail": (
+                f"venv runtime validated: {venv_python}"
+                if len(reasons) == 0
+                else f"managed .venv is broken ({', '.join(reasons)})"
+            ),
+        }
+
     def _install_embedded_python_runtime(self, target_dir: Path) -> tuple[bool, str]:
         """Compatibility shim: managed runtime now uses a local .venv."""
         venv_dir = target_dir / ".venv"
-        venv_python = venv_dir / "Scripts" / "python.exe"
-        if venv_python.exists():
+        venv_python = self._venv_python_executable(venv_dir)
+        runtime_assessment = self._assess_managed_venv_runtime(target_dir)
+        if runtime_assessment.get("ok", False):
             self._update_image_bootstrap_progress(
                 state="verifying pip",
                 step="verifying-pip",
                 summary="Managed .venv detected. Verifying pip availability.",
             )
-            pip_check = self._run_command_capture([str(venv_python), "-m", "pip", "--version"], timeout_seconds=30)
-            if pip_check.returncode == 0:
-                return True, f"venv runtime ready: {venv_python}"
+            return True, f"venv runtime ready: {venv_python}"
+        if venv_dir.exists():
+            reason = ", ".join(runtime_assessment.get("reasons", [])) or "existing runtime invalid"
+            print(f"[setup-orchestrator] runtime-repair removing managed .venv reason={reason}")
         if venv_dir.exists():
             shutil.rmtree(venv_dir, ignore_errors=True)
         python_exe = shutil.which("python") or shutil.which("py")
@@ -2125,7 +2308,13 @@ class WebRuntime:
             detail = self._command_output_snippet(create)
             return False, f"Failed to create ComfyUI .venv runtime: {detail}"
         if not venv_python.exists():
-            return False, "ComfyUI .venv creation did not produce Scripts/python.exe."
+            return False, f"ComfyUI .venv creation did not produce runtime executable at {venv_python}."
+        pyvenv_cfg = venv_dir / "pyvenv.cfg"
+        if not pyvenv_cfg.exists():
+            return False, "ComfyUI .venv creation did not produce pyvenv.cfg."
+        runtime_check = self._validate_python_runtime(str(venv_python), "venv_python")
+        if not runtime_check.get("ok", False):
+            return False, str(runtime_check.get("message", "ComfyUI .venv runtime check failed."))
         self._update_image_bootstrap_progress(
             state="verifying pip",
             step="verifying-pip",
@@ -2144,9 +2333,12 @@ class WebRuntime:
             summary="Repairing managed ComfyUI installation.",
         )
         self._ensure_comfyui_runtime_folders(target_dir)
-        if (target_dir / "main.py").exists() and (target_dir / ".venv" / "Scripts" / "python.exe").exists():
+        if (target_dir / "main.py").exists():
             self._ensure_managed_comfyui_launchers(target_dir)
-            return True, "Managed ComfyUI runtime already complete."
+            python_ok, python_msg = self._install_embedded_python_runtime(target_dir)
+            if python_ok:
+                return True, python_msg
+            return False, python_msg
         if not (target_dir / "main.py").exists():
             bundled_root = bundled_comfyui_dir()
             if bundled_root.exists() and bundled_root.is_dir() and (bundled_root / "main.py").exists():
@@ -2157,7 +2349,7 @@ class WebRuntime:
                     self._ensure_comfyui_runtime_folders(target_dir)
                 except OSError:
                     pass
-            if (target_dir / "main.py").exists() and (target_dir / ".venv" / "Scripts" / "python.exe").exists():
+            if (target_dir / "main.py").exists() and self._venv_python_executable(target_dir / ".venv").exists():
                 return True, "Installed managed ComfyUI from bundled runtime."
             ok, msg = self._download_and_extract_comfyui(target_dir)
             if not ok:
