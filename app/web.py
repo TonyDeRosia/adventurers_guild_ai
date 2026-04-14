@@ -99,6 +99,9 @@ class WebRuntime:
         self.session = WebSession(state=self._load_or_create(default_slot), active_slot=default_slot)
         self.session.message_history = self._history_for_slot(self.session.active_slot)
         self.image_startup_status: dict[str, Any] = {}
+        self._image_startup_lock = threading.Lock()
+        self._image_bootstrap_thread: threading.Thread | None = None
+        self._image_bootstrap_active = False
         self._image_engine_state = "installed"
         self._image_engine_last_error = ""
         self._image_engine_last_health_check = ""
@@ -111,6 +114,21 @@ class WebRuntime:
         self._model_install_jobs: dict[str, dict[str, Any]] = {}
         self._apply_managed_image_engine_defaults()
         print("[web-runtime] session initialized")
+
+    def _set_image_startup_status(self, **payload: Any) -> None:
+        with self._image_startup_lock:
+            self.image_startup_status = payload
+
+    def _update_image_bootstrap_progress(self, *, state: str, step: str, summary: str, **extra: Any) -> None:
+        payload = {
+            "state": state,
+            "stage": step,
+            "current_step": step,
+            "summary": summary,
+            **extra,
+        }
+        self._set_image_startup_status(**payload)
+        print(f"[image-bootstrap] state={state} step={step} summary={summary}")
 
     def shutdown_managed_services(self) -> None:
         """Shutdown managed local subprocesses owned by this runtime."""
@@ -135,12 +153,64 @@ class WebRuntime:
         if self.get_image_status().get("reachable", False):
             return
         path_status = self.get_path_configuration_status().get("image", {})
-        if not bool(path_status.get("pipeline_ready", False)):
+        if str(path_status.get("mode", "managed")) != "managed":
             return
-        print("[startup] attempting managed ComfyUI auto-start")
-        result = self.start_image_engine()
-        if not result.get("ok", False):
-            print(f"[startup] managed ComfyUI auto-start did not complete: {result.get('message', 'unknown')}")
+        if bool(path_status.get("pipeline_ready", False)):
+            print("[startup] managed ComfyUI configured; scheduling background startup")
+        else:
+            print("[startup] managed ComfyUI incomplete; scheduling background bootstrap/repair")
+        self.start_image_bootstrap_background(trigger="startup")
+
+    def start_image_bootstrap_background(self, *, trigger: str = "manual") -> dict[str, Any]:
+        if not self.app_config.image.enabled or self.app_config.image.provider != "comfyui":
+            return {"ok": False, "message": "Image provider is not set to comfyui."}
+        with self._image_startup_lock:
+            if self._image_bootstrap_thread is not None and self._image_bootstrap_thread.is_alive():
+                return {"ok": True, "status": "running", "message": "Image bootstrap is already running."}
+            self._image_bootstrap_active = True
+            self.image_startup_status = {
+                "state": "queued",
+                "stage": "queued",
+                "current_step": "queued",
+                "summary": "Image AI bootstrap queued.",
+                "trigger": trigger,
+            }
+
+        def _runner() -> None:
+            print(f"[startup] background image bootstrap started trigger={trigger}")
+            self._update_image_bootstrap_progress(
+                state="repairing install",
+                step="repair-install",
+                summary="Preparing managed ComfyUI install in background.",
+                trigger=trigger,
+            )
+            result = self.start_image_engine(startup_mode="background")
+            if result.get("ok", False):
+                self._update_image_bootstrap_progress(
+                    state="ready",
+                    step="ready",
+                    summary=str(result.get("message", "Image AI is ready.")),
+                    trigger=trigger,
+                )
+                print("[startup] background image bootstrap completed")
+            else:
+                self._update_image_bootstrap_progress(
+                    state="failed",
+                    step=str(result.get("failure_stage", "failed")),
+                    summary=str(result.get("message", "Image AI bootstrap failed.")),
+                    trigger=trigger,
+                    next_step=str(result.get("next_step", "Retry setup from AI Setup.")),
+                    failure_stage=str(result.get("failure_stage", "")),
+                )
+                print(f"[startup] background image bootstrap failed reason={result.get('message', 'unknown')}")
+            with self._image_startup_lock:
+                self._image_bootstrap_active = False
+
+        thread = threading.Thread(target=_runner, daemon=True, name=f"image-bootstrap-{trigger}")
+        with self._image_startup_lock:
+            self._image_bootstrap_thread = thread
+        thread.start()
+        return {"ok": True, "status": "queued", "message": "Image bootstrap queued in background."}
 
     def _campaign_namespace(self, slot: str, state: CampaignState | None = None) -> str:
         scoped_state = state or self.session.state
@@ -788,6 +858,7 @@ class WebRuntime:
             installed = bool(path_status.get("comfyui_root", {}).get("valid", False))
             state = "installed" if installed else "not_installed"
         self._image_engine_last_health_check = datetime.now(timezone.utc).isoformat()
+        startup_status = dict(self.image_startup_status or {})
         return {
             "ok": True,
             "state": state,
@@ -800,6 +871,8 @@ class WebRuntime:
             "workflow_available": bool(path_status.get("workflow_path", {}).get("valid", False)),
             "model_available": bool(path_status.get("checkpoint_dir", {}).get("model_ready", False)),
             "api_reachable": bool(image_status.get("reachable", False)),
+            "startup_status": startup_status,
+            "bootstrap_active": bool(self._image_bootstrap_active),
         }
 
     def use_bundled_image_engine(self) -> dict[str, Any]:
@@ -1687,6 +1760,11 @@ class WebRuntime:
         venv_dir = target_dir / ".venv"
         venv_python = venv_dir / "Scripts" / "python.exe"
         if venv_python.exists():
+            self._update_image_bootstrap_progress(
+                state="verifying pip",
+                step="verifying-pip",
+                summary="Managed .venv detected. Verifying pip availability.",
+            )
             pip_check = self._run_command_capture([str(venv_python), "-m", "pip", "--version"], timeout_seconds=30)
             if pip_check.returncode == 0:
                 return True, f"venv runtime ready: {venv_python}"
@@ -1695,6 +1773,11 @@ class WebRuntime:
         python_exe = shutil.which("python") or shutil.which("py")
         if not python_exe:
             return False, "System Python is required to create ComfyUI .venv runtime."
+        self._update_image_bootstrap_progress(
+            state="creating venv",
+            step="creating-venv",
+            summary="Creating managed ComfyUI .venv runtime.",
+        )
         create_cmd = [python_exe, "-m", "venv", str(venv_dir)]
         if Path(python_exe).name.lower() in {"py", "py.exe"}:
             create_cmd = [python_exe, "-3", "-m", "venv", str(venv_dir)]
@@ -1704,6 +1787,11 @@ class WebRuntime:
             return False, f"Failed to create ComfyUI .venv runtime: {detail}"
         if not venv_python.exists():
             return False, "ComfyUI .venv creation did not produce Scripts/python.exe."
+        self._update_image_bootstrap_progress(
+            state="verifying pip",
+            step="verifying-pip",
+            summary="ComfyUI .venv created. Verifying pip installation.",
+        )
         pip_check = self._run_command_capture([str(venv_python), "-m", "pip", "--version"], timeout_seconds=30)
         if pip_check.returncode != 0:
             detail = self._command_output_snippet(pip_check)
@@ -1711,6 +1799,11 @@ class WebRuntime:
         return True, f"venv runtime ready: {venv_python}"
 
     def _repair_managed_comfyui_install(self, target_dir: Path) -> tuple[bool, str]:
+        self._update_image_bootstrap_progress(
+            state="repairing install",
+            step="repairing-install",
+            summary="Repairing managed ComfyUI installation.",
+        )
         self._ensure_comfyui_runtime_folders(target_dir)
         if (target_dir / "main.py").exists() and (target_dir / ".venv" / "Scripts" / "python.exe").exists():
             return True, "Managed ComfyUI runtime already complete."
@@ -1908,6 +2001,11 @@ class WebRuntime:
         return text[:max_chars] + "...(truncated)"
 
     def _bootstrap_runtime_pip(self, runtime_command: list[str], *, python_executable: str) -> dict[str, Any]:
+        self._update_image_bootstrap_progress(
+            state="verifying pip",
+            step="verifying-pip",
+            summary="Checking pip in managed ComfyUI runtime.",
+        )
         pip_check = self._run_runtime_python_capture(runtime_command, ["-m", "pip", "--version"], timeout_seconds=30)
         pip_initially_available = pip_check.returncode == 0
         print(
@@ -1961,6 +2059,11 @@ class WebRuntime:
         requirements_file = Path(str(package_info.get("requirements_file", "")))
         installed_packages: list[str] = []
         if bool(package_info.get("requirements_file_present", False)) and requirements_file.exists():
+            self._update_image_bootstrap_progress(
+                state="installing requirements",
+                step="installing-requirements",
+                summary=f"Installing ComfyUI requirements from {requirements_file.name}.",
+            )
             print(f"[setup-deps] installing requirements file={requirements_file}")
             install_requirements = self._run_runtime_python_capture(
                 runtime_command,
@@ -1985,6 +2088,11 @@ class WebRuntime:
             if probe.returncode != 0:
                 missing_imports.append(package_name)
         for package_name in missing_imports:
+            self._update_image_bootstrap_progress(
+                state="installing requirements",
+                step="installing-requirements",
+                summary=f"Installing missing Python package: {package_name}.",
+            )
             print(f"[setup-deps] installing missing package={package_name}")
             install_one = self._run_runtime_python_capture(runtime_command, ["-m", "pip", "install", package_name], timeout_seconds=180)
             if install_one.returncode != 0:
@@ -2517,7 +2625,7 @@ class WebRuntime:
             "readiness_refreshed": True,
         }
 
-    def start_image_engine(self) -> dict[str, Any]:
+    def start_image_engine(self, *, startup_mode: str = "manual") -> dict[str, Any]:
         print("[setup-action] start-image-engine requested")
         self._image_engine_state = "starting"
         self._image_engine_last_error = ""
@@ -2527,7 +2635,15 @@ class WebRuntime:
             startup_log_file = self.paths.logs / "image_engine_startup.log"
         self.app_config.image.managed_logs_path = str(startup_log_file)
         startup_log_file.parent.mkdir(parents=True, exist_ok=True)
-        self.image_startup_status = {}
+        if startup_mode != "background":
+            with self._image_startup_lock:
+                if self._image_bootstrap_thread is not None and self._image_bootstrap_thread.is_alive():
+                    return {
+                        "ok": True,
+                        "message": "Image bootstrap is already running in background.",
+                        "startup_status": dict(self.image_startup_status),
+                    }
+            self._set_image_startup_status()
         self.comfy_manager.clear_if_exited()
         if self.app_config.image.provider != "comfyui":
             print("[setup-action] start-image-engine failure reason=image provider is not comfyui")
@@ -2544,15 +2660,17 @@ class WebRuntime:
         if self.get_image_status().get("reachable", False):
             print("[setup-action] start-image-engine success reason=already running")
             managed_state = self.comfy_manager.snapshot()
-            self.image_startup_status = {
-                "stage": "wait-for-readiness",
-                "reason": "already-reachable",
-                "summary": "ComfyUI is already running.",
-                "log_text": "",
-                "log_available": False,
-                "log_file": str(startup_log_file),
-                "managed_process": managed_state.running,
-            }
+            self._set_image_startup_status(
+                state="ready",
+                stage="wait-for-readiness",
+                reason="already-reachable",
+                summary="ComfyUI is already running.",
+                current_step="wait-for-readiness",
+                log_text="",
+                log_available=False,
+                log_file=str(startup_log_file),
+                managed_process=managed_state.running,
+            )
             return {
                 "ok": True,
                 "message": "ComfyUI is already running.",
@@ -2560,6 +2678,7 @@ class WebRuntime:
                 "steps": [{"step": "wait-for-readiness", "state": "ready", "message": "Engine is already reachable."}],
             }
         path_config = self.get_path_configuration_status().get("image", {})
+        self._update_image_bootstrap_progress(state="repairing install", step="detect-install-path", summary="Detecting managed ComfyUI install path.")
         print("[setup-orchestrator] setup-image step=detect-install-path")
         install_status = self._detect_install_path_status(path_config)
         comfyui_root = Path(str(install_status.get("resolved_root", "")).strip()) if install_status.get("ok") else None
@@ -2629,6 +2748,7 @@ class WebRuntime:
                         {"step": "layout-validation", "state": "failed", "message": f"Missing packaged assets: {', '.join(missing_required) or 'unknown'}"},
                     ],
                 }
+        self._update_image_bootstrap_progress(state="repairing install", step="verify-install", summary="Verifying ComfyUI install integrity.")
         print("[setup-orchestrator] setup-image step=verify-install")
         validation = self.validate_comfyui_install(comfyui_root)
         if not validation.get("ok"):
@@ -2692,6 +2812,7 @@ class WebRuntime:
             }
         launch_command = list(preflight.get("launch_command", []))
         launcher_type = str(preflight.get("launcher_type", "unknown"))
+        self._update_image_bootstrap_progress(state="verifying pip", step="dependency-bootstrap", summary="Bootstrapping Python dependencies for ComfyUI.")
         print("[setup-orchestrator] setup-image step=dependency-bootstrap")
         dependency_bootstrap = self._bootstrap_comfy_python_dependencies(comfyui_root, launch_command, launcher_type)
         if not dependency_bootstrap.get("ok", False):
@@ -2724,6 +2845,7 @@ class WebRuntime:
             self._append_image_startup_log(startup_log_lines, f"Dependency bootstrap installed: {', '.join(installed_packages)}")
         else:
             self._append_image_startup_log(startup_log_lines, "Dependency bootstrap verified required modules are already available.")
+        self._update_image_bootstrap_progress(state="starting ComfyUI", step="launch-engine", summary="Starting ComfyUI process.")
         print("[setup-orchestrator] setup-image step=launch-engine")
         process: subprocess.Popen[str] | None = None
         log_handle = None
@@ -2770,6 +2892,7 @@ class WebRuntime:
             self.comfy_manager.bind_log_handle(log_handle)
         self.comfy_manager.register(process, launch_target=launch_target, startup_log_file=startup_log_file)
         print(f"[setup-action] start-image-engine launch command={launch_target}")
+        self._update_image_bootstrap_progress(state="starting ComfyUI", step="wait-for-readiness", summary="Waiting for ComfyUI readiness endpoint.")
         print("[setup-orchestrator] setup-image step=wait-for-readiness")
         expected_base = self.app_config.image.base_url
         expected = urlparse(expected_base)
@@ -2788,19 +2911,21 @@ class WebRuntime:
                 startup_log_lines.extend(tail_lines)
                 startup_log_text = self._sanitize_image_startup_log(startup_log_lines)
                 runtime_error = self._detect_runtime_error(startup_log_text)
-                self.image_startup_status = {
-                    "stage": "wait-for-readiness",
-                    "reason": "process-exited-immediately",
-                    "summary": f"Image AI failed: ComfyUI exited during startup (exit code {exit_code}).",
-                    "runtime_error_hint": runtime_error,
-                    "exit_code": exit_code,
-                    "last_log_lines": tail_lines[-20:],
-                    "last_error_line": tail_lines[-1] if tail_lines else "",
-                    "log_text": startup_log_text,
-                    "log_available": bool(startup_log_text),
-                    "log_file": str(startup_log_file),
-                    "managed_process": False,
-                }
+                self._set_image_startup_status(
+                    state="failed",
+                    stage="wait-for-readiness",
+                    reason="process-exited-immediately",
+                    summary=f"Image AI failed: ComfyUI exited during startup (exit code {exit_code}).",
+                    current_step="wait-for-readiness",
+                    runtime_error_hint=runtime_error,
+                    exit_code=exit_code,
+                    last_log_lines=tail_lines[-20:],
+                    last_error_line=tail_lines[-1] if tail_lines else "",
+                    log_text=startup_log_text,
+                    log_available=bool(startup_log_text),
+                    log_file=str(startup_log_file),
+                    managed_process=False,
+                )
                 self.comfy_manager.clear_if_exited()
                 self._image_engine_state = "error"
                 self._image_engine_last_error = "process_exited_immediately"
@@ -2823,15 +2948,17 @@ class WebRuntime:
                 }
             if self.get_image_status().get("reachable", False):
                 print("[setup-action] start-image-engine success")
-                self.image_startup_status = {
-                    "stage": "wait-for-readiness",
-                    "reason": "ready",
-                    "summary": "ComfyUI started and is reachable.",
-                    "log_text": self._sanitize_image_startup_log(startup_log_lines + self._read_startup_log_tail(startup_log_file)),
-                    "log_available": True,
-                    "log_file": str(startup_log_file),
-                    "managed_process": self.comfy_manager.snapshot().running,
-                }
+                self._set_image_startup_status(
+                    state="ready",
+                    stage="wait-for-readiness",
+                    reason="ready",
+                    summary="ComfyUI started and is reachable.",
+                    current_step="ready",
+                    log_text=self._sanitize_image_startup_log(startup_log_lines + self._read_startup_log_tail(startup_log_file)),
+                    log_available=True,
+                    log_file=str(startup_log_file),
+                    managed_process=self.comfy_manager.snapshot().running,
+                )
                 self._image_engine_state = "running"
                 return {
                     "ok": True,
@@ -2872,18 +2999,20 @@ class WebRuntime:
         else:
             message = "Image AI failed: ComfyUI is still running but not reachable yet."
             stage_message = "ComfyUI still running but not reachable"
-        self.image_startup_status = {
-            "stage": "wait-for-readiness",
-            "reason": reason,
-            "summary": message,
-            "runtime_error_hint": runtime_error,
-            "detected_bind_urls": bound_urls,
-            "expected_base_url": expected_base,
-            "log_text": startup_log_text,
-            "log_available": bool(startup_log_text),
-            "log_file": str(startup_log_file),
-            "managed_process": self.comfy_manager.snapshot().running,
-        }
+        self._set_image_startup_status(
+            state="failed",
+            stage="wait-for-readiness",
+            reason=reason,
+            summary=message,
+            current_step="wait-for-readiness",
+            runtime_error_hint=runtime_error,
+            detected_bind_urls=bound_urls,
+            expected_base_url=expected_base,
+            log_text=startup_log_text,
+            log_available=bool(startup_log_text),
+            log_file=str(startup_log_file),
+            managed_process=self.comfy_manager.snapshot().running,
+        )
         print("[setup-action] start-image-engine failure reason=timeout-waiting-for-comfyui")
         print("[setup-orchestrator] setup-image failure stage=wait-for-readiness")
         self._image_engine_state = "error"
@@ -2916,12 +3045,14 @@ class WebRuntime:
             self._image_engine_state = "error"
             self._image_engine_last_error = "stop_failed"
             return {"ok": False, "message": "Image engine process could not be stopped cleanly.", "managed_process": True}
-        self.image_startup_status = {
-            "stage": "stopped",
-            "reason": "stopped-by-user",
-            "summary": "ComfyUI process stopped from setup controls.",
-            "managed_process": False,
-        }
+        self._set_image_startup_status(
+            state="stopped",
+            stage="stopped",
+            reason="stopped-by-user",
+            summary="ComfyUI process stopped from setup controls.",
+            current_step="stopped",
+            managed_process=False,
+        )
         self._image_engine_state = "installed"
         return {"ok": True, "message": "Image engine stopped.", "managed_process": False, "readiness_refreshed": True}
 

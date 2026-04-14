@@ -22,6 +22,15 @@ def _runtime(tmp_path: Path, monkeypatch) -> WebRuntime:
     return WebRuntime(Path.cwd())
 
 
+def _wait_for(predicate, timeout: float = 1.0) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return False
+
+
 def test_campaign_management_create_save_switch_rename_delete(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
 
@@ -2395,6 +2404,99 @@ def test_setup_endpoints_invoke_backend_actions(tmp_path: Path, monkeypatch, cap
     assert "[setup-action] route invoked endpoint=/api/setup/orchestrate-text model=llama3" in captured.out
     assert "[setup-action] route invoked endpoint=/api/setup/orchestrate-image" in captured.out
     assert "[setup-action] route invoked endpoint=/api/setup/orchestrate-everything model=llama3" in captured.out
+
+
+def test_background_image_bootstrap_is_non_blocking(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    runtime.app_config.image.enabled = True
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": False, "ready": False})
+    monkeypatch.setattr(runtime, "get_path_configuration_status", lambda: {"image": {"mode": "managed", "pipeline_ready": False}})
+
+    def slow_start(**_kwargs):
+        time.sleep(0.25)
+        return {"ok": True, "message": "ComfyUI started and is reachable."}
+
+    monkeypatch.setattr(runtime, "start_image_engine", slow_start)
+    start = time.perf_counter()
+    result = runtime.auto_start_image_backend_if_needed()
+    elapsed = time.perf_counter() - start
+
+    assert result is None
+    assert elapsed < 0.1
+    assert runtime.image_startup_status["state"] in {"queued", "repairing install", "ready"}
+
+
+def test_startup_auto_bootstrap_keeps_health_and_text_routes_available(tmp_path: Path, monkeypatch) -> None:
+    try:
+        from fastapi.testclient import TestClient
+    except RuntimeError as exc:
+        pytest.skip(str(exc))
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    runtime.app_config.image.enabled = True
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": False, "ready": False})
+    monkeypatch.setattr(runtime, "get_path_configuration_status", lambda: {"image": {"mode": "managed", "pipeline_ready": False}})
+    monkeypatch.setattr(runtime, "start_image_engine", lambda **_kwargs: (time.sleep(0.2), {"ok": True, "message": "ready"})[1])
+
+    app = create_web_app(runtime, runtime.root / "app" / "static")
+    with TestClient(app) as client:
+        health = client.get("/health")
+        play = client.get("/api/campaign/play-view")
+        assert health.status_code == 200
+        assert health.json()["status"] == "ok"
+        assert play.status_code == 200
+        assert "messages" in play.json()
+
+
+def test_background_bootstrap_failure_does_not_stop_app(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    runtime.app_config.image.enabled = True
+    monkeypatch.setattr(runtime, "start_image_engine", lambda **_kwargs: {"ok": False, "message": "pip install failed", "failure_stage": "dependency-bootstrap"})
+
+    result = runtime.start_image_bootstrap_background(trigger="startup")
+    assert result["ok"] is True
+    assert _wait_for(lambda: runtime.image_startup_status.get("state") == "failed")
+    assert runtime.image_startup_status["state"] == "failed"
+    assert "pip install failed" in runtime.image_startup_status["summary"]
+
+
+def test_dependency_readiness_includes_background_bootstrap_state(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.image_startup_status = {
+        "state": "installing requirements",
+        "current_step": "installing-requirements",
+        "summary": "Installing ComfyUI requirements.",
+    }
+    readiness = runtime.get_dependency_readiness()
+    image_item = next(item for item in readiness["items"] if item["provider_type"] == "image_provider")
+    assert image_item["startup_status"]["state"] == "installing requirements"
+    assert image_item["startup_status"]["current_step"] == "installing-requirements"
+
+
+def test_background_bootstrap_retry_after_failure(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    runtime.app_config.image.enabled = True
+    calls = {"count": 0}
+
+    def flaky_start(**_kwargs):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return {"ok": False, "message": "first failure", "failure_stage": "dependency-bootstrap"}
+        return {"ok": True, "message": "ComfyUI started and is reachable."}
+
+    monkeypatch.setattr(runtime, "start_image_engine", flaky_start)
+
+    runtime.start_image_bootstrap_background(trigger="startup")
+    assert _wait_for(lambda: runtime.image_startup_status.get("state") == "failed")
+    assert runtime.image_startup_status["state"] == "failed"
+
+    runtime.start_image_bootstrap_background(trigger="retry")
+    assert _wait_for(lambda: runtime.image_startup_status.get("state") == "ready")
+    assert runtime.image_startup_status["state"] == "ready"
+    assert calls["count"] == 2
 
 
 def test_visual_pipeline_endpoints_apply_and_validate(tmp_path: Path, monkeypatch) -> None:

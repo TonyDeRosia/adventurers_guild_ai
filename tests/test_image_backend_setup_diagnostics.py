@@ -46,8 +46,8 @@ def test_image_backend_diagnostics_includes_managed_runtime_details(tmp_path: Pa
     diagnostics = payload["diagnostics"]
     assert diagnostics["managed_mode_active"] is True
     assert diagnostics["managed_comfyui_root"] == str(comfy_root)
-    assert diagnostics["python_runtime_found"] is False
-    assert "python-runtime" in diagnostics["runtime_missing_items"]
+    assert diagnostics["python_runtime_found"] is True
+    assert "pip" in diagnostics["runtime_missing_items"]
 
 
 def test_image_backend_diagnostics_reports_running_when_api_reachable(tmp_path: Path, monkeypatch) -> None:
