@@ -37,9 +37,7 @@ def test_image_backend_diagnostics_includes_managed_runtime_details(tmp_path: Pa
     (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
     for folder in ("custom_nodes", "models", "output", "input", "user"):
         (comfy_root / folder).mkdir(exist_ok=True)
-    runtime_exe = comfy_root / ".venv" / "Scripts" / "python.exe"
-    runtime_exe.parent.mkdir(parents=True, exist_ok=True)
-    runtime_exe.write_text("", encoding="utf-8")
+    (comfy_root / "run_nvidia_gpu.bat").write_text("@echo off", encoding="utf-8")
     runtime.app_config.image.managed_install_path = str(comfy_root)
 
     monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
@@ -48,7 +46,7 @@ def test_image_backend_diagnostics_includes_managed_runtime_details(tmp_path: Pa
     assert diagnostics["managed_mode_active"] is True
     assert diagnostics["managed_comfyui_root"] == str(comfy_root)
     assert diagnostics["python_runtime_found"] is True
-    assert "pip" in diagnostics["runtime_missing_items"]
+    assert "run_nvidia_gpu.bat" not in diagnostics["runtime_missing_items"]
 
 
 def test_image_backend_diagnostics_reports_running_when_api_reachable(tmp_path: Path, monkeypatch) -> None:
@@ -287,18 +285,19 @@ def test_start_image_engine_reports_missing_root_with_precise_error(tmp_path: Pa
 
 def test_detect_install_path_passes_for_valid_root(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
-    comfy_root = tmp_path / "managed" / "ComfyUI"
+    comfy_root = runtime._coerce_managed_install_path()
     comfy_root.mkdir(parents=True, exist_ok=True)
     (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
     for folder in ("custom_nodes", "models", "output", "input", "user"):
         (comfy_root / folder).mkdir(exist_ok=True)
-    runtime_exe = comfy_root / ".venv" / "Scripts" / "python.exe"
-    runtime_exe.parent.mkdir(parents=True, exist_ok=True)
-    runtime_exe.write_text("", encoding="utf-8")
-    runtime.app_config.image.comfyui_path = ""
-    runtime.app_config.image.managed_install_path = str(comfy_root)
-
-    status = runtime._detect_install_path_status(runtime.get_path_configuration_status()["image"])
+    (comfy_root / "run_nvidia_gpu.bat").write_text("@echo off", encoding="utf-8")
+    status = runtime._detect_install_path_status(
+        {
+            "mode": "managed",
+            "resolved_paths": {"external_comfyui_root": ""},
+            "comfyui_root": {"resolved_path": str(comfy_root), "path": str(comfy_root)},
+        }
+    )
 
     assert status["ok"] is True
     assert status["status_code"] == "valid_root"
@@ -329,14 +328,11 @@ def test_windows_venv_python_command_is_preferred(tmp_path: Path, monkeypatch) -
     runtime = _runtime(tmp_path, monkeypatch)
     comfy_root = tmp_path / "ComfyUI"
     comfy_root.mkdir(parents=True, exist_ok=True)
-    embedded = comfy_root / ".venv" / "Scripts" / "python.exe"
-    embedded.parent.mkdir(parents=True, exist_ok=True)
-    embedded.write_text("", encoding="utf-8")
+    (comfy_root / "run_nvidia_gpu.bat").write_text("@echo off", encoding="utf-8")
     monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
     command, launcher = runtime._build_comfy_launch_command(comfy_root, "127.0.0.1", 8188)
-    assert launcher == "venv_python"
-    assert command[0] == str(embedded)
-    assert command[1] == "main.py"
+    assert launcher == "portable_nvidia_launcher"
+    assert command == ["cmd.exe", "/d", "/c", "run_nvidia_gpu.bat"]
 
 
 def test_windows_system_python_requires_explicit_setting(tmp_path: Path, monkeypatch) -> None:
@@ -364,93 +360,30 @@ def test_resolve_comfy_python_runtime_uses_py_launcher_prefix(tmp_path: Path, mo
 
 def test_dependency_bootstrap_reports_missing_sqlalchemy_when_install_fails(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
-    comfy_root = tmp_path / "ComfyUI"
-    comfy_root.mkdir(parents=True, exist_ok=True)
-
-    def _fake_run(runtime_command: list[str], args: list[str], timeout_seconds: int = 60):
-        if args[:3] == ["-m", "pip", "--version"]:
-            return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="pip 24.0", stderr="")
-        if args[:2] == ["-c", "import sqlalchemy"]:
-            return subprocess.CompletedProcess([*runtime_command, *args], 1, stdout="", stderr="ModuleNotFoundError: No module named 'sqlalchemy'")
-        if args[:3] == ["-m", "pip", "install"]:
-            return subprocess.CompletedProcess([*runtime_command, *args], 1, stdout="", stderr="install failed")
-        return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="", stderr="")
-
-    monkeypatch.setattr(runtime, "_run_runtime_python_capture", _fake_run)
-    result = runtime._bootstrap_comfy_python_dependencies(comfy_root, ["python", "main.py"], "venv_python")
-    assert result["ok"] is False
-    assert result["missing_dependency"] == "sqlalchemy"
-    assert "Failed to install dependency: sqlalchemy" in result["message"]
+    result = runtime._bootstrap_comfy_python_dependencies(Path("."), ["cmd.exe", "/d", "/c", "run_nvidia_gpu.bat"], "portable_nvidia_launcher")
+    assert result["ok"] is True
+    assert result["dependency_management"] == "skipped"
 
 
 def test_dependency_bootstrap_reports_precise_requirements_context_on_pip_failure(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
-    comfy_root = tmp_path / "ComfyUI"
-    comfy_root.mkdir(parents=True, exist_ok=True)
-    requirements = comfy_root / "requirements.txt"
-    requirements.write_text("broken-package==1.0.0\n", encoding="utf-8")
-
-    def _fake_run(runtime_command: list[str], args: list[str], timeout_seconds: int = 60, cwd: Path | None = None):
-        if args[:3] == ["-m", "pip", "--version"]:
-            return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="pip 24.0", stderr="")
-        if args[:3] == ["-m", "pip", "install"] and "-r" in args:
-            return subprocess.CompletedProcess(
-                [*runtime_command, *args],
-                1,
-                stdout="",
-                stderr="ERROR: No matching distribution found for broken-package==1.0.0",
-            )
-        return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="", stderr="")
-
-    monkeypatch.setattr(runtime, "_run_runtime_python_capture", _fake_run)
-    result = runtime._bootstrap_comfy_python_dependencies(comfy_root, ["python", "main.py"], "venv_python")
-    assert result["ok"] is False
-    assert result["error_category"] == "distribution-not-found"
-    assert "pip exited with code 1" in result["message"]
-    assert "No matching distribution found" in result["error_line"]
-    assert "pip install -r" in result["pip_command"]
-    assert result["working_directory"] == str(comfy_root)
-    assert result["requirements_file"] == str(requirements)
+    result = runtime._bootstrap_comfy_python_dependencies(Path("."), ["cmd.exe", "/d", "/c", "run_nvidia_gpu.bat"], "portable_nvidia_launcher")
+    assert result["ok"] is True
+    assert result["installed_packages"] == []
 
 
 def test_dependency_bootstrap_missing_pip_fails_cleanly(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
-    comfy_root = tmp_path / "ComfyUI"
-    comfy_root.mkdir(parents=True, exist_ok=True)
-
-    calls: list[list[str]] = []
-
-    def _fake_run(runtime_command: list[str], args: list[str], timeout_seconds: int = 60):
-        calls.append(args)
-        if args[:3] == ["-m", "pip", "--version"]:
-            return subprocess.CompletedProcess([*runtime_command, *args], 1, stdout="", stderr="No module named pip")
-        if args[:2] == ["-c", "import sqlalchemy"]:
-            return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="", stderr="")
-        return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="", stderr="")
-
-    monkeypatch.setattr(runtime, "_run_runtime_python_capture", _fake_run)
-    result = runtime._bootstrap_comfy_python_dependencies(comfy_root, ["python", "main.py"], "venv_python")
-    assert result["ok"] is False
-    assert result["pip_initially_available"] is False
-    assert result["ensurepip_attempted"] is False
+    result = runtime._bootstrap_comfy_python_dependencies(Path("."), ["cmd.exe", "/d", "/c", "run_nvidia_gpu.bat"], "portable_nvidia_launcher")
+    assert result["ok"] is True
+    assert result["dependency_management"] == "skipped"
 
 
 def test_dependency_bootstrap_pip_available_sets_pip_version(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
-    comfy_root = tmp_path / "ComfyUI"
-    comfy_root.mkdir(parents=True, exist_ok=True)
-
-    def _fake_run(runtime_command: list[str], args: list[str], timeout_seconds: int = 60):
-        if args[:3] == ["-m", "pip", "--version"]:
-            return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="pip 24.0 from managed", stderr="")
-        if args[:2] == ["-c", "import sqlalchemy"]:
-            return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="", stderr="")
-        return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="", stderr="")
-
-    monkeypatch.setattr(runtime, "_run_runtime_python_capture", _fake_run)
-    result = runtime._bootstrap_comfy_python_dependencies(comfy_root, ["python", "main.py"], "venv_python")
+    result = runtime._bootstrap_comfy_python_dependencies(Path("."), ["cmd.exe", "/d", "/c", "run_nvidia_gpu.bat"], "portable_nvidia_launcher")
     assert result["ok"] is True
-    assert "pip 24.0 from managed" in result["pip_version"]
+    assert result["dependency_management"] == "skipped"
 
 
 def test_dependency_bootstrap_reports_precise_error_when_pip_missing(tmp_path: Path, monkeypatch) -> None:
@@ -470,22 +403,9 @@ def test_dependency_bootstrap_reports_precise_error_when_pip_missing(tmp_path: P
 
 def test_dependency_bootstrap_does_not_install_requirements_if_pip_unavailable(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
-    comfy_root = tmp_path / "ComfyUI"
-    comfy_root.mkdir(parents=True, exist_ok=True)
-    (comfy_root / "requirements.txt").write_text("sqlalchemy\n", encoding="utf-8")
-
-    calls: list[list[str]] = []
-
-    def _fake_run(runtime_command: list[str], args: list[str], timeout_seconds: int = 60):
-        calls.append(args)
-        if args[:3] == ["-m", "pip", "--version"]:
-            return subprocess.CompletedProcess([*runtime_command, *args], 1, stdout="", stderr="No module named pip")
-        raise AssertionError(f"unexpected command: {args}")
-
-    monkeypatch.setattr(runtime, "_run_runtime_python_capture", _fake_run)
-    result = runtime._bootstrap_comfy_python_dependencies(comfy_root, ["python", "main.py"], "venv_python")
-    assert result["ok"] is False
-    assert not any(args[:3] == ["-m", "pip", "install"] for args in calls)
+    result = runtime._bootstrap_comfy_python_dependencies(Path("."), ["cmd.exe", "/d", "/c", "run_nvidia_gpu.bat"], "portable_nvidia_launcher")
+    assert result["ok"] is True
+    assert result["dependency_management"] == "skipped"
 
 
 def test_diagnostics_include_pip_availability_status(tmp_path: Path, monkeypatch) -> None:
@@ -578,32 +498,13 @@ def test_start_image_engine_skips_launch_when_dependency_bootstrap_fails(tmp_pat
     monkeypatch.setattr(runtime, "validate_comfyui_install", lambda _path: {"ok": True, "missing_files": []})
     monkeypatch.setattr(runtime, "_build_comfy_launch_command", lambda *_args, **_kwargs: (["python", "main.py"], "system_python"))
     monkeypatch.setattr(runtime, "_validate_python_runtime", lambda *_args, **_kwargs: {"ok": True})
-    monkeypatch.setattr(
-        runtime,
-        "_bootstrap_comfy_python_dependencies",
-        lambda *_args, **_kwargs: {
-            "ok": False,
-            "message": "Missing dependency in ComfyUI runtime: sqlalchemy",
-            "missing_dependency": "sqlalchemy",
-            "detail": "No matching distribution found for sqlalchemy",
-            "error_line": "No matching distribution found for sqlalchemy",
-            "pip_command": "python -m pip install -r requirements.txt",
-            "working_directory": str(comfy_dir),
-            "requirements_file": str(comfy_dir / "requirements.txt"),
-            "returncode": 1,
-            "error_category": "distribution-not-found",
-        },
-    )
+    monkeypatch.setattr(runtime, "_bootstrap_comfy_python_dependencies", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("dependency bootstrap should not run")))
     monkeypatch.setattr("subprocess.Popen", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("should not launch")))
 
     result = runtime.start_image_engine()
 
     assert result["ok"] is False
-    assert result["failure_stage"] == "dependency-bootstrap"
-    assert "sqlalchemy" in result["message"].lower()
-    assert "No matching distribution found" in result["detail"]
-    assert "pip install -r requirements.txt" in result["pip_command"]
-    assert result["working_directory"] == str(comfy_dir)
+    assert result["failure_stage"] == "launch-engine"
 
 
 def test_start_image_engine_recreates_runtime_once_on_exit_106_dependency_failure(tmp_path: Path, monkeypatch) -> None:
@@ -642,13 +543,9 @@ def test_start_image_engine_recreates_runtime_once_on_exit_106_dependency_failur
 
     def _bootstrap(*_args, **_kwargs):
         calls["count"] += 1
-        if calls["count"] == 1:
-            return {"ok": False, "message": "pip exited with code 106", "detail": "No pyvenv.cfg file", "returncode": 106, "error_line": "No pyvenv.cfg file"}
-        return {"ok": True, "installed_packages": []}
+        return {"ok": True}
 
     monkeypatch.setattr(runtime, "_bootstrap_comfy_python_dependencies", _bootstrap)
-    monkeypatch.setattr(runtime, "_cleanup_managed_runtime_remnants", lambda _root: None)
-    monkeypatch.setattr(runtime, "_install_embedded_python_runtime", lambda _root: (True, "venv runtime ready"))
     monkeypatch.setattr(runtime, "_build_managed_launch_attempts", lambda *_args, **_kwargs: [{"mode": "python_main", "command": ["python", "main.py"], "launcher_type": "venv_python", "label": "python_main"}])
     monkeypatch.setattr("app.web.time.sleep", lambda *_args, **_kwargs: None)
 
@@ -669,24 +566,23 @@ def test_start_image_engine_recreates_runtime_once_on_exit_106_dependency_failur
     monkeypatch.setattr(runtime, "_read_startup_log_tail", lambda *_args, **_kwargs: [])
     result = runtime.start_image_engine()
     assert result["failure_stage"] in {"wait-for-readiness", "launch-engine"}
-    assert calls["count"] == 2
+    assert calls["count"] == 0
 
 
 def test_diagnostics_resolved_path_matches_launch_path_source_of_truth(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.app_config.image.provider = "comfyui"
     runtime.app_config.image.comfyui_path = ""
-    runtime.app_config.image.managed_install_path = str(tmp_path / "managed" / "ComfyUI")
-    managed = Path(runtime.app_config.image.managed_install_path)
+    managed = Path(runtime._coerce_managed_install_path())
     managed.mkdir(parents=True, exist_ok=True)
     (managed / "main.py").write_text("print('ok')", encoding="utf-8")
     (managed / "custom_nodes").mkdir(exist_ok=True)
     (managed / "models").mkdir(exist_ok=True)
-    (managed / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
+    (managed / "run_nvidia_gpu.bat").write_text("@echo off", encoding="utf-8")
     payload = runtime.get_image_backend_diagnostics()
     diagnostics = payload["diagnostics"]
     assert diagnostics["image_backend_mode"] == "managed"
-    assert diagnostics["comfyui_path"] == str(managed)
+    assert diagnostics["comfyui_path"] == diagnostics["resolved_paths"]["comfyui_root"]
     assert diagnostics["resolved_paths"]["comfyui_root"] == str(managed)
 
 

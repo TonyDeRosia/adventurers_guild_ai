@@ -804,9 +804,6 @@ class WebRuntime:
             launchers = ["run_cpu.bat", "run_nvidia_gpu.bat"]
             if not any((resolved_source / launcher).is_file() for launcher in launchers):
                 missing.append("portable launch script (run_cpu.bat or run_nvidia_gpu.bat)")
-            runtimes = ["python_embeded", ".venv"]
-            if not any((resolved_source / runtime).exists() for runtime in runtimes):
-                missing.append("python runtime folder (python_embeded or .venv)")
             missing_text = "; ".join(missing) if missing else "required ComfyUI files"
             return {
                 "ok": False,
@@ -2145,39 +2142,8 @@ class WebRuntime:
                     "message": f"ComfyUI Python runtime: {runtime_resolution.get('executable', '')}",
                 }
             )
-            print("[setup-orchestrator] setup-image step=dependency-bootstrap")
-            dep_result = self._bootstrap_comfy_python_dependencies(comfyui_root, launch_command, launcher_type)
-            if not dep_result.get("ok", False):
-                detail = str(dep_result.get("detail", "")).strip()
-                message = str(dep_result.get("message", "Dependency bootstrap failed."))
-                if detail:
-                    message = f"{message} Detail: {detail.splitlines()[-1][:280]}"
-                steps.append({"step": "install-requirements", "state": "failed", "message": message})
-                return {
-                    "ok": False,
-                    "message": message,
-                    "next_step": "Install/repair the reported Python dependency in the ComfyUI runtime, then retry.",
-                    "steps": steps,
-                    "summary": "Image AI failed during dependency bootstrap.",
-                    "detail": detail,
-                    "pip_command": dep_result.get("pip_command", ""),
-                    "requirements_file": dep_result.get("requirements_file", ""),
-                    "working_directory": dep_result.get("working_directory", ""),
-                }
-            dep_installed = list(dep_result.get("installed_packages", []))
-            dep_message = "Dependencies verified."
-            if dep_installed:
-                dep_message = f"Dependencies installed/updated: {', '.join(dep_installed)}."
-            dep_degraded = bool(dep_result.get("degraded", False))
-            if dep_degraded:
-                degraded_detail = " ".join(str(item) for item in dep_result.get("degraded_details", []) if str(item).strip())
-                steps.append({
-                    "step": "install-requirements",
-                    "state": "warning",
-                    "message": f"{dep_message} Optional dependency issues detected. {degraded_detail}".strip(),
-                })
-            else:
-                steps.append({"step": "install-requirements", "state": "ready", "message": dep_message})
+            dep_degraded = False
+            steps.append({"step": "install-requirements", "state": "ready", "message": "Dependency management skipped (portable runtime managed by ComfyUI)."})
             workflow_status = path_status.get("workflow_path", {})
             print("[setup-orchestrator] setup-image step=validate-workflow")
             if not bool(workflow_status.get("valid", False)):
@@ -2220,7 +2186,7 @@ class WebRuntime:
                 "engine_ready": engine_ready,
                 "model_ready": model_ready,
                 "degraded": dep_degraded,
-                "degraded_details": dep_result.get("degraded_details", []),
+                "degraded_details": [],
             }
         finally:
             self._image_setup_flow_lock.release()
@@ -2303,32 +2269,18 @@ class WebRuntime:
         for required in required_dirs:
             if not (path / required).is_dir():
                 missing_files.append(f"{required}/")
-        runtime_details = "python runtime not checked"
+        runtime_details = "portable runtime managed by ComfyUI launcher"
         python_runtime_found = True
         runtime_structurally_valid = True
         runtime_structure_reasons: list[str] = []
         launch_target_resolvable = True
         launch_target = ""
         if os.name == "nt":
-            runtime_assessment = self._assess_managed_venv_runtime(path)
-            venv_python = Path(str(runtime_assessment.get("python_executable", "")))
-            python_runtime_found = bool(venv_python.exists())
-            runtime_structurally_valid = bool(runtime_assessment.get("ok", False))
-            runtime_structure_reasons = list(runtime_assessment.get("reasons", []))
-            runtime_details = str(runtime_assessment.get("detail", "python runtime not checked"))
-            if not python_runtime_found:
-                missing_files.append("python-runtime")
-            if python_runtime_found and not bool(runtime_assessment.get("pyvenv_cfg_exists", False)):
-                missing_files.append("pyvenv.cfg")
-            if python_runtime_found and not runtime_structurally_valid:
-                missing_files.append("python-runtime-broken")
-            if python_runtime_found and bool(runtime_assessment.get("pip_checked", False)) and not bool(runtime_assessment.get("pip_available", False)):
-                missing_files.append("pip")
             launch_command, _launcher_type = self._build_comfy_launch_command(path, "127.0.0.1", 8188)
             launch_target_resolvable = bool(launch_command)
             launch_target = " ".join(launch_command)
             if not launch_target_resolvable:
-                missing_files.append("launch-target")
+                missing_files.append("run_nvidia_gpu.bat")
         valid = len(missing_files) == 0
         return {
             "ok": valid,
@@ -2561,48 +2513,13 @@ class WebRuntime:
         return True, python_msg
 
     def _write_comfyui_cpu_launcher(self, comfyui_root: Path) -> bool:
-        launcher = comfyui_root / "run_cpu.bat"
-        if (comfyui_root / ".venv" / "Scripts" / "python.exe").exists():
-            command = ".\\.venv\\Scripts\\python.exe main.py"
-        else:
-            command = "REM Missing .venv\\Scripts\\python.exe"
-        content = f"@echo off\r\ncd /d %~dp0\r\n{command}\r\npause\r\n"
-        try:
-            launcher.write_text(content, encoding="utf-8")
-            print("[setup-orchestrator] comfyui install repair reason=created-missing-launcher")
-            return True
-        except OSError as exc:
-            print(f"[setup-orchestrator] comfyui install repair failure reason={exc}")
-            return False
+        return False
 
     def _write_comfyui_nvidia_launcher(self, comfyui_root: Path) -> bool:
-        launcher = comfyui_root / "run_nvidia_gpu.bat"
-        if (comfyui_root / ".venv" / "Scripts" / "python.exe").exists():
-            command = ".\\.venv\\Scripts\\python.exe main.py"
-        else:
-            command = "REM Missing .venv\\Scripts\\python.exe"
-        content = f"@echo off\r\ncd /d %~dp0\r\n{command}\r\npause\r\n"
-        try:
-            launcher.write_text(content, encoding="utf-8")
-            print("[setup-orchestrator] comfyui install repair reason=created-missing-nvidia-launcher")
-            return True
-        except OSError as exc:
-            print(f"[setup-orchestrator] comfyui install repair failure reason={exc}")
-            return False
+        return False
 
     def _ensure_managed_comfyui_launchers(self, comfyui_root: Path) -> None:
-        if os.name != "nt":
-            return
-        nvidia_exists = (comfyui_root / "run_nvidia_gpu.bat").exists()
-        cpu_exists = (comfyui_root / "run_cpu.bat").exists()
-        print(
-            "[setup-orchestrator] launcher-check "
-            f"path={comfyui_root} run_nvidia_gpu.bat={nvidia_exists} run_cpu.bat={cpu_exists}"
-        )
-        if not nvidia_exists:
-            self._write_comfyui_nvidia_launcher(comfyui_root)
-        if not cpu_exists:
-            self._write_comfyui_cpu_launcher(comfyui_root)
+        return
 
     def _append_image_startup_log(self, lines: list[str], message: str) -> None:
         if message:
@@ -2641,6 +2558,11 @@ class WebRuntime:
                 return True
         except OSError:
             return False
+
+    def _detect_comfy_child_process(self, host: str, port: int, process: subprocess.Popen[str]) -> bool:
+        if self._is_port_listening(host, port, timeout_seconds=0.5):
+            return True
+        return process.poll() is None
 
     def _detect_runtime_error(self, startup_log_text: str) -> str:
         lowered = startup_log_text.lower()
@@ -2688,14 +2610,7 @@ class WebRuntime:
                 return {"ok": False, "message": f"ComfyUI port is already in use at {host}:{port}.", "failure_stage_message": "port already in use"}
         launch_command, launcher_type = self._build_comfy_launch_command(comfyui_root, host, port)
         if not launch_command:
-            return {"ok": False, "message": "No usable Python runtime was found.", "failure_stage_message": "missing python runtime"}
-        runtime_check = self._validate_python_runtime(launch_command[0], launcher_type)
-        if not runtime_check.get("ok", False):
-            return {
-                "ok": False,
-                "message": str(runtime_check.get("message", "Python runtime is not usable.")),
-                "failure_stage_message": "python runtime check failed",
-            }
+            return {"ok": False, "message": "run_nvidia_gpu.bat is missing from ComfyUI root.", "failure_stage_message": "missing nvidia launcher"}
         return {
             "ok": True,
             "host": host,
@@ -2706,9 +2621,8 @@ class WebRuntime:
         }
 
     def _build_comfy_launch_command(self, comfyui_root: Path, host: str, port: int) -> tuple[list[str], str]:
-        venv_python = comfyui_root / ".venv" / "Scripts" / "python.exe"
-        if os.name == "nt" and venv_python.exists():
-            return [str(venv_python), "main.py", "--listen", host, "--port", str(port)], "venv_python"
+        if os.name == "nt" and (comfyui_root / "run_nvidia_gpu.bat").exists():
+            return ["cmd.exe", "/d", "/c", "run_nvidia_gpu.bat"], "portable_nvidia_launcher"
         return [], "python_runtime_not_found"
 
     def _validate_python_runtime(self, executable: str, launcher_type: str) -> dict[str, Any]:
@@ -2735,7 +2649,7 @@ class WebRuntime:
         runtime_command = [executable]
         if launcher_type == "py_launcher":
             runtime_command.append("-3")
-        runtime_kind = "venv" if launcher_type == "venv_python" else "unknown"
+        runtime_kind = "portable-launcher" if launcher_type == "portable_nvidia_launcher" else ("venv" if launcher_type == "venv_python" else "unknown")
         return {
             "ok": True,
             "executable": executable,
@@ -3003,176 +2917,11 @@ class WebRuntime:
         }
 
     def _bootstrap_comfy_python_dependencies(self, comfyui_root: Path, launch_command: list[str], launcher_type: str) -> dict[str, Any]:
-        runtime = self._resolve_comfy_python_runtime(launch_command, launcher_type)
-        if not runtime.get("ok", False):
-            return runtime
-        runtime_command = list(runtime["runtime_command"])
-        python_executable = str(runtime.get("executable", ""))
-        print(
-            f"[setup-deps] resolved-python executable={python_executable} "
-            f"launcher_type={launcher_type} runtime_kind={runtime.get('runtime_kind', 'unknown')}"
-        )
-        pip_bootstrap = self._bootstrap_runtime_pip(runtime_command, python_executable=python_executable)
-        if not pip_bootstrap.get("ok", False):
-            return pip_bootstrap
-        print(
-            "[setup-deps] pip-bootstrap-status "
-            f"initial={pip_bootstrap.get('pip_initially_available')} "
-            f"ensurepip_attempted={pip_bootstrap.get('ensurepip_attempted')} "
-            f"fallback_attempted={pip_bootstrap.get('fallback_attempted')}"
-        )
-
-        package_info = self._required_comfyui_python_packages(comfyui_root)
-        requirements_file = Path(str(package_info.get("requirements_file", "")))
-        installed_packages: list[str] = []
-        degraded_details: list[str] = []
-
-        self._update_image_bootstrap_progress(
-            state="upgrading pip",
-            step="upgrading-pip",
-            summary="Upgrading pip, setuptools, and wheel in the managed ComfyUI runtime.",
-        )
-        pip_upgrade = self._run_pip_install_with_retries(
-            runtime_command,
-            ["install", "--upgrade", "pip", "setuptools", "wheel"],
-            cwd=comfyui_root,
-            timeout_seconds=180,
-            attempts=2,
-        )
-        if not pip_upgrade.get("ok", False):
-            degraded_details.append(
-                f"pip tooling upgrade failed; continuing with existing pip. error_line={str(pip_upgrade.get('error_line', '')).strip()}"
-            )
-        else:
-            installed_packages.append("pip setuptools wheel (upgraded)")
-
-        critical_dependencies = ["sqlalchemy"]
-        for package_name in critical_dependencies:
-            self._update_image_bootstrap_progress(
-                state="installing requirements",
-                step="installing-critical-dependencies",
-                summary=f"Installing critical dependency: {package_name}.",
-            )
-            install_critical = self._run_pip_install_with_retries(
-                runtime_command,
-                ["install", package_name],
-                cwd=comfyui_root,
-                timeout_seconds=240,
-                attempts=2,
-            )
-            if not install_critical.get("ok", False):
-                detail = str(install_critical.get("detail", "")).strip()
-                classification = self._classify_pip_install_error(detail)
-                return {
-                    "ok": False,
-                    "stage": "dependency-bootstrap",
-                    "message": f"Failed to install dependency: {package_name}",
-                    "detail": detail,
-                    "error_category": str(install_critical.get("error_category") or classification["category"]),
-                    "error_line": str(install_critical.get("error_line") or classification["matched_line"]),
-                    "pip_command": str(install_critical.get("pip_command", "")),
-                    "working_directory": str(comfyui_root),
-                    "returncode": install_critical.get("returncode"),
-                    "python_executable": python_executable,
-                    "missing_dependency": package_name,
-                }
-            installed_packages.append(package_name)
-
-        if bool(package_info.get("requirements_file_present", False)) and requirements_file.exists():
-            self._update_image_bootstrap_progress(
-                state="installing requirements",
-                step="installing-requirements",
-                summary=f"Installing ComfyUI requirements from {requirements_file.name}.",
-            )
-            print(f"[setup-deps] installing requirements file={requirements_file}")
-            install_requirements = self._run_pip_install_with_retries(
-                runtime_command,
-                ["install", "-r", str(requirements_file)],
-                timeout_seconds=60 * 10,
-                cwd=comfyui_root,
-                attempts=2,
-            )
-            if not install_requirements.get("ok", False):
-                detail = str(install_requirements.get("detail", "")).strip()
-                classification = self._classify_pip_install_error(detail)
-                error_line = str(install_requirements.get("error_line") or classification["matched_line"])
-                optional_markers = ("xformers", "triton", "onnxruntime-gpu", "insightface", "opencv-contrib-python")
-                is_optional_failure = any(marker in error_line.lower() for marker in optional_markers)
-                if not is_optional_failure:
-                    return {
-                        "ok": False,
-                        "stage": "dependency-bootstrap",
-                        "message": (
-                            f"{classification['summary']} "
-                            f"pip exited with code {install_requirements.get('returncode')} while installing {requirements_file.name}."
-                        ),
-                        "detail": detail,
-                        "error_category": str(install_requirements.get("error_category") or classification["category"]),
-                        "error_line": error_line,
-                        "pip_command": str(install_requirements.get("pip_command", "")),
-                        "working_directory": str(comfyui_root),
-                        "requirements_file": str(requirements_file),
-                        "returncode": install_requirements.get("returncode"),
-                        "python_executable": python_executable,
-                    }
-                degraded_details.append(
-                    f"{classification['summary']} requirements install had optional package failures; continuing in degraded mode."
-                )
-                degraded_details.append(f"error_line={error_line}")
-            else:
-                installed_packages.append(f"-r {requirements_file.name}")
-
-        import_targets = {"sqlalchemy": "sqlalchemy"}
-        missing_imports: list[str] = []
-        for module_name, package_name in import_targets.items():
-            probe = self._run_runtime_python_capture(runtime_command, ["-c", f"import {module_name}"], timeout_seconds=20)
-            if probe.returncode != 0:
-                missing_imports.append(package_name)
-        for package_name in missing_imports:
-            self._update_image_bootstrap_progress(
-                state="installing requirements",
-                step="installing-requirements",
-                summary=f"Installing missing Python package: {package_name}.",
-            )
-            print(f"[setup-deps] installing missing package={package_name}")
-            install_one = self._run_runtime_python_capture(runtime_command, ["-m", "pip", "install", package_name], timeout_seconds=180)
-            if install_one.returncode != 0:
-                detail = (install_one.stderr or install_one.stdout or "").strip()
-                return {
-                    "ok": False,
-                    "stage": "dependency-bootstrap",
-                    "message": f"Failed to install dependency: {package_name}",
-                    "detail": detail,
-                    "python_executable": python_executable,
-                    "missing_dependency": package_name,
-                }
-            installed_packages.append(package_name)
-
-        for module_name, package_name in import_targets.items():
-            probe = self._run_runtime_python_capture(runtime_command, ["-c", f"import {module_name}"], timeout_seconds=20)
-            if probe.returncode != 0:
-                detail = (probe.stderr or probe.stdout or "").strip()
-                return {
-                    "ok": False,
-                    "stage": "dependency-validation",
-                    "message": f"Missing dependency in ComfyUI runtime: {package_name}",
-                    "detail": detail,
-                    "python_executable": python_executable,
-                    "missing_dependency": package_name,
-                }
-        print(f"[setup-deps] dependency validation passed installed={installed_packages}")
         return {
             "ok": True,
-            "python_executable": python_executable,
-            "runtime_command": runtime_command,
-            "installed_packages": installed_packages,
-            "required_packages": package_info.get("required_packages", []),
-            "pip_initially_available": pip_bootstrap.get("pip_initially_available"),
-            "pip_version": pip_bootstrap.get("pip_version", ""),
-            "ensurepip_attempted": pip_bootstrap.get("ensurepip_attempted"),
-            "fallback_attempted": pip_bootstrap.get("fallback_attempted"),
-            "degraded": bool(degraded_details),
-            "degraded_details": degraded_details,
+            "installed_packages": [],
+            "dependency_management": "skipped",
+            "message": "ComfyUI dependency management is delegated to its portable runtime launcher.",
         }
 
     def _download_and_extract_comfyui(self, target_dir: Path) -> tuple[bool, str]:
@@ -3866,106 +3615,16 @@ class WebRuntime:
                 }
             launch_command = list(preflight.get("launch_command", []))
             launcher_type = str(preflight.get("launcher_type", "unknown"))
-            self._update_image_bootstrap_progress(state="verifying pip", step="dependency-bootstrap", summary="Bootstrapping Python dependencies for ComfyUI.")
-            print("[setup-orchestrator] setup-image step=dependency-bootstrap")
-            runtime_recovery_attempted = False
-            dependency_bootstrap = self._bootstrap_comfy_python_dependencies(comfyui_root, launch_command, launcher_type)
-            if (
-                not dependency_bootstrap.get("ok", False)
-                and launch_mode == "managed"
-                and self._dependency_failure_requires_runtime_recreate(dependency_bootstrap)
-            ):
-                runtime_recovery_attempted = True
-                self._append_image_startup_log(
-                    startup_log_lines,
-                    "Detected broken managed .venv (pyvenv.cfg/exit-code-106). Recreating runtime from scratch.",
-                )
-                self._cleanup_managed_runtime_remnants(comfyui_root)
-                repaired, repaired_message = self._install_embedded_python_runtime(comfyui_root)
-                if repaired:
-                    self._append_image_startup_log(startup_log_lines, repaired_message)
-                    dependency_bootstrap = self._bootstrap_comfy_python_dependencies(comfyui_root, launch_command, launcher_type)
-                else:
-                    dependency_bootstrap = {
-                        "ok": False,
-                        "message": repaired_message,
-                        "detail": repaired_message,
-                        "error_category": "runtime-recreate-failed",
-                        "error_line": repaired_message,
-                        "returncode": None,
-                        "python_executable": "",
-                        "working_directory": str(comfyui_root),
-                    }
-            if not dependency_bootstrap.get("ok", False):
-                message = str(dependency_bootstrap.get("message", "Dependency bootstrap failed for ComfyUI runtime."))
-                detail = str(dependency_bootstrap.get("detail", "")).strip()
-                missing_dep = str(dependency_bootstrap.get("missing_dependency", "")).strip()
-                pip_command = str(dependency_bootstrap.get("pip_command", "")).strip()
-                requirements_file = str(dependency_bootstrap.get("requirements_file", "")).strip()
-                working_directory = str(dependency_bootstrap.get("working_directory", "")).strip()
-                returncode = dependency_bootstrap.get("returncode")
-                error_category = str(dependency_bootstrap.get("error_category", "")).strip()
-                error_line = str(dependency_bootstrap.get("error_line", "")).strip()
-                if missing_dep and "missing dependency" not in message.lower():
-                    message = f"Missing dependency in ComfyUI runtime: {missing_dep}"
-                self._image_engine_state = "error"
-                self._image_engine_last_error = missing_dep or "dependency_bootstrap_failed"
-                if detail:
-                    self._append_image_startup_log(startup_log_lines, f"Dependency bootstrap error: {detail}")
-                if pip_command:
-                    self._append_image_startup_log(startup_log_lines, f"pip command: {pip_command}")
-                if working_directory:
-                    self._append_image_startup_log(startup_log_lines, f"pip working directory: {working_directory}")
-                if requirements_file:
-                    self._append_image_startup_log(startup_log_lines, f"requirements file: {requirements_file}")
-                if error_line:
-                    self._append_image_startup_log(startup_log_lines, f"pip error line: {error_line}")
-                self._set_image_startup_status(
-                    state="failed",
-                    stage="dependency-bootstrap",
-                    reason="dependency-bootstrap-failed",
-                    summary=message,
-                    current_step="dependency-bootstrap",
-                    failure_detail=detail[:2000],
-                    pip_command=pip_command,
-                    requirements_file=requirements_file,
-                    working_directory=working_directory,
-                    returncode=returncode,
-                    error_category=error_category,
-                    error_line=error_line,
-                    startup_log=self._sanitize_image_startup_log(startup_log_lines),
-                )
-                return {
-                    "ok": False,
-                    "message": message,
-                    "next_step": "Install/repair the reported dependency in the ComfyUI runtime, then retry.",
-                    "failure_stage": "dependency-bootstrap",
-                    "failure_stage_message": "python dependency bootstrap failed",
-                    "missing_dependency": missing_dep,
-                    "python_executable": dependency_bootstrap.get("python_executable", ""),
-                    "detail": detail,
-                    "pip_command": pip_command,
-                    "requirements_file": requirements_file,
-                    "working_directory": working_directory,
-                    "returncode": returncode,
-                    "error_category": error_category,
-                    "error_line": error_line,
-                    "steps": [
-                        {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
-                        {"step": "verify-install", "state": "ready", "message": "Install verification completed."},
-                        {"step": "resolve-python-runtime", "state": "ready", "message": f"Resolved runtime: {runtime_resolution.get('executable', '')}"},
-                        {"step": "dependency-bootstrap", "state": "failed", "message": message},
-                    ],
-                    "runtime_recovery_attempted": runtime_recovery_attempted,
-                }
-            installed_packages = dependency_bootstrap.get("installed_packages", [])
-            if installed_packages:
-                self._append_image_startup_log(startup_log_lines, f"Dependency bootstrap installed: {', '.join(installed_packages)}")
-            else:
-                self._append_image_startup_log(startup_log_lines, "Dependency bootstrap verified required modules are already available.")
-            if bool(dependency_bootstrap.get("degraded", False)):
-                degraded_detail = " ".join(str(item) for item in dependency_bootstrap.get("degraded_details", []) if str(item).strip())
-                self._append_image_startup_log(startup_log_lines, f"Dependency bootstrap degraded: {degraded_detail}")
+            dependency_bootstrap: dict[str, Any] = {
+                "ok": True,
+                "degraded": False,
+                "degraded_details": [],
+                "installed_packages": [],
+            }
+            self._append_image_startup_log(
+                startup_log_lines,
+                "Dependency management skipped: using ComfyUI portable runtime exactly as packaged.",
+            )
             self._update_image_bootstrap_progress(state="starting ComfyUI", step="launch-engine", summary="Starting ComfyUI process.")
             print("[setup-orchestrator] setup-image step=launch-engine")
             nvidia_launcher_exists = (comfyui_root / "run_nvidia_gpu.bat").exists()
@@ -4135,7 +3794,11 @@ class WebRuntime:
                     startup_log_text = self._sanitize_image_startup_log(startup_log_lines)
                     runtime_error = self._detect_runtime_error(startup_log_text)
                     readiness_reachable = self._quick_comfy_readiness_probe(expected_base, timeout_seconds=1.0)
-                    child_process_detected = self._is_port_listening(expected.hostname or "127.0.0.1", expected.port or 8188, timeout_seconds=0.5)
+                    child_process_detected = self._detect_comfy_child_process(
+                        expected.hostname or "127.0.0.1",
+                        expected.port or 8188,
+                        process,
+                    )
                     if process.poll() is not None:
                         exit_code = process.poll()
                         if getattr(process, "stdout", None) is not None:
@@ -4198,7 +3861,10 @@ class WebRuntime:
                                 launcher_exists=(comfyui_root / "run_nvidia_gpu.bat").exists(),
                             )
                             launch_diagnostics["nvidia_failure_reason"] = classification["reason"]
+                            exact_error = tail_lines[-1] if tail_lines else startup_log_text.splitlines()[-1] if startup_log_text else ""
                             message = "Image AI requires NVIDIA GPU mode and CPU fallback is disabled. NVIDIA startup exited before ComfyUI was ready."
+                            if exact_error:
+                                message = f"{message} Error: {exact_error}"
                             self._set_image_startup_status(
                                 state="failed",
                                 stage="wait-for-readiness",
@@ -4227,6 +3893,8 @@ class WebRuntime:
                                 "selected_launcher": "nvidia_gpu",
                                 "failure_reason": classification["reason"],
                                 "no_cpu_fallback": True,
+                                "launcher_output": startup_log_text,
+                                "exact_error": exact_error,
                                 "steps": [
                                     {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
                                     {"step": "verify-install", "state": "ready", "message": "Install verification completed."},
@@ -4236,11 +3904,15 @@ class WebRuntime:
                                 ],
                             }
                         launch_diagnostics["launch_attempts"].append(attempt_result)
+                        exact_error = tail_lines[-1] if tail_lines else startup_log_text.splitlines()[-1] if startup_log_text else ""
+                        summary = f"Image AI failed during startup (exit code {exit_code})."
+                        if exact_error:
+                            summary = f"{summary} Error: {exact_error}"
                         self._set_image_startup_status(
                             state="failed",
                             stage="wait-for-readiness",
                             reason="process-exited-immediately",
-                            summary=f"Image AI failed: ComfyUI exited during startup (exit code {exit_code}).",
+                            summary=summary,
                             current_step="wait-for-readiness",
                             runtime_error_hint=runtime_error,
                             exit_code=exit_code,
@@ -4256,11 +3928,13 @@ class WebRuntime:
                         self._image_engine_last_error = "process_exited_immediately"
                         return {
                             "ok": False,
-                            "message": f"Image AI failed during startup (exit code {exit_code}).",
+                            "message": summary,
                             "next_step": "Open setup details to review startup log and fix the runtime/dependency issue.",
                             "failure_stage": "wait-for-readiness",
                             "failure_stage_message": "process exited during startup",
                             "startup_status": self.image_startup_status,
+                            "launcher_output": startup_log_text,
+                            "exact_error": exact_error,
                             "steps": [
                                 {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
                                 {"step": "verify-install", "state": "ready", "message": "Install verification completed."},
