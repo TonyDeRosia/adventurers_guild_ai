@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from types import SimpleNamespace
 import subprocess
@@ -621,3 +622,202 @@ def test_diagnostics_resolved_path_matches_launch_path_source_of_truth(tmp_path:
     assert diagnostics["image_backend_mode"] == "managed"
     assert diagnostics["comfyui_path"] == str(managed)
     assert diagnostics["resolved_paths"]["comfyui_root"] == str(managed)
+
+
+def test_managed_launch_attempts_prefer_nvidia_for_auto_and_gpu_first(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_root = tmp_path / "ComfyUI"
+    comfy_root.mkdir(parents=True, exist_ok=True)
+    (comfy_root / "run_nvidia_gpu.bat").write_text("@echo off", encoding="utf-8")
+    (comfy_root / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+
+    runtime.app_config.image.preferred_launcher = "auto"
+    auto_attempts = runtime._build_managed_launch_attempts(
+        comfy_root,
+        "127.0.0.1",
+        8188,
+        launch_command=["python", "main.py"],
+        launcher_type="venv_python",
+    )
+    assert [attempt["mode"] for attempt in auto_attempts] == ["nvidia_gpu", "cpu"]
+
+    runtime.app_config.image.preferred_launcher = "gpu-first"
+    gpu_first_attempts = runtime._build_managed_launch_attempts(
+        comfy_root,
+        "127.0.0.1",
+        8188,
+        launch_command=["python", "main.py"],
+        launcher_type="venv_python",
+    )
+    assert [attempt["mode"] for attempt in gpu_first_attempts] == ["nvidia_gpu", "cpu"]
+
+
+def test_classify_nvidia_launch_failure_cuda_patterns_are_fallback_eligible(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    cases = [
+        "AssertionError: Torch not compiled with CUDA enabled",
+        "RuntimeError: CUDA initialization error",
+        "RuntimeError: No NVIDIA driver found",
+        "ImportError: cudnn64_9.dll missing",
+    ]
+    for detail in cases:
+        classification = runtime._classify_nvidia_launch_failure(detail, exit_code=1, launcher_exists=True)
+        assert classification["fallback_eligible"] == "true"
+
+
+def test_start_image_engine_cuda_failure_falls_back_to_cpu_and_reports_ready_cpu_mode(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    runtime.app_config.image.preferred_launcher = "auto"
+    comfy_dir = tmp_path / "ComfyUI"
+    comfy_dir.mkdir(parents=True, exist_ok=True)
+    (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
+    (comfy_dir / "models").mkdir(exist_ok=True)
+    (comfy_dir / "run_nvidia_gpu.bat").write_text("@echo off", encoding="utf-8")
+    (comfy_dir / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
+    workflow = tmp_path / "scene.json"
+    workflow.write_text("{}", encoding="utf-8")
+    output_dir = tmp_path / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    runtime.app_config.image.managed_install_path = str(comfy_dir)
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt", path=os.path))
+    monkeypatch.setattr(
+        runtime,
+        "get_path_configuration_status",
+        lambda: {
+            "image": {
+                "mode": "managed",
+                "workflow_path": {"valid": True, "configured": True, "resolved_path": str(workflow)},
+                "comfyui_root": {"valid": True, "configured": True, "path": str(comfy_dir), "resolved_path": str(comfy_dir)},
+                "checkpoint_dir": {"valid": True, "configured": True, "model_ready": True},
+                "output_dir": {"valid": True, "configured": True, "resolved_path": str(output_dir)},
+                "pipeline_ready": True,
+            }
+        },
+    )
+    monkeypatch.setattr(runtime, "validate_comfyui_install", lambda _path: {"ok": True, "missing_files": []})
+    monkeypatch.setattr(runtime, "_build_comfy_launch_command", lambda *_args, **_kwargs: (["python", "main.py"], "venv_python"))
+    monkeypatch.setattr(runtime, "_validate_python_runtime", lambda *_args, **_kwargs: {"ok": True})
+    monkeypatch.setattr(runtime, "_bootstrap_comfy_python_dependencies", lambda *_args, **_kwargs: {"ok": True, "installed_packages": []})
+    monkeypatch.setattr("app.web.time.sleep", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("app.web.subprocess.CREATE_NEW_PROCESS_GROUP", 0, raising=False)
+    monkeypatch.setattr("app.web.subprocess.CREATE_NO_WINDOW", 0, raising=False)
+    monkeypatch.setattr(
+        runtime,
+        "_read_startup_log_tail",
+        lambda *_args, **_kwargs: ["AssertionError: Torch not compiled with CUDA enabled"],
+    )
+
+    launched_modes: list[str] = []
+    reachable_state = {"ready": False}
+
+    class _FakeProcess:
+        def __init__(self, mode: str) -> None:
+            self.mode = mode
+            self.stdout = None
+            self._poll_calls = 0
+            self.pid = 1234 if mode == "cpu" else 1233
+
+        def poll(self):
+            self._poll_calls += 1
+            if self.mode == "nvidia_gpu":
+                return 1
+            return None
+
+        def communicate(self, timeout: float | None = None):
+            return ("", "")
+
+    def _fake_popen(command, **kwargs):
+        mode = "nvidia_gpu" if "run_nvidia_gpu.bat" in " ".join(command) else "cpu"
+        launched_modes.append(mode)
+        if mode == "cpu":
+            reachable_state["ready"] = True
+        return _FakeProcess(mode)
+
+    monkeypatch.setattr("subprocess.Popen", _fake_popen)
+    monkeypatch.setattr(
+        runtime,
+        "get_image_status",
+        lambda: {"reachable": reachable_state["ready"], "status_code": "reachable" if reachable_state["ready"] else "setup_required"},
+    )
+
+    result = runtime.start_image_engine()
+    assert result["ok"] is True
+    assert launched_modes == ["nvidia_gpu", "cpu"]
+    assert result["message"] == "Image AI ready (CPU mode)."
+    launch_diagnostics = result["startup_status"]["launch_diagnostics"]
+    assert launch_diagnostics["primary_launch_attempt"] == "nvidia_gpu"
+    assert launch_diagnostics["fallback_launch_used"] == "cpu"
+    assert launch_diagnostics["nvidia_failure_reason"] == "torch-cuda-disabled"
+    assert launch_diagnostics["final_running_mode"] == "cpu"
+
+
+def test_start_image_engine_fails_only_when_gpu_and_cpu_attempts_fail(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    runtime.app_config.image.preferred_launcher = "auto"
+    comfy_dir = tmp_path / "ComfyUI"
+    comfy_dir.mkdir(parents=True, exist_ok=True)
+    (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_dir / "custom_nodes").mkdir(exist_ok=True)
+    (comfy_dir / "models").mkdir(exist_ok=True)
+    (comfy_dir / "run_nvidia_gpu.bat").write_text("@echo off", encoding="utf-8")
+    (comfy_dir / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
+    workflow = tmp_path / "scene.json"
+    workflow.write_text("{}", encoding="utf-8")
+    output_dir = tmp_path / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    runtime.app_config.image.managed_install_path = str(comfy_dir)
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt", path=os.path))
+    monkeypatch.setattr(
+        runtime,
+        "get_path_configuration_status",
+        lambda: {
+            "image": {
+                "mode": "managed",
+                "workflow_path": {"valid": True, "configured": True, "resolved_path": str(workflow)},
+                "comfyui_root": {"valid": True, "configured": True, "path": str(comfy_dir), "resolved_path": str(comfy_dir)},
+                "checkpoint_dir": {"valid": True, "configured": True, "model_ready": True},
+                "output_dir": {"valid": True, "configured": True, "resolved_path": str(output_dir)},
+                "pipeline_ready": True,
+            }
+        },
+    )
+    monkeypatch.setattr(runtime, "validate_comfyui_install", lambda _path: {"ok": True, "missing_files": []})
+    monkeypatch.setattr(runtime, "_build_comfy_launch_command", lambda *_args, **_kwargs: (["python", "main.py"], "venv_python"))
+    monkeypatch.setattr(runtime, "_validate_python_runtime", lambda *_args, **_kwargs: {"ok": True})
+    monkeypatch.setattr(runtime, "_bootstrap_comfy_python_dependencies", lambda *_args, **_kwargs: {"ok": True, "installed_packages": []})
+    monkeypatch.setattr("app.web.time.sleep", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("app.web.subprocess.CREATE_NEW_PROCESS_GROUP", 0, raising=False)
+    monkeypatch.setattr("app.web.subprocess.CREATE_NO_WINDOW", 0, raising=False)
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": False, "status_code": "setup_required"})
+    monkeypatch.setattr(
+        runtime,
+        "_read_startup_log_tail",
+        lambda *_args, **_kwargs: ["AssertionError: Torch not compiled with CUDA enabled"],
+    )
+
+    class _FailingProcess:
+        stdout = None
+
+        def __init__(self, mode: str) -> None:
+            self.mode = mode
+            self.pid = 2234 if mode == "cpu" else 2233
+
+        def poll(self):
+            return 1
+
+        def communicate(self, timeout: float | None = None):
+            return ("", "")
+
+    monkeypatch.setattr(
+        "subprocess.Popen",
+        lambda command, **kwargs: _FailingProcess("nvidia_gpu" if "run_nvidia_gpu.bat" in " ".join(command) else "cpu"),
+    )
+
+    result = runtime.start_image_engine()
+    assert result["ok"] is False
+    assert result["failure_stage"] == "wait-for-readiness"
+    assert result["startup_status"]["launch_diagnostics"]["fallback_launch_used"] == "cpu"

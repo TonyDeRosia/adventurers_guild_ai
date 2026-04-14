@@ -2097,18 +2097,38 @@ class WebRuntime:
     def _classify_nvidia_launch_failure(detail_text: str, *, exit_code: int | None, launcher_exists: bool) -> dict[str, str]:
         lowered = str(detail_text or "").lower()
         if not launcher_exists:
-            return {"reason": "launcher-file-missing", "summary": "NVIDIA launcher file is missing."}
+            return {"reason": "launcher-file-missing", "summary": "NVIDIA launcher file is missing.", "fallback_eligible": "true"}
         if "torch not compiled with cuda enabled" in lowered:
-            return {"reason": "torch-cuda-disabled", "summary": "Torch runtime is not compiled with CUDA support."}
-        if "no nvidia driver" in lowered or "no cuda gpus are available" in lowered or "no nvidia gpu" in lowered:
-            return {"reason": "nvidia-gpu-not-detected", "summary": "No NVIDIA GPU was detected for CUDA launch."}
-        if "cuda initialization" in lowered or "cuda error" in lowered:
-            return {"reason": "cuda-initialization-failed", "summary": "CUDA failed to initialize."}
-        if "cudart" in lowered or "cublas" in lowered or "cudnn" in lowered:
-            return {"reason": "cuda-runtime-missing", "summary": "Required CUDA runtime libraries are missing."}
+            return {"reason": "torch-cuda-disabled", "summary": "Torch runtime is not compiled with CUDA support.", "fallback_eligible": "true"}
+        if (
+            "no nvidia driver" in lowered
+            or "no cuda gpus are available" in lowered
+            or "no nvidia gpu" in lowered
+            or "found no nvidia driver" in lowered
+            or "cuda driver version is insufficient" in lowered
+        ):
+            return {"reason": "nvidia-gpu-not-detected", "summary": "No NVIDIA GPU/driver was detected for CUDA launch.", "fallback_eligible": "true"}
+        if (
+            "cuda initialization" in lowered
+            or "cuda error" in lowered
+            or "cuda driver initialization failed" in lowered
+            or "failed call to cuinit" in lowered
+        ):
+            return {"reason": "cuda-initialization-failed", "summary": "CUDA failed to initialize.", "fallback_eligible": "true"}
+        if (
+            "cudart" in lowered
+            or "cublas" in lowered
+            or "cudnn" in lowered
+            or "cuda runtime" in lowered
+            or "cudnn64" in lowered
+            or "cublas64" in lowered
+        ):
+            return {"reason": "cuda-runtime-missing", "summary": "Required CUDA runtime libraries are missing.", "fallback_eligible": "true"}
+        if "process-launch-failed" in lowered:
+            return {"reason": "process-launch-failed", "summary": "NVIDIA launch process could not be started.", "fallback_eligible": "true"}
         if exit_code is not None:
-            return {"reason": "process-exited-immediately", "summary": "NVIDIA launch process exited immediately."}
-        return {"reason": "nvidia-launch-failed", "summary": "NVIDIA launch failed."}
+            return {"reason": "process-exited-immediately", "summary": "NVIDIA launch process exited immediately.", "fallback_eligible": "false"}
+        return {"reason": "nvidia-launch-failed", "summary": "NVIDIA launch failed.", "fallback_eligible": "false"}
 
     def _required_comfyui_python_packages(self, comfyui_root: Path) -> dict[str, Any]:
         requirements_file = comfyui_root / "requirements.txt"
@@ -3278,14 +3298,20 @@ class WebRuntime:
             except OSError as exc:
                 launch_diagnostics["launch_attempts"].append({"mode": attempt_mode, "result": "launch-error", "detail": str(exc)})
                 if attempt_mode == "nvidia_gpu" and attempt_index + 1 < len(launch_attempts):
-                    launch_diagnostics["nvidia_failure_reason"] = "process-launch-failed"
-                    self._append_image_startup_log(startup_log_lines, f"NVIDIA launch failed: {exc}")
-                    self._update_image_bootstrap_progress(
-                        state="starting ComfyUI",
-                        step="launch-engine",
-                        summary="NVIDIA launch unavailable, running Image AI in CPU mode.",
+                    classification = self._classify_nvidia_launch_failure(
+                        "process-launch-failed",
+                        exit_code=None,
+                        launcher_exists=(comfyui_root / "run_nvidia_gpu.bat").exists(),
                     )
-                    continue
+                    launch_diagnostics["nvidia_failure_reason"] = classification["reason"]
+                    if classification.get("fallback_eligible", "false") == "true":
+                        self._append_image_startup_log(startup_log_lines, f"NVIDIA launch failed: {exc}")
+                        self._update_image_bootstrap_progress(
+                            state="starting ComfyUI",
+                            step="launch-engine",
+                            summary="NVIDIA launch unavailable, falling back to CPU...",
+                        )
+                        continue
                 print(f"[setup-action] start-image-engine failure reason={exc}")
                 print("[setup-orchestrator] setup-image failure stage=launch-engine")
                 self._image_engine_state = "error"
@@ -3343,13 +3369,14 @@ class WebRuntime:
                             launcher_exists=(comfyui_root / "run_nvidia_gpu.bat").exists(),
                         )
                         launch_diagnostics["nvidia_failure_reason"] = classification["reason"]
-                        self._append_image_startup_log(startup_log_lines, f"NVIDIA attempt failed: {classification['summary']}")
-                        self._update_image_bootstrap_progress(
-                            state="starting ComfyUI",
-                            step="launch-engine",
-                            summary="NVIDIA launch unavailable, running Image AI in CPU mode.",
-                        )
-                        break
+                        if classification.get("fallback_eligible", "false") == "true":
+                            self._append_image_startup_log(startup_log_lines, f"NVIDIA attempt failed: {classification['summary']}")
+                            self._update_image_bootstrap_progress(
+                                state="starting ComfyUI",
+                                step="launch-engine",
+                                summary="NVIDIA launch unavailable, falling back to CPU...",
+                            )
+                            break
                     launch_diagnostics["launch_attempts"].append(attempt_result)
                     self._set_image_startup_status(
                         state="failed",
@@ -3391,11 +3418,16 @@ class WebRuntime:
                     dependency_degraded = bool(dependency_bootstrap.get("degraded", False))
                     degraded_details = list(dependency_bootstrap.get("degraded_details", []))
                     launch_diagnostics["final_running_mode"] = attempt_mode
+                    ready_summary = (
+                        "Image AI ready (CPU mode)."
+                        if attempt_mode == "cpu" and bool(launch_diagnostics.get("fallback_launch_used"))
+                        else ("ComfyUI started and is reachable." if not dependency_degraded else "ComfyUI started (degraded dependency mode).")
+                    )
                     self._set_image_startup_status(
                         state="ready",
                         stage="wait-for-readiness",
                         reason="ready",
-                        summary="ComfyUI started and is reachable." if not dependency_degraded else "ComfyUI started (degraded dependency mode).",
+                        summary=ready_summary,
                         current_step="ready",
                         log_text=self._sanitize_image_startup_log(startup_log_lines + self._read_startup_log_tail(startup_log_file)),
                         log_available=True,
@@ -3408,7 +3440,7 @@ class WebRuntime:
                     self._image_engine_state = "running"
                     return {
                         "ok": True,
-                        "message": "ComfyUI started and is reachable." if not dependency_degraded else "ComfyUI started (degraded dependency mode).",
+                        "message": ready_summary,
                         "managed_process": self.comfy_manager.snapshot().running,
                         "readiness_refreshed": True,
                         "degraded": dependency_degraded,
@@ -3424,8 +3456,22 @@ class WebRuntime:
                     }
             launch_diagnostics["launch_attempts"].append(attempt_result)
             if attempt_mode == "nvidia_gpu" and attempt_index + 1 < len(launch_attempts):
-                launch_diagnostics["fallback_launch_used"] = str(launch_attempts[attempt_index + 1].get("label", ""))
-                continue
+                tail_lines = self._read_startup_log_tail(startup_log_file)
+                startup_log_lines.extend(tail_lines)
+                classification = self._classify_nvidia_launch_failure(
+                    self._sanitize_image_startup_log(startup_log_lines),
+                    exit_code=None,
+                    launcher_exists=(comfyui_root / "run_nvidia_gpu.bat").exists(),
+                )
+                launch_diagnostics["nvidia_failure_reason"] = launch_diagnostics["nvidia_failure_reason"] or classification["reason"]
+                if classification.get("fallback_eligible", "false") == "true":
+                    launch_diagnostics["fallback_launch_used"] = str(launch_attempts[attempt_index + 1].get("label", ""))
+                    self._update_image_bootstrap_progress(
+                        state="starting ComfyUI",
+                        step="launch-engine",
+                        summary="NVIDIA launch unavailable, falling back to CPU...",
+                    )
+                    continue
             tail_lines = self._read_startup_log_tail(startup_log_file)
             startup_log_lines.extend(tail_lines)
             startup_log_text = self._sanitize_image_startup_log(startup_log_lines)
