@@ -3154,7 +3154,8 @@ def test_start_image_engine_falls_back_from_nvidia_to_cpu(tmp_path: Path, monkey
     runtime.app_config.image.comfyui_workflow_path = str(workflow)
     runtime.app_config.image.checkpoint_folder = str(checkpoint_dir)
 
-    monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": True} if getattr(runtime, "_launched_cpu", False) else {"reachable": False})
+    monkeypatch.setattr(runtime, "_quick_comfy_readiness_probe", lambda *_args, **_kwargs: bool(getattr(runtime, "_launched_cpu", False)))
+    monkeypatch.setattr(runtime, "_is_port_listening", lambda *_args, **_kwargs: bool(getattr(runtime, "_launched_cpu", False)))
     monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
     monkeypatch.setattr("time.sleep", lambda _seconds: None)
     monkeypatch.setattr(runtime, "_validate_python_runtime", lambda *_args, **_kwargs: {"ok": True})
@@ -3193,6 +3194,207 @@ def test_start_image_engine_falls_back_from_nvidia_to_cpu(tmp_path: Path, monkey
     assert len(popen_calls) == 2
     assert "run_nvidia_gpu.bat" in popen_calls[0][-1].lower()
     assert "run_cpu.bat" in popen_calls[1][-1].lower()
+
+
+def test_start_image_engine_windows_batch_selects_nvidia_first(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
+    comfy_dir.mkdir(parents=True, exist_ok=True)
+    (comfy_dir / "run_nvidia_gpu.bat").write_text("@echo off\r\n", encoding="utf-8")
+    (comfy_dir / "run_cpu.bat").write_text("@echo off\r\n", encoding="utf-8")
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+    attempts = runtime._build_managed_launch_attempts(
+        comfy_dir,
+        "127.0.0.1",
+        8188,
+        launch_command=["python", "main.py"],
+        launcher_type="venv_python",
+    )
+    assert [item["mode"] for item in attempts] == ["nvidia_gpu", "cpu"]
+
+
+def test_start_image_engine_stalled_nvidia_falls_back_to_cpu_and_marks_ready(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    runtime.app_config.image.comfyui_path = ""
+    runtime.app_config.image.preferred_launcher = "auto"
+    comfy_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
+    comfy_dir.mkdir(parents=True, exist_ok=True)
+    (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_dir / "run_nvidia_gpu.bat").write_text("@echo off\r\n", encoding="utf-8")
+    (comfy_dir / "run_cpu.bat").write_text("@echo off\r\n", encoding="utf-8")
+    embedded = comfy_dir / ".venv" / "Scripts" / "python.exe"
+    embedded.parent.mkdir(parents=True, exist_ok=True)
+    embedded.write_text("", encoding="utf-8")
+    for folder in ("custom_nodes", "output", "input", "user"):
+        (comfy_dir / folder).mkdir(exist_ok=True)
+    checkpoint_dir = comfy_dir / "models" / "checkpoints"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    (checkpoint_dir / "test-model.safetensors").write_text("model", encoding="utf-8")
+    workflow = tmp_path / "scene.json"
+    workflow.write_text("{}", encoding="utf-8")
+    runtime.app_config.image.managed_install_path = str(comfy_dir)
+    runtime.app_config.image.comfyui_workflow_path = str(workflow)
+    runtime.app_config.image.checkpoint_folder = str(checkpoint_dir)
+
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr("time.sleep", lambda _seconds: None)
+    monkeypatch.setattr(runtime, "_validate_python_runtime", lambda *_args, **_kwargs: {"ok": True})
+    monkeypatch.setattr(
+        runtime,
+        "_bootstrap_comfy_python_dependencies",
+        lambda *_args, **_kwargs: {"ok": True, "installed_packages": [], "python_executable": str(embedded)},
+    )
+    monkeypatch.setattr("subprocess.CREATE_NEW_PROCESS_GROUP", 0, raising=False)
+    monkeypatch.setattr("subprocess.CREATE_NO_WINDOW", 0, raising=False)
+
+    class _ProcRun:
+        def __init__(self, pid: int):
+            self.pid = pid
+
+        def poll(self):
+            return None
+
+    call_count = {"popen": 0}
+
+    def _fake_popen(_command, **_kwargs):
+        call_count["popen"] += 1
+        return _ProcRun(4000 + call_count["popen"])
+
+    probe_count = {"readiness": 0}
+
+    def _fake_probe(_base_url: str, timeout_seconds: float = 1.0) -> bool:
+        probe_count["readiness"] += 1
+        return call_count["popen"] >= 2 and probe_count["readiness"] >= 18
+
+    monkeypatch.setattr("subprocess.Popen", _fake_popen)
+    monkeypatch.setattr(runtime, "_quick_comfy_readiness_probe", _fake_probe)
+    monkeypatch.setattr(runtime, "_is_port_listening", lambda *_args, **_kwargs: call_count["popen"] >= 2)
+
+    result = runtime.start_image_engine()
+    assert result["ok"] is True
+    diagnostics = result["startup_status"]["launch_diagnostics"]
+    assert diagnostics["fallback_launch_used"] == "cpu"
+    assert diagnostics["final_running_mode"] == "cpu"
+
+
+def test_start_image_engine_early_exit_nvidia_falls_back_to_cpu(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    runtime.app_config.image.comfyui_path = ""
+    runtime.app_config.image.preferred_launcher = "auto"
+    comfy_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
+    comfy_dir.mkdir(parents=True, exist_ok=True)
+    (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_dir / "run_nvidia_gpu.bat").write_text("@echo off\r\n", encoding="utf-8")
+    (comfy_dir / "run_cpu.bat").write_text("@echo off\r\n", encoding="utf-8")
+    embedded = comfy_dir / ".venv" / "Scripts" / "python.exe"
+    embedded.parent.mkdir(parents=True, exist_ok=True)
+    embedded.write_text("", encoding="utf-8")
+    for folder in ("custom_nodes", "output", "input", "user"):
+        (comfy_dir / folder).mkdir(exist_ok=True)
+    checkpoint_dir = comfy_dir / "models" / "checkpoints"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    (checkpoint_dir / "test-model.safetensors").write_text("model", encoding="utf-8")
+    workflow = tmp_path / "scene.json"
+    workflow.write_text("{}", encoding="utf-8")
+    runtime.app_config.image.managed_install_path = str(comfy_dir)
+    runtime.app_config.image.comfyui_workflow_path = str(workflow)
+    runtime.app_config.image.checkpoint_folder = str(checkpoint_dir)
+
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr("time.sleep", lambda _seconds: None)
+    monkeypatch.setattr(runtime, "_validate_python_runtime", lambda *_args, **_kwargs: {"ok": True})
+    monkeypatch.setattr(
+        runtime,
+        "_bootstrap_comfy_python_dependencies",
+        lambda *_args, **_kwargs: {"ok": True, "installed_packages": [], "python_executable": str(embedded)},
+    )
+    monkeypatch.setattr("subprocess.CREATE_NEW_PROCESS_GROUP", 0, raising=False)
+    monkeypatch.setattr("subprocess.CREATE_NO_WINDOW", 0, raising=False)
+    monkeypatch.setattr(runtime, "_quick_comfy_readiness_probe", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(runtime, "_is_port_listening", lambda *_args, **_kwargs: False)
+
+    class _ProcExit:
+        pid = 8001
+
+        def poll(self):
+            return 1
+
+    class _ProcRun:
+        pid = 8002
+
+        def poll(self):
+            return None
+
+    popen_count = {"count": 0}
+
+    def _fake_popen(_command, **_kwargs):
+        popen_count["count"] += 1
+        return _ProcExit() if popen_count["count"] == 1 else _ProcRun()
+
+    monkeypatch.setattr("subprocess.Popen", _fake_popen)
+    result = runtime.start_image_engine()
+    assert result["ok"] is False
+    diagnostics = result["startup_status"]["launch_diagnostics"]
+    assert diagnostics["fallback_launch_used"] == "cpu"
+    assert diagnostics["launch_attempts"][0]["wrapper_exited"] is True
+
+
+def test_start_image_engine_wrapper_wait_is_bounded_for_windows_batch(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    runtime.app_config.image.comfyui_path = ""
+    runtime.app_config.image.preferred_launcher = "auto"
+    comfy_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
+    comfy_dir.mkdir(parents=True, exist_ok=True)
+    (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_dir / "run_nvidia_gpu.bat").write_text("@echo off\r\n", encoding="utf-8")
+    (comfy_dir / "run_cpu.bat").write_text("@echo off\r\n", encoding="utf-8")
+    embedded = comfy_dir / ".venv" / "Scripts" / "python.exe"
+    embedded.parent.mkdir(parents=True, exist_ok=True)
+    embedded.write_text("", encoding="utf-8")
+    for folder in ("custom_nodes", "output", "input", "user"):
+        (comfy_dir / folder).mkdir(exist_ok=True)
+    checkpoint_dir = comfy_dir / "models" / "checkpoints"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    (checkpoint_dir / "test-model.safetensors").write_text("model", encoding="utf-8")
+    workflow = tmp_path / "scene.json"
+    workflow.write_text("{}", encoding="utf-8")
+    runtime.app_config.image.managed_install_path = str(comfy_dir)
+    runtime.app_config.image.comfyui_workflow_path = str(workflow)
+    runtime.app_config.image.checkpoint_folder = str(checkpoint_dir)
+
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr("time.sleep", lambda _seconds: None)
+    monkeypatch.setattr(runtime, "_validate_python_runtime", lambda *_args, **_kwargs: {"ok": True})
+    monkeypatch.setattr(
+        runtime,
+        "_bootstrap_comfy_python_dependencies",
+        lambda *_args, **_kwargs: {"ok": True, "installed_packages": [], "python_executable": str(embedded)},
+    )
+    monkeypatch.setattr("subprocess.CREATE_NEW_PROCESS_GROUP", 0, raising=False)
+    monkeypatch.setattr("subprocess.CREATE_NO_WINDOW", 0, raising=False)
+    monkeypatch.setattr(runtime, "_quick_comfy_readiness_probe", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(runtime, "_is_port_listening", lambda *_args, **_kwargs: False)
+
+    class _ProcRun:
+        pid = 9001
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr("subprocess.Popen", lambda *_args, **_kwargs: _ProcRun())
+    probe_calls = {"count": 0}
+
+    def _counting_probe(*_args, **_kwargs):
+        probe_calls["count"] += 1
+        return False
+
+    monkeypatch.setattr(runtime, "_quick_comfy_readiness_probe", _counting_probe)
+    result = runtime.start_image_engine()
+    assert result["ok"] is False
+    assert probe_calls["count"] == 36
 
 
 def test_orchestrate_setup_image_ai_attaches_when_setup_already_active(tmp_path: Path, monkeypatch) -> None:
