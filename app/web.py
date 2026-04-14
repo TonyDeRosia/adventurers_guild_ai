@@ -722,6 +722,7 @@ class WebRuntime:
             else {"ok": False, "missing_files": ["comfyui-root"], "python_runtime_found": False}
         )
         runtime_pip = {"checked": False, "available": False, "version": "", "detail": "", "runtime_command": []}
+        runtime_dependency_probe = {"checked": False, "ok": False, "detail": "", "module": "sqlalchemy"}
         if install_validation.get("ok", False) and resolved_comfy_path:
             launch_command, launcher_type = self._build_comfy_launch_command(Path(resolved_comfy_path), "127.0.0.1", 8188)
             runtime_resolution = self._resolve_comfy_python_runtime(launch_command, launcher_type)
@@ -744,9 +745,27 @@ class WebRuntime:
                         "detail": str(exc),
                         "runtime_command": runtime_command,
                     }
+                if runtime_pip.get("available", False):
+                    try:
+                        dep_probe = self._run_runtime_python_capture(runtime_command, ["-c", "import sqlalchemy"], timeout_seconds=20)
+                        runtime_dependency_probe = {
+                            "checked": True,
+                            "ok": dep_probe.returncode == 0,
+                            "detail": self._command_output_snippet(dep_probe),
+                            "module": "sqlalchemy",
+                        }
+                    except (OSError, subprocess.SubprocessError) as exc:
+                        runtime_dependency_probe = {
+                            "checked": True,
+                            "ok": False,
+                            "detail": str(exc),
+                            "module": "sqlalchemy",
+                        }
         runtime_missing_items = list(install_validation.get("missing_files", []))
         if runtime_pip.get("checked") and not runtime_pip.get("available"):
             runtime_missing_items.append("pip")
+        if runtime_dependency_probe.get("checked") and not runtime_dependency_probe.get("ok"):
+            runtime_missing_items.append(f"dependency:{runtime_dependency_probe.get('module', 'unknown')}")
         startup_status = dict(self.image_startup_status or {})
         workflow_parse_valid = None
         workflow_parse_message = "Workflow parse was not checked."
@@ -809,7 +828,15 @@ class WebRuntime:
             "pip_available": bool(runtime_pip.get("available", False)),
             "pip_version": str(runtime_pip.get("version", "")),
             "pip_check_detail": str(runtime_pip.get("detail", "")),
-            "runtime_complete": bool(install_validation.get("ok", False) and (not runtime_pip.get("checked") or runtime_pip.get("available"))),
+            "dependency_probe_checked": bool(runtime_dependency_probe.get("checked", False)),
+            "dependency_probe_module": str(runtime_dependency_probe.get("module", "")),
+            "dependency_probe_ok": bool(runtime_dependency_probe.get("ok", False)),
+            "dependency_probe_detail": str(runtime_dependency_probe.get("detail", "")),
+            "runtime_complete": bool(
+                install_validation.get("ok", False)
+                and (not runtime_pip.get("checked") or runtime_pip.get("available"))
+                and (not runtime_dependency_probe.get("checked") or runtime_dependency_probe.get("ok"))
+            ),
             "runtime_missing_items": runtime_missing_items,
             "install_repairable": bool(
                 "main.py" in install_validation.get("missing_files", [])
@@ -1599,13 +1626,21 @@ class WebRuntime:
         print("[setup-orchestrator] setup-image step=dependency-bootstrap")
         dep_result = self._bootstrap_comfy_python_dependencies(comfyui_root, launch_command, launcher_type)
         if not dep_result.get("ok", False):
-            steps.append({"step": "install-requirements", "state": "failed", "message": str(dep_result.get("message", "Dependency bootstrap failed."))})
+            detail = str(dep_result.get("detail", "")).strip()
+            message = str(dep_result.get("message", "Dependency bootstrap failed."))
+            if detail:
+                message = f"{message} Detail: {detail.splitlines()[-1][:280]}"
+            steps.append({"step": "install-requirements", "state": "failed", "message": message})
             return {
                 "ok": False,
-                "message": str(dep_result.get("message", "Dependency bootstrap failed.")),
+                "message": message,
                 "next_step": "Install/repair the reported Python dependency in the ComfyUI runtime, then retry.",
                 "steps": steps,
                 "summary": "Image AI failed during dependency bootstrap.",
+                "detail": detail,
+                "pip_command": dep_result.get("pip_command", ""),
+                "requirements_file": dep_result.get("requirements_file", ""),
+                "working_directory": dep_result.get("working_directory", ""),
             }
         dep_installed = list(dep_result.get("installed_packages", []))
         dep_message = "Dependencies verified."
@@ -1990,8 +2025,24 @@ class WebRuntime:
             "baseline_packages": baseline_packages,
         }
 
-    def _run_runtime_python_capture(self, runtime_command: list[str], args: list[str], timeout_seconds: int = 60) -> subprocess.CompletedProcess[str]:
-        return self._run_command_capture([*runtime_command, *args], timeout_seconds=timeout_seconds)
+    def _run_runtime_python_capture(
+        self,
+        runtime_command: list[str],
+        args: list[str],
+        timeout_seconds: int = 60,
+        cwd: Path | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        command = [*runtime_command, *args]
+        return subprocess.run(
+            command,
+            cwd=str(cwd) if cwd else None,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout_seconds,
+            check=False,
+        )
 
     @staticmethod
     def _command_output_snippet(result: subprocess.CompletedProcess[str], max_chars: int = 400) -> str:
@@ -1999,6 +2050,51 @@ class WebRuntime:
         if len(text) <= max_chars:
             return text
         return text[:max_chars] + "...(truncated)"
+
+    @staticmethod
+    def _format_command(command: list[str]) -> str:
+        def _quote(token: str) -> str:
+            if not token:
+                return '""'
+            if any(ch in token for ch in (' ', "\t", '"')):
+                escaped = token.replace('"', '\\"')
+                return f"\"{escaped}\""
+            return token
+
+        return " ".join(_quote(str(item)) for item in command)
+
+    @staticmethod
+    def _classify_pip_install_error(detail_text: str) -> dict[str, str]:
+        detail = str(detail_text or "").strip()
+        lowered = detail.lower()
+        summary = "Dependency installation failed."
+        category = "unknown"
+        matched_line = next((line.strip() for line in detail.splitlines() if line.strip()), "")
+
+        if "no matching distribution found for" in lowered:
+            category = "distribution-not-found"
+            summary = "A package could not be installed because no compatible distribution was found."
+            marker = "No matching distribution found for"
+            matched_line = next((line.strip() for line in detail.splitlines() if marker.lower() in line.lower()), matched_line)
+        elif "could not find a version that satisfies the requirement" in lowered:
+            category = "version-unsatisfied"
+            summary = "A package version constraint could not be satisfied."
+            marker = "Could not find a version that satisfies the requirement"
+            matched_line = next((line.strip() for line in detail.splitlines() if marker.lower() in line.lower()), matched_line)
+        elif "connection" in lowered or "timed out" in lowered or "temporary failure in name resolution" in lowered:
+            category = "network"
+            summary = "Dependency download failed due to a network error."
+        elif "access is denied" in lowered or "permission denied" in lowered:
+            category = "permission"
+            summary = "Dependency installation failed due to a filesystem permission error."
+        elif "failed building wheel" in lowered or "could not build wheels" in lowered:
+            category = "build-wheel-failed"
+            summary = "Dependency installation failed while building a wheel."
+        elif "invalid requirement" in lowered:
+            category = "invalid-requirement"
+            summary = "requirements.txt contains an invalid requirement entry."
+
+        return {"category": category, "summary": summary, "matched_line": matched_line}
 
     def _bootstrap_runtime_pip(self, runtime_command: list[str], *, python_executable: str) -> dict[str, Any]:
         self._update_image_bootstrap_progress(
@@ -2065,18 +2161,30 @@ class WebRuntime:
                 summary=f"Installing ComfyUI requirements from {requirements_file.name}.",
             )
             print(f"[setup-deps] installing requirements file={requirements_file}")
+            pip_install_command = [*runtime_command, "-m", "pip", "install", "-r", str(requirements_file)]
             install_requirements = self._run_runtime_python_capture(
                 runtime_command,
                 ["-m", "pip", "install", "-r", str(requirements_file)],
                 timeout_seconds=60 * 10,
+                cwd=comfyui_root,
             )
             if install_requirements.returncode != 0:
                 detail = (install_requirements.stderr or install_requirements.stdout or "").strip()
+                classification = self._classify_pip_install_error(detail)
                 return {
                     "ok": False,
                     "stage": "dependency-bootstrap",
-                    "message": f"Failed to install dependency requirements from {requirements_file.name}.",
+                    "message": (
+                        f"{classification['summary']} "
+                        f"pip exited with code {install_requirements.returncode} while installing {requirements_file.name}."
+                    ),
                     "detail": detail,
+                    "error_category": classification["category"],
+                    "error_line": classification["matched_line"],
+                    "pip_command": self._format_command(pip_install_command),
+                    "working_directory": str(comfyui_root),
+                    "requirements_file": str(requirements_file),
+                    "returncode": install_requirements.returncode,
                     "python_executable": python_executable,
                 }
             installed_packages.append(f"-r {requirements_file.name}")
@@ -2819,12 +2927,41 @@ class WebRuntime:
             message = str(dependency_bootstrap.get("message", "Dependency bootstrap failed for ComfyUI runtime."))
             detail = str(dependency_bootstrap.get("detail", "")).strip()
             missing_dep = str(dependency_bootstrap.get("missing_dependency", "")).strip()
+            pip_command = str(dependency_bootstrap.get("pip_command", "")).strip()
+            requirements_file = str(dependency_bootstrap.get("requirements_file", "")).strip()
+            working_directory = str(dependency_bootstrap.get("working_directory", "")).strip()
+            returncode = dependency_bootstrap.get("returncode")
+            error_category = str(dependency_bootstrap.get("error_category", "")).strip()
+            error_line = str(dependency_bootstrap.get("error_line", "")).strip()
             if missing_dep and "missing dependency" not in message.lower():
                 message = f"Missing dependency in ComfyUI runtime: {missing_dep}"
             self._image_engine_state = "error"
             self._image_engine_last_error = missing_dep or "dependency_bootstrap_failed"
             if detail:
                 self._append_image_startup_log(startup_log_lines, f"Dependency bootstrap error: {detail}")
+            if pip_command:
+                self._append_image_startup_log(startup_log_lines, f"pip command: {pip_command}")
+            if working_directory:
+                self._append_image_startup_log(startup_log_lines, f"pip working directory: {working_directory}")
+            if requirements_file:
+                self._append_image_startup_log(startup_log_lines, f"requirements file: {requirements_file}")
+            if error_line:
+                self._append_image_startup_log(startup_log_lines, f"pip error line: {error_line}")
+            self._set_image_startup_status(
+                state="failed",
+                stage="dependency-bootstrap",
+                reason="dependency-bootstrap-failed",
+                summary=message,
+                current_step="dependency-bootstrap",
+                failure_detail=detail[:2000],
+                pip_command=pip_command,
+                requirements_file=requirements_file,
+                working_directory=working_directory,
+                returncode=returncode,
+                error_category=error_category,
+                error_line=error_line,
+                startup_log=self._sanitize_image_startup_log(startup_log_lines),
+            )
             return {
                 "ok": False,
                 "message": message,
@@ -2833,6 +2970,13 @@ class WebRuntime:
                 "failure_stage_message": "python dependency bootstrap failed",
                 "missing_dependency": missing_dep,
                 "python_executable": dependency_bootstrap.get("python_executable", ""),
+                "detail": detail,
+                "pip_command": pip_command,
+                "requirements_file": requirements_file,
+                "working_directory": working_directory,
+                "returncode": returncode,
+                "error_category": error_category,
+                "error_line": error_line,
                 "steps": [
                     {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
                     {"step": "verify-install", "state": "ready", "message": "Install verification completed."},
