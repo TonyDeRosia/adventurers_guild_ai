@@ -3476,6 +3476,37 @@ def test_world_building_modal_places_recalibrate_left_of_close_on_same_row() -> 
     assert "display: flex;" in styles_css
 
 
+def test_image_ai_setup_controls_exist_in_simplified_setup_modal() -> None:
+    index_html = Path("app/static/index.html").read_text(encoding="utf-8")
+    assert 'id="setup-image-ai"' in index_html
+    assert 'id="retry-image-ai-setup"' in index_html
+    assert 'id="disable-image-ai"' in index_html
+    assert "guided-image-setup-actions" in index_html
+
+
+def test_image_ai_setup_controls_bind_to_current_actions() -> None:
+    app_js = Path("app/static/app.js").read_text(encoding="utf-8")
+    assert "bindClickById('setup-image-ai'" in app_js
+    assert "runReadinessAction('setup_image_ai'" in app_js
+    assert "bindClickOnce(retryImageAiSetupButton" in app_js
+    assert "bindClickOnce(disableImageAiButton" in app_js
+    assert "skipImagesForNow().catch" in app_js
+
+
+def test_frontend_init_uses_safe_missing_element_guards_for_setup_controls() -> None:
+    app_js = Path("app/static/app.js").read_text(encoding="utf-8")
+    assert "function getElementByIdOrWarn(id)" in app_js
+    assert "console.warn(`[ui-init] Missing expected element: #${id}`);" in app_js
+    assert "bindClickById('apply-settings', applySettings);" in app_js
+    assert "document.getElementById('apply-settings').onclick = applySettings;" not in app_js
+
+
+def test_image_ai_setup_actions_call_current_api_endpoints() -> None:
+    app_js = Path("app/static/app.js").read_text(encoding="utf-8")
+    assert "api('/api/setup/orchestrate-image'" in app_js
+    assert "api('/api/setup/skip-images'" in app_js
+
+
 def test_world_building_view_returns_empty_collections_when_no_data(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.create_campaign({"slot": "slot_world_empty"})
