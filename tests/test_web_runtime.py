@@ -2648,6 +2648,7 @@ def test_validate_comfyui_install_reports_missing_python_runtime(tmp_path: Path,
     validation = runtime.validate_comfyui_install(comfy_dir)
     assert validation["ok"] is False
     assert "python-runtime" in validation["missing_files"]
+    assert "launch-target" in validation["missing_files"]
 
 
 def test_install_image_engine_succeeds_without_launcher_bat_files(tmp_path: Path, monkeypatch) -> None:
@@ -2664,9 +2665,118 @@ def test_install_image_engine_succeeds_without_launcher_bat_files(tmp_path: Path
         return True, "ok"
 
     monkeypatch.setattr(runtime, "_download_and_extract_comfyui", _fake_download)
+    monkeypatch.setattr(runtime, "_install_embedded_python_runtime", lambda _target: (True, "embedded python ready"))
     monkeypatch.setattr(runtime, "validate_comfyui_install", lambda *_args, **_kwargs: {"ok": True, "missing_files": []})
     result = runtime.install_image_engine()
     assert result["ok"] is True
+
+
+def test_install_image_engine_repairs_missing_python_runtime(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    monkeypatch.setattr(runtime, "_is_windows", lambda: True)
+    target_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    (target_dir / "main.py").write_text("print('ok')", encoding="utf-8")
+    (target_dir / "custom_nodes").mkdir(exist_ok=True)
+    (target_dir / "models").mkdir(exist_ok=True)
+    monkeypatch.setattr(runtime, "_default_comfyui_path", lambda: target_dir)
+    monkeypatch.setattr(runtime, "_download_and_extract_comfyui", lambda _target: (True, "ok"))
+    def _fake_python_runtime(target: Path) -> tuple[bool, str]:
+        runtime_exe = target / "python_embeded" / "python.exe"
+        runtime_exe.parent.mkdir(parents=True, exist_ok=True)
+        runtime_exe.write_text("", encoding="utf-8")
+        return True, "embedded python ready"
+
+    monkeypatch.setattr(runtime, "_install_embedded_python_runtime", _fake_python_runtime)
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+
+    result = runtime.install_image_engine()
+    assert result["ok"] is True
+    assert "embedded python runtime" in result["message"].lower()
+
+
+def test_managed_mode_never_uses_system_python_fallback(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    runtime.app_config.image.comfyui_path = ""
+    managed_root = tmp_path / "user_data" / "tools" / "ComfyUI"
+    managed_root.mkdir(parents=True, exist_ok=True)
+    runtime.app_config.image.managed_install_path = str(managed_root)
+    runtime.app_config.image.preferred_launcher = "system_python"
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr("shutil.which", lambda _name: "py")
+
+    command, launcher = runtime._build_comfy_launch_command(managed_root, "127.0.0.1", 8188)
+    assert command == []
+    assert launcher == "python_runtime_not_found"
+
+
+def test_validate_comfyui_install_requires_resolvable_launch_target(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_dir = tmp_path / "ComfyUI"
+    comfy_dir.mkdir(parents=True, exist_ok=True)
+    (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
+    for folder in ("custom_nodes", "models", "output", "input", "user"):
+        (comfy_dir / folder).mkdir(exist_ok=True)
+    embedded = comfy_dir / "python_embeded" / "python.exe"
+    embedded.parent.mkdir(parents=True, exist_ok=True)
+    embedded.write_text("", encoding="utf-8")
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(runtime, "_build_comfy_launch_command", lambda *_args, **_kwargs: ([], "python_runtime_not_found"))
+
+    validation = runtime.validate_comfyui_install(comfy_dir)
+    assert validation["ok"] is False
+    assert validation["launch_target_resolvable"] is False
+    assert "launch-target" in validation["missing_files"]
+
+
+def test_orchestrate_image_setup_reports_full_sequence_steps(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    comfy_root = tmp_path / "ComfyUI"
+    comfy_root.mkdir(parents=True, exist_ok=True)
+    (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
+    (comfy_root / "python_embeded").mkdir(exist_ok=True)
+    ((comfy_root / "python_embeded") / "python.exe").write_text("", encoding="utf-8")
+    for folder in ("custom_nodes", "models", "output", "input", "user"):
+        (comfy_root / folder).mkdir(exist_ok=True)
+    monkeypatch.setattr(runtime, "install_image_engine", lambda: {"ok": True, "message": "installed"})
+    monkeypatch.setattr(runtime, "_resolve_image_engine_root_for_launch", lambda _cfg: comfy_root)
+    monkeypatch.setattr(runtime, "validate_comfyui_install", lambda _path: {"ok": True, "missing_files": []})
+    monkeypatch.setattr(runtime, "_build_comfy_launch_command", lambda *_args, **_kwargs: ([str(comfy_root / "python_embeded" / "python.exe"), "main.py"], "embedded_python"))
+    monkeypatch.setattr(runtime, "_bootstrap_comfy_python_dependencies", lambda *_args, **_kwargs: {"ok": True, "installed_packages": []})
+    monkeypatch.setattr(
+        runtime,
+        "get_path_configuration_status",
+        lambda: {"image": {"workflow_path": {"valid": True}, "checkpoint_dir": {"model_ready": True, "valid": True}}},
+    )
+    monkeypatch.setattr(runtime, "start_image_engine", lambda: {"ok": True, "steps": [{"step": "wait-for-readiness", "state": "ready", "message": "ready"}]})
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": True, "model_ready": True})
+    monkeypatch.setattr(runtime, "_refresh_readiness_snapshot", lambda: {})
+
+    result = runtime.orchestrate_setup_image_ai()
+    assert result["ok"] is True
+    step_ids = [item["step"] for item in result["steps"]]
+    assert step_ids[:7] == [
+        "detect-install-path",
+        "install-or-repair",
+        "verify-main-py",
+        "verify-embedded-python",
+        "resolve-paths",
+        "resolve-python-runtime",
+        "install-requirements",
+    ]
+
+
+def test_orchestrate_image_setup_returns_precise_error_when_repair_fails(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    monkeypatch.setattr(runtime, "install_image_engine", lambda: {"ok": False, "message": "Failed to download or extract embedded Python runtime for managed ComfyUI.", "next_step": "Retry setup."})
+
+    result = runtime.orchestrate_setup_image_ai()
+    assert result["ok"] is False
+    assert "embedded python runtime" in result["message"].lower()
 
 
 def test_start_image_engine_attempts_python_launch_and_reports_launch_error(tmp_path: Path, monkeypatch) -> None:
