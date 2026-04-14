@@ -30,7 +30,7 @@ def test_build_launch_command_uses_portable_nvidia_launcher(tmp_path: Path, monk
     command, launcher = runtime._build_comfy_launch_command(comfy_dir, "127.0.0.1", 8188)
 
     assert launcher == "portable_nvidia_launcher"
-    assert command == ["cmd.exe", "/d", "/c", "run_nvidia_gpu.bat"]
+    assert command == ["cmd.exe", "/d", "/c", "run_nvidia_gpu.bat", "--listen", "127.0.0.1", "--port", "8188"]
 
 
 def test_detect_child_process_uses_port_probe(tmp_path: Path, monkeypatch) -> None:

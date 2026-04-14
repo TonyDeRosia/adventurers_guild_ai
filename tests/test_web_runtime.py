@@ -4535,6 +4535,24 @@ def test_image_ai_setup_controls_bind_to_current_actions() -> None:
     assert "skipImagesForNow().catch" in app_js
 
 
+def test_image_ai_setup_frontend_has_inflight_guard_and_terminal_retry_gate() -> None:
+    app_js = Path("app/static/app.js").read_text(encoding="utf-8")
+    assert "let imageSetupRequestInFlight = false;" in app_js
+    assert "let imageSetupTerminalFailure = false;" in app_js
+    assert "if (imageSetupRequestInFlight || setupRunState.busy)" in app_js
+    assert "Image setup is already running. Please wait for it to finish." in app_js
+    assert "if (imageSetupTerminalFailure && !allowExisting)" in app_js
+    assert "Click Retry Setup to run a new attempt" in app_js
+
+
+def test_image_ai_setup_frontend_marks_terminal_failure_until_explicit_retry() -> None:
+    app_js = Path("app/static/app.js").read_text(encoding="utf-8")
+    assert "imageSetupTerminalFailure = !result.ok;" in app_js
+    assert "if (statusLabel === 'failed')" in app_js
+    assert "imageSetupTerminalFailure = true;" in app_js
+    assert "if (imageSetupTerminalFailure && button.id === 'import-image-ai')" in app_js
+
+
 def test_frontend_init_uses_safe_missing_element_guards_for_setup_controls() -> None:
     app_js = Path("app/static/app.js").read_text(encoding="utf-8")
     assert "function getElementByIdOrWarn(id)" in app_js

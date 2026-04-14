@@ -2547,10 +2547,47 @@ class WebRuntime:
         target = f"{str(base_url).rstrip('/')}/system_stats"
         req = urllib.request.Request(target)
         try:
-            with urllib.request.urlopen(req, timeout=timeout_seconds):
-                return True
-        except (urllib.error.URLError, urllib.error.HTTPError, ValueError, OSError):
+            with urllib.request.urlopen(req, timeout=timeout_seconds) as response:
+                return int(getattr(response, "status", 200) or 200) < 500
+        except urllib.error.HTTPError as exc:
+            return int(getattr(exc, "code", 500) or 500) < 500
+        except (urllib.error.URLError, ValueError, OSError):
             return False
+
+    def _candidate_readiness_bases(self, expected_base: str, startup_log_text: str) -> list[str]:
+        candidates: list[str] = []
+
+        def _append(url: str) -> None:
+            clean = str(url or "").strip().rstrip("/")
+            if clean and clean not in candidates:
+                candidates.append(clean)
+
+        _append(expected_base)
+        parsed_expected = urlparse(str(expected_base or "").strip() or "http://127.0.0.1:8188")
+        expected_host = parsed_expected.hostname or "127.0.0.1"
+        expected_port = parsed_expected.port or 8188
+        _append(f"http://{expected_host}:{expected_port}")
+        _append(f"http://127.0.0.1:{expected_port}")
+        _append(f"http://localhost:{expected_port}")
+        _append("http://127.0.0.1:8188")
+        _append("http://localhost:8188")
+
+        for raw in self._extract_comfyui_bind_urls(startup_log_text):
+            parsed = urlparse(raw)
+            port = parsed.port or expected_port
+            host = parsed.hostname or expected_host
+            if host in {"0.0.0.0", "::"}:
+                _append(f"http://127.0.0.1:{port}")
+                _append(f"http://localhost:{port}")
+            else:
+                _append(f"http://{host}:{port}")
+        return candidates
+
+    def _probe_comfy_readiness(self, expected_base: str, startup_log_text: str, timeout_seconds: float = 1.0) -> tuple[bool, str]:
+        for candidate in self._candidate_readiness_bases(expected_base, startup_log_text):
+            if self._quick_comfy_readiness_probe(candidate, timeout_seconds=timeout_seconds):
+                return True, candidate
+        return False, ""
 
     def _is_port_listening(self, host: str, port: int, timeout_seconds: float = 0.5) -> bool:
         try:
@@ -2622,7 +2659,16 @@ class WebRuntime:
 
     def _build_comfy_launch_command(self, comfyui_root: Path, host: str, port: int) -> tuple[list[str], str]:
         if os.name == "nt" and (comfyui_root / "run_nvidia_gpu.bat").exists():
-            return ["cmd.exe", "/d", "/c", "run_nvidia_gpu.bat"], "portable_nvidia_launcher"
+            return [
+                "cmd.exe",
+                "/d",
+                "/c",
+                "run_nvidia_gpu.bat",
+                "--listen",
+                str(host),
+                "--port",
+                str(port),
+            ], "portable_nvidia_launcher"
         return [], "python_runtime_not_found"
 
     def _validate_python_runtime(self, executable: str, launcher_type: str) -> dict[str, Any]:
@@ -2677,7 +2723,16 @@ class WebRuntime:
             attempts.append(
                 {
                     "mode": "nvidia_gpu",
-                    "command": ["cmd.exe", "/d", "/c", str(nvidia_script)],
+                    "command": [
+                        "cmd.exe",
+                        "/d",
+                        "/c",
+                        str(nvidia_script),
+                        "--listen",
+                        str(host),
+                        "--port",
+                        str(port),
+                    ],
                     "launcher_type": "windows_batch",
                     "label": "nvidia_gpu",
                 }
@@ -3654,6 +3709,7 @@ class WebRuntime:
                     "run_nvidia_gpu.bat": nvidia_launcher_exists,
                     "run_cpu.bat": cpu_launcher_exists,
                 },
+                "expected_readiness_url": expected_base,
             }
             if not launch_attempts:
                 message = "Image AI requires NVIDIA GPU mode (run_nvidia_gpu.bat). CPU fallback is disabled."
@@ -3786,14 +3842,14 @@ class WebRuntime:
                 self._update_image_bootstrap_progress(state="starting ComfyUI", step="wait-for-readiness", summary="Waiting for ComfyUI readiness endpoint.")
                 print("[setup-orchestrator] setup-image step=wait-for-readiness")
                 attempt_result: dict[str, Any] = {"mode": attempt_mode, "result": "timeout"}
-                max_poll_cycles = 16 if attempt_mode == "nvidia_gpu" else 20
+                max_poll_cycles = 240 if attempt_mode == "nvidia_gpu" else 20
                 for poll_index in range(max_poll_cycles):
                     time.sleep(0.75)
                     tail_lines = self._read_startup_log_tail(startup_log_file)
                     startup_log_lines.extend(tail_lines)
                     startup_log_text = self._sanitize_image_startup_log(startup_log_lines)
                     runtime_error = self._detect_runtime_error(startup_log_text)
-                    readiness_reachable = self._quick_comfy_readiness_probe(expected_base, timeout_seconds=1.0)
+                    readiness_reachable, ready_base = self._probe_comfy_readiness(expected_base, startup_log_text, timeout_seconds=1.0)
                     child_process_detected = self._detect_comfy_child_process(
                         expected.hostname or "127.0.0.1",
                         expected.port or 8188,
@@ -3834,6 +3890,7 @@ class WebRuntime:
                                 log_available=bool(startup_log_text),
                                 log_file=str(startup_log_file),
                                 managed_process=self.comfy_manager.snapshot().running,
+                                ready_base_url=ready_base,
                                 launch_diagnostics=launch_diagnostics,
                             )
                             self._image_engine_state = "running"
@@ -3949,6 +4006,7 @@ class WebRuntime:
                         f"child_process_detected={child_process_detected} runtime_error={bool(runtime_error)}"
                     )
                     if readiness_reachable:
+                        launch_diagnostics["ready_base_url"] = ready_base
                         print("[setup-action] start-image-engine success")
                         dependency_degraded = bool(dependency_bootstrap.get("degraded", False))
                         degraded_details = list(dependency_bootstrap.get("degraded_details", []))
@@ -3970,6 +4028,7 @@ class WebRuntime:
                             managed_process=self.comfy_manager.snapshot().running,
                             degraded=dependency_degraded,
                             degraded_details=degraded_details,
+                            ready_base_url=ready_base,
                             launch_diagnostics=launch_diagnostics,
                         )
                         self._image_engine_state = "running"
@@ -4037,6 +4096,7 @@ class WebRuntime:
                 startup_log_lines.extend(tail_lines)
                 startup_log_text = self._sanitize_image_startup_log(startup_log_lines)
                 bound_urls = self._extract_comfyui_bind_urls(startup_log_text)
+                readiness_candidates = self._candidate_readiness_bases(expected_base, startup_log_text)
                 runtime_error = self._detect_runtime_error(startup_log_text)
                 reason = "timeout-waiting-for-comfyui"
                 message = "ComfyUI launch command was sent, but readiness timed out."
@@ -4059,8 +4119,22 @@ class WebRuntime:
                         launcher_exists=(comfyui_root / "run_nvidia_gpu.bat").exists(),
                     )
                     launch_diagnostics["nvidia_failure_reason"] = launch_diagnostics["nvidia_failure_reason"] or classification["reason"]
-                    message = "Image AI requires NVIDIA GPU mode and CPU fallback is disabled. NVIDIA launch failed before readiness."
-                    stage_message = "nvidia launch timed out before readiness"
+                    if runtime_error:
+                        message = "Image AI requires NVIDIA GPU mode and CPU fallback is disabled. NVIDIA launch reported a runtime/CUDA error before readiness."
+                        stage_message = "nvidia runtime/cuda error before readiness"
+                    elif process.poll() is not None:
+                        message = "Image AI requires NVIDIA GPU mode and CPU fallback is disabled. NVIDIA launcher exited before readiness."
+                        stage_message = "nvidia launcher exited before readiness"
+                    elif reason == "bound-to-unexpected-address":
+                        message = "Image AI requires NVIDIA GPU mode and CPU fallback is disabled. ComfyUI appears bound to a different endpoint than expected."
+                        stage_message = "nvidia endpoint mismatch before readiness"
+                    else:
+                        message = "Image AI requires NVIDIA GPU mode and CPU fallback is disabled. NVIDIA process stayed alive but readiness was never reachable before timeout."
+                        stage_message = "nvidia process alive but readiness timeout"
+                launcher_tail = startup_log_text.splitlines()[-20:]
+                error_line = launcher_tail[-1] if launcher_tail else ""
+                if error_line:
+                    message = f"{message} Last output: {error_line}"
                 self._set_image_startup_status(
                     state="failed",
                     stage="wait-for-readiness",
@@ -4069,7 +4143,12 @@ class WebRuntime:
                     current_step="wait-for-readiness",
                     runtime_error_hint=runtime_error,
                     detected_bind_urls=bound_urls,
+                    readiness_candidates=readiness_candidates,
                     expected_base_url=expected_base,
+                    launch_command=launch_target,
+                    working_directory=str(comfyui_root),
+                    launcher_output_tail=launcher_tail,
+                    launcher_error_line=error_line,
                     log_text=startup_log_text,
                     log_available=bool(startup_log_text),
                     log_file=str(startup_log_file),
@@ -4090,6 +4169,9 @@ class WebRuntime:
                     "selected_launcher": "nvidia_gpu" if attempt_mode == "nvidia_gpu" else attempt_mode,
                     "failure_reason": str(launch_diagnostics.get("nvidia_failure_reason", "")) if attempt_mode == "nvidia_gpu" else reason,
                     "no_cpu_fallback": True if attempt_mode == "nvidia_gpu" else False,
+                    "launcher_output": startup_log_text,
+                    "launcher_output_tail": launcher_tail,
+                    "exact_error": error_line,
                     "steps": [
                         {"step": "detect-install-path", "state": "ready", "message": f"Using install path: {comfyui_root}"},
                         {"step": "verify-install", "state": "ready", "message": "Install verification completed."},

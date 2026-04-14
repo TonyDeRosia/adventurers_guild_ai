@@ -161,6 +161,8 @@ let modelInstallState = {};
 let latestGlobalSettings = null;
 let latestImageSetupSnapshot = null;
 let latestImageBackendDiagnostics = null;
+let imageSetupRequestInFlight = false;
+let imageSetupTerminalFailure = false;
 let appliedVisualPipelinePaths = {
   comfyui_path: '',
   comfyui_workflow_path: '',
@@ -491,6 +493,10 @@ function updateSetupButtonsBusyState() {
       : '');
     if (!actionId) return;
     if (!setupRunState.busy) {
+      if (imageSetupTerminalFailure && button.id === 'import-image-ai') {
+        button.disabled = true;
+        return;
+      }
       button.disabled = false;
       return;
     }
@@ -2009,9 +2015,23 @@ function renderImageSetupCard(snapshot = latestImageSetupSnapshot) {
   if (retryImageAiSetupButton) {
     retryImageAiSetupButton.classList.toggle('hidden', statusLabel !== 'failed');
   }
+  if (statusLabel === 'failed') {
+    imageSetupTerminalFailure = true;
+  } else if (isReady) {
+    imageSetupTerminalFailure = false;
+  }
+  updateSetupButtonsBusyState();
 }
 
 async function importAndSetupImageAi({ allowExisting = false } = {}) {
+  if (imageSetupRequestInFlight || setupRunState.busy) {
+    setStatus('Image setup is already running. Please wait for it to finish.');
+    return;
+  }
+  if (imageSetupTerminalFailure && !allowExisting) {
+    setStatus('Image setup previously failed. Click Retry Setup to run a new attempt.', true);
+    return;
+  }
   const comfySource = imageImportComfySourceInput?.value.trim() || '';
   const modelSource = imageImportModelSourceInput?.value.trim() || '';
   const hasSources = !!(comfySource && modelSource);
@@ -2019,31 +2039,39 @@ async function importAndSetupImageAi({ allowExisting = false } = {}) {
     setStatus('Select both a ComfyUI source and a model source before starting setup.', true);
     return;
   }
+  imageSetupRequestInFlight = true;
   startSetupRun('setup_image_ai', 'Running guided Image AI setup flow...', [
     { step: 'validate-comfyui-source', label: 'Validate ComfyUI source', state: 'running', message: hasSources ? 'Checking ComfyUI source path...' : 'Using existing managed ComfyUI runtime...' },
   ]);
-  const result = hasSources
-    ? await api('/api/setup/import-image-ai', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ comfyui_source: comfySource, model_source: modelSource }),
-    })
-    : await api('/api/setup/orchestrate-image', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
+  try {
+    const result = hasSources
+      ? await api('/api/setup/import-image-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comfyui_source: comfySource, model_source: modelSource }),
+      })
+      : await api('/api/setup/orchestrate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+    updateSetupRun({
+      steps: normalizeSetupSteps(result.steps),
+      summary: result.summary || result.message || (result.ok ? 'Image AI is ready.' : 'Image AI setup failed.'),
+      startupStatus: result.startup_status || result.startup || null,
     });
-  updateSetupRun({
-    steps: normalizeSetupSteps(result.steps),
-    summary: result.summary || result.message || (result.ok ? 'Image AI is ready.' : 'Image AI setup failed.'),
-  });
-  finishSetupRun({
-    summary: result.summary || result.message || (result.ok ? 'Image AI is ready.' : 'Image AI setup failed.'),
-    isError: !result.ok,
-    steps: normalizeSetupSteps(result.steps),
-  });
-  setStatus(result.message || (result.ok ? 'Image AI imported, set up, and started.' : 'Image AI setup failed.'), !result.ok);
-  await Promise.all([loadSettings(), refreshDependencyReadiness(), refreshImageSetupSnapshot(), refreshImageBackendDiagnostics(), refreshComfyuiModelList()]);
+    finishSetupRun({
+      summary: result.summary || result.message || (result.ok ? 'Image AI is ready.' : 'Image AI setup failed.'),
+      isError: !result.ok,
+      steps: normalizeSetupSteps(result.steps),
+      startupStatus: result.startup_status || result.startup || null,
+    });
+    imageSetupTerminalFailure = !result.ok;
+    setStatus(result.message || (result.ok ? 'Image AI imported, set up, and started.' : 'Image AI setup failed.'), !result.ok);
+    await Promise.all([loadSettings(), refreshDependencyReadiness(), refreshImageSetupSnapshot(), refreshImageBackendDiagnostics(), refreshComfyuiModelList()]);
+  } finally {
+    imageSetupRequestInFlight = false;
+  }
 }
 
 function bindClickOnce(element, handler) {
