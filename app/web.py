@@ -2031,11 +2031,10 @@ class WebRuntime:
         launch_command: list[str],
         launcher_type: str,
     ) -> list[dict[str, Any]]:
-        preference = str(self.app_config.image.preferred_launcher or "auto").strip().lower()
         nvidia_script = comfyui_root / "run_nvidia_gpu.bat"
         cpu_script = comfyui_root / "run_cpu.bat"
         attempts: list[dict[str, Any]] = []
-        if os.name == "nt" and self._is_gpu_first_launcher_preference() and nvidia_script.exists():
+        if os.name == "nt" and nvidia_script.exists():
             attempts.append(
                 {
                     "mode": "nvidia_gpu",
@@ -2053,13 +2052,13 @@ class WebRuntime:
                     "label": "cpu",
                 }
             )
-        elif preference in {"cpu", "cpu_only"}:
+        elif launch_command:
             attempts.append(
                 {
                     "mode": "cpu",
                     "command": list(launch_command),
                     "launcher_type": launcher_type,
-                    "label": "cpu",
+                    "label": "cpu_python_fallback",
                 }
             )
         if launch_command:
@@ -3254,11 +3253,17 @@ class WebRuntime:
             attempt_mode = str(attempt.get("mode", "unknown"))
             attempt_command = list(attempt.get("command", []))
             launch_target = " ".join(attempt_command)
+            next_attempt_label = (
+                str(launch_attempts[attempt_index + 1].get("label", ""))
+                if attempt_index + 1 < len(launch_attempts)
+                else ""
+            )
+            can_try_next_attempt = bool(next_attempt_label)
             if attempt_mode == "nvidia_gpu":
                 self._update_image_bootstrap_progress(
                     state="starting ComfyUI",
                     step="launch-engine",
-                    summary="Starting Image AI with NVIDIA...",
+                    summary="Starting Image AI...",
                 )
             try:
                 self._append_image_startup_log(startup_log_lines, f"Launching mode: {attempt_mode}")
@@ -3277,21 +3282,21 @@ class WebRuntime:
                 process = subprocess.Popen(attempt_command, **kwargs)
             except OSError as exc:
                 launch_diagnostics["launch_attempts"].append({"mode": attempt_mode, "result": "launch-error", "detail": str(exc)})
-                if attempt_mode == "nvidia_gpu" and attempt_index + 1 < len(launch_attempts):
+                if attempt_mode == "nvidia_gpu" and can_try_next_attempt:
                     classification = self._classify_nvidia_launch_failure(
                         "process-launch-failed",
                         exit_code=None,
                         launcher_exists=(comfyui_root / "run_nvidia_gpu.bat").exists(),
                     )
                     launch_diagnostics["nvidia_failure_reason"] = classification["reason"]
-                    if classification.get("fallback_eligible", "false") == "true":
-                        self._append_image_startup_log(startup_log_lines, f"NVIDIA launch failed: {exc}")
-                        self._update_image_bootstrap_progress(
-                            state="starting ComfyUI",
-                            step="launch-engine",
-                            summary="NVIDIA unavailable, falling back to CPU...",
-                        )
-                        continue
+                    launch_diagnostics["fallback_launch_used"] = next_attempt_label
+                    self._append_image_startup_log(startup_log_lines, f"NVIDIA launch failed: {exc}")
+                    self._update_image_bootstrap_progress(
+                        state="starting ComfyUI",
+                        step="launch-engine",
+                        summary="Falling back to CPU...",
+                    )
+                    continue
                 print(f"[setup-action] start-image-engine failure reason={exc}")
                 print("[setup-orchestrator] setup-image failure stage=launch-engine")
                 self._image_engine_state = "error"
@@ -3342,21 +3347,21 @@ class WebRuntime:
                         "runtime_error_hint": runtime_error,
                     }
                     self.comfy_manager.clear_if_exited()
-                    if attempt_mode == "nvidia_gpu" and attempt_index + 1 < len(launch_attempts):
+                    if attempt_mode == "nvidia_gpu" and can_try_next_attempt:
                         classification = self._classify_nvidia_launch_failure(
                             startup_log_text,
                             exit_code=exit_code,
                             launcher_exists=(comfyui_root / "run_nvidia_gpu.bat").exists(),
                         )
                         launch_diagnostics["nvidia_failure_reason"] = classification["reason"]
-                        if classification.get("fallback_eligible", "false") == "true":
-                            self._append_image_startup_log(startup_log_lines, f"NVIDIA attempt failed: {classification['summary']}")
-                            self._update_image_bootstrap_progress(
-                                state="starting ComfyUI",
-                                step="launch-engine",
-                                summary="NVIDIA unavailable, falling back to CPU...",
-                            )
-                            break
+                        launch_diagnostics["fallback_launch_used"] = next_attempt_label
+                        self._append_image_startup_log(startup_log_lines, f"NVIDIA attempt failed: {classification['summary']}")
+                        self._update_image_bootstrap_progress(
+                            state="starting ComfyUI",
+                            step="launch-engine",
+                            summary="Falling back to CPU...",
+                        )
+                        break
                     launch_diagnostics["launch_attempts"].append(attempt_result)
                     self._set_image_startup_status(
                         state="failed",
@@ -3433,7 +3438,7 @@ class WebRuntime:
                         ],
                     }
             launch_diagnostics["launch_attempts"].append(attempt_result)
-            if attempt_mode == "nvidia_gpu" and attempt_index + 1 < len(launch_attempts):
+            if attempt_mode == "nvidia_gpu" and can_try_next_attempt:
                 tail_lines = self._read_startup_log_tail(startup_log_file)
                 startup_log_lines.extend(tail_lines)
                 classification = self._classify_nvidia_launch_failure(
@@ -3442,14 +3447,13 @@ class WebRuntime:
                     launcher_exists=(comfyui_root / "run_nvidia_gpu.bat").exists(),
                 )
                 launch_diagnostics["nvidia_failure_reason"] = launch_diagnostics["nvidia_failure_reason"] or classification["reason"]
-                if classification.get("fallback_eligible", "false") == "true":
-                    launch_diagnostics["fallback_launch_used"] = str(launch_attempts[attempt_index + 1].get("label", ""))
-                    self._update_image_bootstrap_progress(
-                        state="starting ComfyUI",
-                        step="launch-engine",
-                        summary="NVIDIA unavailable, falling back to CPU...",
-                    )
-                    continue
+                launch_diagnostics["fallback_launch_used"] = next_attempt_label
+                self._update_image_bootstrap_progress(
+                    state="starting ComfyUI",
+                    step="launch-engine",
+                    summary="Falling back to CPU...",
+                )
+                continue
             tail_lines = self._read_startup_log_tail(startup_log_file)
             startup_log_lines.extend(tail_lines)
             startup_log_text = self._sanitize_image_startup_log(startup_log_lines)
