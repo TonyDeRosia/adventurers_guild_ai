@@ -67,3 +67,8 @@ def test_guided_image_import_controls_are_present() -> None:
     ]
     for element_id in required_ids:
         assert f'id="{element_id}"' in html
+    assert 'id="setup-image-ai"' not in html
+    assert "Import, Set Up, and Start Image AI" in html
+    assert "1. Download" in html
+    assert "2. Select Sources" in html
+    assert "3. Start" in html

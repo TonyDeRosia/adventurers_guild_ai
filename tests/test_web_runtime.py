@@ -309,10 +309,56 @@ def test_import_image_ai_retry_works_after_invalid_attempt(tmp_path: Path, monke
     assert second["ok"] is True
 
 
+def test_import_image_ai_primary_flow_reports_import_setup_launch_steps(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_src = _make_comfy_source_folder(tmp_path)
+    model_src = tmp_path / "flow.safetensors"
+    model_src.write_text("model", encoding="utf-8")
+    monkeypatch.setattr(runtime, "start_image_engine", lambda **_kwargs: {"ok": True, "message": "started"})
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": True, "ready": True})
+
+    result = runtime.import_and_setup_image_ai(str(comfy_src), str(model_src))
+
+    step_names = [step["step"] for step in result.get("steps", [])]
+    assert result["ok"] is True
+    assert step_names == [
+        "validate-comfyui-source",
+        "validate-model-source",
+        "import-comfyui",
+        "import-model",
+        "validate-managed-install",
+        "prepare-runtime",
+        "start-image-ai",
+        "readiness-check",
+    ]
+
+
+def test_import_image_ai_returns_precise_stage_failure_on_launch_error(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_src = _make_comfy_source_folder(tmp_path)
+    model_src = tmp_path / "flow_fail.safetensors"
+    model_src.write_text("model", encoding="utf-8")
+    monkeypatch.setattr(runtime, "start_image_engine", lambda **_kwargs: {"ok": False, "message": "launch failed at runtime"})
+
+    result = runtime.import_and_setup_image_ai(str(comfy_src), str(model_src))
+
+    assert result["ok"] is False
+    assert result["steps"][-1]["step"] == "start-image-ai"
+    assert result["steps"][-1]["state"] == "failed"
+    assert "launch failed at runtime" in result["message"]
+
+
 def test_image_setup_snapshot_reports_guided_status(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     snapshot = runtime.get_image_setup_snapshot()
-    assert snapshot["setup_status"] in {"not configured", "error", "ComfyUI selected", "model selected", "ready", "importing"}
+    assert snapshot["setup_status"] in {
+        "waiting for ComfyUI source",
+        "waiting for model source",
+        "preparing runtime",
+        "starting Image AI",
+        "connected",
+        "failed",
+    }
 
 
 def test_text_mode_remains_usable_when_image_setup_incomplete(tmp_path: Path, monkeypatch) -> None:
@@ -4060,7 +4106,8 @@ def test_world_building_modal_places_recalibrate_left_of_close_on_same_row() -> 
 
 def test_image_ai_setup_controls_exist_in_simplified_setup_modal() -> None:
     index_html = Path("app/static/index.html").read_text(encoding="utf-8")
-    assert 'id="setup-image-ai"' in index_html
+    assert 'id="setup-image-ai"' not in index_html
+    assert "Import, Set Up, and Start Image AI" in index_html
     assert 'id="retry-image-ai-setup"' in index_html
     assert 'id="disable-image-ai"' in index_html
     assert "guided-image-setup-actions" in index_html
@@ -4068,8 +4115,9 @@ def test_image_ai_setup_controls_exist_in_simplified_setup_modal() -> None:
 
 def test_image_ai_setup_controls_bind_to_current_actions() -> None:
     app_js = Path("app/static/app.js").read_text(encoding="utf-8")
-    assert "bindClickById('setup-image-ai'" in app_js
-    assert "runReadinessAction('setup_image_ai'" in app_js
+    assert "bindClickById('setup-image-ai'" not in app_js
+    assert "bindClickById('import-image-ai'" in app_js
+    assert "importAndSetupImageAi({ allowExisting: true })" in app_js
     assert "bindClickOnce(retryImageAiSetupButton" in app_js
     assert "bindClickOnce(disableImageAiButton" in app_js
     assert "skipImagesForNow().catch" in app_js
@@ -4085,6 +4133,7 @@ def test_frontend_init_uses_safe_missing_element_guards_for_setup_controls() -> 
 
 def test_image_ai_setup_actions_call_current_api_endpoints() -> None:
     app_js = Path("app/static/app.js").read_text(encoding="utf-8")
+    assert "api('/api/setup/import-image-ai'" in app_js
     assert "api('/api/setup/orchestrate-image'" in app_js
     assert "api('/api/setup/skip-images'" in app_js
 
