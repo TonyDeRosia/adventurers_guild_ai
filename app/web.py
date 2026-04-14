@@ -2044,26 +2044,6 @@ class WebRuntime:
                     "label": "nvidia_gpu",
                 }
             )
-        if preference in {"cpu", "cpu_only"}:
-            if os.name == "nt" and cpu_script.exists():
-                attempts.append(
-                    {
-                        "mode": "cpu",
-                        "command": ["cmd.exe", "/d", "/c", str(cpu_script)],
-                        "launcher_type": "windows_batch",
-                        "label": "cpu",
-                    }
-                )
-            else:
-                attempts.append(
-                    {
-                        "mode": "cpu",
-                        "command": list(launch_command),
-                        "launcher_type": launcher_type,
-                        "label": "cpu",
-                    }
-                )
-            return attempts
         if os.name == "nt" and cpu_script.exists():
             attempts.append(
                 {
@@ -2073,7 +2053,7 @@ class WebRuntime:
                     "label": "cpu",
                 }
             )
-        else:
+        elif preference in {"cpu", "cpu_only"}:
             attempts.append(
                 {
                     "mode": "cpu",
@@ -2082,13 +2062,13 @@ class WebRuntime:
                     "label": "cpu",
                 }
             )
-        if not attempts:
+        if launch_command:
             attempts.append(
                 {
                     "mode": "python_main",
                     "command": list(launch_command),
                     "launcher_type": launcher_type,
-                    "label": "python_main",
+                    "label": "python_main_last_resort",
                 }
             )
         return attempts
@@ -2127,7 +2107,7 @@ class WebRuntime:
         if "process-launch-failed" in lowered:
             return {"reason": "process-launch-failed", "summary": "NVIDIA launch process could not be started.", "fallback_eligible": "true"}
         if exit_code is not None:
-            return {"reason": "process-exited-immediately", "summary": "NVIDIA launch process exited immediately.", "fallback_eligible": "false"}
+            return {"reason": "process-exited-immediately", "summary": "NVIDIA launch process exited immediately.", "fallback_eligible": "true"}
         return {"reason": "nvidia-launch-failed", "summary": "NVIDIA launch failed.", "fallback_eligible": "false"}
 
     def _required_comfyui_python_packages(self, comfyui_root: Path) -> dict[str, Any]:
@@ -3278,7 +3258,7 @@ class WebRuntime:
                 self._update_image_bootstrap_progress(
                     state="starting ComfyUI",
                     step="launch-engine",
-                    summary="Starting Image AI with NVIDIA acceleration...",
+                    summary="Starting Image AI with NVIDIA...",
                 )
             try:
                 self._append_image_startup_log(startup_log_lines, f"Launching mode: {attempt_mode}")
@@ -3309,7 +3289,7 @@ class WebRuntime:
                         self._update_image_bootstrap_progress(
                             state="starting ComfyUI",
                             step="launch-engine",
-                            summary="NVIDIA launch unavailable, falling back to CPU...",
+                            summary="NVIDIA unavailable, falling back to CPU...",
                         )
                         continue
                 print(f"[setup-action] start-image-engine failure reason={exc}")
@@ -3374,7 +3354,7 @@ class WebRuntime:
                             self._update_image_bootstrap_progress(
                                 state="starting ComfyUI",
                                 step="launch-engine",
-                                summary="NVIDIA launch unavailable, falling back to CPU...",
+                                summary="NVIDIA unavailable, falling back to CPU...",
                             )
                             break
                     launch_diagnostics["launch_attempts"].append(attempt_result)
@@ -3396,11 +3376,9 @@ class WebRuntime:
                     )
                     self._image_engine_state = "error"
                     self._image_engine_last_error = "process_exited_immediately"
-                    last_error_line = tail_lines[-1] if tail_lines else ""
-                    detail = f", last error: {last_error_line}" if last_error_line else ""
                     return {
                         "ok": False,
-                        "message": f"ComfyUI failed: Process exited (code {exit_code}){detail}",
+                        "message": f"Image AI failed during startup (exit code {exit_code}).",
                         "next_step": "Open setup details to review startup log and fix the runtime/dependency issue.",
                         "failure_stage": "wait-for-readiness",
                         "failure_stage_message": "process exited during startup",
@@ -3469,7 +3447,7 @@ class WebRuntime:
                     self._update_image_bootstrap_progress(
                         state="starting ComfyUI",
                         step="launch-engine",
-                        summary="NVIDIA launch unavailable, falling back to CPU...",
+                        summary="NVIDIA unavailable, falling back to CPU...",
                     )
                     continue
             tail_lines = self._read_startup_log_tail(startup_log_file)
