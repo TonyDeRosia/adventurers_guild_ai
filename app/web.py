@@ -1968,6 +1968,22 @@ class WebRuntime:
         except OSError:
             return []
 
+    def _quick_comfy_readiness_probe(self, base_url: str, timeout_seconds: float = 1.0) -> bool:
+        target = f"{str(base_url).rstrip('/')}/system_stats"
+        req = urllib.request.Request(target)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout_seconds):
+                return True
+        except (urllib.error.URLError, urllib.error.HTTPError, ValueError, OSError):
+            return False
+
+    def _is_port_listening(self, host: str, port: int, timeout_seconds: float = 0.5) -> bool:
+        try:
+            with socket.create_connection((host, port), timeout=timeout_seconds):
+                return True
+        except OSError:
+            return False
+
     def _detect_runtime_error(self, startup_log_text: str) -> str:
         lowered = startup_log_text.lower()
         markers = [
@@ -3385,11 +3401,19 @@ class WebRuntime:
                     self.comfy_manager.bind_log_handle(log_handle)
                 self.comfy_manager.register(process, launch_target=launch_target, startup_log_file=startup_log_file)
                 print(f"[setup-action] start-image-engine launch command={launch_target}")
+                print(f"[setup-action] launcher-selected mode={attempt_mode} command={launch_target}")
                 self._update_image_bootstrap_progress(state="starting ComfyUI", step="wait-for-readiness", summary="Waiting for ComfyUI readiness endpoint.")
                 print("[setup-orchestrator] setup-image step=wait-for-readiness")
                 attempt_result: dict[str, Any] = {"mode": attempt_mode, "result": "timeout"}
-                for _ in range(20):
+                max_poll_cycles = 16 if attempt_mode == "nvidia_gpu" else 20
+                for poll_index in range(max_poll_cycles):
                     time.sleep(0.75)
+                    tail_lines = self._read_startup_log_tail(startup_log_file)
+                    startup_log_lines.extend(tail_lines)
+                    startup_log_text = self._sanitize_image_startup_log(startup_log_lines)
+                    runtime_error = self._detect_runtime_error(startup_log_text)
+                    readiness_reachable = self._quick_comfy_readiness_probe(expected_base, timeout_seconds=1.0)
+                    child_process_detected = self._is_port_listening(expected.hostname or "127.0.0.1", expected.port or 8188, timeout_seconds=0.5)
                     if process.poll() is not None:
                         exit_code = process.poll()
                         if getattr(process, "stdout", None) is not None:
@@ -3399,15 +3423,50 @@ class WebRuntime:
                                     startup_log_lines.extend(str(captured).splitlines()[-80:])
                             except (OSError, subprocess.SubprocessError):
                                 pass
-                        tail_lines = self._read_startup_log_tail(startup_log_file)
-                        startup_log_lines.extend(tail_lines)
-                        startup_log_text = self._sanitize_image_startup_log(startup_log_lines)
-                        runtime_error = self._detect_runtime_error(startup_log_text)
+                        print(
+                            "[setup-action] launcher-wrapper-exited "
+                            f"mode={attempt_mode} exit_code={exit_code} child_process_detected={child_process_detected}"
+                        )
+                        if readiness_reachable:
+                            print(f"[setup-action] readiness-probe ready mode={attempt_mode} wrapper_exited=true")
+                            attempt_result = {
+                                "mode": attempt_mode,
+                                "result": "ready-after-wrapper-exit",
+                                "wrapper_exited": True,
+                                "exit_code": exit_code,
+                                "child_process_detected": child_process_detected,
+                                "readiness_reachable": True,
+                            }
+                            launch_diagnostics["launch_attempts"].append(attempt_result)
+                            launch_diagnostics["final_running_mode"] = attempt_mode
+                            self._set_image_startup_status(
+                                state="ready",
+                                stage="wait-for-readiness",
+                                reason="ready",
+                                summary="ComfyUI started and is reachable.",
+                                current_step="ready",
+                                log_text=startup_log_text,
+                                log_available=bool(startup_log_text),
+                                log_file=str(startup_log_file),
+                                managed_process=self.comfy_manager.snapshot().running,
+                                launch_diagnostics=launch_diagnostics,
+                            )
+                            self._image_engine_state = "running"
+                            return {
+                                "ok": True,
+                                "message": "ComfyUI started and is reachable.",
+                                "managed_process": self.comfy_manager.snapshot().running,
+                                "readiness_refreshed": True,
+                                "startup_status": self.image_startup_status,
+                            }
                         attempt_result = {
                             "mode": attempt_mode,
                             "result": "process-exited-immediately",
+                            "wrapper_exited": True,
                             "exit_code": exit_code,
                             "runtime_error_hint": runtime_error,
+                            "child_process_detected": child_process_detected,
+                            "readiness_reachable": readiness_reachable,
                         }
                         self.comfy_manager.clear_if_exited()
                         if attempt_mode == "nvidia_gpu" and can_try_next_attempt:
@@ -3423,6 +3482,10 @@ class WebRuntime:
                                 state="starting ComfyUI",
                                 step="launch-engine",
                                 summary="Falling back to CPU...",
+                            )
+                            print(
+                                "[setup-action] launcher-fallback "
+                                f"from={attempt_mode} to={next_attempt_label} reason={classification['reason']}"
                             )
                             break
                         launch_diagnostics["launch_attempts"].append(attempt_result)
@@ -3459,7 +3522,12 @@ class WebRuntime:
                                 {"step": "wait-for-readiness", "state": "failed", "message": "ComfyUI process exited before readiness endpoint was reachable."},
                             ],
                         }
-                    if self.get_image_status().get("reachable", False):
+                    print(
+                        "[setup-action] readiness-probe "
+                        f"mode={attempt_mode} cycle={poll_index + 1}/{max_poll_cycles} reachable={readiness_reachable} "
+                        f"child_process_detected={child_process_detected} runtime_error={bool(runtime_error)}"
+                    )
+                    if readiness_reachable:
                         print("[setup-action] start-image-engine success")
                         dependency_degraded = bool(dependency_bootstrap.get("degraded", False))
                         degraded_details = list(dependency_bootstrap.get("degraded_details", []))
@@ -3500,10 +3568,34 @@ class WebRuntime:
                                 {"step": "wait-for-readiness", "state": "ready", "message": "ComfyUI responded to readiness probe."},
                             ],
                         }
+                    if attempt_mode == "nvidia_gpu" and runtime_error and can_try_next_attempt:
+                        classification = self._classify_nvidia_launch_failure(
+                            startup_log_text,
+                            exit_code=None,
+                            launcher_exists=(comfyui_root / "run_nvidia_gpu.bat").exists(),
+                        )
+                        launch_diagnostics["nvidia_failure_reason"] = classification["reason"]
+                        launch_diagnostics["fallback_launch_used"] = next_attempt_label
+                        attempt_result = {
+                            "mode": attempt_mode,
+                            "result": "runtime-error-before-readiness",
+                            "runtime_error_hint": runtime_error,
+                            "child_process_detected": child_process_detected,
+                            "readiness_reachable": False,
+                            "wrapper_exited": False,
+                        }
+                        self._update_image_bootstrap_progress(
+                            state="starting ComfyUI",
+                            step="launch-engine",
+                            summary="Falling back to CPU...",
+                        )
+                        print(
+                            "[setup-action] launcher-fallback "
+                            f"from={attempt_mode} to={next_attempt_label} reason={classification['reason']}"
+                        )
+                        break
                 launch_diagnostics["launch_attempts"].append(attempt_result)
                 if attempt_mode == "nvidia_gpu" and can_try_next_attempt:
-                    tail_lines = self._read_startup_log_tail(startup_log_file)
-                    startup_log_lines.extend(tail_lines)
                     classification = self._classify_nvidia_launch_failure(
                         self._sanitize_image_startup_log(startup_log_lines),
                         exit_code=None,
@@ -3511,6 +3603,10 @@ class WebRuntime:
                     )
                     launch_diagnostics["nvidia_failure_reason"] = launch_diagnostics["nvidia_failure_reason"] or classification["reason"]
                     launch_diagnostics["fallback_launch_used"] = next_attempt_label
+                    print(
+                        "[setup-action] launcher-fallback "
+                        f"from={attempt_mode} to={next_attempt_label} reason={launch_diagnostics['nvidia_failure_reason'] or 'nvidia-launch-stalled'}"
+                    )
                     self._update_image_bootstrap_progress(
                         state="starting ComfyUI",
                         step="launch-engine",
