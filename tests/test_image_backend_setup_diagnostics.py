@@ -349,6 +349,36 @@ def test_dependency_bootstrap_reports_missing_sqlalchemy_when_install_fails(tmp_
     assert "Failed to install dependency: sqlalchemy" in result["message"]
 
 
+def test_dependency_bootstrap_reports_precise_requirements_context_on_pip_failure(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_root = tmp_path / "ComfyUI"
+    comfy_root.mkdir(parents=True, exist_ok=True)
+    requirements = comfy_root / "requirements.txt"
+    requirements.write_text("broken-package==1.0.0\n", encoding="utf-8")
+
+    def _fake_run(runtime_command: list[str], args: list[str], timeout_seconds: int = 60, cwd: Path | None = None):
+        if args[:3] == ["-m", "pip", "--version"]:
+            return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="pip 24.0", stderr="")
+        if args[:3] == ["-m", "pip", "install"] and "-r" in args:
+            return subprocess.CompletedProcess(
+                [*runtime_command, *args],
+                1,
+                stdout="",
+                stderr="ERROR: No matching distribution found for broken-package==1.0.0",
+            )
+        return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="", stderr="")
+
+    monkeypatch.setattr(runtime, "_run_runtime_python_capture", _fake_run)
+    result = runtime._bootstrap_comfy_python_dependencies(comfy_root, ["python", "main.py"], "venv_python")
+    assert result["ok"] is False
+    assert result["error_category"] == "distribution-not-found"
+    assert "pip exited with code 1" in result["message"]
+    assert "No matching distribution found" in result["error_line"]
+    assert "pip install -r" in result["pip_command"]
+    assert result["working_directory"] == str(comfy_root)
+    assert result["requirements_file"] == str(requirements)
+
+
 def test_dependency_bootstrap_missing_pip_fails_cleanly(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     comfy_root = tmp_path / "ComfyUI"
@@ -453,6 +483,40 @@ def test_diagnostics_include_pip_availability_status(tmp_path: Path, monkeypatch
     assert diagnostics["runtime_complete"] is False
 
 
+def test_diagnostics_dependency_probe_failure_marks_runtime_incomplete(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.image.provider = "comfyui"
+    comfy_root = tmp_path / "user_data" / "tools" / "ComfyUI"
+    comfy_root.mkdir(parents=True, exist_ok=True)
+    (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
+    for folder in ("custom_nodes", "models", "output", "input", "user"):
+        (comfy_root / folder).mkdir(exist_ok=True)
+    embedded = comfy_root / ".venv" / "Scripts" / "python.exe"
+    embedded.parent.mkdir(parents=True, exist_ok=True)
+    embedded.write_text("", encoding="utf-8")
+    runtime.app_config.image.managed_install_path = str(comfy_root)
+
+    monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(runtime, "_build_comfy_launch_command", lambda *_args, **_kwargs: ([str(embedded), "main.py"], "venv_python"))
+    monkeypatch.setattr(runtime, "_resolve_comfy_python_runtime", lambda *_args, **_kwargs: {"ok": True, "runtime_command": [str(embedded)], "executable": str(embedded)})
+
+    def _fake_run(runtime_command: list[str], args: list[str], timeout_seconds: int = 60, cwd: Path | None = None):
+        if args[:3] == ["-m", "pip", "--version"]:
+            return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="pip 24.0", stderr="")
+        if args[:2] == ["-c", "import sqlalchemy"]:
+            return subprocess.CompletedProcess([*runtime_command, *args], 1, stdout="", stderr="No module named sqlalchemy")
+        return subprocess.CompletedProcess([*runtime_command, *args], 0, stdout="", stderr="")
+
+    monkeypatch.setattr(runtime, "_run_runtime_python_capture", _fake_run)
+
+    payload = runtime.get_image_backend_diagnostics()
+    diagnostics = payload["diagnostics"]
+    assert diagnostics["dependency_probe_checked"] is True
+    assert diagnostics["dependency_probe_ok"] is False
+    assert diagnostics["runtime_complete"] is False
+    assert "dependency:sqlalchemy" in diagnostics["runtime_missing_items"]
+
+
 def test_start_image_engine_skips_launch_when_dependency_bootstrap_fails(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.app_config.image.provider = "comfyui"
@@ -483,7 +547,18 @@ def test_start_image_engine_skips_launch_when_dependency_bootstrap_fails(tmp_pat
     monkeypatch.setattr(
         runtime,
         "_bootstrap_comfy_python_dependencies",
-        lambda *_args, **_kwargs: {"ok": False, "message": "Missing dependency in ComfyUI runtime: sqlalchemy", "missing_dependency": "sqlalchemy"},
+        lambda *_args, **_kwargs: {
+            "ok": False,
+            "message": "Missing dependency in ComfyUI runtime: sqlalchemy",
+            "missing_dependency": "sqlalchemy",
+            "detail": "No matching distribution found for sqlalchemy",
+            "error_line": "No matching distribution found for sqlalchemy",
+            "pip_command": "python -m pip install -r requirements.txt",
+            "working_directory": str(comfy_dir),
+            "requirements_file": str(comfy_dir / "requirements.txt"),
+            "returncode": 1,
+            "error_category": "distribution-not-found",
+        },
     )
     monkeypatch.setattr("subprocess.Popen", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("should not launch")))
 
@@ -492,6 +567,9 @@ def test_start_image_engine_skips_launch_when_dependency_bootstrap_fails(tmp_pat
     assert result["ok"] is False
     assert result["failure_stage"] == "dependency-bootstrap"
     assert "sqlalchemy" in result["message"].lower()
+    assert "No matching distribution found" in result["detail"]
+    assert "pip install -r requirements.txt" in result["pip_command"]
+    assert result["working_directory"] == str(comfy_dir)
 
 
 def test_diagnostics_resolved_path_matches_launch_path_source_of_truth(tmp_path: Path, monkeypatch) -> None:

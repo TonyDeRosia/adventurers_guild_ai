@@ -582,6 +582,11 @@ async function runReadinessAction(actionId, item) {
     setStatus('Another setup action is still running. Please wait.');
     return;
   }
+  const withFailureDetail = (result, fallbackMessage) => {
+    const base = result?.next_step ? `${result.message} ${result.next_step}` : (result?.message || fallbackMessage);
+    const detail = String(result?.error_line || result?.detail || '').trim();
+    return detail ? `${base} Detail: ${detail}`.trim() : base;
+  };
   try {
     if (actionId === 'setup_text_ai') {
       const modelName = document.getElementById('model-name').value.trim() || item.selected_model || 'llama3';
@@ -763,7 +768,7 @@ async function runReadinessAction(actionId, item) {
       });
       await refreshDependencyReadiness();
       console.log('[setup-action] readiness refresh triggered');
-      setStatus(result.ok ? (result.message || 'ComfyUI started.') : (result.next_step ? `${result.message} ${result.next_step}` : result.message), !result.ok);
+      setStatus(result.ok ? (result.message || 'ComfyUI started.') : withFailureDetail(result, 'ComfyUI failed to start.'), !result.ok);
       finishSetupRun({
         summary: result.ok
           ? 'Image AI is ready.'
