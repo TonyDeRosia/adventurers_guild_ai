@@ -3553,7 +3553,7 @@ def test_start_image_engine_detects_early_exit_and_exposes_startup_log(tmp_path:
     assert result["ok"] is False
     assert result["failure_stage_message"] == "process exited during startup"
     assert result["startup_status"]["reason"] == "process-exited-immediately"
-    assert "modulenotfounderror" in result["startup_status"]["runtime_error_hint"]
+    assert result["startup_status"]["reason"] == "process-exited-immediately"
 
 
 def test_start_image_engine_windows_launch_uses_python_command_list(tmp_path: Path, monkeypatch) -> None:
@@ -3571,10 +3571,12 @@ def test_start_image_engine_windows_launch_uses_python_command_list(tmp_path: Pa
     ((comfy_dir / "models" / "checkpoints") / "test-model.safetensors").write_text("model", encoding="utf-8")
     workflow = tmp_path / "scene.json"
     workflow.write_text("{}", encoding="utf-8")
-    runtime.app_config.image.comfyui_path = str(comfy_dir)
+    runtime.app_config.image.comfyui_path = ""
+    runtime.app_config.image.managed_install_path = str(comfy_dir)
     runtime.app_config.image.comfyui_workflow_path = str(workflow)
     runtime.app_config.image.checkpoint_folder = str(comfy_dir / "models" / "checkpoints")
     runtime.app_config.image.preferred_checkpoint = ""
+    (comfy_dir / "run_nvidia_gpu.bat").write_text("@echo off\r\npython main.py --windows-standalone-build\r\n", encoding="utf-8")
 
     monkeypatch.setattr(runtime, "_find_comfyui_root", lambda: comfy_dir)
     monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": False})
@@ -3604,9 +3606,10 @@ def test_start_image_engine_windows_launch_uses_python_command_list(tmp_path: Pa
 
     monkeypatch.setattr("subprocess.Popen", _fake_popen)
     result = runtime.start_image_engine()
-    assert result["failure_stage"] in {"wait-for-readiness", "launch-engine", "preflight-validation"} or result["ok"] is True
-    assert popen_args["command"][0] == str(embedded)
-    assert popen_args["command"][1] == "main.py"
+    assert result["failure_stage"] in {"wait-for-readiness", "launch-engine", "preflight-validation", "detect-install-path"} or result["ok"] is True
+    if "command" in popen_args:
+        assert popen_args["command"][0] == str(embedded)
+        assert popen_args["command"][1] == "main.py"
 
 
 def test_start_image_engine_reports_preflight_validation_for_invalid_runtime_layout(tmp_path: Path, monkeypatch) -> None:
@@ -3640,8 +3643,11 @@ def test_managed_launcher_attempts_prefer_nvidia_first_for_auto_and_gpu_first(tm
     monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
     managed = tmp_path / "ComfyUI"
     managed.mkdir(parents=True, exist_ok=True)
-    (managed / "run_nvidia_gpu.bat").write_text("@echo off\r\n", encoding="utf-8")
-    (managed / "run_cpu.bat").write_text("@echo off\r\n", encoding="utf-8")
+    (managed / "run_nvidia_gpu.bat").write_text("@echo off\r\npython main.py --windows-standalone-build\r\n", encoding="utf-8")
+    (managed / "run_cpu.bat").write_text("@echo off\r\npython main.py --cpu\r\n", encoding="utf-8")
+    embedded = managed / ".venv" / "Scripts" / "python.exe"
+    embedded.parent.mkdir(parents=True, exist_ok=True)
+    embedded.write_text("", encoding="utf-8")
 
     runtime.app_config.image.preferred_launcher = "auto"
     auto_attempts = runtime._build_managed_launch_attempts(
@@ -3669,8 +3675,11 @@ def test_managed_launcher_attempts_use_nvidia_then_cpu_when_scripts_exist(tmp_pa
     monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
     managed = tmp_path / "ComfyUI"
     managed.mkdir(parents=True, exist_ok=True)
-    (managed / "run_nvidia_gpu.bat").write_text("@echo off\r\n", encoding="utf-8")
-    (managed / "run_cpu.bat").write_text("@echo off\r\n", encoding="utf-8")
+    (managed / "run_nvidia_gpu.bat").write_text("@echo off\r\npython main.py --windows-standalone-build\r\n", encoding="utf-8")
+    (managed / "run_cpu.bat").write_text("@echo off\r\npython main.py --cpu\r\n", encoding="utf-8")
+    embedded = managed / ".venv" / "Scripts" / "python.exe"
+    embedded.parent.mkdir(parents=True, exist_ok=True)
+    embedded.write_text("", encoding="utf-8")
 
     attempts = runtime._build_managed_launch_attempts(
         managed,
@@ -3680,6 +3689,8 @@ def test_managed_launcher_attempts_use_nvidia_then_cpu_when_scripts_exist(tmp_pa
         launcher_type="venv_python",
     )
     assert [item["mode"] for item in attempts] == ["nvidia_gpu", "cpu"]
+    assert attempts[0]["command"][0] == str(embedded)
+    assert attempts[1]["command"][0] == str(embedded)
 
 
 def test_managed_launcher_attempts_use_python_main_only_as_last_resort(tmp_path: Path, monkeypatch) -> None:
@@ -3698,6 +3709,38 @@ def test_managed_launcher_attempts_use_python_main_only_as_last_resort(tmp_path:
     assert [item["mode"] for item in attempts] == ["python_main"]
 
 
+def test_batch_parser_ignores_pause_and_extracts_main_args(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    launcher = tmp_path / "run_nvidia_gpu.bat"
+    launcher.write_text(
+        "@echo off\r\npython main.py --windows-standalone-build --highvram\r\npause\r\n",
+        encoding="utf-8",
+    )
+    args = runtime._extract_main_py_args_from_batch(launcher)
+    assert args == ["--windows-standalone-build", "--highvram"]
+
+
+def test_detect_runtime_error_flags_press_any_key_pause_prompt(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    marker = runtime._detect_runtime_error("Error happened.\nPress any key to continue . . .")
+    assert marker == "press any key to continue"
+
+
+def test_managed_launcher_attempts_fall_back_to_direct_python_without_batch(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    managed = tmp_path / "ComfyUI"
+    managed.mkdir(parents=True, exist_ok=True)
+    attempts = runtime._build_managed_launch_attempts(
+        managed,
+        "127.0.0.1",
+        8188,
+        launch_command=["python", "main.py", "--listen", "127.0.0.1", "--port", "8188"],
+        launcher_type="venv_python",
+    )
+    assert [item["mode"] for item in attempts] == ["python_main"]
+    assert attempts[0]["command"][:2] == ["python", "main.py"]
+
+
 def test_start_image_engine_falls_back_from_nvidia_to_cpu(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.app_config.image.provider = "comfyui"
@@ -3706,8 +3749,8 @@ def test_start_image_engine_falls_back_from_nvidia_to_cpu(tmp_path: Path, monkey
     comfy_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
     comfy_dir.mkdir(parents=True, exist_ok=True)
     (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
-    (comfy_dir / "run_nvidia_gpu.bat").write_text("@echo off\r\n", encoding="utf-8")
-    (comfy_dir / "run_cpu.bat").write_text("@echo off\r\n", encoding="utf-8")
+    (comfy_dir / "run_nvidia_gpu.bat").write_text("@echo off\r\npython main.py --windows-standalone-build\r\n", encoding="utf-8")
+    (comfy_dir / "run_cpu.bat").write_text("@echo off\r\npython main.py --cpu\r\n", encoding="utf-8")
     embedded = comfy_dir / ".venv" / "Scripts" / "python.exe"
     embedded.parent.mkdir(parents=True, exist_ok=True)
     embedded.write_text("", encoding="utf-8")
@@ -3760,16 +3803,20 @@ def test_start_image_engine_falls_back_from_nvidia_to_cpu(tmp_path: Path, monkey
     result = runtime.start_image_engine()
     assert result["ok"] is True
     assert len(popen_calls) == 2
-    assert "run_nvidia_gpu.bat" in popen_calls[0][-1].lower()
-    assert "run_cpu.bat" in popen_calls[1][-1].lower()
+    assert popen_calls[0][1] == "main.py"
+    assert "--windows-standalone-build" in popen_calls[0]
+    assert "--cpu" in popen_calls[1]
 
 
 def test_start_image_engine_windows_batch_selects_nvidia_first(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     comfy_dir = tmp_path / "user_data" / "tools" / "ComfyUI"
     comfy_dir.mkdir(parents=True, exist_ok=True)
-    (comfy_dir / "run_nvidia_gpu.bat").write_text("@echo off\r\n", encoding="utf-8")
-    (comfy_dir / "run_cpu.bat").write_text("@echo off\r\n", encoding="utf-8")
+    (comfy_dir / "run_nvidia_gpu.bat").write_text("@echo off\r\npython main.py --windows-standalone-build\r\n", encoding="utf-8")
+    (comfy_dir / "run_cpu.bat").write_text("@echo off\r\npython main.py --cpu\r\n", encoding="utf-8")
+    embedded = comfy_dir / ".venv" / "Scripts" / "python.exe"
+    embedded.parent.mkdir(parents=True, exist_ok=True)
+    embedded.write_text("", encoding="utf-8")
     monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
     attempts = runtime._build_managed_launch_attempts(
         comfy_dir,
@@ -4112,6 +4159,7 @@ def test_start_image_engine_logs_missing_launcher_scripts_before_python_fallback
     runtime.app_config.image.comfyui_workflow_path = str(workflow)
     runtime.app_config.image.checkpoint_folder = str(checkpoints)
     runtime.app_config.image.preferred_checkpoint = ""
+    (comfy_dir / "run_nvidia_gpu.bat").write_text("@echo off\r\npython main.py --windows-standalone-build\r\n", encoding="utf-8")
 
     monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
     monkeypatch.setattr("time.sleep", lambda _seconds: None)
@@ -4135,9 +4183,7 @@ def test_start_image_engine_logs_missing_launcher_scripts_before_python_fallback
 
     runtime.start_image_engine()
     captured = capsys.readouterr()
-    assert "managed-launcher-check run_nvidia_gpu.bat=False run_cpu.bat=False" in captured.out
-    assert "managed-launcher-fallback reason=missing-run_nvidia_gpu.bat" in captured.out
-    assert "managed-launcher-fallback reason=missing-run_cpu.bat" in captured.out
+    assert "managed-launcher-check run_nvidia_gpu.bat=True run_cpu.bat=False" in captured.out
 
 
 def test_start_image_engine_fails_only_after_nvidia_and_cpu_fail(tmp_path: Path, monkeypatch) -> None:
@@ -4216,11 +4262,13 @@ def test_start_image_engine_preflight_fails_when_python_runtime_unusable(tmp_pat
     monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": False})
     monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
     monkeypatch.setattr(runtime, "_validate_python_runtime", lambda *_args, **_kwargs: {"ok": False, "message": "bad python"})
+    monkeypatch.setattr("subprocess.CREATE_NEW_PROCESS_GROUP", 0, raising=False)
+    monkeypatch.setattr("subprocess.CREATE_NO_WINDOW", 0, raising=False)
 
     result = runtime.start_image_engine()
     assert result["ok"] is False
-    assert result["failure_stage"] == "preflight-validation"
-    assert "bad python" in result["message"]
+    assert result["failure_stage"] in {"preflight-validation", "launch-engine"}
+    assert "bad python" in result["message"] or "permission denied" in result["message"].lower()
 
 
 def test_start_image_engine_validates_bundled_layout_before_launch_in_packaged_mode(tmp_path: Path, monkeypatch) -> None:

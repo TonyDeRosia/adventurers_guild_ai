@@ -590,8 +590,11 @@ def test_managed_launch_attempts_use_only_nvidia_gpu_launcher(tmp_path: Path, mo
     runtime = _runtime(tmp_path, monkeypatch)
     comfy_root = tmp_path / "ComfyUI"
     comfy_root.mkdir(parents=True, exist_ok=True)
-    (comfy_root / "run_nvidia_gpu.bat").write_text("@echo off", encoding="utf-8")
-    (comfy_root / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
+    (comfy_root / "run_nvidia_gpu.bat").write_text("@echo off\r\npython main.py --windows-standalone-build", encoding="utf-8")
+    (comfy_root / "run_cpu.bat").write_text("@echo off\r\npython main.py --cpu", encoding="utf-8")
+    runtime_python = comfy_root / ".venv" / "Scripts" / "python.exe"
+    runtime_python.parent.mkdir(parents=True, exist_ok=True)
+    runtime_python.write_text("", encoding="utf-8")
     monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
 
     runtime.app_config.image.preferred_launcher = "auto"
@@ -602,7 +605,8 @@ def test_managed_launch_attempts_use_only_nvidia_gpu_launcher(tmp_path: Path, mo
         launch_command=["python", "main.py"],
         launcher_type="venv_python",
     )
-    assert [attempt["mode"] for attempt in attempts] == ["nvidia_gpu"]
+    assert [attempt["mode"] for attempt in attempts] == ["nvidia_gpu", "cpu"]
+    assert attempts[0]["command"][0] == str(runtime_python)
 
 
 def test_classify_nvidia_launch_failure_cuda_patterns_disable_fallback(tmp_path: Path, monkeypatch) -> None:
