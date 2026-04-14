@@ -2093,7 +2093,10 @@ async function checkImageEngineStatus() {
   const payload = await api('/api/setup/image-engine-status');
   const state = payload.state || 'unknown';
   const pid = payload.process_id ? ` (PID ${payload.process_id})` : '';
-  setStatus(`Image engine status: ${state}${pid}`);
+  const startupState = payload.startup_status?.state ? ` | bootstrap: ${payload.startup_status.state}` : '';
+  const startupStep = payload.startup_status?.current_step ? ` (${payload.startup_status.current_step})` : '';
+  const startupSummary = payload.startup_status?.summary ? ` - ${payload.startup_status.summary}` : '';
+  setStatus(`Image engine status: ${state}${pid}${startupState}${startupStep}${startupSummary}`);
   return payload;
 }
 
@@ -2321,7 +2324,10 @@ function renderDependencyReadiness(payload) {
     const statusCode = item.status_code ? `<div>Status: <code>${escapeHtml(toTitle(item.status_code))}</code></div>` : '<div>Status: <code>connected</code></div>';
     const fallbackInfo = item.fallback_available ? '<div>Fallback: available</div>' : '';
     const startupInfo = item.startup_status?.summary
-      ? `<div>Latest startup result: ${escapeHtml(item.startup_status.summary)}</div>`
+      ? `<div>Image bootstrap: <code>${escapeHtml(item.startup_status.state || item.startup_status.stage || 'unknown')}</code> — ${escapeHtml(item.startup_status.summary)}</div>`
+      : '';
+    const startupStep = item.startup_status?.current_step
+      ? `<div>Current setup step: <code>${escapeHtml(item.startup_status.current_step)}</code></div>`
       : '';
     const startupLog = item.startup_status?.log_text
       ? `<details class="startup-log"><summary>Startup log details</summary><pre>${escapeHtml(item.startup_status.log_text)}</pre></details>`
@@ -2334,6 +2340,7 @@ function renderDependencyReadiness(payload) {
       ${selectedModel}
       <div>${escapeHtml(item.user_message || '')}</div>
       ${startupInfo}
+      ${startupStep}
       <div>Next step: ${escapeHtml(item.next_action || 'No action needed.')}</div>
       ${fallbackInfo}
       ${startupLog}
