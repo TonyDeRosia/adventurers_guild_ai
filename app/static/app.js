@@ -2006,6 +2006,25 @@ function bindClickOnce(element, handler) {
   element.onclick = handler;
 }
 
+function getElementByIdOrWarn(id) {
+  const element = document.getElementById(id);
+  if (!element) {
+    console.warn(`[ui-init] Missing expected element: #${id}`);
+  }
+  return element;
+}
+
+function bindClickById(id, handler, { once = false } = {}) {
+  const element = getElementByIdOrWarn(id);
+  if (!element) return null;
+  if (once) {
+    bindClickOnce(element, handler);
+  } else {
+    element.onclick = handler;
+  }
+  return element;
+}
+
 async function refreshImageSetupSnapshot() {
   try {
     const payload = await api('/api/setup/image-readiness-card');
@@ -2809,49 +2828,49 @@ async function loadSettings() {
   await refreshComfyuiModelList();
 }
 
-document.getElementById('send-btn').onclick = sendInput;
-document.getElementById('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendInput(); });
+bindClickById('send-btn', sendInput);
+getElementByIdOrWarn('chat-input')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendInput(); });
 if (inputModeToggle) inputModeToggle.onclick = toggleInputMode;
 renderInputModeToggle();
-document.getElementById('load-selected').onclick = loadSelectedCampaign;
-document.getElementById('open-campaign-browser').onclick = openCampaignBrowser;
-document.getElementById('new-campaign').onclick = openNewCampaignModal;
-document.getElementById('close-campaign-browser').onclick = closeCampaignBrowser;
-document.getElementById('create-campaign-cancel').onclick = closeNewCampaignModal;
-document.getElementById('create-campaign-confirm').onclick = createCampaignFromForm;
-document.getElementById('image-generate-submit').onclick = generateImage;
-document.getElementById('save-campaign').onclick = saveCampaign;
-document.getElementById('rename-campaign').onclick = renameCampaign;
-document.getElementById('delete-campaign').onclick = deleteCampaign;
-document.getElementById('apply-settings').onclick = applySettings;
-document.getElementById('open-setup-modal').onclick = openSetupModal;
-document.getElementById('close-setup-modal').onclick = closeSetupModal;
-document.getElementById('setup-text-ai').onclick = () => runReadinessAction('setup_text_ai', {});
-bindClickOnce(document.getElementById('setup-image-ai'), () => runReadinessAction('setup_image_ai', {}).catch((error) => setStatus(error.message, true)));
-document.getElementById('setup-everything').onclick = () => runReadinessAction('setup_everything', {});
-document.getElementById('download-ollama').onclick = () => openOfficialDownload('https://ollama.com/download');
-document.getElementById('pick-ollama-folder').onclick = () => pickFolder('Select Ollama install folder', ollamaPathInput);
+bindClickById('load-selected', loadSelectedCampaign);
+bindClickById('open-campaign-browser', openCampaignBrowser);
+bindClickById('new-campaign', openNewCampaignModal);
+bindClickById('close-campaign-browser', closeCampaignBrowser);
+bindClickById('create-campaign-cancel', closeNewCampaignModal);
+bindClickById('create-campaign-confirm', createCampaignFromForm);
+bindClickById('image-generate-submit', generateImage);
+bindClickById('save-campaign', saveCampaign);
+bindClickById('rename-campaign', renameCampaign);
+bindClickById('delete-campaign', deleteCampaign);
+bindClickById('apply-settings', applySettings);
+bindClickById('open-setup-modal', openSetupModal);
+bindClickById('close-setup-modal', closeSetupModal);
+bindClickById('setup-text-ai', () => runReadinessAction('setup_text_ai', {}));
+bindClickById('setup-image-ai', () => runReadinessAction('setup_image_ai', {}).catch((error) => setStatus(error.message, true)), { once: true });
+bindClickById('setup-everything', () => runReadinessAction('setup_everything', {}));
+bindClickById('download-ollama', () => openOfficialDownload('https://ollama.com/download'));
+bindClickById('pick-ollama-folder', () => pickFolder('Select Ollama install folder', ollamaPathInput));
 bindClickOnce(disableImageAiButton, () => skipImagesForNow().catch((error) => setStatus(error.message, true)));
 bindClickOnce(retryImageAiSetupButton, () => runReadinessAction('setup_image_ai', {}).catch((error) => setStatus(error.message, true)));
 bindClickOnce(openImageBackendFolderButton, () => openLocalPath(latestImageBackendDiagnostics?.diagnostics?.comfyui_path, 'Image backend folder').catch((error) => setStatus(error.message, true)));
 bindClickOnce(showImageDiagnosticsButton, () => refreshImageBackendDiagnostics().catch((error) => setStatus(error.message, true)));
-document.getElementById('connect-ollama-folder').onclick = connectOllamaFolder;
-document.getElementById('install-story-model').onclick = () => runReadinessAction('install_model', { selected_model: document.getElementById('model-name').value.trim() || 'llama3' });
-document.getElementById('refresh-supported-models').onclick = async () => {
+bindClickById('connect-ollama-folder', connectOllamaFolder);
+bindClickById('install-story-model', () => runReadinessAction('install_model', { selected_model: getElementByIdOrWarn('model-name')?.value.trim() || 'llama3' }));
+bindClickById('refresh-supported-models', async () => {
   try {
     await api('/api/models/refresh', { method: 'POST' });
     await refreshSupportedModels(true);
   } catch (error) {
     setStatus(error.message, true);
   }
-};
-document.getElementById('recheck-readiness').onclick = async () => {
+});
+bindClickById('recheck-readiness', async () => {
   try {
     await runReadinessAction('recheck', {});
   } catch (error) {
     setStatus(error.message, true);
   }
-};
+});
 if (manualImageEnabledInput) {
   manualImageEnabledInput.onchange = () => syncVisualModeUi({ manualEnabled: !!manualImageEnabledInput.checked });
 }
