@@ -18,19 +18,26 @@ def _comfy_root(tmp_path: Path) -> Path:
     (comfy_dir / "main.py").write_text("print('ok')", encoding="utf-8")
     for folder in ("custom_nodes", "models", "output", "input", "user"):
         (comfy_dir / folder).mkdir(exist_ok=True)
-    (comfy_dir / "run_nvidia_gpu.bat").write_text("@echo off\necho launch", encoding="utf-8")
+    (comfy_dir / "run_nvidia_gpu.bat").write_text("@echo off\npython main.py --windows-standalone-build", encoding="utf-8")
+    runtime_python = comfy_dir / ".venv" / "Scripts" / "python.exe"
+    runtime_python.parent.mkdir(parents=True, exist_ok=True)
+    runtime_python.write_text("", encoding="utf-8")
     return comfy_dir
 
 
-def test_build_launch_command_uses_portable_nvidia_launcher(tmp_path: Path, monkeypatch) -> None:
+def test_build_launch_command_uses_direct_python_without_batch_wrapper(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     comfy_dir = _comfy_root(tmp_path)
     monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt", path=os.path))
 
     command, launcher = runtime._build_comfy_launch_command(comfy_dir, "127.0.0.1", 8188)
 
-    assert launcher == "portable_nvidia_launcher"
-    assert command == ["cmd.exe", "/d", "/c", "run_nvidia_gpu.bat", "--listen", "127.0.0.1", "--port", "8188"]
+    assert launcher == "portable_python_direct"
+    assert command[0].endswith("python.exe")
+    assert command[1] == "main.py"
+    assert "--windows-standalone-build" in command
+    assert "--listen" in command and "127.0.0.1" in command
+    assert "--port" in command and "8188" in command
 
 
 def test_detect_child_process_uses_port_probe(tmp_path: Path, monkeypatch) -> None:
@@ -41,7 +48,7 @@ def test_detect_child_process_uses_port_probe(tmp_path: Path, monkeypatch) -> No
             return 1
 
     monkeypatch.setattr(runtime, "_is_port_listening", lambda *_args, **_kwargs: True)
-    assert runtime._detect_comfy_child_process("127.0.0.1", 8188, _FakeProcess()) is True
+    assert runtime._detect_comfy_child_process(_FakeProcess(), ["http://127.0.0.1:8188"]) is True
 
 
 def test_start_image_engine_reports_immediate_launcher_exit_with_output(tmp_path: Path, monkeypatch) -> None:

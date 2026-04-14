@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import shutil
 import socket
 import subprocess
@@ -2663,6 +2664,7 @@ class WebRuntime:
             "error:",
             "failed to import",
             "no module named",
+            "press any key to continue",
         ]
         for marker in markers:
             if marker in lowered:
@@ -2711,14 +2713,49 @@ class WebRuntime:
         }
 
     def _build_comfy_launch_command(self, comfyui_root: Path, host: str, port: int) -> tuple[list[str], str]:
-        if os.name == "nt" and (comfyui_root / "run_nvidia_gpu.bat").exists():
-            return [
-                "cmd.exe",
-                "/d",
-                "/c",
-                "run_nvidia_gpu.bat",
-            ], "portable_nvidia_launcher"
+        if os.name == "nt":
+            for launcher in (comfyui_root / "run_nvidia_gpu.bat", comfyui_root / "run_cpu.bat"):
+                if not launcher.exists():
+                    continue
+                command = self._build_python_main_command_from_batch(launcher, comfyui_root, host, port)
+                if command:
+                    return command, "portable_python_direct"
         return [], "python_runtime_not_found"
+
+    def _extract_main_py_args_from_batch(self, launcher_path: Path) -> list[str]:
+        try:
+            lines = launcher_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            return []
+        for raw_line in lines:
+            line = raw_line.strip()
+            lowered = line.lower()
+            if not line or lowered in {"@echo off", "echo off"} or lowered.startswith("rem "):
+                continue
+            if "pause" in lowered or "press any key" in lowered:
+                continue
+            if "main.py" not in lowered:
+                continue
+            try:
+                tokens = shlex.split(line, posix=False)
+            except ValueError:
+                continue
+            main_idx = next((index for index, token in enumerate(tokens) if "main.py" in token.lower()), -1)
+            if main_idx < 0:
+                continue
+            return [token.strip().strip('"') for token in tokens[main_idx + 1 :] if token.strip()]
+        return []
+
+    def _build_python_main_command_from_batch(self, launcher_path: Path, comfyui_root: Path, host: str, port: int) -> list[str]:
+        venv_python = self._venv_python_executable(comfyui_root / ".venv")
+        if not venv_python.exists():
+            return []
+        args = self._extract_main_py_args_from_batch(launcher_path)
+        if "--listen" not in args:
+            args.extend(["--listen", host])
+        if "--port" not in args:
+            args.extend(["--port", str(port)])
+        return [str(venv_python), "main.py", *args]
 
     def _validate_python_runtime(self, executable: str, launcher_type: str) -> dict[str, Any]:
         command = [executable, "--version"]
@@ -2770,31 +2807,34 @@ class WebRuntime:
         cpu_script = comfyui_root / "run_cpu.bat"
         attempts: list[dict[str, Any]] = []
         if os.name == "nt" and nvidia_script.exists():
-            attempts.append(
-                {
-                    "mode": "nvidia_gpu",
-                    "command": [
-                        "cmd.exe",
-                        "/d",
-                        "/c",
-                        str(nvidia_script),
-                    ],
-                    "launcher_type": "windows_batch",
-                    "label": "nvidia_gpu",
-                }
-            )
+            nvidia_command = self._build_python_main_command_from_batch(nvidia_script, comfyui_root, host, port)
+            if nvidia_command:
+                attempts.append(
+                    {
+                        "mode": "nvidia_gpu",
+                        "command": nvidia_command,
+                        "launcher_type": "python_main_direct",
+                        "label": "nvidia_gpu",
+                    }
+                )
         if os.name == "nt" and cpu_script.exists():
+            cpu_command = self._build_python_main_command_from_batch(cpu_script, comfyui_root, host, port)
+            if cpu_command:
+                attempts.append(
+                    {
+                        "mode": "cpu",
+                        "command": cpu_command,
+                        "launcher_type": "python_main_direct",
+                        "label": "cpu",
+                    }
+                )
+        if not attempts and launch_command:
             attempts.append(
                 {
-                    "mode": "cpu",
-                    "command": [
-                        "cmd.exe",
-                        "/d",
-                        "/c",
-                        str(cpu_script),
-                    ],
-                    "launcher_type": "windows_batch",
-                    "label": "cpu",
+                    "mode": "python_main",
+                    "command": list(launch_command),
+                    "launcher_type": launcher_type,
+                    "label": "python_main",
                 }
             )
         return attempts
