@@ -66,6 +66,11 @@ from models.ollama_adapter import OllamaAdapter
 from models.registry import create_model_adapter
 from models.supported_models import get_supported_model, get_supported_models
 
+try:
+    import py7zr
+except ModuleNotFoundError:  # pragma: no cover - optional dependency in some test environments
+    py7zr = None
+
 
 @dataclass
 class WebSession:
@@ -753,6 +758,10 @@ class WebRuntime:
             return False
         return ".." not in member_path.parts
 
+    @staticmethod
+    def _archive_extension(path: Path) -> str:
+        return str(path.suffix or "").strip().lower()
+
     def _resolve_comfyui_source_layout(self, source_root: Path) -> dict[str, Any]:
         resolved_source = source_root.resolve()
         selected_source_type = "source_folder"
@@ -816,29 +825,57 @@ class WebRuntime:
             "resolved_source_dir": str(resolved_source_dir),
         }
 
-    def _extract_comfyui_zip_to_temp(self, source: Path) -> dict[str, Any]:
+    def _extract_comfyui_archive_to_temp(self, source: Path) -> dict[str, Any]:
+        extension = self._archive_extension(source)
+        temp_root = Path(tempfile.mkdtemp(prefix="agai-comfyui-import-"))
         try:
-            with zipfile.ZipFile(source, "r") as archive:
-                members = archive.namelist()
-                if not members:
-                    return {"ok": False, "message": "ComfyUI zip archive is empty.", "error_code": "comfyui_zip_empty"}
-                unsafe = [member for member in members if not self._zip_member_is_safe(member)]
-                if unsafe:
+            if extension == ".zip":
+                with zipfile.ZipFile(source, "r") as archive:
+                    members = archive.namelist()
+                    if not members:
+                        return {"ok": False, "message": "ComfyUI zip archive is empty.", "error_code": "comfyui_zip_empty"}
+                    unsafe = [member for member in members if not self._zip_member_is_safe(member)]
+                    if unsafe:
+                        return {
+                            "ok": False,
+                            "message": "ComfyUI zip archive contains unsafe paths.",
+                            "error_code": "comfyui_zip_unsafe_paths",
+                            "detail": ", ".join(unsafe[:5]),
+                        }
+                    archive.extractall(temp_root)
+            elif extension == ".7z":
+                if py7zr is None:
                     return {
                         "ok": False,
-                        "message": "ComfyUI zip archive contains unsafe paths.",
-                        "error_code": "comfyui_zip_unsafe_paths",
-                        "detail": ", ".join(unsafe[:5]),
+                        "message": "7z support is not available. Install py7zr to import .7z archives.",
+                        "error_code": "comfyui_7z_support_missing",
                     }
-                temp_root = Path(tempfile.mkdtemp(prefix="agai-comfyui-import-"))
-                archive.extractall(temp_root)
+                with py7zr.SevenZipFile(source, mode="r") as archive:
+                    members = archive.getnames()
+                    if not members:
+                        return {"ok": False, "message": "ComfyUI 7z archive is empty.", "error_code": "comfyui_7z_empty"}
+                    unsafe = [member for member in members if not self._zip_member_is_safe(member)]
+                    if unsafe:
+                        return {
+                            "ok": False,
+                            "message": "ComfyUI 7z archive contains unsafe paths.",
+                            "error_code": "comfyui_7z_unsafe_paths",
+                            "detail": ", ".join(unsafe[:5]),
+                        }
+                    archive.extractall(path=temp_root)
+            else:
+                return {
+                    "ok": False,
+                    "message": "ComfyUI source file must be a .zip or .7z archive.",
+                    "error_code": "comfyui_archive_unsupported",
+                }
         except zipfile.BadZipFile:
             return {"ok": False, "message": "Selected file is not a valid zip archive.", "error_code": "comfyui_zip_invalid"}
-        except (OSError, PermissionError) as exc:
+        except Exception as exc:
             return {
                 "ok": False,
-                "message": "ComfyUI zip extraction failed.",
-                "error_code": "comfyui_zip_extract_failed",
+                "message": "ComfyUI archive extraction failed.",
+                "error_code": "comfyui_archive_extract_failed",
                 "detail": str(exc),
             }
 
@@ -855,27 +892,27 @@ class WebRuntime:
         shutil.rmtree(temp_root, ignore_errors=True)
         return {
             "ok": False,
-            "message": "Zip archive does not contain a valid ComfyUI runtime layout.",
-            "error_code": "comfyui_zip_missing_runtime",
+            "message": "Archive does not contain a valid ComfyUI runtime layout.",
+            "error_code": "comfyui_archive_missing_runtime",
         }
 
     def _validate_comfyui_import_source(self, source: Path) -> dict[str, Any]:
         if not source.exists():
             return {"ok": False, "message": "ComfyUI source path does not exist."}
         if source.is_file():
-            if source.suffix.lower() != ".zip":
-                return {"ok": False, "message": "ComfyUI source file must be a .zip archive."}
-            zip_validation = self._extract_comfyui_zip_to_temp(source)
+            if self._archive_extension(source) not in {".zip", ".7z"}:
+                return {"ok": False, "message": "ComfyUI source file must be a .zip or .7z archive."}
+            zip_validation = self._extract_comfyui_archive_to_temp(source)
             temp_root = Path(str(zip_validation.get("temp_root", ""))).resolve() if zip_validation.get("temp_root") else None
             if temp_root is not None and temp_root.exists():
                 shutil.rmtree(temp_root, ignore_errors=True)
             if not zip_validation.get("ok", False):
                 return {
                     "ok": False,
-                    "message": str(zip_validation.get("message", "ComfyUI zip is invalid.")),
-                    "error_code": str(zip_validation.get("error_code", "comfyui_zip_invalid")),
+                    "message": str(zip_validation.get("message", "ComfyUI archive is invalid.")),
+                    "error_code": str(zip_validation.get("error_code", "comfyui_archive_invalid")),
                 }
-            return {"ok": True, "kind": "zip"}
+            return {"ok": True, "kind": "archive"}
         if source.is_dir():
             return self._resolve_comfyui_source_layout(source)
         return {"ok": False, "message": "ComfyUI source must be a file or folder."}
@@ -923,13 +960,13 @@ class WebRuntime:
         import_source_dir: Path | None = None
         temp_extract_root: Path | None = None
         try:
-            if validation.get("kind") == "zip":
-                zip_extract = self._extract_comfyui_zip_to_temp(source)
+            if validation.get("kind") == "archive":
+                zip_extract = self._extract_comfyui_archive_to_temp(source)
                 if not zip_extract.get("ok", False):
                     return {
                         "ok": False,
-                        "message": str(zip_extract.get("message", "ComfyUI zip extraction failed.")),
-                        "error_code": str(zip_extract.get("error_code", "comfyui_zip_extract_failed")),
+                        "message": str(zip_extract.get("message", "ComfyUI archive extraction failed.")),
+                        "error_code": str(zip_extract.get("error_code", "comfyui_archive_extract_failed")),
                         "detail": str(zip_extract.get("detail", "")),
                     }
                 temp_extract_root = Path(str(zip_extract.get("temp_root", "")))
@@ -1013,162 +1050,167 @@ class WebRuntime:
         return payload
 
     def import_and_setup_image_ai(self, comfyui_source: str, model_source: str) -> dict[str, Any]:
-        comfy_source_path = Path(str(comfyui_source or "").strip())
-        model_source_path = Path(str(model_source or "").strip())
-        steps: list[dict[str, str]] = []
-        if not str(comfy_source_path):
-            return self._image_import_failure(
-                steps=[],
-                stage="validate-comfyui-source",
-                message="ComfyUI source is required.",
-                next_step="Select a ComfyUI source folder or .zip and retry import.",
-                error_code="image_import_missing_comfyui_source",
-            )
-        if not str(model_source_path):
-            return self._image_import_failure(
-                steps=[],
-                stage="validate-model-source",
-                message="Model source is required.",
-                next_step="Select a model file/folder and retry import.",
-                error_code="image_import_missing_model_source",
-            )
-        comfy_validation = self._validate_comfyui_import_source(comfy_source_path)
-        if not comfy_validation.get("ok", False):
-            return self._image_import_failure(
-                steps=[],
-                stage="validate-comfyui-source",
-                message=str(comfy_validation.get("message", "ComfyUI source is invalid.")),
-                next_step="Choose a valid ComfyUI source folder (with main.py) or portable .zip.",
-                error_code="image_import_invalid_comfyui_source",
-            )
-        steps.append({"step": "validate-comfyui-source", "state": "ready", "message": "ComfyUI source validated."})
-        if not model_source_path.exists():
-            return self._image_import_failure(
-                steps=steps,
-                stage="validate-model-source",
-                message="Model source path does not exist.",
-                next_step="Pick an existing model file or folder and retry import.",
-                error_code="image_import_model_source_missing",
-            )
-        if model_source_path.is_file() and not self._is_supported_model_file(model_source_path):
-            return self._image_import_failure(
-                steps=steps,
-                stage="validate-model-source",
-                message="Model file must be .safetensors, .ckpt, .pt, .pth, or .bin.",
-                next_step="Select a supported checkpoint/model file and retry import.",
-                error_code="image_import_model_source_unsupported",
-            )
-        steps.append({"step": "validate-model-source", "state": "ready", "message": "Model source validated."})
-        managed_root = self._coerce_managed_install_path()
-        comfy_result = self._import_comfyui_source(comfy_source_path, managed_root)
-        if not comfy_result.get("ok", False):
-            return self._image_import_failure(
-                steps=steps,
-                stage="import-comfyui",
-                message=str(comfy_result.get("message", "ComfyUI import failed.")),
-                next_step="Verify the source path permissions and retry import.",
-                error_code=str(comfy_result.get("error_code", "image_import_comfyui_copy_failed")),
-                detail=str(comfy_result.get("detail", "")),
-            )
-        steps.append({"step": "import-comfyui", "state": "ready", "message": "ComfyUI imported into managed runtime."})
-        self._ensure_managed_comfyui_launchers(managed_root)
-        if os.name == "nt":
-            launchers_missing = [
-                launcher
-                for launcher in ("run_cpu.bat", "run_nvidia_gpu.bat")
-                if not (managed_root / launcher).is_file()
-            ]
-            if launchers_missing:
+        if not self._image_setup_flow_lock.acquire(blocking=False):
+            return self._image_setup_busy_response(requester="import-and-setup-image-ai")
+        try:
+            comfy_source_path = Path(str(comfyui_source or "").strip())
+            model_source_path = Path(str(model_source or "").strip())
+            steps: list[dict[str, str]] = []
+            if not str(comfy_source_path):
+                return self._image_import_failure(
+                    steps=[],
+                    stage="validate-comfyui-source",
+                    message="ComfyUI source is required.",
+                    next_step="Select a ComfyUI source folder or archive and retry import.",
+                    error_code="image_import_missing_comfyui_source",
+                )
+            if not str(model_source_path):
+                return self._image_import_failure(
+                    steps=[],
+                    stage="validate-model-source",
+                    message="Model source is required.",
+                    next_step="Select a model file/folder and retry import.",
+                    error_code="image_import_missing_model_source",
+                )
+            comfy_validation = self._validate_comfyui_import_source(comfy_source_path)
+            if not comfy_validation.get("ok", False):
+                return self._image_import_failure(
+                    steps=[],
+                    stage="validate-comfyui-source",
+                    message=str(comfy_validation.get("message", "ComfyUI source is invalid.")),
+                    next_step="Choose a valid ComfyUI source folder (with main.py) or portable .zip/.7z archive.",
+                    error_code="image_import_invalid_comfyui_source",
+                )
+            steps.append({"step": "validate-comfyui-source", "state": "ready", "message": "ComfyUI source validated."})
+            if not model_source_path.exists():
                 return self._image_import_failure(
                     steps=steps,
-                    stage="validate-launchers",
-                    message=f"Managed ComfyUI launchers are missing: {', '.join(launchers_missing)}.",
-                    next_step="Retry import/setup to recreate launcher files.",
-                    error_code="image_import_launchers_missing",
+                    stage="validate-model-source",
+                    message="Model source path does not exist.",
+                    next_step="Pick an existing model file or folder and retry import.",
+                    error_code="image_import_model_source_missing",
                 )
-        steps.append({"step": "validate-launchers", "state": "ready", "message": "Managed launcher files validated."})
-        repair_ok, repair_message = self._repair_managed_comfyui_install(managed_root)
-        if not repair_ok:
-            return self._image_import_failure(
-                steps=steps,
-                stage="repair-managed-runtime",
-                message=repair_message,
-                next_step="Retry setup to rebuild the managed Python runtime.",
-                error_code="image_import_runtime_repair_failed",
-            )
-        steps.append({"step": "repair-managed-runtime", "state": "ready", "message": repair_message})
-        install_validation = self.validate_comfyui_install(managed_root)
-        if not install_validation.get("ok", False):
-            missing = ", ".join(install_validation.get("missing_files", []))
-            return self._image_import_failure(
-                steps=steps,
-                stage="validate-managed-install",
-                message=f"Managed ComfyUI install is missing required files: {missing}.",
-                next_step="Retry setup to repair the managed install/runtime.",
-                error_code="image_import_managed_install_invalid",
-            )
-        steps.append({"step": "validate-managed-install", "state": "ready", "message": "Managed ComfyUI install structure is valid."})
-        checkpoint_target = managed_root / "models" / "checkpoints"
-        model_result = self._import_model_source(model_source_path, checkpoint_target)
-        if not model_result.get("ok", False):
-            return self._image_import_failure(
-                steps=steps,
-                stage="import-model",
-                message=str(model_result.get("message", "Model import failed.")),
-                next_step="Select a supported model file/folder and retry import.",
-                error_code="image_import_model_copy_failed",
-            )
-        steps.append({"step": "import-model", "state": "ready", "message": "Model imported into managed checkpoint folder."})
-        self.app_config.image.provider = "comfyui"
-        self.app_config.image.enabled = True
-        self.app_config.image.comfyui_path = ""
-        self.app_config.image.managed_install_path = str(managed_root)
-        self.app_config.image.checkpoint_folder = str(checkpoint_target)
-        self.app_config.image.preferred_checkpoint = str(model_result.get("active_model", ""))
-        self.app_config.image.comfyui_output_dir = str(self.generated_image_dir)
-        default_workflow = self._default_workflow_path()
-        if default_workflow.exists():
-            self.app_config.image.comfyui_workflow_path = str(default_workflow)
-        self.config_store.save(self.app_config)
-        self.image_adapter = self._create_image_adapter()
-        steps.append({"step": "prepare-runtime", "state": "ready", "message": "Runtime configuration prepared."})
-        start_result = self.start_image_engine()
-        if not start_result.get("ok", False):
-            payload = self._image_import_failure(
-                steps=steps,
-                stage="start-image-ai",
-                message=str(start_result.get("message", "Import succeeded but launch failed.")),
-                next_step=str(start_result.get("next_step", "Open setup details, fix the reported stage, then retry.")),
-                error_code="image_import_startup_failed",
-            )
-            payload["managed_comfyui_path"] = str(managed_root)
-            payload["managed_checkpoint_path"] = str(checkpoint_target)
-            payload["startup"] = start_result
-            return payload
-        steps.append({"step": "start-image-ai", "state": "ready", "message": str(start_result.get("message", "ComfyUI started."))})
-        ready = bool(self.get_image_status().get("reachable", False))
-        if not ready:
-            payload = self._image_import_failure(
-                steps=steps,
-                stage="readiness-check",
-                message="Image AI startup completed but readiness check did not pass.",
-                next_step="Wait for ComfyUI startup to finish, then click Recheck.",
-                error_code="image_import_readiness_failed",
-            )
-            payload["managed_comfyui_path"] = str(managed_root)
-            payload["managed_checkpoint_path"] = str(checkpoint_target)
-            return payload
-        steps.append({"step": "readiness-check", "state": "ready", "message": "ComfyUI is reachable and connected."})
-        return {
-            "ok": True,
-            "message": "Image AI imported, set up, started in background, and connected.",
-            "summary": "Image AI connected.",
-            "steps": steps,
-            "managed_comfyui_path": str(managed_root),
-            "managed_checkpoint_path": str(checkpoint_target),
-            "preferred_checkpoint": self.app_config.image.preferred_checkpoint,
-            "startup": start_result,
-        }
+            if model_source_path.is_file() and not self._is_supported_model_file(model_source_path):
+                return self._image_import_failure(
+                    steps=steps,
+                    stage="validate-model-source",
+                    message="Model file must be .safetensors, .ckpt, .pt, .pth, or .bin.",
+                    next_step="Select a supported checkpoint/model file and retry import.",
+                    error_code="image_import_model_source_unsupported",
+                )
+            steps.append({"step": "validate-model-source", "state": "ready", "message": "Model source validated."})
+            managed_root = self._coerce_managed_install_path()
+            comfy_result = self._import_comfyui_source(comfy_source_path, managed_root)
+            if not comfy_result.get("ok", False):
+                return self._image_import_failure(
+                    steps=steps,
+                    stage="import-comfyui",
+                    message=str(comfy_result.get("message", "ComfyUI import failed.")),
+                    next_step="Verify the source path permissions and retry import.",
+                    error_code=str(comfy_result.get("error_code", "image_import_comfyui_copy_failed")),
+                    detail=str(comfy_result.get("detail", "")),
+                )
+            steps.append({"step": "import-comfyui", "state": "ready", "message": "ComfyUI imported into managed runtime."})
+            self._ensure_managed_comfyui_launchers(managed_root)
+            if os.name == "nt":
+                launchers_missing = [
+                    launcher
+                    for launcher in ("run_cpu.bat", "run_nvidia_gpu.bat")
+                    if not (managed_root / launcher).is_file()
+                ]
+                if launchers_missing:
+                    return self._image_import_failure(
+                        steps=steps,
+                        stage="validate-launchers",
+                        message=f"Managed ComfyUI launchers are missing: {', '.join(launchers_missing)}.",
+                        next_step="Retry import/setup to recreate launcher files.",
+                        error_code="image_import_launchers_missing",
+                    )
+            steps.append({"step": "validate-launchers", "state": "ready", "message": "Managed launcher files validated."})
+            repair_ok, repair_message = self._repair_managed_comfyui_install(managed_root)
+            if not repair_ok:
+                return self._image_import_failure(
+                    steps=steps,
+                    stage="repair-managed-runtime",
+                    message=repair_message,
+                    next_step="Retry setup to rebuild the managed Python runtime.",
+                    error_code="image_import_runtime_repair_failed",
+                )
+            steps.append({"step": "repair-managed-runtime", "state": "ready", "message": repair_message})
+            install_validation = self.validate_comfyui_install(managed_root)
+            if not install_validation.get("ok", False):
+                missing = ", ".join(install_validation.get("missing_files", []))
+                return self._image_import_failure(
+                    steps=steps,
+                    stage="validate-managed-install",
+                    message=f"Managed ComfyUI install is missing required files: {missing}.",
+                    next_step="Retry setup to repair the managed install/runtime.",
+                    error_code="image_import_managed_install_invalid",
+                )
+            steps.append({"step": "validate-managed-install", "state": "ready", "message": "Managed ComfyUI install structure is valid."})
+            checkpoint_target = managed_root / "models" / "checkpoints"
+            model_result = self._import_model_source(model_source_path, checkpoint_target)
+            if not model_result.get("ok", False):
+                return self._image_import_failure(
+                    steps=steps,
+                    stage="import-model",
+                    message=str(model_result.get("message", "Model import failed.")),
+                    next_step="Select a supported model file/folder and retry import.",
+                    error_code="image_import_model_copy_failed",
+                )
+            steps.append({"step": "import-model", "state": "ready", "message": "Model imported into managed checkpoint folder."})
+            self.app_config.image.provider = "comfyui"
+            self.app_config.image.enabled = True
+            self.app_config.image.comfyui_path = ""
+            self.app_config.image.managed_install_path = str(managed_root)
+            self.app_config.image.checkpoint_folder = str(checkpoint_target)
+            self.app_config.image.preferred_checkpoint = str(model_result.get("active_model", ""))
+            self.app_config.image.comfyui_output_dir = str(self.generated_image_dir)
+            default_workflow = self._default_workflow_path()
+            if default_workflow.exists():
+                self.app_config.image.comfyui_workflow_path = str(default_workflow)
+            self.config_store.save(self.app_config)
+            self.image_adapter = self._create_image_adapter()
+            steps.append({"step": "prepare-runtime", "state": "ready", "message": "Runtime configuration prepared."})
+            start_result = self.start_image_engine(setup_lock_owned=True)
+            if not start_result.get("ok", False):
+                payload = self._image_import_failure(
+                    steps=steps,
+                    stage="start-image-ai",
+                    message=str(start_result.get("message", "Import succeeded but launch failed.")),
+                    next_step=str(start_result.get("next_step", "Open setup details, fix the reported stage, then retry.")),
+                    error_code="image_import_startup_failed",
+                )
+                payload["managed_comfyui_path"] = str(managed_root)
+                payload["managed_checkpoint_path"] = str(checkpoint_target)
+                payload["startup"] = start_result
+                return payload
+            steps.append({"step": "start-image-ai", "state": "ready", "message": str(start_result.get("message", "ComfyUI started."))})
+            ready = bool(self.get_image_status().get("reachable", False))
+            if not ready:
+                payload = self._image_import_failure(
+                    steps=steps,
+                    stage="readiness-check",
+                    message="Image AI startup completed but readiness check did not pass.",
+                    next_step="Wait for ComfyUI startup to finish, then click Recheck.",
+                    error_code="image_import_readiness_failed",
+                )
+                payload["managed_comfyui_path"] = str(managed_root)
+                payload["managed_checkpoint_path"] = str(checkpoint_target)
+                return payload
+            steps.append({"step": "readiness-check", "state": "ready", "message": "ComfyUI is reachable and connected."})
+            return {
+                "ok": True,
+                "message": "Image AI imported, set up, started in background, and connected.",
+                "summary": "Image AI connected.",
+                "steps": steps,
+                "managed_comfyui_path": str(managed_root),
+                "managed_checkpoint_path": str(checkpoint_target),
+                "preferred_checkpoint": self.app_config.image.preferred_checkpoint,
+                "startup": start_result,
+            }
+        finally:
+            self._image_setup_flow_lock.release()
 
     def get_image_backend_diagnostics(self) -> dict[str, Any]:
         path_status = self.get_path_configuration_status().get("image", {})
@@ -2419,6 +2461,14 @@ class WebRuntime:
                 shutil.rmtree(cleanup_target, ignore_errors=True)
             elif cleanup_target.exists():
                 cleanup_target.unlink(missing_ok=True)
+
+    @staticmethod
+    def _dependency_failure_requires_runtime_recreate(result: dict[str, Any]) -> bool:
+        returncode = result.get("returncode")
+        detail = str(result.get("detail", "")).lower()
+        error_line = str(result.get("error_line", "")).lower()
+        message = str(result.get("message", "")).lower()
+        return returncode == 106 or "pyvenv.cfg" in detail or "pyvenv.cfg" in error_line or "exit code 106" in message
 
     def _install_embedded_python_runtime(self, target_dir: Path) -> tuple[bool, str]:
         """Compatibility shim: managed runtime now uses a local .venv."""
@@ -3837,7 +3887,34 @@ class WebRuntime:
             launcher_type = str(preflight.get("launcher_type", "unknown"))
             self._update_image_bootstrap_progress(state="verifying pip", step="dependency-bootstrap", summary="Bootstrapping Python dependencies for ComfyUI.")
             print("[setup-orchestrator] setup-image step=dependency-bootstrap")
+            runtime_recovery_attempted = False
             dependency_bootstrap = self._bootstrap_comfy_python_dependencies(comfyui_root, launch_command, launcher_type)
+            if (
+                not dependency_bootstrap.get("ok", False)
+                and launch_mode == "managed"
+                and self._dependency_failure_requires_runtime_recreate(dependency_bootstrap)
+            ):
+                runtime_recovery_attempted = True
+                self._append_image_startup_log(
+                    startup_log_lines,
+                    "Detected broken managed .venv (pyvenv.cfg/exit-code-106). Recreating runtime from scratch.",
+                )
+                self._cleanup_managed_runtime_remnants(comfyui_root)
+                repaired, repaired_message = self._install_embedded_python_runtime(comfyui_root)
+                if repaired:
+                    self._append_image_startup_log(startup_log_lines, repaired_message)
+                    dependency_bootstrap = self._bootstrap_comfy_python_dependencies(comfyui_root, launch_command, launcher_type)
+                else:
+                    dependency_bootstrap = {
+                        "ok": False,
+                        "message": repaired_message,
+                        "detail": repaired_message,
+                        "error_category": "runtime-recreate-failed",
+                        "error_line": repaired_message,
+                        "returncode": None,
+                        "python_executable": "",
+                        "working_directory": str(comfyui_root),
+                    }
             if not dependency_bootstrap.get("ok", False):
                 message = str(dependency_bootstrap.get("message", "Dependency bootstrap failed for ComfyUI runtime."))
                 detail = str(dependency_bootstrap.get("detail", "")).strip()
@@ -3898,6 +3975,7 @@ class WebRuntime:
                         {"step": "resolve-python-runtime", "state": "ready", "message": f"Resolved runtime: {runtime_resolution.get('executable', '')}"},
                         {"step": "dependency-bootstrap", "state": "failed", "message": message},
                     ],
+                    "runtime_recovery_attempted": runtime_recovery_attempted,
                 }
             installed_packages = dependency_bootstrap.get("installed_packages", [])
             if installed_packages:

@@ -11,6 +11,7 @@ import os
 import platform
 import sys
 import webbrowser
+import ctypes
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -106,7 +107,14 @@ class DesktopIntegration:
         try:
             root = tk.Tk()
             root.withdraw()
-            selected = filedialog.askdirectory(title=title, initialdir=initial_path or self.capabilities.user_data_root)
+            previous_window = self._capture_windows_foreground_window()
+            self._prepare_dialog_root(root)
+            selected = filedialog.askdirectory(
+                title=title,
+                initialdir=initial_path or self.capabilities.user_data_root,
+                parent=root,
+            )
+            self._restore_windows_foreground_window(previous_window)
             root.destroy()
         except Exception as exc:  # pragma: no cover - OS GUI behavior specific
             return {"ok": False, "message": "Folder picker could not be opened.", "error": str(exc)}
@@ -128,7 +136,15 @@ class DesktopIntegration:
         try:
             root = tk.Tk()
             root.withdraw()
-            selected = filedialog.askopenfilename(title=title, initialdir=initial_dir, filetypes=file_types)
+            previous_window = self._capture_windows_foreground_window()
+            self._prepare_dialog_root(root)
+            selected = filedialog.askopenfilename(
+                title=title,
+                initialdir=initial_dir,
+                filetypes=file_types,
+                parent=root,
+            )
+            self._restore_windows_foreground_window(previous_window)
             root.destroy()
         except Exception as exc:  # pragma: no cover - OS GUI behavior specific
             return {"ok": False, "message": "File picker could not be opened.", "error": str(exc)}
@@ -157,3 +173,35 @@ class DesktopIntegration:
         if platform.system().lower() == "windows":
             return True
         return bool(os.getenv("DISPLAY") or os.getenv("WAYLAND_DISPLAY"))
+
+    @staticmethod
+    def _prepare_dialog_root(root: Any) -> None:
+        try:
+            root.update_idletasks()
+            root.attributes("-topmost", True)
+            root.deiconify()
+            root.lift()
+            root.focus_force()
+            root.update()
+            root.attributes("-topmost", False)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _capture_windows_foreground_window() -> int | None:
+        if platform.system().lower() != "windows":
+            return None
+        try:
+            hwnd = ctypes.windll.user32.GetForegroundWindow()
+            return int(hwnd) if hwnd else None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _restore_windows_foreground_window(previous_window: int | None) -> None:
+        if platform.system().lower() != "windows" or not previous_window:
+            return
+        try:
+            ctypes.windll.user32.SetForegroundWindow(previous_window)
+        except Exception:
+            return

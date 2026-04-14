@@ -318,6 +318,40 @@ def test_import_image_ai_accepts_comfyui_zip_source(tmp_path: Path, monkeypatch)
     assert (tmp_path / "user_data" / "tools" / "ComfyUI" / "main.py").exists()
 
 
+def test_import_image_ai_accepts_comfyui_7z_source(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    comfy_src = _make_comfy_source_folder(tmp_path)
+    archive_path = tmp_path / "ComfyUI.7z"
+    archive_path.write_text("fake", encoding="utf-8")
+    model_src = tmp_path / "model7z.safetensors"
+    model_src.write_text("model", encoding="utf-8")
+
+    class _Fake7zFile:
+        def __init__(self, _path: Path, mode: str = "r") -> None:
+            assert mode == "r"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def getnames(self):
+            return [f"ComfyUI/{path.relative_to(comfy_src)}" for path in comfy_src.rglob("*")]
+
+        def extractall(self, path: Path):
+            target = path / "ComfyUI"
+            shutil.copytree(comfy_src, target, dirs_exist_ok=True)
+
+    monkeypatch.setattr("app.web.py7zr", SimpleNamespace(SevenZipFile=_Fake7zFile))
+    monkeypatch.setattr(runtime, "start_image_engine", lambda **_kwargs: {"ok": True, "message": "started"})
+    monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": True, "ready": True})
+
+    result = runtime.import_and_setup_image_ai(str(archive_path), str(model_src))
+    assert result["ok"] is True
+    assert (tmp_path / "user_data" / "tools" / "ComfyUI" / "main.py").exists()
+
+
 def test_import_image_ai_zip_replaces_stale_managed_runtime_files(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     managed_root = tmp_path / "user_data" / "tools" / "ComfyUI"
@@ -455,6 +489,17 @@ def test_import_image_ai_retry_works_after_invalid_attempt(tmp_path: Path, monke
     model_src.write_text("good", encoding="utf-8")
     second = runtime.import_and_setup_image_ai(str(comfy_src), str(model_src))
     assert second["ok"] is True
+
+
+def test_import_image_ai_attaches_when_flow_already_running(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    assert runtime._image_setup_flow_lock.acquire(blocking=False) is True
+    try:
+        payload = runtime.import_and_setup_image_ai("C:/fake.zip", "C:/fake.safetensors")
+    finally:
+        runtime._image_setup_flow_lock.release()
+    assert payload["ok"] is True
+    assert payload["status"] == "running"
 
 
 def test_import_image_ai_primary_flow_reports_import_setup_launch_steps(tmp_path: Path, monkeypatch) -> None:

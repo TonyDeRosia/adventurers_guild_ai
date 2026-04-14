@@ -1341,11 +1341,19 @@ function buildSheetFromEditor() {
 
 async function api(path, options = {}) {
   const response = await fetch(path, options);
-  const data = await response.json().catch(() => ({ error: 'Invalid server response' }));
+  const text = await response.text();
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch (_error) {
+    data = { error: 'Invalid server response', detail: text.slice(0, 400) };
+  }
   if (!response.ok) {
     const detail = data.error || data.message || data.detail || data.reason || '';
     const nested = data.metadata?.error_body || '';
-    const composed = [detail, nested].filter(Boolean).join(' ').trim();
+    const stage = data.failure_stage ? `stage=${data.failure_stage}` : '';
+    const nextStep = data.next_step ? `next=${data.next_step}` : '';
+    const composed = [detail, nested, stage, nextStep].filter(Boolean).join(' ').trim();
     throw new Error(composed || `Request failed for ${path}`);
   }
   return data;
@@ -2887,7 +2895,7 @@ bindClickById('close-setup-modal', closeSetupModal);
 bindClickById('setup-text-ai', () => runReadinessAction('setup_text_ai', {}));
 bindClickById('open-comfyui-download-page', () => openOfficialDownload('https://github.com/comfyanonymous/ComfyUI/releases'));
 bindClickById('open-model-download-page', () => openOfficialDownload('https://civitai.com/models/4384/dreamshaper'));
-bindClickById('pick-image-import-comfy-file', () => pickFile('Select ComfyUI zip file', imageImportComfySourceInput, ['.zip']));
+bindClickById('pick-image-import-comfy-file', () => pickFile('Select ComfyUI archive file (.zip or .7z)', imageImportComfySourceInput, ['.zip', '.7z']));
 bindClickById('pick-image-import-comfy-folder', () => pickFolder('Select extracted ComfyUI folder', imageImportComfySourceInput));
 bindClickById('pick-image-import-model-file', () => pickFile('Select model/checkpoint file', imageImportModelSourceInput, ['.safetensors', '.ckpt', '.pt', '.pth', '.bin']));
 bindClickById('pick-image-import-model-folder', () => pickFolder('Select model/checkpoint folder', imageImportModelSourceInput));
