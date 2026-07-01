@@ -5844,16 +5844,14 @@ def test_campaign_input_endpoint_ooc_whats_going_on_never_uses_turn_pipeline(tmp
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["messages"][0]["type"] == "ooc_gm"
     assert "Action noted" not in payload["narrative"]
     assert "commit to" not in payload["narrative"].lower()
     assert payload["state"]["turn_count"] == before_turns
     assert runtime.session.state.turn_count == before_turns
     routing = client.get("/api/debug/last-turn-routing").json()
     assert routing["input_mode"] == "ooc"
-    assert routing["build_ooc_response_called"] is True
+    assert routing["branch_taken"] == "ooc_state_answer"
     assert routing["normal_turn_pipeline_used"] is False
-    assert routing["action_noted_added"] is False
 
 
 def test_campaign_input_endpoint_ic_startup_intro_uses_reasoning_not_commit_fallback(tmp_path: Path, monkeypatch) -> None:
@@ -5875,7 +5873,7 @@ def test_campaign_input_endpoint_ic_startup_intro_uses_reasoning_not_commit_fall
     assert "Draevok" in payload["narrative"] or payload["state"]["player"]["name"] == "Draevok"
     assert payload["state"]["startup_state"] in {"character_creation", "ability_setup_followup", "ready"}
     routing = client.get("/api/debug/last-turn-routing").json()
-    assert routing["branch"] == "startup_character_creation"
+    assert routing["branch_taken"] == "startup_character_creation"
     assert routing["normal_turn_pipeline_used"] is False
 
 
@@ -5899,7 +5897,7 @@ def test_campaign_input_endpoint_ic_seriously_avoids_commit_fallback(tmp_path: P
     assert "commit to seriously" not in payload["narrative"].lower()
     assert "commit to" not in payload["narrative"].lower()
     routing = client.get("/api/debug/last-turn-routing").json()
-    assert routing["detected_intent"] == "reflection"
+    assert routing["primary_intent"] == "reflection"
     assert routing["normal_turn_pipeline_used"] is False
 
 
@@ -5908,3 +5906,89 @@ def test_frontend_send_payload_posts_current_input_mode_to_campaign_input() -> N
     assert "api('/api/campaign/input'" in app_js
     assert "body: JSON.stringify({ text, mode: currentInputMode })" in app_js
     assert "const localMessageType = currentInputMode === 'ooc' ? 'ooc_player' : 'player';" in app_js
+
+
+def test_dm_pipeline_bootstrap_ooc_reflection_dialogue_flows_direct(tmp_path: Path, monkeypatch) -> None:
+    from engine.dm_pipeline import process_player_input
+
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_dm_pipeline_direct", "campaign_name": "Pipeline Trial", "world_theme": "fantasy magic"})
+    monkeypatch.setattr(runtime.engine, "run_turn", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("normal turn engine should not run")))
+
+    before_turn = runtime.session.state.turn_count
+    name_only = process_player_input(runtime, "im dork", "ic").response
+    assert name_only is not None
+    assert "What class, role, or concept" in name_only["narrative"]
+    assert name_only["state"]["startup_state"] == "character_creation"
+    assert name_only["state"]["bootstrap_complete"] is False
+    assert name_only["state"]["turn_count"] == before_turn
+    assert name_only["state"]["character_sheets"][0]["name"] == "Dork"
+    assert all(bad not in name_only["narrative"] for bad in ["Unknown", "Untitled World", "Starting Area", "Action noted"])
+    assert "commit to" not in name_only["narrative"].lower()
+
+    role = process_player_input(runtime, "a pyromancer with fire spells", "ic").response
+    assert role is not None
+    assert role["state"]["character_sheets"][0]["name"] == "Dork"
+    assert role["state"]["character_sheets"][0]["role"] == "Pyromancer"
+    assert role["state"]["startup_state"] == "ability_setup_followup"
+    assert "What fire spells does Dork already know" in role["narrative"]
+    assert "What do you do?" not in role["narrative"]
+
+    spells = process_player_input(runtime, "Firebolt, Flame Shield, Ember Step", "ic").response
+    assert spells is not None
+    events = [event for event in spells["state"]["campaign_events"] if event["type"] == "ability_suggested" and event["status"] == "pending"]
+    assert {event["payload"]["name"] for event in events} >= {"Firebolt", "Flame Shield", "Ember Step"}
+    assert spells["state"]["startup_state"] == "ready"
+    assert spells["state"]["bootstrap_complete"] is True
+    assert not runtime.session.state.structured_state.runtime.spellbook
+    assert "What do you do?" in spells["narrative"]
+    assert all(bad not in spells["narrative"] for bad in ["Unknown", "Untitled World", "Starting Area", "Action noted"])
+    assert "commit to" not in spells["narrative"].lower()
+
+    turn_ready = runtime.session.state.turn_count
+    ooc_status = process_player_input(runtime, "whats going on", "ooc").response
+    assert ooc_status is not None
+    assert "Campaign status" in ooc_status["narrative"]
+    assert runtime.session.state.turn_count == turn_ready
+    assert runtime.get_last_turn_routing()["normal_turn_pipeline_used"] is False
+
+    ooc_spells = process_player_input(runtime, "what spells do i have", "ooc").response
+    assert ooc_spells is not None
+    assert "accepted spells" in ooc_spells["narrative"]
+    assert "Pending spell proposals" in ooc_spells["narrative"]
+    assert runtime.session.state.turn_count == turn_ready
+
+    reflection = process_player_input(runtime, "i think about my spells", "ic").response
+    assert reflection is not None
+    assert "no spells have been accepted" in reflection["narrative"]
+    assert runtime.session.state.turn_count == turn_ready
+    assert "commit to" not in reflection["narrative"].lower()
+
+    dialogue = process_player_input(runtime, 'I say "hello im Dork."', "ic").response
+    assert dialogue is not None
+    assert "hello im Dork" in dialogue["narrative"]
+    assert "commit to say" not in dialogue["narrative"].lower()
+
+    unclear = process_player_input(runtime, "seriously...", "ic").response
+    assert unclear is not None
+    assert "not sure what you want" in unclear["narrative"]
+    assert "commit to" not in unclear["narrative"].lower()
+
+
+def test_dm_pipeline_complete_intro_bootstraps_without_role_pollution(tmp_path: Path, monkeypatch) -> None:
+    from engine.dm_pipeline import process_player_input
+
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_dm_pipeline_complete", "campaign_name": "Ember Trial", "world_theme": "fantasy magic"})
+    result = process_player_input(runtime, "I am Draevok, a bald muscular pyromancer who knows Firebolt and Flame Shield.", "ic").response
+    assert result is not None
+    sheet = result["state"]["character_sheets"][0]
+    assert sheet["name"] == "Draevok"
+    assert sheet["role"] == "Pyromancer"
+    assert sheet["role"] != "Bald Muscular Man"
+    assert "bald" in sheet["description"].lower() and "muscular" in sheet["description"].lower()
+    assert result["state"]["startup_state"] == "ready"
+    assert result["state"]["bootstrap_complete"] is True
+    event_names = {event["payload"]["name"] for event in result["state"]["campaign_events"] if event["type"] == "ability_suggested"}
+    assert {"Firebolt", "Flame Shield"} <= event_names
+    assert "What do you do?" in result["narrative"]

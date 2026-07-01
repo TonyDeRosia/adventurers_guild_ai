@@ -376,7 +376,7 @@ class CampaignEngine:
             system_messages.append(self._analysis_response(state, question))
 
         else:
-            system_messages.append("Action noted.")
+            system_messages.append("I’m not sure what you want your character to do. Do you want to act in the scene, ask me something out of character, or clarify your setup?")
 
         return self._finish_turn(state, action, system_messages, requested_mode=requested_mode)
 
