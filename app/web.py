@@ -122,8 +122,17 @@ class WebRuntime:
         self._active_npc_portrait_jobs: set[tuple[str, str]] = set()
         self._model_install_lock = threading.Lock()
         self._model_install_jobs: dict[str, dict[str, Any]] = {}
+        self.last_turn_routing: dict[str, Any] = {}
         self._apply_managed_image_engine_defaults()
         print("[web-runtime] session initialized")
+
+    def _set_last_turn_routing(self, **payload: Any) -> None:
+        self.last_turn_routing = payload
+        if getattr(os, "environ", {}).get("ADVENTURERS_GUILD_DEV_TRACE") == "1":
+            print(f"[turn-routing] {json.dumps(payload, default=str)}")
+
+    def get_last_turn_routing(self) -> dict[str, Any]:
+        return dict(self.last_turn_routing)
 
     def _image_setup_busy_response(self, *, requester: str) -> dict[str, Any]:
         snapshot = dict(self.image_startup_status)
@@ -5858,14 +5867,18 @@ class WebRuntime:
         request_started = time.perf_counter()
         request_received_at = datetime.now(timezone.utc).isoformat()
         startup_state = getattr(self.session.state, "startup_state", "ready")
+        initial_intent = analyze_player_input(text, mode="ic", campaign_state=self.session.state)
+        self._set_last_turn_routing(input_mode="ic", startup_state=startup_state, detected_intent=initial_intent.primary_intent, branch="ic_entry", analyze_player_input_called=True, build_ooc_response_called=False, normal_turn_pipeline_used=False, action_noted_added=False)
         if startup_state == "ability_setup_followup":
             return self._handle_ability_setup_followup(text, request_started, request_received_at)
         if startup_state == "character_creation":
-            if self._looks_like_character_creation_answer(text):
+            if initial_intent.primary_intent == "character_introduction" or self._looks_like_character_creation_answer(text):
+                self._set_last_turn_routing(input_mode="ic", startup_state=startup_state, detected_intent=initial_intent.primary_intent, branch="startup_character_creation", analyze_player_input_called=True, build_ooc_response_called=False, normal_turn_pipeline_used=False, action_noted_added=False)
                 return self._handle_character_creation_answer(text, request_started, request_received_at)
             self.session.state.startup_state = "ready"
         reasoned_response = self._handle_reasoned_non_turn_input(text, request_started, request_received_at)
         if reasoned_response is not None:
+            self._set_last_turn_routing(input_mode="ic", startup_state=startup_state, detected_intent=initial_intent.primary_intent, branch=f"ic_{initial_intent.primary_intent}_non_turn", analyze_player_input_called=True, build_ooc_response_called=False, normal_turn_pipeline_used=False, action_noted_added=False)
             return reasoned_response
         model_status = self.get_model_status()
         visual_mode = self._normalize_scene_visual_mode(self.session.state.settings.play_style.scene_visual_mode)
@@ -5903,6 +5916,7 @@ class WebRuntime:
             print("[turn-visual] auto_image_skipped reason=image_provider_not_ready")
 
         engine_started = time.perf_counter()
+        self._set_last_turn_routing(input_mode="ic", startup_state=startup_state, detected_intent=initial_intent.primary_intent, branch="normal_turn_pipeline", analyze_player_input_called=True, build_ooc_response_called=False, normal_turn_pipeline_used=True, action_noted_added=False)
         result = self.engine.run_turn(self.session.state, clean_text)
         registry = self._sync_npc_identities()
         self._maybe_queue_npc_portraits(registry)
@@ -5943,6 +5957,8 @@ class WebRuntime:
             "auto_after_image_queued": background_image_queued,
         }
         print(f"[turn-timing] {json.dumps(turn_timing)}")
+        action_noted_added = any(str(message).strip() == "Action noted." for message in result.system_messages)
+        self._set_last_turn_routing(**{**self.last_turn_routing, "action_noted_added": action_noted_added})
         return {
             "narrative": result.narrative,
             "system_messages": result.system_messages,
@@ -6575,6 +6591,7 @@ class WebRuntime:
         self._append_message("ooc_player", clean_text, persist=False)
         print(f"[ooc] mode={ooc_mode}")
         intent = analyze_player_input(clean_text, mode="ooc", campaign_state=self.session.state)
+        self._set_last_turn_routing(input_mode="ooc", startup_state=getattr(self.session.state, "startup_state", "ready"), detected_intent=intent.primary_intent, branch="ooc_dm_reasoning", analyze_player_input_called=True, build_ooc_response_called=ooc_mode != "structured_authoring", normal_turn_pipeline_used=False, action_noted_added=False)
         dm_response = build_ooc_response(intent, self.session.state) if ooc_mode != "structured_authoring" else None
         if dm_response is not None:
             response_text = dm_response.text
@@ -6619,6 +6636,7 @@ class WebRuntime:
                 },
                 "state": self.serialize_state(),
             }
+        self._set_last_turn_routing(input_mode="ooc", startup_state=getattr(self.session.state, "startup_state", "ready"), detected_intent=intent.primary_intent, branch=f"ooc_{ooc_mode}_model_response", analyze_player_input_called=True, build_ooc_response_called=ooc_mode != "structured_authoring", normal_turn_pipeline_used=False, action_noted_added=False)
         context_prompt = self._build_ooc_context()
         system_prompt = (
             "You are the Adventure Guild AI GM brain responding in OOC mode.\n"
@@ -7400,6 +7418,10 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     @app.get("/api/debug/comfyui-last")
     def debug_comfyui_last() -> dict[str, Any]:
         return runtime.get_comfy_debug_bundle()
+
+    @app.get("/api/debug/last-turn-routing")
+    def debug_last_turn_routing() -> dict[str, Any]:
+        return runtime.get_last_turn_routing()
 
     @app.get("/api/campaign/state")
     def campaign_state() -> dict[str, Any]:

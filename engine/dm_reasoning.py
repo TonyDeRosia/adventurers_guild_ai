@@ -136,7 +136,7 @@ def analyze_player_input(text: str, mode: str = "ic", campaign_state: Any | None
     for pattern in (
         r"\bmy name is\s+([A-Z][A-Za-z'\-]+(?: [A-Z][A-Za-z'\-]+)?)",
         r"\bname\s+([A-Z][A-Za-z'\-]+(?: [A-Z][A-Za-z'\-]+)?)",
-        r"\b(?:i am|i'm)\s+([A-Z][A-Za-z'\-]+)(?=\s*,|\s+an?\b|\s+the\b|\.|$)",
+        r"\b(?:i am|i'm|im)\s+([A-Z][A-Za-z'\-]+)(?=\s*,|\s+an?\b|\s+the\b|\.|$)",
         r"\b(?:i am called|i'm called|call me)\s+([A-Z][A-Za-z'\-]+(?: [A-Z][A-Za-z'\-]+)?)",
     ):
         match = re.search(pattern, clean, re.I)
@@ -188,6 +188,8 @@ def analyze_player_input(text: str, mode: str = "ic", campaign_state: Any | None
     if "?" in clean or lowered.startswith(("what ", "who ", "where ", "when ", "why ", "how ")):
         intent.explicit_questions.append(clean)
     reflection = bool(re.search(r"\b(i think over|i remember|i check what i know|i review|what spells do i know|current spells)\b", lowered))
+    if not reflection and re.fullmatch(r"seriously[.!?…\.]*", lowered):
+        reflection = True
     if intent.input_mode == "ooc":
         intent.primary_intent = "ooc_question" if intent.explicit_questions or any(w in lowered for w in ("spells", "inventory", "sheet", "status", "what can")) else "ooc_instruction"
     elif reflection:

@@ -5826,3 +5826,85 @@ def test_ic_reflection_and_spoken_dialogue_avoid_generic_commit_language(tmp_pat
     assert "commit to think" not in reflection["narrative"].lower()
     assert "hello im Kokudar" in dialogue["narrative"]
     assert "commit to say" not in dialogue["narrative"].lower()
+
+
+def test_campaign_input_endpoint_ooc_whats_going_on_never_uses_turn_pipeline(tmp_path: Path, monkeypatch) -> None:
+    try:
+        from fastapi.testclient import TestClient
+    except RuntimeError as exc:
+        pytest.skip(str(exc))
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_ooc_endpoint"})
+    before_turns = runtime.session.state.turn_count
+    monkeypatch.setattr(runtime.engine, "run_turn", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("run_turn should not execute for OOC input")))
+    app = create_web_app(runtime, runtime.root / "app" / "static")
+    client = TestClient(app)
+
+    response = client.post("/api/campaign/input", json={"text": "whats going on", "mode": "ooc"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["messages"][0]["type"] == "ooc_gm"
+    assert "Action noted" not in payload["narrative"]
+    assert "commit to" not in payload["narrative"].lower()
+    assert payload["state"]["turn_count"] == before_turns
+    assert runtime.session.state.turn_count == before_turns
+    routing = client.get("/api/debug/last-turn-routing").json()
+    assert routing["input_mode"] == "ooc"
+    assert routing["build_ooc_response_called"] is True
+    assert routing["normal_turn_pipeline_used"] is False
+    assert routing["action_noted_added"] is False
+
+
+def test_campaign_input_endpoint_ic_startup_intro_uses_reasoning_not_commit_fallback(tmp_path: Path, monkeypatch) -> None:
+    try:
+        from fastapi.testclient import TestClient
+    except RuntimeError as exc:
+        pytest.skip(str(exc))
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_ic_intro_endpoint"})
+    monkeypatch.setattr(runtime.engine, "run_turn", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("run_turn should not execute for startup character introduction")))
+    app = create_web_app(runtime, runtime.root / "app" / "static")
+    client = TestClient(app)
+
+    response = client.post("/api/campaign/input", json={"text": "im Draevok a pyromancer", "mode": "ic"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "commit to" not in payload["narrative"].lower()
+    assert "Draevok" in payload["narrative"] or payload["state"]["player"]["name"] == "Draevok"
+    assert payload["state"]["startup_state"] in {"character_creation", "ability_setup_followup", "ready"}
+    routing = client.get("/api/debug/last-turn-routing").json()
+    assert routing["branch"] == "startup_character_creation"
+    assert routing["normal_turn_pipeline_used"] is False
+
+
+def test_campaign_input_endpoint_ic_seriously_avoids_commit_fallback(tmp_path: Path, monkeypatch) -> None:
+    try:
+        from fastapi.testclient import TestClient
+    except RuntimeError as exc:
+        pytest.skip(str(exc))
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_ic_seriously_endpoint"})
+    runtime.handle_player_input("I am Kraevok, a bald and muscular man, a pyromancer with fire spells.")
+    runtime.handle_player_input("Firebolt, Flame Shield, Ember Step")
+    monkeypatch.setattr(runtime.engine, "run_turn", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("run_turn should not execute for reflection input")))
+    app = create_web_app(runtime, runtime.root / "app" / "static")
+    client = TestClient(app)
+
+    response = client.post("/api/campaign/input", json={"text": "seriously...", "mode": "ic"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "commit to seriously" not in payload["narrative"].lower()
+    assert "commit to" not in payload["narrative"].lower()
+    routing = client.get("/api/debug/last-turn-routing").json()
+    assert routing["detected_intent"] == "reflection"
+    assert routing["normal_turn_pipeline_used"] is False
+
+
+def test_frontend_send_payload_posts_current_input_mode_to_campaign_input() -> None:
+    app_js = Path("app/static/app.js").read_text()
+    assert "api('/api/campaign/input'" in app_js
+    assert "body: JSON.stringify({ text, mode: currentInputMode })" in app_js
+    assert "const localMessageType = currentInputMode === 'ooc' ? 'ooc_player' : 'player';" in app_js
