@@ -139,6 +139,81 @@ const worldBuildingDesignList = document.getElementById('world-building-design-l
 const worldBuildingReactiveList = document.getElementById('world-building-reactive-list');
 const recalibrateWorldBuildingButton = document.getElementById('recalibrate-world-building');
 
+const PRIMARY_MODAL_IDS = new Set([
+  'campaign-browser-modal',
+  'new-campaign-modal',
+  'setup-modal',
+  'runtime-character-sheets-modal',
+  'runtime-inventory-modal',
+  'runtime-spellbook-modal',
+  'narrator-rules-modal',
+  'world-building-modal',
+]);
+const DIALOG_MODAL_IDS = new Set([
+  'creator-mode-confirm-modal',
+  'runtime-character-sheet-create-modal',
+]);
+const modalManager = {
+  activePrimaryId: null,
+  openDialogs: new Set(),
+  getModal(id) {
+    return document.getElementById(id);
+  },
+  prepareModal(modal, layer) {
+    modal.classList.toggle('modal-primary', layer === 'primary');
+    modal.classList.toggle('modal-dialog', layer === 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    if (!modal.hasAttribute('role')) modal.setAttribute('role', 'dialog');
+  },
+  focusModal(modal) {
+    const card = modal.querySelector('.modal-card') || modal;
+    if (typeof card.scrollTo === 'function') card.scrollTo({ top: 0, left: 0 });
+    else card.scrollTop = 0;
+    const firstInteractive = modal.querySelector('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+    (firstInteractive || card || modal).focus?.({ preventScroll: true });
+  },
+  bringToFront(id, layer = 'primary') {
+    const modal = this.getModal(id);
+    if (!modal) return null;
+    this.prepareModal(modal, layer);
+    modal.classList.remove('hidden');
+    requestAnimationFrame(() => this.focusModal(modal));
+    return modal;
+  },
+  openPrimaryModal(id) {
+    if (!PRIMARY_MODAL_IDS.has(id)) console.warn(`[modal-manager] opening unregistered primary modal: ${id}`);
+    if (this.activePrimaryId && this.activePrimaryId !== id) {
+      this.closePrimaryModal();
+    }
+    this.activePrimaryId = id;
+    return this.bringToFront(id, 'primary');
+  },
+  closePrimaryModal(id = this.activePrimaryId) {
+    if (!id) return;
+    const modal = this.getModal(id);
+    modal?.classList.add('hidden');
+    modal?.classList.remove('modal-primary');
+    if (!id || this.activePrimaryId === id) {
+      this.activePrimaryId = null;
+    }
+  },
+  openDialog(id) {
+    if (!DIALOG_MODAL_IDS.has(id)) console.warn(`[modal-manager] opening unregistered dialog modal: ${id}`);
+    this.openDialogs.add(id);
+    return this.bringToFront(id, 'dialog');
+  },
+  closeDialog(id) {
+    const modal = this.getModal(id);
+    modal?.classList.add('hidden');
+    modal?.classList.remove('modal-dialog');
+    this.openDialogs.delete(id);
+  },
+};
+function openPrimaryModal(id) { return modalManager.openPrimaryModal(id); }
+function closePrimaryModal(id) { return modalManager.closePrimaryModal(id); }
+function openDialog(id) { return modalManager.openDialog(id); }
+function closeDialog(id) { return modalManager.closeDialog(id); }
+
 const intelligenceStatus = document.getElementById('intelligence-status');
 const intelligenceSourceList = document.getElementById('intelligence-source-list');
 const intelligenceSourceIdInput = document.getElementById('intelligence-source-id');
@@ -420,11 +495,11 @@ function openCreatorModeConfirmation() {
   if (!creatorModeConfirmModal) return;
   if (creatorModeConfirmCheckbox) creatorModeConfirmCheckbox.checked = false;
   if (creatorModeConfirmEnable) creatorModeConfirmEnable.disabled = true;
-  creatorModeConfirmModal.classList.remove('hidden');
+  openDialog('creator-mode-confirm-modal');
 }
 
 function closeCreatorModeConfirmation() {
-  creatorModeConfirmModal?.classList.add('hidden');
+  closeDialog('creator-mode-confirm-modal');
 }
 
 async function setCampaignMode(mode) {
@@ -990,7 +1065,7 @@ function openNewCampaignModal() {
   renderCharacterSheetList();
   document.getElementById('character-sheets-manager')?.classList.add('hidden');
   document.getElementById('character-sheet-editor')?.classList.add('hidden');
-  newCampaignModal.classList.remove('hidden');
+  openPrimaryModal('new-campaign-modal');
 }
 
 
@@ -1060,15 +1135,15 @@ async function postIntelligence(endpoint, payload, successMessage) {
 }
 
 function closeNewCampaignModal() {
-  newCampaignModal.classList.add('hidden');
+  closePrimaryModal('new-campaign-modal');
 }
 
 function openCampaignBrowser() {
-  campaignBrowserModal?.classList.remove('hidden');
+  openPrimaryModal('campaign-browser-modal');
 }
 
 function closeCampaignBrowser() {
-  campaignBrowserModal?.classList.add('hidden');
+  closePrimaryModal('campaign-browser-modal');
 }
 
 function setDeveloperToolsVisible(visible) {
@@ -1092,16 +1167,13 @@ function getDeveloperToolsVisiblePreference() {
 
 function openSetupModal() {
   setDeveloperToolsVisible(getDeveloperToolsVisiblePreference());
-  setupModal.classList.remove('hidden');
+  openPrimaryModal('setup-modal');
 }
 
 function closeSetupModal() {
-  setupModal.classList.add('hidden');
+  closePrimaryModal('setup-modal');
 }
 
-function closeSettingsBeforeOpeningModal() {
-  closeSetupModal();
-}
 
 function parseCsv(input) {
   return String(input || '').split(',').map((v) => v.trim()).filter(Boolean);
@@ -1190,7 +1262,7 @@ function renderRuntimeCharacterSheets() {
       </div>
     `;
     runtimeCharacterSheetsList.querySelector('#runtime-character-sheet-empty-create')?.addEventListener('click', () => {
-      runtimeCharacterSheetCreateModal?.classList.remove('hidden');
+      openDialog('runtime-character-sheet-create-modal');
       console.log('[character-sheets] create_modal_opened=true');
       runtimeSheetCreateName?.focus();
     });
@@ -1408,7 +1480,7 @@ async function createRuntimeCharacterSheet() {
   console.log(`[character-sheets] created id=${result.created_id || 'unknown'} total=${runtimeCharacterSheets.length}`);
   console.log(`[character-sheets] selected=${selectedRuntimeSheetId || 'none'}`);
   renderRuntimeCharacterSheets();
-  runtimeCharacterSheetCreateModal?.classList.add('hidden');
+  closeDialog('runtime-character-sheet-create-modal');
   resetRuntimeSheetCreateForm();
 }
 
@@ -3280,32 +3352,34 @@ if (cancelSettingsButton) {
   };
 }
 
-document.getElementById('open-character-sheets').onclick = () => {
-  characterSheetsManager?.classList.remove('hidden');
-  renderCharacterSheetList();
-};
+document.getElementById('open-character-sheets')?.addEventListener('click', () => {
+  console.log(`[character-sheets] viewer_opened campaign=${selectedCampaignName || loadedSlot || 'draft'}`);
+  renderRuntimeCharacterSheets();
+  closeDialog('runtime-character-sheet-create-modal');
+  openPrimaryModal('runtime-character-sheets-modal');
+});
 document.getElementById('open-runtime-character-sheets').onclick = () => {
   console.log(`[character-sheets] viewer_opened campaign=${selectedCampaignName || loadedSlot || 'unknown'}`);
   renderRuntimeCharacterSheets();
-  runtimeCharacterSheetCreateModal?.classList.add('hidden');
+  closeDialog('runtime-character-sheet-create-modal');
   resetRuntimeSheetCreateForm();
-  runtimeCharacterSheetsModal?.classList.remove('hidden');
+  openPrimaryModal('runtime-character-sheets-modal');
 };
 document.getElementById('open-runtime-inventory').onclick = async () => {
   console.log('[inventory] runtime_button_rendered=true');
   await refreshInventory();
-  runtimeInventoryModal?.classList.remove('hidden');
+  openPrimaryModal('runtime-inventory-modal');
 };
 document.getElementById('close-runtime-inventory').onclick = () => {
-  runtimeInventoryModal?.classList.add('hidden');
+  closePrimaryModal('runtime-inventory-modal');
 };
 document.getElementById('open-runtime-spellbook').onclick = async () => {
   console.log('[spellbook] runtime_button_rendered=true');
   await refreshSpellbook();
-  runtimeSpellbookModal?.classList.remove('hidden');
+  openPrimaryModal('runtime-spellbook-modal');
 };
 document.getElementById('close-runtime-spellbook').onclick = () => {
-  runtimeSpellbookModal?.classList.add('hidden');
+  closePrimaryModal('runtime-spellbook-modal');
 };
 campaignBrowserModal?.addEventListener('click', (event) => {
   if (event.target === campaignBrowserModal) {
@@ -3319,15 +3393,13 @@ document.addEventListener('keydown', (event) => {
 });
 document.getElementById('open-narrator-rules').onclick = async () => {
   console.log('[narrator-rules] runtime_button_rendered=true');
-  closeSettingsBeforeOpeningModal();
   await refreshNarratorRules();
-  narratorRulesModal?.classList.remove('hidden');
+  openPrimaryModal('narrator-rules-modal');
   console.log(`[narrator-rules] modal_opened campaign=${loadedSlot || 'unknown'}`);
 };
 document.getElementById('open-world-building').onclick = async () => {
-  closeSettingsBeforeOpeningModal();
   await refreshWorldBuilding();
-  worldBuildingModal?.classList.remove('hidden');
+  openPrimaryModal('world-building-modal');
 };
 if (recalibrateWorldBuildingButton) {
   recalibrateWorldBuildingButton.onclick = async () => {
@@ -3335,10 +3407,10 @@ if (recalibrateWorldBuildingButton) {
   };
 }
 document.getElementById('close-narrator-rules').onclick = () => {
-  narratorRulesModal?.classList.add('hidden');
+  closePrimaryModal('narrator-rules-modal');
 };
 document.getElementById('close-world-building').onclick = () => {
-  worldBuildingModal?.classList.add('hidden');
+  closePrimaryModal('world-building-modal');
 };
 document.getElementById('narrator-rule-clear').onclick = () => {
   document.getElementById('narrator-rule-edit-id').value = '';
@@ -3375,11 +3447,11 @@ document.getElementById('narrator-rules-save-campaign').onclick = async () => {
   setStatus('Narrator rules saved to campaign.');
 };
 document.getElementById('close-runtime-character-sheets').onclick = () => {
-  runtimeCharacterSheetsModal?.classList.add('hidden');
-  runtimeCharacterSheetCreateModal?.classList.add('hidden');
+  closePrimaryModal('runtime-character-sheets-modal');
+  closeDialog('runtime-character-sheet-create-modal');
 };
 runtimeCharacterSheetCreateToggle?.addEventListener('click', () => {
-  runtimeCharacterSheetCreateModal?.classList.remove('hidden');
+  openDialog('runtime-character-sheet-create-modal');
   console.log('[character-sheets] create_modal_opened=true');
   runtimeSheetCreateName?.focus();
 });
@@ -3389,12 +3461,12 @@ runtimeSheetCreateRole?.addEventListener('change', () => {
   if (isCustom) runtimeSheetCreateCustomRole?.focus();
 });
 runtimeCharacterSheetCreateCancel?.addEventListener('click', () => {
-  runtimeCharacterSheetCreateModal?.classList.add('hidden');
+  closeDialog('runtime-character-sheet-create-modal');
   console.log('[character-sheets] create_modal_closed=true');
   resetRuntimeSheetCreateForm();
 });
 closeRuntimeCharacterSheetCreate?.addEventListener('click', () => {
-  runtimeCharacterSheetCreateModal?.classList.add('hidden');
+  closeDialog('runtime-character-sheet-create-modal');
   console.log('[character-sheets] create_modal_closed=true');
   resetRuntimeSheetCreateForm();
 });

@@ -536,7 +536,10 @@ button:disabled {
   display: grid;
   place-items: center;
   padding: 16px;
+  z-index: var(--modal-z-index, 1000);
 }
+.modal-primary { --modal-z-index: 1000; }
+.modal-dialog { --modal-z-index: 1100; background: rgba(5, 10, 18, 0.55); }
 .modal-card {
   width: min(760px, 100%);
   max-height: 90vh;
