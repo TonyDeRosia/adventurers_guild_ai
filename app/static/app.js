@@ -10,6 +10,10 @@ const sceneImageProgressStrip = document.getElementById('scene-image-progress-st
 const sceneImageProgressText = document.getElementById('scene-image-progress-text');
 const statusLine = document.getElementById('status-line');
 const autosaveStatus = document.getElementById('autosave-status');
+const statusCampaignName = document.getElementById('status-campaign-name');
+const statusWorldLocation = document.getElementById('status-world-location');
+const statusTurnCount = document.getElementById('status-turn-count');
+const statusDisplayMode = document.getElementById('status-display-mode');
 const inputModeToggle = document.getElementById('input-mode-toggle');
 const readinessPanel = document.getElementById('dependency-readiness');
 const setupGuidance = document.getElementById('setup-guidance');
@@ -1033,7 +1037,7 @@ function renderRuntimeCharacterSheets() {
     return `
       <button type="button" class="runtime-sheet-list-item ${selectedClass}" data-sheet-id="${escapeHtml(sheet.id || '')}">
         <strong>${escapeHtml(sheet.name || 'Unnamed')}</strong>
-        <span>${escapeHtml(sheet.sheet_type || 'unknown')}</span>
+        <span>${escapeHtml(titleizeValue(sheet.sheet_type || 'unknown'))}</span>
         <small>HP ${Number(stats.health ?? 0)} • Energy ${Number(stats.energy_or_mana ?? 0)}</small>
       </button>
     `;
@@ -1063,7 +1067,7 @@ function renderRuntimeCharacterSheetDetail(sheet) {
     ? `<ul class="runtime-sheet-list">${guaranteed.map((entry) => `<li>${escapeHtml(`${entry.type || 'ability'}: ${entry.name || 'Unnamed'}`)}</li>`).join('')}</ul>`
     : '<p class="runtime-sheet-muted">No guaranteed abilities.</p>';
   const baseDetails = [
-    ['Role', sheet.role],
+    ['Role', titleizeValue(sheet.role, '')],
     ['Archetype', sheet.archetype],
     ['Faction', sheet.faction],
     ['Level / Rank', sheet.level_or_rank],
@@ -1073,7 +1077,7 @@ function renderRuntimeCharacterSheetDetail(sheet) {
   ].filter(([, value]) => String(value || '').trim());
   runtimeCharacterSheetDetail.innerHTML = `
     <article class="runtime-sheet-card">
-      <h4>${escapeHtml(sheet.name || 'Unnamed')} • ${escapeHtml(sheet.sheet_type || 'unknown')}</h4>
+      <h4>${escapeHtml(sheet.name || 'Unnamed')} <span>${escapeHtml(titleizeValue(sheet.sheet_type || 'unknown'))}</span></h4>
       <section class="runtime-sheet-section">
         <h5>Profile</h5>
         ${baseDetails.length ? `<dl>${baseDetails.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(String(value))}</dd>`).join('')}</dl>` : '<p class="runtime-sheet-muted">No profile metadata.</p>'}
@@ -1582,25 +1586,54 @@ function normalizeSpellbookEntry(entry = {}) {
   };
 }
 
+function titleizeValue(value, fallback = '—') {
+  const clean = String(value || '').trim();
+  if (!clean) return fallback;
+  return clean
+    .replaceAll('_', ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function renderInlineTags(values = [], emptyText = '—') {
+  const clean = (Array.isArray(values) ? values : []).filter((value) => String(value || '').trim());
+  if (!clean.length) return `<span class="runtime-sheet-muted">${escapeHtml(emptyText)}</span>`;
+  return clean.map((value) => `<span class="tag-chip">${escapeHtml(titleizeValue(value))}</span>`).join('');
+}
+
 function renderInventoryViewer() {
   if (!runtimeInventoryDetail) return;
   const state = runtimeInventoryState || {};
   const entries = Array.isArray(state.entries) ? state.entries : [];
+  const currency = state.currency || {};
+  const equipped = state.equipped || {};
+  const equippedEntries = Object.entries(equipped).filter(([, value]) => String(value || '').trim());
   const rows = entries.length ? entries.map((entry) => `
-      <div class="spellbook-entry">
-        <strong>${escapeHtml(entry.name || '')}</strong>
-        <div>Category: ${escapeHtml(entry.category || 'items')} • Quantity: ${escapeHtml(String(entry.quantity || 1))}</div>
-        ${entry.notes ? `<div>Notes: ${escapeHtml(entry.notes)}</div>` : ''}
-        <div class="button-row compact-row">
+      <article class="item-card">
+        <div class="item-card-head">
+          <div>
+            <strong>${escapeHtml(entry.name || 'Unnamed item')}</strong>
+            <small>${escapeHtml(titleizeValue(entry.category || 'items'))}</small>
+          </div>
+          <span class="quantity-badge">×${escapeHtml(String(entry.quantity || 1))}</span>
+        </div>
+        ${entry.notes ? `<p>${escapeHtml(entry.notes)}</p>` : '<p class="runtime-sheet-muted">No notes yet.</p>'}
+        <div class="subtle-actions">
           <button type="button" data-inventory-edit="${escapeHtml(entry.id || '')}">Edit</button>
           <button type="button" data-inventory-delete="${escapeHtml(entry.id || '')}">Delete</button>
         </div>
-      </div>
-    `).join('') : '<div>None</div>';
+      </article>
+    `).join('') : '<div class="runtime-sheet-muted">No items recorded.</div>';
   runtimeInventoryDetail.innerHTML = `
-    <div class="spellbook-group"><h4>Items</h4>${rows}</div>
-    <div class="spellbook-group"><strong>CURRENCY</strong><div>${escapeHtml(JSON.stringify(state.currency || { gold: 0, silver: 0, copper: 0 }))}</div></div>
-    <div class="spellbook-group"><strong>EQUIPPED</strong><div>${escapeHtml(JSON.stringify(state.equipped || {}))}</div></div>
+    <section class="inventory-summary-grid">
+      <div class="currency-card"><span>Gold</span><strong>${Number(currency.gold || 0)}</strong></div>
+      <div class="currency-card"><span>Silver</span><strong>${Number(currency.silver || 0)}</strong></div>
+      <div class="currency-card"><span>Copper</span><strong>${Number(currency.copper || 0)}</strong></div>
+    </section>
+    <section class="spellbook-group">
+      <h4>Equipped</h4>
+      <div class="equipped-list">${equippedEntries.length ? equippedEntries.map(([slot, value]) => `<span class="tag-chip">${escapeHtml(titleizeValue(slot))}: ${escapeHtml(value)}</span>`).join('') : '<span class="runtime-sheet-muted">Nothing equipped.</span>'}</div>
+    </section>
+    <section class="spellbook-group"><h4>Items</h4><div class="item-card-grid">${rows}</div></section>
   `;
   runtimeInventoryDetail.querySelectorAll('button[data-inventory-edit]').forEach((button) => {
     button.onclick = () => {
@@ -1629,18 +1662,24 @@ function renderSpellbookViewer() {
   if (!runtimeSpellbookList) return;
   const normalizedEntries = runtimeSpellbookEntries.map((entry) => normalizeSpellbookEntry(entry));
   const rows = normalizedEntries.length ? normalizedEntries.map((entry) => `
-      <div class="spellbook-entry">
-        <strong>${escapeHtml(entry.name)}</strong>
-        <div>${escapeHtml(entry.description || 'No description')}</div>
-        <div>Cost: ${escapeHtml(entry.cost_or_resource || '-')} • Cooldown: ${escapeHtml(entry.cooldown || '-')}</div>
-        <div>Tags/Flags: ${escapeHtml([...(entry.tags || []), ...(entry.flags || [])].join(', ') || '-')}</div>
-        ${entry.notes ? `<div>Notes: ${escapeHtml(entry.notes)}</div>` : ''}
-        <div class="button-row compact-row">
+      <article class="ability-card">
+        <div class="item-card-head">
+          <strong>${escapeHtml(entry.name || 'Unnamed ability')}</strong>
+          <small>${escapeHtml(titleizeValue(entry.subtype || 'ability'))}</small>
+        </div>
+        <p>${escapeHtml(entry.description || 'No description yet.')}</p>
+        <div class="ability-meta">
+          <span>Cost: <strong>${escapeHtml(entry.cost_or_resource || '—')}</strong></span>
+          <span>Cooldown: <strong>${escapeHtml(entry.cooldown || '—')}</strong></span>
+        </div>
+        <div class="tag-row">${renderInlineTags([...(entry.tags || []), ...(entry.flags || [])])}</div>
+        ${entry.notes ? `<p class="ability-notes">${escapeHtml(entry.notes)}</p>` : ''}
+        <div class="subtle-actions">
           <button type="button" data-spellbook-edit="${escapeHtml(entry.id)}">Edit</button>
           <button type="button" data-spellbook-delete="${escapeHtml(entry.id)}">Delete</button>
         </div>
-      </div>
-    `).join('') : '<div>None</div>';
+      </article>
+    `).join('') : '<div class="runtime-sheet-muted">No abilities recorded.</div>';
   runtimeSpellbookList.innerHTML = `<div class="spellbook-group"><h4>Abilities</h4>${rows}</div>`;
   runtimeSpellbookList.querySelectorAll('button[data-spellbook-edit]').forEach((button) => {
     button.onclick = () => {
@@ -1811,9 +1850,15 @@ async function refreshState() {
   renderInventoryViewer();
   renderSpellbookViewer();
   renderNarratorRules();
+  const displayModeText = displayModeLabel(state.settings?.display_mode || 'story');
+  const locationText = world.starting_location || world.current_location || world.world_name || state.world_name || 'Unknown world';
   campaignMeta.textContent = `${state.campaign_name || 'Campaign'} · Turn ${state.turn_count || 0}`;
+  if (statusCampaignName) statusCampaignName.textContent = state.campaign_name || 'Campaign';
+  if (statusWorldLocation) statusWorldLocation.textContent = locationText;
+  if (statusTurnCount) statusTurnCount.textContent = String(state.turn_count || 0);
+  if (statusDisplayMode) statusDisplayMode.textContent = displayModeText;
   if (campaignDisplayModeIndicator) {
-    campaignDisplayModeIndicator.textContent = `Display Mode: ${displayModeLabel(state.settings?.display_mode || 'story')}`;
+    campaignDisplayModeIndicator.textContent = `Display Mode: ${displayModeText}`;
   }
   ingestPersistedCampaignSettings(
     {
@@ -2916,7 +2961,6 @@ bindClickById('close-campaign-browser', closeCampaignBrowser);
 bindClickById('create-campaign-cancel', closeNewCampaignModal);
 bindClickById('create-campaign-confirm', createCampaignFromForm);
 bindClickById('image-generate-submit', generateImage);
-bindClickById('save-campaign', saveCampaign);
 bindClickById('rename-campaign', renameCampaign);
 bindClickById('delete-campaign', deleteCampaign);
 bindClickById('apply-settings', applySettings);

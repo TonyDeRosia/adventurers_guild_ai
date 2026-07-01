@@ -30,12 +30,27 @@
             <p id="campaign-display-mode-indicator" class="campaign-display-mode-indicator">Display Mode: Story Mode</p>
           </div>
         </header>
-        <section id="scene-context-panel" class="scene-context-panel">
-          <div class="scene-visual-header">
-            <h3>Scene Context</h3>
-            <div class="scene-visual-meta">Text-first campaign play. The Dungeon Master tracks the world, NPCs, and consequences.</div>
+        <section id="scene-context-panel" class="scene-context-panel campaign-status-strip" aria-label="Campaign status">
+          <div class="status-pill">
+            <span>Campaign</span>
+            <strong id="status-campaign-name">Loading...</strong>
           </div>
-          <div id="scene-context-display" class="scene-context-display">Your current scene and campaign log appear below.</div>
+          <div class="status-pill">
+            <span>Location</span>
+            <strong id="status-world-location">Unknown world</strong>
+          </div>
+          <div class="status-pill">
+            <span>Turn</span>
+            <strong id="status-turn-count">0</strong>
+          </div>
+          <div class="status-pill">
+            <span>Mode</span>
+            <strong id="status-display-mode">Story Mode</strong>
+          </div>
+          <div class="status-pill autosave-pill">
+            <span>Autosave</span>
+            <strong>Autosaved just now</strong>
+          </div>
         </section>
         <section id="scene-visual-panel" class="scene-visual-panel hidden v1-addon-panel" aria-hidden="true">
           <div class="scene-visual-header">
@@ -75,7 +90,7 @@
           <div class="button-row compact-row">
             <button id="open-runtime-character-sheets" type="button">Character Sheets</button>
             <button id="open-runtime-inventory" type="button">Inventory</button>
-            <button id="open-runtime-spellbook" type="button">Spellbook</button>
+            <button id="open-runtime-spellbook" type="button">Abilities</button>
           </div>
         </section>
         <section id="manual-image-panel" class="panel-block image-generation-panel hidden v1-addon-panel" aria-hidden="true">
@@ -180,7 +195,7 @@
         <div class="campaign-browser-actions button-row">
           <button id="load-selected">Play selected campaign</button>
           <button id="new-campaign">New campaign</button>
-          <button id="save-campaign">Autosave active campaign now</button>
+          <p class="campaign-autosave-note" aria-live="polite">Campaigns autosave automatically.</p>
           <button id="rename-campaign">Rename selected</button>
           <button id="delete-campaign">Delete selected</button>
         </div>
@@ -221,7 +236,7 @@
     <div id="runtime-spellbook-modal" class="modal hidden">
       <div class="modal-card">
         <div class="panel-title-row">
-          <h3>Spellbook</h3>
+          <h3>Abilities</h3>
           <button id="close-runtime-spellbook" type="button">Close</button>
         </div>
         <div id="runtime-spellbook-list" class="runtime-sheet-detail">No spellbook entries.</div>
