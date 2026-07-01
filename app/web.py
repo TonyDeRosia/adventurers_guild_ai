@@ -52,7 +52,7 @@ from app.comfy_manager import ComfyProcessManager
 from app.desktop_capabilities import DesktopIntegration
 from app.installer_layout import InstallerLayoutValidator
 from app.intelligence import CampaignIntelligenceLibrary
-from app.dm_intent import analyze_dm_intent
+from engine.dm_reasoning import analyze_player_input, build_ooc_response
 from app.npc_identity import NPCIdentityRegistry
 from app.runtime_config import AppRuntimeConfig, ImageRuntimeConfig, ModelRuntimeConfig, RuntimeConfigStore
 from engine.campaign_engine import CampaignEngine, TurnResult
@@ -5519,7 +5519,7 @@ class WebRuntime:
         )
 
     def _infer_character_identity(self, text: str) -> dict[str, Any]:
-        return analyze_dm_intent(text).to_inferred_dict()
+        return analyze_player_input(text, mode="ic", campaign_state=self.session.state).to_inferred_dict()
 
     def _infer_guided_world_name(self, state: CampaignState, inferred: dict[str, Any]) -> str:
         current = str(state.world_meta.world_name or "").strip()
@@ -5538,7 +5538,7 @@ class WebRuntime:
             return "Frontier Sector"
         if any(token in blob for token in ("post-apocalyptic", "apocalypse", "wastes", "wasteland")):
             return "The Wastes"
-        if any(token in blob for token in ("fantasy", "magic", "magical", "archmage", "wizard")):
+        if any(token in blob for token in ("fantasy", "magic", "magical", "archmage", "wizard", "pyromancer", "fire spells")):
             return "The Arcane Realm"
         campaign = str(state.campaign_name or "").strip()
         if campaign:
@@ -5563,8 +5563,10 @@ class WebRuntime:
             options = ["Docking Bay", "Orbital Concourse", "Frontier Outpost"]
         elif any(token in blob for token in ("post-apocalyptic", "wastes", "wasteland")):
             options = ["Shelter Gate", "Rusted Overpass", "Dust Market"]
+        elif any(token in blob for token in ("pyromancer", "fire spells", "fire magic")):
+            options = ["Scorched Crossroads", "Ruined Shrine", "Ashen Arrival Clearing"]
         elif any(token in blob for token in ("town", "village", "fantasy", "magic", "magical")):
-            options = ["Village Crossroads", "Market Square", "Old Gate"]
+            options = ["Lantern Market", "Old Gate", "River Shrine"]
         else:
             options = ["Wayfarer's Camp", "Roadside Threshold", "Quiet Trailhead"]
         index = sum(ord(ch) for ch in blob) % len(options) if blob else 0
@@ -5601,7 +5603,7 @@ class WebRuntime:
 
     def _starter_inventory_for_character(self, inferred: dict[str, Any]) -> list[dict[str, Any]]:
         state = self.session.state
-        role = str(inferred.get("role", "") or state.player.char_class or "").lower()
+        role = str(inferred.get("role", "") or "").lower()
         intro = str(inferred.get("background", "")).lower()
         theme = str(state.world_meta.world_theme or state.settings.profile or "").lower()
         tone = str(state.world_meta.tone or state.settings.narration_tone or "").lower()
@@ -5640,7 +5642,14 @@ class WebRuntime:
             ability_name = str(ability).strip()
             if not ability_name:
                 continue
-            if any(event.get("type") == "ability_suggested" and str(event.get("title", "")).lower() == ability_name.lower() for event in runtime.campaign_events if isinstance(event, dict)):
+            normalized_name = re.sub(r"[^a-z0-9]+", "", ability_name.lower())
+            if any(
+                event.get("type") == "ability_suggested"
+                and re.sub(r"[^a-z0-9]+", "", str(event.get("payload", {}).get("name") or event.get("title", "")).lower()) == normalized_name
+                and str(event.get("status", "pending")) in {"pending", "accepted"}
+                for event in runtime.campaign_events
+                if isinstance(event, dict)
+            ):
                 continue
             runtime.campaign_events.append({
                 "id": f"guided_ability_{int(time.time() * 1000)}_{len(runtime.campaign_events)}",
@@ -5659,7 +5668,7 @@ class WebRuntime:
                 "id": f"guided_ability_{int(time.time() * 1000)}",
                 "type": "ability_suggested",
                 "title": "Starting Spell List",
-                "description": "The DM should ask what spells or magical specialties the player wants known at start.",
+                "description": "Player described the character as a pyromancer/archmage with existing magic, but no specific spells were defined.",
                 "status": "pending",
                 "payload": {"name": "Starting Spell List", "category": "spell", "tags": ["starter", "guided_creation"], "source_metadata": {"source": "guided_character_creation"}},
             }
@@ -5668,6 +5677,10 @@ class WebRuntime:
     def _guided_followup_question(self, inferred: dict[str, Any]) -> str:
         if inferred.get("needs_ability_followup") == "spells":
             name = str(inferred.get("name") or self.session.state.player.name or "your character").strip()
+            claims = " ".join(inferred.get("starting_claims", []) if isinstance(inferred.get("starting_claims"), list) else []).lower()
+            role = str(inferred.get("role") or self.session.state.player.char_class or "").lower()
+            if "fire" in claims or "pyromancer" in role:
+                return f"What fire spells does {name} already know? You can list a few, or describe his style of pyromancy."
             return f"What kinds of spells is {name} known for? What kinds of magic or signature spells is {name} known for? You can list a few, or describe the style of magic."
         return "Tell me one more important detail before we begin."
 
@@ -5682,8 +5695,11 @@ class WebRuntime:
             sheet.name = inferred["name"]
             state.player.name = inferred["name"]
         if inferred.get("role"):
-            sheet.role = inferred["role"]
-            state.player.char_class = inferred["role"]
+            role_value = inferred["role"]
+            if str(role_value).lower() == "archmage":
+                role_value = "archmage"
+            sheet.role = role_value
+            state.player.char_class = role_value
         notes = []
         if inferred.get("species"):
             notes.append(f"Species: {inferred['species']}")
@@ -5705,19 +5721,53 @@ class WebRuntime:
 
     def _guided_opening_scene(self, state: CampaignState, sheet: CharacterSheet) -> str:
         location = state.locations.get(state.current_location_id)
-        location_name = str(state.world_meta.starting_location_name or (location.name if location else "the threshold of adventure")).strip()
-        theme = str(state.world_meta.world_theme or "fantasy").strip()
-        premise = str(state.world_meta.premise or "rumors of trouble are already moving through the air").strip()
+        location_name = str(state.world_meta.starting_location_name or (location.name if location else "the threshold")).strip()
+        if location_name.lower() == "starting area":
+            location_name = "Arrival Threshold"
+        theme = str(state.world_meta.world_theme or state.settings.profile or "fantasy").strip()
+        premise = str(state.world_meta.premise or "an uneasy change has just touched the region").strip()
         role = sheet.role or state.player.char_class or "adventurer"
         name = sheet.name or state.player.name or "Adventurer"
-        identity = f"{name}, a {role}" if role else name
         world = str(state.world_meta.world_name or "the world").strip()
-        poi = "A cracked stone arch hums nearby." if any(token in " ".join([theme, premise]).lower() for token in ("magic", "new world", "isekai", "awakening")) else "A clear path leads onward."
+        if world.lower() == "untitled world":
+            world = "the unfolding realm"
+        appearance = f", {sheet.description}" if str(sheet.description or "").strip() else ""
+        context = " ".join([theme, premise, role, location_name]).lower()
+        if any(token in context for token in ("pyromancer", "fire", "magic", "arcane")):
+            immediate = "Residual heat ripples over cracked stone, and a sealed courier-scroll smolders without burning in a frightened traveler's hands."
+            landmark = "Smoke coils from a ruined watchtower beyond a lantern-lit road."
+        elif any(token in context for token in ("space", "starship", "sector")):
+            immediate = "Warning lights pulse across the deck while a damaged beacon repeats a partial distress code."
+            landmark = "Beyond the viewport, station traffic scatters from a dark object drifting too close."
+        else:
+            immediate = "A local messenger blocks the path, clutching news that clearly cannot wait."
+            landmark = "Nearby, a distinctive landmark draws every wary glance in the area."
         return (
-            f"Your story begins at {location_name} in {world}. {premise.capitalize()}. "
-            f"{identity} comes to awareness with the campaign's {theme} tone pressing in around them. "
-            f"{poi} What do you do?"
+            f"{name}, a {role}{appearance}, arrives at {location_name} in {world}. "
+            f"{premise[:1].upper() + premise[1:] if premise else ''} "
+            f"{immediate} {landmark} What do you do?"
         )
+
+    def _handle_ability_setup_followup(self, text: str, request_started: float, request_received_at: str) -> dict[str, Any]:
+        clean_text = text.strip()
+        self._append_message("player", clean_text, persist=False)
+        inferred = self._infer_character_identity(f"my spells are {clean_text}")
+        self._add_guided_ability_proposals(inferred)
+        sheet = self._find_main_character_sheet(self.session.state) or self._upsert_guided_main_character_sheet("")
+        self.session.state.startup_state = "ready"
+        opening = self._guided_opening_scene(self.session.state, sheet)
+        self._append_message("narrator", opening, persist=False)
+        self._flush_history_store()
+        self.save_active_campaign(self.session.active_slot)
+        total_ms = (time.perf_counter() - request_started) * 1000
+        return {
+            "narrative": opening,
+            "system_messages": [],
+            "messages": [{"type": "narrator", "text": opening}],
+            "should_exit": False,
+            "metadata": {"startup_flow": "ability_setup_completed", "timing": {"total_request_ms": round(total_ms, 2), "request_received_at": request_received_at}},
+            "state": self.serialize_state(),
+        }
 
     def _handle_character_creation_answer(self, text: str, request_started: float, request_received_at: str) -> dict[str, Any]:
         clean_text = text.strip()
@@ -5727,6 +5777,7 @@ class WebRuntime:
         self.session.state.recent_memory.append(f"Player introduced main character: {clean_text}")
         if inferred.get("needs_ability_followup"):
             followup = self._guided_followup_question(inferred)
+            self.session.state.startup_state = "ability_setup_followup"
             self._append_message("narrator", followup, persist=False)
             self._flush_history_store()
             self.save_active_campaign(self.session.active_slot)
@@ -5737,7 +5788,7 @@ class WebRuntime:
                 "messages": [{"type": "narrator", "text": followup}],
                 "should_exit": False,
                 "metadata": {"startup_flow": "character_creation_needs_followup", "timing": {"total_request_ms": round(total_ms, 2), "request_received_at": request_received_at}},
-                "state": self.serialize_state(),
+                "state": {**self.serialize_state(), "startup_state": "character_creation"},
             }
         self.session.state.startup_state = "ready"
         opening = self._guided_opening_scene(self.session.state, sheet)
@@ -5754,13 +5805,68 @@ class WebRuntime:
             "state": self.serialize_state(),
         }
 
+    def _defined_ability_names(self) -> list[str]:
+        runtime = self.session.state.structured_state.runtime
+        names = [str(entry.get("name", "")).strip() for entry in (runtime.spellbook or []) if isinstance(entry, dict)]
+        for sheet in self.session.state.character_sheets:
+            for ability in getattr(sheet, "abilities", []) or []:
+                names.append(str(getattr(ability, "name", "")).strip())
+        return [name for name in dict.fromkeys(names) if name]
+
+    def _handle_reasoned_non_turn_input(self, text: str, request_started: float, request_received_at: str) -> dict[str, Any] | None:
+        intent = analyze_player_input(text, mode="ic", campaign_state=self.session.state)
+        clean_text = text.strip()
+        if intent.primary_intent not in {"reflection", "spoken_dialogue"}:
+            return None
+        if intent.primary_intent == "spoken_dialogue" and type(self.engine.model).__name__ != "NullNarrationAdapter":
+            return None
+        self._append_message("player", clean_text, persist=False)
+        if intent.primary_intent == "spoken_dialogue":
+            spoken = intent.spoken_text or clean_text.strip('"')
+            registry = self._sync_npc_identities()
+            if registry.records:
+                narrative = f'{self.session.state.player.name} says, "{spoken}" The nearby listener takes in the words and reacts to the address.'
+            else:
+                narrative = f'{self.session.state.player.name} says, "{spoken}" The words carry into the current scene. Who are you addressing?'
+            mode = "spoken_dialogue"
+        else:
+            names = self._defined_ability_names()
+            player = self.session.state.player.name or "Your character"
+            role = self.session.state.player.char_class or "adventurer"
+            if names:
+                narrative = f"{player} reviews what they know: {', '.join(names)}."
+            elif str(role).lower() == "pyromancer":
+                narrative = f"{player} searches his memory, but his spell list has not been defined yet. Since he is a pyromancer, choose a few fire spells or ask the DM to suggest some."
+                self._add_guided_ability_proposals({"needs_ability_followup": "spells"})
+            else:
+                narrative = f"{player} searches their memory, but no spell or ability list has been defined yet. You can define a few abilities or ask the DM to suggest some."
+            mode = "reflection"
+        self._append_message("narrator", narrative, persist=False)
+        self._flush_history_store()
+        self.save_active_campaign(self.session.active_slot)
+        total_ms = (time.perf_counter() - request_started) * 1000
+        return {
+            "narrative": narrative,
+            "system_messages": [],
+            "messages": [{"type": "narrator", "text": narrative}],
+            "should_exit": False,
+            "metadata": {"mode": mode, "dm_reasoning": intent.primary_intent, "timing": {"total_request_ms": round(total_ms, 2), "request_received_at": request_received_at}},
+            "state": self.serialize_state(),
+        }
+
     def handle_player_input(self, text: str) -> dict[str, Any]:
         request_started = time.perf_counter()
         request_received_at = datetime.now(timezone.utc).isoformat()
-        if getattr(self.session.state, "startup_state", "ready") == "character_creation":
+        startup_state = getattr(self.session.state, "startup_state", "ready")
+        if startup_state == "ability_setup_followup":
+            return self._handle_ability_setup_followup(text, request_started, request_received_at)
+        if startup_state == "character_creation":
             if self._looks_like_character_creation_answer(text):
                 return self._handle_character_creation_answer(text, request_started, request_received_at)
             self.session.state.startup_state = "ready"
+        reasoned_response = self._handle_reasoned_non_turn_input(text, request_started, request_received_at)
+        if reasoned_response is not None:
+            return reasoned_response
         model_status = self.get_model_status()
         visual_mode = self._normalize_scene_visual_mode(self.session.state.settings.play_style.scene_visual_mode)
         auto_enabled = visual_mode in {"before_narration", "after_narration"}
@@ -6468,6 +6574,20 @@ class WebRuntime:
         model_status = self.get_model_status()
         self._append_message("ooc_player", clean_text, persist=False)
         print(f"[ooc] mode={ooc_mode}")
+        intent = analyze_player_input(clean_text, mode="ooc", campaign_state=self.session.state)
+        dm_response = build_ooc_response(intent, self.session.state) if ooc_mode != "structured_authoring" else None
+        if dm_response is not None:
+            response_text = dm_response.text
+            self._append_message("ooc_gm", response_text, persist=False)
+            self._flush_history_store()
+            return {
+                "narrative": response_text,
+                "system_messages": [],
+                "messages": [{"type": "ooc_gm", "text": response_text}],
+                "should_exit": False,
+                "metadata": {"mode": "ooc", "ooc_mode": "dm_reasoning", "ooc_sync": {"spellbook_entries_added": 0, "character_sheet_updated": False, "world_entries_added": 0, "mutated": False}, "model_status": model_status, "timing": {"request_received_at": request_received_at, "ooc_generation_ms": 0.0}},
+                "state": self.serialize_state(),
+            }
         if ooc_mode == "behavior_rule":
             sync_summary = {"spellbook_entries_added": 0, "character_sheet_updated": False, "world_entries_added": 0, "mutated": False}
             rule_entry, added, deduped = self._upsert_ooc_behavior_rule(clean_text)

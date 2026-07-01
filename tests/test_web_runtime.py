@@ -5724,3 +5724,105 @@ def test_spoken_dialogue_turn_does_not_commit_to_say(tmp_path: Path, monkeypatch
 
     assert "commit to say" not in result["narrative"].lower()
     assert "hello im Kokudar" in result["narrative"]
+
+
+def test_dm_reasoning_intent_extracts_kraevok_intro() -> None:
+    from engine.dm_reasoning import analyze_player_input, build_startup_plan
+
+    intent = analyze_player_input("I am Kraevok, a bald and muscular man, a pyromancer with fire spells.", mode="ic")
+    plan = build_startup_plan(intent)
+
+    assert intent.character_name == "Kraevok"
+    assert intent.role == "Pyromancer"
+    assert "bald" in intent.appearance
+    assert "muscular" in intent.appearance
+    assert any("fire spells" in claim.lower() or "pyromancer" in claim.lower() for claim in intent.broad_power_claims)
+    assert plan.should_advance_turn is False
+    assert plan.should_ask_followup is True
+
+
+def test_dm_reasoning_intent_detects_spoken_dialogue_and_ooc_spells() -> None:
+    from engine.dm_reasoning import analyze_player_input, build_ooc_response
+
+    dialogue = analyze_player_input('I say "hello I\'m Kokudar."', mode="ic")
+    assert dialogue.primary_intent == "spoken_dialogue"
+    assert dialogue.spoken_text == "hello I'm Kokudar."
+
+    ooc = analyze_player_input("what spells do i have", mode="ooc")
+    assert ooc.primary_intent in {"information_request", "ooc_question"}
+    response = build_ooc_response(ooc, None)
+    assert response is not None
+
+
+def test_guided_startup_kraevok_intro_requests_spell_followup(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_kraevok", "campaign_name": "Arcane Arrival", "world_theme": "fantasy magic"})
+
+    output = runtime.handle_player_input("I am Kraevok, a bald and muscular man, a pyromancer with fire spells.")
+    state = runtime.session.state
+    sheet = runtime._find_main_character_sheet(state)
+
+    assert sheet is not None
+    assert sheet.name == "Kraevok"
+    assert sheet.role == "Pyromancer"
+    assert "bald" in sheet.description.lower()
+    assert "muscular" in sheet.description.lower()
+    assert sheet.role != "Bald And Muscular Man"
+    assert state.world_meta.world_name != "Untitled World"
+    assert state.world_meta.starting_location_name != "Starting Area"
+    assert state.startup_state == "ability_setup_followup"
+    assert output["metadata"]["startup_flow"] == "character_creation_needs_followup"
+    assert any(event.get("title") == "Starting Spell List" for event in state.structured_state.runtime.campaign_events)
+    assert "What fire spells" in output["narrative"]
+    assert "What do you do?" not in output["narrative"]
+
+
+def test_ability_setup_followup_creates_pending_spell_events_then_opens(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_kraevok_spells", "campaign_name": "Arcane Arrival", "world_theme": "fantasy magic"})
+    runtime.handle_player_input("I am Kraevok, a bald and muscular man, a pyromancer with fire spells.")
+
+    output = runtime.handle_player_input("Firebolt, Flame Shield, Ember Step")
+    events = runtime.session.state.structured_state.runtime.campaign_events
+    event_names = [event.get("payload", {}).get("name") for event in events]
+
+    assert "Firebolt" in event_names
+    assert "Flame Shield" in event_names
+    assert "Ember Step" in event_names
+    assert runtime.session.state.startup_state == "ready"
+    assert "What do you do?" in output["narrative"]
+    assert not runtime.session.state.structured_state.runtime.spellbook
+
+
+def test_ooc_spell_question_uses_reasoning_without_turn_pipeline(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_ooc_spells"})
+    runtime.handle_player_input("I am Kraevok, a bald and muscular man, a pyromancer with fire spells.")
+    before_turns = runtime.session.state.turn_count
+    monkeypatch.setattr(runtime.engine, "run_turn", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("run_turn should not execute")))
+
+    output = runtime.handle_ooc_input("what spells do i have")
+
+    assert output["messages"][0]["type"] == "ooc_gm"
+    assert "does not have any defined spells yet" in output["narrative"]
+    assert "pyromancer" in output["narrative"].lower()
+    assert runtime.session.state.turn_count == before_turns
+    assert "Action noted" not in output["narrative"]
+    assert "commit to act" not in output["narrative"].lower()
+
+
+def test_ic_reflection_and_spoken_dialogue_avoid_generic_commit_language(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_ic_reasoning"})
+    runtime.handle_player_input("I am Kraevok, a bald and muscular man, a pyromancer with fire spells.")
+    runtime.handle_player_input("Firebolt, Flame Shield, Ember Step")
+    runtime.session.state.structured_state.runtime.spellbook = []
+    monkeypatch.setattr(runtime.engine, "run_turn", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("run_turn should not execute")))
+
+    reflection = runtime.handle_player_input("i think over my current spells")
+    dialogue = runtime.handle_player_input('I say "hello im Kokudar."')
+
+    assert "spell list has not been defined" in reflection["narrative"]
+    assert "commit to think" not in reflection["narrative"].lower()
+    assert "hello im Kokudar" in dialogue["narrative"]
+    assert "commit to say" not in dialogue["narrative"].lower()
