@@ -52,6 +52,7 @@ from app.comfy_manager import ComfyProcessManager
 from app.desktop_capabilities import DesktopIntegration
 from app.installer_layout import InstallerLayoutValidator
 from app.intelligence import CampaignIntelligenceLibrary
+from app.dm_intent import analyze_dm_intent
 from app.npc_identity import NPCIdentityRegistry
 from app.runtime_config import AppRuntimeConfig, ImageRuntimeConfig, ModelRuntimeConfig, RuntimeConfigStore
 from engine.campaign_engine import CampaignEngine, TurnResult
@@ -5518,66 +5519,75 @@ class WebRuntime:
         )
 
     def _infer_character_identity(self, text: str) -> dict[str, Any]:
-        clean = re.sub(r"\s+", " ", str(text or "")).strip()
-        lowered = clean.lower()
-        inferred: dict[str, Any] = {"background": clean}
-        name_patterns = [
-            r"\bmy name is\s+([A-Z][A-Za-z'\-]+(?: [A-Z][A-Za-z'\-]+)?)",
-            r"\b(?:i am|i'm)\s+([A-Z][A-Za-z'\-]+(?: [A-Z][A-Za-z'\-]+)?)(?=\s*,|\s+an?\b|\s+the\b|\.|$)",
-            r"\bname\s+([A-Z][A-Za-z'\-]+(?: [A-Z][A-Za-z'\-]+)?)",
-            r"\b(?:i am called|i'm called|call me)\s+([A-Z][A-Za-z'\-]+(?: [A-Z][A-Za-z'\-]+)?)",
-        ]
-        for pattern in name_patterns:
-            match = re.search(pattern, clean, flags=re.IGNORECASE)
-            if match:
-                inferred["name"] = match.group(1).strip(" .,;:")
-                break
-        known_roles = (
-            "archmage", "mage", "wizard", "sorcerer", "witch", "warlock", "ranger", "knight", "soldier",
-            "veteran soldier", "pilot", "sci-fi pilot", "captain", "rogue", "thief", "cleric", "priest",
-            "druid", "bard", "fighter", "paladin", "monk", "barbarian", "gunslinger", "detective",
-        )
-        for role in sorted(known_roles, key=len, reverse=True):
-            if re.search(rf"\b{re.escape(role)}\b", lowered):
-                inferred["role"] = role
-                break
-        if "role" not in inferred:
-            role_match = re.search(r"(?:a|an|the) ([a-z][a-z '\-]{2,40}?)(?: named| called| with| who| from|,|\.|$)", clean, flags=re.IGNORECASE)
-            if role_match:
-                role = role_match.group(1).strip(" .,;:")
-                if role not in {"name", "world"}:
-                    inferred["role"] = role
-        species_match = re.search(r"\b(human|elf|elven|dwarf|halfling|orc|half-orc|gnome|tiefling|dragonborn|android|alien|fae|vampire|werewolf)\b", lowered)
-        if species_match:
-            inferred["species"] = species_match.group(1)
-        appearance_parts: list[str] = []
-        for pattern in (
-            r"\b(?:very\s+)?(?:tall|short|slender|broad|scarred|armored)\b",
-            r"\b(?:black|brown|blonde|silver|white|red|blue|green|gray|grey) hair\b",
-            r"\b(?:black|brown|blue|green|gray|grey|gold|amber|violet) eyes\b",
-            r"\b(?:wearing|wears|clad in) [^,.;]+",
-            r"\b(?:with|has) [^,.;]*(?:hair|eyes|scar|cloak|robes|armor)[^,.;]*",
-        ):
-            appearance_parts.extend(match.group(0).strip(" .,;:") for match in re.finditer(pattern, clean, flags=re.IGNORECASE))
-        if appearance_parts:
-            inferred["appearance"] = ", ".join(dict.fromkeys(appearance_parts))
-        claims: list[str] = []
-        claim_patterns = (
-            r"\bmany spells(?: in my arsenal)?\b",
-            r"\bmaster (?:swordsman|archer|duelist|assassin)\b",
-            r"\bveteran soldier\b",
-            r"\bstarting out with [^,.;]+",
-        )
-        for pattern in claim_patterns:
-            claims.extend(match.group(0).strip(" .,;:") for match in re.finditer(pattern, clean, flags=re.IGNORECASE))
-        if claims:
-            inferred["starting_claims"] = list(dict.fromkeys(claims))
-        if any("many spells" in claim.lower() for claim in claims):
-            inferred["needs_ability_followup"] = "spells"
-        goal_match = re.search(r"(?:want to|goal is to|seeking|searching for|trying to|hope to) ([^.]+)", clean, flags=re.IGNORECASE)
-        if goal_match:
-            inferred["goals"] = goal_match.group(1).strip(" .,;:")
-        return inferred
+        return analyze_dm_intent(text).to_inferred_dict()
+
+    def _infer_guided_world_name(self, state: CampaignState, inferred: dict[str, Any]) -> str:
+        current = str(state.world_meta.world_name or "").strip()
+        if current and current.lower() != "untitled world":
+            return current
+        blob = " ".join([
+            str(state.campaign_name or ""),
+            str(state.world_meta.world_theme or ""),
+            str(state.world_meta.premise or ""),
+            str(inferred.get("background", "")),
+            " ".join(inferred.get("world_clues", []) if isinstance(inferred.get("world_clues"), list) else []),
+        ]).lower()
+        if any(token in blob for token in ("isekai", "new world", "awakening", "summoned", "overlord")):
+            return "The New World"
+        if any(token in blob for token in ("sci-fi", "science fiction", "space", "starship", "sector")):
+            return "Frontier Sector"
+        if any(token in blob for token in ("post-apocalyptic", "apocalypse", "wastes", "wasteland")):
+            return "The Wastes"
+        if any(token in blob for token in ("fantasy", "magic", "magical", "archmage", "wizard")):
+            return "The Arcane Realm"
+        campaign = str(state.campaign_name or "").strip()
+        if campaign:
+            cleaned = re.sub(r"\b(campaign|adventure|again)\b", "", campaign, flags=re.IGNORECASE).strip(" -:;,")
+            if cleaned:
+                return cleaned
+        return current or "Untitled World"
+
+    def _infer_guided_starting_location(self, state: CampaignState, inferred: dict[str, Any]) -> str:
+        current = str(state.world_meta.starting_location_name or "").strip()
+        if current and current.lower() != "starting area":
+            return current
+        blob = " ".join([
+            str(state.world_meta.world_theme or ""),
+            str(state.world_meta.premise or ""),
+            str(inferred.get("background", "")),
+            " ".join(inferred.get("world_clues", []) if isinstance(inferred.get("world_clues"), list) else []),
+        ]).lower()
+        if any(token in blob for token in ("awakening", "new world", "isekai", "summoned")):
+            options = ["Arrival Clearing", "Summoning Site", "Ruined Shrine"]
+        elif any(token in blob for token in ("sci-fi", "space", "starship", "sector")):
+            options = ["Docking Bay", "Orbital Concourse", "Frontier Outpost"]
+        elif any(token in blob for token in ("post-apocalyptic", "wastes", "wasteland")):
+            options = ["Shelter Gate", "Rusted Overpass", "Dust Market"]
+        elif any(token in blob for token in ("town", "village", "fantasy", "magic", "magical")):
+            options = ["Village Crossroads", "Market Square", "Old Gate"]
+        else:
+            options = ["Wayfarer's Camp", "Roadside Threshold", "Quiet Trailhead"]
+        index = sum(ord(ch) for ch in blob) % len(options) if blob else 0
+        return options[index]
+
+    def _apply_guided_world_metadata(self, inferred: dict[str, Any]) -> None:
+        state = self.session.state
+        world_name = self._infer_guided_world_name(state, inferred)
+        location_name = self._infer_guided_starting_location(state, inferred)
+        state.world_meta.world_name = world_name
+        state.world_meta.starting_location_name = location_name
+        if inferred.get("world_clues") and not str(state.world_meta.premise or "").strip():
+            state.world_meta.premise = ", ".join(inferred["world_clues"])
+        location = state.locations.get(state.current_location_id)
+        if location is not None:
+            location.name = location_name
+            theme = str(state.world_meta.world_theme or "adventure").strip()
+            premise = str(state.world_meta.premise or "the adventure is beginning").strip()
+            location.description = f"{location_name} in {world_name}, a {theme} setting. {premise}"
+        scene_state = state.structured_state.runtime.scene_state if isinstance(state.structured_state.runtime.scene_state, dict) else {}
+        scene_state["location_name"] = location_name
+        scene_state["scene_summary"] = self._build_seed_scene_summary(state, location_name)
+        state.structured_state.runtime.scene_state = scene_state
 
     def _looks_like_character_creation_answer(self, text: str) -> bool:
         clean = str(text or "").strip().lower()
@@ -5622,11 +5632,26 @@ class WebRuntime:
         self.session.state.player.inventory = list(runtime.inventory)
 
     def _add_guided_ability_proposals(self, inferred: dict[str, Any]) -> None:
-        if not inferred.get("needs_ability_followup"):
-            return
         runtime = self.session.state.structured_state.runtime
         if not isinstance(runtime.campaign_events, list):
             runtime.campaign_events = []
+        specific = inferred.get("specific_abilities") if isinstance(inferred.get("specific_abilities"), list) else []
+        for ability in specific:
+            ability_name = str(ability).strip()
+            if not ability_name:
+                continue
+            if any(event.get("type") == "ability_suggested" and str(event.get("title", "")).lower() == ability_name.lower() for event in runtime.campaign_events if isinstance(event, dict)):
+                continue
+            runtime.campaign_events.append({
+                "id": f"guided_ability_{int(time.time() * 1000)}_{len(runtime.campaign_events)}",
+                "type": "ability_suggested",
+                "title": ability_name,
+                "description": f"Player proposed {ability_name} as a starting ability during guided creation.",
+                "status": "pending",
+                "payload": {"name": ability_name, "category": "spell", "tags": ["starter", "guided_creation"], "source_metadata": {"source": "guided_character_creation"}},
+            })
+        if not inferred.get("needs_ability_followup"):
+            return
         if any(event.get("type") == "ability_suggested" and event.get("title") == "Starting Spell List" and event.get("status") == "pending" for event in runtime.campaign_events if isinstance(event, dict)):
             return
         runtime.campaign_events.append(
@@ -5643,7 +5668,7 @@ class WebRuntime:
     def _guided_followup_question(self, inferred: dict[str, Any]) -> str:
         if inferred.get("needs_ability_followup") == "spells":
             name = str(inferred.get("name") or self.session.state.player.name or "your character").strip()
-            return f"What kinds of spells is {name} known for? You can list a few, or describe the style of magic."
+            return f"What kinds of spells is {name} known for? What kinds of magic or signature spells is {name} known for? You can list a few, or describe the style of magic."
         return "Tell me one more important detail before we begin."
 
     def _upsert_guided_main_character_sheet(self, text: str) -> CharacterSheet:
@@ -5668,9 +5693,12 @@ class WebRuntime:
             notes.append(f"Starting claims: {', '.join(inferred['starting_claims'])}")
         if inferred.get("goals"):
             notes.append(f"Starting goal: {inferred['goals']}")
+        if inferred.get("world_clues"):
+            notes.append(f"World clues: {', '.join(inferred['world_clues'])}")
         if inferred.get("background"):
             notes.append(f"Player introduction: {inferred['background']}")
         sheet.notes = "\n".join(dict.fromkeys([part for part in [sheet.notes, *notes] if part]))
+        self._apply_guided_world_metadata(inferred)
         self._apply_guided_starter_inventory(inferred)
         self._add_guided_ability_proposals(inferred)
         return sheet
@@ -5680,12 +5708,15 @@ class WebRuntime:
         location_name = str(state.world_meta.starting_location_name or (location.name if location else "the threshold of adventure")).strip()
         theme = str(state.world_meta.world_theme or "fantasy").strip()
         premise = str(state.world_meta.premise or "rumors of trouble are already moving through the air").strip()
-        npc_name = "Mara" if "fantasy" in theme.lower() else "the nearest guide"
         role = sheet.role or state.player.char_class or "adventurer"
+        name = sheet.name or state.player.name or "Adventurer"
+        identity = f"{name}, a {role}" if role else name
+        world = str(state.world_meta.world_name or "the world").strip()
+        poi = "A cracked stone arch hums nearby." if any(token in " ".join([theme, premise]).lower() for token in ("magic", "new world", "isekai", "awakening")) else "A clear path leads onward."
         return (
-            f"Your story begins at {location_name}, where {premise}. As a {role}, you arrive just as the first urgent sign of trouble appears. "
-            f"{npc_name} waits near a weathered notice board, clutching a sealed message and watching the road as if someone is late. "
-            "The place is alive with possibility, but the moment is already moving. What do you do?"
+            f"Your story begins at {location_name} in {world}. {premise.capitalize()}. "
+            f"{identity} comes to awareness with the campaign's {theme} tone pressing in around them. "
+            f"{poi} What do you do?"
         )
 
     def _handle_character_creation_answer(self, text: str, request_started: float, request_received_at: str) -> dict[str, Any]:
