@@ -373,36 +373,100 @@
           <h3>Settings</h3>
           <button id="close-setup-modal">Close Settings</button>
         </div>
-        <p class="setup-intro">Settings is the future home for advanced AI/provider/world controls. Basic DM Mode is available without local setup.</p>
-        <div id="setup-progress" class="setup-progress" aria-live="polite"></div>
-        <div class="setup-main-actions">
-          <button id="setup-text-ai" class="btn-primary">Set Up Text AI</button>
-          <button id="setup-everything" class="btn-primary">Set Up Everything</button>
-          <button id="recheck-readiness">Recheck dependencies</button>
-        </div>
-        <div id="dependency-readiness" class="readiness-panel">Checking providers...</div>
+        <p class="setup-intro">Tune how your adventure looks, plays, and responds. Basic DM Mode is available for everyone; optional local tools are tucked away for players who want extra setup.</p>
+
         <section class="panel-block">
-          <h4>Story DM Settings</h4>
-          <label>Story Mode <select id="model-provider"><option value="null">Basic DM Mode</option><option value="ollama">Local AI (Advanced)</option></select></label>
-          <label>Model Name <input id="model-name" type="text" value="llama3" /></label>
-          <div class="button-row">
-            <button id="download-ollama">Download Ollama</button>
-            <button id="pick-ollama-folder">Select Ollama Folder</button>
-            <button id="connect-ollama-folder">Connect Ollama Folder</button>
-            <button id="install-story-model">Install Story Model</button>
+          <h4>General</h4>
+          <p class="setup-intro">Choose comfortable play options for the table.</p>
+          <label><input id="suggested-moves-toggle" type="checkbox" /> Show narrator suggested next moves</label>
+          <label>Narration format
+            <select id="narration-format-mode">
+              <option value="book">Book</option>
+              <option value="compact">Compact</option>
+              <option value="dialogue_focused">Dialogue focused</option>
+            </select>
+          </label>
+        </section>
+
+        <section class="panel-block">
+          <h4>Campaign</h4>
+          <div class="settings-shortcut-row button-row">
+            <button id="open-narrator-rules" type="button">Narrator Rules</button>
+            <button id="open-world-building" type="button">World Building</button>
           </div>
-          <label>Ollama folder path <input id="ollama-path-input" type="text" placeholder="C:\\Users\\You\\AppData\\Local\\Programs\\Ollama" /></label>
-          <div class="model-management">
-            <div class="panel-title-row">
-              <h4>Available Models</h4>
-              <button id="refresh-supported-models">Refresh inventory</button>
-            </div>
-            <div id="active-model-banner" class="setup-summary">Active model: loading...</div>
-            <div id="supported-models-list" class="setup-model-list">Loading supported models...</div>
+          <section class="campaign-mode-settings">
+            <h4>Campaign Mode</h4>
+            <p class="setup-intro">Adventure Mode keeps sheets, inventory, and abilities as reference screens while you play. Creator Mode unlocks editing tools for campaign content.</p>
+            <label><input id="creator-mode-toggle" type="checkbox" /> Enable Creator Mode</label>
+          </section>
+          <section class="campaign-play-style-group">
+            <h4>Campaign Rules &amp; Behavior</h4>
+            <label><input id="allow-freeform-powers" type="checkbox" /> Allow freeform powers/actions not yet on sheet</label>
+            <label><input id="auto-update-sheet-from-actions" type="checkbox" /> Auto-update character sheet from demonstrated actions</label>
+            <label><input id="strict-sheet-enforcement" type="checkbox" /> Strictly require sheet-listed powers</label>
+            <label><input id="auto-sync-player-identity" type="checkbox" /> Auto-sync player-declared identity/name/title</label>
+            <label><input id="auto-generate-npc-personalities" type="checkbox" /> Auto-generate NPC personalities</label>
+            <label><input id="auto-evolve-npc-personalities" type="checkbox" /> Auto-evolve NPC personalities over time</label>
+            <label><input id="reactive-world-persistence" type="checkbox" /> Persist reactive world consequences</label>
+          </section>
+        </section>
+
+        <section class="panel-block">
+          <h4>Story DM</h4>
+          <p class="setup-intro">Basic DM Mode is ready without extra setup. Optional local AI and image tools can be enabled from Developer Tools.</p>
+          <label>Story DM mode <select id="model-provider"><option value="null">Basic DM Mode</option><option value="ollama">Local AI (optional)</option></select></label>
+          <label>Scene visual mode
+            <select id="scene-visual-mode">
+              <option value="off">Off</option>
+              <option value="manual">Manual only</option>
+              <option value="before_narration">Before narration</option>
+              <option value="after_narration">After narration</option>
+            </select>
+          </label>
+          <label class="advanced-image-toggle hidden"><input id="manual-image-enabled" type="checkbox" /> Manual image addon enabled</label>
+        </section>
+
+        <section class="panel-block">
+          <h4>Advanced</h4>
+          <p class="setup-intro">Advanced local AI and image tools are optional. Most adventures do not need them.</p>
+          <label><input id="developer-tools-toggle" type="checkbox" /> Show Developer Tools</label>
+          <div class="settings-status-row">
+            <span id="campaign-settings-status" class="settings-status saved">Saved</span>
+            <button id="cancel-settings" type="button">Cancel changes</button>
           </div>
         </section>
-        <section class="panel-block advanced-addon-settings">
-          <h4>Future Image Addon</h4>
+
+        <section id="developer-tools-panel" class="panel-block hidden">
+          <h4>Developer Tools</h4>
+          <p class="setup-intro"><strong>These tools are for testing, diagnostics, and local AI setup. Most players do not need them.</strong></p>
+          <div id="setup-progress" class="setup-progress" aria-live="polite"></div>
+          <div class="setup-main-actions">
+            <button id="setup-text-ai" class="btn-primary">Set Up Text AI</button>
+            <button id="setup-everything" class="btn-primary">Set Up Everything</button>
+            <button id="recheck-readiness">Recheck dependencies</button>
+          </div>
+          <div id="dependency-readiness" class="readiness-panel">Checking providers...</div>
+          <section class="developer-tool-section">
+            <h5>Ollama and Model Setup</h5>
+            <label>Model Name <input id="model-name" type="text" value="llama3" /></label>
+            <div class="button-row">
+              <button id="download-ollama">Download Ollama</button>
+              <button id="pick-ollama-folder">Select Ollama Folder</button>
+              <button id="connect-ollama-folder">Connect Ollama Folder</button>
+              <button id="install-story-model">Install Story Model</button>
+            </div>
+            <label>Ollama folder path <input id="ollama-path-input" type="text" placeholder="C:\Users\You\AppData\Local\Programs\Ollama" /></label>
+            <div class="model-management">
+              <div class="panel-title-row">
+                <h5>Model Inventory</h5>
+                <button id="refresh-supported-models">Refresh inventory</button>
+              </div>
+              <div id="active-model-banner" class="setup-summary">Active model: loading...</div>
+              <div id="supported-models-list" class="setup-model-list">Loading supported models...</div>
+            </div>
+          </section>
+          <section class="developer-tool-section advanced-addon-settings">
+            <h5>ComfyUI / Image Addon Setup</h5>
           <section class="guided-image-setup-card">
             <h5>Image AI</h5>
             <p class="setup-intro">Use this guided flow: Download → Select Sources → Start.</p>
@@ -464,53 +528,12 @@
             </div>
             <pre id="image-backend-diagnostics-log">Diagnostics have not run yet.</pre>
           </details>
-        </section>
-        <section class="panel-block">
-          <h4>Campaign Behavior</h4>
-          <div class="settings-shortcut-row button-row">
-            <button id="open-narrator-rules" type="button">Narrator Rules</button>
-            <button id="open-world-building" type="button">World Building</button>
-          </div>
-          <label class="advanced-image-toggle hidden"><input id="manual-image-enabled" type="checkbox" /> Manual image addon enabled</label>
-          <section class="campaign-mode-settings">
-            <h4>Campaign Mode</h4>
-            <p class="setup-intro">Adventure Mode keeps sheets, inventory, and abilities as reference screens while you play. Creator Mode unlocks editing tools for full control.</p>
-            <label><input id="creator-mode-toggle" type="checkbox" /> Enable Creator Mode</label>
+
           </section>
-          <label><input id="suggested-moves-toggle" type="checkbox" /> Show narrator suggested next moves</label>
-          <section class="campaign-play-style-group">
-            <h4>Campaign Rules &amp; Behavior</h4>
-            <label><input id="allow-freeform-powers" type="checkbox" /> Allow freeform powers/actions not yet on sheet</label>
-            <label><input id="auto-update-sheet-from-actions" type="checkbox" /> Auto-update character sheet from demonstrated actions</label>
-            <label><input id="strict-sheet-enforcement" type="checkbox" /> Strictly require sheet-listed powers</label>
-            <label><input id="auto-sync-player-identity" type="checkbox" /> Auto-sync player-declared identity/name/title</label>
-            <label><input id="auto-generate-npc-personalities" type="checkbox" /> Auto-generate NPC personalities</label>
-            <label><input id="auto-evolve-npc-personalities" type="checkbox" /> Auto-evolve NPC personalities over time</label>
-            <label><input id="reactive-world-persistence" type="checkbox" /> Persist reactive world consequences</label>
-            <label>Narration format
-              <select id="narration-format-mode">
-                <option value="book">Book</option>
-                <option value="compact">Compact</option>
-                <option value="dialogue_focused">Dialogue focused</option>
-              </select>
-            </label>
-            <label>Scene visual mode
-              <select id="scene-visual-mode">
-                <option value="off">Off</option>
-                <option value="manual">Manual only</option>
-                <option value="before_narration">Before narration</option>
-                <option value="after_narration">After narration</option>
-              </select>
-            </label>
+          <section class="developer-tool-section">
+            <h5>Setup Guidance</h5>
+            <ul id="setup-guidance" class="setup-guidance"></ul>
           </section>
-          <div class="settings-status-row">
-            <span id="campaign-settings-status" class="settings-status saved">Saved</span>
-            <button id="cancel-settings" type="button">Cancel changes</button>
-          </div>
-        </section>
-        <section class="panel-block">
-          <h4>Setup Guidance</h4>
-          <ul id="setup-guidance" class="setup-guidance"></ul>
         </section>
       </div>
     </div>

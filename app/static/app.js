@@ -72,6 +72,8 @@ const supportedModelsList = document.getElementById('supported-models-list');
 const activeModelBanner = document.getElementById('active-model-banner');
 const campaignSettingsStatus = document.getElementById('campaign-settings-status');
 const cancelSettingsButton = document.getElementById('cancel-settings');
+const developerToolsToggleInput = document.getElementById('developer-tools-toggle');
+const developerToolsPanel = document.getElementById('developer-tools-panel');
 const characterSheetsManager = document.getElementById('character-sheets-manager');
 const characterSheetsList = document.getElementById('character-sheets-list');
 const characterSheetsCount = document.getElementById('character-sheets-count');
@@ -982,7 +984,27 @@ function closeCampaignBrowser() {
   campaignBrowserModal?.classList.add('hidden');
 }
 
+function setDeveloperToolsVisible(visible) {
+  if (developerToolsPanel) developerToolsPanel.classList.toggle('hidden', !visible);
+  if (developerToolsToggleInput) developerToolsToggleInput.checked = !!visible;
+  try {
+    window.localStorage?.setItem('adventurersGuildDeveloperToolsVisible', visible ? 'true' : 'false');
+  } catch (error) {
+    console.warn(`[settings] could not persist Developer Tools visibility: ${error.message}`);
+  }
+}
+
+function getDeveloperToolsVisiblePreference() {
+  try {
+    return window.localStorage?.getItem('adventurersGuildDeveloperToolsVisible') === 'true';
+  } catch (error) {
+    console.warn(`[settings] could not read Developer Tools visibility: ${error.message}`);
+    return false;
+  }
+}
+
 function openSetupModal() {
+  setDeveloperToolsVisible(getDeveloperToolsVisiblePreference());
   setupModal.classList.remove('hidden');
 }
 
@@ -3055,6 +3077,8 @@ creatorModeConfirmEnable?.addEventListener('click', async () => {
 
 bindClickById('open-setup-modal', openSetupModal);
 bindClickById('close-setup-modal', closeSetupModal);
+developerToolsToggleInput?.addEventListener('change', () => setDeveloperToolsVisible(!!developerToolsToggleInput.checked));
+setDeveloperToolsVisible(getDeveloperToolsVisiblePreference());
 bindClickById('setup-text-ai', () => runReadinessAction('setup_text_ai', {}));
 bindClickById('open-comfyui-download-page', () => openOfficialDownload('https://github.com/comfyanonymous/ComfyUI/releases'));
 bindClickById('open-model-download-page', () => openOfficialDownload('https://civitai.com/models/4384/dreamshaper'));
