@@ -120,14 +120,14 @@ def test_settings_shortcuts_close_settings_before_opening_target_modals() -> Non
     )
     assert narrator_handler, "Narrator Rules handler is missing."
     assert world_handler, "World Building handler is missing."
-    assert narrator_handler.group("body").find("closeSettingsBeforeOpeningModal();") < narrator_handler.group("body").find("narratorRulesModal?.classList.remove('hidden')")
-    assert world_handler.group("body").find("closeSettingsBeforeOpeningModal();") < world_handler.group("body").find("worldBuildingModal?.classList.remove('hidden')")
+    assert "openPrimaryModal('narrator-rules-modal');" in narrator_handler.group("body")
+    assert "openPrimaryModal('world-building-modal');" in world_handler.group("body")
 
 
 def test_creator_mode_confirmation_handler_still_opens_confirmation_modal() -> None:
     script = Path("app/static/app.js").read_text(encoding="utf-8")
     assert "openCreatorModeConfirmation();" in script
-    assert "creatorModeConfirmModal.classList.remove('hidden');" in script
+    assert "openDialog('creator-mode-confirm-modal');" in script
 
 
 def test_new_campaign_form_is_campaign_focused_by_default() -> None:
