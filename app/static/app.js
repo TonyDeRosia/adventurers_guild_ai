@@ -238,7 +238,7 @@ function normalizeNarrationFormatMode(mode) {
 
 function normalizeSceneVisualMode(mode) {
   const clean = String(mode || '').trim().toLowerCase();
-  return ['off', 'manual', 'before_narration', 'after_narration'].includes(clean) ? clean : 'after_narration';
+  return ['off', 'manual', 'before_narration', 'after_narration'].includes(clean) ? clean : 'off';
 }
 
 function playStyleSnapshotFromUi() {
@@ -251,7 +251,7 @@ function playStyleSnapshotFromUi() {
     auto_evolve_npc_personalities: !!autoEvolveNpcPersonalitiesInput?.checked,
     reactive_world_persistence: !!reactiveWorldPersistenceInput?.checked,
     narration_format_mode: normalizeNarrationFormatMode(narrationFormatModeInput?.value || 'book'),
-    scene_visual_mode: normalizeSceneVisualMode(sceneVisualModeInput?.value || 'after_narration'),
+    scene_visual_mode: normalizeSceneVisualMode(sceneVisualModeInput?.value || 'off'),
   };
 }
 
@@ -366,7 +366,7 @@ function ingestPersistedCampaignSettings(snapshot, slot, { forceUi = false } = {
       auto_evolve_npc_personalities: !!snapshot.play_style?.auto_evolve_npc_personalities,
       reactive_world_persistence: !!snapshot.play_style?.reactive_world_persistence,
       narration_format_mode: normalizeNarrationFormatMode(snapshot.play_style?.narration_format_mode || 'book'),
-      scene_visual_mode: normalizeSceneVisualMode(snapshot.play_style?.scene_visual_mode || 'after_narration'),
+      scene_visual_mode: normalizeSceneVisualMode(snapshot.play_style?.scene_visual_mode || 'off'),
     },
   };
   const slotChanged = campaignSettingsSlot && slot && campaignSettingsSlot !== slot;
@@ -882,7 +882,7 @@ const imageProgressMessages = {
   accepted: 'Generating scene image...',
   generating: 'Generating scene image...',
   finalizing: 'Finalizing visual...',
-  success: 'Scene visual updated',
+  success: '',
   error: 'Image generation failed',
 };
 
@@ -893,11 +893,16 @@ function clearImageProgressTimer() {
   }
 }
 
+function visualsEnabledForPlayer() {
+  return !!campaignSettingsPersisted?.image_generation_enabled
+    && normalizeSceneVisualMode(campaignSettingsPersisted?.play_style?.scene_visual_mode || 'off') !== 'off';
+}
+
 function setImageProgressPhase(phase, message = '') {
   if (!sceneImageProgressStrip || !sceneImageProgressText) return;
   clearImageProgressTimer();
   imageProgressState.phase = phase;
-  if (phase === 'idle') {
+  if (phase === 'idle' || !visualsEnabledForPlayer()) {
     sceneImageProgressStrip.classList.add('hidden');
     sceneImageProgressStrip.removeAttribute('data-phase');
     sceneImageProgressText.textContent = '';
@@ -1010,6 +1015,10 @@ function openSetupModal() {
 
 function closeSetupModal() {
   setupModal.classList.add('hidden');
+}
+
+function closeSettingsBeforeOpeningModal() {
+  closeSetupModal();
 }
 
 function parseCsv(input) {
@@ -1460,6 +1469,7 @@ async function api(path, options = {}) {
 function renderMessage(msg) {
   if (!dialogueFeed) return;
   if (msg.type === 'image') {
+    if (!visualsEnabledForPlayer()) return;
     msg = { ...msg, type: 'system', text: msg.text || 'Scene visual updated.' };
   }
   const el = document.createElement('div');
@@ -1578,6 +1588,11 @@ async function refreshMessages() {
 }
 
 async function refreshSceneVisual() {
+  if (!visualsEnabledForPlayer()) {
+    clearSceneImage('Scene visuals are off.');
+    setImageProgressPhase('idle');
+    return null;
+  }
   const data = await api('/api/campaign/scene-visual');
   const sceneVisual = data.scene_visual;
   if (sceneVisual?.image_url) {
@@ -1599,7 +1614,7 @@ async function waitForSceneVisualUpdate(previousUpdatedAt = '') {
     updateImageProgress(progressId, 'generating', pollCount > 1 ? 'Generating scene image...' : 'Submitting image request...');
     const sceneVisual = await refreshSceneVisual().catch(() => null);
     if (sceneVisual?.updated_at && sceneVisual.updated_at !== previousUpdatedAt) {
-      setImageStatus('Scene visual updated.');
+      if (visualsEnabledForPlayer()) setImageStatus('Scene visual updated.');
       updateImageProgress(progressId, 'finalizing', 'Finalizing visual...');
       return true;
     }
@@ -3206,11 +3221,13 @@ document.addEventListener('keydown', (event) => {
 });
 document.getElementById('open-narrator-rules').onclick = async () => {
   console.log('[narrator-rules] runtime_button_rendered=true');
+  closeSettingsBeforeOpeningModal();
   await refreshNarratorRules();
   narratorRulesModal?.classList.remove('hidden');
   console.log(`[narrator-rules] modal_opened campaign=${loadedSlot || 'unknown'}`);
 };
 document.getElementById('open-world-building').onclick = async () => {
+  closeSettingsBeforeOpeningModal();
   await refreshWorldBuilding();
   worldBuildingModal?.classList.remove('hidden');
 };

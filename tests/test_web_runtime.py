@@ -110,14 +110,14 @@ def test_new_campaign_uses_preferred_visual_and_suggested_move_defaults(tmp_path
     created = runtime.create_campaign({"player_name": "DefaultCheck", "slot": "slot_defaults"})
 
     assert "campaign_auto_visuals_enabled" not in created["state"]["settings"]
-    assert created["state"]["settings"]["play_style"]["scene_visual_mode"] == "after_narration"
+    assert created["state"]["settings"]["play_style"]["scene_visual_mode"] == "off"
     assert created["state"]["settings"]["suggested_moves_enabled"] is False
     assert created["state"]["settings"]["effective_suggested_moves_enabled"] is False
     assert created["state"]["settings"]["display_mode"] == "story"
 
     global_settings = runtime.get_global_settings()
-    assert global_settings["image"]["manual_image_generation_enabled"] is True
-    assert global_settings["image"]["campaign_auto_visual_timing"] == "after_narration"
+    assert global_settings["image"]["manual_image_generation_enabled"] is False
+    assert global_settings["image"]["campaign_auto_visual_timing"] == "off"
 
 
 def test_existing_campaign_settings_are_preserved_on_load(tmp_path: Path, monkeypatch) -> None:
@@ -875,7 +875,7 @@ def test_legacy_campaign_without_play_style_loads_safe_defaults() -> None:
     play_style = loaded.settings.play_style
     assert play_style.allow_freeform_powers is True
     assert play_style.narration_format_mode == "book"
-    assert play_style.scene_visual_mode == "after_narration"
+    assert play_style.scene_visual_mode == "off"
 
 
 def test_character_sheet_can_be_created_after_campaign_start_and_serialized(tmp_path: Path, monkeypatch) -> None:
@@ -1094,6 +1094,7 @@ def test_valid_external_workflow_path_enables_comfyui_generation_path(tmp_path: 
     )
     monkeypatch.setattr(runtime, "get_image_status", lambda: {"ready": True})
     monkeypatch.setattr(runtime.image_adapter, "generate", lambda request, _manager: ImageGenerationResult(success=True, workflow_id=request.workflow_id))
+    runtime.set_campaign_settings({"image_generation_enabled": True})
     result = runtime.generate_image({"workflow_id": "scene_image", "prompt": "ok"})
     assert result.success is True
     assert result.workflow_id == "custom_scene"
@@ -4573,6 +4574,7 @@ def test_image_pipeline_test_action_succeeds_when_configured(tmp_path: Path, mon
         "images.comfyui_adapter.ComfyUIAdapter.generate",
         lambda self, request, _manager: ImageGenerationResult(success=True, workflow_id=request.workflow_id, prompt_id="pid", result_path="/tmp/out.png"),
     )
+    runtime.set_campaign_settings({"image_generation_enabled": True})
 
     result = runtime.test_image_pipeline()
     assert result["success"] is True
@@ -4604,6 +4606,7 @@ def test_image_pipeline_test_action_fails_when_workflow_path_missing(tmp_path: P
             }
         }
     )
+    runtime.set_campaign_settings({"image_generation_enabled": True})
 
     result = runtime.test_image_pipeline()
     assert result["success"] is False

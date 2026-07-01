@@ -494,7 +494,7 @@ class CampaignState:
         settings["content_settings"] = content_settings
         play_style = CampaignState._play_style_from_payload(raw_play_style, settings)
         settings["play_style"] = play_style
-        settings["image_generation_enabled"] = bool(settings.get("image_generation_enabled", True))
+        settings["image_generation_enabled"] = bool(settings.get("image_generation_enabled", False))
         settings["suggested_moves_enabled"] = bool(settings.get("suggested_moves_enabled", False))
         raw_display_mode = str(settings.get("display_mode", "story")).strip().lower()
         settings["display_mode"] = raw_display_mode if raw_display_mode in {"story", "mud", "rpg"} else "story"
@@ -514,9 +514,9 @@ class CampaignState:
         if visual_mode not in {"off", "manual", "before_narration", "after_narration"}:
             legacy_auto_visuals = settings.get("campaign_auto_visuals_enabled")
             if legacy_auto_visuals is None:
-                visual_mode = "after_narration"
+                visual_mode = "off"
             else:
-                visual_mode = "after_narration" if bool(legacy_auto_visuals) else "manual"
+                visual_mode = "after_narration" if bool(legacy_auto_visuals) else "off"
         return CampaignSettings.PlayStyleSettings(
             allow_freeform_powers=bool(source.get("allow_freeform_powers", True)),
             auto_update_character_sheet_from_actions=bool(source.get("auto_update_character_sheet_from_actions", True)),

@@ -285,7 +285,7 @@ class WebRuntime:
 
     def _normalize_scene_visual_mode(self, value: str | None) -> str:
         clean = str(value or "").strip().lower()
-        return clean if clean in {"off", "manual", "before_narration", "after_narration"} else "after_narration"
+        return clean if clean in {"off", "manual", "before_narration", "after_narration"} else "off"
 
     def _set_scene_visual(
         self,
@@ -6622,7 +6622,7 @@ class WebRuntime:
                 play_style.get("narration_format_mode", settings.play_style.narration_format_mode)
             ),
             scene_visual_mode=self._normalize_scene_visual_mode(
-                play_style.get("scene_visual_mode", settings.play_style.scene_visual_mode)
+                requested_scene_visual_mode or settings.play_style.scene_visual_mode
             ),
         )
         self.save_active_campaign(self.session.active_slot)

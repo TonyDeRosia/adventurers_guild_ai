@@ -96,3 +96,35 @@ def test_runtime_editors_are_creator_mode_only_by_default() -> None:
         assert match, f"{element_id} is missing"
         classes = ' '.join(group for group in match.groups() if group)
         assert 'creator-mode-only' in classes
+
+
+
+def test_advanced_campaign_image_generation_checkbox_defaults_off() -> None:
+    html = _index_html()
+    match = re.search(r'<input id="image-enabled"[^>]*>', html)
+    assert match, "Campaign image generation checkbox is missing."
+    assert "checked" not in match.group(0)
+
+
+def test_settings_shortcuts_close_settings_before_opening_target_modals() -> None:
+    script = Path("app/static/app.js").read_text(encoding="utf-8")
+    narrator_handler = re.search(
+        r"document\.getElementById\('open-narrator-rules'\)\.onclick = async \(\) => \{(?P<body>.*?)\n\};",
+        script,
+        flags=re.DOTALL,
+    )
+    world_handler = re.search(
+        r"document\.getElementById\('open-world-building'\)\.onclick = async \(\) => \{(?P<body>.*?)\n\};",
+        script,
+        flags=re.DOTALL,
+    )
+    assert narrator_handler, "Narrator Rules handler is missing."
+    assert world_handler, "World Building handler is missing."
+    assert narrator_handler.group("body").find("closeSettingsBeforeOpeningModal();") < narrator_handler.group("body").find("narratorRulesModal?.classList.remove('hidden')")
+    assert world_handler.group("body").find("closeSettingsBeforeOpeningModal();") < world_handler.group("body").find("worldBuildingModal?.classList.remove('hidden')")
+
+
+def test_creator_mode_confirmation_handler_still_opens_confirmation_modal() -> None:
+    script = Path("app/static/app.js").read_text(encoding="utf-8")
+    assert "openCreatorModeConfirmation();" in script
+    assert "creatorModeConfirmModal.classList.remove('hidden');" in script
