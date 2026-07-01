@@ -53,6 +53,7 @@ from app.desktop_capabilities import DesktopIntegration
 from app.installer_layout import InstallerLayoutValidator
 from app.intelligence import CampaignIntelligenceLibrary
 from engine.dm_reasoning import analyze_player_input, build_ooc_response
+from engine.dm_pipeline import process_player_input
 from app.npc_identity import NPCIdentityRegistry
 from app.runtime_config import AppRuntimeConfig, ImageRuntimeConfig, ModelRuntimeConfig, RuntimeConfigStore
 from engine.campaign_engine import CampaignEngine, TurnResult
@@ -4571,6 +4572,8 @@ class WebRuntime:
             },
             "character_sheet_guidance_strength": state.character_sheet_guidance_strength,
             "startup_state": getattr(state, "startup_state", "ready"),
+            "bootstrap_complete": getattr(state, "bootstrap_complete", getattr(state, "startup_state", "ready") == "ready"),
+            "bootstrap_missing_fields": list(getattr(state, "bootstrap_missing_fields", [])),
             "character_sheets": [
                 {
                     "id": sheet.id,
@@ -5617,7 +5620,9 @@ class WebRuntime:
         theme = str(state.world_meta.world_theme or state.settings.profile or "").lower()
         tone = str(state.world_meta.tone or state.settings.narration_tone or "").lower()
         text = " ".join([role, intro, theme, tone])
-        if "archmage" in text or "wizard" in text or "mage" in text:
+        if "pyromancer" in text or "fire spells" in text or "fire magic" in text:
+            names = [("charred spellbook", "key_items"), ("fire-resistant gloves", "items"), ("ember focus", "items"), ("ash-stained cloak", "armor")]
+        elif "archmage" in text or "wizard" in text or "mage" in text:
             names = [("spellbook", "key_items"), ("arcane focus", "items"), ("travel robes", "armor"), ("component pouch", "items")]
         elif "ranger" in text:
             names = [("bow", "weapons"), ("hunting knife", "weapons"), ("cloak", "armor"), ("rations", "consumables")]
@@ -5630,7 +5635,7 @@ class WebRuntime:
         else:
             names = [("travel pack", "items"), ("rations", "consumables")]
         return [
-            {"id": f"starter_{index}_{name.replace(' ', '_')}", "name": name, "category": category, "quantity": 1, "notes": "Guided character creation starter item."}
+            {"id": f"starter_{index}_{name.replace(' ', '_')}", "name": name, "category": category, "quantity": 1, "notes": f"Starter item inferred from {role or 'character'} role."}
             for index, (name, category) in enumerate(names)
         ]
 
@@ -5701,8 +5706,8 @@ class WebRuntime:
             sheet = CharacterSheet(id="sheet_main", name=inferred.get("name") or state.player.name or "Adventurer", sheet_type="main_character")
             state.character_sheets.append(sheet)
         if inferred.get("name"):
-            sheet.name = inferred["name"]
-            state.player.name = inferred["name"]
+            sheet.name = str(inferred["name"]).strip().title()
+            state.player.name = str(inferred["name"]).strip().title()
         if inferred.get("role"):
             role_value = inferred["role"]
             if str(role_value).lower() == "archmage":
@@ -5764,6 +5769,8 @@ class WebRuntime:
         self._add_guided_ability_proposals(inferred)
         sheet = self._find_main_character_sheet(self.session.state) or self._upsert_guided_main_character_sheet("")
         self.session.state.startup_state = "ready"
+        self.session.state.bootstrap_complete = True
+        self.session.state.bootstrap_missing_fields = []
         opening = self._guided_opening_scene(self.session.state, sheet)
         self._append_message("narrator", opening, persist=False)
         self._flush_history_store()
@@ -5784,6 +5791,29 @@ class WebRuntime:
         inferred = self._infer_character_identity(clean_text)
         sheet = self._upsert_guided_main_character_sheet(clean_text)
         self.session.state.recent_memory.append(f"Player introduced main character: {clean_text}")
+        missing = []
+        if not str(sheet.name or "").strip() or str(sheet.name).strip().lower() == "adventurer":
+            missing.append("character_name")
+        if not str(sheet.role or "").strip() or str(sheet.role).strip().lower() == "adventurer":
+            missing.append("role")
+        self.session.state.bootstrap_missing_fields = list(missing)
+        self.session.state.bootstrap_complete = False
+        if "role" in missing:
+            name = str(sheet.name or self.session.state.player.name or "your character").strip().title()
+            followup = f"Got it. Your name is {name}. What class, role, or concept should this adventure be built around?"
+            self.session.state.startup_state = "character_creation"
+            self._append_message("narrator", followup, persist=False)
+            self._flush_history_store()
+            self.save_active_campaign(self.session.active_slot)
+            total_ms = (time.perf_counter() - request_started) * 1000
+            return {
+                "narrative": followup,
+                "system_messages": [],
+                "messages": [{"type": "narrator", "text": followup}],
+                "should_exit": False,
+                "metadata": {"startup_flow": "character_creation_missing_role", "timing": {"total_request_ms": round(total_ms, 2), "request_received_at": request_received_at}},
+                "state": self.serialize_state(),
+            }
         if inferred.get("needs_ability_followup"):
             followup = self._guided_followup_question(inferred)
             self.session.state.startup_state = "ability_setup_followup"
@@ -5797,9 +5827,11 @@ class WebRuntime:
                 "messages": [{"type": "narrator", "text": followup}],
                 "should_exit": False,
                 "metadata": {"startup_flow": "character_creation_needs_followup", "timing": {"total_request_ms": round(total_ms, 2), "request_received_at": request_received_at}},
-                "state": {**self.serialize_state(), "startup_state": "character_creation"},
+                "state": self.serialize_state(),
             }
         self.session.state.startup_state = "ready"
+        self.session.state.bootstrap_complete = True
+        self.session.state.bootstrap_missing_fields = []
         opening = self._guided_opening_scene(self.session.state, sheet)
         self._append_message("narrator", opening, persist=False)
         self._flush_history_store()
@@ -7726,9 +7758,8 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
             raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="'text' is required")
         if mode not in {"ic", "ooc"}:
             raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="'mode' must be 'ic' or 'ooc'")
-        if mode == "ooc":
-            return runtime.handle_ooc_input(player_text)
-        return runtime.handle_player_input(player_text)
+        result = process_player_input(runtime, player_text, mode)
+        return result.response or {"narrative": "", "system_messages": [], "messages": [], "should_exit": False, "metadata": {}, "state": runtime.serialize_state()}
 
     @app.post("/api/campaign/start")
     def campaign_start(payload: dict[str, Any]) -> dict[str, Any]:
