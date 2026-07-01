@@ -15,6 +15,7 @@ from engine.content_registry import ContentRegistry
 from engine.dialogue_service import DialogueService
 from engine.entities import CampaignState, NPC
 from engine.inventory import InventoryService
+from engine.player_output import filter_player_messages, narrative_needs_player_facing_fallback
 from engine.spellbook import normalize_spellbook_entry
 from app.dm_intent import analyze_dm_intent
 from memory.campaign_memory import CampaignMemory
@@ -459,6 +460,7 @@ class CampaignEngine:
         turn_started = time.perf_counter()
         scene_state = self._ensure_scene_state(state)
         system_messages = self._sanitize_system_messages(system_messages)
+        debug_trace: list[str] = []
         self.memory.record_recent(state, f"Player action: {action}")
         for msg in system_messages:
             self.quests.add_event(state, msg)
@@ -468,7 +470,7 @@ class CampaignEngine:
         pending_ability_learning = self._prepare_pending_ability_learning(state, action, system_messages)
         ability_assessment = self._assess_ability_resolution(state, action, pending_ability_learning)
         if ability_assessment is not None:
-            system_messages.extend(self._build_ability_authority_messages(ability_assessment))
+            debug_trace.extend(self._build_ability_authority_messages(ability_assessment))
 
         if self.summary.should_summarize(action, system_messages):
             summary = self.summary.build_summary(state, action, system_messages)
@@ -508,6 +510,7 @@ class CampaignEngine:
                 messages=self._build_structured_messages(system_messages, ""),
                 metadata={
                     "requested_mode": requested_mode,
+                    "debug_trace": debug_trace,
                     "provider_attempted": False,
                     "fallback_used": False,
                     "fallback_reason": "",
@@ -733,6 +736,10 @@ class CampaignEngine:
             print("[control-audit] preserved_generated_output=true")
             print("[narrative-quality] preserved_valid_output=true")
         narrative = self._sanitize_narrator_actor_output(narrative, state, scene_state)
+        if narrative_needs_player_facing_fallback(narrative):
+            debug_trace.append(f"Quarantined narrator fallback: {narrative}")
+            narrative = self._build_scene_aware_fallback(action, scene_state)
+            quality_fallback_used = True
         if quality_fallback_used:
             scene_state["consecutive_repetition_count"] = 0
         elif dead_loop_detected:
@@ -768,12 +775,16 @@ class CampaignEngine:
             "llm_generate_ms": round(model_ms, 2),
             "turn_finalize_ms": round(total_ms, 2),
         }
+        filtered_output = filter_player_messages(system_messages)
+        debug_trace.extend(filtered_output.quarantined_messages)
+        system_messages = filtered_output.player_messages
         return TurnResult(
             narrative=narrative,
             system_messages=system_messages,
             messages=self._build_structured_messages(system_messages, narrative),
             metadata={
                 "requested_mode": requested_mode,
+                "debug_trace": debug_trace,
                 "model_provider": selected_provider,
                 "model_name": selected_model,
                 "provider_attempted": provider_attempted,

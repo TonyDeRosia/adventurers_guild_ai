@@ -5555,7 +5555,7 @@ def test_guided_kokudar_archmage_intro_parses_sheet_inventory_and_followup(tmp_p
     assert not {"torch", "worn_backpack", "field_draught"}.issubset(inventory_names)
     assert "what kinds of spells is kokudar known for" in result["narrative"].lower()
     assert any(event["type"] == "ability_suggested" and event["title"] == "Starting Spell List" and event["status"] == "pending" for event in state["campaign_events"])
-    assert state["startup_state"] == "character_creation"
+    assert state["startup_state"] == "ability_setup_followup"
 
 
 def test_guided_sparse_intro_still_starts_with_minimal_supplies(tmp_path: Path, monkeypatch) -> None:
@@ -5699,7 +5699,7 @@ def test_guided_broad_archmage_claim_triggers_followup_and_event(tmp_path: Path,
 
     result = runtime.handle_player_input("my name is Kokudar, an archmage with many spells, awakening in a new world")
 
-    assert result["state"]["startup_state"] == "character_creation"
+    assert result["state"]["startup_state"] == "ability_setup_followup"
     assert "what kinds of magic or signature spells is kokudar known for" in result["narrative"].lower()
     assert any(event["type"] == "ability_suggested" and event["title"] == "Starting Spell List" and event["status"] == "pending" for event in result["state"]["campaign_events"])
 
@@ -5992,3 +5992,58 @@ def test_dm_pipeline_complete_intro_bootstraps_without_role_pollution(tmp_path: 
     event_names = {event["payload"]["name"] for event in result["state"]["campaign_events"] if event["type"] == "ability_suggested"}
     assert {"Firebolt", "Flame Shield"} <= event_names
     assert "What do you do?" in result["narrative"]
+
+
+def test_adventure_output_filter_blocks_diagnostics_but_keeps_debug_trace(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"player_name": "Dork", "char_class": "Battle Mage", "slot": "slot_output_filter", "campaign_mode": "adventure"})
+    runtime.session.state.startup_state = "ready"
+
+    output = runtime.handle_player_input("i cast colour spray on myself")
+    combined_log = "\n".join(message["text"] for message in output["messages"]) + "\n" + output["narrative"]
+    blocked = ["Action noted.", "You commit to", "Ability authority", "Freeform power note", "Learning mode is disabled", "strict=", "confidence=", "state=untrained"]
+
+    assert all(phrase not in combined_log for phrase in blocked)
+    assert "raises a hand" in output["narrative"] or "attempts to cast" in output["narrative"]
+    assert any("Ability authority" in line for line in output["metadata"].get("debug_trace", []))
+    assert any("Ability authority" in line for line in runtime.get_last_turn_routing().get("debug_trace", []))
+
+
+def test_unknown_ability_use_proposes_pending_without_accepting(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"player_name": "Dork", "char_class": "Mage", "slot": "slot_pending_ability", "campaign_mode": "adventure"})
+    runtime.session.state.startup_state = "ready"
+    runtime.session.state.settings.play_style.allow_freeform_powers = True
+
+    output = runtime.handle_player_input("i cast colour spray on myself")
+    events = output["state"]["campaign_events"]
+    spellbook_names = {entry.get("name") for entry in output["state"]["spellbook"]}
+
+    assert any(event["type"] == "ability_suggested" and event["status"] == "pending" for event in events)
+    assert "Colour Spray" not in spellbook_names
+    assert "Ability authority" not in output["narrative"]
+
+
+def test_legendary_battle_mage_bootstrap_preserves_compound_role_and_asks_followup(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_legendary_battle_mage", "campaign_name": "Legend Test"})
+
+    output = runtime.handle_player_input("I am Dork, a legendary battle mage.")
+    sheet = next(sheet for sheet in output["state"]["character_sheets"] if sheet["sheet_type"] == "main_character")
+
+    assert sheet["role"] == "Battle Mage"
+    assert "legendary" in sheet["notes"].lower()
+    assert output["state"]["startup_state"] == "ability_setup_followup"
+    assert "truly famous as a legendary battle mage" in output["narrative"]
+    assert "What do you do?" not in output["narrative"]
+
+
+def test_basic_dm_fallback_never_says_you_commit_to(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"player_name": "Dork", "char_class": "Mage", "slot": "slot_basic_dm", "campaign_mode": "adventure"})
+    runtime.session.state.startup_state = "ready"
+
+    output = runtime.handle_player_input("seriously")
+
+    assert "You commit to" not in output["narrative"]
+    assert "I’m not sure" in output["narrative"] or "spell" in output["narrative"].lower()

@@ -1,6 +1,6 @@
 # Known Test Baseline
 
-Last checked while hardening the V2 DM Reasoning Pipeline.
+Last checked while cleaning player-facing Adventure Mode output and Basic DM fallbacks.
 
 ## Command
 
@@ -8,12 +8,27 @@ Last checked while hardening the V2 DM Reasoning Pipeline.
 python -m pytest tests/test_web_runtime.py tests/test_campaign_extensions.py tests/test_setup_modal_dom.py
 ```
 
+## Current result
+
+- `tests/test_campaign_extensions.py`: passed in the combined run.
+- `tests/test_setup_modal_dom.py`: passed in the combined run.
+- Combined suite result: **339 passed, 11 failed, 12 skipped**.
+
 ## Current failures observed
 
-`tests/test_campaign_extensions.py` and `tests/test_setup_modal_dom.py` passed during the combined run. The combined suite currently reports legacy/environment failures in `tests/test_web_runtime.py` that are outside the pipeline-owned `/api/campaign/input` acceptance path:
+The remaining failures are in `tests/test_web_runtime.py` and are unrelated to the Adventure Mode player-output filter, diagnostic routing, Basic DM fallback, ability-use quarantine, or bootstrap role parsing changes in this branch:
 
-- ComfyUI/image setup validation and orchestration failures in this container, including incomplete portable folder messaging, missing `pyvenv.cfg`, managed ComfyUI root inference, preferred-checkpoint setup, missing python runtime, and launch-target validation.
-- Legacy direct `runtime.handle_player_input(...)` expectations around lightweight NPC persistence, prompt feed retention, narrator output, recalibration learning-mode ability creation, and NPC dialogue splitting.
-- Legacy guided-start tests that still call `runtime.handle_player_input(...)` directly and expect sparse/broad intros to open immediately or remain in the previous `character_creation` follow-up state. The V2 route acceptance path is now covered through `engine.dm_pipeline.process_player_input(...)` and `/api/campaign/input`; weak intros intentionally stay in bootstrap and broad ability claims move to `ability_setup_followup` until abilities are clarified.
+- ComfyUI/image setup validation and orchestration baseline failures:
+  - incomplete portable folder messaging still expects `python_embeded or .venv`
+  - missing `pyvenv.cfg` validation is not marked broken
+  - managed ComfyUI root inference is not considered valid in the test fixture
+  - preferred-checkpoint setup monkeypatch does not accept `setup_lock_owned`
+  - missing python runtime and launch-target validation do not report expected missing-file sentinels
+- Legacy direct runtime expectations unrelated to this output-filter change:
+  - lightweight NPC persistence still observes an auto-created main character sheet
+  - prompt-feed retention expectations differ from current runtime behavior
+  - gameplay narrator-output counting still sees retry generation
+  - recalibration no longer auto-adds missing abilities directly when player-owned ability proposals are required
+  - NPC dialogue split assertion expects the pre-routed message list shape
 
-Use the targeted V2 pipeline tests and live route tests for this change's acceptance behavior.
+Use the focused DM/output tests and the passing `tests/test_campaign_extensions.py`/`tests/test_setup_modal_dom.py` results for this change's acceptance behavior.

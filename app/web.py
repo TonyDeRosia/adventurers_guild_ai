@@ -5689,10 +5689,14 @@ class WebRuntime:
         )
 
     def _guided_followup_question(self, inferred: dict[str, Any]) -> str:
+        claims_blob = " ".join(inferred.get("starting_claims", []) if isinstance(inferred.get("starting_claims"), list) else []).lower()
+        role_blob = str(inferred.get("role") or self.session.state.player.char_class or "").lower()
+        name = str(inferred.get("name") or self.session.state.player.name or "your character").strip()
+        if "legendary" in claims_blob and "battle mage" in role_blob:
+            return f"Is {name} truly famous as a legendary battle mage in this world, or is that just how he sees himself? What battle magic does he already know?"
         if inferred.get("needs_ability_followup") == "spells":
-            name = str(inferred.get("name") or self.session.state.player.name or "your character").strip()
-            claims = " ".join(inferred.get("starting_claims", []) if isinstance(inferred.get("starting_claims"), list) else []).lower()
-            role = str(inferred.get("role") or self.session.state.player.char_class or "").lower()
+            claims = claims_blob
+            role = role_blob
             if "fire" in claims or "pyromancer" in role:
                 return f"What fire spells does {name} already know? You can list a few, or describe his style of pyromancy."
             return f"What kinds of spells is {name} known for? What kinds of magic or signature spells is {name} known for? You can list a few, or describe the style of magic."
@@ -5798,7 +5802,7 @@ class WebRuntime:
             missing.append("role")
         self.session.state.bootstrap_missing_fields = list(missing)
         self.session.state.bootstrap_complete = False
-        if "role" in missing:
+        if "role" in missing and re.search(r"\b(?:my name is|name\s+[A-Z]|i am|i\'m|im|call me)\b", clean_text, re.I):
             name = str(sheet.name or self.session.state.player.name or "your character").strip().title()
             followup = f"Got it. Your name is {name}. What class, role, or concept should this adventure be built around?"
             self.session.state.startup_state = "character_creation"
@@ -5990,7 +5994,8 @@ class WebRuntime:
         }
         print(f"[turn-timing] {json.dumps(turn_timing)}")
         action_noted_added = any(str(message).strip() == "Action noted." for message in result.system_messages)
-        self._set_last_turn_routing(**{**self.last_turn_routing, "action_noted_added": action_noted_added})
+        debug_trace = list((result.metadata or {}).get("debug_trace", [])) if isinstance(result.metadata, dict) else []
+        self._set_last_turn_routing(**{**self.last_turn_routing, "action_noted_added": action_noted_added, "debug_trace": debug_trace})
         return {
             "narrative": result.narrative,
             "system_messages": result.system_messages,

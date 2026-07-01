@@ -13,7 +13,7 @@ from typing import Any
 
 
 ROLE_VOCABULARY = (
-    "pyromancer", "necromancer", "archmage", "mage", "wizard", "sorcerer", "witch", "warlock",
+    "legendary battle mage", "battle mage", "fire mage", "spellblade", "sword saint", "death knight", "pyromancer", "necromancer", "archmage", "mage", "wizard", "sorcerer", "witch", "warlock",
     "ranger", "knight", "warrior", "soldier", "veteran", "veteran soldier", "rogue", "thief",
     "assassin", "cleric", "priest", "paladin", "druid", "hunter", "pilot", "captain", "engineer",
     "medic", "noble", "merchant", "bard", "fighter", "monk", "barbarian", "gunslinger", "detective",
@@ -146,7 +146,11 @@ def analyze_player_input(text: str, mode: str = "ic", campaign_state: Any | None
 
     for role in sorted(ROLE_VOCABULARY, key=len, reverse=True):
         if re.search(rf"\b{re.escape(role)}\b", lowered):
-            intent.role = _title(role)
+            role_value = role
+            if role_value == "legendary battle mage":
+                role_value = "battle mage"
+                intent.broad_power_claims.append("legendary")
+            intent.role = _title(role_value)
             break
 
     for term in APPEARANCE_TERMS:
@@ -165,7 +169,7 @@ def analyze_player_input(text: str, mode: str = "ic", campaign_state: Any | None
     )
     for pattern in broad_patterns:
         intent.broad_power_claims.extend(m.group(0).strip(" .,;:") for m in re.finditer(pattern, clean, re.I))
-    if intent.role in {"Pyromancer", "Archmage", "Necromancer"} and intent.role.lower() not in [p.lower() for p in intent.broad_power_claims]:
+    if intent.role in {"Pyromancer", "Archmage", "Necromancer", "Battle Mage", "Fire Mage", "Warlock"} and intent.role.lower() not in [p.lower() for p in intent.broad_power_claims]:
         intent.broad_power_claims.append(intent.role.lower())
 
     list_match = re.search(r"\b(?:my\s+)?(?:spells?|abilities|powers)\s*(?:are|:|include|like|such as)\s+([^.;]+)", clean, re.I)
@@ -220,9 +224,13 @@ def build_startup_plan(intent: DMIntent, campaign_state: Any | None = None) -> D
     plan = DMPlan(should_advance_turn=False, should_generate_narration=False, character_updates=updates, intent_notes=[intent.primary_intent])
     if intent.needs_followup:
         who = intent.character_name or getattr(getattr(campaign_state, "player", None), "name", "your character")
-        topic = "fire spells" if any("fire" in p.lower() or p.lower() == "pyromancer" for p in intent.broad_power_claims) else "abilities"
-        plan.should_ask_followup = True
-        plan.followup_question = f"What {topic} does {who} already know? You can list a few, or describe their style."
+        if "legendary" in [p.lower() for p in intent.broad_power_claims] and intent.role == "Battle Mage":
+            plan.should_ask_followup = True
+            plan.followup_question = f"Is {who} truly famous as a legendary battle mage in this world, or is that just how he sees himself? What battle magic does he already know?"
+        else:
+            topic = "fire spells" if any("fire" in p.lower() or p.lower() == "pyromancer" for p in intent.broad_power_claims) else "abilities"
+            plan.should_ask_followup = True
+            plan.followup_question = f"What {topic} does {who} already know? You can list a few, or describe their style."
         plan.campaign_event_proposals.append({"type": "ability_suggested", "title": "Starting Spell List", "reason": "Player described existing magic, but no specific spells were defined."})
     else:
         plan.should_start_opening_scene = True
