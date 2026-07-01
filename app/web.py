@@ -4604,6 +4604,8 @@ class WebRuntime:
             "inventory_state": state.structured_state.runtime.inventory_state,
             "abilities": getattr(state.structured_state.runtime, "abilities", state.structured_state.runtime.spellbook),
             "spellbook": state.structured_state.runtime.spellbook,
+            "campaign_events": self.get_campaign_events()["events"],
+            "campaign_events_pending_count": self.get_campaign_events()["pending_count"],
             "custom_narrator_rules": state.structured_state.canon.custom_narrator_rules,
             "active_slot": self.session.active_slot,
         }
@@ -5129,6 +5131,39 @@ class WebRuntime:
         equipped = inventory_state.get("equipped")
         if not isinstance(equipped, dict):
             inventory_state["equipped"] = {"equipped_item_id": self.session.state.player.equipped_item_id}
+
+    def get_campaign_events(self) -> dict[str, Any]:
+        runtime = self.session.state.structured_state.runtime
+        runtime.campaign_events = [dict(v) for v in getattr(runtime, "campaign_events", []) if isinstance(v, dict)]
+        pending_count = sum(1 for event in runtime.campaign_events if str(event.get("status")) == "pending")
+        return {"events": runtime.campaign_events, "pending_count": pending_count}
+
+    def resolve_campaign_event(self, payload: dict[str, Any], status: str) -> dict[str, Any]:
+        event_id = str(payload.get("id", payload.get("event_id", ""))).strip()
+        if not event_id:
+            raise ValueError("Event id is required.")
+        events = self.get_campaign_events()["events"]
+        event = next((entry for entry in events if str(entry.get("id", "")) == event_id), None)
+        if event is None:
+            raise ValueError("Campaign event not found.")
+        if str(event.get("status")) != "pending":
+            return self.get_campaign_events()
+        event["status"] = status
+        event["resolved_at"] = datetime.now(timezone.utc).isoformat()
+        if status == "accepted" and event.get("type") == "ability_suggested":
+            ability_payload = event.get("payload", {}) if isinstance(event.get("payload"), dict) else {}
+            # Reuse the existing abilities/spellbook helper so accepted proposals follow canonical normalization.
+            self.upsert_spellbook_entry(ability_payload)
+            ability_name = str(ability_payload.get("name", "")).strip()
+            main_sheet = next((sheet for sheet in self.session.state.character_sheets if sheet.sheet_type == "main_character"), None)
+            if main_sheet is not None and ability_name:
+                existing = {self.engine._normalize_ability_name(name) for name in main_sheet.abilities}
+                if self.engine._normalize_ability_name(ability_name) not in existing:
+                    main_sheet.abilities.append(ability_name)
+        elif status == "acknowledged" and event.get("type") == "ability_suggested":
+            raise ValueError("Ability proposals must be accepted or rejected.")
+        self.save_active_campaign(self.session.active_slot)
+        return self.get_campaign_events()
 
     def get_spellbook_state(self) -> list[dict[str, Any]]:
         runtime = self.session.state.structured_state.runtime
@@ -7135,6 +7170,31 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     def campaign_spellbook() -> dict[str, Any]:
         abilities = runtime.get_spellbook_state()
         return {"abilities": abilities, "spellbook": abilities}
+
+    @app.get("/api/campaign/events")
+    def campaign_events() -> dict[str, Any]:
+        return runtime.get_campaign_events()
+
+    @app.post("/api/campaign/events/accept")
+    def campaign_events_accept(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return runtime.resolve_campaign_event(payload, "accepted")
+        except ValueError as exc:
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.post("/api/campaign/events/reject")
+    def campaign_events_reject(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return runtime.resolve_campaign_event(payload, "rejected")
+        except ValueError as exc:
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.post("/api/campaign/events/acknowledge")
+    def campaign_events_acknowledge(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return runtime.resolve_campaign_event(payload, "acknowledged")
+        except ValueError as exc:
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(exc)) from exc
 
     @app.get("/api/campaign/narrator-rules")
     def campaign_narrator_rules() -> dict[str, Any]:

@@ -290,7 +290,8 @@ def test_new_ability_is_added_after_successful_use() -> None:
     engine.run_turn(state, "cast rain spell")
 
     names = [entry.get("name") for entry in state.structured_state.runtime.spellbook]
-    assert "Rain Spell" in names
+    assert "Rain Spell" not in names
+    assert any(event.get("payload", {}).get("name") == "Rain Spell" for event in state.structured_state.runtime.campaign_events)
 
 
 def test_ability_normalization_produces_clean_reusable_names() -> None:
@@ -299,7 +300,8 @@ def test_ability_normalization_produces_clean_reusable_names() -> None:
     engine = CampaignEngine(StaticNarrationAdapter("You cast chain lightning and it succeeds."), data_dir=Path("data"))
 
     engine.run_turn(state, "cast chain lightning in the air")
-    assert any(entry.get("name") == "Chain Lightning" for entry in state.structured_state.runtime.spellbook)
+    assert not any(entry.get("name") == "Chain Lightning" for entry in state.structured_state.runtime.spellbook)
+    assert any(event.get("type") == "ability_suggested" and event.get("status") == "pending" for event in state.structured_state.runtime.campaign_events)
 
 
 def test_summon_and_create_actions_normalize_to_named_abilities() -> None:
@@ -311,8 +313,11 @@ def test_summon_and_create_actions_normalize_to_named_abilities() -> None:
     engine.run_turn(state, "i create rain")
 
     names = [entry.get("name") for entry in state.structured_state.runtime.spellbook]
-    assert "Fire Summoning" in names
-    assert "Rain Calling" in names
+    assert "Fire Summoning" not in names
+    assert "Rain Calling" not in names
+    event_names = [event.get("payload", {}).get("name") for event in state.structured_state.runtime.campaign_events]
+    assert "Fire Summoning" in event_names
+    assert "Rain Calling" in event_names
 
 
 def test_learned_ability_persists_across_turns_and_prompt_injection() -> None:
@@ -324,8 +329,8 @@ def test_learned_ability_persists_across_turns_and_prompt_injection() -> None:
     engine.run_turn(state, "look")
 
     gm_context = engine.state_orchestrator.build_gm_context(state)
-    assert "Rain Spell" in gm_context
-    assert any(entry.get("name") == "Rain Spell" for entry in state.structured_state.runtime.spellbook)
+    assert not any(entry.get("name") == "Rain Spell" for entry in state.structured_state.runtime.spellbook)
+    assert any(event.get("payload", {}).get("name") == "Rain Spell" for event in state.structured_state.runtime.campaign_events)
 
 
 def test_duplicate_ability_entries_are_not_created() -> None:
@@ -337,7 +342,9 @@ def test_duplicate_ability_entries_are_not_created() -> None:
     engine.run_turn(state, "cast rain spell")
 
     matches = [entry for entry in state.structured_state.runtime.spellbook if entry.get("name") == "Rain Spell"]
-    assert len(matches) == 1
+    assert len(matches) == 0
+    proposals = [event for event in state.structured_state.runtime.campaign_events if event.get("payload", {}).get("name") == "Rain Spell"]
+    assert len(proposals) == 1
 
 
 def test_duplicate_ability_entries_are_prevented_by_fuzzy_similarity() -> None:
@@ -349,7 +356,9 @@ def test_duplicate_ability_entries_are_prevented_by_fuzzy_similarity() -> None:
     engine.run_turn(state, "cast chain-lightning")
 
     matches = [entry for entry in state.structured_state.runtime.spellbook if entry.get("name") == "Chain Lightning"]
-    assert len(matches) == 1
+    assert len(matches) == 0
+    proposals = [event for event in state.structured_state.runtime.campaign_events if event.get("payload", {}).get("name") == "Chain Lightning"]
+    assert len(proposals) == 1
 
 
 def test_strict_mode_recognizes_learned_abilities_after_learning() -> None:
@@ -361,8 +370,8 @@ def test_strict_mode_recognizes_learned_abilities_after_learning() -> None:
     first = engine.run_turn(state, "cast rain spell")
     second = engine.run_turn(state, "cast rain spell")
 
-    assert any("newly demonstrated" in msg.lower() for msg in first.system_messages)
-    assert not any("newly demonstrated" in msg.lower() for msg in second.system_messages)
+    assert any("state=untrained" in msg for msg in first.system_messages if msg.startswith("Ability authority:"))
+    assert any("state=untrained" in msg for msg in second.system_messages if msg.startswith("Ability authority:"))
 
 
 def test_ability_state_matrix_strict_on_auto_update_on_transitions_after_learning() -> None:
@@ -377,10 +386,10 @@ def test_ability_state_matrix_strict_on_auto_update_on_transitions_after_learnin
 
     first_authority = next(msg for msg in first.system_messages if msg.startswith("Ability authority:"))
     second_authority = next(msg for msg in second.system_messages if msg.startswith("Ability authority:"))
-    assert "state=newly_demonstrated" in first_authority
-    assert "confidence=reduced" in first_authority
-    assert "state=known" in second_authority
-    assert "confidence=normal" in second_authority
+    assert "state=untrained" in first_authority
+    assert "confidence=low" in first_authority
+    assert "state=untrained" in second_authority
+    assert "confidence=low" in second_authority
 
 
 def test_ability_state_matrix_strict_on_auto_update_off_never_learns_unknown_action() -> None:
@@ -441,9 +450,9 @@ def test_prompt_injection_includes_settings_driven_ability_truth() -> None:
     prompt = engine.get_last_prompt_debug_packet(state.campaign_id)["turn_prompt"]
 
     assert "- strict_sheet_enforcement: true" in prompt
-    assert "- learning_mode: true" in prompt
-    assert "- ability_state: newly_demonstrated" in prompt
-    assert "- ability_confidence: reduced" in prompt
+    assert "- learning_mode: false" in prompt
+    assert "- ability_state: untrained" in prompt
+    assert "- ability_confidence: low" in prompt
 
 
 def test_main_character_sheet_is_auto_created_and_injected_when_missing() -> None:

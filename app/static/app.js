@@ -131,6 +131,8 @@ const inventoryEntryQuantityInput = document.getElementById('inventory-entry-qua
 const inventoryEntryNotesInput = document.getElementById('inventory-entry-notes');
 const runtimeSpellbookModal = document.getElementById('runtime-spellbook-modal');
 const runtimeSpellbookList = document.getElementById('runtime-spellbook-list');
+const campaignEventsList = document.getElementById('campaign-events-list');
+const campaignEventsPendingCount = document.getElementById('campaign-events-pending-count');
 const narratorRulesModal = document.getElementById('narrator-rules-modal');
 const narratorRulesList = document.getElementById('narrator-rules-list');
 const worldBuildingModal = document.getElementById('world-building-modal');
@@ -146,6 +148,7 @@ const PRIMARY_MODAL_IDS = new Set([
   'runtime-character-sheets-modal',
   'runtime-inventory-modal',
   'runtime-spellbook-modal',
+  'campaign-events-modal',
   'narrator-rules-modal',
   'world-building-modal',
 ]);
@@ -241,6 +244,7 @@ let runtimeCharacterSheets = [];
 let selectedRuntimeSheetId = '';
 let runtimeInventoryState = {};
 let runtimeSpellbookEntries = [];
+let campaignEvents = [];
 let customNarratorRules = [];
 let worldBuildingState = { npc_personalities: [], world_design: [], reactive_world_changes: [] };
 
@@ -1950,6 +1954,46 @@ function renderInventoryViewer() {
   });
 }
 
+function renderCampaignEvents() {
+  if (!campaignEventsList) return;
+  const events = Array.isArray(campaignEvents) ? [...campaignEvents] : [];
+  const pending = events.filter((event) => event.status === 'pending');
+  const recent = events.filter((event) => event.status !== 'pending').slice(-10).reverse();
+  const pendingCount = pending.length;
+  if (campaignEventsPendingCount) {
+    campaignEventsPendingCount.textContent = String(pendingCount);
+    campaignEventsPendingCount.classList.toggle('hidden', pendingCount === 0);
+  }
+  const renderCard = (event) => {
+    const isAbilityProposal = event.type === 'ability_suggested' && event.status === 'pending';
+    return `
+      <article class="ability-card campaign-event-card">
+        <div class="item-card-head"><strong>${escapeHtml(event.title || 'Campaign Event')}</strong><small>${escapeHtml(titleizeValue(event.type || 'other'))}</small></div>
+        <p>${escapeHtml(event.description || '')}</p>
+        <p class="ability-notes"><strong>Reason:</strong> ${escapeHtml(event.reason || '—')}</p>
+        <div class="ability-meta"><span>Status: <strong>${escapeHtml(titleizeValue(event.status || 'pending'))}</strong></span><span>Created: <strong>${escapeHtml(event.created_at || '—')}</strong></span></div>
+        ${isAbilityProposal ? `<div class="button-row"><button type="button" data-event-accept="${escapeHtml(event.id)}">Learn</button><button type="button" data-event-not-yet="${escapeHtml(event.id)}">Not Yet</button><button type="button" data-event-reject="${escapeHtml(event.id)}">Reject</button></div>` : ''}
+      </article>`;
+  };
+  campaignEventsList.innerHTML = events.length ? `
+    <section class="spellbook-group"><h4>Pending Proposals</h4>${pending.length ? pending.map(renderCard).join('') : '<div class="runtime-sheet-muted">No pending proposals.</div>'}</section>
+    <section class="spellbook-group"><h4>Recent Events</h4>${recent.length ? recent.map(renderCard).join('') : '<div class="runtime-sheet-muted">No resolved events yet.</div>'}</section>
+  ` : '<div class="runtime-sheet-muted">No campaign events yet.</div>';
+  campaignEventsList.querySelectorAll('button[data-event-accept]').forEach((button) => {
+    button.onclick = async () => { await api('/api/campaign/events/accept', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: button.dataset.eventAccept }) }); await refreshCampaignEvents(); await refreshSpellbook(); };
+  });
+  campaignEventsList.querySelectorAll('button[data-event-reject]').forEach((button) => {
+    button.onclick = async () => { await api('/api/campaign/events/reject', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: button.dataset.eventReject }) }); await refreshCampaignEvents(); };
+  });
+  campaignEventsList.querySelectorAll('button[data-event-not-yet]').forEach((button) => { button.onclick = () => closePrimaryModal('campaign-events-modal'); });
+}
+
+async function refreshCampaignEvents() {
+  const payload = await api('/api/campaign/events');
+  campaignEvents = Array.isArray(payload.events) ? payload.events : [];
+  renderCampaignEvents();
+}
+
 function renderSpellbookViewer() {
   if (!runtimeSpellbookList) return;
   const normalizedEntries = runtimeSpellbookEntries.map((entry) => normalizeSpellbookEntry(entry));
@@ -3599,3 +3643,6 @@ console.log('[ui] left_panel_resized=true');
 console.log('[ui] header_simplified=true');
 console.log('[ui] turn_visuals_removed=true');
 console.log('[ui] duplicate_scene_visual_text_removed=true');
+
+document.getElementById('open-campaign-events')?.addEventListener('click', async () => { await refreshCampaignEvents(); openPrimaryModal('campaign-events-modal'); });
+document.getElementById('close-campaign-events')?.addEventListener('click', () => closePrimaryModal('campaign-events-modal'));

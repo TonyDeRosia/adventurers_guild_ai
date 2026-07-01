@@ -92,6 +92,7 @@
             <button id="open-runtime-character-sheets" type="button">Character Sheets</button>
             <button id="open-runtime-inventory" type="button">Inventory</button>
             <button id="open-runtime-spellbook" type="button">Abilities</button>
+            <button id="open-campaign-events" type="button">Campaign Events <span id="campaign-events-pending-count" class="badge hidden">0</span></button>
           </div>
         </section>
         <section id="manual-image-panel" class="panel-block image-generation-panel hidden v1-addon-panel" aria-hidden="true">
@@ -222,6 +223,16 @@
           <button id="inventory-entry-clear" type="button">Clear Form</button>
         </div>
         </section>
+      </div>
+    </div>
+
+    <div id="campaign-events-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="panel-title-row">
+          <h3>Campaign Events</h3>
+          <button id="close-campaign-events" type="button">Close</button>
+        </div>
+        <div id="campaign-events-list" class="runtime-sheet-detail">No campaign events yet.</div>
       </div>
     </div>
 

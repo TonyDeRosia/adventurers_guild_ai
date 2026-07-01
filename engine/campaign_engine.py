@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import re
 import time
+from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from typing import Any
 
@@ -743,7 +744,7 @@ class CampaignEngine:
         print(f"[narration] grounding_cleanup_applied={str(grounding_cleanup_applied).lower()}")
         state.structured_state.runtime.last_narration = narrative
         if pending_ability_learning and self._is_successful_ability_demonstration(narrative):
-            self._learn_ability_from_action(state, pending_ability_learning)
+            self._propose_ability_from_action(state, pending_ability_learning, narrative)
         self._update_scene_state_from_turn(state, action=action, narrative=narrative, system_messages=system_messages, is_gameplay=True)
         self.memory.record_recent(state, f"Narrator: {narrative}")
         self.state_orchestrator.update_runtime_state(state, action=action, system_messages=system_messages, narrative=narrative)
@@ -795,11 +796,13 @@ class CampaignEngine:
         action: str,
         system_messages: list[str],
     ) -> PendingAbilityLearning | None:
-        # Ownership rule: spellbook is player-managed by default.
-        # Normal gameplay narration/actions never auto-write spellbook entries.
-        # Explicit OOC structured-authoring remains the only system write path.
-        print("[ability-learn] added_to_spellbook=false reason=player_managed_spellbook")
-        return None
+        detected = self._detect_action_ability(action)
+        if detected is None or self._find_existing_ability_name(state, detected.normalized_name) is not None:
+            return None
+        # Ownership rule: ability learning during play becomes a player-owned proposal,
+        # not a direct sheet/spellbook write.
+        print("[ability-learn] added_to_spellbook=false reason=player_managed_spellbook proposal_pending=true")
+        return detected
 
     def _assess_ability_resolution(
         self,
@@ -983,6 +986,44 @@ class CampaignEngine:
         if any(marker in lowered for marker in failure_markers):
             return False
         return any(marker in lowered for marker in success_markers)
+
+    def _propose_ability_from_action(self, state: CampaignState, pending: PendingAbilityLearning, narrative: str = "") -> None:
+        runtime = state.structured_state.runtime
+        runtime.campaign_events = [dict(v) for v in getattr(runtime, "campaign_events", []) if isinstance(v, dict)]
+        normalized_key = re.sub(r"[^a-z0-9]", "", pending.normalized_name.lower())
+        for event in runtime.campaign_events:
+            if event.get("type") == "ability_suggested" and event.get("status") == "pending":
+                payload = event.get("payload", {}) if isinstance(event.get("payload"), dict) else {}
+                existing_key = re.sub(r"[^a-z0-9]", "", str(payload.get("name", event.get("title", ""))).lower())
+                if existing_key == normalized_key:
+                    print("[campaign-event] duplicate_pending_ability_suggestion=true")
+                    return
+        ability_entry = {
+            "id": f"learned_{state.turn_count}_{pending.normalized_name.lower().replace(' ', '_')}",
+            "name": pending.normalized_name,
+            "type": "ability",
+            "subtype": pending.category,
+            "description": "Learned from successful in-play demonstration.",
+            "cost_or_resource": "",
+            "cooldown": "",
+            "tags": ["learned_from_action", pending.category],
+            "notes": f"confidence={pending.confidence}",
+            "source_metadata": {"source_type": pending.category},
+        }
+        now = datetime.now(timezone.utc).isoformat()
+        runtime.campaign_events.append({
+            "id": f"evt_{state.turn_count}_{int(time.time() * 1000)}_{normalized_key or 'ability'}",
+            "type": "ability_suggested",
+            "title": "New Ability Suggested",
+            "description": f"{pending.normalized_name}: {ability_entry['description']}",
+            "reason": f"The DM recognized a successful {pending.source_verb or 'ability'} moment in play and is asking before changing player-owned abilities.",
+            "status": "pending",
+            "created_at": now,
+            "source": "ai",
+            "payload": ability_entry,
+            "applies_to": "ability",
+        })
+        print("[campaign-event] type=ability_suggested status=pending")
 
     def _learn_ability_from_action(self, state: CampaignState, pending: PendingAbilityLearning) -> None:
         raw_entry = {

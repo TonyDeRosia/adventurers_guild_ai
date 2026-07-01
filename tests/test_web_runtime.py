@@ -4921,6 +4921,7 @@ def test_recalibration_cleanup_removes_invalid_spell_entries_and_keeps_valid(tmp
         {"name": "Bark Shield", "type": "spell"},
         {"name": "Do you have a preferred level for these new spells?", "type": "spell"},
     ]
+    state.structured_state.runtime.abilities = list(state.structured_state.runtime.spellbook)
     main_sheet.abilities = ["Bark Shield", "Now that we've got your data up to date, what would you like to do next?"]
     main_sheet.guaranteed_abilities = [
         CharacterSheetAbilityEntry.from_payload({"name": "Moonlit Tracker", "type": "ability"}),
@@ -5559,3 +5560,58 @@ def test_prompt_inspector_reports_used_intelligence_files(tmp_path: Path, monkey
     assert any(item["category"] == "core" for item in inspector["core_intelligence_files"])
     assert [item["id"] for item in inspector["campaign_intelligence_files"]] == [entry["id"]]
     assert inspector["estimated_guidance_char_count"] > 0
+
+
+def test_campaign_events_default_empty_and_pending_count_serializes(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"player_name": "Eventless", "slot": "slot_events_empty"})
+
+    state_payload = runtime.serialize_state()
+
+    assert state_payload["campaign_events"] == []
+    assert state_payload["campaign_events_pending_count"] == 0
+
+
+def test_accept_and_reject_ability_campaign_events_in_adventure_mode(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"player_name": "EventHero", "slot": "slot_events_accept", "campaign_mode": "adventure"})
+    state = runtime.session.state
+    state.structured_state.runtime.campaign_events = [
+        {
+            "id": "evt_learn_spark",
+            "type": "ability_suggested",
+            "title": "New Ability Suggested",
+            "description": "Spark Veil: Learned from successful in-play demonstration.",
+            "reason": "The DM recognized a successful magic moment.",
+            "status": "pending",
+            "created_at": "2026-07-01T00:00:00+00:00",
+            "source": "ai",
+            "payload": {"id": "learned_spark_veil", "name": "Spark Veil", "type": "ability", "description": "Learned from play."},
+            "applies_to": "ability",
+        },
+        {
+            "id": "evt_reject_shadow",
+            "type": "ability_suggested",
+            "title": "New Ability Suggested",
+            "description": "Shadow Step: Learned from successful in-play demonstration.",
+            "reason": "The DM recognized a successful stealth moment.",
+            "status": "pending",
+            "created_at": "2026-07-01T00:00:00+00:00",
+            "source": "ai",
+            "payload": {"id": "learned_shadow_step", "name": "Shadow Step", "type": "ability", "description": "Learned from play."},
+            "applies_to": "ability",
+        },
+    ]
+
+    accepted = runtime.resolve_campaign_event({"id": "evt_learn_spark"}, "accepted")
+    rejected = runtime.resolve_campaign_event({"id": "evt_reject_shadow"}, "rejected")
+
+    names = [entry.get("name") for entry in state.structured_state.runtime.spellbook]
+    assert "Spark Veil" in names
+    assert "Shadow Step" not in names
+    statuses = {event["id"]: event["status"] for event in state.structured_state.runtime.campaign_events}
+    assert statuses["evt_learn_spark"] == "accepted"
+    assert statuses["evt_reject_shadow"] == "rejected"
+    assert accepted["pending_count"] == 1
+    assert rejected["pending_count"] == 0
+    assert runtime.serialize_state()["settings"]["campaign_mode"] == "adventure"
