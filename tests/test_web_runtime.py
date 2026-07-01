@@ -5654,3 +5654,73 @@ def test_accept_and_reject_ability_campaign_events_in_adventure_mode(tmp_path: P
     assert accepted["pending_count"] == 1
     assert rejected["pending_count"] == 0
     assert runtime.serialize_state()["settings"]["campaign_mode"] == "adventure"
+
+
+def test_intent_analyzer_detects_character_intro_from_ic_text() -> None:
+    from app.dm_intent import analyze_dm_intent
+
+    intent = analyze_dm_intent('my name is Kokudar, an archmage, tall and black hair and blue eyes, and muscular, awakening in a new world with magical powers as an archmage.')
+
+    assert intent.intent in {"ability_setup_followup", "character_setup_followup", "character_introduction"}
+    assert intent.character_name == "Kokudar"
+    assert intent.role == "archmage"
+    assert "black hair" in intent.appearance.lower()
+    assert "blue eyes" in intent.appearance.lower()
+    assert "muscular" in intent.appearance.lower()
+    assert any("new world" in clue for clue in intent.world_clues)
+
+
+def test_intent_analyzer_detects_spoken_dialogue_with_apostrophes() -> None:
+    from app.dm_intent import analyze_dm_intent
+
+    intent = analyze_dm_intent('I tell them "don\'t worry, I\'m Kokudar."')
+
+    assert intent.intent == "spoken_dialogue"
+    assert intent.spoken_text == "don't worry, I'm Kokudar."
+
+
+def test_guided_startup_infers_world_and_location_from_kokudar_intro(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"campaign_name": "Overlord Again", "world_theme": "classic fantasy", "slot": "slot_guided_world_location"})
+
+    result = runtime.handle_player_input("my name is Kokudar, an archmage, tall and black hair and blue eyes, and muscular, awakening in a new world with magical powers as an archmage.")
+    state = result["state"]
+
+    assert state["world_meta"]["world_name"] != "Untitled World"
+    assert state["world_meta"]["world_name"] == "The New World"
+    assert state["world_meta"]["starting_location_name"] != "Starting Area"
+    assert "untitled world" not in result["narrative"].lower()
+    assert "starting area" not in result["narrative"].lower()
+
+
+def test_guided_broad_archmage_claim_triggers_followup_and_event(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"campaign_name": "Overlord Again", "world_theme": "classic fantasy", "slot": "slot_guided_archmage_followup"})
+
+    result = runtime.handle_player_input("my name is Kokudar, an archmage with many spells, awakening in a new world")
+
+    assert result["state"]["startup_state"] == "character_creation"
+    assert "what kinds of magic or signature spells is kokudar known for" in result["narrative"].lower()
+    assert any(event["type"] == "ability_suggested" and event["title"] == "Starting Spell List" and event["status"] == "pending" for event in result["state"]["campaign_events"])
+
+
+def test_guided_specific_spell_list_creates_ability_suggested_events(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"campaign_name": "Overlord Again", "world_theme": "classic fantasy", "slot": "slot_guided_specific_spells"})
+
+    result = runtime.handle_player_input("my name is Kokudar, an archmage. spells include fireball, teleport, and shield.")
+    titles = {event["title"] for event in result["state"]["campaign_events"] if event["type"] == "ability_suggested"}
+
+    assert {"Fireball", "Teleport", "Shield"}.issubset(titles)
+    assert result["state"]["startup_state"] == "ready"
+
+
+def test_spoken_dialogue_turn_does_not_commit_to_say(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"slot": "slot_dialogue_no_commit"})
+    runtime.handle_player_input("A quiet traveler.")
+
+    result = runtime.handle_player_input('I say "hello im Kokudar."')
+
+    assert "commit to say" not in result["narrative"].lower()
+    assert "hello im Kokudar" in result["narrative"]

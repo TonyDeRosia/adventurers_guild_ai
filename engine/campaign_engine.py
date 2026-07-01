@@ -16,6 +16,7 @@ from engine.dialogue_service import DialogueService
 from engine.entities import CampaignState, NPC
 from engine.inventory import InventoryService
 from engine.spellbook import normalize_spellbook_entry
+from app.dm_intent import analyze_dm_intent
 from memory.campaign_memory import CampaignMemory
 from memory.campaign_state_orchestrator import CampaignStateOrchestrator
 from memory.npc_memory import NPCMemoryTracker
@@ -520,7 +521,10 @@ class CampaignEngine:
                 },
             )
 
-        action_subtype = self._classify_gameplay_action_subtype(action)
+        dm_intent = analyze_dm_intent(action)
+        if dm_intent.spoken_text:
+            system_messages.append(f"Player spoken dialogue: {dm_intent.spoken_text}")
+        action_subtype = "dialogue" if dm_intent.spoken_text else self._classify_gameplay_action_subtype(action)
         # Boundary: engine provides social structure (participants + continuity); narrator prompt/rules
         # own prose shape for both pure dialogue and mixed social turns.
         if action_subtype == "dialogue":
@@ -673,7 +677,7 @@ class CampaignEngine:
                 f"[turn-routing] provider={selected_provider} model={selected_model} attempted={provider_attempted} "
                 f"fallback={fallback_used} reason={fallback_reason} sanitized={was_sanitized}"
             )
-        action_subtype = self._classify_gameplay_action_subtype(action)
+        action_subtype = "dialogue" if analyze_dm_intent(action).spoken_text else self._classify_gameplay_action_subtype(action)
         last_narration = state.structured_state.runtime.last_narration
         consecutive_repetition_count = int(scene_state.get("consecutive_repetition_count", 0) or 0)
         strict_validation_reasons = {"no_output", "refusal", "broken_scaffold"}
@@ -2311,7 +2315,8 @@ class CampaignEngine:
         print(f"[scene-state] recent_consequences_count={len(scene_state.get('recent_consequences', []))}")
 
     def _build_scene_aware_fallback(self, action: str, scene_state: dict[str, Any]) -> str:
-        subtype = self._classify_gameplay_action_subtype(action)
+        intent = analyze_dm_intent(action)
+        subtype = "dialogue" if intent.spoken_text else self._classify_gameplay_action_subtype(action)
         print(f"[turn-quality] fallback_subtype={subtype}")
         if subtype == "internal":
             return self._build_internal_fallback(scene_state)
