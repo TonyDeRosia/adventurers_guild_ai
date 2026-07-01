@@ -1054,7 +1054,7 @@ def test_settings_persistence_and_runtime_effects(tmp_path: Path, monkeypatch) -
     payload = json.loads(config_path.read_text(encoding="utf-8"))
     assert payload["model"]["model_name"] == "llama3.2"
     assert payload["image"]["enabled"] is False
-    assert payload["image"]["comfyui_workflow_path"].endswith("scene_image.json")
+    assert payload["image"]["comfyui_workflow_path"] == ""
     assert payload["image"]["comfyui_output_dir"] == ""
     assert runtime.session.state.settings.content_settings.tone == "noir"
     assert runtime.session.state.settings.suggested_moves_active() is False
@@ -3465,7 +3465,7 @@ def test_orchestrate_image_setup_reports_full_sequence_steps(tmp_path: Path, mon
     ((comfy_root / ".venv") / "python.exe").write_text("", encoding="utf-8")
     for folder in ("custom_nodes", "models", "output", "input", "user"):
         (comfy_root / folder).mkdir(exist_ok=True)
-    monkeypatch.setattr(runtime, "install_image_engine", lambda: {"ok": True, "message": "installed"})
+    monkeypatch.setattr(runtime, "install_image_engine", lambda **_kwargs: {"ok": True, "message": "installed"})
     monkeypatch.setattr(runtime, "_resolve_image_engine_root_for_launch", lambda _cfg: comfy_root)
     monkeypatch.setattr(runtime, "validate_comfyui_install", lambda _path: {"ok": True, "missing_files": []})
     monkeypatch.setattr(runtime, "_build_comfy_launch_command", lambda *_args, **_kwargs: ([str(comfy_root / ".venv" / "Scripts" / "python.exe"), "main.py"], "venv_python"))
@@ -3475,7 +3475,7 @@ def test_orchestrate_image_setup_reports_full_sequence_steps(tmp_path: Path, mon
         "get_path_configuration_status",
         lambda: {"image": {"workflow_path": {"valid": True}, "checkpoint_dir": {"model_ready": True, "valid": True}}},
     )
-    monkeypatch.setattr(runtime, "start_image_engine", lambda: {"ok": True, "steps": [{"step": "wait-for-readiness", "state": "ready", "message": "ready"}]})
+    monkeypatch.setattr(runtime, "start_image_engine", lambda **_kwargs: {"ok": True, "steps": [{"step": "wait-for-readiness", "state": "ready", "message": "ready"}]})
     monkeypatch.setattr(runtime, "get_image_status", lambda: {"reachable": True, "model_ready": True})
     monkeypatch.setattr(runtime, "_refresh_readiness_snapshot", lambda: {})
 
@@ -3496,7 +3496,7 @@ def test_orchestrate_image_setup_reports_full_sequence_steps(tmp_path: Path, mon
 def test_orchestrate_image_setup_returns_precise_error_when_repair_fails(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.app_config.image.provider = "comfyui"
-    monkeypatch.setattr(runtime, "install_image_engine", lambda: {"ok": False, "message": "Failed to create ComfyUI .venv runtime.", "next_step": "Retry setup."})
+    monkeypatch.setattr(runtime, "install_image_engine", lambda **_kwargs: {"ok": False, "message": "Failed to create ComfyUI .venv runtime.", "next_step": "Retry setup."})
 
     result = runtime.orchestrate_setup_image_ai()
     assert result["ok"] is False
