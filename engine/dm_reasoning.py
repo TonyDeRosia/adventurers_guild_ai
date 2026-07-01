@@ -141,7 +141,7 @@ def analyze_player_input(text: str, mode: str = "ic", campaign_state: Any | None
     ):
         match = re.search(pattern, clean, re.I)
         if match:
-            intent.character_name = match.group(1).strip(" .,;:")
+            intent.character_name = _title(match.group(1).strip(" .,;:"))
             break
 
     for role in sorted(ROLE_VOCABULARY, key=len, reverse=True):
@@ -236,17 +236,26 @@ def _ability_names(state: Any) -> list[str]:
     names = [str(e.get("name", "")).strip() for e in entries if isinstance(e, dict)]
     for sheet in sheets:
         for ability in getattr(sheet, "abilities", []) or []:
-            names.append(str(getattr(ability, "name", "")).strip())
+            if isinstance(ability, str):
+                names.append(ability.strip())
+            else:
+                names.append(str(getattr(ability, "name", "")).strip())
     return [n for n in dict.fromkeys(names) if n]
 
 
 def build_ooc_response(intent: DMIntent, campaign_state: Any | None = None) -> DMResponse | None:
     lowered = intent.raw_text.lower()
+    player = getattr(getattr(campaign_state, "player", None), "name", "Your character") if campaign_state is not None else "Your character"
+    role = getattr(getattr(campaign_state, "player", None), "char_class", "") if campaign_state is not None else ""
+    if any(phrase in lowered for phrase in ("whats going on", "what's going on", "status", "where are we", "recap")):
+        world = getattr(getattr(campaign_state, "world_meta", None), "world_name", "the campaign") if campaign_state is not None else "the campaign"
+        location = getattr(getattr(campaign_state, "world_meta", None), "starting_location_name", "the current scene") if campaign_state is not None else "the current scene"
+        startup = getattr(campaign_state, "startup_state", "ready") if campaign_state is not None else "ready"
+        turn = getattr(campaign_state, "turn_count", 0) if campaign_state is not None else 0
+        return DMResponse(f"OOC: Campaign status — {player}, a {role or 'character'}, is in {location} within {world}. Startup state: {startup}. Turn: {turn}. You can ask about spells, inventory, the scene, or describe what you do next.", {"handled_by": "dm_reasoning"})
     if not any(word in lowered for word in ("spell", "ability", "abilities")):
         return None
     names = _ability_names(campaign_state)
-    player = getattr(getattr(campaign_state, "player", None), "name", "Your character") if campaign_state is not None else "Your character"
-    role = getattr(getattr(campaign_state, "player", None), "char_class", "") if campaign_state is not None else ""
     if names:
         return DMResponse(f"OOC: {player}'s defined spells/abilities are: {', '.join(names)}.", {"handled_by": "dm_reasoning"})
     if str(role).lower() == "pyromancer":

@@ -319,3 +319,7 @@ The seeded core files are:
 2. Add packaged-mode smoke tests for static serving, user data paths, save creation, and Basic DM Mode.
 3. Add a release checklist that runs launcher readiness, installer layout validation, frontend syntax check, and targeted pytest suite.
 4. Ensure Developer Tools are hidden by default in packaged player builds.
+
+## DM Reasoning Pipeline V2
+
+Live player input now routes through `engine/dm_pipeline.py` before startup handling, OOC answers, non-turn IC handling, opening scenes, or normal turn simulation. The pipeline records debug branch data in `/api/debug/last-turn-routing` and enforces state-before-story bootstrap readiness.
