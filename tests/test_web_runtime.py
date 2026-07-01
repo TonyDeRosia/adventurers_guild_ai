@@ -810,6 +810,55 @@ def test_campaign_state_api_includes_display_mode(tmp_path: Path, monkeypatch) -
     assert state["settings"]["display_mode"] == "mud"
 
 
+
+
+def test_existing_campaigns_default_to_adventure_mode() -> None:
+    payload = {
+        "campaign_id": "legacy_mode",
+        "campaign_name": "Legacy Mode",
+        "turn_count": 0,
+        "current_location_id": "start",
+        "player": {"id": "player", "name": "Aria", "char_class": "Ranger"},
+        "npcs": {},
+        "locations": {"start": {"id": "start", "name": "Start", "description": "", "connections": []}},
+        "quests": {},
+        "settings": {},
+    }
+    loaded = CampaignState.from_dict(payload)
+    assert loaded.settings.campaign_mode == "adventure"
+
+
+
+
+def test_legacy_edit_mode_setting_maps_to_creator_mode() -> None:
+    payload = {
+        "campaign_id": "legacy_creator",
+        "campaign_name": "Legacy Creator",
+        "turn_count": 0,
+        "current_location_id": "start",
+        "player": {"id": "player", "name": "Aria", "char_class": "Ranger"},
+        "npcs": {},
+        "locations": {"start": {"id": "start", "name": "Start", "description": "", "connections": []}},
+        "quests": {},
+        "settings": {"edit_mode": "creator"},
+    }
+    loaded = CampaignState.from_dict(payload)
+    assert loaded.settings.campaign_mode == "creator"
+
+
+def test_campaign_mode_persists_in_settings(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"player_name": "ModeKeeper", "slot": "slot_campaign_mode"})
+    assert runtime.serialize_state()["settings"]["campaign_mode"] == "adventure"
+    updated = runtime.set_campaign_settings({"campaign_mode": "creator"})
+    assert updated["campaign_mode"] == "creator"
+    runtime.save_active_campaign("slot_campaign_mode")
+
+    reloaded = _runtime(tmp_path, monkeypatch)
+    switched = reloaded.switch_campaign("slot_campaign_mode")
+    assert switched["state"]["settings"]["campaign_mode"] == "creator"
+
+
 def test_legacy_campaign_without_play_style_loads_safe_defaults() -> None:
     legacy = {
         "campaign_id": "legacy",

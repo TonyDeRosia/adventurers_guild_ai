@@ -4528,6 +4528,7 @@ class WebRuntime:
                 "image_generation_enabled": state.settings.image_generation_enabled,
                 "suggested_moves_enabled": state.settings.suggested_moves_enabled,
                 "display_mode": state.settings.display_mode,
+                "campaign_mode": state.settings.campaign_mode,
                 "player_suggested_moves_override": state.settings.player_suggested_moves_override,
                 "effective_suggested_moves_enabled": state.settings.suggested_moves_active(),
                 "content_settings": {
@@ -4648,11 +4649,20 @@ class WebRuntime:
                     "world_name": str(world_meta.get("world_name", "Unknown world")),
                     "turn_count": turn_count,
                     "display_mode": raw_display_mode if raw_display_mode in {"story", "mud", "rpg"} else "story",
+                    "campaign_mode": self._normalize_campaign_mode(
+                        settings_payload.get("campaign_mode", settings_payload.get("edit_mode", "adventure"))
+                    ),
                     "updated": updated,
                     "loadable": True,
                 }
             )
         return sorted(campaigns, key=lambda item: item["updated"], reverse=True)
+
+
+    @staticmethod
+    def _normalize_campaign_mode(value: Any) -> str:
+        clean = str(value or "adventure").strip().lower()
+        return clean if clean in {"adventure", "creator"} else "adventure"
 
     def save_active_campaign(self, slot: str | None = None) -> dict[str, Any]:
         target_slot = (slot or self.session.active_slot or "autosave").strip()
@@ -6569,6 +6579,8 @@ class WebRuntime:
         requested_display_mode = str(payload.get("display_mode", settings.display_mode)).strip().lower()
         if requested_display_mode in {"story", "mud", "rpg"}:
             settings.display_mode = requested_display_mode
+        requested_campaign_mode = self._normalize_campaign_mode(payload.get("campaign_mode", settings.campaign_mode))
+        settings.campaign_mode = requested_campaign_mode
         raw_override = payload.get("player_suggested_moves_override", settings.player_suggested_moves_override)
         settings.player_suggested_moves_override = None if raw_override is None else bool(raw_override)
         content = payload.get("content_settings", {})

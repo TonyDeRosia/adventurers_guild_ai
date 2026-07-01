@@ -176,6 +176,7 @@ class CampaignSettings:
     image_generation_enabled: bool = False
     suggested_moves_enabled: bool = False
     display_mode: str = "story"
+    campaign_mode: str = "adventure"
     player_suggested_moves_override: bool | None = None
     content_settings: ContentSettings = field(default_factory=ContentSettings)
     play_style: PlayStyleSettings = field(default_factory=PlayStyleSettings)
@@ -473,6 +474,7 @@ class CampaignState:
         settings = dict(raw_settings)
         raw_content = settings.pop("content_settings", None)
         raw_play_style = settings.pop("play_style", None)
+        legacy_edit_mode = settings.pop("edit_mode", None)
         content_settings: CampaignSettings.ContentSettings
 
         if raw_content is None:
@@ -496,6 +498,8 @@ class CampaignState:
         settings["suggested_moves_enabled"] = bool(settings.get("suggested_moves_enabled", False))
         raw_display_mode = str(settings.get("display_mode", "story")).strip().lower()
         settings["display_mode"] = raw_display_mode if raw_display_mode in {"story", "mud", "rpg"} else "story"
+        raw_campaign_mode = str(settings.get("campaign_mode", legacy_edit_mode or "adventure")).strip().lower()
+        settings["campaign_mode"] = raw_campaign_mode if raw_campaign_mode in {"adventure", "creator"} else "adventure"
         raw_override = settings.get("player_suggested_moves_override")
         settings["player_suggested_moves_override"] = None if raw_override is None else bool(raw_override)
         return CampaignSettings(**settings)

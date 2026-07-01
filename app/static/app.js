@@ -1,6 +1,7 @@
 const dialogueFeed = document.getElementById('dialogue-feed');
 const campaignMeta = document.getElementById('campaign-meta');
 const campaignDisplayModeIndicator = document.getElementById('campaign-display-mode-indicator');
+const creatorModeBadge = document.getElementById('creator-mode-badge');
 const saveList = document.getElementById('save-list');
 const sceneImageDisplay = document.getElementById('scene-image-display');
 const sceneVisualMeta = document.getElementById('scene-visual-meta');
@@ -51,6 +52,11 @@ const disableImageAiButton = document.getElementById('disable-image-ai');
 const pickCheckpointFolderButton = document.getElementById('pick-checkpoint-folder');
 const preferredLauncherInput = document.getElementById('preferred-launcher');
 const manualImageEnabledInput = document.getElementById('manual-image-enabled');
+const creatorModeToggleInput = document.getElementById('creator-mode-toggle');
+const creatorModeConfirmModal = document.getElementById('creator-mode-confirm-modal');
+const creatorModeConfirmCheckbox = document.getElementById('creator-mode-confirm-checkbox');
+const creatorModeConfirmEnable = document.getElementById('creator-mode-confirm-enable');
+const creatorModeConfirmCancel = document.getElementById('creator-mode-confirm-cancel');
 const suggestedMovesToggleInput = document.getElementById('suggested-moves-toggle');
 const allowFreeformPowersInput = document.getElementById('allow-freeform-powers');
 const autoUpdateSheetFromActionsInput = document.getElementById('auto-update-sheet-from-actions');
@@ -179,6 +185,8 @@ let campaignSettingsDirty = false;
 let campaignSettingsApplying = false;
 let campaignSettingsSlot = '';
 let campaignSettingsApplyTimeoutId = 0;
+let suppressCreatorModeToggle = false;
+// TODO: Keep future Developer Mode separate from Creator Mode. Developer Mode should cover diagnostics, provider setup, prompt debugging, logs, image addon tools, and model/provider details only for users who intentionally reveal it.
 const imageProgressState = {
   requestId: 0,
   phase: 'idle',
@@ -248,6 +256,7 @@ function playStyleSnapshotFromUi() {
 function campaignSettingsSnapshotFromUi() {
   const playStyle = playStyleSnapshotFromUi();
   return {
+    campaign_mode: creatorModeToggleInput?.checked ? 'creator' : 'adventure',
     image_generation_enabled: !!document.getElementById('image-enabled')?.checked,
     suggested_moves_enabled: !!suggestedMovesToggleInput?.checked,
     play_style: playStyle,
@@ -259,6 +268,7 @@ function campaignSettingsEqual(left, right) {
   return (
     !!left.image_generation_enabled === !!right.image_generation_enabled
     && !!left.suggested_moves_enabled === !!right.suggested_moves_enabled
+    && normalizeCampaignMode(left.campaign_mode) === normalizeCampaignMode(right.campaign_mode)
     && normalizeNarrationFormatMode(left.play_style?.narration_format_mode) === normalizeNarrationFormatMode(right.play_style?.narration_format_mode)
     && normalizeSceneVisualMode(left.play_style?.scene_visual_mode) === normalizeSceneVisualMode(right.play_style?.scene_visual_mode)
     && !!left.play_style?.allow_freeform_powers === !!right.play_style?.allow_freeform_powers
@@ -311,6 +321,12 @@ function queueAutoApplyCampaignSettings() {
 
 function applyCampaignSettingsToUi(snapshot) {
   if (!snapshot) return;
+  if (creatorModeToggleInput) {
+    suppressCreatorModeToggle = true;
+    creatorModeToggleInput.checked = normalizeCampaignMode(snapshot.campaign_mode) === 'creator';
+    suppressCreatorModeToggle = false;
+  }
+  updateCreatorModeUi();
   document.getElementById('image-enabled').checked = !!snapshot.image_generation_enabled;
   if (suggestedMovesToggleInput) {
     suggestedMovesToggleInput.checked = !!snapshot.suggested_moves_enabled;
@@ -335,6 +351,7 @@ function applyCampaignSettingsToUi(snapshot) {
 
 function ingestPersistedCampaignSettings(snapshot, slot, { forceUi = false } = {}) {
   const normalized = {
+    campaign_mode: normalizeCampaignMode(snapshot.campaign_mode || 'adventure'),
     image_generation_enabled: !!snapshot.image_generation_enabled,
     suggested_moves_enabled: !!snapshot.suggested_moves_enabled,
     display_mode: normalizeDisplayMode(snapshot.display_mode || 'story'),
@@ -357,6 +374,46 @@ function ingestPersistedCampaignSettings(snapshot, slot, { forceUi = false } = {
     applyCampaignSettingsToUi(normalized);
   }
   updateCampaignDirtyState();
+}
+
+function normalizeCampaignMode(mode) {
+  return String(mode || '').trim().toLowerCase() === 'creator' ? 'creator' : 'adventure';
+}
+
+function isCreatorModeEnabled() {
+  return normalizeCampaignMode(campaignSettingsPersisted?.campaign_mode || (creatorModeToggleInput?.checked ? 'creator' : 'adventure')) === 'creator';
+}
+
+function updateCreatorModeUi() {
+  const creatorEnabled = isCreatorModeEnabled();
+  document.body?.classList.toggle('creator-mode-enabled', creatorEnabled);
+  document.body?.classList.toggle('adventure-mode-enabled', !creatorEnabled);
+  creatorModeBadge?.classList.toggle('hidden', !creatorEnabled);
+  document.querySelectorAll('.creator-mode-only').forEach((element) => {
+    element.classList.toggle('hidden', !creatorEnabled);
+    element.setAttribute('aria-hidden', creatorEnabled ? 'false' : 'true');
+  });
+  renderRuntimeCharacterSheets();
+  renderInventoryViewer();
+  renderSpellbookViewer();
+}
+
+function openCreatorModeConfirmation() {
+  if (!creatorModeConfirmModal) return;
+  if (creatorModeConfirmCheckbox) creatorModeConfirmCheckbox.checked = false;
+  if (creatorModeConfirmEnable) creatorModeConfirmEnable.disabled = true;
+  creatorModeConfirmModal.classList.remove('hidden');
+}
+
+function closeCreatorModeConfirmation() {
+  creatorModeConfirmModal?.classList.add('hidden');
+}
+
+async function setCampaignMode(mode) {
+  const normalizedMode = normalizeCampaignMode(mode);
+  if (creatorModeToggleInput) creatorModeToggleInput.checked = normalizedMode === 'creator';
+  await applySettings();
+  setStatus(normalizedMode === 'creator' ? 'Creator Mode enabled for this campaign.' : 'Adventure Mode enabled. Editing tools are tucked away.');
 }
 
 function syncVisualModeUi({ manualEnabled }) {
@@ -900,6 +957,7 @@ function renderSelectedCampaignSummary() {
     <strong>${escapeHtml(selectedCampaign.campaign_name || selectedCampaign.slot)}</strong>
     <small>${escapeHtml(selectedCampaign.world_name || 'Unknown world')} · Turn ${Number(selectedCampaign.turn_count || 0)}</small>
     <small>Display Mode: ${displayModeLabel(mode)}</small>
+    <small>${normalizeCampaignMode(selectedCampaign.campaign_mode || (selectedCampaign.slot === loadedSlot ? campaignSettingsPersisted?.campaign_mode : 'adventure')) === 'creator' ? 'Creator Mode' : 'Adventure Mode'}</small>
   `;
 }
 
@@ -1015,7 +1073,7 @@ function renderRuntimeCharacterSheets() {
     runtimeCharacterSheetsList.innerHTML = `
       <div class="runtime-sheets-empty-state">
         <p>No character sheets attached yet.</p>
-        <button type="button" id="runtime-character-sheet-empty-create">Create Character Sheet</button>
+        ${isCreatorModeEnabled() ? '<button type="button" id="runtime-character-sheet-empty-create">Create Character Sheet</button>' : '<p class="runtime-sheet-muted">Adventure Mode: sheets are reference pages while you play.</p>'}
       </div>
     `;
     runtimeCharacterSheetsList.querySelector('#runtime-character-sheet-empty-create')?.addEventListener('click', () => {
@@ -1607,6 +1665,11 @@ function renderInventoryViewer() {
   const currency = state.currency || {};
   const equipped = state.equipped || {};
   const equippedEntries = Object.entries(equipped).filter(([, value]) => String(value || '').trim());
+  const actionMarkup = (entry) => isCreatorModeEnabled() ? `
+        <div class="subtle-actions">
+          <button type="button" data-inventory-edit="${escapeHtml(entry.id || '')}">Edit</button>
+          <button type="button" data-inventory-delete="${escapeHtml(entry.id || '')}">Delete</button>
+        </div>` : '';
   const rows = entries.length ? entries.map((entry) => `
       <article class="item-card">
         <div class="item-card-head">
@@ -1617,10 +1680,7 @@ function renderInventoryViewer() {
           <span class="quantity-badge">×${escapeHtml(String(entry.quantity || 1))}</span>
         </div>
         ${entry.notes ? `<p>${escapeHtml(entry.notes)}</p>` : '<p class="runtime-sheet-muted">No notes yet.</p>'}
-        <div class="subtle-actions">
-          <button type="button" data-inventory-edit="${escapeHtml(entry.id || '')}">Edit</button>
-          <button type="button" data-inventory-delete="${escapeHtml(entry.id || '')}">Delete</button>
-        </div>
+        ${actionMarkup(entry)}
       </article>
     `).join('') : '<div class="runtime-sheet-muted">No items recorded.</div>';
   runtimeInventoryDetail.innerHTML = `
@@ -1674,10 +1734,10 @@ function renderSpellbookViewer() {
         </div>
         <div class="tag-row">${renderInlineTags([...(entry.tags || []), ...(entry.flags || [])])}</div>
         ${entry.notes ? `<p class="ability-notes">${escapeHtml(entry.notes)}</p>` : ''}
-        <div class="subtle-actions">
+        ${isCreatorModeEnabled() ? `<div class="subtle-actions">
           <button type="button" data-spellbook-edit="${escapeHtml(entry.id)}">Edit</button>
           <button type="button" data-spellbook-delete="${escapeHtml(entry.id)}">Delete</button>
-        </div>
+        </div>` : ''}
       </article>
     `).join('') : '<div class="runtime-sheet-muted">No abilities recorded.</div>';
   runtimeSpellbookList.innerHTML = `<div class="spellbook-group"><h4>Abilities</h4>${rows}</div>`;
@@ -1865,6 +1925,7 @@ async function refreshState() {
       image_generation_enabled: !!state.settings.image_generation_enabled,
       suggested_moves_enabled: !!state.settings.effective_suggested_moves_enabled,
       display_mode: normalizeDisplayMode(state.settings?.display_mode || 'story'),
+      campaign_mode: normalizeCampaignMode(state.settings?.campaign_mode || 'adventure'),
       play_style: state.settings?.play_style || campaignSettingsPersisted?.play_style || playStyleSnapshotFromUi(),
     },
     incomingSlot,
@@ -2819,6 +2880,7 @@ async function applySettings() {
     const campaignSettings = await api('/api/settings/campaign', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        campaign_mode: creatorModeToggleInput?.checked ? 'creator' : 'adventure',
         image_generation_enabled: campaignImageEnabled,
         suggested_moves_enabled: suggestedMovesEnabled,
         player_suggested_moves_override: suggestedMovesEnabled,
@@ -2831,6 +2893,7 @@ async function applySettings() {
     syncVisualModeUi({ manualEnabled: manualImageEnabled });
     ingestPersistedCampaignSettings(
       {
+        campaign_mode: normalizeCampaignMode(campaignSettings.settings?.campaign_mode || 'adventure'),
         image_generation_enabled: !!campaignSettings.settings?.image_generation_enabled,
         suggested_moves_enabled: !!campaignSettings.settings?.effective_suggested_moves_enabled,
         play_style: campaignSettings.settings?.play_style || playStyle,
@@ -2925,6 +2988,7 @@ async function loadSettings() {
   if (preferredLauncherInput) preferredLauncherInput.value = data.settings.image.preferred_launcher || 'auto';
   ingestPersistedCampaignSettings(
     {
+      campaign_mode: campaignSettingsPersisted?.campaign_mode || 'adventure',
       image_generation_enabled: campaignSettingsPersisted?.image_generation_enabled ?? document.getElementById('image-enabled').checked,
       suggested_moves_enabled: campaignSettingsPersisted?.suggested_moves_enabled ?? !!suggestedMovesToggleInput?.checked,
       play_style: campaignSettingsPersisted?.play_style || playStyleSnapshotFromUi(),
@@ -2964,6 +3028,31 @@ bindClickById('image-generate-submit', generateImage);
 bindClickById('rename-campaign', renameCampaign);
 bindClickById('delete-campaign', deleteCampaign);
 bindClickById('apply-settings', applySettings);
+
+creatorModeToggleInput?.addEventListener('change', () => {
+  if (suppressCreatorModeToggle) return;
+  if (creatorModeToggleInput.checked) {
+    suppressCreatorModeToggle = true;
+    creatorModeToggleInput.checked = false;
+    suppressCreatorModeToggle = false;
+    openCreatorModeConfirmation();
+    return;
+  }
+  setCampaignMode('adventure').catch((error) => setStatus(`Could not leave Creator Mode: ${error.message}`, true));
+});
+creatorModeConfirmCheckbox?.addEventListener('change', () => {
+  if (creatorModeConfirmEnable) creatorModeConfirmEnable.disabled = !creatorModeConfirmCheckbox.checked;
+});
+creatorModeConfirmCancel?.addEventListener('click', () => {
+  closeCreatorModeConfirmation();
+  if (creatorModeToggleInput) creatorModeToggleInput.checked = false;
+});
+creatorModeConfirmEnable?.addEventListener('click', async () => {
+  if (!creatorModeConfirmCheckbox?.checked) return;
+  closeCreatorModeConfirmation();
+  await setCampaignMode('creator');
+});
+
 bindClickById('open-setup-modal', openSetupModal);
 bindClickById('close-setup-modal', closeSetupModal);
 bindClickById('setup-text-ai', () => runReadinessAction('setup_text_ai', {}));

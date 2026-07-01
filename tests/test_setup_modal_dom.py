@@ -72,3 +72,27 @@ def test_guided_image_import_controls_are_present() -> None:
     assert "1. Download" in html
     assert "2. Select Sources" in html
     assert "3. Start" in html
+
+
+
+def test_creator_mode_confirmation_and_badge_markup_exist() -> None:
+    html = _index_html()
+    assert 'id="creator-mode-toggle"' in html
+    assert 'id="creator-mode-confirm-modal"' in html
+    assert 'Creator Mode lets you edit character sheets, inventory, abilities, quests, NPCs, and other campaign data.' in html
+    assert 'I understand that editing campaign data can change gameplay.' in html
+    assert 'id="creator-mode-badge"' in html
+
+
+def test_runtime_editors_are_creator_mode_only_by_default() -> None:
+    html = _index_html()
+    creator_only_ids = [
+        'runtime-character-sheet-create-toggle',
+        'inventory-editor-panel',
+        'spellbook-editor-panel',
+    ]
+    for element_id in creator_only_ids:
+        match = re.search(rf'id="{element_id}"[^>]*class="([^"]*)"|class="([^"]*)"[^>]*id="{element_id}"', html)
+        assert match, f"{element_id} is missing"
+        classes = ' '.join(group for group in match.groups() if group)
+        assert 'creator-mode-only' in classes

@@ -1238,3 +1238,30 @@ button:disabled {
   .campaign-status-strip,
   .inventory-summary-grid { grid-template-columns: 1fr; }
 }
+
+.creator-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-top: 6px;
+  padding: 3px 9px;
+  border: 1px solid rgba(251, 191, 36, 0.55);
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.14);
+  color: #fde68a;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.campaign-mode-settings {
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.34);
+}
+
+body.adventure-mode-enabled .creator-mode-only,
+.creator-mode-only.hidden {
+  display: none !important;
+}

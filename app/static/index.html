@@ -28,6 +28,7 @@
             <h1>Adventurer Guild AI</h1>
             <p id="campaign-meta">Loading campaign...</p>
             <p id="campaign-display-mode-indicator" class="campaign-display-mode-indicator">Display Mode: Story Mode</p>
+            <p id="creator-mode-badge" class="creator-mode-badge hidden">Creator Mode</p>
           </div>
         </header>
         <section id="scene-context-panel" class="scene-context-panel campaign-status-strip" aria-label="Campaign status">
@@ -210,6 +211,7 @@
           <button id="close-runtime-inventory" type="button">Close</button>
         </div>
         <div id="runtime-inventory-detail" class="runtime-sheet-detail">Loading inventory...</div>
+        <section id="inventory-editor-panel" class="creator-mode-only">
         <h4>Edit Item</h4>
         <div class="modal-grid">
           <input id="inventory-entry-id" type="hidden" />
@@ -230,6 +232,7 @@
           <button id="inventory-entry-save" type="button">Save Item</button>
           <button id="inventory-entry-clear" type="button">Clear Form</button>
         </div>
+        </section>
       </div>
     </div>
 
@@ -240,6 +243,7 @@
           <button id="close-runtime-spellbook" type="button">Close</button>
         </div>
         <div id="runtime-spellbook-list" class="runtime-sheet-detail">No spellbook entries.</div>
+        <section id="spellbook-editor-panel" class="creator-mode-only">
         <h4>Edit Ability</h4>
         <div class="modal-grid">
           <input id="spellbook-entry-id" type="hidden" />
@@ -254,6 +258,7 @@
           <button id="spellbook-entry-save" type="button">Save Entry</button>
           <button id="spellbook-entry-clear" type="button">Clear Form</button>
         </div>
+        </section>
       </div>
     </div>
 
@@ -267,7 +272,7 @@
           <aside>
             <div class="panel-title-row">
               <h4>Sheets</h4>
-              <button id="runtime-character-sheet-create-toggle" type="button">Create Character Sheet</button>
+              <button id="runtime-character-sheet-create-toggle" class="creator-mode-only" type="button">Create Character Sheet</button>
             </div>
             <div id="runtime-character-sheets-list" class="character-sheets-list">No sheets attached to this campaign.</div>
           </aside>
@@ -346,6 +351,18 @@
             <h4>Reactive World Changes</h4>
             <div id="world-building-reactive-list" class="world-building-list">No reactive world changes recorded yet.</div>
           </section>
+        </div>
+      </div>
+    </div>
+
+    <div id="creator-mode-confirm-modal" class="modal hidden">
+      <div class="modal-card">
+        <h3>Enable Creator Mode?</h3>
+        <p class="setup-intro">Creator Mode lets you edit character sheets, inventory, abilities, quests, NPCs, and other campaign data. This can change gameplay balance and may make the campaign feel less like a fair adventure. Enable it only if you want full control over this campaign.</p>
+        <label><input id="creator-mode-confirm-checkbox" type="checkbox" /> I understand that editing campaign data can change gameplay.</label>
+        <div class="button-row">
+          <button id="creator-mode-confirm-enable" type="button" disabled>Enable Creator Mode</button>
+          <button id="creator-mode-confirm-cancel" type="button">Stay in Adventure Mode</button>
         </div>
       </div>
     </div>
@@ -455,6 +472,11 @@
             <button id="open-world-building" type="button">World Building</button>
           </div>
           <label class="advanced-image-toggle hidden"><input id="manual-image-enabled" type="checkbox" /> Manual image addon enabled</label>
+          <section class="campaign-mode-settings">
+            <h4>Campaign Mode</h4>
+            <p class="setup-intro">Adventure Mode keeps sheets, inventory, and abilities as reference screens while you play. Creator Mode unlocks editing tools for full control.</p>
+            <label><input id="creator-mode-toggle" type="checkbox" /> Enable Creator Mode</label>
+          </section>
           <label><input id="suggested-moves-toggle" type="checkbox" /> Show narrator suggested next moves</label>
           <section class="campaign-play-style-group">
             <h4>Campaign Rules &amp; Behavior</h4>
