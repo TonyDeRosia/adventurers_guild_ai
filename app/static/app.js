@@ -1126,6 +1126,14 @@ function buildCampaignWizardPayload() {
     goal: document.getElementById('form-goal').value.trim(),
     description: document.getElementById('form-player-concept').value.trim(),
     power_level: checkedValue('form-power-level-choice', 'Capable Adventurer'),
+    stats: {
+      Strength: Number(document.getElementById('form-stat-strength')?.value || 5),
+      Dexterity: Number(document.getElementById('form-stat-dexterity')?.value || 5),
+      Constitution: Number(document.getElementById('form-stat-constitution')?.value || 5),
+      Intelligence: Number(document.getElementById('form-stat-intelligence')?.value || 5),
+      Wisdom: Number(document.getElementById('form-stat-wisdom')?.value || 5),
+      Charisma: Number(document.getElementById('form-stat-charisma')?.value || 5),
+    },
     starting_ability_mode: checkedValue('form-ability-mode', 'suggest'),
     starting_abilities: document.getElementById('form-starting-abilities').value.trim(),
     starting_item_mode: checkedValue('form-item-mode', 'suggest'),
@@ -1152,7 +1160,7 @@ function renderCampaignWizardReview() {
     ['Campaign name', p.campaign_name], ['World name', p.world_name || '(infer from campaign)'], ['Genre/theme', p.theme],
     ['Tone', p.tone], ['Play style', p.play_style], ['Rules style', p.rules_style], ['Character name', p.character_name],
     ['Class/role', p.character_role], ['Species/race', p.species], ['Background/origin', p.background], ['Goal', p.goal],
-    ['Description', p.description], ['Power level', p.power_level], ['Starting abilities', p.starting_ability_mode === 'manual' ? p.starting_abilities : 'Deterministic suggestions will become proposals'],
+    ['Description', p.description], ['Stats', Object.entries(p.stats || {}).map(([k, v]) => `${k}: ${v}`).join(', ')], ['Power level', p.power_level], ['Starting abilities', p.starting_ability_mode === 'manual' ? p.starting_abilities : 'Deterministic suggestions will become proposals'],
     ['Starting items', p.starting_item_mode === 'manual' ? p.starting_items : 'Deterministic suggestions will be added'], ['World premise', p.premise],
   ];
   review.innerHTML = rows.map(([label, value]) => `<p><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value || '—')}</p>`).join('');

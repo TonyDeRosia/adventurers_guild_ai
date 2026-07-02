@@ -10,6 +10,8 @@ from dataclasses import asdict, dataclass, field
 import re
 from typing import Any
 
+from engine.core_game import by_id, load_core_game
+
 ENTITY_KINDS = {"npc", "object", "landmark", "exit", "hazard", "item", "creature", "vehicle", "structure"}
 
 
@@ -129,8 +131,36 @@ def normalize_scene_v1(raw: Any) -> dict[str, Any]:
     return asdict(scene)
 
 
+
+def initialize_scene_v1_from_core_game(starting_zone_id: str = "guildhall_crossing") -> dict[str, Any]:
+    core = load_core_game()
+    zones = by_id(core["zones"])
+    npcs = by_id(core["npcs"])
+    zone = zones.get(starting_zone_id) or zones[core["manifest"].get("starting_zone", "guildhall_crossing")]
+    entities: list[SceneEntity] = []
+    for npc_id in zone.get("npcs", []):
+        npc = npcs.get(npc_id)
+        if npc:
+            entities.append(SceneEntity(npc["id"], npc["name"], "npc", npc["description"], True, True, list(npc.get("tags", [])) + [npc.get("faction_id", "")], {"dialogue": npc.get("dialogue_seed", "")}))
+    for obj in zone.get("objects", []):
+        entities.append(SceneEntity(_slug(obj), str(obj).replace("_", " ").title(), "object", f"A notable feature of {zone['name']}.", True, True, [_slug(obj)]))
+    scene = SceneStateV1(
+        location_id=zone["id"],
+        location_name=zone["name"],
+        summary=zone["summary"],
+        atmosphere=zone["atmosphere"],
+        entities=entities,
+        exits=[_exit_from_raw(ex) for ex in zone.get("exits", []) if _exit_from_raw(ex)],
+        active_hooks=list(zone.get("active_hooks", [])),
+    )
+    return asdict(scene)
+
 def initialize_scene_v1_from_campaign(state: Any) -> dict[str, Any]:
     meta = getattr(state, "world_meta", None)
+    requested_world = _clean(getattr(meta, "world_name", ""))
+    requested_location = _clean(getattr(meta, "starting_location_name", ""))
+    if (not requested_world or requested_world == "The Shattered Realms") and (not requested_location or requested_location == "Guildhall Crossing"):
+        return initialize_scene_v1_from_core_game("guildhall_crossing")
     location = getattr(state, "locations", {}).get(getattr(state, "current_location_id", "")) if isinstance(getattr(state, "locations", {}), dict) else None
     location_name = _clean(getattr(meta, "starting_location_name", "")) or _clean(getattr(location, "name", "")) or "Old Gate"
     if location_name.lower() in {"starting area", "arrival threshold"}:

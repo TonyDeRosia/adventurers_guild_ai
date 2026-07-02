@@ -1,0 +1,74 @@
+[
+  {
+    "id": "guild_registrar",
+    "name": "Guild Registrar",
+    "kind": "npc",
+    "description": "Guild Registrar template.",
+    "faction_id": "adventurers_guild",
+    "default_zone": "guildhall_crossing",
+    "dialogue_seed": "I have work for a careful adventurer.",
+    "tags": [
+      "starter"
+    ]
+  },
+  {
+    "id": "road_messenger",
+    "name": "Road Messenger",
+    "kind": "npc",
+    "description": "Road Messenger template.",
+    "faction_id": "adventurers_guild",
+    "default_zone": "old_gate_road",
+    "dialogue_seed": "I have work for a careful adventurer.",
+    "tags": [
+      "starter"
+    ]
+  },
+  {
+    "id": "warden_scout",
+    "name": "Warden Scout",
+    "kind": "npc",
+    "description": "Warden Scout template.",
+    "faction_id": "crown_wardens",
+    "default_zone": "old_gate_road",
+    "dialogue_seed": "I have work for a careful adventurer.",
+    "tags": [
+      "starter"
+    ]
+  },
+  {
+    "id": "village_healer",
+    "name": "Village Healer",
+    "kind": "npc",
+    "description": "Village Healer template.",
+    "faction_id": "riverwatch_merchants",
+    "default_zone": "riverwatch_village",
+    "dialogue_seed": "I have work for a careful adventurer.",
+    "tags": [
+      "starter"
+    ]
+  },
+  {
+    "id": "suspicious_merchant",
+    "name": "Suspicious Merchant",
+    "kind": "npc",
+    "description": "Suspicious Merchant template.",
+    "faction_id": "riverwatch_merchants",
+    "default_zone": "guildhall_crossing",
+    "dialogue_seed": "I have work for a careful adventurer.",
+    "tags": [
+      "starter"
+    ]
+  },
+  {
+    "id": "crypt_acolyte",
+    "name": "Crypt Acolyte",
+    "kind": "npc",
+    "description": "Crypt Acolyte template.",
+    "faction_id": "hollow_cult",
+    "default_zone": "hollow_crypt",
+    "dialogue_seed": "I have work for a careful adventurer.",
+    "tags": [
+      "starter"
+    ]
+  }
+]

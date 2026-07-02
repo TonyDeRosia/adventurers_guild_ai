@@ -83,11 +83,11 @@
 
       <aside class="sidebar right-panel">
         <div class="panel-title-row">
-          <h2 class="panel-heading">Adventure Panel</h2>
+          <h2 class="panel-heading">Character</h2>
         </div>
         <p class="panel-subheading">Useful campaign references while you play.</p>
         <section class="panel-block">
-          <h3>Campaign Tools</h3>
+          <h3>Character · Inventory · Spellbook/Abilities · Journal</h3>
           <div class="button-row compact-row">
             <button id="open-runtime-character-sheets" type="button">Character Sheets</button>
             <button id="open-runtime-inventory" type="button">Inventory</button>
@@ -130,8 +130,8 @@
           </section>
           <section class="wizard-step hidden" data-step="3"><h4>Character Identity</h4>
             <label>Character Name <input id="form-player-name" type="text" required /></label>
-            <label>Class / Role <input id="form-player-class" type="text" required /></label>
-            <label>Species / Race <input id="form-species" type="text" /></label>
+            <label>Class <input id="form-player-class" type="text" required list="core-class-options" placeholder="Mage" /></label><datalist id="core-class-options"><option value="Warrior"></option><option value="Ranger"></option><option value="Rogue"></option><option value="Mage"></option><option value="Cleric"></option><option value="Druid"></option><option value="Warlock"></option><option value="Battle Mage"></option><option value="Necromancer"></option></datalist>
+            <label>Race / Species <input id="form-species" type="text" list="core-race-options" placeholder="Human" /></label><datalist id="core-race-options"><option value="Human"></option><option value="Elf"></option><option value="Dwarf"></option><option value="Halfling"></option><option value="Orc"></option><option value="Tiefling"></option><option value="Dragonkin"></option><option value="Undead"></option><option value="Custom"></option></datalist>
             <label>Background / Origin <input id="form-background" type="text" /></label>
             <label class="full-width">Character Goal <input id="form-goal" type="text" /></label>
             <p id="campaign-wizard-validation" class="status-line error hidden">Character Name and Class / Role are required.</p>
@@ -139,7 +139,7 @@
           <section class="wizard-step hidden" data-step="4"><h4>Character Description</h4>
             <label class="full-width">Character Description <textarea id="form-player-concept" rows="5" placeholder="Describe your character’s appearance, personality, reputation, starting items, spells, abilities, or anything important. You can be brief or detailed."></textarea></label>
           </section>
-          <section class="wizard-step hidden" data-step="5"><h4>Power Level</h4>
+          <section class="wizard-step hidden" data-step="5"><h4>Power Level & Stats</h4><p class="runtime-sheet-muted">Core Game V1 uses 30 points across Strength, Dexterity, Constitution, Intelligence, Wisdom, and Charisma. Storybook can auto-allocate; MUD/Stats can edit these values.</p><div class="stat-allocation-grid"><label>STR <input id="form-stat-strength" type="number" min="3" max="10" value="5" /></label><label>DEX <input id="form-stat-dexterity" type="number" min="3" max="10" value="5" /></label><label>CON <input id="form-stat-constitution" type="number" min="3" max="10" value="5" /></label><label>INT <input id="form-stat-intelligence" type="number" min="3" max="10" value="5" /></label><label>WIS <input id="form-stat-wisdom" type="number" min="3" max="10" value="5" /></label><label>CHA <input id="form-stat-charisma" type="number" min="3" max="10" value="5" /></label></div>
             <label class="wizard-option-card"><input name="form-power-level-choice" type="radio" value="Ordinary Beginner" /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>Ordinary Beginner</strong><small>Start vulnerable and grow through play.</small></span></label>
             <label class="wizard-option-card"><input name="form-power-level-choice" type="radio" value="Capable Adventurer" checked /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>Capable Adventurer</strong><small>Competent without overshadowing the world.</small></span></label>
             <label class="wizard-option-card"><input name="form-power-level-choice" type="radio" value="Experienced Veteran" /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>Experienced Veteran</strong><small>Begin with reputation and proven skill.</small></span></label>

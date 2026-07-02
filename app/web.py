@@ -72,6 +72,7 @@ from engine.character_sheets import CharacterSheet, CharacterSheetAbilityEntry
 from engine.entities import CampaignSettings, CampaignState
 from engine.game_state_manager import GameStateManager
 from engine.scene_simulation import ensure_scene_v1
+from engine.core_game import auto_allocate_stats, by_id, calculate_derived_stats, load_core_game
 from engine.spellbook import normalize_spellbook_entry
 from images.base import ImageGenerationRequest, ImageGenerationResult, ImageGeneratorAdapter, NullImageAdapter
 from images.comfyui_adapter import ComfyUIAdapter
@@ -5533,74 +5534,77 @@ class WebRuntime:
         return "items"
 
     def _apply_wizard_setup(self, state: CampaignState, payload: dict[str, Any]) -> None:
+        core = load_core_game()
+        classes, races, backgrounds = by_id(core["classes"]), by_id(core["races"]), by_id(core["backgrounds"])
+        abilities_by_id = by_id(core["abilities"])
+        items_by_id = by_id(core["items"])
         character_name = str(payload.get("character_name") or payload.get("player_name") or state.player.name or "Aria").strip()
-        character_role = str(payload.get("character_role") or payload.get("char_class") or state.player.char_class or "Ranger").strip()
+        requested_role = str(payload.get("character_role") or payload.get("char_class") or state.player.char_class or "Ranger").strip()
+        class_key = re.sub(r"[^a-z0-9]+", "_", requested_role.lower()).strip("_")
+        cls = classes.get(class_key) or next((c for c in core["classes"] if c["name"].lower() == class_key.replace("_", " ")), None)
+        if cls is None:
+            role_lower = requested_role.lower()
+            cls = classes["battle_mage"] if "battle" in role_lower and "mage" in role_lower else classes["mage"] if any(t in role_lower for t in ("mage", "wizard", "sorcerer")) else classes["ranger"]
+        race_key = re.sub(r"[^a-z0-9]+", "_", str(payload.get("species") or payload.get("race") or "human").strip().lower()).strip("_") or "human"
+        race = races.get(race_key, races["human"])
+        bg_key = re.sub(r"[^a-z0-9]+", "_", str(payload.get("background") or "guild_recruit").strip().lower()).strip("_") or "guild_recruit"
+        background = backgrounds.get(bg_key, backgrounds["guild_recruit"])
         description = str(payload.get("description") or payload.get("player_concept") or "").strip()
-        power_level = str(payload.get("power_level") or "Capable Adventurer").strip() or "Capable Adventurer"
-        play_style_name = str(payload.get("play_style") or "Storybook Mode").strip() or "Storybook Mode"
-        rules_style = str(payload.get("rules_style") or "Hybrid").strip() or "Hybrid"
         state.player.name = character_name
-        state.player.char_class = character_role
-        state.player.role = character_role
-        state.settings.play_style_name = play_style_name
-        state.settings.rules_style = rules_style
-        state.settings.power_level = power_level
-        if rules_style == "Sheet Strict":
+        state.player.char_class = requested_role or cls["name"]
+        state.player.role = requested_role or cls["name"]
+        if not str(state.world_meta.world_name or "").strip() or str(state.world_meta.world_name).strip().lower() == "untitled world":
+            state.world_meta.world_name = "The Shattered Realms"
+        if not str(state.world_meta.starting_location_name or "").strip() or str(state.world_meta.starting_location_name).strip().lower() == "starting area":
+            state.world_meta.starting_location_name = "Guildhall Crossing"
+        state.world_meta.premise = state.world_meta.premise or "Ancient gates are waking across the Shattered Realms."
+        state.settings.play_style_name = str(payload.get("play_style") or "Storybook Mode").strip() or "Storybook Mode"
+        state.settings.rules_style = str(payload.get("rules_style") or "Hybrid").strip() or "Hybrid"
+        state.settings.power_level = str(payload.get("power_level") or "Capable Adventurer").strip() or "Capable Adventurer"
+        if state.settings.rules_style == "Sheet Strict":
             state.settings.play_style.allow_freeform_powers = False
             state.settings.play_style.strict_sheet_enforcement = True
-        else:
-            state.settings.play_style.allow_freeform_powers = True
-            state.settings.play_style.strict_sheet_enforcement = False
-            if rules_style == "Hybrid":
-                state.settings.play_style.auto_update_character_sheet_from_actions = True
-        notes = []
-        if payload.get("species"):
-            notes.append(f"Species/Race: {str(payload.get('species')).strip()}")
-        if payload.get("background"):
-            notes.append(f"Background/Origin: {str(payload.get('background')).strip()}")
-        if payload.get("goal"):
-            notes.append(f"Goal: {str(payload.get('goal')).strip()}")
+        stats = payload.get("stats") if isinstance(payload.get("stats"), dict) else auto_allocate_stats(cls["id"], core["classes"])
+        for key, bonus in race.get("stat_bonuses", {}).items():
+            if key in stats:
+                stats[key] = int(stats[key]) + int(bonus)
+        # Derived stats use the allocated base before racial bonuses can exceed level-1 caps; clamp only for legacy fields.
+        base_for_validation = auto_allocate_stats(cls["id"], core["classes"])
+        derived = calculate_derived_stats(base_for_validation, equipped_armor=10 if any('armor' in str(i) or 'robes' in str(i) for i in cls.get('starting_items', [])) else 0)
+        state.player.hp = derived["HP"]; state.player.max_hp = derived["HP"]; state.player.armor_class = derived["Armor"]
+        state.player.energy_or_mana = derived["Mana"]
+        state.player.classic_attributes = dict(stats)
         sheet = self._find_main_character_sheet(state)
         if sheet is None:
             sheet = CharacterSheet(id="sheet_main", name=character_name, sheet_type="main_character")
             state.character_sheets.append(sheet)
-        sheet.name = character_name
-        sheet.role = character_role
-        sheet.description = description
-        sheet.notes = "\n".join([part for part in [sheet.notes, *notes] if part])
-        abilities = self._split_setup_list(payload.get("starting_abilities")) if payload.get("starting_ability_mode") == "manual" else self._wizard_ability_suggestions(character_role, description, power_level)
+        sheet.name = character_name; sheet.role = requested_role or cls["name"]; sheet.description = description
+        sheet.notes = "\n".join([part for part in [sheet.notes, f"Race/Species: {race['name']}", f"Background: {background['name']}", str(payload.get('goal') or '').strip()] if part])
         runtime = state.structured_state.runtime
-        if not isinstance(runtime.campaign_events, list):
-            runtime.campaign_events = []
-        existing = {re.sub(r"[^a-z0-9]+", "", str((e.get("payload") or {}).get("name") or e.get("title", "")).lower()) for e in runtime.campaign_events if isinstance(e, dict)}
-        for ability in abilities:
-            key = re.sub(r"[^a-z0-9]+", "", ability.lower())
-            if not key or key in existing:
-                continue
-            existing.add(key)
-            manual = payload.get("starting_ability_mode") == "manual"
-            runtime.campaign_events.append({
-                "id": f"wizard_ability_{int(time.time()*1000)}_{len(runtime.campaign_events)}",
-                "type": "ability_suggested",
-                "title": ability,
-                "description": f"{ability} was {'selected during character creation' if manual else 'suggested from class/role and power level'}.",
-                "reason": "Selected during character creation." if manual else "Suggested from class/role and power level.",
-                "status": "pending",
-                "source": "system",
-                "applies_to": "ability",
-                "payload": {"name": ability, "description": f"Starting ability proposal: {ability}.", "tags": ["starter", "character_creation"], "source": "character_creation"},
-            })
-        items = self._split_setup_list(payload.get("starting_items")) if payload.get("starting_item_mode") == "manual" else self._wizard_item_suggestions(character_role, description)
-        entries = [{"id": f"starter_{i}_{re.sub(r'[^a-z0-9]+', '_', item.lower()).strip('_')}", "name": item, "category": self._category_for_item(item), "quantity": 1, "notes": "Starting item selected during character creation." if payload.get("starting_item_mode") == "manual" else "Starting item suggested from class/role."} for i, item in enumerate(items)]
+        selected_ids = self._split_setup_list(payload.get("starting_abilities")) if payload.get("starting_ability_mode") == "manual" and payload.get("starting_abilities") else list(cls.get("starting_abilities", []))
+        selected_ids += list(background.get("starting_abilities", []))
+        known = []
+        for raw in selected_ids:
+            key = re.sub(r"[^a-z0-9]+", "_", str(raw).strip().lower()).strip("_")
+            ability = abilities_by_id.get(key) or next((a for a in core["abilities"] if a["name"].lower() == str(raw).strip().lower()), None)
+            if ability and ability["id"] not in {a.get("id") for a in known}:
+                known.append({"id": ability["id"], "name": ability["name"], "description": ability["description"], "category": ability["type"], "type": ability["type"], "cost_or_resource": ability.get("resource_cost", {}), "cooldown": ability.get("cooldown", "none"), "tags": ["starter", "character_creation", *ability.get("tags", [])], "source": "core_game"})
+        runtime.abilities = self.engine.state_orchestrator._normalize_spellbook(known)
+        runtime.spellbook = list(runtime.abilities)
+        # Starting class abilities are known immediately, not pending Journal events.
+        runtime.campaign_events = [e for e in (runtime.campaign_events or []) if not (isinstance(e, dict) and e.get("type") == "ability_suggested")]
+        item_ids = self._split_setup_list(payload.get("starting_items")) if payload.get("starting_item_mode") == "manual" and payload.get("starting_items") else list(cls.get("starting_items", [])) + list(background.get("starting_items", []))
+        entries = []
+        for i, item_id in enumerate(item_ids):
+            key = re.sub(r"[^a-z0-9]+", "_", str(item_id).strip().lower()).strip("_")
+            item = items_by_id.get(key) or {"id": key or f"item_{i}", "name": str(item_id).replace("_", " "), "type": self._category_for_item(str(item_id))}
+            entries.append({"id": f"starter_{i}_{item['id']}", "item_id": item["id"], "name": item["name"], "category": item.get("type", "items"), "quantity": 1, "notes": "Starting item from Core Game class/background data."})
         runtime.inventory_state = {"entries": entries, "currency": {"gold": 0, "silver": 0, "copper": 0}}
         self._normalize_inventory_state(runtime.inventory_state)
         runtime.inventory = [e["name"] for e in entries]
         state.player.inventory = list(runtime.inventory)
-        runtime.player_core = dict(runtime.player_core or {})
-        runtime.player_core["wizard_setup"] = True
-        state.startup_state = "ready"
-        state.bootstrap_complete = True
-        state.bootstrap_missing_fields = []
+        runtime.player_core = {"core_game_version": "v1", "wizard_setup": True, "race_id": race["id"], "class_id": cls["id"], "background_id": background["id"], "stats": stats, "derived_stats": derived, "known_ability_ids": [a["id"] for a in known]}
+        state.startup_state = "ready"; state.bootstrap_complete = True; state.bootstrap_missing_fields = []
 
     def create_campaign(self, payload: dict[str, Any]) -> dict[str, Any]:
         mode = str(payload.get("mode", "custom")).strip().lower() or "custom"
@@ -5691,9 +5695,6 @@ class WebRuntime:
         if wizard_payload:
             sheet = self._find_main_character_sheet(state) or CharacterSheet(id="sheet_main", name=state.player.name, sheet_type="main_character", role=state.player.char_class)
             opening = self._guided_opening_scene(state, sheet)
-            pending_abilities = [e for e in state.structured_state.runtime.campaign_events if isinstance(e, dict) and e.get("type") == "ability_suggested" and e.get("status") == "pending"]
-            if pending_abilities:
-                opening += f"\n\nYou have {len(pending_abilities)} starting ability choices waiting in your Journal under Character Growth."
             self._append_message("narrator", opening, persist=False)
         else:
             self._append_message("narrator", self._character_creation_prompt(state), persist=False)

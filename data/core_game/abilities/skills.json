@@ -1,0 +1,299 @@
+[
+  {
+    "id": "power_strike",
+    "name": "Power Strike",
+    "type": "skill",
+    "class_tags": [
+      "martial"
+    ],
+    "school": "martial",
+    "category": "martial",
+    "level_requirement": 1,
+    "resource_cost": {
+      "Stamina": 1
+    },
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "Power Strike starter skill.",
+    "mechanical_effect": "Resolve Power Strike using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe Power Strike consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "martial",
+      "skill"
+    ]
+  },
+  {
+    "id": "guard_stance",
+    "name": "Guard Stance",
+    "type": "skill",
+    "class_tags": [
+      "martial"
+    ],
+    "school": "martial",
+    "category": "martial",
+    "level_requirement": 1,
+    "resource_cost": {
+      "Stamina": 1
+    },
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "Guard Stance starter skill.",
+    "mechanical_effect": "Resolve Guard Stance using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe Guard Stance consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "martial",
+      "skill"
+    ]
+  },
+  {
+    "id": "precise_shot",
+    "name": "Precise Shot",
+    "type": "skill",
+    "class_tags": [
+      "martial"
+    ],
+    "school": "martial",
+    "category": "martial",
+    "level_requirement": 1,
+    "resource_cost": {
+      "Stamina": 1
+    },
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "Precise Shot starter skill.",
+    "mechanical_effect": "Resolve Precise Shot using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe Precise Shot consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "martial",
+      "skill"
+    ]
+  },
+  {
+    "id": "track_quarry",
+    "name": "Track Quarry",
+    "type": "skill",
+    "class_tags": [
+      "martial"
+    ],
+    "school": "martial",
+    "category": "martial",
+    "level_requirement": 1,
+    "resource_cost": {
+      "Stamina": 1
+    },
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "Track Quarry starter skill.",
+    "mechanical_effect": "Resolve Track Quarry using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe Track Quarry consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "martial",
+      "skill"
+    ]
+  },
+  {
+    "id": "sneak",
+    "name": "Sneak",
+    "type": "skill",
+    "class_tags": [
+      "martial"
+    ],
+    "school": "martial",
+    "category": "martial",
+    "level_requirement": 1,
+    "resource_cost": {
+      "Stamina": 1
+    },
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "Sneak starter skill.",
+    "mechanical_effect": "Resolve Sneak using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe Sneak consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "martial",
+      "skill"
+    ]
+  },
+  {
+    "id": "backstab",
+    "name": "Backstab",
+    "type": "skill",
+    "class_tags": [
+      "martial"
+    ],
+    "school": "martial",
+    "category": "martial",
+    "level_requirement": 1,
+    "resource_cost": {
+      "Stamina": 1
+    },
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "Backstab starter skill.",
+    "mechanical_effect": "Resolve Backstab using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe Backstab consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "martial",
+      "skill"
+    ]
+  },
+  {
+    "id": "first_aid",
+    "name": "First Aid",
+    "type": "skill",
+    "class_tags": [
+      "martial"
+    ],
+    "school": "martial",
+    "category": "martial",
+    "level_requirement": 1,
+    "resource_cost": {
+      "Stamina": 1
+    },
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "First Aid starter skill.",
+    "mechanical_effect": "Resolve First Aid using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe First Aid consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "martial",
+      "skill"
+    ]
+  },
+  {
+    "id": "persuade",
+    "name": "Persuade",
+    "type": "skill",
+    "class_tags": [
+      "martial"
+    ],
+    "school": "martial",
+    "category": "martial",
+    "level_requirement": 1,
+    "resource_cost": {
+      "Stamina": 1
+    },
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "Persuade starter skill.",
+    "mechanical_effect": "Resolve Persuade using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe Persuade consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "martial",
+      "skill"
+    ]
+  },
+  {
+    "id": "intimidate",
+    "name": "Intimidate",
+    "type": "skill",
+    "class_tags": [
+      "martial"
+    ],
+    "school": "martial",
+    "category": "martial",
+    "level_requirement": 1,
+    "resource_cost": {
+      "Stamina": 1
+    },
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "Intimidate starter skill.",
+    "mechanical_effect": "Resolve Intimidate using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe Intimidate consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "martial",
+      "skill"
+    ]
+  },
+  {
+    "id": "search",
+    "name": "Search",
+    "type": "skill",
+    "class_tags": [
+      "martial"
+    ],
+    "school": "martial",
+    "category": "martial",
+    "level_requirement": 1,
+    "resource_cost": {
+      "Stamina": 1
+    },
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "Search starter skill.",
+    "mechanical_effect": "Resolve Search using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe Search consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "martial",
+      "skill"
+    ]
+  },
+  {
+    "id": "battle_focus",
+    "name": "Battle Focus",
+    "type": "skill",
+    "class_tags": [
+      "martial"
+    ],
+    "school": "martial",
+    "category": "martial",
+    "level_requirement": 1,
+    "resource_cost": {
+      "Stamina": 1
+    },
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "Battle Focus starter skill.",
+    "mechanical_effect": "Resolve Battle Focus using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe Battle Focus consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "martial",
+      "skill"
+    ]
+  }
+]

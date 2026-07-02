@@ -1,0 +1,321 @@
+[
+  {
+    "id": "warrior",
+    "name": "Warrior",
+    "description": "Warrior class for Core Game V1.",
+    "primary_stats": [
+      "Strength",
+      "Constitution"
+    ],
+    "allowed_armor": [
+      "light",
+      "medium",
+      "heavy",
+      "shield"
+    ],
+    "allowed_weapons": [
+      "sword",
+      "axe",
+      "mace"
+    ],
+    "resource_type": "Stamina",
+    "starting_abilities": [
+      "power_strike",
+      "guard_stance"
+    ],
+    "starting_items": [
+      "training_sword",
+      "chain_shirt"
+    ],
+    "level_1_choices": [
+      "power_strike",
+      "guard_stance"
+    ],
+    "tags": [
+      "warrior",
+      "martial"
+    ]
+  },
+  {
+    "id": "ranger",
+    "name": "Ranger",
+    "description": "Ranger class for Core Game V1.",
+    "primary_stats": [
+      "Dexterity",
+      "Wisdom"
+    ],
+    "allowed_armor": [
+      "light",
+      "medium"
+    ],
+    "allowed_weapons": [
+      "bow",
+      "dagger",
+      "sword"
+    ],
+    "resource_type": "Stamina",
+    "starting_abilities": [
+      "precise_shot",
+      "track_quarry"
+    ],
+    "starting_items": [
+      "short_bow",
+      "leather_armor"
+    ],
+    "level_1_choices": [
+      "precise_shot",
+      "track_quarry"
+    ],
+    "tags": [
+      "ranger",
+      "martial"
+    ]
+  },
+  {
+    "id": "rogue",
+    "name": "Rogue",
+    "description": "Rogue class for Core Game V1.",
+    "primary_stats": [
+      "Dexterity",
+      "Charisma"
+    ],
+    "allowed_armor": [
+      "light"
+    ],
+    "allowed_weapons": [
+      "dagger",
+      "sword"
+    ],
+    "resource_type": "Stamina",
+    "starting_abilities": [
+      "sneak",
+      "backstab"
+    ],
+    "starting_items": [
+      "dagger",
+      "lockpick_set"
+    ],
+    "level_1_choices": [
+      "sneak",
+      "backstab"
+    ],
+    "tags": [
+      "rogue",
+      "martial"
+    ]
+  },
+  {
+    "id": "mage",
+    "name": "Mage",
+    "description": "Mage class for Core Game V1.",
+    "primary_stats": [
+      "Intelligence",
+      "Wisdom"
+    ],
+    "allowed_armor": [
+      "cloth"
+    ],
+    "allowed_weapons": [
+      "staff",
+      "focus"
+    ],
+    "resource_type": "Mana",
+    "starting_abilities": [
+      "arcane_bolt",
+      "mage_ward",
+      "detect_magic"
+    ],
+    "starting_items": [
+      "spellbook",
+      "arcane_focus",
+      "travel_robes"
+    ],
+    "level_1_choices": [
+      "arcane_bolt",
+      "mage_ward",
+      "detect_magic"
+    ],
+    "tags": [
+      "mage",
+      "magic_focused"
+    ]
+  },
+  {
+    "id": "cleric",
+    "name": "Cleric",
+    "description": "Cleric class for Core Game V1.",
+    "primary_stats": [
+      "Wisdom",
+      "Constitution"
+    ],
+    "allowed_armor": [
+      "light",
+      "medium",
+      "shield"
+    ],
+    "allowed_weapons": [
+      "mace",
+      "staff"
+    ],
+    "resource_type": "Mana",
+    "starting_abilities": [
+      "healing_light",
+      "smite"
+    ],
+    "starting_items": [
+      "wooden_staff",
+      "healers_kit"
+    ],
+    "level_1_choices": [
+      "healing_light",
+      "smite"
+    ],
+    "tags": [
+      "cleric",
+      "magic_focused"
+    ]
+  },
+  {
+    "id": "druid",
+    "name": "Druid",
+    "description": "Druid class for Core Game V1.",
+    "primary_stats": [
+      "Wisdom",
+      "Constitution"
+    ],
+    "allowed_armor": [
+      "light",
+      "medium"
+    ],
+    "allowed_weapons": [
+      "staff",
+      "dagger"
+    ],
+    "resource_type": "Mana",
+    "starting_abilities": [
+      "natures_grasp",
+      "wind_step"
+    ],
+    "starting_items": [
+      "wooden_staff",
+      "component_pouch"
+    ],
+    "level_1_choices": [
+      "natures_grasp",
+      "wind_step"
+    ],
+    "tags": [
+      "druid",
+      "magic_focused"
+    ]
+  },
+  {
+    "id": "warlock",
+    "name": "Warlock",
+    "description": "Warlock class for Core Game V1.",
+    "primary_stats": [
+      "Charisma",
+      "Intelligence"
+    ],
+    "allowed_armor": [
+      "cloth",
+      "light"
+    ],
+    "allowed_weapons": [
+      "dagger",
+      "focus"
+    ],
+    "resource_type": "Mana",
+    "starting_abilities": [
+      "shadow_bolt",
+      "mage_ward"
+    ],
+    "starting_items": [
+      "arcane_focus",
+      "dagger"
+    ],
+    "level_1_choices": [
+      "shadow_bolt",
+      "mage_ward"
+    ],
+    "tags": [
+      "warlock",
+      "magic_focused"
+    ]
+  },
+  {
+    "id": "battle_mage",
+    "name": "Battle Mage",
+    "description": "Battle Mage class for Core Game V1.",
+    "primary_stats": [
+      "Strength",
+      "Intelligence",
+      "Constitution"
+    ],
+    "allowed_armor": [
+      "cloth",
+      "light",
+      "medium"
+    ],
+    "allowed_weapons": [
+      "sword",
+      "focus"
+    ],
+    "resource_type": "Mana + Stamina",
+    "starting_abilities": [
+      "arcane_strike",
+      "shield_ward",
+      "battle_focus"
+    ],
+    "starting_items": [
+      "reinforced_robes",
+      "side_blade",
+      "battle_focus"
+    ],
+    "level_1_choices": [
+      "arcane_strike",
+      "shield_ward",
+      "battle_focus"
+    ],
+    "tags": [
+      "battle_mage",
+      "magic_focused"
+    ]
+  },
+  {
+    "id": "necromancer",
+    "name": "Necromancer",
+    "description": "Necromancer class for Core Game V1.",
+    "primary_stats": [
+      "Intelligence",
+      "Wisdom"
+    ],
+    "allowed_armor": [
+      "cloth"
+    ],
+    "allowed_weapons": [
+      "staff",
+      "focus"
+    ],
+    "resource_type": "Mana",
+    "starting_abilities": [
+      "shadow_bolt",
+      "raise_skeleton",
+      "detect_magic"
+    ],
+    "starting_items": [
+      "spellbook",
+      "component_pouch",
+      "travel_robes"
+    ],
+    "level_1_choices": [
+      "shadow_bolt",
+      "raise_skeleton",
+      "detect_magic"
+    ],
+    "tags": [
+      "necromancer",
+      "magic_focused"
+    ]
+  }
+]

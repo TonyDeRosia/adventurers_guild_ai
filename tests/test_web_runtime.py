@@ -5539,8 +5539,8 @@ def test_wizard_campaign_payload_creates_ready_bootstrap(tmp_path: Path, monkeyp
     main = next(sheet for sheet in state["character_sheets"] if sheet["sheet_type"] == "main_character")
     assert main["name"] == "Dorkly of Funroad"
     assert main["role"] == "Mage of Fire and Ice"
-    assert [event["title"] for event in state["campaign_events"] if event["type"] == "ability_suggested"] == ["Fireball", "Ice Lance"]
-    assert state["abilities"] == []
+    assert [event["title"] for event in state["campaign_events"] if event["type"] == "ability_suggested"] == []
+    assert [entry["name"] for entry in state["abilities"]][:2] == ["Fireball", "Ice Lance"]
     assert [entry["name"] for entry in state["inventory_state"]["entries"]] == ["old spellbook", "frostglass focus"]
     assert state["world_meta"]["world_name"] not in {"", "Untitled World"}
     opening = runtime.session.message_history[0]["text"]

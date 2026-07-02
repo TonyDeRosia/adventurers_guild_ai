@@ -1,0 +1,31 @@
+{
+  "primary_stats": [
+    "Strength",
+    "Dexterity",
+    "Constitution",
+    "Intelligence",
+    "Wisdom",
+    "Charisma"
+  ],
+  "derived_stats": [
+    "HP",
+    "Mana",
+    "Stamina",
+    "Armor",
+    "Initiative",
+    "Carry Capacity"
+  ],
+  "allocation": {
+    "total_points": 30,
+    "min": 3,
+    "max_level_1": 10
+  },
+  "formulas": {
+    "HP": "20 + Constitution * 5",
+    "Mana": "10 + Intelligence * 5 + Wisdom * 2",
+    "Stamina": "20 + Constitution * 3 + Dexterity * 2",
+    "Armor": "equipped_armor + Dexterity_modifier_if_allowed",
+    "Initiative": "Dexterity",
+    "Carry Capacity": "Strength * 10"
+  }
+}

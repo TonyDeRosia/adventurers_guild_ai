@@ -1,0 +1,114 @@
+[
+  {
+    "id": "torch",
+    "name": "torch",
+    "type": "tool",
+    "slot": "backpack",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": [],
+    "description": "torch (tool).",
+    "tags": [
+      "tool"
+    ]
+  },
+  {
+    "id": "rope",
+    "name": "rope",
+    "type": "tool",
+    "slot": "backpack",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": [],
+    "description": "rope (tool).",
+    "tags": [
+      "tool"
+    ]
+  },
+  {
+    "id": "lockpick_set",
+    "name": "lockpick set",
+    "type": "tool",
+    "slot": "backpack",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": [],
+    "description": "lockpick set (tool).",
+    "tags": [
+      "tool"
+    ]
+  },
+  {
+    "id": "healers_kit",
+    "name": "healer’s kit",
+    "type": "tool",
+    "slot": "backpack",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": [],
+    "description": "healer’s kit (tool).",
+    "tags": [
+      "tool"
+    ]
+  },
+  {
+    "id": "spellbook",
+    "name": "spellbook",
+    "type": "tool",
+    "slot": "backpack",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": [],
+    "description": "spellbook (tool).",
+    "tags": [
+      "tool"
+    ]
+  },
+  {
+    "id": "arcane_focus",
+    "name": "arcane focus",
+    "type": "tool",
+    "slot": "main_hand",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": [],
+    "description": "arcane focus (tool).",
+    "tags": [
+      "tool"
+    ]
+  },
+  {
+    "id": "component_pouch",
+    "name": "component pouch",
+    "type": "tool",
+    "slot": "backpack",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": [],
+    "description": "component pouch (tool).",
+    "tags": [
+      "tool"
+    ]
+  }
+]

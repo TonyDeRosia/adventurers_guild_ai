@@ -1,0 +1,98 @@
+[
+  {
+    "id": "training_sword",
+    "name": "training sword",
+    "type": "weapon",
+    "slot": "main_hand",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": [],
+    "description": "training sword (weapon).",
+    "tags": [
+      "weapon"
+    ]
+  },
+  {
+    "id": "side_blade",
+    "name": "side blade",
+    "type": "weapon",
+    "slot": "main_hand",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": [],
+    "description": "side blade (weapon).",
+    "tags": [
+      "weapon"
+    ]
+  },
+  {
+    "id": "short_bow",
+    "name": "short bow",
+    "type": "weapon",
+    "slot": "main_hand",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": [],
+    "description": "short bow (weapon).",
+    "tags": [
+      "weapon"
+    ]
+  },
+  {
+    "id": "dagger",
+    "name": "dagger",
+    "type": "weapon",
+    "slot": "main_hand",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": [],
+    "description": "dagger (weapon).",
+    "tags": [
+      "weapon"
+    ]
+  },
+  {
+    "id": "wooden_staff",
+    "name": "wooden staff",
+    "type": "weapon",
+    "slot": "main_hand",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": [],
+    "description": "wooden staff (weapon).",
+    "tags": [
+      "weapon"
+    ]
+  },
+  {
+    "id": "battle_focus",
+    "name": "battle focus",
+    "type": "weapon",
+    "slot": "main_hand",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": [],
+    "description": "battle focus (weapon).",
+    "tags": [
+      "weapon"
+    ]
+  }
+]

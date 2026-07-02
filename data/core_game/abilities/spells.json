@@ -1,0 +1,380 @@
+[
+  {
+    "id": "arcane_bolt",
+    "name": "Arcane Bolt",
+    "type": "spell",
+    "class_tags": [
+      "magic_focused"
+    ],
+    "school": "arcane",
+    "category": "arcane",
+    "level_requirement": 1,
+    "resource_cost": {
+      "Mana": 2
+    },
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "Arcane Bolt starter spell.",
+    "mechanical_effect": "Resolve Arcane Bolt using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe Arcane Bolt consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "magic_focused",
+      "spell"
+    ]
+  },
+  {
+    "id": "mage_ward",
+    "name": "Mage Ward",
+    "type": "spell",
+    "class_tags": [
+      "magic_focused"
+    ],
+    "school": "arcane",
+    "category": "arcane",
+    "level_requirement": 1,
+    "resource_cost": {
+      "Mana": 2
+    },
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "Mage Ward starter spell.",
+    "mechanical_effect": "Resolve Mage Ward using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe Mage Ward consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "magic_focused",
+      "spell"
+    ]
+  },
+  {
+    "id": "detect_magic",
+    "name": "Detect Magic",
+    "type": "spell",
+    "class_tags": [
+      "magic_focused"
+    ],
+    "school": "arcane",
+    "category": "arcane",
+    "level_requirement": 1,
+    "resource_cost": {
+      "Mana": 2
+    },
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "Detect Magic starter spell.",
+    "mechanical_effect": "Resolve Detect Magic using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe Detect Magic consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "magic_focused",
+      "spell"
+    ]
+  },
+  {
+    "id": "fireball",
+    "name": "Fireball",
+    "type": "spell",
+    "class_tags": [
+      "magic_focused"
+    ],
+    "school": "arcane",
+    "category": "arcane",
+    "level_requirement": 1,
+    "resource_cost": {
+      "Mana": 2
+    },
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "Fireball starter spell.",
+    "mechanical_effect": "Resolve Fireball using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe Fireball consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "magic_focused",
+      "spell"
+    ]
+  },
+  {
+    "id": "ice_lance",
+    "name": "Ice Lance",
+    "type": "spell",
+    "class_tags": [
+      "magic_focused"
+    ],
+    "school": "arcane",
+    "category": "arcane",
+    "level_requirement": 1,
+    "resource_cost": {
+      "Mana": 2
+    },
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "Ice Lance starter spell.",
+    "mechanical_effect": "Resolve Ice Lance using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe Ice Lance consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "magic_focused",
+      "spell"
+    ]
+  },
+  {
+    "id": "flame_shield",
+    "name": "Flame Shield",
+    "type": "spell",
+    "class_tags": [
+      "magic_focused"
+    ],
+    "school": "arcane",
+    "category": "arcane",
+    "level_requirement": 1,
+    "resource_cost": {
+      "Mana": 2
+    },
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "Flame Shield starter spell.",
+    "mechanical_effect": "Resolve Flame Shield using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe Flame Shield consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "magic_focused",
+      "spell"
+    ]
+  },
+  {
+    "id": "healing_light",
+    "name": "Healing Light",
+    "type": "spell",
+    "class_tags": [
+      "magic_focused"
+    ],
+    "school": "arcane",
+    "category": "arcane",
+    "level_requirement": 1,
+    "resource_cost": {
+      "Mana": 2
+    },
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "Healing Light starter spell.",
+    "mechanical_effect": "Resolve Healing Light using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe Healing Light consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "magic_focused",
+      "spell"
+    ]
+  },
+  {
+    "id": "smite",
+    "name": "Smite",
+    "type": "spell",
+    "class_tags": [
+      "magic_focused"
+    ],
+    "school": "arcane",
+    "category": "arcane",
+    "level_requirement": 1,
+    "resource_cost": {
+      "Mana": 2
+    },
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "Smite starter spell.",
+    "mechanical_effect": "Resolve Smite using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe Smite consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "magic_focused",
+      "spell"
+    ]
+  },
+  {
+    "id": "shadow_bolt",
+    "name": "Shadow Bolt",
+    "type": "spell",
+    "class_tags": [
+      "magic_focused"
+    ],
+    "school": "arcane",
+    "category": "arcane",
+    "level_requirement": 1,
+    "resource_cost": {
+      "Mana": 2
+    },
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "Shadow Bolt starter spell.",
+    "mechanical_effect": "Resolve Shadow Bolt using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe Shadow Bolt consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "magic_focused",
+      "spell"
+    ]
+  },
+  {
+    "id": "raise_skeleton",
+    "name": "Raise Skeleton",
+    "type": "spell",
+    "class_tags": [
+      "magic_focused"
+    ],
+    "school": "arcane",
+    "category": "arcane",
+    "level_requirement": 1,
+    "resource_cost": {
+      "Mana": 2
+    },
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "Raise Skeleton starter spell.",
+    "mechanical_effect": "Resolve Raise Skeleton using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe Raise Skeleton consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "magic_focused",
+      "spell"
+    ]
+  },
+  {
+    "id": "natures_grasp",
+    "name": "Nature’s Grasp",
+    "type": "spell",
+    "class_tags": [
+      "magic_focused"
+    ],
+    "school": "arcane",
+    "category": "arcane",
+    "level_requirement": 1,
+    "resource_cost": {
+      "Mana": 2
+    },
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "Nature’s Grasp starter spell.",
+    "mechanical_effect": "Resolve Nature’s Grasp using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe Nature’s Grasp consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "magic_focused",
+      "spell"
+    ]
+  },
+  {
+    "id": "wind_step",
+    "name": "Wind Step",
+    "type": "spell",
+    "class_tags": [
+      "magic_focused"
+    ],
+    "school": "arcane",
+    "category": "arcane",
+    "level_requirement": 1,
+    "resource_cost": {
+      "Mana": 2
+    },
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "Wind Step starter spell.",
+    "mechanical_effect": "Resolve Wind Step using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe Wind Step consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "magic_focused",
+      "spell"
+    ]
+  },
+  {
+    "id": "arcane_strike",
+    "name": "Arcane Strike",
+    "type": "spell",
+    "class_tags": [
+      "magic_focused"
+    ],
+    "school": "arcane",
+    "category": "arcane",
+    "level_requirement": 1,
+    "resource_cost": {
+      "Mana": 2
+    },
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "Arcane Strike starter spell.",
+    "mechanical_effect": "Resolve Arcane Strike using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe Arcane Strike consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "magic_focused",
+      "spell"
+    ]
+  },
+  {
+    "id": "shield_ward",
+    "name": "Shield Ward",
+    "type": "spell",
+    "class_tags": [
+      "magic_focused"
+    ],
+    "school": "arcane",
+    "category": "arcane",
+    "level_requirement": 1,
+    "resource_cost": {
+      "Mana": 2
+    },
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "Shield Ward starter spell.",
+    "mechanical_effect": "Resolve Shield Ward using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe Shield Ward consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "magic_focused",
+      "spell"
+    ]
+  }
+]

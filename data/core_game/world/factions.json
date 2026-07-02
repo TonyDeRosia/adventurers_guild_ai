@@ -1,0 +1,42 @@
+[
+  {
+    "id": "adventurers_guild",
+    "name": "Adventurer’s Guild",
+    "description": "Adventurer’s Guild faction.",
+    "tags": [
+      "adventurers_guild"
+    ]
+  },
+  {
+    "id": "crown_wardens",
+    "name": "Crown Wardens",
+    "description": "Crown Wardens faction.",
+    "tags": [
+      "crown_wardens"
+    ]
+  },
+  {
+    "id": "emberwood_circle",
+    "name": "Emberwood Circle",
+    "description": "Emberwood Circle faction.",
+    "tags": [
+      "emberwood_circle"
+    ]
+  },
+  {
+    "id": "hollow_cult",
+    "name": "Hollow Cult",
+    "description": "Hollow Cult faction.",
+    "tags": [
+      "hollow_cult"
+    ]
+  },
+  {
+    "id": "riverwatch_merchants",
+    "name": "Riverwatch Merchants",
+    "description": "Riverwatch Merchants faction.",
+    "tags": [
+      "riverwatch_merchants"
+    ]
+  }
+]
