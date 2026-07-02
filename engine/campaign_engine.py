@@ -172,6 +172,10 @@ class CampaignEngine:
             "scene_v1_context_used": bool(gm_context.scene_v1),
             "known_ability_matched": bool(gm_context.relevant_rules.get("known_ability_definition")),
             "state_changes_applied": {},
+            "raw_provider_response": None,
+            "parsed_decision": {},
+            "validation_errors": [],
+            "applied_changes": {},
         }
         if provider_available:
             try:
@@ -183,7 +187,18 @@ class CampaignEngine:
                 self.memory.record_recent(state, f"Player action: {action}")
                 self.memory.record_recent(state, f"GM: {narrative}")
                 self.memory.record_conversation_turn(state, player_input=action, system_messages=[], narrator_response=narrative, requested_mode="gm_orchestrator")
-                gm_debug.update({"provider_decision_used": True, "decision_validation_errors": errors, "decision_repair_applied": repaired, "state_changes_applied": applied})
+                orchestrator_debug = dict(getattr(self.gm_orchestrator, "last_debug", {}) or {})
+                validation_errors = list(dict.fromkeys([e for e in orchestrator_debug.get("validation_errors", []) if e] + errors))
+                gm_debug.update({
+                    "provider_decision_used": True,
+                    "decision_validation_errors": errors,
+                    "decision_repair_applied": repaired,
+                    "state_changes_applied": applied,
+                    "raw_provider_response": orchestrator_debug.get("raw_provider_response"),
+                    "parsed_decision": orchestrator_debug.get("parsed_decision", decision),
+                    "validation_errors": validation_errors,
+                    "applied_changes": orchestrator_debug.get("applied_changes", applied),
+                })
                 return TurnResult(narrative=narrative, system_messages=[], messages=[{"type": "narrator", "text": narrative}], metadata={"requested_mode": "gm_orchestrator", "turn_count": state.turn_count, "quality_fallback_used": False, "debug_trace": [gm_debug], "gm_decision": decision})
             except Exception as exc:
                 gm_debug.update({"deterministic_fallback_used": True, "decision_validation_errors": [f"gm_orchestrator_exception:{type(exc).__name__}"]})

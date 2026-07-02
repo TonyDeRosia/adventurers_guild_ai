@@ -136,3 +136,120 @@ def test_campaign_engine_null_provider_uses_deterministic_fallback(tmp_path):
     assert result.metadata['requested_mode'] != 'gm_orchestrator'
     assert state.structured_state.runtime.scene_state['last_gm_debug_trace']['provider_available'] is False
     assert state.structured_state.runtime.scene_state['last_gm_debug_trace']['deterministic_fallback_used'] is True
+
+
+def test_gm_orchestrator_prose_wrapped_json_decision(tmp_path):
+    class Provider:
+        def gm_decision(self, payload):
+            return 'Here is the ruling: {"action_interpretation":"search shelves","intent_type":"look","outcome":"success","difficulty":"easy","narration":"You spot chalk marks along the shelf.","scene_updates":{"summary":"Marked shelves line the wall."},"npc_state_updates":[],"inventory_changes":[],"quest_updates":[],"memory_notes":["Shelf chalk marks found."],"follow_up_prompt":"Inspect the marks or move on?"} End.'
+
+    state = _state(tmp_path, 'Warrior')
+    gm = GMOrchestrator(Provider())
+    decision = gm.decide('search shelves', state)
+    assert decision['intent_type'] == 'look'
+    assert decision['scene_updates']['summary'] == 'Marked shelves line the wall.'
+    assert gm.last_debug['raw_provider_response'].startswith('Here is')
+
+
+def test_gm_orchestrator_invalid_json_fallback_has_debug(tmp_path):
+    class Provider:
+        def gm_decision(self, payload):
+            return 'not json at all'
+
+    state = _state(tmp_path, 'Warrior')
+    decision = GMOrchestrator(Provider()).decide('look around', state)
+    assert decision['action_interpretation'] == 'look around'
+    assert decision['follow_up_prompt'] == 'What do you do next?'
+
+
+def test_gm_orchestrator_known_spell_provider_decision_validates(tmp_path):
+    class Provider:
+        def gm_decision(self, payload):
+            return {
+                'action_interpretation': 'cast Arcane Bolt',
+                'intent_type': 'cast_known_spell',
+                'skill_or_ability_used': 'Arcane Bolt',
+                'outcome': 'success',
+                'difficulty': 'standard',
+                'narration': 'You loose a controlled bolt of arcane light into the target.',
+                'scene_updates': {},
+                'npc_state_updates': [],
+                'inventory_changes': [],
+                'quest_updates': [],
+                'memory_notes': [],
+                'follow_up_prompt': 'Choose your next move.',
+            }
+
+    state = _state(tmp_path, 'Mage')
+    state.structured_state.runtime.abilities = [{'id': 'arcane_bolt', 'name': 'Arcane Bolt', 'type': 'spell'}]
+    gm = GMOrchestrator(Provider())
+    ctx = gm.build_context('cast Arcane Bolt', state)
+    decision, errors, _ = gm.validate_decision(gm.decide('cast Arcane Bolt', state), ctx, strict_rules=True)
+    assert decision['intent_type'] == 'cast_known_spell'
+    assert 'unknown_ability_used' not in errors
+
+
+def test_gm_orchestrator_unknown_spell_strict_rejection_from_provider(tmp_path):
+    class Provider:
+        def gm_decision(self, payload):
+            return {
+                'action_interpretation': 'cast Meteor Swarm',
+                'intent_type': 'cast_known_spell',
+                'skill_or_ability_used': 'Meteor Swarm',
+                'outcome': 'success',
+                'difficulty': 'hard',
+                'narration': 'You cast Meteor Swarm successfully.',
+                'scene_updates': {},
+                'npc_state_updates': [],
+                'inventory_changes': [],
+                'quest_updates': [],
+                'memory_notes': [],
+                'follow_up_prompt': 'What next?',
+            }
+
+    state = _state(tmp_path, 'Mage')
+    state.settings.rules_style = 'Strict'
+    state.structured_state.runtime.abilities = [{'id': 'arcane_bolt', 'name': 'Arcane Bolt', 'type': 'spell'}]
+    gm = GMOrchestrator(Provider())
+    ctx = gm.build_context('cast Meteor Swarm', state)
+    _, errors, _ = gm.validate_decision(gm.decide('cast Meteor Swarm', state), ctx, strict_rules=True)
+    assert 'unknown_ability_used' in errors
+
+
+def test_gm_orchestrator_rejects_unknown_npc_and_invalid_item_id(tmp_path):
+    state = _state(tmp_path, 'Warrior')
+    state.structured_state.runtime.scene_state['scene_v1'] = {'entities': [{'kind': 'npc', 'actor_id': 'guard', 'name': 'Guard'}]}
+    gm = GMOrchestrator(provider=None)
+    ctx = gm.build_context('bribe stranger', state)
+    _, errors, _ = gm.validate_decision({
+        'action_interpretation': 'bribe stranger',
+        'intent_type': 'talk',
+        'outcome': 'partial_success',
+        'difficulty': 'standard',
+        'narration': 'You make the offer aloud and wait for a response.',
+        'scene_updates': {},
+        'npc_state_updates': [{'actor_id': 'stranger', 'mood': 'pleased'}],
+        'inventory_changes': [{'action': 'add', 'item': {'id': 'impossible_artifact', 'name': 'impossible artifact'}}],
+        'quest_updates': [],
+        'memory_notes': [],
+        'follow_up_prompt': 'Wait or walk away?',
+    }, ctx)
+    assert 'unknown_npc_update:stranger' in errors
+    assert 'invalid_item_id:impossible_artifact' in errors
+
+
+def test_gm_orchestrator_applies_quest_update(tmp_path):
+    state = _state(tmp_path, 'Warrior')
+    gm = GMOrchestrator(provider=None)
+    applied = gm.apply_gm_decision({
+        'action_interpretation': 'report to registrar',
+        'narration': 'The registrar marks your first assignment complete.',
+        'scene_updates': {},
+        'npc_state_updates': [],
+        'inventory_changes': [],
+        'quest_updates': [{'quest_id': 'first_assignment', 'status': 'completed', 'note': 'Reported in.'}],
+        'memory_notes': [],
+    }, state)
+    assert state.structured_state.runtime.quest_state['first_assignment'] == 'completed'
+    assert applied['journal'] == ['first_assignment']
+    assert state.structured_state.runtime.scene_state['last_turn_summary'] == 'report to registrar'
