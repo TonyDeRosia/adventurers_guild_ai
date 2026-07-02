@@ -1,0 +1,82 @@
+[
+  {
+    "id": "missing_courier",
+    "title": "Missing Courier",
+    "description": "Missing Courier quest template.",
+    "starting_zone": "old_gate_road",
+    "objectives": [
+      "Investigate",
+      "Report back"
+    ],
+    "rewards": [
+      "guild reputation"
+    ],
+    "tags": [
+      "starter"
+    ]
+  },
+  {
+    "id": "trouble_at_the_old_gate",
+    "title": "Trouble at the Old Gate",
+    "description": "Trouble at the Old Gate quest template.",
+    "starting_zone": "guildhall_crossing",
+    "objectives": [
+      "Investigate",
+      "Report back"
+    ],
+    "rewards": [
+      "guild reputation"
+    ],
+    "tags": [
+      "starter"
+    ]
+  },
+  {
+    "id": "wolves_in_emberwood",
+    "title": "Wolves in Emberwood",
+    "description": "Wolves in Emberwood quest template.",
+    "starting_zone": "emberwood",
+    "objectives": [
+      "Investigate",
+      "Report back"
+    ],
+    "rewards": [
+      "guild reputation"
+    ],
+    "tags": [
+      "starter"
+    ]
+  },
+  {
+    "id": "frostfen_lights",
+    "title": "Frostfen Lights",
+    "description": "Frostfen Lights quest template.",
+    "starting_zone": "frostfen",
+    "objectives": [
+      "Investigate",
+      "Report back"
+    ],
+    "rewards": [
+      "guild reputation"
+    ],
+    "tags": [
+      "starter"
+    ]
+  },
+  {
+    "id": "crypt_whispers",
+    "title": "Crypt Whispers",
+    "description": "Crypt Whispers quest template.",
+    "starting_zone": "hollow_crypt",
+    "objectives": [
+      "Investigate",
+      "Report back"
+    ],
+    "rewards": [
+      "guild reputation"
+    ],
+    "tags": [
+      "starter"
+    ]
+  }
+]

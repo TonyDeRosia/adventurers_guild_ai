@@ -1,0 +1,44 @@
+[
+  {
+    "id": "guild_recruit",
+    "name": "Guild Recruit",
+    "description": "A newly chartered adventurer.",
+    "starting_items": [
+      "torch",
+      "rations"
+    ],
+    "starting_abilities": [
+      "search"
+    ],
+    "tags": [
+      "guild"
+    ]
+  },
+  {
+    "id": "village_helper",
+    "name": "Village Helper",
+    "description": "Raised helping ordinary people through crises.",
+    "starting_items": [
+      "rations",
+      "rope"
+    ],
+    "starting_abilities": [
+      "first_aid"
+    ],
+    "tags": [
+      "commoner"
+    ]
+  },
+  {
+    "id": "custom",
+    "name": "Custom",
+    "description": "Player-defined background.",
+    "starting_items": [
+      "rations"
+    ],
+    "starting_abilities": [],
+    "tags": [
+      "custom"
+    ]
+  }
+]

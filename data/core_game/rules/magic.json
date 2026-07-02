@@ -1,0 +1,8 @@
+{
+  "unknown_magic": {
+    "storybook": "improvise_with_risk",
+    "mud": "known_abilities_preferred",
+    "stats": "strict_known_abilities"
+  },
+  "freeform_allowed_by_default": true
+}

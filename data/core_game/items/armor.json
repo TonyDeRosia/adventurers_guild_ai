@@ -1,0 +1,82 @@
+[
+  {
+    "id": "travel_robes",
+    "name": "travel robes",
+    "type": "armor",
+    "slot": "chest",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": [],
+    "description": "travel robes (armor).",
+    "tags": [
+      "armor"
+    ]
+  },
+  {
+    "id": "reinforced_robes",
+    "name": "reinforced robes",
+    "type": "armor",
+    "slot": "chest",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": [],
+    "description": "reinforced robes (armor).",
+    "tags": [
+      "armor"
+    ]
+  },
+  {
+    "id": "leather_armor",
+    "name": "leather armor",
+    "type": "armor",
+    "slot": "chest",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": [],
+    "description": "leather armor (armor).",
+    "tags": [
+      "armor"
+    ]
+  },
+  {
+    "id": "chain_shirt",
+    "name": "chain shirt",
+    "type": "armor",
+    "slot": "chest",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": [],
+    "description": "chain shirt (armor).",
+    "tags": [
+      "armor"
+    ]
+  },
+  {
+    "id": "wooden_shield",
+    "name": "wooden shield",
+    "type": "armor",
+    "slot": "off_hand",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": [],
+    "description": "wooden shield (armor).",
+    "tags": [
+      "armor"
+    ]
+  }
+]

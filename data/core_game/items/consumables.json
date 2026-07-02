@@ -1,0 +1,50 @@
+[
+  {
+    "id": "minor_healing_potion",
+    "name": "minor healing potion",
+    "type": "consumable",
+    "slot": "backpack",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": [],
+    "description": "minor healing potion (consumable).",
+    "tags": [
+      "consumable"
+    ]
+  },
+  {
+    "id": "minor_mana_potion",
+    "name": "minor mana potion",
+    "type": "consumable",
+    "slot": "backpack",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": [],
+    "description": "minor mana potion (consumable).",
+    "tags": [
+      "consumable"
+    ]
+  },
+  {
+    "id": "rations",
+    "name": "rations",
+    "type": "consumable",
+    "slot": "backpack",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": [],
+    "description": "rations (consumable).",
+    "tags": [
+      "consumable"
+    ]
+  }
+]

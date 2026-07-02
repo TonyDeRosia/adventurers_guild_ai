@@ -1,0 +1,27 @@
+[
+  {
+    "id": "adaptable",
+    "name": "Adaptable",
+    "type": "passive",
+    "class_tags": [
+      "racial"
+    ],
+    "school": "racial",
+    "category": "racial",
+    "level_requirement": 1,
+    "resource_cost": {},
+    "cooldown": "none",
+    "target_type": "creature_or_object",
+    "range": "near",
+    "description": "Adaptable starter passive.",
+    "mechanical_effect": "Resolve Adaptable using relevant stat and standard difficulty.",
+    "narrative_guidance": "Describe Adaptable consistently with Core Game V1.",
+    "scaling": {
+      "per_level": "minor"
+    },
+    "tags": [
+      "racial",
+      "passive"
+    ]
+  }
+]

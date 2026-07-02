@@ -1,0 +1,14 @@
+{
+  "outcomes": [
+    "success",
+    "partial_success",
+    "failure",
+    "complication"
+  ],
+  "difficulty_scale": {
+    "easy": 8,
+    "standard": 12,
+    "hard": 16,
+    "heroic": 20
+  }
+}

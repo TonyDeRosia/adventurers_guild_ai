@@ -1,0 +1,129 @@
+[
+  {
+    "id": "human",
+    "name": "Human",
+    "description": "Human adventurer of the Shattered Realms.",
+    "stat_bonuses": {},
+    "traits": [
+      "Adaptable",
+      "Guild Network"
+    ],
+    "tags": [
+      "human"
+    ]
+  },
+  {
+    "id": "elf",
+    "name": "Elf",
+    "description": "Elf adventurer of the Shattered Realms.",
+    "stat_bonuses": {
+      "Dexterity": 1,
+      "Intelligence": 1
+    },
+    "traits": [
+      "Keen Senses"
+    ],
+    "tags": [
+      "elf"
+    ]
+  },
+  {
+    "id": "dwarf",
+    "name": "Dwarf",
+    "description": "Dwarf adventurer of the Shattered Realms.",
+    "stat_bonuses": {
+      "Constitution": 2
+    },
+    "traits": [
+      "Stonecunning"
+    ],
+    "tags": [
+      "dwarf"
+    ]
+  },
+  {
+    "id": "halfling",
+    "name": "Halfling",
+    "description": "Halfling adventurer of the Shattered Realms.",
+    "stat_bonuses": {
+      "Dexterity": 2
+    },
+    "traits": [
+      "Small and Lucky"
+    ],
+    "tags": [
+      "halfling"
+    ]
+  },
+  {
+    "id": "orc",
+    "name": "Orc",
+    "description": "Orc adventurer of the Shattered Realms.",
+    "stat_bonuses": {
+      "Strength": 2
+    },
+    "traits": [
+      "Relentless"
+    ],
+    "tags": [
+      "orc"
+    ]
+  },
+  {
+    "id": "tiefling",
+    "name": "Tiefling",
+    "description": "Tiefling adventurer of the Shattered Realms.",
+    "stat_bonuses": {
+      "Charisma": 1,
+      "Intelligence": 1
+    },
+    "traits": [
+      "Infernal Echo"
+    ],
+    "tags": [
+      "tiefling"
+    ]
+  },
+  {
+    "id": "dragonkin",
+    "name": "Dragonkin",
+    "description": "Dragonkin adventurer of the Shattered Realms.",
+    "stat_bonuses": {
+      "Strength": 1,
+      "Charisma": 1
+    },
+    "traits": [
+      "Draconic Bearing"
+    ],
+    "tags": [
+      "dragonkin"
+    ]
+  },
+  {
+    "id": "undead",
+    "name": "Undead",
+    "description": "Undead adventurer of the Shattered Realms.",
+    "stat_bonuses": {
+      "Constitution": 1,
+      "Wisdom": 1
+    },
+    "traits": [
+      "Deathless"
+    ],
+    "tags": [
+      "undead"
+    ]
+  },
+  {
+    "id": "custom",
+    "name": "Custom",
+    "description": "Custom adventurer of the Shattered Realms.",
+    "stat_bonuses": {},
+    "traits": [
+      "Player-defined appearance; no major default stat bonus"
+    ],
+    "tags": [
+      "custom"
+    ]
+  }
+]

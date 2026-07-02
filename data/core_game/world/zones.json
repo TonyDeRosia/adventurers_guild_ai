@@ -1,0 +1,120 @@
+[
+  {
+    "id": "guildhall_crossing",
+    "name": "Guildhall Crossing",
+    "summary": "A busy charter hall around a waking gate.",
+    "atmosphere": "hopeful, crowded, tense",
+    "npcs": [
+      "guild_registrar",
+      "suspicious_merchant"
+    ],
+    "objects": [
+      "notice_board",
+      "old_gate"
+    ],
+    "exits": [
+      {
+        "direction": "north",
+        "destination_id": "old_gate_road",
+        "destination_name": "Old Gate Road",
+        "description": "The old road leads toward gate trouble."
+      }
+    ],
+    "active_hooks": [
+      "Trouble at the Old Gate"
+    ],
+    "tags": [
+      "starting_hub"
+    ]
+  },
+  {
+    "id": "old_gate_road",
+    "name": "Old Gate Road",
+    "summary": "A broken road lined by humming gate stones.",
+    "atmosphere": "charged and watchful",
+    "npcs": [
+      "road_messenger",
+      "warden_scout"
+    ],
+    "objects": [
+      "gate_stones"
+    ],
+    "exits": [],
+    "active_hooks": [
+      "Missing Courier"
+    ],
+    "tags": [
+      "road"
+    ]
+  },
+  {
+    "id": "emberwood",
+    "name": "Emberwood",
+    "summary": "Warm woods under ember-lit leaves.",
+    "atmosphere": "wild and smoky",
+    "npcs": [],
+    "objects": [
+      "wolf_tracks"
+    ],
+    "exits": [],
+    "active_hooks": [
+      "Wolves in Emberwood"
+    ],
+    "tags": [
+      "forest"
+    ]
+  },
+  {
+    "id": "frostfen",
+    "name": "Frostfen",
+    "summary": "Cold marsh where pale lights drift.",
+    "atmosphere": "cold and eerie",
+    "npcs": [],
+    "objects": [
+      "fen_lights"
+    ],
+    "exits": [],
+    "active_hooks": [
+      "Frostfen Lights"
+    ],
+    "tags": [
+      "swamp"
+    ]
+  },
+  {
+    "id": "hollow_crypt",
+    "name": "Hollow Crypt",
+    "summary": "A sunken crypt whispering below old stone.",
+    "atmosphere": "claustrophobic and haunted",
+    "npcs": [
+      "crypt_acolyte"
+    ],
+    "objects": [
+      "sealed_sarcophagus"
+    ],
+    "exits": [],
+    "active_hooks": [
+      "Crypt Whispers"
+    ],
+    "tags": [
+      "crypt"
+    ]
+  },
+  {
+    "id": "riverwatch_village",
+    "name": "Riverwatch Village",
+    "summary": "A riverside village of ferries and worried merchants.",
+    "atmosphere": "practical and anxious",
+    "npcs": [
+      "village_healer"
+    ],
+    "objects": [
+      "market_stalls"
+    ],
+    "exits": [],
+    "active_hooks": [],
+    "tags": [
+      "village"
+    ]
+  }
+]

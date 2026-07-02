@@ -1,0 +1,7 @@
+{
+  "id": "core_game_v1",
+  "name": "Core Game V1",
+  "world": "The Shattered Realms",
+  "starting_zone": "guildhall_crossing",
+  "version": 1
+}

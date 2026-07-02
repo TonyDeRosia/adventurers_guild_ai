@@ -1,0 +1,18 @@
+[
+  {
+    "id": "guild_charter",
+    "name": "guild charter",
+    "type": "misc",
+    "slot": "backpack",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": [],
+    "description": "guild charter (misc).",
+    "tags": [
+      "misc"
+    ]
+  }
+]
