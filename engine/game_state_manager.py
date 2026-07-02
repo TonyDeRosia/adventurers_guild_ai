@@ -8,6 +8,7 @@ from pathlib import Path
 from engine.character_sheets import CharacterSheet
 from engine.entities import CampaignState
 from engine.save_manager import SaveManager
+from engine.mud_state_store import MUDStateStore, mud_state_db_path
 
 
 class GameStateManager:
@@ -309,6 +310,37 @@ class GameStateManager:
             )
         print(f"[character-sheets] applied_health={main_sheet.stats.health}")
 
+
+    def _sync_mud_v2_from_sqlite(self, state: CampaignState) -> CampaignState:
+        if getattr(state, "campaign_format", "") != "mud_v2" and getattr(state.structured_state.runtime, "campaign_format", "") != "mud_v2":
+            return state
+        runtime = state.structured_state.runtime
+        core = runtime.player_core or {}
+        db_path = core.get("mud_state_db_path") if isinstance(core, dict) else None
+        store = MUDStateStore(state.campaign_id, getattr(runtime, "world_id", ""), db_path=db_path or mud_state_db_path(state.campaign_id, self.user_data_dir, self.save_manager.save_dir))
+        if not store.db_path.exists():
+            store.initialize()
+            cid = state.player.id or "player_1"
+            store.save_character({"character_id": cid, "name": state.player.name, "world_id": runtime.world_id, "class_id": state.player.char_class, "level": state.player.level, "xp": state.player.xp, "current_room_id": runtime.current_room_id, "hp_current": state.player.hp, "mana_current": state.player.energy_or_mana, "gold": (runtime.inventory_state.get("currency", {}) or {}).get("gold", 0)})
+            store.save_character_stats(cid, (runtime.player_core or {}).get("stats", {}))
+            store.save_abilities(cid, [a.get("id", a.get("name", "")) for a in runtime.abilities])
+            store.save_inventory(cid, runtime.inventory_state.get("entries", []))
+            if runtime.current_room_id: store.mark_room_visited(runtime.current_room_id)
+            store.log_event(character_id=cid, room_id=runtime.current_room_id, actor_id=cid, event_type="migration", summary="Migrated mud_v2 JSON runtime into SQLite.")
+        row = store.load_character(state.player.id or "player_1")
+        if row:
+            state.player.name = row.get("name") or state.player.name
+            state.player.level = int(row.get("level") or state.player.level)
+            state.player.xp = int(row.get("xp") or state.player.xp)
+            state.player.hp = int(row.get("hp_current") or state.player.hp)
+            state.player.energy_or_mana = int(row.get("mana_current") or state.player.energy_or_mana)
+            runtime.current_room_id = str(row.get("current_room_id") or runtime.current_room_id)
+            runtime.current_location_id = runtime.current_room_id
+            state.current_location_id = runtime.current_room_id
+        runtime.inventory_state["entries"] = store.load_inventory(state.player.id or "player_1") or runtime.inventory_state.get("entries", [])
+        runtime.player_core["mud_state_db_path"] = str(store.db_path)
+        return state
+
     def save(self, state: CampaignState, slot: str = "autosave") -> Path:
         return self.save_manager.save(state, slot)
 
@@ -321,7 +353,7 @@ class GameStateManager:
                 payload = loaded.to_dict()
                 self._apply_main_character_sheet_to_payload(payload, loaded.character_sheets, source="campaign_load_runtime_sync")
                 return CampaignState.from_dict(payload)
-            return loaded
+            return self._sync_mud_v2_from_sqlite(loaded)
         return self.create_new_campaign(
             player_name="Aria",
             char_class="Ranger",

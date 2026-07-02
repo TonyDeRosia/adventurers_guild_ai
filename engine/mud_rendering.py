@@ -40,5 +40,18 @@ def render_room(room: dict[str, Any], world: dict[str, Any], player: dict[str, A
     hp, max_hp = player.get("hp", 0), player.get("max_hp", 0)
     mana = player.get("mana", player.get("energy_or_mana", 0)); max_mana = player.get("max_mana", mana)
     stm = player.get("stamina", player.get("Stamina", 0)); max_stm = player.get("max_stamina", stm)
-    lines += ["", f"{semantic('prompt_hp', f'HP {hp}/{max_hp}')}  {semantic('prompt_mana', f'MP {mana}/{max_mana}')}  {semantic('prompt_stamina', f'STM {stm}/{max_stm}')}  LVL {player.get('level',1)}  {semantic('prompt_xp', f'XP {player.get('xp',0)}')}  {semantic('prompt_gold', f'Gold {player.get('gold',0)}')}", f"{player.get('race','Human')} {player.get('class', player.get('char_class','Adventurer'))}", str(room.get("name", "")), semantic("prompt_marker", ">")]
+    level = player.get("level", 1)
+    xp = player.get("xp", 0)
+    gold = player.get("gold", 0)
+    race = player.get("race", "Human")
+    char_class = player.get("class", player.get("char_class", "Adventurer"))
+    prompt = (
+        f"{semantic('prompt_hp', f'HP {hp}/{max_hp}')}  "
+        f"{semantic('prompt_mana', f'MP {mana}/{max_mana}')}  "
+        f"{semantic('prompt_stamina', f'STM {stm}/{max_stm}')}  "
+        f"LVL {level}  "
+        f"{semantic('prompt_xp', f'XP {xp}')}  "
+        f"{semantic('prompt_gold', f'Gold {gold}')}"
+    )
+    lines += ["", prompt, f"{race} {char_class}", str(room.get("name", "")), semantic("prompt_marker", ">")]
     return "\n".join(lines)

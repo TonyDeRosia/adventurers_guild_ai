@@ -3965,3 +3965,19 @@ document.getElementById('open-campaign-events')?.addEventListener('click', async
 document.getElementById('close-campaign-events')?.addEventListener('click', () => closePrimaryModal('campaign-events-modal'));
 
 // Legacy compatibility marker for tests: display_mode: 'story'
+
+const refreshMudMemoryButton = document.getElementById('refresh-mud-memory');
+const clearMudMemoryButton = document.getElementById('clear-mud-memory');
+const mudMemoryOutput = document.getElementById('mud-memory-output');
+async function refreshMudMemoryInspector() {
+  if (!mudMemoryOutput) return;
+  try { mudMemoryOutput.textContent = JSON.stringify(await api('/api/developer/mud-memory'), null, 2); }
+  catch (error) { mudMemoryOutput.textContent = error.message; }
+}
+async function clearMudMemoryInspector() {
+  if (!confirm('Clear persistent MUD memory for this campaign?')) return;
+  try { mudMemoryOutput.textContent = JSON.stringify(await api('/api/developer/mud-memory/clear', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: true }) }), null, 2); }
+  catch (error) { mudMemoryOutput.textContent = error.message; }
+}
+refreshMudMemoryButton?.addEventListener('click', refreshMudMemoryInspector);
+clearMudMemoryButton?.addEventListener('click', clearMudMemoryInspector);

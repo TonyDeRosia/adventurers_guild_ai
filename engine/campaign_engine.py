@@ -20,6 +20,7 @@ from engine.scene_simulation import ensure_scene_v1, resolve_scene_action, get_s
 from engine.gm_orchestrator import GMOrchestrator
 from engine.world_registry import WorldRegistry, by_id as world_by_id
 from engine.mud_rendering import render_room
+from engine.mud_state_store import MUDStateStore
 from engine.spellbook import normalize_spellbook_entry
 from app.dm_intent import analyze_dm_intent
 from memory.campaign_memory import CampaignMemory
@@ -103,6 +104,35 @@ class CampaignEngine:
             "just",
         }
 
+
+    def _mud_store_for_state(self, state: CampaignState) -> MUDStateStore:
+        runtime = state.structured_state.runtime
+        core = runtime.player_core or {}
+        db_path = core.get("mud_state_db_path") if isinstance(core, dict) else None
+        return MUDStateStore(state.campaign_id, runtime.world_id, db_path=db_path)
+
+    def _apply_deterministic_social_memory(self, state: CampaignState, action: str, npcs: list[dict[str, Any]], room_id: str) -> None:
+        normalized = action.strip().lower()
+        cid = state.player.id or "player_1"
+        target = next((n for n in npcs if str(n.get("id", "")).lower() in normalized or str(n.get("name", "")).lower() in normalized), npcs[0] if npcs else None)
+        if not target:
+            return
+        npc_id = str(target.get("id") or target.get("name"))
+        name = str(target.get("name") or npc_id)
+        deltas: dict[str, int] = {}; summary = ""; tags: list[str] = []
+        if re.search(r"\b(i hate you|hate him|hate her|insult|curse you)\b", normalized):
+            deltas = {"annoyance": 15, "trust": -10, "hostility": 5}; summary = f"Player insulted {name}."; tags=["rude","insult"]
+        elif "flirt" in normalized:
+            flirt_ok = any(str(v).lower() in {"flirtatious", "romantic", "warm", "playful"} for v in (target.get("tags", []) if isinstance(target.get("tags"), list) else [])) or "flirt" in str(target.get("personality", "")).lower()
+            deltas = {"affection": 5} if flirt_ok else {"annoyance": 5}; summary = f"Player flirted with {name}."; tags=["flirt"]
+        elif re.search(r"\b(spit on|lick|attack|punch|stab|threaten|steal from)\b", normalized):
+            deltas = {"hostility": 25, "annoyance": 15, "trust": -20, "fear": 5}; summary = f"Player acted hostile toward {name}."; tags=["hostile"]
+        elif re.search(r"\b(thank|praise|compliment|gift)\b", normalized):
+            deltas = {"trust": 5, "respect": 5, "annoyance": -5}; summary = f"Player was kind to {name}."; tags=["kind"]
+        if not deltas:
+            return
+        store = self._mud_store_for_state(state); store.initialize(); store.update_relationship(npc_id, cid, deltas); store.add_npc_memory(npc_id, cid, summary, memory_type="social", weight=max(abs(v) for v in deltas.values()), tags=tags); store.log_event(character_id=cid, room_id=room_id, actor_id=npc_id, event_type="social_memory", summary=summary, data={"deltas": deltas, "tags": tags})
+
     def _handle_mud_command(self, state: CampaignState, action: str) -> TurnResult | None:
         normalized = action.strip().lower()
         directions = {"north", "south", "east", "west", "northeast", "northwest", "southeast", "southwest", "up", "down", "in", "out", "n", "s", "e", "w", "ne", "nw", "se", "sw", "u", "d"}
@@ -126,6 +156,7 @@ class CampaignEngine:
                 return TurnResult(text, [text], [{"type":"system", "text": text}], metadata={"mud_v2": True, "movement": "invalid"})
             room = world.room(str(exit_["destination_room_id"])); room_id = room["id"]
             state.current_location_id = room_id; state.structured_state.runtime.current_room_id = room_id; state.structured_state.runtime.current_location_id = room_id
+            self._mud_store_for_state(state).mark_room_visited(room_id)
             state.structured_state.runtime.discovered_locations = sorted(set(state.structured_state.runtime.discovered_locations + [room_id]))
             room_npcs = [npcs_by_id[n] for n in room.get("npcs", []) if n in npcs_by_id]
             room_objects = [{"id": o, "name": o.replace("_", " ").title()} for o in room.get("objects", [])]
@@ -139,8 +170,10 @@ class CampaignEngine:
             elif normalized in {"quests", "journal"}: narrative = ["Quests: " + ", ".join(q.get("title", q.get("id", "quest")) for q in world.quests[:7])]
             elif normalized == "help": narrative = ["Commands: look, look <target>, examine/inspect <target>, say <message>, talk <npc>, ask <npc> about <topic>, go <direction>, north/south/east/west/ne/nw/se/sw/up/down/in/out, inventory, equipment, score, character, spellbook, abilities, quests, journal, help."]
             elif normalized.startswith(("talk ", "ask ", "say ")):
-                self.gm_orchestrator.build_context(action, state, [{"source": k, "text": v} for k, v in world.intelligence.items()])
-                narrative = ["The GM Orchestrator receives the NPC context for this social action."]
+                self._apply_deterministic_social_memory(state, action, room_npcs, room_id)
+                ctx = self.gm_orchestrator.build_context(action, state, [{"source": k, "text": v} for k, v in world.intelligence.items()])
+                state.structured_state.runtime.scene_state["persistent_state_context"] = ctx.persistent_state_context
+                narrative = ["The GM Orchestrator receives persistent NPC memory before this social action."]
         else:
             return None
         text = render_room(room, world.manifest, player, npcs=room_npcs, objects=room_objects, narrative=narrative)
