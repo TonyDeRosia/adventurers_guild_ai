@@ -75,6 +75,7 @@ from engine.scene_simulation import ensure_scene_v1
 from engine.core_game import auto_allocate_stats, by_id, calculate_derived_stats, load_core_game
 from engine.world_registry import WorldRegistry, by_id as world_by_id
 from engine.mud_rendering import PRESETS, render_room
+from engine.mud_state_store import MUDStateStore
 from engine.spellbook import normalize_spellbook_entry
 from images.base import ImageGenerationRequest, ImageGenerationResult, ImageGeneratorAdapter, NullImageAdapter
 from images.comfyui_adapter import ComfyUIAdapter
@@ -4521,6 +4522,56 @@ class WebRuntime:
             "dialogue_entries": dialogue_entries,
         }
 
+
+    def _mud_store(self, state: CampaignState) -> MUDStateStore:
+        runtime = state.structured_state.runtime
+        return MUDStateStore(state.campaign_id, getattr(runtime, "world_id", ""), user_data_dir=self.paths.user_data, saves_dir=self.paths.saves)
+
+    def _persist_mud_v2_initial_state(self, state: CampaignState) -> None:
+        runtime = state.structured_state.runtime
+        store = self._mud_store(state)
+        store.initialize()
+        core = runtime.player_core or {}
+        derived = core.get("derived_stats", {}) if isinstance(core, dict) else {}
+        store.save_character({
+            "character_id": state.player.id or "player_1", "name": state.player.name, "world_id": runtime.world_id,
+            "race_id": core.get("race_id", "human"), "class_id": core.get("class_id", state.player.char_class),
+            "appearance": core.get("appearance", ""), "level": state.player.level, "xp": state.player.xp,
+            "current_room_id": runtime.current_room_id, "hp_current": state.player.hp, "mana_current": state.player.energy_or_mana,
+            "stamina_current": derived.get("Stamina", 0), "gold": (runtime.inventory_state.get("currency", {}) or {}).get("gold", 0),
+        })
+        store.save_character_stats(state.player.id or "player_1", core.get("stats", {}))
+        store.save_abilities(state.player.id or "player_1", [a.get("id", a.get("name", "")) for a in runtime.abilities])
+        store.save_inventory(state.player.id or "player_1", runtime.inventory_state.get("entries", []))
+        store.mark_room_visited(runtime.current_room_id)
+        for faction in getattr(state, "faction_reputation", {}) or {}:
+            store.update_reputation(str(faction), state.player.id or "player_1", int(state.faction_reputation.get(faction, 0)))
+        store.log_event(character_id=state.player.id or "player_1", room_id=runtime.current_room_id, actor_id=state.player.id or "player_1", event_type="campaign_start", summary="Character entered world.")
+
+    def get_mud_memory_inspector(self) -> dict[str, Any]:
+        state = self.session.state
+        if getattr(state, "campaign_format", "") != "mud_v2":
+            return {"enabled": False, "reason": "Active campaign is not mud_v2."}
+        store = self._mud_store(state); store.initialize()
+        runtime = state.structured_state.runtime; cid = state.player.id or "player_1"
+        visible = runtime.room_state.get("visible_npcs", []) if isinstance(runtime.room_state, dict) else []
+        return {
+            "enabled": True, "database_path": str(store.db_path), "character": store.load_character(cid),
+            "room_runtime": store.load_room_runtime(runtime.current_room_id), "room_items": store.load_room_items(runtime.current_room_id),
+            "visible_npc_relationships": {str(n.get("id")): store.load_relationship(str(n.get("id")), cid) for n in visible if isinstance(n, dict)},
+            "visible_npc_memories": {str(n.get("id")): store.recall_npc_memories(str(n.get("id")), cid) for n in visible if isinstance(n, dict)},
+            "recent_events": store.load_recent_events(state.campaign_id),
+            "recent_conversations": {str(n.get("id")): store.load_recent_conversation(str(n.get("id")), cid) for n in visible if isinstance(n, dict)},
+            "faction_reputation": {f: store.load_reputation(str(f), cid) for f in (getattr(state, "faction_reputation", {}) or {})},
+        }
+
+    def clear_mud_memory(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not payload.get("confirm"):
+            raise ValueError("Confirmation required to clear MUD memory.")
+        store = self._mud_store(self.session.state)
+        path = str(store.db_path); store.clear()
+        return {"cleared": True, "database_path": path}
+
     def serialize_state(self) -> dict[str, Any]:
         state = self.session.state
         return {
@@ -5642,7 +5693,7 @@ class WebRuntime:
         state.npcs = {}
         runtime = state.structured_state.runtime
         runtime.campaign_format = "mud_v2"; runtime.world_id = world.id; runtime.current_room_id = room["id"]; runtime.current_location_id = room["id"]; runtime.discovered_locations = [room["id"]]
-        runtime.player_core = {"campaign_format":"mud_v2", "world_id": world.id, "race_id": race["id"], "class_id": cls["id"], "appearance": appearance, "stats": stats, "derived_stats": {"HP": hp, "Mana": mana, "Stamina": stamina}, "known_ability_ids": [a["id"] for a in known]}
+        runtime.player_core = {"campaign_format":"mud_v2", "world_id": world.id, "race_id": race["id"], "class_id": cls["id"], "appearance": appearance, "stats": stats, "derived_stats": {"HP": hp, "Mana": mana, "Stamina": stamina}, "known_ability_ids": [a["id"] for a in known], "mud_state_db_path": str(self._mud_store(state).db_path)}
         runtime.abilities = [{"id": a["id"], "name": a["name"], "description": a.get("description", ""), "type": a.get("type", "ability"), "source": "world_class"} for a in known]
         runtime.spellbook = list(runtime.abilities); runtime.inventory_state = {"entries": entries, "currency": {"gold": 10, "silver": 0, "copper": 0}}; runtime.inventory = [e["name"] for e in entries]
         runtime.mud_color_settings = dict(PRESETS.get(world.manifest.get("default_color_theme", "Dark Fantasy"), PRESETS["Dark Fantasy"]))
@@ -5653,6 +5704,7 @@ class WebRuntime:
         runtime.scene_state["scene_v1"] = {"location_id": room["id"], "location_name": room["name"], "summary": room.get("long_description", ""), "entities": room_npcs + room_objects, "exits": room.get("exits", [])}
         runtime.last_narration = render_room(room, world.manifest, {"hp": hp, "max_hp": hp, "mana": mana, "max_mana": mana, "stamina": stamina, "max_stamina": stamina, "level":1, "xp":0, "gold":10, "race": race["name"], "class": cls["name"]}, npcs=room_npcs, objects=room_objects, narrative=["Welcome to the Guild."])
         state.startup_state = "ready"; state.bootstrap_complete = True; state.bootstrap_missing_fields = []
+        self._persist_mud_v2_initial_state(state)
 
     def _location_from_mud_room(self, room: dict[str, Any]):
         from engine.entities import Location
@@ -7786,6 +7838,14 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
         return {"status": "ok"}
 
 
+
+    @app.get("/api/developer/mud-memory")
+    def developer_mud_memory() -> dict[str, Any]:
+        return runtime.get_mud_memory_inspector()
+
+    @app.post("/api/developer/mud-memory/clear")
+    def developer_mud_memory_clear(payload: dict[str, Any]) -> dict[str, Any]:
+        return runtime.clear_mud_memory(payload)
 
     @app.get("/api/developer/intelligence")
     def developer_intelligence() -> dict[str, Any]:

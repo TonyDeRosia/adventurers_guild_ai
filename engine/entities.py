@@ -603,6 +603,11 @@ class CampaignState:
                 spell_definitions_version=str(raw_canon.get("spell_definitions_version", "default")),
             ),
             runtime=CampaignRuntimeState(
+                campaign_format=str(raw_runtime.get("campaign_format", payload.get("campaign_format", "legacy_story"))),
+                world_id=str(raw_runtime.get("world_id", "")),
+                current_room_id=str(raw_runtime.get("current_room_id", "")),
+                room_state=dict(raw_runtime.get("room_state", {})),
+                mud_color_settings=dict(raw_runtime.get("mud_color_settings", {})),
                 player_core=dict(raw_runtime.get("player_core", {})),
                 inventory=[str(v) for v in raw_runtime.get("inventory", [])],
                 equipment={str(k): (None if v is None else str(v)) for k, v in raw_runtime.get("equipment", {}).items()},

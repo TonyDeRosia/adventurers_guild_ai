@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from engine.core_game import load_core_game
+from engine.mud_state_store import MUDStateStore
 
 GM_DECISION_SCHEMA: dict[str, Any] = {
     "action_interpretation": "Plain-language summary of what the player tried.",
@@ -45,6 +46,7 @@ class GMContext:
     background_data: dict[str, Any] = field(default_factory=dict)
     intelligence_chunks: list[dict[str, Any]] = field(default_factory=list)
     relevant_rules: dict[str, Any] = field(default_factory=dict)
+    persistent_state_context: dict[str, Any] = field(default_factory=dict)
 
 class GMOrchestrator:
     """Builds context and lets the provider decide when one is available."""
@@ -74,7 +76,47 @@ class GMOrchestrator:
         hooks = list(getattr(getattr(state, "structured_state", None), "runtime", None).scene_state.get("active_hooks", []) or []) if runtime else []
         cls_name = str(character.get("character_class", character.get("role", ""))).lower()
         class_data = next((c for c in self.core_game.get("classes", []) if str(c.get("name", c.get("id", ""))).lower() == cls_name or str(c.get("id", "")).lower() == cls_name), {})
-        return GMContext(player_input, scene, character, character.get("classic_attributes", {}) or character, list(inventory_state.get("entries", [])), abilities, quests, npcs, hooks, current_location, objects, exits, class_data, {}, {}, intelligence_chunks or [], rules)
+        persistent = self._build_persistent_state_context(state, runtime, mud_room_state, npcs)
+        return GMContext(player_input, scene, character, character.get("classic_attributes", {}) or character, list(inventory_state.get("entries", [])), abilities, quests, npcs, hooks, current_location, objects, exits, class_data, {}, {}, intelligence_chunks or [], rules, persistent)
+
+
+    def _build_persistent_state_context(self, state: Any, runtime: Any, mud_room_state: dict[str, Any], npcs: list[dict[str, Any]]) -> dict[str, Any]:
+        if not runtime or str(getattr(runtime, "campaign_format", "")) != "mud_v2":
+            return {}
+        core = getattr(runtime, "player_core", {}) or {}
+        db_path = core.get("mud_state_db_path") if isinstance(core, dict) else None
+        store = MUDStateStore(getattr(state, "campaign_id", "campaign"), getattr(runtime, "world_id", ""), db_path=db_path)
+        store.initialize()
+        cid = getattr(getattr(state, "player", None), "id", "player_1") or "player_1"
+        room_id = getattr(runtime, "current_room_id", "") or getattr(state, "current_location_id", "")
+        relationships: dict[str, Any] = {}; memories: dict[str, Any] = {}; conversations: dict[str, Any] = {}; reps: dict[str, Any] = {}
+        for npc in npcs:
+            if not isinstance(npc, dict):
+                continue
+            npc_id = str(npc.get("id") or npc.get("npc_id") or npc.get("name") or "")
+            if not npc_id:
+                continue
+            relationships[npc_id] = store.load_relationship(npc_id, cid)
+            memories[npc_id] = store.recall_npc_memories(npc_id, cid, limit=5)
+            conversations[npc_id] = store.load_recent_conversation(npc_id, cid, limit=10)
+            faction = npc.get("faction_id") or npc.get("faction")
+            if faction:
+                reps[str(faction)] = store.load_reputation(str(faction), cid)
+        return {
+            "character": store.load_character(cid),
+            "stats": store.load_character_stats(cid),
+            "abilities": store.load_abilities(cid),
+            "inventory": store.load_inventory(cid),
+            "current_room_id": room_id,
+            "room_runtime": store.load_room_runtime(room_id),
+            "room_items": store.load_room_items(room_id),
+            "npc_relationships": relationships,
+            "npc_memories": memories,
+            "faction_reputation": reps,
+            "recent_events": store.load_recent_events(getattr(state, "campaign_id", ""), limit=10),
+            "recent_conversations": conversations,
+            "instruction": "Portray NPCs according to both static world profiles and persistent memory; do not reset NPC behavior each turn.",
+        }
 
     def decide(self, player_input: str, state: Any, intelligence_chunks: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         context = self.build_context(player_input, state, intelligence_chunks)
