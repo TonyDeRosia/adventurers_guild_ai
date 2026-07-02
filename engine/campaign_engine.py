@@ -17,6 +17,7 @@ from engine.entities import CampaignState, NPC
 from engine.inventory import InventoryService
 from engine.player_output import filter_player_messages, narrative_needs_player_facing_fallback
 from engine.scene_simulation import ensure_scene_v1, resolve_scene_action, get_scene_entity_counts
+from engine.gm_orchestrator import GMOrchestrator
 from engine.spellbook import normalize_spellbook_entry
 from app.dm_intent import analyze_dm_intent
 from memory.campaign_memory import CampaignMemory
@@ -62,6 +63,7 @@ class CampaignEngine:
         self.state_orchestrator = CampaignStateOrchestrator()
         self.retrieval = MemoryRetrievalPipeline()
         self.summary = SummaryGenerator()
+        self.gm_orchestrator = GMOrchestrator(provider=self.model)
         self._last_prompt_debug_by_campaign: dict[str, dict[str, object]] = {}
         self._scene_state_list_caps: dict[str, int] = {
             "visible_entities": 8,
@@ -154,6 +156,42 @@ class CampaignEngine:
         requested_mode = "play"
 
         scene_v1 = ensure_scene_v1(state)
+        self.gm_orchestrator.provider = self.model
+        intelligence_chunks = list(state.structured_state.runtime.scene_state.get("gm_intelligence_chunks", []) or [])
+        gm_context = self.gm_orchestrator.build_context(action, state, intelligence_chunks)
+        provider_available = bool(getattr(self, "gm_orchestrator_live_enabled", True)) and self.gm_orchestrator._provider_available()
+        gm_debug: dict[str, object] = {
+            "gm_orchestrator_used": provider_available,
+            "provider_available": provider_available,
+            "provider_decision_used": False,
+            "deterministic_fallback_used": False,
+            "decision_validation_errors": [],
+            "decision_repair_applied": False,
+            "intelligence_chunks_in_context": len(intelligence_chunks),
+            "core_game_context_used": bool(gm_context.relevant_rules),
+            "scene_v1_context_used": bool(gm_context.scene_v1),
+            "known_ability_matched": bool(gm_context.relevant_rules.get("known_ability_definition")),
+            "state_changes_applied": {},
+        }
+        if provider_available:
+            try:
+                decision = self.gm_orchestrator.decide(action, state, intelligence_chunks)
+                strict = str(getattr(state.settings, "rules_style", "")).strip().lower() == "strict"
+                decision, errors, repaired = self.gm_orchestrator.validate_decision(decision, gm_context, strict_rules=strict)
+                applied = self.gm_orchestrator.apply_gm_decision(decision, state)
+                narrative = str(decision.get("narration", "")).strip()
+                self.memory.record_recent(state, f"Player action: {action}")
+                self.memory.record_recent(state, f"GM: {narrative}")
+                self.memory.record_conversation_turn(state, player_input=action, system_messages=[], narrator_response=narrative, requested_mode="gm_orchestrator")
+                gm_debug.update({"provider_decision_used": True, "decision_validation_errors": errors, "decision_repair_applied": repaired, "state_changes_applied": applied})
+                return TurnResult(narrative=narrative, system_messages=[], messages=[{"type": "narrator", "text": narrative}], metadata={"requested_mode": "gm_orchestrator", "turn_count": state.turn_count, "quality_fallback_used": False, "debug_trace": [gm_debug], "gm_decision": decision})
+            except Exception as exc:
+                gm_debug.update({"deterministic_fallback_used": True, "decision_validation_errors": [f"gm_orchestrator_exception:{type(exc).__name__}"]})
+                state.structured_state.runtime.scene_state["last_gm_debug_trace"] = gm_debug
+        else:
+            gm_debug["deterministic_fallback_used"] = True
+            state.structured_state.runtime.scene_state["last_gm_debug_trace"] = gm_debug
+
         scene_v1_enabled = bool(state.structured_state.runtime.scene_state.get("scene_v1_enabled", False))
         legacy_talk_target = normalized.split(" ", 1)[1] if normalized.startswith("talk ") and " " in normalized else ""
         use_legacy_command = (

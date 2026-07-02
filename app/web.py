@@ -6141,8 +6141,15 @@ class WebRuntime:
         elif auto_enabled and auto_timing == "before_narration" and not auto_provider_ready:
             print("[turn-visual] auto_image_skipped reason=image_provider_not_ready")
 
+        try:
+            retrieved = self.intelligence_library.retrieve(clean_text, self.session.state.settings.enabled_intelligence_source_ids, max_chunks=5)
+            self.session.state.structured_state.runtime.scene_state["gm_intelligence_chunks"] = list(retrieved.get("results", []) or [])
+        except Exception as exc:
+            self.session.state.structured_state.runtime.scene_state["gm_intelligence_chunks"] = []
+            self.session.state.structured_state.runtime.scene_state["gm_intelligence_error"] = type(exc).__name__
         engine_started = time.perf_counter()
         self._set_last_turn_routing(input_mode="ic", startup_state=startup_state, detected_intent=initial_intent.primary_intent, branch="normal_turn_pipeline", analyze_player_input_called=True, build_ooc_response_called=False, normal_turn_pipeline_used=True, action_noted_added=False)
+        self.engine.gm_orchestrator_live_enabled = str(getattr(self.app_config.model, "provider", "null") or "null").lower() != "null"
         result = self.engine.run_turn(self.session.state, clean_text)
         registry = self._sync_npc_identities()
         self._maybe_queue_npc_portraits(registry)
@@ -6185,7 +6192,10 @@ class WebRuntime:
         print(f"[turn-timing] {json.dumps(turn_timing)}")
         action_noted_added = any(str(message).strip() == "Action noted." for message in result.system_messages)
         debug_trace = list((result.metadata or {}).get("debug_trace", [])) if isinstance(result.metadata, dict) else []
-        self._set_last_turn_routing(**{**self.last_turn_routing, "action_noted_added": action_noted_added, "debug_trace": debug_trace})
+        last_gm_debug = self.session.state.structured_state.runtime.scene_state.get("last_gm_debug_trace")
+        if last_gm_debug and not debug_trace:
+            debug_trace = [last_gm_debug]
+        self._set_last_turn_routing(**{**self.last_turn_routing, "action_noted_added": action_noted_added, "debug_trace": debug_trace, **(last_gm_debug if isinstance(last_gm_debug, dict) else {})})
         return {
             "narrative": result.narrative,
             "system_messages": result.system_messages,

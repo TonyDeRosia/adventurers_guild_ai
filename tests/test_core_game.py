@@ -76,3 +76,63 @@ def test_core_character_creation_warrior_known_skills(tmp_path, monkeypatch):
     names = [a['name'] for a in state['abilities']]
     assert 'Power Strike' in names and 'Guard Stance' in names
     assert 'training sword' in [i['name'] for i in state['inventory_state']['entries']]
+
+
+def test_gm_decision_validation_unknown_spell_strict(tmp_path):
+    state = _state(tmp_path, 'Warrior')
+    state.settings.rules_style = 'Strict'
+    gm = GMOrchestrator(provider=None)
+    ctx = gm.build_context('cast Fireball at the scarecrow', state, [])
+    decision, errors, repaired = gm.validate_decision({'narration': 'Flames gather.', 'outcome': 'success', 'state_changes': {}, 'skill_or_ability_used': 'Fireball'}, ctx, strict_rules=True)
+    assert 'unknown_ability_used' in errors
+    assert repaired is False
+
+
+def test_gm_decision_applies_scene_npc_and_inventory(tmp_path):
+    state = _state(tmp_path)
+    scene = state.structured_state.runtime.scene_state['scene_v1'] = {'entities': [{'kind': 'npc', 'actor_id': 'npc_guard', 'name': 'Guard'}], 'recent_changes': []}
+    state.structured_state.runtime.inventory_state = {'entries': [{'id': 'old_key', 'name': 'old key'}]}
+    gm = GMOrchestrator(provider=None)
+    applied = gm.apply_gm_decision({
+        'narration': 'The guard opens the way.',
+        'scene_updates': {'summary': 'The gate is open.'},
+        'npc_state_updates': [{'actor_id': 'npc_guard', 'mood': 'relieved'}],
+        'inventory_changes': [{'action': 'add', 'item': {'id': 'gate_token', 'name': 'gate token'}}, {'action': 'remove', 'item_id': 'old_key'}],
+        'memory_notes': ['Guard helped at the gate.'],
+    }, state)
+    assert scene['summary'] == 'The gate is open.'
+    assert scene['entities'][0]['mood'] == 'relieved'
+    ids = [item.get('id') for item in state.structured_state.runtime.inventory_state['entries']]
+    assert 'gate_token' in ids and 'old_key' not in ids
+    assert applied['scene'] and applied['npc'] == ['npc_guard'] and applied['memory']
+
+
+def test_campaign_engine_provider_gm_path_does_not_overwrite_narration(tmp_path):
+    from engine.campaign_engine import CampaignEngine
+
+    class Provider:
+        provider_name = 'test'
+        def gm_decision(self, payload):
+            return {'outcome': 'success', 'narration': 'Provider GM narration wins.', 'state_changes': {}}
+
+    state = _state(tmp_path, 'Warrior')
+    state.structured_state.runtime.scene_state['scene_v1_enabled'] = True
+    state.structured_state.runtime.scene_state['scene_v1'] = {'summary': 'A room.', 'entities': [], 'exits': []}
+    engine = CampaignEngine(Provider())
+    result = engine.run_turn(state, 'look around')
+    assert result.narrative == 'Provider GM narration wins.'
+    assert result.metadata['requested_mode'] == 'gm_orchestrator'
+    assert result.metadata['debug_trace'][0]['provider_decision_used'] is True
+    assert state.turn_count == 1
+
+
+def test_campaign_engine_null_provider_uses_deterministic_fallback(tmp_path):
+    from engine.campaign_engine import CampaignEngine
+    from models.base import NullNarrationAdapter
+
+    state = _state(tmp_path, 'Warrior')
+    engine = CampaignEngine(NullNarrationAdapter())
+    result = engine.run_turn(state, 'look')
+    assert result.metadata['requested_mode'] != 'gm_orchestrator'
+    assert state.structured_state.runtime.scene_state['last_gm_debug_trace']['provider_available'] is False
+    assert state.structured_state.runtime.scene_state['last_gm_debug_trace']['deterministic_fallback_used'] is True
