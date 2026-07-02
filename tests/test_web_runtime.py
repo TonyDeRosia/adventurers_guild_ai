@@ -6181,10 +6181,7 @@ def test_intelligence_import_endpoint_without_file_does_not_report_dot_path(tmp_
 def test_python_multipart_dependency_check_exists() -> None:
     import app.web as web
     assert hasattr(web, "ensure_python_multipart_available")
-    try:
-        web.ensure_python_multipart_available()
-    except RuntimeError as exc:
-        assert "python-multipart" in str(exc)
+    assert isinstance(web.ensure_python_multipart_available(), dict)
 
 
 def test_remove_from_campaign_clears_selected_source_id(tmp_path: Path, monkeypatch) -> None:
@@ -6198,3 +6195,93 @@ def test_remove_from_campaign_clears_selected_source_id(tmp_path: Path, monkeypa
 
     assert entry["id"] not in runtime.session.state.settings.enabled_intelligence_source_ids
     assert entry["id"] not in inspector["selected_source_ids"]
+
+
+def test_python_multipart_dependency_check_returns_status() -> None:
+    import app.web as web
+    status = web.ensure_python_multipart_available()
+    assert set(status) >= {"available", "message"}
+    assert isinstance(status["available"], bool)
+    assert "python-multipart" in status["message"]
+
+
+def test_gm_orchestrator_inspector_shape_and_non_mutating_test_call(tmp_path: Path, monkeypatch) -> None:
+    class Provider(NarrationModelAdapter):
+        provider_name = "test"
+        def generate(self, messages, **kwargs):
+            return "unused"
+        def gm_decision(self, payload):
+            return {
+                "action_interpretation": "Inspect the door.",
+                "intent_type": "look",
+                "outcome": "success",
+                "difficulty": "easy",
+                "narration": "The door shows a fine seam around the latch.",
+                "scene_updates": {},
+                "npc_state_updates": [],
+                "inventory_changes": [],
+                "quest_updates": [],
+                "memory_notes": [],
+                "follow_up_prompt": "What do you do next?",
+                "state_changes": {},
+            }
+
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.create_campaign({"player_name": "Mira", "char_class": "Rogue", "slot": "slot_gm_inspector"})
+    runtime.engine.model = Provider()
+    runtime.engine.gm_orchestrator.provider = runtime.engine.model
+    runtime.app_config.model.provider = "local_template"
+    before = json.dumps(runtime.serialize_state(), sort_keys=True, default=str)
+
+    inspector = runtime.get_gm_orchestrator_inspector()
+    test_result = runtime.test_gm_orchestrator_decision({"player_input": "inspect the door"})
+    after = json.dumps(runtime.serialize_state(), sort_keys=True, default=str)
+
+    for key in [
+        "provider_available",
+        "gm_orchestrator_used",
+        "provider_decision_used",
+        "deterministic_fallback_used",
+        "raw_provider_response",
+        "parsed_decision",
+        "validation_errors",
+        "applied_changes",
+    ]:
+        assert key in inspector
+    assert test_result["provider_available"] is True
+    assert test_result["valid_json"] is True
+    assert test_result["valid_decision"] is True
+    assert test_result["mutated_campaign_state"] is False
+    assert before == after
+
+
+def test_gm_orchestrator_inspector_basic_dm_shows_fallback(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.app_config.model.provider = "null"
+    inspector = runtime.get_gm_orchestrator_inspector()
+    assert inspector["fallback_mode"] is True
+    assert inspector["deterministic_fallback_used"] is True
+    assert "fallback" in inspector["fallback_mode_label"].lower()
+
+
+def test_intelligence_multipart_upload_returns_503_when_dependency_missing(tmp_path: Path, monkeypatch) -> None:
+    try:
+        from fastapi.testclient import TestClient
+    except RuntimeError as exc:
+        pytest.skip(str(exc))
+    runtime = _runtime(tmp_path, monkeypatch)
+    app = create_web_app(runtime, runtime.root / "app" / "static")
+    runtime.python_multipart_status = {
+        "available": False,
+        "message": "File uploads require python-multipart. Run python -m pip install -r requirements.txt.",
+    }
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/developer/intelligence/import",
+        data={"title": "Uploaded Lore"},
+        files={"file": ("lore.md", b"uploaded lore", "text/markdown")},
+    )
+
+    assert response.status_code == 503
+    assert "python-multipart" in response.json()["error"]

@@ -14,6 +14,7 @@ class ModelRuntimeConfig:
     base_url: str = "http://localhost:11434"
     timeout_seconds: int = 45
     ollama_path: str = ""
+    force_gm_orchestrator: bool = False
 
 
 @dataclass
@@ -92,6 +93,7 @@ class RuntimeConfigStore:
                 base_url=str(model_payload.get("base_url", "http://localhost:11434")),
                 timeout_seconds=int(model_payload.get("timeout_seconds", 45)),
                 ollama_path=str(model_payload.get("ollama_path", "")),
+                force_gm_orchestrator=bool(model_payload.get("force_gm_orchestrator", False)),
             ),
             image=ImageRuntimeConfig(
                 provider=str(image_payload.get("provider", "local")),

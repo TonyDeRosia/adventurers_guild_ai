@@ -509,6 +509,20 @@
             </div>
           </section>
 
+
+          <section class="developer-tool-section" id="gm-orchestrator-inspector">
+            <h5>GM Orchestrator Inspector</h5>
+            <p class="setup-intro">Live testing panel for provider GM decisions. Test calls do not mutate campaign state.</p>
+            <label><input id="force-gm-orchestrator" type="checkbox" /> Force GM Orchestrator for testing when provider is available</label>
+            <div class="button-row">
+              <button id="refresh-gm-orchestrator" type="button">Refresh Inspector</button>
+              <input id="gm-test-input" type="text" placeholder="Fake turn context, e.g. I inspect the door for traps" />
+              <button id="test-gm-decision" type="button">Test GM Decision</button>
+            </div>
+            <div id="gm-orchestrator-status" class="setup-summary">GM Orchestrator inspector not loaded.</div>
+            <pre id="gm-orchestrator-output" class="setup-summary">No GM decision test run yet.</pre>
+          </section>
+
           <section class="developer-tool-section" id="campaign-intelligence-library">
             <h5>Campaign Intelligence Library</h5>
             <p class="setup-intro">Developer-only source files that can guide campaign AI behavior. Core files affect all campaigns. Selected pack/imported files affect only this campaign.</p>

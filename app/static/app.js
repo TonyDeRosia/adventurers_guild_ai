@@ -74,6 +74,12 @@ const campaignSettingsStatus = document.getElementById('campaign-settings-status
 const cancelSettingsButton = document.getElementById('cancel-settings');
 const developerToolsToggleInput = document.getElementById('developer-tools-toggle');
 const developerToolsPanel = document.getElementById('developer-tools-panel');
+const gmOrchestratorStatus = document.getElementById('gm-orchestrator-status');
+const gmOrchestratorOutput = document.getElementById('gm-orchestrator-output');
+const forceGmOrchestratorInput = document.getElementById('force-gm-orchestrator');
+const gmTestInput = document.getElementById('gm-test-input');
+const refreshGmOrchestratorButton = document.getElementById('refresh-gm-orchestrator');
+const testGmDecisionButton = document.getElementById('test-gm-decision');
 const characterSheetsManager = document.getElementById('character-sheets-manager');
 const characterSheetsList = document.getElementById('character-sheets-list');
 const characterSheetsCount = document.getElementById('character-sheets-count');
@@ -1249,10 +1255,12 @@ async function refreshIntelligenceSources() {
   setIntelligenceStatus('Loading intelligence sources...');
   try {
     const [result, inspector] = await Promise.all([api('/api/developer/intelligence'), api('/api/developer/intelligence/prompt-inspector')]);
+    const uploadOk = result.python_multipart?.available !== false;
+    [addIntelligenceSourceButton, replaceIntelligenceSourceButton].forEach((button) => { if (button) button.disabled = !uploadOk; });
     selectedCampaignIntelligenceSourceIds = new Set(inspector.selected_source_ids || []);
     renderPromptInspector(inspector);
     renderIntelligenceSources(result.sources || []);
-    setIntelligenceStatus(`Loaded ${(result.sources || []).length} intelligence source(s).`);
+    setIntelligenceStatus(result.python_multipart?.available === false ? result.python_multipart.message : `Loaded ${(result.sources || []).length} intelligence source(s).`);
   } catch (error) {
     setIntelligenceStatus(`Could not load intelligence sources: ${error.message}`, true);
   }
@@ -1279,6 +1287,40 @@ function renderPromptInspector(data) {
     Indexed sources: ${escapeHtml(String(data.indexed_source_count || 0))}; Retrieved source IDs: ${escapeHtml((data.retrieved_source_ids || []).join(', ') || 'none')}; Retrieved chunks: ${escapeHtml(String(data.retrieved_chunk_count || 0))}; Injected chunks: ${escapeHtml(String(data.injected_chunk_count || 0))}; Injected chars: ${escapeHtml(String(data.estimated_injected_chars || data.estimated_guidance_char_count || 0))}; Zero reason: ${escapeHtml(data.zero_injection_reason || '—')}
     <div><strong>Retrieved chunks actually injected</strong><ul>${snippets}</ul></div>
     <div><strong>Source files not injected and why</strong><ul>${skipped}</ul></div>`;
+}
+
+function renderGmInspector(data) {
+  if (!gmOrchestratorStatus || !data) return;
+  if (forceGmOrchestratorInput) forceGmOrchestratorInput.checked = !!data.force_gm_orchestrator;
+  const rows = ['provider_available', 'gm_orchestrator_used', 'provider_decision_used', 'deterministic_fallback_used']
+    .map((key) => `<div><strong>${escapeHtml(key)}</strong>: ${escapeHtml(String(!!data[key]))}</div>`).join('');
+  const upload = data.python_multipart?.available ? 'python-multipart available' : (data.python_multipart?.message || 'File uploads require python-multipart. Run python -m pip install -r requirements.txt.');
+  gmOrchestratorStatus.innerHTML = `<strong>${escapeHtml(data.fallback_mode_label || '')}</strong><br />Provider: ${escapeHtml(data.provider || 'null')}<br />${rows}<div>${escapeHtml(upload)}</div>`;
+  if (gmOrchestratorOutput) gmOrchestratorOutput.textContent = JSON.stringify({
+    raw_provider_response: data.raw_provider_response,
+    parsed_decision: data.parsed_decision,
+    validation_errors: data.validation_errors,
+    applied_changes: data.applied_changes,
+  }, null, 2);
+}
+
+async function refreshGmInspector() {
+  try { renderGmInspector(await api('/api/developer/gm-orchestrator')); }
+  catch (error) { if (gmOrchestratorStatus) gmOrchestratorStatus.textContent = error.message; }
+}
+
+async function setForceGmOrchestrator() {
+  try { renderGmInspector(await api('/api/developer/gm-orchestrator/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ force_gm_orchestrator: !!forceGmOrchestratorInput?.checked }) })); }
+  catch (error) { if (gmOrchestratorStatus) gmOrchestratorStatus.textContent = error.message; }
+}
+
+async function testGmDecision() {
+  if (gmOrchestratorOutput) gmOrchestratorOutput.textContent = 'Testing provider GM decision...';
+  try {
+    const data = await api('/api/developer/gm-orchestrator/test-decision', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_input: gmTestInput?.value?.trim() || 'look around' }) });
+    if (gmOrchestratorOutput) gmOrchestratorOutput.textContent = JSON.stringify(data, null, 2);
+    if (gmOrchestratorStatus) gmOrchestratorStatus.innerHTML = `Provider valid JSON: <strong>${escapeHtml(String(!!data.valid_json))}</strong>; validation passed: <strong>${escapeHtml(String(!!data.valid_decision))}</strong>; mutated campaign state: <strong>${escapeHtml(String(!!data.mutated_campaign_state))}</strong>`;
+  } catch (error) { if (gmOrchestratorOutput) gmOrchestratorOutput.textContent = error.message; }
 }
 
 async function rebuildIntelligenceIndex() {
@@ -3410,7 +3452,7 @@ async function applySettings() {
     const settings = await api('/api/settings/global', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: { provider: modelProvider, model_name: modelName, ollama_path: ollamaPathInput?.value.trim() || '' },
+        model: { provider: modelProvider, model_name: modelName, ollama_path: ollamaPathInput?.value.trim() || '', force_gm_orchestrator: !!forceGmOrchestratorInput?.checked },
         image: {
           provider: imageProvider,
           comfyui_path: appliedVisualPipelinePaths.comfyui_path || '',
@@ -3521,6 +3563,7 @@ async function loadSettings() {
   document.getElementById('image-provider').value = data.settings.image.provider;
   if (manualImageEnabledInput) manualImageEnabledInput.checked = !!data.settings.image.manual_image_generation_enabled;
   if (ollamaPathInput) ollamaPathInput.value = data.settings.model.ollama_path || '';
+  if (forceGmOrchestratorInput) forceGmOrchestratorInput.checked = !!data.settings.model.force_gm_orchestrator;
   if (comfyuiPathInput) comfyuiPathInput.value = data.settings.image.comfyui_path || '';
   if (comfyuiWorkflowPathInput) comfyuiWorkflowPathInput.value = data.settings.image.comfyui_workflow_path || '';
   if (comfyuiOutputDirInput) comfyuiOutputDirInput.value = data.settings.image.comfyui_output_dir || '';
@@ -3612,6 +3655,10 @@ removeCurrentCampaignIntelligenceSourceButton?.addEventListener('click', removeS
 deleteIntelligenceSourceButton?.addEventListener('click', deleteSelectedIntelligenceSource);
 resetImportedIntelligenceSourcesButton?.addEventListener('click', resetImportedIntelligenceSources);
 refreshPromptInspectorButton?.addEventListener('click', refreshPromptInspector);
+refreshGmOrchestratorButton?.addEventListener('click', refreshGmInspector);
+testGmDecisionButton?.addEventListener('click', testGmDecision);
+forceGmOrchestratorInput?.addEventListener('change', setForceGmOrchestrator);
+refreshGmInspector();
 addIntelligenceSourceButton?.addEventListener('click', openAddIntelligenceFilePicker);
 replaceIntelligenceSourceButton?.addEventListener('click', openReplaceIntelligenceFilePicker);
 addIntelligenceSourceFileInput?.addEventListener('change', () => uploadIntelligenceSource('/api/developer/intelligence/import', addIntelligenceSourceFileInput.files?.[0], intelligencePayload(), 'Imported source'));

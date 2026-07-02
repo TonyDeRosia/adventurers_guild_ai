@@ -27,7 +27,7 @@ if "%PYTHON_CMD%"=="" (
 )
 
 echo [setup] Installing/updating dependencies from requirements.txt ...
-call %PYTHON_CMD% -m pip install -r requirements.txt python-multipart
+call %PYTHON_CMD% -m pip install --upgrade -r requirements.txt python-multipart
 if errorlevel 1 (
     echo [error] Dependency installation failed.
     goto :error_pause

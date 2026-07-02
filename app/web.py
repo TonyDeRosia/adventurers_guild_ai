@@ -19,20 +19,20 @@ import urllib.request
 import zipfile
 from difflib import SequenceMatcher
 from dataclasses import dataclass, field
+from copy import deepcopy
 from datetime import datetime, timezone
 from http import HTTPStatus
 from pathlib import Path
 from urllib.parse import urlparse
 from typing import Any
 
-def ensure_python_multipart_available() -> None:
+def ensure_python_multipart_available() -> dict[str, Any]:
+    message = "File uploads require python-multipart. Run python -m pip install -r requirements.txt."
     try:
         import multipart  # noqa: F401
-    except ModuleNotFoundError as exc:
-        raise RuntimeError(
-            "python-multipart is required for Developer Tools source uploads. "
-            "Install it with `python -m pip install python-multipart` or rerun `python -m pip install -r requirements.txt`."
-        ) from exc
+    except ModuleNotFoundError:
+        return {"available": False, "message": message}
+    return {"available": True, "message": "python-multipart is available for Developer Tools source uploads."}
 
 
 try:
@@ -6149,7 +6149,7 @@ class WebRuntime:
             self.session.state.structured_state.runtime.scene_state["gm_intelligence_error"] = type(exc).__name__
         engine_started = time.perf_counter()
         self._set_last_turn_routing(input_mode="ic", startup_state=startup_state, detected_intent=initial_intent.primary_intent, branch="normal_turn_pipeline", analyze_player_input_called=True, build_ooc_response_called=False, normal_turn_pipeline_used=True, action_noted_added=False)
-        self.engine.gm_orchestrator_live_enabled = str(getattr(self.app_config.model, "provider", "null") or "null").lower() != "null"
+        self.engine.gm_orchestrator_live_enabled = str(getattr(self.app_config.model, "provider", "null") or "null").lower() != "null" or bool(getattr(self.app_config.model, "force_gm_orchestrator", False))
         result = self.engine.run_turn(self.session.state, clean_text)
         registry = self._sync_npc_identities()
         self._maybe_queue_npc_portraits(registry)
@@ -7130,6 +7130,72 @@ class WebRuntime:
         threading.Thread(target=_worker, name=f"turn-image-{slot}-{turn}-{stage}", daemon=True).start()
         return True
 
+
+    def get_gm_orchestrator_inspector(self) -> dict[str, Any]:
+        provider_name = str(getattr(self.app_config.model, "provider", "null") or "null").lower()
+        trace = dict(self.session.state.structured_state.runtime.scene_state.get("last_gm_debug_trace", {}) or {})
+        provider_available = bool(self.engine.gm_orchestrator._provider_available())
+        fallback_mode = provider_name in {"", "null"} or bool(getattr(self.engine.model, "is_null", False))
+        defaults = {
+            "provider_available": provider_available,
+            "gm_orchestrator_used": False,
+            "provider_decision_used": False,
+            "deterministic_fallback_used": fallback_mode,
+            "raw_provider_response": None,
+            "parsed_decision": {},
+            "validation_errors": [],
+            "applied_changes": {},
+        }
+        defaults.update(trace)
+        return {
+            **defaults,
+            "provider": provider_name or "null",
+            "fallback_mode": fallback_mode,
+            "fallback_mode_label": "Basic DM/null provider fallback mode" if fallback_mode else "Provider decision mode available",
+            "force_gm_orchestrator": bool(getattr(self.app_config.model, "force_gm_orchestrator", False)),
+            "python_multipart": getattr(self, "python_multipart_status", ensure_python_multipart_available()),
+        }
+
+    def set_gm_orchestrator_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self.app_config.model.force_gm_orchestrator = bool(payload.get("force_gm_orchestrator", False))
+        self.config_store.save(self.app_config)
+        return self.get_gm_orchestrator_inspector()
+
+    def test_gm_orchestrator_decision(self, payload: dict[str, Any]) -> dict[str, Any]:
+        player_input = str(payload.get("player_input") or payload.get("text") or "look around").strip() or "look around"
+        state_copy = deepcopy(self.session.state)
+        before = json.dumps(self.serialize_state(), sort_keys=True, default=str)
+        context = self.engine.gm_orchestrator.build_context(player_input, state_copy, [])
+        provider_available = self.engine.gm_orchestrator._provider_available()
+        raw = None
+        parsed: dict[str, Any] = {}
+        validation_errors: list[str] = []
+        valid_json = False
+        valid_decision = False
+        if provider_available:
+            raw = self.engine.gm_orchestrator._ask_provider(context)
+            parsed_obj, parse_error = self.engine.gm_orchestrator._extract_json_object(raw)
+            valid_json = parsed_obj is not None
+            if parsed_obj is not None:
+                parsed, validation_errors, _ = self.engine.gm_orchestrator.validate_decision(parsed_obj, context)
+                valid_decision = not validation_errors
+            elif parse_error:
+                validation_errors = [parse_error]
+        else:
+            parsed = self.engine.gm_orchestrator._fallback_decision(context)
+            validation_errors = ["provider_unavailable_basic_dm_fallback"]
+        after = json.dumps(self.serialize_state(), sort_keys=True, default=str)
+        return {
+            "provider_available": provider_available,
+            "valid_json": valid_json,
+            "valid_decision": valid_decision,
+            "raw_provider_response": raw,
+            "parsed_decision": parsed,
+            "validation_errors": validation_errors,
+            "mutated_campaign_state": before != after,
+            "fallback_mode": not provider_available,
+        }
+
     def get_global_settings(self) -> dict[str, Any]:
         path_status = self.get_path_configuration_status()
         return {
@@ -7139,6 +7205,7 @@ class WebRuntime:
                 "base_url": self.app_config.model.base_url,
                 "timeout_seconds": self.app_config.model.timeout_seconds,
                 "ollama_path": self.app_config.model.ollama_path,
+                "force_gm_orchestrator": bool(getattr(self.app_config.model, "force_gm_orchestrator", False)),
             },
             "model_status": self.get_model_status(),
             "image": {
@@ -7165,6 +7232,7 @@ class WebRuntime:
             "path_config": path_status,
             "dependency_readiness": self.get_dependency_readiness(),
             "supported_models": self.get_supported_model_inventory(refresh=False),
+            "python_multipart": getattr(self, "python_multipart_status", ensure_python_multipart_available()),
         }
 
     def set_global_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -7182,6 +7250,7 @@ class WebRuntime:
             base_url=str(model_payload.get("base_url", self.app_config.model.base_url)),
             timeout_seconds=int(model_payload.get("timeout_seconds", self.app_config.model.timeout_seconds)),
             ollama_path=str(model_payload.get("ollama_path", self.app_config.model.ollama_path)),
+            force_gm_orchestrator=bool(model_payload.get("force_gm_orchestrator", getattr(self.app_config.model, "force_gm_orchestrator", False))),
         )
         self.app_config.image = ImageRuntimeConfig(
             provider="null" if image_provider == "null" else image_provider,
@@ -7622,7 +7691,7 @@ def _resolve_static_root() -> Path:
 def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     if FastAPI is None:
         raise RuntimeError("FastAPI is not installed")
-    ensure_python_multipart_available()
+    runtime.python_multipart_status = ensure_python_multipart_available()
     app = FastAPI(title="Adventurer Guild AI Web API")
     app.add_middleware(
         CORSMiddleware,
@@ -7662,7 +7731,21 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
 
     @app.get("/api/developer/intelligence")
     def developer_intelligence() -> dict[str, Any]:
-        return runtime.list_intelligence_sources()
+        data = runtime.list_intelligence_sources()
+        data["python_multipart"] = getattr(runtime, "python_multipart_status", ensure_python_multipart_available())
+        return data
+
+    @app.get("/api/developer/gm-orchestrator")
+    def developer_gm_orchestrator() -> dict[str, Any]:
+        return runtime.get_gm_orchestrator_inspector()
+
+    @app.post("/api/developer/gm-orchestrator/settings")
+    def developer_gm_orchestrator_settings(payload: dict[str, Any]) -> dict[str, Any]:
+        return runtime.set_gm_orchestrator_settings(payload)
+
+    @app.post("/api/developer/gm-orchestrator/test-decision")
+    def developer_gm_orchestrator_test_decision(payload: dict[str, Any]) -> dict[str, Any]:
+        return runtime.test_gm_orchestrator_decision(payload)
 
     @app.get("/api/developer/intelligence/enabled")
     def developer_intelligence_enabled() -> dict[str, Any]:
@@ -7680,6 +7763,9 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
         content_type = request.headers.get("content-type", "").lower()
         if "multipart/form-data" not in content_type and "application/x-www-form-urlencoded" not in content_type:
             return await request.json(), None
+        multipart_status = getattr(runtime, "python_multipart_status", ensure_python_multipart_available())
+        if not multipart_status.get("available"):
+            raise HTTPException(status_code=HTTPStatus.SERVICE_UNAVAILABLE, detail=multipart_status.get("message") or "File uploads require python-multipart.")
         form = await request.form()
         payload: dict[str, Any] = {key: value for key, value in form.items() if key != "file"}
         upload = form.get("file")
