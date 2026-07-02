@@ -1,0 +1,1 @@
+[{"id":"read_notice_board","title":"Read the Notice Board","description":"Check the guild notices for your first contract.","starting_room":"guildhall_crossing_square","objectives":["examine notice board"],"rewards":{"gold":10}}]

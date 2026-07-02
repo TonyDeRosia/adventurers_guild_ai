@@ -1,0 +1,1 @@
+{"primary_stats":["Strength","Dexterity","Constitution","Intelligence","Wisdom","Charisma"],"derived_stats":["HP","Mana","Stamina","Armor"],"allocation":{"mode":"world_defined"},"formulas":{"HP":"30 + Constitution * 3","Mana":"15 + Intelligence * 3","Stamina":"18 + Constitution * 2 + Dexterity"}}

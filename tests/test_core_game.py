@@ -253,3 +253,43 @@ def test_gm_orchestrator_applies_quest_update(tmp_path):
     assert state.structured_state.runtime.quest_state['first_assignment'] == 'completed'
     assert applied['journal'] == ['first_assignment']
     assert state.structured_state.runtime.scene_state['last_turn_summary'] == 'report to registrar'
+
+
+def test_world_registry_lists_and_loads_shattered_realms():
+    from engine.world_registry import WorldRegistry
+    registry = WorldRegistry()
+    worlds = registry.list_worlds()
+    assert {w["id"] for w in worlds} >= {"shattered_realms", "frontier_stars", "modern_earth"}
+    world = registry.load_world("shattered_realms")
+    assert world.manifest["status"] == "playable"
+    assert world.default_starting_room["id"] == "guildhall_crossing_square"
+    assert world.races and world.classes and world.items and world.abilities and world.npcs and world.quests
+
+
+def test_mud_renderer_semantic_html_and_plain_text():
+    from engine.mud_rendering import PRESETS, render_room, render_semantic_html, render_semantic_plain, semantic
+    tagged = semantic("room_name", "Guildhall Crossing")
+    assert '<span class="mud-room_name"' in render_semantic_html(tagged, PRESETS["Dark Fantasy"])
+    assert render_semantic_plain(tagged) == "Guildhall Crossing"
+    room = {"name": "Guildhall Crossing", "long_description": "A courtyard.", "exits": [{"direction": "north"}]}
+    output = render_room(room, {"name": "The Shattered Realms"}, {"hp": 35, "max_hp": 35, "mana": 22, "max_mana": 22, "stamina": 28, "max_stamina": 28, "level": 1, "xp": 0, "gold": 10, "race": "Human", "class": "Mage"}, npcs=[{"name": "Guild Registrar", "disposition": "neutral"}], objects=[{"name": "Notice Board"}])
+    assert "{room_name}" in output and "{prompt_hp}" in output and "{exit}north{/exit}" in output
+    assert "\x1b[" not in output
+
+
+def test_mud_v2_campaign_creation_and_room_movement(tmp_path, monkeypatch):
+    from app.web import WebRuntime
+    from models.base import NullNarrationAdapter
+    from engine.campaign_engine import CampaignEngine
+    monkeypatch.setenv('ADVENTURERS_GUILD_USER_DATA', str(tmp_path / 'user_data'))
+    runtime = WebRuntime(Path.cwd())
+    created = runtime.create_campaign({"mode":"mud_v2", "slot":"mud_v2", "character_name":"Mira", "race_id":"human", "class_id":"mage", "appearance":"blue cloak"})
+    state = runtime.session.state
+    assert created["state"]["campaign_format"] == "mud_v2"
+    assert state.current_location_id == "guildhall_crossing_square"
+    assert state.structured_state.runtime.player_core["known_ability_ids"] == ["arcane_bolt", "mage_ward", "detect_magic"]
+    engine = CampaignEngine(NullNarrationAdapter())
+    moved = engine.run_turn(state, "north")
+    assert moved.metadata["room_id"] == "old_gate_road"
+    blocked = engine.run_turn(state, "east")
+    assert blocked.metadata["movement"] == "invalid"

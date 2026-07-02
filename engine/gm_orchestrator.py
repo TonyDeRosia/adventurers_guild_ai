@@ -55,7 +55,10 @@ class GMOrchestrator:
 
     def build_context(self, player_input: str, state: Any, intelligence_chunks: list[dict[str, Any]] | None = None) -> GMContext:
         runtime = getattr(getattr(state, "structured_state", None), "runtime", None)
+        mud_room_state = getattr(runtime, "room_state", {}) if runtime else {}
         scene = getattr(runtime, "scene_state", {}).get("scene_v1", {}) if runtime else {}
+        if mud_room_state:
+            scene = {**scene, "mud_room": mud_room_state.get("room", {}), "authoritative_location_truth": "mud_room"}
         inventory_state = getattr(runtime, "inventory_state", {}) if runtime else {}
         abilities = list(getattr(runtime, "abilities", []) or getattr(runtime, "spellbook", []) or []) if runtime else []
         quests = [q if isinstance(q, dict) else getattr(q, "__dict__", {}) for q in getattr(state, "quests", {}).values()] if hasattr(state, "quests") else []
@@ -66,8 +69,8 @@ class GMOrchestrator:
         if known: rules["known_ability_definition"] = known
         loc = getattr(state, "locations", {}).get(getattr(state, "current_location_id", "")) if state is not None else None
         current_location = getattr(loc, "__dict__", {}) if loc else {"id": getattr(state, "current_location_id", ""), "name": scene.get("location_name", "")}
-        objects = [e for e in scene.get("entities", []) if isinstance(e, dict) and e.get("kind") in {"object", "item", "feature"}]
-        exits = list(scene.get("exits", []) or [])
+        objects = list(mud_room_state.get("visible_objects", [])) or [e for e in scene.get("entities", []) if isinstance(e, dict) and e.get("kind") in {"object", "item", "feature"}]
+        exits = list((mud_room_state.get("room", {}) or {}).get("exits", [])) or list(scene.get("exits", []) or [])
         hooks = list(getattr(getattr(state, "structured_state", None), "runtime", None).scene_state.get("active_hooks", []) or []) if runtime else []
         cls_name = str(character.get("character_class", character.get("role", ""))).lower()
         class_data = next((c for c in self.core_game.get("classes", []) if str(c.get("name", c.get("id", ""))).lower() == cls_name or str(c.get("id", "")).lower() == cls_name), {})
@@ -86,13 +89,14 @@ class GMOrchestrator:
     def _ask_provider(self, context: GMContext) -> Any:
         payload = {"schema": GM_DECISION_SCHEMA, "allowed_intent_types": sorted(INTENT_TYPES), "allowed_outcomes": sorted(OUTCOMES), "context": context.__dict__}
         instruction = (
-            "You are the live Game Master brain for Adventure Guild AI. Make narrative/game decisions; the engine validates and applies state changes. "
+            "You are the live Game Master inside a MUD engine. The engine owns mechanics and world data is truth; do not invent exits, items, stats, known spells, or permanent NPCs. "
+            "Make narrative/game decisions; the engine validates and applies state changes. "
             "Return exactly one JSON object matching the schema, with all required keys. No markdown. No prose outside JSON. "
             "Never control player thoughts, feelings, motives, or speech. Never invent known abilities/spells; if a player uses an unknown spell, set intent_type='use_unknown_spell', outcome='rejected', and explain what is missing. "
             "Only update NPCs present in nearby_npcs. Only use known item ids from inventory/core items unless inventory_changes entries are marked improvised:true. Narration must be player-facing prose. "
             "Examples: look around => intent_type look, scene observations, no forced thoughts; talk to NPC => intent_type talk, NPC reaction update only for that NPC; "
             "cast known spell => intent_type cast_known_spell and skill_or_ability_used must match known_abilities; use unknown spell => rejected, no new ability granted; "
-            "rude action => rude_action with plausible social consequences; attack => attack with difficulty/outcome and NPC reaction; travel => travel with scene_updates for valid exit/location cues."
+            "rude action => rude_action with plausible social consequences; attack => attack with difficulty/outcome and NPC reaction; travel => travel only for valid exits supplied in context."
         )
         if hasattr(self.provider, "gm_decision"):
             return self.provider.gm_decision({"instruction": instruction, **payload})

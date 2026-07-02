@@ -73,6 +73,8 @@ from engine.entities import CampaignSettings, CampaignState
 from engine.game_state_manager import GameStateManager
 from engine.scene_simulation import ensure_scene_v1
 from engine.core_game import auto_allocate_stats, by_id, calculate_derived_stats, load_core_game
+from engine.world_registry import WorldRegistry, by_id as world_by_id
+from engine.mud_rendering import PRESETS, render_room
 from engine.spellbook import normalize_spellbook_entry
 from images.base import ImageGenerationRequest, ImageGenerationResult, ImageGeneratorAdapter, NullImageAdapter
 from images.comfyui_adapter import ComfyUIAdapter
@@ -4522,6 +4524,13 @@ class WebRuntime:
     def serialize_state(self) -> dict[str, Any]:
         state = self.session.state
         return {
+            "campaign_format": getattr(state, "campaign_format", "legacy_story"),
+            "mud": {
+                "world_id": getattr(state.structured_state.runtime, "world_id", ""),
+                "current_room_id": getattr(state.structured_state.runtime, "current_room_id", ""),
+                "room_state": getattr(state.structured_state.runtime, "room_state", {}),
+                "color_settings": getattr(state.structured_state.runtime, "mud_color_settings", {}),
+            },
             "campaign_id": state.campaign_id,
             "campaign_name": state.campaign_name,
             "turn_count": state.turn_count,
@@ -5606,8 +5615,52 @@ class WebRuntime:
         runtime.player_core = {"core_game_version": "v1", "wizard_setup": True, "race_id": race["id"], "class_id": cls["id"], "background_id": background["id"], "stats": stats, "derived_stats": derived, "known_ability_ids": [a["id"] for a in known]}
         state.startup_state = "ready"; state.bootstrap_complete = True; state.bootstrap_missing_fields = []
 
+    def _apply_mud_v2_setup(self, state: CampaignState, payload: dict[str, Any]) -> None:
+        registry = WorldRegistry()
+        world_id = str(payload.get("world_id") or "shattered_realms").strip() or "shattered_realms"
+        world = registry.load_world(world_id)
+        races, classes, items, abilities, npcs = map(world_by_id, (world.races, world.classes, world.items, world.abilities, world.npcs))
+        race = races.get(str(payload.get("race_id") or payload.get("race") or "human")) or races["human"]
+        cls = classes.get(str(payload.get("class_id") or payload.get("character_role") or payload.get("char_class") or "ranger")) or classes["ranger"]
+        name = str(payload.get("character_name") or payload.get("player_name") or state.player.name or "Aria").strip() or "Aria"
+        appearance = str(payload.get("appearance") or payload.get("description") or "A new Guild adventurer.").strip()
+        stats = dict(cls.get("base_stats", {}))
+        for stat, bonus in race.get("stat_bonuses", {}).items():
+            stats[stat] = int(stats.get(stat, 0)) + int(bonus)
+        hp = 30 + int(stats.get("Constitution", 0)) * 3
+        mana = 15 + int(stats.get("Intelligence", 0)) * 3
+        stamina = 18 + int(stats.get("Constitution", 0)) * 2 + int(stats.get("Dexterity", 0))
+        known = [abilities[a] for a in cls.get("starting_abilities", []) if a in abilities]
+        entries = [{"id": f"starter_{i}_{iid}", "item_id": iid, "name": items.get(iid, {"name": iid.replace("_", " ")}).get("name", iid), "quantity": 1, "category": items.get(iid, {}).get("type", "item"), "notes": "Starting item from world class data."} for i, iid in enumerate(cls.get("starting_items", []))]
+        room = world.default_starting_room
+        state.campaign_format = "mud_v2"; state.current_location_id = room["id"]
+        state.campaign_name = str(payload.get("campaign_name") or f"{name} in {world.manifest['name']}")
+        state.player.name = name; state.player.char_class = cls["name"]; state.player.role = cls["name"]; state.player.hp = hp; state.player.max_hp = hp; state.player.energy_or_mana = mana; state.player.classic_attributes = stats; state.player.inventory = [e["name"] for e in entries]
+        state.settings.display_mode = "mud"; state.settings.image_generation_enabled = False; state.settings.play_style.allow_freeform_powers = False; state.settings.play_style.strict_sheet_enforcement = True; state.settings.play_style.narration_format_mode = "mud"
+        state.world_meta.world_name = world.manifest["name"]; state.world_meta.world_theme = world.manifest["genre"]; state.world_meta.starting_location_name = room["name"]; state.world_meta.premise = world.manifest["description"]
+        state.locations = {r["id"]: self._location_from_mud_room(r) for r in world.rooms}
+        state.npcs = {}
+        runtime = state.structured_state.runtime
+        runtime.campaign_format = "mud_v2"; runtime.world_id = world.id; runtime.current_room_id = room["id"]; runtime.current_location_id = room["id"]; runtime.discovered_locations = [room["id"]]
+        runtime.player_core = {"campaign_format":"mud_v2", "world_id": world.id, "race_id": race["id"], "class_id": cls["id"], "appearance": appearance, "stats": stats, "derived_stats": {"HP": hp, "Mana": mana, "Stamina": stamina}, "known_ability_ids": [a["id"] for a in known]}
+        runtime.abilities = [{"id": a["id"], "name": a["name"], "description": a.get("description", ""), "type": a.get("type", "ability"), "source": "world_class"} for a in known]
+        runtime.spellbook = list(runtime.abilities); runtime.inventory_state = {"entries": entries, "currency": {"gold": 10, "silver": 0, "copper": 0}}; runtime.inventory = [e["name"] for e in entries]
+        runtime.mud_color_settings = dict(PRESETS.get(world.manifest.get("default_color_theme", "Dark Fantasy"), PRESETS["Dark Fantasy"]))
+        room_npcs = [npcs[n] for n in room.get("npcs", []) if n in npcs]
+        room_objects = [{"id": o, "name": o.replace("_", " ").title()} for o in room.get("objects", [])]
+        runtime.room_state = {"authoritative_room_id": room["id"], "room": room, "visible_npcs": room_npcs, "visible_objects": room_objects}
+        runtime.scene_state["mud_room"] = runtime.room_state
+        runtime.scene_state["scene_v1"] = {"location_id": room["id"], "location_name": room["name"], "summary": room.get("long_description", ""), "entities": room_npcs + room_objects, "exits": room.get("exits", [])}
+        runtime.last_narration = render_room(room, world.manifest, {"hp": hp, "max_hp": hp, "mana": mana, "max_mana": mana, "stamina": stamina, "max_stamina": stamina, "level":1, "xp":0, "gold":10, "race": race["name"], "class": cls["name"]}, npcs=room_npcs, objects=room_objects, narrative=["Welcome to the Guild."])
+        state.startup_state = "ready"; state.bootstrap_complete = True; state.bootstrap_missing_fields = []
+
+    def _location_from_mud_room(self, room: dict[str, Any]):
+        from engine.entities import Location
+        return Location(id=str(room.get("id", "")), name=str(room.get("name", "")), description=str(room.get("long_description", "")), connections=[e.get("destination_room_id", "") for e in room.get("exits", [])])
+
     def create_campaign(self, payload: dict[str, Any]) -> dict[str, Any]:
         mode = str(payload.get("mode", "custom")).strip().lower() or "custom"
+        mud_requested = mode == "mud_v2" or "world_id" in payload
         wizard_payload = any(key in payload for key in ("character_name", "character_role", "rules_style", "power_level", "starting_ability_mode", "starting_item_mode"))
         player_name = str(payload.get("character_name") or payload.get("player_name", "Aria")).strip() or "Aria"
         char_class = str(payload.get("character_role") or payload.get("char_class", "Ranger")).strip() or "Ranger"
@@ -5684,15 +5737,20 @@ class WebRuntime:
             state.settings.play_style.scene_visual_mode = self._normalize_scene_visual_mode(
                 play_style_payload.get("scene_visual_mode", state.settings.play_style.scene_visual_mode)
             )
-        if wizard_payload:
+        if mud_requested:
+            self._apply_mud_v2_setup(state, payload)
+        elif wizard_payload:
             self._apply_wizard_setup(state, payload)
         else:
             state.startup_state = "character_creation"
-        self._seed_scene_state(state)
-        state.structured_state.runtime.scene_state["scene_v1_enabled"] = bool(wizard_payload)
+        if not mud_requested:
+            self._seed_scene_state(state)
+        state.structured_state.runtime.scene_state["scene_v1_enabled"] = bool(wizard_payload or mud_requested)
         self.session = WebSession(state=state, active_slot=slot)
         self.session.message_history = []
-        if wizard_payload:
+        if mud_requested:
+            self._append_message("narrator", state.structured_state.runtime.last_narration, persist=False)
+        elif wizard_payload:
             sheet = self._find_main_character_sheet(state) or CharacterSheet(id="sheet_main", name=state.player.name, sheet_type="main_character", role=state.player.char_class)
             opening = self._guided_opening_scene(state, sheet)
             self._append_message("narrator", opening, persist=False)

@@ -106,29 +106,27 @@
 
     <div id="new-campaign-modal" class="modal hidden">
       <div class="modal-card">
-        <h3>Forge a New Campaign</h3>
+        <h3>Enter a MUD World</h3>
         <div class="modal-grid campaign-create-grid campaign-wizard" data-current-step="0">
-          <section class="wizard-step" data-step="0"><h4>Campaign Basics</h4>
+          <section class="wizard-step" data-step="0"><h4>Choose World</h4>
             <label class="full-width">Campaign Name <input id="form-campaign-name" type="text" value="New Adventure" /></label>
-            <label>World / Setting Name optional <input id="form-world-name" type="text" placeholder="The Arcane Realm" /></label>
-            <label>Genre / Theme <input id="form-world-theme" type="text" value="classic fantasy" /></label>
-            <label>Tone / Style <input id="form-tone" type="text" value="heroic" /></label>
-            <label class="full-width">World Premise optional <textarea id="form-premise" rows="3" placeholder="The old gods vanished and the sea is haunted."></textarea></label>
+            <label>World <select id="form-world-name"><option value="shattered_realms" selected>The Shattered Realms — fantasy medieval</option><option value="frontier_stars" disabled>Frontier Stars — Coming soon</option><option value="modern_earth" disabled>Modern Earth — Coming soon</option></select></label>
+            <input id="form-world-theme" type="hidden" value="fantasy medieval" /><input id="form-tone" type="hidden" value="world-defined" /><textarea id="form-premise" class="hidden"></textarea>
           </section>
-          <section class="wizard-step hidden" data-step="1"><h4>Play Style</h4>
+          <section class="wizard-step hidden" data-step="1"><h4>Choose Race</h4>
             <label class="wizard-option-card"><input name="form-play-style-choice" type="radio" value="Storybook Mode" checked /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>Storybook Mode</strong><small>Text-first, rules-light, AI handles most details.</small></span></label>
             <label class="wizard-option-card"><input name="form-play-style-choice" type="radio" value="MUD Mode" /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>MUD Mode</strong><small>More structured room/location style.</small></span></label>
             <label class="wizard-option-card"><input name="form-play-style-choice" type="radio" value="Stats Mode" /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>Stats Mode</strong><small>Stat allocation and sheet-focused play.</small></span></label>
             <label class="wizard-option-card"><input name="form-play-style-choice" type="radio" value="Sandbox Mode" /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>Sandbox Mode</strong><small>Freeform world simulation.</small></span></label>
             <label class="wizard-option-card"><input name="form-play-style-choice" type="radio" value="Hardcore Consequences" /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>Hardcore Consequences</strong><small>Riskier decisions, lasting consequences.</small></span></label>
           </section>
-          <section class="wizard-step hidden" data-step="2"><h4>Rules Style</h4>
+          <section class="wizard-step hidden" data-step="2"><h4>Choose Class</h4>
             <label class="wizard-option-card"><input name="form-rules-style-choice" type="radio" value="Freeform Abilities" /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>Freeform Abilities</strong><small>Loose ability use with broad permission.</small></span></label>
             <label class="wizard-option-card"><input name="form-rules-style-choice" type="radio" value="Hybrid" checked /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>Hybrid</strong><small>Balances narrative freedom with sheet awareness.</small></span></label>
             <label class="wizard-option-card"><input name="form-rules-style-choice" type="radio" value="Sheet Strict" /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>Sheet Strict</strong><small>Require established sheet abilities for reliable effects.</small></span></label>
             <label class="wizard-option-card"><input name="form-rules-style-choice" type="radio" value="Story Only" /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>Story Only</strong><small>Prioritize fiction over mechanics.</small></span></label>
           </section>
-          <section class="wizard-step hidden" data-step="3"><h4>Character Identity</h4>
+          <section class="wizard-step hidden" data-step="3"><h4>Enter Character Name</h4>
             <label>Character Name <input id="form-player-name" type="text" required /></label>
             <label>Class <input id="form-player-class" type="text" required list="core-class-options" placeholder="Mage" /></label><datalist id="core-class-options"><option value="Warrior"></option><option value="Ranger"></option><option value="Rogue"></option><option value="Mage"></option><option value="Cleric"></option><option value="Druid"></option><option value="Warlock"></option><option value="Battle Mage"></option><option value="Necromancer"></option></datalist>
             <label>Race / Species <input id="form-species" type="text" list="core-race-options" placeholder="Human" /></label><datalist id="core-race-options"><option value="Human"></option><option value="Elf"></option><option value="Dwarf"></option><option value="Halfling"></option><option value="Orc"></option><option value="Tiefling"></option><option value="Dragonkin"></option><option value="Undead"></option><option value="Custom"></option></datalist>
@@ -136,29 +134,29 @@
             <label class="full-width">Character Goal <input id="form-goal" type="text" /></label>
             <p id="campaign-wizard-validation" class="status-line error hidden">Character Name and Class / Role are required.</p>
           </section>
-          <section class="wizard-step hidden" data-step="4"><h4>Character Description</h4>
-            <label class="full-width">Character Description <textarea id="form-player-concept" rows="5" placeholder="Describe your character’s appearance, personality, reputation, starting items, spells, abilities, or anything important. You can be brief or detailed."></textarea></label>
+          <section class="wizard-step hidden" data-step="4"><h4>Describe Appearance</h4>
+            <label class="full-width">Appearance <textarea id="form-player-concept" rows="5" required placeholder="Describe what others see. This is descriptive only and does not change mechanics."></textarea></label>
           </section>
-          <section class="wizard-step hidden" data-step="5"><h4>Power Level & Stats</h4><p class="runtime-sheet-muted">Core Game V1 uses 30 points across Strength, Dexterity, Constitution, Intelligence, Wisdom, and Charisma. Storybook can auto-allocate; MUD/Stats can edit these values.</p><div class="stat-allocation-grid"><label>STR <input id="form-stat-strength" type="number" min="3" max="10" value="5" /></label><label>DEX <input id="form-stat-dexterity" type="number" min="3" max="10" value="5" /></label><label>CON <input id="form-stat-constitution" type="number" min="3" max="10" value="5" /></label><label>INT <input id="form-stat-intelligence" type="number" min="3" max="10" value="5" /></label><label>WIS <input id="form-stat-wisdom" type="number" min="3" max="10" value="5" /></label><label>CHA <input id="form-stat-charisma" type="number" min="3" max="10" value="5" /></label></div>
+          <section class="wizard-step hidden" data-step="5"><h4>Review and Enter World</h4><div id="campaign-wizard-review" class="status-card">Review your MUD character, then enter the world.</div></section><section class="wizard-step hidden legacy-setup-field" data-step="50"><h4>Power Level & Stats</h4><p class="runtime-sheet-muted">Core Game V1 uses 30 points across Strength, Dexterity, Constitution, Intelligence, Wisdom, and Charisma. Storybook can auto-allocate; MUD/Stats can edit these values.</p><div class="stat-allocation-grid"><label>STR <input id="form-stat-strength" type="number" min="3" max="10" value="5" /></label><label>DEX <input id="form-stat-dexterity" type="number" min="3" max="10" value="5" /></label><label>CON <input id="form-stat-constitution" type="number" min="3" max="10" value="5" /></label><label>INT <input id="form-stat-intelligence" type="number" min="3" max="10" value="5" /></label><label>WIS <input id="form-stat-wisdom" type="number" min="3" max="10" value="5" /></label><label>CHA <input id="form-stat-charisma" type="number" min="3" max="10" value="5" /></label></div>
             <label class="wizard-option-card"><input name="form-power-level-choice" type="radio" value="Ordinary Beginner" /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>Ordinary Beginner</strong><small>Start vulnerable and grow through play.</small></span></label>
             <label class="wizard-option-card"><input name="form-power-level-choice" type="radio" value="Capable Adventurer" checked /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>Capable Adventurer</strong><small>Competent without overshadowing the world.</small></span></label>
             <label class="wizard-option-card"><input name="form-power-level-choice" type="radio" value="Experienced Veteran" /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>Experienced Veteran</strong><small>Begin with reputation and proven skill.</small></span></label>
             <label class="wizard-option-card"><input name="form-power-level-choice" type="radio" value="Powerful Hero" /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>Powerful Hero</strong><small>Start with exceptional capability.</small></span></label>
             <label class="wizard-option-card"><input name="form-power-level-choice" type="radio" value="Legendary Figure" /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>Legendary Figure</strong><small>Begin as a figure of mythic importance.</small></span></label>
           </section>
-          <section class="wizard-step hidden" data-step="6"><h4>Starting Abilities</h4>
+          <section class="wizard-step hidden legacy-setup-field" data-step="60"><h4>Starting Abilities</h4>
             <label class="wizard-option-card"><input name="form-ability-mode" type="radio" value="suggest" checked /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>suggest</strong><small>Suggest starting abilities from class and description.</small></span></label>
             <label class="wizard-option-card"><input name="form-ability-mode" type="radio" value="manual" /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>manual</strong><small>I will list my starting abilities.</small></span></label>
             <label class="full-width">Enter abilities, spells, techniques, or powers separated by commas or new lines. <textarea id="form-starting-abilities" rows="4" placeholder="Fireball&#10;Ice Lance&#10;Arcane Shield"></textarea></label>
           </section>
-          <section class="wizard-step hidden" data-step="7"><h4>Starting Items</h4>
+          <section class="wizard-step hidden legacy-setup-field" data-step="70"><h4>Starting Items</h4>
             <label class="wizard-option-card"><input name="form-item-mode" type="radio" value="suggest" checked /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>suggest</strong><small>Suggest starting items that fit the setup.</small></span></label>
             <label class="wizard-option-card"><input name="form-item-mode" type="radio" value="manual" /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>manual</strong><small>I will list starting items.</small></span></label>
             <label class="full-width">Starting items, comma/new-line separated. <textarea id="form-starting-items" rows="4" placeholder="old spellbook, frostglass focus"></textarea></label>
           </section>
-          <section class="wizard-step hidden" data-step="8"><h4>Review</h4><div id="campaign-wizard-review" class="status-card">Review your campaign setup, then create the campaign.</div></section>
+          
           <input id="form-starting-location" type="hidden" value="" />
-          <details class="campaign-play-style-group full-width advanced-campaign-rules">
+          <details class="campaign-play-style-group full-width advanced-campaign-rules hidden">
             <summary>Advanced Campaign Rules</summary>
             <label><input id="form-allow-freeform-powers" type="checkbox" checked /> Allow freeform powers/actions not yet on sheet</label>
             <label><input id="form-auto-update-sheet-from-actions" type="checkbox" checked /> Auto-update character sheet from demonstrated actions</label>

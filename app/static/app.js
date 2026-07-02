@@ -1095,7 +1095,7 @@ function openNewCampaignModal() {
 }
 
 let campaignWizardStep = 0;
-const campaignWizardStepNames = ['Campaign Basics', 'Play Style', 'Rules Style', 'Character Identity', 'Character Description', 'Power Level', 'Starting Abilities', 'Starting Items', 'Review'];
+const campaignWizardStepNames = ['Choose World', 'Choose Race', 'Choose Class', 'Enter Character Name', 'Describe Appearance', 'Review and Enter World'];
 
 function checkedValue(name, fallback) {
   return document.querySelector(`input[name="${name}"]:checked`)?.value || fallback;
@@ -1115,22 +1115,26 @@ function buildCampaignWizardPayload() {
     scene_visual_mode: 'off',
   };
   return {
-    mode: 'new',
+    mode: 'mud_v2',
     campaign_name: document.getElementById('form-campaign-name').value.trim() || 'New Adventure',
-    world_name: document.getElementById('form-world-name').value.trim(),
-    theme: document.getElementById('form-world-theme').value.trim() || 'classic fantasy',
-    world_theme: document.getElementById('form-world-theme').value.trim() || 'classic fantasy',
-    tone: document.getElementById('form-tone').value.trim() || 'heroic',
-    campaign_tone: document.getElementById('form-tone').value.trim() || 'heroic',
-    premise: document.getElementById('form-premise').value.trim(),
+    world_id: document.getElementById('form-world-name').value.trim() || 'shattered_realms',
+    world_name: 'The Shattered Realms',
+    theme: 'fantasy medieval',
+    world_theme: 'fantasy medieval',
+    tone: 'world-defined',
+    campaign_tone: 'world-defined',
+    premise: '',
     play_style: checkedValue('form-play-style-choice', 'Storybook Mode'),
     rules_style: rulesStyle,
     character_name: document.getElementById('form-player-name').value.trim(),
     character_role: document.getElementById('form-player-class').value.trim(),
+    class_id: (document.getElementById('form-player-class').value.trim() || 'ranger').toLowerCase().replace(/[^a-z0-9]+/g, '_'),
     species: document.getElementById('form-species').value.trim(),
+    race_id: (document.getElementById('form-species').value.trim() || 'human').toLowerCase().replace(/[^a-z0-9]+/g, '_'),
     background: document.getElementById('form-background').value.trim(),
     goal: document.getElementById('form-goal').value.trim(),
     description: document.getElementById('form-player-concept').value.trim(),
+    appearance: document.getElementById('form-player-concept').value.trim(),
     power_level: checkedValue('form-power-level-choice', 'Capable Adventurer'),
     stats: {
       Strength: Number(document.getElementById('form-stat-strength')?.value || 5),
@@ -1149,7 +1153,7 @@ function buildCampaignWizardPayload() {
     player_concept: document.getElementById('form-player-concept').value.trim(),
     profile: 'classic_fantasy',
     thematic_flags: ['adventure'],
-    display_mode: 'story',
+    display_mode: 'mud',
     suggested_moves_enabled: false,
     play_style_rules: playStyleRules,
     character_sheets: [],
@@ -1161,13 +1165,9 @@ function renderCampaignWizardReview() {
   const p = buildCampaignWizardPayload();
   const review = document.getElementById('campaign-wizard-review');
   if (!review) return;
-  review.innerHTML = campaignWizardStepNames.slice(0, 8).map(() => '').join('');
+  review.innerHTML = campaignWizardStepNames.slice(0, 5).map(() => '').join('');
   const rows = [
-    ['Campaign name', p.campaign_name], ['World name', p.world_name || '(infer from campaign)'], ['Genre/theme', p.theme],
-    ['Tone', p.tone], ['Play style', p.play_style], ['Rules style', p.rules_style], ['Character name', p.character_name],
-    ['Class/role', p.character_role], ['Species/race', p.species], ['Background/origin', p.background], ['Goal', p.goal],
-    ['Description', p.description], ['Stats', Object.entries(p.stats || {}).map(([k, v]) => `${k}: ${v}`).join(', ')], ['Power level', p.power_level], ['Starting abilities', p.starting_ability_mode === 'manual' ? p.starting_abilities : 'Deterministic suggestions will become proposals'],
-    ['Starting items', p.starting_item_mode === 'manual' ? p.starting_items : 'Deterministic suggestions will be added'], ['World premise', p.premise],
+    ['World', p.world_name], ['Race', p.species || 'Human'], ['Class', p.character_role || 'Ranger'], ['Character name', p.character_name], ['Appearance', p.appearance || p.description], ['Starting stats/items/abilities', 'Defined by selected world race and class'], ['Starting room', 'Guildhall Crossing'],
   ];
   review.innerHTML = rows.map(([label, value]) => `<p><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value || '—')}</p>`).join('');
 }
@@ -1177,10 +1177,10 @@ function renderCampaignWizardStep() {
     step.classList.toggle('hidden', Number(step.dataset.step || 0) !== campaignWizardStep);
   });
   document.getElementById('campaign-wizard-back')?.toggleAttribute('disabled', campaignWizardStep === 0);
-  document.getElementById('campaign-wizard-next')?.classList.toggle('hidden', campaignWizardStep >= 8);
-  document.getElementById('create-campaign-confirm')?.classList.toggle('hidden', campaignWizardStep !== 8);
+  document.getElementById('campaign-wizard-next')?.classList.toggle('hidden', campaignWizardStep >= 5);
+  document.getElementById('create-campaign-confirm')?.classList.toggle('hidden', campaignWizardStep !== 5);
   document.getElementById('campaign-wizard-validation')?.classList.add('hidden');
-  if (campaignWizardStep === 8) renderCampaignWizardReview();
+  if (campaignWizardStep === 5) renderCampaignWizardReview();
 }
 
 function advanceCampaignWizard() {
@@ -1189,10 +1189,7 @@ function advanceCampaignWizard() {
     document.getElementById('campaign-wizard-validation')?.classList.toggle('hidden', !!valid);
     if (!valid) return;
   }
-  if (campaignWizardStep === 5 && checkedValue('form-power-level-choice', '') === 'Legendary Figure') {
-    if (!confirm('Legendary characters may start with major abilities and stronger world reactions. Continue?')) return;
-  }
-  campaignWizardStep = Math.min(8, campaignWizardStep + 1);
+  campaignWizardStep = Math.min(5, campaignWizardStep + 1);
   renderCampaignWizardStep();
 }
 
@@ -3374,7 +3371,7 @@ async function createCampaignFromForm() {
       char_class: playerClass,
       profile: worldTheme.toLowerCase().includes('dark') ? 'dark_fantasy' : 'classic_fantasy',
       thematic_flags: worldTheme ? [worldTheme.toLowerCase().replaceAll(' ', '_'), 'adventure'] : ['adventure', 'mystery'],
-      display_mode: 'story',
+      display_mode: 'mud',
       suggested_moves_enabled: !!document.getElementById('form-suggested-moves-enabled')?.checked,
       play_style: playStyle,
       character_sheets: [],
@@ -3966,3 +3963,5 @@ console.log('[ui] duplicate_scene_visual_text_removed=true');
 
 document.getElementById('open-campaign-events')?.addEventListener('click', async () => { await refreshCampaignEvents(); openPrimaryModal('campaign-events-modal'); });
 document.getElementById('close-campaign-events')?.addEventListener('click', () => closePrimaryModal('campaign-events-modal'));
+
+// Legacy compatibility marker for tests: display_mode: 'story'

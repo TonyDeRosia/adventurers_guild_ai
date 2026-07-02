@@ -262,6 +262,11 @@ class CampaignCanonState:
 class CampaignRuntimeState:
     """Dynamic campaign runtime state that must remain campaign-scoped."""
 
+    campaign_format: str = "legacy_story"
+    world_id: str = ""
+    current_room_id: str = ""
+    room_state: dict[str, Any] = field(default_factory=dict)
+    mud_color_settings: dict[str, str] = field(default_factory=dict)
     player_core: dict[str, Any] = field(default_factory=dict)
     inventory: list[str] = field(default_factory=list)
     equipment: dict[str, str | None] = field(default_factory=dict)
@@ -362,6 +367,7 @@ class CampaignState:
     bootstrap_complete: bool = True
     bootstrap_missing_fields: list[str] = field(default_factory=list)
     structured_state: CampaignStructuredState = field(default_factory=CampaignStructuredState)
+    campaign_format: str = "legacy_story"
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize campaign state to a dictionary for JSON storage."""
@@ -470,6 +476,7 @@ class CampaignState:
             bootstrap_complete=bool(payload.get("bootstrap_complete", str(payload.get("startup_state", "ready") or "ready") == "ready")),
             bootstrap_missing_fields=[str(v) for v in payload.get("bootstrap_missing_fields", [])],
             structured_state=cls._structured_state_from_payload(payload.get("structured_state"), payload),
+            campaign_format=str(payload.get("campaign_format", payload.get("structured_state", {}).get("runtime", {}).get("campaign_format", "legacy_story"))),
         )
 
     @staticmethod

@@ -18,6 +18,8 @@ from engine.inventory import InventoryService
 from engine.player_output import filter_player_messages, narrative_needs_player_facing_fallback
 from engine.scene_simulation import ensure_scene_v1, resolve_scene_action, get_scene_entity_counts
 from engine.gm_orchestrator import GMOrchestrator
+from engine.world_registry import WorldRegistry, by_id as world_by_id
+from engine.mud_rendering import render_room
 from engine.spellbook import normalize_spellbook_entry
 from app.dm_intent import analyze_dm_intent
 from memory.campaign_memory import CampaignMemory
@@ -101,6 +103,46 @@ class CampaignEngine:
             "just",
         }
 
+    def _handle_mud_command(self, state: CampaignState, action: str) -> TurnResult | None:
+        normalized = action.strip().lower()
+        directions = {"north", "south", "east", "west", "up", "down", "n", "s", "e", "w", "u", "d"}
+        aliases = {"n":"north", "s":"south", "e":"east", "w":"west", "u":"up", "d":"down"}
+        direction = ""
+        if normalized in directions:
+            direction = aliases.get(normalized, normalized)
+        elif normalized.startswith("go "):
+            direction = aliases.get(normalized[3:].strip(), normalized[3:].strip())
+        registry = WorldRegistry(); world = registry.load_world(state.structured_state.runtime.world_id or "shattered_realms")
+        room_id = state.structured_state.runtime.current_room_id or state.current_location_id or world.default_starting_room_id
+        room = world.room(room_id)
+        npcs_by_id = world_by_id(world.npcs)
+        room_npcs = [npcs_by_id[n] for n in room.get("npcs", []) if n in npcs_by_id]
+        room_objects = [{"id": o, "name": o.replace("_", " ").title()} for o in room.get("objects", [])]
+        player = {"hp": state.player.hp, "max_hp": state.player.max_hp, "mana": state.player.energy_or_mana, "max_mana": state.player.energy_or_mana, "stamina": state.structured_state.runtime.player_core.get("derived_stats", {}).get("Stamina", 0), "max_stamina": state.structured_state.runtime.player_core.get("derived_stats", {}).get("Stamina", 0), "level": state.player.level, "xp": state.player.xp, "gold": state.structured_state.runtime.inventory_state.get("currency", {}).get("gold", 0), "race": state.structured_state.runtime.player_core.get("race_id", "human").title(), "class": state.player.char_class}
+        if direction:
+            exit_ = next((e for e in room.get("exits", []) if e.get("direction") == direction and not e.get("hidden") and not e.get("locked")), None)
+            if not exit_:
+                text = f"You cannot go {direction} from here."
+                return TurnResult(text, [text], [{"type":"system", "text": text}], metadata={"mud_v2": True, "movement": "invalid"})
+            room = world.room(str(exit_["destination_room_id"])); room_id = room["id"]
+            state.current_location_id = room_id; state.structured_state.runtime.current_room_id = room_id; state.structured_state.runtime.current_location_id = room_id
+            state.structured_state.runtime.discovered_locations = sorted(set(state.structured_state.runtime.discovered_locations + [room_id]))
+            room_npcs = [npcs_by_id[n] for n in room.get("npcs", []) if n in npcs_by_id]
+            room_objects = [{"id": o, "name": o.replace("_", " ").title()} for o in room.get("objects", [])]
+            narrative = [f"You travel {direction}."]
+        elif normalized in {"look", "l"} or normalized.startswith(("look ", "examine ", "inventory", "equipment", "spellbook", "abilities", "score", "character", "quests", "journal", "help", "say ", "talk ", "ask ")):
+            narrative = []
+            if normalized == "inventory": narrative = ["Inventory: " + ", ".join(i.get("name", "item") for i in state.structured_state.runtime.inventory_state.get("entries", []))]
+            elif normalized in {"spellbook", "abilities"}: narrative = ["Abilities: " + ", ".join(a.get("name", "ability") for a in state.structured_state.runtime.abilities)]
+            elif normalized == "help": narrative = ["Commands: look, examine <target>, say <message>, talk <npc>, ask <npc> <topic>, go <direction>, north/south/east/west/up/down, inventory, equipment, spellbook, abilities, score, character, quests, journal, help."]
+        else:
+            return None
+        text = render_room(room, world.manifest, player, npcs=room_npcs, objects=room_objects, narrative=narrative)
+        state.structured_state.runtime.room_state = {"authoritative_room_id": room["id"], "room": room, "visible_npcs": room_npcs, "visible_objects": room_objects}
+        state.structured_state.runtime.scene_state["mud_room"] = state.structured_state.runtime.room_state
+        state.structured_state.runtime.last_narration = text
+        return TurnResult(text, [], [{"type":"narrator", "text": text}], metadata={"mud_v2": True, "room_id": room["id"]})
+
     @dataclass
     class PendingAbilityLearning:
         raw_name: str
@@ -132,6 +174,11 @@ class CampaignEngine:
                 messages=[{"type": "narrator", "text": "Your adventure pauses here."}],
                 should_exit=True,
             )
+
+        if getattr(state, "campaign_format", "") == "mud_v2" or getattr(state.structured_state.runtime, "campaign_format", "") == "mud_v2":
+            mud = self._handle_mud_command(state, action)
+            if mud is not None:
+                return mud
 
         intent = self._classify_turn_intent(action)
         print(f"[turn-routing] intent={intent}")
