@@ -1,0 +1,137 @@
+[
+  {
+    "spawn_id": "spawn_guildhall_crossing_square_old_gate",
+    "item_id": "old_gate",
+    "room_id": "guildhall_crossing_square",
+    "max_count": 1,
+    "respawn_enabled": false,
+    "respawn_delay_seconds": 0,
+    "container_id": null
+  },
+  {
+    "spawn_id": "spawn_guildhall_crossing_square_fountain",
+    "item_id": "fountain",
+    "room_id": "guildhall_crossing_square",
+    "max_count": 1,
+    "respawn_enabled": false,
+    "respawn_delay_seconds": 0,
+    "container_id": null
+  },
+  {
+    "spawn_id": "spawn_blacksmith_stall_training_sword",
+    "item_id": "training_sword",
+    "room_id": "blacksmith_stall",
+    "max_count": 1,
+    "respawn_enabled": false,
+    "respawn_delay_seconds": 0,
+    "container_id": null
+  },
+  {
+    "spawn_id": "spawn_blacksmith_stall_iron_sword",
+    "item_id": "iron_sword",
+    "room_id": "blacksmith_stall",
+    "max_count": 1,
+    "respawn_enabled": false,
+    "respawn_delay_seconds": 0,
+    "container_id": null
+  },
+  {
+    "spawn_id": "spawn_provisioner_stall_ration",
+    "item_id": "ration",
+    "room_id": "provisioner_stall",
+    "max_count": 1,
+    "respawn_enabled": false,
+    "respawn_delay_seconds": 0,
+    "container_id": null
+  },
+  {
+    "spawn_id": "spawn_provisioner_stall_clean_water_flask",
+    "item_id": "clean_water_flask",
+    "room_id": "provisioner_stall",
+    "max_count": 1,
+    "respawn_enabled": false,
+    "respawn_delay_seconds": 0,
+    "container_id": null
+  },
+  {
+    "spawn_id": "spawn_provisioner_stall_torch",
+    "item_id": "torch",
+    "room_id": "provisioner_stall",
+    "max_count": 1,
+    "respawn_enabled": false,
+    "respawn_delay_seconds": 0,
+    "container_id": null
+  },
+  {
+    "spawn_id": "spawn_provisioner_stall_rope",
+    "item_id": "rope",
+    "room_id": "provisioner_stall",
+    "max_count": 1,
+    "respawn_enabled": false,
+    "respawn_delay_seconds": 0,
+    "container_id": null
+  },
+  {
+    "spawn_id": "spawn_adventurer_notice_board_notice_board",
+    "item_id": "notice_board",
+    "room_id": "adventurer_notice_board",
+    "max_count": 1,
+    "respawn_enabled": false,
+    "respawn_delay_seconds": 0,
+    "container_id": null
+  },
+  {
+    "spawn_id": "spawn_adventurer_notice_board_guild_token",
+    "item_id": "guild_token",
+    "room_id": "adventurer_notice_board",
+    "max_count": 1,
+    "respawn_enabled": false,
+    "respawn_delay_seconds": 0,
+    "container_id": null
+  },
+  {
+    "spawn_id": "spawn_tavern_back_room_suspicious_ledger",
+    "item_id": "suspicious_ledger",
+    "room_id": "tavern_back_room",
+    "max_count": 1,
+    "respawn_enabled": false,
+    "respawn_delay_seconds": 0,
+    "container_id": null
+  },
+  {
+    "spawn_id": "spawn_old_gate_checkpoint_old_gate_shard",
+    "item_id": "old_gate_shard",
+    "room_id": "old_gate_checkpoint",
+    "max_count": 1,
+    "respawn_enabled": false,
+    "respawn_delay_seconds": 0,
+    "container_id": null
+  },
+  {
+    "spawn_id": "spawn_milestone_bend_sealed_courier_satchel",
+    "item_id": "sealed_courier_satchel",
+    "room_id": "milestone_bend",
+    "max_count": 1,
+    "respawn_enabled": false,
+    "respawn_delay_seconds": 0,
+    "container_id": null
+  },
+  {
+    "spawn_id": "spawn_rat_cellar_storage_empty_vial",
+    "item_id": "empty_vial",
+    "room_id": "rat_cellar_storage",
+    "max_count": 1,
+    "respawn_enabled": false,
+    "respawn_delay_seconds": 0,
+    "container_id": null
+  },
+  {
+    "spawn_id": "spawn_rat_cellar_nest_rat_tail",
+    "item_id": "rat_tail",
+    "room_id": "rat_cellar_nest",
+    "max_count": 1,
+    "respawn_enabled": false,
+    "respawn_delay_seconds": 0,
+    "container_id": null
+  }
+]
