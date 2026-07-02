@@ -176,3 +176,20 @@ def test_wizard_selected_options_have_card_styling() -> None:
     assert 'name="form-power-level-choice" type="radio" value="Capable Adventurer" checked' in html
     assert 'name="form-ability-mode" type="radio" value="suggest" checked' in html
     assert 'name="form-item-mode" type="radio" value="suggest" checked' in html
+
+
+def test_campaign_intelligence_uses_file_picker_not_source_path_field() -> None:
+    html = _index_html()
+    script = Path("app/static/app.js").read_text(encoding="utf-8")
+    styles = Path("app/static/styles.css").read_text(encoding="utf-8")
+
+    assert 'id="intelligence-source-path"' not in html
+    assert 'id="add-intelligence-source-file" class="hidden" type="file" accept=".txt,.md,.json"' in html
+    assert 'id="replace-intelligence-source-file" class="hidden" type="file" accept=".txt,.md,.json"' in html
+    assert "addIntelligenceSourceButton?.addEventListener('click', openAddIntelligenceFilePicker);" in script
+    assert "FormData" in script
+    assert "Choose a .txt, .md, or .json file." in script
+    assert "Import failed: unsupported file type." in script
+    assert "Replace failed: select a source first." in script
+    assert "intelligence-source-card${selectedClass}" in script
+    assert ".intelligence-source-card.selected" in styles

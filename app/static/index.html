@@ -516,14 +516,15 @@
             <div class="button-row">
               <button id="refresh-intelligence-sources" type="button">Refresh Sources</button>
               <button id="add-intelligence-source" type="button">Add Source File</button>
+              <input id="add-intelligence-source-file" class="hidden" type="file" accept=".txt,.md,.json" />
               <button id="replace-intelligence-source" type="button">Replace Source File</button>
+              <input id="replace-intelligence-source-file" class="hidden" type="file" accept=".txt,.md,.json" />
               <button id="rebuild-intelligence-index" type="button">Rebuild Index placeholder</button>
               <button id="test-intelligence-retrieval" type="button">Test Retrieval placeholder</button>
               <button id="apply-campaign-intelligence-sources" type="button">Apply Campaign Selection</button>
               <button id="refresh-prompt-inspector" type="button">Refresh Prompt Inspector</button>
             </div>
             <label>Selected source id <input id="intelligence-source-id" type="text" placeholder="source id for replace / enable / priority" /></label>
-            <label>Source file path <input id="intelligence-source-path" type="text" placeholder="Path to .txt, .md, or .json file" /></label>
             <label>Title <input id="intelligence-source-title" type="text" placeholder="Optional title" /></label>
             <label>Category
               <select id="intelligence-source-category">

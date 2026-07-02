@@ -220,7 +220,6 @@ function closeDialog(id) { return modalManager.closeDialog(id); }
 const intelligenceStatus = document.getElementById('intelligence-status');
 const intelligenceSourceList = document.getElementById('intelligence-source-list');
 const intelligenceSourceIdInput = document.getElementById('intelligence-source-id');
-const intelligenceSourcePathInput = document.getElementById('intelligence-source-path');
 const intelligenceSourceTitleInput = document.getElementById('intelligence-source-title');
 const intelligenceSourceCategoryInput = document.getElementById('intelligence-source-category');
 const intelligenceSourcePriorityInput = document.getElementById('intelligence-source-priority');
@@ -228,6 +227,8 @@ const intelligenceSourceEnabledInput = document.getElementById('intelligence-sou
 const refreshIntelligenceSourcesButton = document.getElementById('refresh-intelligence-sources');
 const addIntelligenceSourceButton = document.getElementById('add-intelligence-source');
 const replaceIntelligenceSourceButton = document.getElementById('replace-intelligence-source');
+const addIntelligenceSourceFileInput = document.getElementById('add-intelligence-source-file');
+const replaceIntelligenceSourceFileInput = document.getElementById('replace-intelligence-source-file');
 const applyIntelligenceEnabledButton = document.getElementById('apply-intelligence-enabled');
 const applyIntelligencePriorityButton = document.getElementById('apply-intelligence-priority');
 const rebuildIntelligenceIndexButton = document.getElementById('rebuild-intelligence-index');
@@ -236,6 +237,7 @@ const applyCampaignIntelligenceSourcesButton = document.getElementById('apply-ca
 const refreshPromptInspectorButton = document.getElementById('refresh-prompt-inspector');
 const campaignPromptInspector = document.getElementById('campaign-prompt-inspector');
 let intelligenceSourcesCache = [];
+let selectedIntelligenceSourceId = '';
 let selectedCampaignIntelligenceSourceIds = new Set();
 
 let draftCharacterSheets = [];
@@ -1195,9 +1197,11 @@ function renderIntelligenceSources(sources) {
   intelligenceSourceList.innerHTML = sources.map((source) => {
     const enabled = source.enabled ? 'enabled' : 'disabled';
     const campaignSelectable = ['packs', 'imported'].includes(source.category || '');
-    const checked = selectedCampaignIntelligenceSourceIds.has(source.id || '') ? 'checked' : '';
-    const selector = campaignSelectable ? `<label><input type="checkbox" data-campaign-source-id="${escapeHtml(source.id || '')}" ${checked} /> Use in this campaign</label>` : `<small>Core file: affects all campaigns.</small>`;
-    return `<button type="button" class="model-card intelligence-source-card" data-source-id="${escapeHtml(source.id || '')}">
+    const sourceId = source.id || '';
+    const checked = selectedCampaignIntelligenceSourceIds.has(sourceId) ? 'checked' : '';
+    const selectedClass = selectedIntelligenceSourceId === sourceId ? ' selected' : '';
+    const selector = campaignSelectable ? `<label><input type="checkbox" data-campaign-source-id="${escapeHtml(sourceId)}" ${checked} /> Use in this campaign</label>` : `<small>Core file: affects all campaigns.</small>`;
+    return `<button type="button" class="model-card intelligence-source-card${selectedClass}" data-source-id="${escapeHtml(sourceId)}" aria-pressed="${selectedIntelligenceSourceId === sourceId ? 'true' : 'false'}">
       <strong>${escapeHtml(source.title || source.id || '')}</strong>
       <span>${escapeHtml(source.id || '')} • ${escapeHtml(source.category || '')} • priority ${escapeHtml(String(source.priority ?? 0))} • ${enabled}</span>
       <small>${escapeHtml(source.filename || '')}</small>
@@ -1215,7 +1219,9 @@ function renderIntelligenceSources(sources) {
     button.addEventListener('click', () => {
       const source = sources.find((item) => item.id === button.dataset.sourceId);
       if (!source) return;
-      if (intelligenceSourceIdInput) intelligenceSourceIdInput.value = source.id || '';
+      selectedIntelligenceSourceId = source.id || '';
+      if (intelligenceSourceIdInput) intelligenceSourceIdInput.value = selectedIntelligenceSourceId;
+      renderIntelligenceSources(sources);
       if (intelligenceSourceTitleInput) intelligenceSourceTitleInput.value = source.title || '';
       if (intelligenceSourcePriorityInput) intelligenceSourcePriorityInput.value = source.priority || 0;
       if (intelligenceSourceEnabledInput) intelligenceSourceEnabledInput.checked = !!source.enabled;
@@ -1240,7 +1246,6 @@ async function refreshIntelligenceSources() {
 function intelligencePayload() {
   return {
     id: intelligenceSourceIdInput?.value?.trim() || '',
-    source_path: intelligenceSourcePathInput?.value?.trim() || '',
     title: intelligenceSourceTitleInput?.value?.trim() || '',
     category: intelligenceSourceCategoryInput?.value || 'imported',
     priority: Number.parseInt(intelligenceSourcePriorityInput?.value || '0', 10) || 0,
@@ -1268,6 +1273,55 @@ async function applyCampaignIntelligenceSources() {
     renderIntelligenceSources(intelligenceSourcesCache);
     setIntelligenceStatus('Updated campaign intelligence selection.');
   } catch (error) { setIntelligenceStatus(error.message, true); }
+}
+
+
+function isSupportedIntelligenceFile(file) {
+  return !!file && /\.(txt|md|json)$/i.test(file.name || '');
+}
+
+async function uploadIntelligenceSource(endpoint, file, payload, successPrefix) {
+  if (!file) {
+    setIntelligenceStatus('Choose a .txt, .md, or .json file.', true);
+    return;
+  }
+  if (!isSupportedIntelligenceFile(file)) {
+    setIntelligenceStatus('Import failed: unsupported file type.', true);
+    return;
+  }
+  const formData = new FormData();
+  formData.append('file', file);
+  Object.entries(payload).forEach(([key, value]) => formData.append(key, String(value)));
+  try {
+    const result = await api(endpoint, { method: 'POST', body: formData });
+    selectedIntelligenceSourceId = result.source?.id || selectedIntelligenceSourceId;
+    await refreshIntelligenceSources();
+    setIntelligenceStatus(`${successPrefix}: ${result.source?.title || payload.title || file.name}`);
+  } catch (error) {
+    const prefix = endpoint.includes('/replace') ? 'Replace failed' : 'Import failed';
+    setIntelligenceStatus(`${prefix}: ${error.message}`, true);
+  }
+}
+
+function openAddIntelligenceFilePicker() {
+  setIntelligenceStatus('Choose a .txt, .md, or .json file.');
+  if (addIntelligenceSourceFileInput) {
+    addIntelligenceSourceFileInput.value = '';
+    addIntelligenceSourceFileInput.click();
+  }
+}
+
+function openReplaceIntelligenceFilePicker() {
+  const sourceId = intelligencePayload().id;
+  if (!sourceId) {
+    setIntelligenceStatus('Replace failed: select a source first.', true);
+    return;
+  }
+  setIntelligenceStatus('Choose a .txt, .md, or .json file.');
+  if (replaceIntelligenceSourceFileInput) {
+    replaceIntelligenceSourceFileInput.value = '';
+    replaceIntelligenceSourceFileInput.click();
+  }
 }
 
 async function postIntelligence(endpoint, payload, successMessage) {
@@ -3460,8 +3514,10 @@ bindClickById('close-setup-modal', closeSetupModal);
 refreshIntelligenceSourcesButton?.addEventListener('click', refreshIntelligenceSources);
 applyCampaignIntelligenceSourcesButton?.addEventListener('click', applyCampaignIntelligenceSources);
 refreshPromptInspectorButton?.addEventListener('click', refreshPromptInspector);
-addIntelligenceSourceButton?.addEventListener('click', () => postIntelligence('/api/developer/intelligence/import', intelligencePayload(), 'Imported source file.'));
-replaceIntelligenceSourceButton?.addEventListener('click', () => postIntelligence('/api/developer/intelligence/replace', intelligencePayload(), 'Replaced source file.'));
+addIntelligenceSourceButton?.addEventListener('click', openAddIntelligenceFilePicker);
+replaceIntelligenceSourceButton?.addEventListener('click', openReplaceIntelligenceFilePicker);
+addIntelligenceSourceFileInput?.addEventListener('change', () => uploadIntelligenceSource('/api/developer/intelligence/import', addIntelligenceSourceFileInput.files?.[0], intelligencePayload(), 'Imported source'));
+replaceIntelligenceSourceFileInput?.addEventListener('change', () => uploadIntelligenceSource('/api/developer/intelligence/replace', replaceIntelligenceSourceFileInput.files?.[0], intelligencePayload(), 'Replaced source'));
 applyIntelligenceEnabledButton?.addEventListener('click', () => postIntelligence('/api/developer/intelligence/enabled', { id: intelligencePayload().id, enabled: intelligencePayload().enabled }, 'Updated source enabled state.'));
 applyIntelligencePriorityButton?.addEventListener('click', () => postIntelligence('/api/developer/intelligence/priority', { id: intelligencePayload().id, priority: intelligencePayload().priority }, 'Updated source priority.'));
 rebuildIntelligenceIndexButton?.addEventListener('click', () => setIntelligenceStatus('Rebuild Index placeholder: embeddings/vector index are intentionally not implemented yet.'));

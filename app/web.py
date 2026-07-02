@@ -10,6 +10,7 @@ import shutil
 import socket
 import subprocess
 import tempfile
+from contextlib import suppress
 import threading
 import time
 import sys
@@ -7456,12 +7457,14 @@ class WebRuntime:
         return {"sources": self.intelligence_library.list_sources()}
 
     def import_intelligence_source(self, payload: dict[str, Any]) -> dict[str, Any]:
+        enabled_value = payload.get("enabled", True)
+        enabled = str(enabled_value).strip().lower() not in {"0", "false", "no", "off"} if isinstance(enabled_value, str) else bool(enabled_value)
         entry = self.intelligence_library.import_source(
             Path(str(payload.get("source_path", ""))),
             title=str(payload.get("title", "")),
             category=str(payload.get("category", "imported")),
             priority=int(payload.get("priority", 0) or 0),
-            enabled=bool(payload.get("enabled", True)),
+            enabled=enabled,
         )
         return {"source": entry, "sources": self.intelligence_library.list_sources()}
 
@@ -7598,19 +7601,50 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     def developer_intelligence_campaign_sources(payload: dict[str, Any]) -> dict[str, Any]:
         return runtime.set_campaign_intelligence_sources(payload)
 
+    async def _intelligence_request_payload(request: Request) -> tuple[dict[str, Any], Path | None]:
+        content_type = request.headers.get("content-type", "").lower()
+        if "multipart/form-data" not in content_type and "application/x-www-form-urlencoded" not in content_type:
+            return await request.json(), None
+        form = await request.form()
+        payload: dict[str, Any] = {key: value for key, value in form.items() if key != "file"}
+        upload = form.get("file")
+        filename = str(getattr(upload, "filename", "") or "")
+        if not upload or not filename:
+            raise ValueError("Choose a .txt, .md, or .json file.")
+        suffix = Path(filename).suffix.lower()
+        if suffix not in {".txt", ".md", ".json"}:
+            raise ValueError("Import failed: unsupported file type.")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp_path = Path(tmp.name)
+            tmp.write(await upload.read())
+        payload["source_path"] = str(tmp_path)
+        return payload, tmp_path
+
     @app.post("/api/developer/intelligence/import")
-    def developer_intelligence_import(payload: dict[str, Any]) -> dict[str, Any]:
+    async def developer_intelligence_import(request: Request) -> dict[str, Any]:
+        tmp_path: Path | None = None
         try:
+            payload, tmp_path = await _intelligence_request_payload(request)
             return runtime.import_intelligence_source(payload)
         except (FileNotFoundError, ValueError) as exc:
             raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(exc)) from exc
+        finally:
+            if tmp_path:
+                with suppress(FileNotFoundError):
+                    tmp_path.unlink()
 
     @app.post("/api/developer/intelligence/replace")
-    def developer_intelligence_replace(payload: dict[str, Any]) -> dict[str, Any]:
+    async def developer_intelligence_replace(request: Request) -> dict[str, Any]:
+        tmp_path: Path | None = None
         try:
+            payload, tmp_path = await _intelligence_request_payload(request)
             return runtime.replace_intelligence_source(payload)
         except (FileNotFoundError, KeyError, ValueError) as exc:
             raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(exc)) from exc
+        finally:
+            if tmp_path:
+                with suppress(FileNotFoundError):
+                    tmp_path.unlink()
 
     @app.post("/api/developer/intelligence/enabled")
     def developer_intelligence_set_enabled(payload: dict[str, Any]) -> dict[str, Any]:

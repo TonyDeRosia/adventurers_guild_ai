@@ -1299,3 +1299,9 @@ body.adventure-mode-enabled .creator-mode-only,
 }
 .wizard-option-card:has(input:checked) .option-indicator { background: var(--accent); border-color: #e0f2fe; }
 .wizard-option-card:focus-within { outline: 2px solid rgba(56, 189, 248, 0.65); outline-offset: 2px; }
+
+.intelligence-source-card.selected {
+  border-color: #4cc2ff;
+  box-shadow: 0 0 0 1px rgba(76, 194, 255, 0.5) inset;
+  background: #17314a;
+}

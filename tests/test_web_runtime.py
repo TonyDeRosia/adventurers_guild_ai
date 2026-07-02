@@ -6088,3 +6088,91 @@ def test_basic_dm_fallback_never_says_you_commit_to(tmp_path: Path, monkeypatch)
 
     assert "You commit to" not in output["narrative"]
     assert "I’m not sure" in output["narrative"] or "spell" in output["narrative"].lower()
+
+
+def test_intelligence_import_endpoint_accepts_multipart_and_lists_source(tmp_path: Path, monkeypatch) -> None:
+    try:
+        from fastapi.testclient import TestClient
+    except RuntimeError as exc:
+        pytest.skip(str(exc))
+    runtime = _runtime(tmp_path, monkeypatch)
+    app = create_web_app(runtime, runtime.root / "app" / "static")
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/developer/intelligence/import",
+        data={"title": "Uploaded Lore", "category": "imported", "priority": "7", "enabled": "false"},
+        files={"file": ("lore.md", b"uploaded lore", "text/markdown")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"]["title"] == "Uploaded Lore"
+    assert payload["source"]["enabled"] is False
+    assert payload["source"]["id"] in [source["id"] for source in payload["sources"]]
+    assert "uploaded lore" in (runtime.intelligence_library.root / payload["source"]["filename"]).read_text(encoding="utf-8")
+
+
+def test_intelligence_import_endpoint_rejects_unsupported_multipart_extension(tmp_path: Path, monkeypatch) -> None:
+    try:
+        from fastapi.testclient import TestClient
+    except RuntimeError as exc:
+        pytest.skip(str(exc))
+    runtime = _runtime(tmp_path, monkeypatch)
+    app = create_web_app(runtime, runtime.root / "app" / "static")
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/developer/intelligence/import",
+        data={"title": "Bad"},
+        files={"file": ("bad.exe", b"bad", "application/octet-stream")},
+    )
+
+    assert response.status_code == 400
+    assert "unsupported file type" in response.json()["error"]
+
+
+def test_intelligence_replace_endpoint_requires_id_and_preserves_id(tmp_path: Path, monkeypatch) -> None:
+    try:
+        from fastapi.testclient import TestClient
+    except RuntimeError as exc:
+        pytest.skip(str(exc))
+    runtime = _runtime(tmp_path, monkeypatch)
+    original = tmp_path / "original.md"
+    original.write_text("original", encoding="utf-8")
+    imported = runtime.intelligence_library.import_source(original, title="Original")
+    app = create_web_app(runtime, runtime.root / "app" / "static")
+    client = TestClient(app)
+
+    missing_id = client.post(
+        "/api/developer/intelligence/replace",
+        data={"title": "No Id"},
+        files={"file": ("replacement.md", b"replacement", "text/markdown")},
+    )
+    replaced = client.post(
+        "/api/developer/intelligence/replace",
+        data={"id": imported["id"], "title": "Replaced"},
+        files={"file": ("replacement.md", b"replacement", "text/markdown")},
+    )
+
+    assert missing_id.status_code == 400
+    assert replaced.status_code == 200
+    assert replaced.json()["source"]["id"] == imported["id"]
+    assert replaced.json()["source"]["filename"] == imported["filename"]
+    assert (runtime.intelligence_library.root / imported["filename"]).read_text(encoding="utf-8") == "replacement"
+
+
+def test_intelligence_import_endpoint_without_file_does_not_report_dot_path(tmp_path: Path, monkeypatch) -> None:
+    try:
+        from fastapi.testclient import TestClient
+    except RuntimeError as exc:
+        pytest.skip(str(exc))
+    runtime = _runtime(tmp_path, monkeypatch)
+    app = create_web_app(runtime, runtime.root / "app" / "static")
+    client = TestClient(app)
+
+    response = client.post("/api/developer/intelligence/import", data={"title": "Missing"})
+
+    assert response.status_code == 400
+    assert "Choose a .txt, .md, or .json file." in response.json()["error"]
+    assert "Source file not found: ." not in response.text
