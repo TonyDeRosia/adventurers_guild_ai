@@ -30,11 +30,12 @@ def render_semantic_html(text: str, colors: dict[str, str] | None = None) -> str
 def render_semantic_plain(text: str) -> str:
     return TAG_RE.sub("", text)
 
-def render_room(room: dict[str, Any], world: dict[str, Any], player: dict[str, Any], *, npcs: list[dict[str, Any]] | None = None, objects: list[dict[str, Any]] | None = None, narrative: list[str] | None = None) -> str:
-    npcs = npcs or []; objects = objects or []; narrative = narrative or []
+def render_room(room: dict[str, Any], world: dict[str, Any], player: dict[str, Any], *, npcs: list[dict[str, Any]] | None = None, objects: list[dict[str, Any]] | None = None, narrative: list[str] | None = None, corpses: list[dict[str, Any]] | None = None) -> str:
+    npcs = [n for n in (npcs or []) if str(n.get("status", "alive")) == "alive"]; objects = objects or []; narrative = narrative or []; corpses = corpses or []
     lines = [semantic("room_name", room.get("name", "Unknown Room")), semantic("area_name", world.get("name", "Unknown World")), "", semantic("room_description", room.get("long_description") or room.get("short_description", "")), "", "You see:"]
     for npc in npcs: lines.append(semantic(f"npc_{npc.get('disposition','neutral')}" if npc.get('disposition') in {'friendly','neutral','hostile'} else "npc_neutral", npc.get("name", npc.get("id", "NPC"))))
     for obj in objects: lines.append(semantic("item_common", obj.get("name", obj.get("id", "Object"))))
+    for corpse in corpses: lines.append(semantic("combat", corpse.get("name") or f"corpse of {corpse.get('npc_id', 'mob')}"))
     lines += ["", "Exits:"] + [semantic("exit", e.get("direction", "")) for e in room.get("exits", []) if not e.get("hidden")]
     if narrative: lines += [""] + [semantic("dialogue", n) for n in narrative]
     hp, max_hp = player.get("hp", 0), player.get("max_hp", 0)

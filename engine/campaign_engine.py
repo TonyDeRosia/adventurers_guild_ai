@@ -146,7 +146,14 @@ class CampaignEngine:
         room_id = state.structured_state.runtime.current_room_id or state.current_location_id or world.default_starting_room_id
         room = world.room(room_id)
         npcs_by_id = world_by_id(world.npcs)
-        room_npcs = [npcs_by_id[n] for n in room.get("npcs", []) if n in npcs_by_id]
+        areas_by_id = world_by_id(world.areas)
+        area = areas_by_id.get(room.get("area_id", ""), {})
+        store = self._mud_store_for_state(state)
+        store.process_due_respawns()
+        alive_mobs = store.spawn_mobs_for_room(room["id"], [n for n in world.npcs if n.get("spawn_id")])
+        alive_ids = {m.get("npc_id") for m in alive_mobs}
+        room_npcs = [{**npcs_by_id[n], "status": "alive"} for n in room.get("npcs", []) if n in npcs_by_id and n in alive_ids]
+        corpses = [{**c, "name": f"corpse of {npcs_by_id.get(c.get('npc_id'), {}).get('name', c.get('npc_id', 'mob'))}"} for c in store.load_corpses(room["id"])]
         room_objects = [{"id": o, "name": o.replace("_", " ").title()} for o in room.get("objects", [])]
         player = {"hp": state.player.hp, "max_hp": state.player.max_hp, "mana": state.player.energy_or_mana, "max_mana": state.player.energy_or_mana, "stamina": state.structured_state.runtime.player_core.get("derived_stats", {}).get("Stamina", 0), "max_stamina": state.structured_state.runtime.player_core.get("derived_stats", {}).get("Stamina", 0), "level": state.player.level, "xp": state.player.xp, "gold": state.structured_state.runtime.inventory_state.get("currency", {}).get("gold", 0), "race": state.structured_state.runtime.player_core.get("race_id", "human").title(), "class": state.player.char_class}
         if direction:
@@ -158,7 +165,11 @@ class CampaignEngine:
             state.current_location_id = room_id; state.structured_state.runtime.current_room_id = room_id; state.structured_state.runtime.current_location_id = room_id
             self._mud_store_for_state(state).mark_room_visited(room_id)
             state.structured_state.runtime.discovered_locations = sorted(set(state.structured_state.runtime.discovered_locations + [room_id]))
-            room_npcs = [npcs_by_id[n] for n in room.get("npcs", []) if n in npcs_by_id]
+            store.process_due_respawns()
+            alive_mobs = store.spawn_mobs_for_room(room["id"], [n for n in world.npcs if n.get("spawn_id")])
+            alive_ids = {m.get("npc_id") for m in alive_mobs}
+            room_npcs = [{**npcs_by_id[n], "status": "alive"} for n in room.get("npcs", []) if n in npcs_by_id and n in alive_ids]
+            corpses = [{**c, "name": f"corpse of {npcs_by_id.get(c.get('npc_id'), {}).get('name', c.get('npc_id', 'mob'))}"} for c in store.load_corpses(room["id"])]
             room_objects = [{"id": o, "name": o.replace("_", " ").title()} for o in room.get("objects", [])]
             narrative = [f"You travel {direction}."]
         elif normalized in {"look", "l"} or normalized.startswith(("look ", "examine ", "inspect ", "inventory", "equipment", "spellbook", "abilities", "score", "character", "quests", "journal", "help", "say ", "talk ", "ask ")):
@@ -176,8 +187,8 @@ class CampaignEngine:
                 narrative = ["The GM Orchestrator receives persistent NPC memory before this social action."]
         else:
             return None
-        text = render_room(room, world.manifest, player, npcs=room_npcs, objects=room_objects, narrative=narrative)
-        state.structured_state.runtime.room_state = {"authoritative_room_id": room["id"], "room": room, "visible_npcs": room_npcs, "visible_objects": room_objects}
+        text = render_room(room, world.manifest, player, npcs=room_npcs, objects=room_objects, narrative=narrative, corpses=corpses)
+        state.structured_state.runtime.room_state = {"authoritative_room_id": room["id"], "room": room, "area": area, "visible_npcs": room_npcs, "visible_objects": room_objects, "corpses": corpses, "pending_respawn_timers": store.load_respawn_timers(room["id"])}
         state.structured_state.runtime.scene_state["mud_room"] = state.structured_state.runtime.room_state
         state.structured_state.runtime.last_narration = text
         return TurnResult(text, [], [{"type":"narrator", "text": text}], metadata={"mud_v2": True, "room_id": room["id"]})

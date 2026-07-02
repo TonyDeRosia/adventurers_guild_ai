@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -114,6 +114,95 @@ class MUDStateStore:
         self.initialize(); now=utc_now();
         with self.connect() as con:
             rows=[dict(r) for r in con.execute("SELECT * FROM npc_memories WHERE npc_id=? AND character_id=? ORDER BY weight DESC, id DESC LIMIT ?",(npc_id,character_id,limit))]; con.execute("UPDATE npc_memories SET last_recalled_at=? WHERE npc_id=? AND character_id=?",(now,npc_id,character_id)); return [{**r,"tags":self._loads(r.get("tags_json"), [])} for r in rows]
+
+    def _row(self, row: sqlite3.Row | None) -> dict[str, Any] | None:
+        if not row: return None
+        data = dict(row)
+        if "state_json" in data: data["state"] = self._loads(data.get("state_json"))
+        return data
+
+    def upsert_mob_spawn(self, spawn: dict[str, Any]) -> None:
+        self.initialize(); sid=str(spawn.get("spawn_id") or "")
+        if not sid: return
+        with self.connect() as con:
+            con.execute("""INSERT INTO mob_spawns(spawn_id,campaign_id,world_id,npc_id,room_id,max_alive,respawn_enabled,respawn_delay_seconds,respawn_mode,next_respawn_at,state_json)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(spawn_id,campaign_id) DO UPDATE SET world_id=excluded.world_id,npc_id=excluded.npc_id,room_id=excluded.room_id,max_alive=excluded.max_alive,respawn_enabled=excluded.respawn_enabled,respawn_delay_seconds=excluded.respawn_delay_seconds,respawn_mode=excluded.respawn_mode,state_json=excluded.state_json""", (sid,self.campaign_id,spawn.get("world_id",self.world_id),spawn.get("npc_id") or spawn.get("mob_id"),spawn.get("room_id"),int(spawn.get("max_alive",1) or 1),1 if spawn.get("respawn_enabled") else 0,int(spawn.get("respawn_delay_seconds",0) or 0),spawn.get("respawn_mode","normal"),spawn.get("next_respawn_at"),self._json(spawn)))
+
+    def spawn_mobs_for_room(self, room_id: str, spawn_defs: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+        self.initialize()
+        for spawn in spawn_defs or []:
+            if str(spawn.get("room_id") or spawn.get("default_room_id") or "") == room_id:
+                data={**spawn, "room_id": room_id, "npc_id": spawn.get("npc_id") or spawn.get("mob_id") or spawn.get("id"), "spawn_id": spawn.get("spawn_id") or f"spawn_{spawn.get('id')}"}
+                self.upsert_mob_spawn(data)
+        with self.connect() as con:
+            rows=[dict(r) for r in con.execute("SELECT * FROM mob_spawns WHERE campaign_id=? AND room_id=?", (self.campaign_id, room_id))]
+            for sp in rows:
+                alive=con.execute("SELECT COUNT(*) c FROM mob_instances WHERE spawn_id=? AND campaign_id=? AND status='alive'", (sp["spawn_id"], self.campaign_id)).fetchone()["c"]
+                for _ in range(max(0, int(sp["max_alive"] or 1)-int(alive or 0))):
+                    con.execute("INSERT INTO mob_instances(instance_id,spawn_id,npc_id,campaign_id,room_id,hp_current,status,state_json) VALUES(?,?,?,?,?,?,?,?)", (f'{sp["spawn_id"]}:{utc_now()}',sp["spawn_id"],sp["npc_id"],self.campaign_id,room_id,0,"alive","{}"))
+        return self.load_alive_mobs(room_id)
+
+    def load_alive_mobs(self, room_id: str) -> list[dict[str, Any]]:
+        self.initialize()
+        with self.connect() as con: return [self._row(r) for r in con.execute("SELECT * FROM mob_instances WHERE campaign_id=? AND room_id=? AND status='alive' ORDER BY instance_id", (self.campaign_id, room_id))]
+
+    def mark_mob_dead(self, instance_id: str, killed_by_character_id: str = "", cause: str = "combat", summary: str = "") -> dict[str, Any]:
+        self.initialize(); now=utc_now()
+        with self.connect() as con:
+            inst=dict(con.execute("SELECT * FROM mob_instances WHERE instance_id=? AND campaign_id=?", (instance_id,self.campaign_id)).fetchone() or {})
+            if not inst: return {}
+            sp=dict(con.execute("SELECT * FROM mob_spawns WHERE spawn_id=? AND campaign_id=?", (inst["spawn_id"],self.campaign_id)).fetchone() or {})
+            state=self._loads(sp.get("state_json")); corpse_seconds=int(state.get("corpse_decay_seconds", 0) or 0)
+            corpse=(datetime.now(timezone.utc)+timedelta(seconds=corpse_seconds)).isoformat() if corpse_seconds else None
+            con.execute("UPDATE mob_instances SET status='dead',killed_by_character_id=?,killed_at=?,corpse_expires_at=? WHERE instance_id=? AND campaign_id=?", (killed_by_character_id,now,corpse,instance_id,self.campaign_id))
+            con.execute("INSERT INTO death_log(campaign_id,character_id,npc_id,instance_id,room_id,cause,summary,created_at) VALUES(?,?,?,?,?,?,?,?)", (self.campaign_id,killed_by_character_id,inst.get("npc_id",""),instance_id,inst.get("room_id",""),cause,summary,now))
+            if sp and int(sp.get("respawn_enabled") or 0) and sp.get("respawn_mode") != "story_permanent":
+                due=(datetime.now(timezone.utc)+timedelta(seconds=int(sp.get("respawn_delay_seconds") or 0))).isoformat()
+                con.execute("UPDATE mob_spawns SET next_respawn_at=? WHERE spawn_id=? AND campaign_id=?", (due,sp["spawn_id"],self.campaign_id))
+            return self._row(con.execute("SELECT * FROM mob_instances WHERE instance_id=?", (instance_id,)).fetchone()) or {}
+
+    def schedule_respawn(self, spawn_id: str) -> None:
+        self.initialize()
+        with self.connect() as con:
+            sp=con.execute("SELECT * FROM mob_spawns WHERE spawn_id=? AND campaign_id=?", (spawn_id,self.campaign_id)).fetchone()
+            if not sp: return
+            due=(datetime.now(timezone.utc)+timedelta(seconds=int(sp["respawn_delay_seconds"] or 0))).isoformat()
+            con.execute("UPDATE mob_spawns SET next_respawn_at=? WHERE spawn_id=? AND campaign_id=?", (due,spawn_id,self.campaign_id))
+
+    def process_due_respawns(self, now: str | None = None) -> list[dict[str, Any]]:
+        self.initialize(); now=now or utc_now(); made=[]
+        with self.connect() as con:
+            for sp in con.execute("SELECT * FROM mob_spawns WHERE campaign_id=? AND respawn_enabled=1 AND respawn_mode!='story_permanent' AND next_respawn_at IS NOT NULL AND next_respawn_at<=?", (self.campaign_id, now)):
+                alive=con.execute("SELECT COUNT(*) c FROM mob_instances WHERE spawn_id=? AND campaign_id=? AND status='alive'", (sp["spawn_id"],self.campaign_id)).fetchone()["c"]
+                if int(alive or 0) < int(sp["max_alive"] or 1):
+                    iid=f'{sp["spawn_id"]}:{utc_now()}'; con.execute("INSERT INTO mob_instances(instance_id,spawn_id,npc_id,campaign_id,room_id,hp_current,status,state_json) VALUES(?,?,?,?,?,?,?,?)", (iid,sp["spawn_id"],sp["npc_id"],self.campaign_id,sp["room_id"],0,"alive","{}")); made.append({"instance_id":iid,"spawn_id":sp["spawn_id"],"npc_id":sp["npc_id"],"room_id":sp["room_id"]})
+                con.execute("UPDATE mob_spawns SET next_respawn_at=NULL WHERE spawn_id=? AND campaign_id=?", (sp["spawn_id"],self.campaign_id))
+        return made
+
+    def load_corpses(self, room_id: str) -> list[dict[str, Any]]:
+        self.initialize()
+        with self.connect() as con: return [self._row(r) for r in con.execute("SELECT * FROM mob_instances WHERE campaign_id=? AND room_id=? AND status='dead' AND corpse_expires_at IS NOT NULL ORDER BY killed_at DESC", (self.campaign_id, room_id))]
+
+    def decay_expired_corpses(self, now: str | None = None) -> int:
+        self.initialize(); now=now or utc_now()
+        with self.connect() as con:
+            cur=con.execute("UPDATE mob_instances SET status='despawned' WHERE campaign_id=? AND status='dead' AND corpse_expires_at IS NOT NULL AND corpse_expires_at<=?", (self.campaign_id, now)); return int(cur.rowcount or 0)
+
+    def log_death(self, character_id: str = "", npc_id: str = "", instance_id: str = "", room_id: str = "", cause: str = "", summary: str = "") -> None:
+        self.initialize()
+        with self.connect() as con: con.execute("INSERT INTO death_log(campaign_id,character_id,npc_id,instance_id,room_id,cause,summary,created_at) VALUES(?,?,?,?,?,?,?,?)", (self.campaign_id,character_id,npc_id,instance_id,room_id,cause,summary,utc_now()))
+
+    def recall_kill_history(self, npc_id: str | None = None, character_id: str | None = None, limit: int = 10) -> list[dict[str, Any]]:
+        self.initialize(); clauses=["campaign_id=?"]; args=[self.campaign_id]
+        if npc_id: clauses.append("npc_id=?"); args.append(npc_id)
+        if character_id: clauses.append("character_id=?"); args.append(character_id)
+        with self.connect() as con: return [dict(r) for r in con.execute(f"SELECT * FROM death_log WHERE {' AND '.join(clauses)} ORDER BY id DESC LIMIT ?", (*args, limit))]
+
+    def load_respawn_timers(self, room_id: str | None = None) -> list[dict[str, Any]]:
+        self.initialize(); sql="SELECT * FROM mob_spawns WHERE campaign_id=? AND next_respawn_at IS NOT NULL"; args=[self.campaign_id]
+        if room_id: sql += " AND room_id=?"; args.append(room_id)
+        with self.connect() as con: return [self._row(r) for r in con.execute(sql, args)]
+
     def log_event(self, campaign_id:str|None=None, character_id:str="", room_id:str="", actor_id:str="", event_type:str="event", summary:str="", data:dict[str,Any]|None=None, **kw:Any)->None:
         self.initialize();
         with self.connect() as con: con.execute("INSERT INTO event_log(campaign_id,character_id,room_id,actor_id,event_type,summary,data_json,created_at) VALUES(?,?,?,?,?,?,?,?)", (campaign_id or self.campaign_id, character_id, room_id, actor_id, event_type, summary, self._json(data or kw), utc_now()))
@@ -150,4 +239,8 @@ CREATE TABLE IF NOT EXISTS quests_runtime(quest_id TEXT,character_id TEXT,status
 CREATE TABLE IF NOT EXISTS event_log(id INTEGER PRIMARY KEY AUTOINCREMENT,campaign_id TEXT,character_id TEXT,room_id TEXT,actor_id TEXT,event_type TEXT,summary TEXT,data_json TEXT,created_at TEXT);
 CREATE TABLE IF NOT EXISTS conversation_log(id INTEGER PRIMARY KEY AUTOINCREMENT,campaign_id TEXT,character_id TEXT,npc_id TEXT,room_id TEXT,speaker TEXT,text TEXT,created_at TEXT);
 CREATE TABLE IF NOT EXISTS world_facts(id INTEGER PRIMARY KEY AUTOINCREMENT,campaign_id TEXT,fact_type TEXT,subject_id TEXT,summary TEXT,weight INTEGER,data_json TEXT,created_at TEXT);
+CREATE TABLE IF NOT EXISTS mob_spawns(spawn_id TEXT,campaign_id TEXT,world_id TEXT,npc_id TEXT,room_id TEXT,max_alive INTEGER,respawn_enabled INTEGER,respawn_delay_seconds INTEGER,respawn_mode TEXT,next_respawn_at TEXT,state_json TEXT,PRIMARY KEY(spawn_id,campaign_id));
+CREATE TABLE IF NOT EXISTS mob_instances(instance_id TEXT PRIMARY KEY,spawn_id TEXT,npc_id TEXT,campaign_id TEXT,room_id TEXT,hp_current INTEGER,status TEXT,killed_by_character_id TEXT,killed_at TEXT,corpse_expires_at TEXT,state_json TEXT);
+CREATE TABLE IF NOT EXISTS object_spawns(spawn_id TEXT,campaign_id TEXT,item_id TEXT,room_id TEXT,max_count INTEGER,respawn_enabled INTEGER,respawn_delay_seconds INTEGER,next_respawn_at TEXT,state_json TEXT,PRIMARY KEY(spawn_id,campaign_id));
+CREATE TABLE IF NOT EXISTS death_log(id INTEGER PRIMARY KEY AUTOINCREMENT,campaign_id TEXT,character_id TEXT,npc_id TEXT,instance_id TEXT,room_id TEXT,cause TEXT,summary TEXT,created_at TEXT);
 """

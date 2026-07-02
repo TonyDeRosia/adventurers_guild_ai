@@ -4562,6 +4562,10 @@ class WebRuntime:
             "visible_npc_memories": {str(n.get("id")): store.recall_npc_memories(str(n.get("id")), cid) for n in visible if isinstance(n, dict)},
             "recent_events": store.load_recent_events(state.campaign_id),
             "recent_conversations": {str(n.get("id")): store.load_recent_conversation(str(n.get("id")), cid) for n in visible if isinstance(n, dict)},
+            "alive_mobs": store.load_alive_mobs(runtime.current_room_id),
+            "corpses": store.load_corpses(runtime.current_room_id),
+            "death_log": store.recall_kill_history(character_id=cid, limit=25),
+            "respawn_timers": store.load_respawn_timers(runtime.current_room_id),
             "faction_reputation": {f: store.load_reputation(str(f), cid) for f in (getattr(state, "faction_reputation", {}) or {})},
         }
 

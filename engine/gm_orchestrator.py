@@ -110,12 +110,18 @@ class GMOrchestrator:
             "current_room_id": room_id,
             "room_runtime": store.load_room_runtime(room_id),
             "room_items": store.load_room_items(room_id),
+            "alive_mobs": store.load_alive_mobs(room_id),
+            "dead_mobs_or_corpses": store.load_corpses(room_id),
+            "recent_kills_by_player": store.recall_kill_history(character_id=cid, limit=10),
+            "permanently_dead_npcs": [d for d in store.recall_kill_history(character_id=cid, limit=50) if not store.load_respawn_timers(room_id)],
+            "area_reset_rules": (mud_room_state.get("area") or mud_room_state.get("reset_rules") or {}),
+            "pending_respawn_timers": store.load_respawn_timers(room_id),
             "npc_relationships": relationships,
             "npc_memories": memories,
             "faction_reputation": reps,
             "recent_events": store.load_recent_events(getattr(state, "campaign_id", ""), limit=10),
             "recent_conversations": conversations,
-            "instruction": "Portray NPCs according to both static world profiles and persistent memory; do not reset NPC behavior each turn.",
+            "instruction": "Portray NPCs according to static world profiles, persistent memory, and MUD death state. Dead mobs are absent from You see unless represented by corpses; story_permanent kills stay dead unless reset by world/developer data.",
         }
 
     def decide(self, player_input: str, state: Any, intelligence_chunks: list[dict[str, Any]] | None = None) -> dict[str, Any]:

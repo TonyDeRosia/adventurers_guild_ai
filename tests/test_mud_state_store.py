@@ -26,3 +26,43 @@ def test_mud_state_store_schema_and_round_trip(tmp_path: Path) -> None:
     store.log_event(character_id="player_1", room_id="room", summary="Character entered world.")
     assert store.load_recent_events("camp")[0]["summary"] == "Character entered world."
     assert store.update_reputation("guild", "player_1", 15)["reputation"] == 15
+
+
+def test_mud_death_respawn_and_permanent_story_npc(tmp_path: Path) -> None:
+    store = MUDStateStore("camp", "world", db_path=tmp_path / "camp.sqlite")
+    rat_spawn = {
+        "spawn_id": "rat_spawn",
+        "npc_id": "cellar_rat",
+        "room_id": "cellar",
+        "max_alive": 1,
+        "respawn_enabled": True,
+        "respawn_delay_seconds": 0,
+        "respawn_mode": "normal",
+        "corpse_decay_seconds": 60,
+    }
+    story_spawn = {
+        "spawn_id": "maren_spawn",
+        "npc_id": "guild_registrar_maren",
+        "room_id": "office",
+        "max_alive": 1,
+        "respawn_enabled": False,
+        "respawn_delay_seconds": 0,
+        "respawn_mode": "story_permanent",
+    }
+
+    rat = store.spawn_mobs_for_room("cellar", [rat_spawn])[0]
+    assert store.load_alive_mobs("cellar")[0]["npc_id"] == "cellar_rat"
+    dead_rat = store.mark_mob_dead(rat["instance_id"], "player_1", "combat", "Player killed a cellar rat.")
+    assert dead_rat["status"] == "dead"
+    assert store.load_alive_mobs("cellar") == []
+    assert store.load_corpses("cellar")[0]["npc_id"] == "cellar_rat"
+    assert store.recall_kill_history("cellar_rat", "player_1")[0]["summary"] == "Player killed a cellar rat."
+    assert store.load_respawn_timers("cellar")[0]["spawn_id"] == "rat_spawn"
+    assert store.process_due_respawns("9999-01-01T00:00:00+00:00")[0]["npc_id"] == "cellar_rat"
+    assert store.load_alive_mobs("cellar")[0]["npc_id"] == "cellar_rat"
+
+    story = store.spawn_mobs_for_room("office", [story_spawn])[0]
+    store.mark_mob_dead(story["instance_id"], "player_1", "combat", "Maren died permanently.")
+    assert store.load_alive_mobs("office") == []
+    assert store.load_respawn_timers("office") == []
+    assert store.process_due_respawns("9999-01-01T00:00:00+00:00") == []
