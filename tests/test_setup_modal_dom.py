@@ -141,5 +141,20 @@ def test_new_campaign_form_is_campaign_focused_by_default() -> None:
     assert 'class="character-sheets-entry"' not in modal
     assert '<h4>Character Sheets Manager</h4>' in modal
     assert 'id="character-sheets-manager" class="character-sheets-manager hidden"' in modal
-    assert 'Player Name' not in modal
-    assert 'Player Class' not in modal
+    for step in [
+        "Campaign Basics",
+        "Play Style",
+        "Rules Style",
+        "Character Identity",
+        "Character Description",
+        "Power Level",
+        "Starting Abilities",
+        "Starting Items",
+        "Review",
+    ]:
+        assert step in modal
+    assert 'id="form-player-name" type="text" required' in modal
+    assert 'id="form-player-class" type="text" required' in modal
+    assert 'id="create-campaign-confirm" class="hidden"' in modal
+    assert "ComfyUI" not in modal
+    assert 'advanced-campaign-rules' in modal

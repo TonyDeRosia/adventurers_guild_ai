@@ -107,16 +107,57 @@
     <div id="new-campaign-modal" class="modal hidden">
       <div class="modal-card">
         <h3>Forge a New Campaign</h3>
-        <div class="modal-grid campaign-create-grid">
-          <label class="full-width">Campaign Name <input id="form-campaign-name" type="text" value="New Adventure" /></label>
-          <label>Genre / Theme <input id="form-world-theme" type="text" value="classic fantasy" /></label>
-          <label>Tone / Style <input id="form-tone" type="text" value="heroic" /></label>
-          <label class="full-width">World Premise (optional) <textarea id="form-premise" rows="3" placeholder="The old gods vanished and the sea is haunted."></textarea></label>
-          <input id="form-world-name" type="hidden" value="Untitled World" />
-          <input id="form-starting-location" type="hidden" value="Starting Area" />
-          <input id="form-player-name" type="hidden" value="Adventurer" />
-          <input id="form-player-class" type="hidden" value="Unknown" />
-          <input id="form-player-concept" type="hidden" value="" />
+        <div class="modal-grid campaign-create-grid campaign-wizard" data-current-step="0">
+          <section class="wizard-step" data-step="0"><h4>Campaign Basics</h4>
+            <label class="full-width">Campaign Name <input id="form-campaign-name" type="text" value="New Adventure" /></label>
+            <label>World / Setting Name optional <input id="form-world-name" type="text" placeholder="The Arcane Realm" /></label>
+            <label>Genre / Theme <input id="form-world-theme" type="text" value="classic fantasy" /></label>
+            <label>Tone / Style <input id="form-tone" type="text" value="heroic" /></label>
+            <label class="full-width">World Premise optional <textarea id="form-premise" rows="3" placeholder="The old gods vanished and the sea is haunted."></textarea></label>
+          </section>
+          <section class="wizard-step hidden" data-step="1"><h4>Play Style</h4>
+            <label><input name="form-play-style-choice" type="radio" value="Storybook Mode" checked /> Storybook Mode — Text-first, rules-light, AI handles most details.</label>
+            <label><input name="form-play-style-choice" type="radio" value="MUD Mode" /> MUD Mode — More structured room/location style.</label>
+            <label><input name="form-play-style-choice" type="radio" value="Stats Mode" /> Stats Mode — Stat allocation and sheet-focused play.</label>
+            <label><input name="form-play-style-choice" type="radio" value="Sandbox Mode" /> Sandbox Mode — Freeform world simulation.</label>
+            <label><input name="form-play-style-choice" type="radio" value="Hardcore Consequences" /> Hardcore Consequences — Riskier decisions, lasting consequences.</label>
+          </section>
+          <section class="wizard-step hidden" data-step="2"><h4>Rules Style</h4>
+            <label><input name="form-rules-style-choice" type="radio" value="Freeform Abilities" /> Freeform Abilities</label>
+            <label><input name="form-rules-style-choice" type="radio" value="Hybrid" checked /> Hybrid</label>
+            <label><input name="form-rules-style-choice" type="radio" value="Sheet Strict" /> Sheet Strict</label>
+            <label><input name="form-rules-style-choice" type="radio" value="Story Only" /> Story Only</label>
+          </section>
+          <section class="wizard-step hidden" data-step="3"><h4>Character Identity</h4>
+            <label>Character Name <input id="form-player-name" type="text" required /></label>
+            <label>Class / Role <input id="form-player-class" type="text" required /></label>
+            <label>Species / Race <input id="form-species" type="text" /></label>
+            <label>Background / Origin <input id="form-background" type="text" /></label>
+            <label class="full-width">Character Goal <input id="form-goal" type="text" /></label>
+            <p id="campaign-wizard-validation" class="status-line error hidden">Character Name and Class / Role are required.</p>
+          </section>
+          <section class="wizard-step hidden" data-step="4"><h4>Character Description</h4>
+            <label class="full-width">Character Description <textarea id="form-player-concept" rows="5" placeholder="Describe your character’s appearance, personality, reputation, starting items, spells, abilities, or anything important. You can be brief or detailed."></textarea></label>
+          </section>
+          <section class="wizard-step hidden" data-step="5"><h4>Power Level</h4>
+            <label><input name="form-power-level-choice" type="radio" value="Ordinary Beginner" /> Ordinary Beginner</label>
+            <label><input name="form-power-level-choice" type="radio" value="Capable Adventurer" checked /> Capable Adventurer</label>
+            <label><input name="form-power-level-choice" type="radio" value="Experienced Veteran" /> Experienced Veteran</label>
+            <label><input name="form-power-level-choice" type="radio" value="Powerful Hero" /> Powerful Hero</label>
+            <label><input name="form-power-level-choice" type="radio" value="Legendary Figure" /> Legendary Figure</label>
+          </section>
+          <section class="wizard-step hidden" data-step="6"><h4>Starting Abilities</h4>
+            <label><input name="form-ability-mode" type="radio" value="suggest" checked /> Let the AI suggest starting abilities from my class and description.</label>
+            <label><input name="form-ability-mode" type="radio" value="manual" /> I will list my starting abilities.</label>
+            <label class="full-width">Enter abilities, spells, techniques, or powers separated by commas or new lines. <textarea id="form-starting-abilities" rows="4" placeholder="Fireball&#10;Ice Lance&#10;Arcane Shield"></textarea></label>
+          </section>
+          <section class="wizard-step hidden" data-step="7"><h4>Starting Items</h4>
+            <label><input name="form-item-mode" type="radio" value="suggest" checked /> Let the AI suggest starting items.</label>
+            <label><input name="form-item-mode" type="radio" value="manual" /> I will list starting items.</label>
+            <label class="full-width">Starting items, comma/new-line separated. <textarea id="form-starting-items" rows="4" placeholder="old spellbook, frostglass focus"></textarea></label>
+          </section>
+          <section class="wizard-step hidden" data-step="8"><h4>Review</h4><div id="campaign-wizard-review" class="status-card">Review your campaign setup, then create the campaign.</div></section>
+          <input id="form-starting-location" type="hidden" value="" />
           <details class="campaign-play-style-group full-width advanced-campaign-rules">
             <summary>Advanced Campaign Rules</summary>
             <label><input id="form-allow-freeform-powers" type="checkbox" checked /> Allow freeform powers/actions not yet on sheet</label>
@@ -170,7 +211,9 @@
           </div>
         </div>
         <div class="button-row">
-          <button id="create-campaign-confirm">Create campaign</button>
+          <button id="campaign-wizard-back" type="button">Back</button>
+          <button id="campaign-wizard-next" type="button">Next</button>
+          <button id="create-campaign-confirm" class="hidden">Create Campaign</button>
           <button id="create-campaign-cancel">Cancel</button>
         </div>
       </div>

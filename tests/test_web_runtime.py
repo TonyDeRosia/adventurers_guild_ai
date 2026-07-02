@@ -5507,6 +5507,47 @@ def test_new_campaign_starts_guided_character_creation(tmp_path: Path, monkeypat
     assert "class or role" in first_message
 
 
+def test_wizard_campaign_payload_creates_ready_bootstrap(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+    created = runtime.create_campaign(
+        {
+            "slot": "slot_wizard",
+            "campaign_name": "Frostfire Road",
+            "world_name": "",
+            "theme": "classic fantasy magic",
+            "tone": "heroic",
+            "premise": "A frostfire gate has gone silent.",
+            "play_style": "Storybook Mode",
+            "rules_style": "Hybrid",
+            "character_name": "Dorkly of Funroad",
+            "character_role": "Mage of Fire and Ice",
+            "description": "Dorkly of Funroad is a noble mage with a humming spellbook.",
+            "power_level": "Powerful Hero",
+            "starting_ability_mode": "manual",
+            "starting_abilities": "Fireball, Ice Lance",
+            "starting_item_mode": "manual",
+            "starting_items": "old spellbook, frostglass focus",
+        }
+    )
+
+    state = created["state"]
+    assert state["startup_state"] == "ready"
+    assert state["bootstrap_complete"] is True
+    assert state["settings"]["play_style_name"] == "Storybook Mode"
+    assert state["settings"]["rules_style"] == "Hybrid"
+    assert state["settings"]["power_level"] == "Powerful Hero"
+    main = next(sheet for sheet in state["character_sheets"] if sheet["sheet_type"] == "main_character")
+    assert main["name"] == "Dorkly of Funroad"
+    assert main["role"] == "Mage of Fire and Ice"
+    assert [event["title"] for event in state["campaign_events"] if event["type"] == "ability_suggested"] == ["Fireball", "Ice Lance"]
+    assert state["abilities"] == []
+    assert [entry["name"] for entry in state["inventory_state"]["entries"]] == ["old spellbook", "frostglass focus"]
+    assert state["world_meta"]["world_name"] not in {"", "Untitled World"}
+    opening = runtime.session.message_history[0]["text"]
+    for forbidden in ["Adventurer", "Unknown", "Untitled World", "Starting Area", "Before the adventure begins"]:
+        assert forbidden not in opening
+
+
 def test_guided_character_answer_creates_sheet_and_opening_scene(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.create_campaign({"campaign_name": "Guided Start", "world_theme": "classic fantasy", "slot": "slot_guided_answer"})

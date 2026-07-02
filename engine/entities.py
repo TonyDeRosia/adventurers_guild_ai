@@ -177,6 +177,9 @@ class CampaignSettings:
     suggested_moves_enabled: bool = False
     display_mode: str = "story"
     campaign_mode: str = "adventure"
+    play_style_name: str = "Storybook Mode"
+    rules_style: str = "Hybrid"
+    power_level: str = "Capable Adventurer"
     player_suggested_moves_override: bool | None = None
     enabled_intelligence_source_ids: list[str] = field(default_factory=list)
     content_settings: ContentSettings = field(default_factory=ContentSettings)
@@ -508,6 +511,9 @@ class CampaignState:
         settings["display_mode"] = raw_display_mode if raw_display_mode in {"story", "mud", "rpg"} else "story"
         raw_campaign_mode = str(settings.get("campaign_mode", legacy_edit_mode or "adventure")).strip().lower()
         settings["campaign_mode"] = raw_campaign_mode if raw_campaign_mode in {"adventure", "creator"} else "adventure"
+        settings["play_style_name"] = str(settings.get("play_style_name", settings.get("play_style_label", "Storybook Mode")) or "Storybook Mode")
+        settings["rules_style"] = str(settings.get("rules_style", "Hybrid") or "Hybrid")
+        settings["power_level"] = str(settings.get("power_level", "Capable Adventurer") or "Capable Adventurer")
         raw_override = settings.get("player_suggested_moves_override")
         settings["player_suggested_moves_override"] = None if raw_override is None else bool(raw_override)
         settings["enabled_intelligence_source_ids"] = [str(v).strip() for v in settings.get("enabled_intelligence_source_ids", []) if str(v).strip()]

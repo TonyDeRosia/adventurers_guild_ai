@@ -4542,6 +4542,9 @@ class WebRuntime:
                 "suggested_moves_enabled": state.settings.suggested_moves_enabled,
                 "display_mode": state.settings.display_mode,
                 "campaign_mode": state.settings.campaign_mode,
+                "play_style_name": getattr(state.settings, "play_style_name", "Storybook Mode"),
+                "rules_style": getattr(state.settings, "rules_style", "Hybrid"),
+                "power_level": getattr(state.settings, "power_level", "Capable Adventurer"),
                 "player_suggested_moves_override": state.settings.player_suggested_moves_override,
                 "enabled_intelligence_source_ids": list(state.settings.enabled_intelligence_source_ids),
                 "effective_suggested_moves_enabled": state.settings.suggested_moves_active(),
@@ -5442,10 +5445,155 @@ class WebRuntime:
             "prompt_id": result.prompt_id,
             "result_path": result.result_path,
         }
+    def _split_setup_list(self, value: Any) -> list[str]:
+        if isinstance(value, list):
+            raw = value
+        else:
+            raw = re.split(r"[\n,]+", str(value or ""))
+        return [str(item).strip() for item in raw if str(item).strip()]
+
+    def _infer_wizard_world_name(self, campaign_name: str, theme: str, premise: str) -> str:
+        blob = " ".join([campaign_name, theme, premise]).lower()
+        if any(token in blob for token in ("isekai", "new world", "summoned")):
+            return "The New World"
+        if any(token in blob for token in ("sci-fi", "science fiction", "space", "sector", "starship")):
+            return "Frontier Sector"
+        if any(token in blob for token in ("post-apocalyptic", "wasteland", "apocalypse")):
+            return "The Wastes"
+        if any(token in blob for token in ("fantasy", "magic", "arcane", "mage")):
+            return "The Arcane Realm"
+        return campaign_name or "New Campaign"
+
+    def _infer_wizard_location(self, theme: str, role: str, premise: str) -> str:
+        blob = " ".join([theme, role, premise]).lower()
+        if "sci-fi" in blob or "space" in blob:
+            return "Docking Bay"
+        if "post-apocalyptic" in blob or "wasteland" in blob:
+            return "Broken Highway"
+        if "fire" in blob and "ice" in blob or "mage" in blob:
+            return "Frostfire Gate"
+        if "fantasy" in blob or "magic" in blob:
+            return "Old Gate"
+        return "Arrival Clearing"
+
+    def _wizard_ability_suggestions(self, role: str, description: str, power_level: str) -> list[str]:
+        blob = f"{role} {description}".lower()
+        if "fire" in blob and "ice" in blob:
+            base = ["Firebolt", "Ice Lance", "Frostfire Ward", "Thermal Weave"]
+        elif "battle mage" in blob:
+            base = ["Arcane Strike", "Shield Ward", "Battle Focus", "Spellguard Riposte"]
+        elif "ranger" in blob:
+            base = ["Precise Shot", "Track Quarry", "Camouflage", "Trail Sense"]
+        elif "warrior" in blob or "fighter" in blob:
+            base = ["Power Strike", "Guard Stance", "Second Wind", "Shield Breaker"]
+        elif "mage" in blob or "wizard" in blob:
+            base = ["Arcane Bolt", "Mage Ward", "Detect Magic", "Minor Illusion"]
+        else:
+            base = ["Focused Effort", "Quick Read", "Steady Nerve"]
+        counts = {"Ordinary Beginner": 1, "Capable Adventurer": 2, "Experienced Veteran": 3, "Powerful Hero": 4, "Legendary Figure": 5}
+        return base[: counts.get(power_level, 2)]
+
+    def _wizard_item_suggestions(self, role: str, description: str) -> list[str]:
+        blob = f"{role} {description}".lower()
+        if "fire" in blob and "ice" in blob and "mage" in blob:
+            return ["scorched spellbook", "frostglass focus", "insulated travel robes", "component pouch"]
+        if "battle mage" in blob:
+            return ["reinforced robes", "battle focus", "side blade", "field spellbook"]
+        if "mage" in blob or "wizard" in blob:
+            return ["spellbook", "arcane focus", "travel robes", "component pouch"]
+        if "ranger" in blob:
+            return ["bow", "hunting knife", "trail cloak", "rations"]
+        if "warrior" in blob or "fighter" in blob:
+            return ["sword", "shield", "travel cloak", "rations"]
+        return ["travel pack", "rations"]
+
+    def _category_for_item(self, name: str) -> str:
+        lower = name.lower()
+        if any(token in lower for token in ("bow", "knife", "sword", "blade", "staff")):
+            return "weapons"
+        if any(token in lower for token in ("robe", "cloak", "shield", "armor")):
+            return "armor"
+        if any(token in lower for token in ("ration", "potion")):
+            return "consumables"
+        if any(token in lower for token in ("spellbook", "focus")):
+            return "key_items"
+        return "items"
+
+    def _apply_wizard_setup(self, state: CampaignState, payload: dict[str, Any]) -> None:
+        character_name = str(payload.get("character_name") or payload.get("player_name") or state.player.name or "Aria").strip()
+        character_role = str(payload.get("character_role") or payload.get("char_class") or state.player.char_class or "Ranger").strip()
+        description = str(payload.get("description") or payload.get("player_concept") or "").strip()
+        power_level = str(payload.get("power_level") or "Capable Adventurer").strip() or "Capable Adventurer"
+        play_style_name = str(payload.get("play_style") or "Storybook Mode").strip() or "Storybook Mode"
+        rules_style = str(payload.get("rules_style") or "Hybrid").strip() or "Hybrid"
+        state.player.name = character_name
+        state.player.char_class = character_role
+        state.player.role = character_role
+        state.settings.play_style_name = play_style_name
+        state.settings.rules_style = rules_style
+        state.settings.power_level = power_level
+        if rules_style == "Sheet Strict":
+            state.settings.play_style.allow_freeform_powers = False
+            state.settings.play_style.strict_sheet_enforcement = True
+        else:
+            state.settings.play_style.allow_freeform_powers = True
+            state.settings.play_style.strict_sheet_enforcement = False
+            if rules_style == "Hybrid":
+                state.settings.play_style.auto_update_character_sheet_from_actions = True
+        notes = []
+        if payload.get("species"):
+            notes.append(f"Species/Race: {str(payload.get('species')).strip()}")
+        if payload.get("background"):
+            notes.append(f"Background/Origin: {str(payload.get('background')).strip()}")
+        if payload.get("goal"):
+            notes.append(f"Goal: {str(payload.get('goal')).strip()}")
+        sheet = self._find_main_character_sheet(state)
+        if sheet is None:
+            sheet = CharacterSheet(id="sheet_main", name=character_name, sheet_type="main_character")
+            state.character_sheets.append(sheet)
+        sheet.name = character_name
+        sheet.role = character_role
+        sheet.description = description
+        sheet.notes = "\n".join([part for part in [sheet.notes, *notes] if part])
+        abilities = self._split_setup_list(payload.get("starting_abilities")) if payload.get("starting_ability_mode") == "manual" else self._wizard_ability_suggestions(character_role, description, power_level)
+        runtime = state.structured_state.runtime
+        if not isinstance(runtime.campaign_events, list):
+            runtime.campaign_events = []
+        existing = {re.sub(r"[^a-z0-9]+", "", str((e.get("payload") or {}).get("name") or e.get("title", "")).lower()) for e in runtime.campaign_events if isinstance(e, dict)}
+        for ability in abilities:
+            key = re.sub(r"[^a-z0-9]+", "", ability.lower())
+            if not key or key in existing:
+                continue
+            existing.add(key)
+            manual = payload.get("starting_ability_mode") == "manual"
+            runtime.campaign_events.append({
+                "id": f"wizard_ability_{int(time.time()*1000)}_{len(runtime.campaign_events)}",
+                "type": "ability_suggested",
+                "title": ability,
+                "description": f"{ability} was {'selected during character creation' if manual else 'suggested from class/role and power level'}.",
+                "reason": "Selected during character creation." if manual else "Suggested from class/role and power level.",
+                "status": "pending",
+                "source": "system",
+                "applies_to": "ability",
+                "payload": {"name": ability, "description": f"Starting ability proposal: {ability}.", "tags": ["starter", "character_creation"], "source": "character_creation"},
+            })
+        items = self._split_setup_list(payload.get("starting_items")) if payload.get("starting_item_mode") == "manual" else self._wizard_item_suggestions(character_role, description)
+        entries = [{"id": f"starter_{i}_{re.sub(r'[^a-z0-9]+', '_', item.lower()).strip('_')}", "name": item, "category": self._category_for_item(item), "quantity": 1, "notes": "Starting item selected during character creation." if payload.get("starting_item_mode") == "manual" else "Starting item suggested from class/role."} for i, item in enumerate(items)]
+        runtime.inventory_state = {"entries": entries, "currency": {"gold": 0, "silver": 0, "copper": 0}}
+        self._normalize_inventory_state(runtime.inventory_state)
+        runtime.inventory = [e["name"] for e in entries]
+        state.player.inventory = list(runtime.inventory)
+        runtime.player_core = dict(runtime.player_core or {})
+        runtime.player_core["wizard_setup"] = True
+        state.startup_state = "ready"
+        state.bootstrap_complete = True
+        state.bootstrap_missing_fields = []
+
     def create_campaign(self, payload: dict[str, Any]) -> dict[str, Any]:
         mode = str(payload.get("mode", "custom")).strip().lower() or "custom"
-        player_name = str(payload.get("player_name", "Aria")).strip() or "Aria"
-        char_class = str(payload.get("char_class", "Ranger")).strip() or "Ranger"
+        wizard_payload = any(key in payload for key in ("character_name", "character_role", "rules_style", "power_level", "starting_ability_mode", "starting_item_mode"))
+        player_name = str(payload.get("character_name") or payload.get("player_name", "Aria")).strip() or "Aria"
+        char_class = str(payload.get("character_role") or payload.get("char_class", "Ranger")).strip() or "Ranger"
         profile = str(payload.get("profile", "classic_fantasy")).strip() or "classic_fantasy"
         display_mode = str(payload.get("display_mode", "story")).strip().lower() or "story"
         slot = str(payload.get("slot", f"campaign_{len(self.list_saves()) + 1}")).strip() or f"campaign_{len(self.list_saves()) + 1}"
@@ -5455,21 +5603,32 @@ class WebRuntime:
             print("[campaign-create] using_sample_template=True")
         else:
             play_style_payload = payload.get("play_style", {})
+            if not isinstance(play_style_payload, dict):
+                play_style_payload = {}
+            campaign_name = str(payload.get("campaign_name", "")).strip()
+            theme = str(payload.get("theme") or payload.get("world_theme") or "").strip()
+            premise = str(payload.get("premise", "")).strip()
+            world_name = str(payload.get("world_name", "")).strip()
+            if wizard_payload and (not world_name or world_name.lower() == "untitled world"):
+                world_name = self._infer_wizard_world_name(campaign_name, theme, premise)
+            starting_location = str(payload.get("starting_location_name", "")).strip()
+            if wizard_payload and (not starting_location or starting_location.lower() == "starting area"):
+                starting_location = self._infer_wizard_location(theme, char_class, premise)
             state = self.state_manager.create_new_campaign(
                 player_name=player_name,
                 char_class=char_class,
                 profile=profile,
                 mature_content_enabled=bool(payload.get("mature_content_enabled", False)),
                 content_settings_enabled=bool(payload.get("content_settings_enabled", True)),
-                campaign_tone=str(payload.get("campaign_tone", "heroic")),
+                campaign_tone=str(payload.get("campaign_tone") or payload.get("tone") or "heroic"),
                 maturity_level=str(payload.get("maturity_level", "standard")),
                 thematic_flags=list(payload.get("thematic_flags", ["adventure", "mystery"])),
-                campaign_name=str(payload.get("campaign_name", "")).strip(),
-                world_name=str(payload.get("world_name", "")).strip(),
-                world_theme=str(payload.get("world_theme", "")).strip(),
-                starting_location_name=str(payload.get("starting_location_name", "")).strip(),
-                premise=str(payload.get("premise", "")).strip(),
-                player_concept=str(payload.get("player_concept", "")).strip(),
+                campaign_name=campaign_name,
+                world_name=world_name,
+                world_theme=theme,
+                starting_location_name=starting_location,
+                premise=premise,
+                player_concept=str(payload.get("description") or payload.get("player_concept", "")).strip(),
                 suggested_moves_enabled=bool(payload.get("suggested_moves_enabled", False)),
                 display_mode=display_mode,
                 character_sheets=self._coerce_character_sheets(payload.get("character_sheets", [])),
@@ -5508,11 +5667,18 @@ class WebRuntime:
             state.settings.play_style.scene_visual_mode = self._normalize_scene_visual_mode(
                 play_style_payload.get("scene_visual_mode", state.settings.play_style.scene_visual_mode)
             )
-        state.startup_state = "character_creation"
+        if wizard_payload:
+            self._apply_wizard_setup(state, payload)
+        else:
+            state.startup_state = "character_creation"
         self._seed_scene_state(state)
         self.session = WebSession(state=state, active_slot=slot)
         self.session.message_history = []
-        self._append_message("narrator", self._character_creation_prompt(state), persist=False)
+        if wizard_payload:
+            sheet = self._find_main_character_sheet(state) or CharacterSheet(id="sheet_main", name=state.player.name, sheet_type="main_character", role=state.player.char_class)
+            self._append_message("narrator", self._guided_opening_scene(state, sheet), persist=False)
+        else:
+            self._append_message("narrator", self._character_creation_prompt(state), persist=False)
         self.scene_visual_store.pop(slot, None)
         self.scene_visual_store.pop(self._campaign_namespace(slot), None)
         self._persist_scene_visual_store()
@@ -5856,6 +6022,10 @@ class WebRuntime:
         for sheet in self.session.state.character_sheets:
             for ability in getattr(sheet, "abilities", []) or []:
                 names.append(str(getattr(ability, "name", "")).strip())
+        if isinstance(getattr(runtime, "player_core", None), dict) and runtime.player_core.get("wizard_setup"):
+            for event in getattr(runtime, "campaign_events", []) or []:
+                if isinstance(event, dict) and event.get("type") == "ability_suggested" and event.get("status") == "pending":
+                    names.append(f"{str((event.get('payload') or {}).get('name') or event.get('title', '')).strip()} (pending proposal)")
         return [name for name in dict.fromkeys(names) if name]
 
     def _handle_reasoned_non_turn_input(self, text: str, request_started: float, request_received_at: str) -> dict[str, Any] | None:
