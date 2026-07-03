@@ -4548,6 +4548,77 @@ class WebRuntime:
             store.update_reputation(str(faction), state.player.id or "player_1", int(state.faction_reputation.get(faction, 0)))
         store.log_event(character_id=state.player.id or "player_1", room_id=runtime.current_room_id, actor_id=state.player.id or "player_1", event_type="campaign_start", summary="Character entered world.")
 
+
+    def mud_list_worlds(self) -> dict[str, Any]:
+        registry = WorldRegistry()
+        worlds = registry.list_worlds()
+        return {"worlds": [{**w, "playable": w.get("status") == "playable"} for w in worlds]}
+
+    def mud_select_world(self, payload: dict[str, Any]) -> dict[str, Any]:
+        world_id = str(payload.get("world_id") or "").strip()
+        world = WorldRegistry().load_world(world_id)
+        if world.manifest.get("status") != "playable":
+            raise ValueError("World is coming soon and cannot be entered yet.")
+        return {"world": {**world.manifest, "races": world.races, "classes": world.classes}}
+
+    def mud_list_characters(self, world_id: str) -> dict[str, Any]:
+        registry = WorldRegistry(); world = registry.load_world(world_id)
+        races = world_by_id(world.races); classes = world_by_id(world.classes); rooms = world_by_id(world.rooms)
+        chars = []
+        for save in self.list_campaigns():
+            if not save.get("loadable"):
+                continue
+            try:
+                payload = json.loads((self.paths.saves / f"{save['slot']}.json").read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            runtime = ((payload.get("structured_state") or {}).get("runtime") or {})
+            if payload.get("campaign_format") != "mud_v2" and runtime.get("campaign_format") != "mud_v2":
+                continue
+            if str(runtime.get("world_id") or "") != world_id:
+                continue
+            player = payload.get("player") or {}
+            core = runtime.get("player_core") or {}
+            room_id = str(runtime.get("current_room_id") or payload.get("current_location_id") or world.default_starting_room_id)
+            chars.append({"character_id": save["slot"], "slot": save["slot"], "name": player.get("name", save["slot"]), "race": races.get(core.get("race_id", ""), {}).get("name", str(core.get("race_id", "Human")).title()), "class": classes.get(core.get("class_id", ""), {}).get("name", player.get("char_class", "Adventurer")), "level": player.get("level", 1), "current_room_id": room_id, "current_room": rooms.get(room_id, {}).get("name", room_id), "last_played": datetime.fromtimestamp(float(save.get("updated") or time.time()), timezone.utc).isoformat()} )
+        return {"world_id": world_id, "characters": chars}
+
+    def mud_create_character(self, payload: dict[str, Any]) -> dict[str, Any]:
+        world_id = str(payload.get("world_id") or "shattered_realms").strip() or "shattered_realms"
+        name = str(payload.get("character_name") or "").strip()
+        if not name:
+            raise ValueError("Character name is required.")
+        safe = re.sub(r"[^a-z0-9_]+", "_", name.lower()).strip("_") or "character"
+        slot = f"mud_{world_id}_{safe}"
+        result = self.create_campaign({"mode": "mud_v2", "slot": slot, "world_id": world_id, "character_name": name, "race_id": payload.get("race_id", "human"), "class_id": payload.get("class_id", "ranger"), "appearance": payload.get("appearance", "")})
+        return {"character": {"character_id": slot, "slot": slot, "name": name}, **result}
+
+    def mud_enter_character(self, payload: dict[str, Any]) -> dict[str, Any]:
+        cid = str(payload.get("character_id") or "").strip()
+        result = self.switch_campaign(cid)
+        state = self.session.state
+        return {"character": {"character_id": cid, "name": state.player.name, "level": state.player.level}, **result}
+
+    def mud_delete_character(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not payload.get("confirm"):
+            raise ValueError("Confirmation required.")
+        return self.delete_campaign(str(payload.get("character_id") or ""))
+
+    def mud_play_view(self) -> dict[str, Any]:
+        state = self.session.state
+        if getattr(state, "campaign_format", "") != "mud_v2":
+            return {"world": None, "character": None, "room": None, "output": "Select a world and character to enter the Smart MUD."}
+        world = WorldRegistry().load_world(state.structured_state.runtime.world_id or "shattered_realms")
+        room = world.room(state.structured_state.runtime.current_room_id or world.default_starting_room_id)
+        return {"world": world.manifest, "character": {"name": state.player.name, "level": state.player.level, "race": state.structured_state.runtime.player_core.get("race_id", "human"), "class": state.player.char_class}, "room": room, "output": state.structured_state.runtime.last_narration or render_room(room, world.manifest, {"hp": state.player.hp, "max_hp": state.player.max_hp, "mana": state.player.energy_or_mana, "max_mana": state.player.energy_or_mana, "stamina": state.structured_state.runtime.player_core.get("derived_stats", {}).get("Stamina", 0), "max_stamina": state.structured_state.runtime.player_core.get("derived_stats", {}).get("Stamina", 0), "level": state.player.level, "xp": state.player.xp, "gold": state.structured_state.runtime.inventory_state.get("currency", {}).get("gold", 0), "race": state.structured_state.runtime.player_core.get("race_id", "human").title(), "class": state.player.char_class})}
+
+    def mud_input(self, payload: dict[str, Any]) -> dict[str, Any]:
+        text = str(payload.get("text") or payload.get("command") or "").strip()
+        if not text:
+            raise ValueError("text is required")
+        result = process_player_input(self, text, "ic")
+        return {"result": result.response, **self.mud_play_view()}
+
     def get_mud_memory_inspector(self) -> dict[str, Any]:
         state = self.session.state
         if getattr(state, "campaign_format", "") != "mud_v2":
@@ -7842,6 +7913,54 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
         return {"status": "ok"}
 
 
+
+
+    @app.get("/api/mud/worlds")
+    def mud_worlds() -> dict[str, Any]:
+        return runtime.mud_list_worlds()
+
+    @app.post("/api/mud/world/select")
+    def mud_world_select(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return runtime.mud_select_world(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.get("/api/mud/characters")
+    def mud_characters(world_id: str) -> dict[str, Any]:
+        return runtime.mud_list_characters(world_id)
+
+    @app.post("/api/mud/characters/create")
+    def mud_characters_create(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return runtime.mud_create_character(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.post("/api/mud/characters/enter")
+    def mud_characters_enter(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return runtime.mud_enter_character(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.post("/api/mud/characters/delete")
+    def mud_characters_delete(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return runtime.mud_delete_character(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.get("/api/mud/play-view")
+    def mud_play_view() -> dict[str, Any]:
+        return runtime.mud_play_view()
+
+    @app.post("/api/mud/input")
+    def mud_input(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return runtime.mud_input(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(exc)) from exc
 
     @app.get("/api/developer/mud-memory")
     def developer_mud_memory() -> dict[str, Any]:

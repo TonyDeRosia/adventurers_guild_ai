@@ -1305,3 +1305,9 @@ body.adventure-mode-enabled .creator-mode-only,
   box-shadow: 0 0 0 1px rgba(76, 194, 255, 0.5) inset;
   background: #17314a;
 }
+
+.mud-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+.mud-card, .mud-choice-card, .mud-readonly-details { border: 1px solid rgba(255,255,255,.14); border-radius: 12px; padding: 1rem; background: rgba(5, 10, 18, .72); }
+.mud-card.disabled { opacity: .58; }
+.mud-choice-card { display: grid; gap: .35rem; cursor: pointer; }
+.mud-terminal-output { min-height: 58vh; white-space: pre-wrap; background: #020604; color: #d8ffd8; border: 1px solid #225c22; border-radius: 12px; padding: 1rem; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }

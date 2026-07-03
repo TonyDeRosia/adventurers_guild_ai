@@ -6285,3 +6285,35 @@ def test_intelligence_multipart_upload_returns_503_when_dependency_missing(tmp_p
 
     assert response.status_code == 503
     assert "python-multipart" in response.json()["error"]
+
+
+def test_mud_api_world_character_play_flow(tmp_path: Path, monkeypatch) -> None:
+    runtime = _runtime(tmp_path, monkeypatch)
+
+    worlds = runtime.mud_list_worlds()["worlds"]
+    shattered = next(world for world in worlds if world["id"] == "shattered_realms")
+    assert shattered["status"] == "playable"
+
+    selected = runtime.mud_select_world({"world_id": "shattered_realms"})["world"]
+    assert selected["name"] == "The Shattered Realms"
+    assert any(race["id"] == "human" for race in selected["races"])
+    assert any(cls["id"] == "mage" for cls in selected["classes"])
+
+    created = runtime.mud_create_character(
+        {
+            "world_id": "shattered_realms",
+            "character_name": "Test",
+            "race_id": "human",
+            "class_id": "mage",
+            "appearance": "plain gray traveling robes",
+        }
+    )
+    character_id = created["character"]["character_id"]
+    characters = runtime.mud_list_characters("shattered_realms")["characters"]
+    assert any(character["character_id"] == character_id for character in characters)
+
+    runtime.mud_enter_character({"world_id": "shattered_realms", "character_id": character_id})
+    view = runtime.mud_play_view()
+    assert view["room"]["name"] == "Guildhall Crossing Square"
+    assert "Guildhall Crossing" in view["output"]
+    assert runtime.mud_input({"text": "look"})["room"]["name"] == "Guildhall Crossing Square"
