@@ -1,0 +1,162 @@
+[
+  {
+    "id": "human",
+    "name": "Human",
+    "description": "Human ancestry.",
+    "stat_bonuses": {
+      "Charisma": 1
+    },
+    "traits": [
+      "world-ready"
+    ],
+    "lore": "Human lore in the Shattered Realms.",
+    "social_reactions": {
+      "default": "recognized as part of the Guild roads"
+    },
+    "tags": [
+      "starter"
+    ]
+  },
+  {
+    "id": "elf",
+    "name": "Elf",
+    "description": "Elf ancestry.",
+    "stat_bonuses": {
+      "Dexterity": 1
+    },
+    "traits": [
+      "world-ready"
+    ],
+    "lore": "Elf lore in the Shattered Realms.",
+    "social_reactions": {
+      "default": "recognized as part of the Guild roads"
+    },
+    "tags": [
+      "starter"
+    ]
+  },
+  {
+    "id": "dwarf",
+    "name": "Dwarf",
+    "description": "Dwarf ancestry.",
+    "stat_bonuses": {
+      "Constitution": 1
+    },
+    "traits": [
+      "world-ready"
+    ],
+    "lore": "Dwarf lore in the Shattered Realms.",
+    "social_reactions": {
+      "default": "recognized as part of the Guild roads"
+    },
+    "tags": [
+      "starter"
+    ]
+  },
+  {
+    "id": "halfling",
+    "name": "Halfling",
+    "description": "Halfling ancestry.",
+    "stat_bonuses": {
+      "Dexterity": 1
+    },
+    "traits": [
+      "world-ready"
+    ],
+    "lore": "Halfling lore in the Shattered Realms.",
+    "social_reactions": {
+      "default": "recognized as part of the Guild roads"
+    },
+    "tags": [
+      "starter"
+    ]
+  },
+  {
+    "id": "orc",
+    "name": "Orc",
+    "description": "Orc ancestry.",
+    "stat_bonuses": {
+      "Strength": 1
+    },
+    "traits": [
+      "world-ready"
+    ],
+    "lore": "Orc lore in the Shattered Realms.",
+    "social_reactions": {
+      "default": "recognized as part of the Guild roads"
+    },
+    "tags": [
+      "starter"
+    ]
+  },
+  {
+    "id": "tiefling",
+    "name": "Tiefling",
+    "description": "Tiefling ancestry.",
+    "stat_bonuses": {
+      "Charisma": 1
+    },
+    "traits": [
+      "world-ready"
+    ],
+    "lore": "Tiefling lore in the Shattered Realms.",
+    "social_reactions": {
+      "default": "recognized as part of the Guild roads"
+    },
+    "tags": [
+      "starter"
+    ]
+  },
+  {
+    "id": "dragonkin",
+    "name": "Dragonkin",
+    "description": "Dragonkin ancestry.",
+    "stat_bonuses": {
+      "Strength": 1
+    },
+    "traits": [
+      "world-ready"
+    ],
+    "lore": "Dragonkin lore in the Shattered Realms.",
+    "social_reactions": {
+      "default": "recognized as part of the Guild roads"
+    },
+    "tags": [
+      "starter"
+    ]
+  },
+  {
+    "id": "undead",
+    "name": "Undead",
+    "description": "Undead ancestry.",
+    "stat_bonuses": {
+      "Constitution": 1
+    },
+    "traits": [
+      "world-ready"
+    ],
+    "lore": "Undead lore in the Shattered Realms.",
+    "social_reactions": {
+      "default": "recognized as part of the Guild roads"
+    },
+    "tags": [
+      "starter"
+    ]
+  },
+  {
+    "id": "custom",
+    "name": "Custom",
+    "description": "Custom ancestry.",
+    "stat_bonuses": {},
+    "traits": [
+      "world-ready"
+    ],
+    "lore": "Custom lore in the Shattered Realms.",
+    "social_reactions": {
+      "default": "recognized as part of the Guild roads"
+    },
+    "tags": [
+      "starter"
+    ]
+  }
+]

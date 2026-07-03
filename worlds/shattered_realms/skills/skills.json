@@ -1,0 +1,340 @@
+[
+  {
+    "id": "power_strike",
+    "name": "Power Strike",
+    "type": "skill",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "Power Strike beginner skill.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Power Strike concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "skill"
+    ]
+  },
+  {
+    "id": "guard_stance",
+    "name": "Guard Stance",
+    "type": "skill",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "Guard Stance beginner skill.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Guard Stance concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "skill"
+    ]
+  },
+  {
+    "id": "parry",
+    "name": "Parry",
+    "type": "skill",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "Parry beginner skill.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Parry concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "skill"
+    ]
+  },
+  {
+    "id": "shield_bash",
+    "name": "Shield Bash",
+    "type": "skill",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "Shield Bash beginner skill.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Shield Bash concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "skill"
+    ]
+  },
+  {
+    "id": "precise_shot",
+    "name": "Precise Shot",
+    "type": "skill",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "Precise Shot beginner skill.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Precise Shot concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "skill"
+    ]
+  },
+  {
+    "id": "track_quarry",
+    "name": "Track Quarry",
+    "type": "skill",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "Track Quarry beginner skill.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Track Quarry concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "skill"
+    ]
+  },
+  {
+    "id": "sneak",
+    "name": "Sneak",
+    "type": "skill",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "Sneak beginner skill.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Sneak concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "skill"
+    ]
+  },
+  {
+    "id": "backstab",
+    "name": "Backstab",
+    "type": "skill",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "Backstab beginner skill.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Backstab concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "skill"
+    ]
+  },
+  {
+    "id": "search",
+    "name": "Search",
+    "type": "skill",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "Search beginner skill.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Search concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "skill"
+    ]
+  },
+  {
+    "id": "pick_lock",
+    "name": "Pick Lock",
+    "type": "skill",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "Pick Lock beginner skill.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Pick Lock concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "skill"
+    ]
+  },
+  {
+    "id": "first_aid",
+    "name": "First Aid",
+    "type": "skill",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "First Aid beginner skill.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe First Aid concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "skill"
+    ]
+  },
+  {
+    "id": "persuade",
+    "name": "Persuade",
+    "type": "skill",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "Persuade beginner skill.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Persuade concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "skill"
+    ]
+  },
+  {
+    "id": "intimidate",
+    "name": "Intimidate",
+    "type": "skill",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "Intimidate beginner skill.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Intimidate concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "skill"
+    ]
+  }
+]

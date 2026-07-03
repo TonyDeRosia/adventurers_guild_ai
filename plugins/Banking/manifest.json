@@ -1,0 +1,1 @@
+{"id":"Banking","name":"Banking","version":"0.1.0","description":"Foundation plugin package for Smart MUD.","dependencies":[],"registers":{"commands":[],"database_tables":[],"builder_editors":[],"runtime_hooks":[],"scheduled_events":[],"ai_context_providers":[],"render_extensions":[]}}

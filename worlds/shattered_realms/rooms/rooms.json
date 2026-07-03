@@ -1,0 +1,874 @@
+[
+  {
+    "id": "guildhall_crossing_square",
+    "area_id": "guildhall_crossing",
+    "name": "Guildhall Crossing Square",
+    "short_description": "Guildhall Crossing Square lies within guildhall crossing .",
+    "long_description": "Guildhall Crossing Square is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "indoor",
+    "lighting": "daylight",
+    "weather": "breezy",
+    "tags": [
+      "starter",
+      "guildhall_crossing"
+    ],
+    "npcs": [],
+    "objects": [
+      "old_gate",
+      "fountain"
+    ],
+    "exits": [
+      {
+        "direction": "north",
+        "destination_room_id": "old_gate_road",
+        "description": "north to old gate road."
+      },
+      {
+        "direction": "east",
+        "destination_room_id": "market_lane",
+        "description": "east to market lane."
+      },
+      {
+        "direction": "west",
+        "destination_room_id": "training_yard",
+        "description": "west to training yard."
+      },
+      {
+        "direction": "in",
+        "destination_room_id": "guildhall_archway",
+        "description": "in to guildhall archway."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around Guildhall Crossing Square."
+    ],
+    "active_hooks": []
+  },
+  {
+    "id": "guildhall_registrar_office",
+    "area_id": "registrar_hall",
+    "name": "Guildhall Registrar Office",
+    "short_description": "Guildhall Registrar Office lies within registrar hall .",
+    "long_description": "Guildhall Registrar Office is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "indoor",
+    "lighting": "daylight",
+    "weather": "sheltered",
+    "tags": [
+      "starter",
+      "registrar_hall"
+    ],
+    "npcs": [
+      "guild_registrar_maren"
+    ],
+    "objects": [],
+    "exits": [
+      {
+        "direction": "south",
+        "destination_room_id": "guildhall_archway",
+        "description": "south to guildhall archway."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around Guildhall Registrar Office."
+    ],
+    "active_hooks": []
+  },
+  {
+    "id": "guildhall_archway",
+    "area_id": "guildhall_crossing",
+    "name": "Guildhall Archway",
+    "short_description": "Guildhall Archway lies within guildhall crossing .",
+    "long_description": "Guildhall Archway is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "indoor",
+    "lighting": "daylight",
+    "weather": "breezy",
+    "tags": [
+      "starter",
+      "guildhall_crossing"
+    ],
+    "npcs": [],
+    "objects": [],
+    "exits": [
+      {
+        "direction": "out",
+        "destination_room_id": "guildhall_crossing_square",
+        "description": "out to guildhall crossing square."
+      },
+      {
+        "direction": "north",
+        "destination_room_id": "guildhall_registrar_office",
+        "description": "north to guildhall registrar office."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around Guildhall Archway."
+    ],
+    "active_hooks": []
+  },
+  {
+    "id": "training_yard",
+    "area_id": "training_grounds",
+    "name": "Training Yard",
+    "short_description": "Training Yard lies within training grounds .",
+    "long_description": "Training Yard is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "road",
+    "lighting": "daylight",
+    "weather": "breezy",
+    "tags": [
+      "starter",
+      "training_grounds"
+    ],
+    "npcs": [
+      "training_master_borik"
+    ],
+    "objects": [],
+    "exits": [
+      {
+        "direction": "east",
+        "destination_room_id": "guildhall_crossing_square",
+        "description": "east to guildhall crossing square."
+      },
+      {
+        "direction": "north",
+        "destination_room_id": "weapon_practice_ring",
+        "description": "north to weapon practice ring."
+      },
+      {
+        "direction": "west",
+        "destination_room_id": "spell_practice_circle",
+        "description": "west to spell practice circle."
+      },
+      {
+        "direction": "south",
+        "destination_room_id": "healer_corner",
+        "description": "south to healer corner."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around Training Yard."
+    ],
+    "active_hooks": []
+  },
+  {
+    "id": "weapon_practice_ring",
+    "area_id": "training_grounds",
+    "name": "Weapon Practice Ring",
+    "short_description": "Weapon Practice Ring lies within training grounds .",
+    "long_description": "Weapon Practice Ring is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "road",
+    "lighting": "daylight",
+    "weather": "breezy",
+    "tags": [
+      "starter",
+      "training_grounds"
+    ],
+    "npcs": [],
+    "objects": [],
+    "exits": [
+      {
+        "direction": "south",
+        "destination_room_id": "training_yard",
+        "description": "south to training yard."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around Weapon Practice Ring."
+    ],
+    "active_hooks": []
+  },
+  {
+    "id": "spell_practice_circle",
+    "area_id": "training_grounds",
+    "name": "Spell Practice Circle",
+    "short_description": "Spell Practice Circle lies within training grounds .",
+    "long_description": "Spell Practice Circle is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "road",
+    "lighting": "daylight",
+    "weather": "breezy",
+    "tags": [
+      "starter",
+      "training_grounds"
+    ],
+    "npcs": [
+      "apprentice_mage_lina"
+    ],
+    "objects": [],
+    "exits": [
+      {
+        "direction": "east",
+        "destination_room_id": "training_yard",
+        "description": "east to training yard."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around Spell Practice Circle."
+    ],
+    "active_hooks": []
+  },
+  {
+    "id": "healer_corner",
+    "area_id": "training_grounds",
+    "name": "Healer Corner",
+    "short_description": "Healer Corner lies within training grounds .",
+    "long_description": "Healer Corner is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "road",
+    "lighting": "daylight",
+    "weather": "breezy",
+    "tags": [
+      "starter",
+      "training_grounds"
+    ],
+    "npcs": [
+      "healer_sella"
+    ],
+    "objects": [],
+    "exits": [
+      {
+        "direction": "north",
+        "destination_room_id": "training_yard",
+        "description": "north to training yard."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around Healer Corner."
+    ],
+    "active_hooks": []
+  },
+  {
+    "id": "market_lane",
+    "area_id": "market_lane",
+    "name": "Market Lane",
+    "short_description": "Market Lane lies within market lane .",
+    "long_description": "Market Lane is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "road",
+    "lighting": "daylight",
+    "weather": "breezy",
+    "tags": [
+      "starter",
+      "market_lane"
+    ],
+    "npcs": [
+      "suspicious_merchant_varrik"
+    ],
+    "objects": [],
+    "exits": [
+      {
+        "direction": "west",
+        "destination_room_id": "guildhall_crossing_square",
+        "description": "west to guildhall crossing square."
+      },
+      {
+        "direction": "north",
+        "destination_room_id": "blacksmith_stall",
+        "description": "north to blacksmith stall."
+      },
+      {
+        "direction": "east",
+        "destination_room_id": "provisioner_stall",
+        "description": "east to provisioner stall."
+      },
+      {
+        "direction": "south",
+        "destination_room_id": "adventurer_notice_board",
+        "description": "south to adventurer notice board."
+      },
+      {
+        "direction": "in",
+        "destination_room_id": "tavern_common_room",
+        "description": "in to tavern common room."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around Market Lane."
+    ],
+    "active_hooks": []
+  },
+  {
+    "id": "blacksmith_stall",
+    "area_id": "market_lane",
+    "name": "Blacksmith Stall",
+    "short_description": "Blacksmith Stall lies within market lane .",
+    "long_description": "Blacksmith Stall is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "indoor",
+    "lighting": "daylight",
+    "weather": "sheltered",
+    "tags": [
+      "starter",
+      "market_lane"
+    ],
+    "npcs": [
+      "blacksmith_harl"
+    ],
+    "objects": [
+      "training_sword",
+      "iron_sword"
+    ],
+    "exits": [
+      {
+        "direction": "south",
+        "destination_room_id": "market_lane",
+        "description": "south to market lane."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around Blacksmith Stall."
+    ],
+    "active_hooks": []
+  },
+  {
+    "id": "provisioner_stall",
+    "area_id": "market_lane",
+    "name": "Provisioner Stall",
+    "short_description": "Provisioner Stall lies within market lane .",
+    "long_description": "Provisioner Stall is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "indoor",
+    "lighting": "daylight",
+    "weather": "sheltered",
+    "tags": [
+      "starter",
+      "market_lane"
+    ],
+    "npcs": [],
+    "objects": [
+      "ration",
+      "clean_water_flask",
+      "torch",
+      "rope"
+    ],
+    "exits": [
+      {
+        "direction": "west",
+        "destination_room_id": "market_lane",
+        "description": "west to market lane."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around Provisioner Stall."
+    ],
+    "active_hooks": []
+  },
+  {
+    "id": "adventurer_notice_board",
+    "area_id": "market_lane",
+    "name": "Adventurer Notice Board",
+    "short_description": "Adventurer Notice Board lies within market lane .",
+    "long_description": "Adventurer Notice Board is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "road",
+    "lighting": "daylight",
+    "weather": "breezy",
+    "tags": [
+      "starter",
+      "market_lane"
+    ],
+    "npcs": [],
+    "objects": [
+      "notice_board",
+      "guild_token"
+    ],
+    "exits": [
+      {
+        "direction": "north",
+        "destination_room_id": "market_lane",
+        "description": "north to market lane."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around Adventurer Notice Board."
+    ],
+    "active_hooks": []
+  },
+  {
+    "id": "tavern_common_room",
+    "area_id": "wayfarers_mug",
+    "name": "Tavern Common Room",
+    "short_description": "Tavern Common Room lies within wayfarers mug .",
+    "long_description": "Tavern Common Room is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "indoor",
+    "lighting": "daylight",
+    "weather": "sheltered",
+    "tags": [
+      "starter",
+      "wayfarers_mug"
+    ],
+    "npcs": [
+      "tavern_keeper_jory",
+      "rat_catcher_nemm"
+    ],
+    "objects": [],
+    "exits": [
+      {
+        "direction": "out",
+        "destination_room_id": "market_lane",
+        "description": "out to market lane."
+      },
+      {
+        "direction": "east",
+        "destination_room_id": "tavern_back_room",
+        "description": "east to tavern back room."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around Tavern Common Room."
+    ],
+    "active_hooks": []
+  },
+  {
+    "id": "tavern_back_room",
+    "area_id": "wayfarers_mug",
+    "name": "Tavern Back Room",
+    "short_description": "Tavern Back Room lies within wayfarers mug .",
+    "long_description": "Tavern Back Room is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "indoor",
+    "lighting": "daylight",
+    "weather": "sheltered",
+    "tags": [
+      "starter",
+      "wayfarers_mug"
+    ],
+    "npcs": [],
+    "objects": [
+      "suspicious_ledger"
+    ],
+    "exits": [
+      {
+        "direction": "west",
+        "destination_room_id": "tavern_common_room",
+        "description": "west to tavern common room."
+      },
+      {
+        "direction": "down",
+        "destination_room_id": "rat_cellar_entry",
+        "description": "down to rat cellar entry."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around Tavern Back Room."
+    ],
+    "active_hooks": []
+  },
+  {
+    "id": "old_gate_road",
+    "area_id": "old_gate_road",
+    "name": "Old Gate Road",
+    "short_description": "Old Gate Road lies within old gate road .",
+    "long_description": "Old Gate Road is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "road",
+    "lighting": "daylight",
+    "weather": "breezy",
+    "tags": [
+      "starter",
+      "old_gate_road"
+    ],
+    "npcs": [],
+    "objects": [],
+    "exits": [
+      {
+        "direction": "south",
+        "destination_room_id": "guildhall_crossing_square",
+        "description": "south to guildhall crossing square."
+      },
+      {
+        "direction": "north",
+        "destination_room_id": "old_gate_checkpoint",
+        "description": "north to old gate checkpoint."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around Old Gate Road."
+    ],
+    "active_hooks": []
+  },
+  {
+    "id": "old_gate_checkpoint",
+    "area_id": "old_gate_road",
+    "name": "Old Gate Checkpoint",
+    "short_description": "Old Gate Checkpoint lies within old gate road .",
+    "long_description": "Old Gate Checkpoint is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "road",
+    "lighting": "daylight",
+    "weather": "breezy",
+    "tags": [
+      "starter",
+      "old_gate_road"
+    ],
+    "npcs": [
+      "crown_warden_ilyra",
+      "old_gate_watcher"
+    ],
+    "objects": [
+      "old_gate_shard"
+    ],
+    "exits": [
+      {
+        "direction": "south",
+        "destination_room_id": "old_gate_road",
+        "description": "south to old gate road."
+      },
+      {
+        "direction": "north",
+        "destination_room_id": "milestone_bend",
+        "description": "north to milestone bend."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around Old Gate Checkpoint."
+    ],
+    "active_hooks": []
+  },
+  {
+    "id": "milestone_bend",
+    "area_id": "old_gate_road",
+    "name": "Milestone Bend",
+    "short_description": "Milestone Bend lies within old gate road .",
+    "long_description": "Milestone Bend is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "road",
+    "lighting": "daylight",
+    "weather": "breezy",
+    "tags": [
+      "starter",
+      "old_gate_road"
+    ],
+    "npcs": [
+      "road_messenger_pell"
+    ],
+    "objects": [
+      "sealed_courier_satchel"
+    ],
+    "exits": [
+      {
+        "direction": "south",
+        "destination_room_id": "old_gate_checkpoint",
+        "description": "south to old gate checkpoint."
+      },
+      {
+        "direction": "east",
+        "destination_room_id": "east_farmland_path",
+        "description": "east to east farmland path."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around Milestone Bend."
+    ],
+    "active_hooks": []
+  },
+  {
+    "id": "east_farmland_path",
+    "area_id": "east_farmland",
+    "name": "East Farmland Path",
+    "short_description": "East Farmland Path lies within east farmland .",
+    "long_description": "East Farmland Path is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "road",
+    "lighting": "daylight",
+    "weather": "breezy",
+    "tags": [
+      "starter",
+      "east_farmland"
+    ],
+    "npcs": [],
+    "objects": [],
+    "exits": [
+      {
+        "direction": "west",
+        "destination_room_id": "milestone_bend",
+        "description": "west to milestone bend."
+      },
+      {
+        "direction": "north",
+        "destination_room_id": "farmer_field",
+        "description": "north to farmer field."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around East Farmland Path."
+    ],
+    "active_hooks": []
+  },
+  {
+    "id": "farmer_field",
+    "area_id": "east_farmland",
+    "name": "Farmer Field",
+    "short_description": "Farmer Field lies within east farmland .",
+    "long_description": "Farmer Field is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "road",
+    "lighting": "daylight",
+    "weather": "breezy",
+    "tags": [
+      "starter",
+      "east_farmland"
+    ],
+    "npcs": [
+      "farmer_tomas"
+    ],
+    "objects": [],
+    "exits": [
+      {
+        "direction": "south",
+        "destination_room_id": "east_farmland_path",
+        "description": "south to east farmland path."
+      },
+      {
+        "direction": "east",
+        "destination_room_id": "broken_fence",
+        "description": "east to broken fence."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around Farmer Field."
+    ],
+    "active_hooks": []
+  },
+  {
+    "id": "broken_fence",
+    "area_id": "east_farmland",
+    "name": "Broken Fence",
+    "short_description": "Broken Fence lies within east farmland .",
+    "long_description": "Broken Fence is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "road",
+    "lighting": "daylight",
+    "weather": "breezy",
+    "tags": [
+      "starter",
+      "east_farmland"
+    ],
+    "npcs": [],
+    "objects": [],
+    "exits": [
+      {
+        "direction": "west",
+        "destination_room_id": "farmer_field",
+        "description": "west to farmer field."
+      },
+      {
+        "direction": "east",
+        "destination_room_id": "emberwood_edge",
+        "description": "east to emberwood edge."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around Broken Fence."
+    ],
+    "active_hooks": []
+  },
+  {
+    "id": "emberwood_edge",
+    "area_id": "emberwood_edge",
+    "name": "Emberwood Edge",
+    "short_description": "Emberwood Edge lies within emberwood edge .",
+    "long_description": "Emberwood Edge is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "road",
+    "lighting": "daylight",
+    "weather": "breezy",
+    "tags": [
+      "starter",
+      "emberwood_edge"
+    ],
+    "npcs": [],
+    "objects": [],
+    "exits": [
+      {
+        "direction": "west",
+        "destination_room_id": "broken_fence",
+        "description": "west to broken fence."
+      },
+      {
+        "direction": "north",
+        "destination_room_id": "emberwood_game_trail",
+        "description": "north to emberwood game trail."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around Emberwood Edge."
+    ],
+    "active_hooks": []
+  },
+  {
+    "id": "emberwood_game_trail",
+    "area_id": "emberwood_edge",
+    "name": "Emberwood Game Trail",
+    "short_description": "Emberwood Game Trail lies within emberwood edge .",
+    "long_description": "Emberwood Game Trail is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "road",
+    "lighting": "daylight",
+    "weather": "breezy",
+    "tags": [
+      "starter",
+      "emberwood_edge"
+    ],
+    "npcs": [],
+    "objects": [],
+    "exits": [
+      {
+        "direction": "south",
+        "destination_room_id": "emberwood_edge",
+        "description": "south to emberwood edge."
+      },
+      {
+        "direction": "east",
+        "destination_room_id": "abandoned_watchpost",
+        "description": "east to abandoned watchpost."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around Emberwood Game Trail."
+    ],
+    "active_hooks": []
+  },
+  {
+    "id": "abandoned_watchpost",
+    "area_id": "abandoned_watchpost",
+    "name": "Abandoned Watchpost",
+    "short_description": "Abandoned Watchpost lies within abandoned watchpost .",
+    "long_description": "Abandoned Watchpost is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "road",
+    "lighting": "daylight",
+    "weather": "breezy",
+    "tags": [
+      "starter",
+      "abandoned_watchpost"
+    ],
+    "npcs": [],
+    "objects": [],
+    "exits": [
+      {
+        "direction": "west",
+        "destination_room_id": "emberwood_game_trail",
+        "description": "west to emberwood game trail."
+      },
+      {
+        "direction": "in",
+        "destination_room_id": "watchpost_entry",
+        "description": "in to watchpost entry."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around Abandoned Watchpost."
+    ],
+    "active_hooks": []
+  },
+  {
+    "id": "watchpost_entry",
+    "area_id": "abandoned_watchpost",
+    "name": "Watchpost Entry",
+    "short_description": "Watchpost Entry lies within abandoned watchpost .",
+    "long_description": "Watchpost Entry is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "road",
+    "lighting": "daylight",
+    "weather": "breezy",
+    "tags": [
+      "starter",
+      "abandoned_watchpost"
+    ],
+    "npcs": [],
+    "objects": [],
+    "exits": [
+      {
+        "direction": "out",
+        "destination_room_id": "abandoned_watchpost",
+        "description": "out to abandoned watchpost."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around Watchpost Entry."
+    ],
+    "active_hooks": []
+  },
+  {
+    "id": "rat_cellar_entry",
+    "area_id": "rat_cellar",
+    "name": "Rat Cellar Entry",
+    "short_description": "Rat Cellar Entry lies within rat cellar .",
+    "long_description": "Rat Cellar Entry is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "indoor",
+    "lighting": "lantern-lit",
+    "weather": "sheltered",
+    "tags": [
+      "starter",
+      "rat_cellar"
+    ],
+    "npcs": [],
+    "objects": [],
+    "exits": [
+      {
+        "direction": "up",
+        "destination_room_id": "tavern_back_room",
+        "description": "up to tavern back room."
+      },
+      {
+        "direction": "north",
+        "destination_room_id": "rat_cellar_storage",
+        "description": "north to rat cellar storage."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around Rat Cellar Entry."
+    ],
+    "active_hooks": []
+  },
+  {
+    "id": "rat_cellar_storage",
+    "area_id": "rat_cellar",
+    "name": "Rat Cellar Storage",
+    "short_description": "Rat Cellar Storage lies within rat cellar .",
+    "long_description": "Rat Cellar Storage is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "indoor",
+    "lighting": "lantern-lit",
+    "weather": "sheltered",
+    "tags": [
+      "starter",
+      "rat_cellar"
+    ],
+    "npcs": [
+      "cellar_rats"
+    ],
+    "objects": [
+      "empty_vial"
+    ],
+    "exits": [
+      {
+        "direction": "south",
+        "destination_room_id": "rat_cellar_entry",
+        "description": "south to rat cellar entry."
+      },
+      {
+        "direction": "east",
+        "destination_room_id": "rat_cellar_nest",
+        "description": "east to rat cellar nest."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around Rat Cellar Storage."
+    ],
+    "active_hooks": []
+  },
+  {
+    "id": "rat_cellar_nest",
+    "area_id": "rat_cellar",
+    "name": "Rat Cellar Nest",
+    "short_description": "Rat Cellar Nest lies within rat cellar .",
+    "long_description": "Rat Cellar Nest is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "terrain": "indoor",
+    "lighting": "lantern-lit",
+    "weather": "sheltered",
+    "tags": [
+      "starter",
+      "rat_cellar"
+    ],
+    "npcs": [
+      "giant_cellar_rat"
+    ],
+    "objects": [
+      "rat_tail"
+    ],
+    "exits": [
+      {
+        "direction": "west",
+        "destination_room_id": "rat_cellar_storage",
+        "description": "west to rat cellar storage."
+      }
+    ],
+    "ambient_messages": [
+      "Life continues around Rat Cellar Nest."
+    ],
+    "active_hooks": []
+  }
+]

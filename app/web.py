@@ -25,6 +25,7 @@ except ModuleNotFoundError:  # pragma: no cover
 from app.pathing import initialize_user_data_paths, static_dir
 from app.runtime_config_mud import MudRuntimeConfigStore
 from engine.mud_runtime import MudRuntime
+from engine.plugin_system import PluginRegistry
 from engine.world_registry import WorldRegistry
 
 
@@ -38,12 +39,17 @@ class WebRuntime:
         self.config_store = MudRuntimeConfigStore(self.paths.config / "mud_config.json")
         self.config = self.config_store.load()
         print("[startup] Opening SQLite...")
-        print("[startup] Loading world registry...")
-        self.world_registry = WorldRegistry()
-        print("[startup] Loading world packages...")
+        print("[startup] Loading plugins...")
+        self.plugin_registry = PluginRegistry(self.root / "plugins")
+        self.available_plugins = self.plugin_registry.discover()
+        print("[startup] Scanning installed worlds...")
+        self.world_registry = WorldRegistry(self.root / "worlds")
         self.available_worlds = self.world_registry.list_worlds()
+        print("[startup] Validating world manifests and package integrity...")
+        for world in self.available_worlds:
+            self.world_registry.validate_world(str(world["id"]))
         print("[startup] Initializing Smart MUD runtime...")
-        self.mud_runtime = MudRuntime(self.root, self.paths.user_data, world_registry=self.world_registry)
+        self.mud_runtime = MudRuntime(self.root, self.paths.user_data, world_registry=self.world_registry, plugin_registry=self.plugin_registry)
         self.active_world_id = ""
         self.active_character_id = ""
         print("[startup] Ready.")
@@ -61,6 +67,7 @@ class WebRuntime:
             "runtime": "smart_mud",
             "sqlite_ready": self.mud_runtime.sqlite_ready,
             "world_registry_ready": True,
+            "plugins_ready": True,
             "campaign_runtime_started": False,
             "comfyui_initialized": False,
             "campaign_memory_loaded": False,

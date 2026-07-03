@@ -1,0 +1,184 @@
+[
+  {
+    "id": "toughness",
+    "name": "Toughness",
+    "type": "passive",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 0,
+    "cooldown": 0,
+    "target_type": "self",
+    "range": "self",
+    "description": "Toughness beginner passive.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Toughness concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "passive"
+    ]
+  },
+  {
+    "id": "quick_hands",
+    "name": "Quick Hands",
+    "type": "passive",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 0,
+    "cooldown": 0,
+    "target_type": "self",
+    "range": "self",
+    "description": "Quick Hands beginner passive.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Quick Hands concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "passive"
+    ]
+  },
+  {
+    "id": "arcane_training",
+    "name": "Arcane Training",
+    "type": "passive",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 0,
+    "cooldown": 0,
+    "target_type": "self",
+    "range": "self",
+    "description": "Arcane Training beginner passive.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Arcane Training concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "passive"
+    ]
+  },
+  {
+    "id": "fieldcraft",
+    "name": "Fieldcraft",
+    "type": "passive",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 0,
+    "cooldown": 0,
+    "target_type": "self",
+    "range": "self",
+    "description": "Fieldcraft beginner passive.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Fieldcraft concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "passive"
+    ]
+  },
+  {
+    "id": "divine_calling",
+    "name": "Divine Calling",
+    "type": "passive",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 0,
+    "cooldown": 0,
+    "target_type": "self",
+    "range": "self",
+    "description": "Divine Calling beginner passive.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Divine Calling concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "passive"
+    ]
+  },
+  {
+    "id": "grave_touched",
+    "name": "Grave Touched",
+    "type": "passive",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 0,
+    "cooldown": 0,
+    "target_type": "self",
+    "range": "self",
+    "description": "Grave Touched beginner passive.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Grave Touched concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "passive"
+    ]
+  },
+  {
+    "id": "battle_focus",
+    "name": "Battle Focus",
+    "type": "passive",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 0,
+    "cooldown": 0,
+    "target_type": "self",
+    "range": "self",
+    "description": "Battle Focus beginner passive.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Battle Focus concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "passive"
+    ]
+  }
+]

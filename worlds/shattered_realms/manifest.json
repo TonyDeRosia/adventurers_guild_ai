@@ -1,0 +1,26 @@
+{
+  "world_id": "shattered_realms",
+  "display_name": "The Shattered Realms",
+  "author": "Smart MUD Team",
+  "description": "A fractured fantasy realm where adventurers gather under the Guild's old banners.",
+  "version": "2.0.0",
+  "engine_version_required": "1.0.0",
+  "minimum_engine_version": "1.0.0",
+  "maximum_engine_version": "2.x",
+  "dependencies": [],
+  "required_plugins": [],
+  "optional_plugins": [],
+  "world_type": "fantasy medieval",
+  "default_starting_area": "crossing_square_area",
+  "default_starting_room": "guildhall_crossing_square",
+  "supported_languages": [
+    "en"
+  ],
+  "supported_character_slots": 8,
+  "builder": {
+    "enabled": true,
+    "minimum_role": "builder"
+  },
+  "load_priority": 10,
+  "package_guid": "8f46e0b1-6f08-48a3-9468-shattered-realms"
+}

@@ -142,7 +142,7 @@ class CampaignEngine:
             direction = aliases.get(normalized, normalized)
         elif normalized.startswith("go "):
             direction = aliases.get(normalized[3:].strip(), normalized[3:].strip())
-        registry = WorldRegistry(); world = registry.load_world(state.structured_state.runtime.world_id or "shattered_realms")
+        registry = WorldRegistry(); selected_world_id = state.structured_state.runtime.world_id or (registry.list_worlds()[0]["id"] if registry.list_worlds() else ""); world = registry.load_world(selected_world_id)
         room_id = state.structured_state.runtime.current_room_id or state.current_location_id or world.default_starting_room_id
         room = world.room(room_id)
         npcs_by_id = world_by_id(world.npcs)

@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from engine.mud_commands import MudCommandEngine
 from engine.mud_displays import render_prompt, render_room
 from engine.world_registry import WorldRegistry
+from engine.plugin_system import HookRegistry, PluginRegistry
 
 
 @dataclass
@@ -333,12 +334,14 @@ class MudWorldRegistry:
 class MudRuntime:
     """Primary Smart MUD application runtime."""
 
-    def __init__(self, root: Path, user_data_dir: Path, world_registry: WorldRegistry | None = None):
+    def __init__(self, root: Path, user_data_dir: Path, world_registry: WorldRegistry | None = None, plugin_registry: PluginRegistry | None = None):
         self.root = root
         self.user_data_dir = user_data_dir
         self.user_data_dir.mkdir(parents=True, exist_ok=True)
         self.state_store = MudStateStore(user_data_dir / "mud_state.db")
         self.world_registry = world_registry or WorldRegistry()
+        self.plugin_registry = plugin_registry or PluginRegistry(root / "plugins")
+        self.hooks = HookRegistry()
         self.active_world_id: Optional[str] = None
         self.active_world: Any = None
         self.sessions: dict[str, MudSession] = {}
@@ -349,7 +352,9 @@ class MudRuntime:
     def load_world(self, world_id: str) -> Any:
         """Load a read-only world template package for gameplay."""
         self.active_world = self.world_registry.load_world(world_id)
+        self.plugin_registry.resolve_required([str(p) for p in self.active_world.manifest.get("required_plugins", [])])
         self.active_world_id = world_id
+        self.hooks.emit("world_loaded", world_id=world_id, world=self.active_world)
         return self.active_world
 
     def list_characters(self, world_id: str = "") -> list[dict[str, Any]]:
@@ -389,6 +394,7 @@ class MudRuntime:
             abilities=[value for value in (race_id, class_id) if value],
         )
         self.state_store.save_character(char, world_id)
+        self.hooks.emit("character_creation", world_id=world_id, character=char)
         return self._character_payload(char, world_id)
 
     def enter_world(self, character_id: str) -> dict[str, Any]:
@@ -401,6 +407,7 @@ class MudRuntime:
                 row = conn.execute("SELECT world_id FROM characters WHERE id = ?", (character_id,)).fetchone()
             if row and row[0]:
                 self.load_world(str(row[0]))
+        self.hooks.emit("player_login", world_id=self.active_world_id or "", character=char)
         self.sessions[character_id] = MudSession(
             session_id=character_id,
             character_id=character_id,
