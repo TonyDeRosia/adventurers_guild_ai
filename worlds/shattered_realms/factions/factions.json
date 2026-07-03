@@ -1,0 +1,187 @@
+[
+  {
+    "id": "adventurers_guild",
+    "name": "Adventurer\u2019s Guild",
+    "description": "Adventurers Guild faction in Guildhall Crossing.",
+    "goals": [
+      "survive the waking gates",
+      "gain influence"
+    ],
+    "allies": [],
+    "enemies": [
+      "hollow_cult"
+    ],
+    "reputation_scale": {
+      "hostile": -50,
+      "wary": -10,
+      "neutral": 0,
+      "friendly": 25,
+      "honored": 75
+    },
+    "tags": [
+      "shattered_realms"
+    ]
+  },
+  {
+    "id": "crown_wardens",
+    "name": "Crown Wardens",
+    "description": "Crown Wardens faction in Guildhall Crossing.",
+    "goals": [
+      "survive the waking gates",
+      "gain influence"
+    ],
+    "allies": [],
+    "enemies": [
+      "hollow_cult"
+    ],
+    "reputation_scale": {
+      "hostile": -50,
+      "wary": -10,
+      "neutral": 0,
+      "friendly": 25,
+      "honored": 75
+    },
+    "tags": [
+      "shattered_realms"
+    ]
+  },
+  {
+    "id": "riverwatch_merchants",
+    "name": "Riverwatch Merchants",
+    "description": "Riverwatch Merchants faction in Guildhall Crossing.",
+    "goals": [
+      "survive the waking gates",
+      "gain influence"
+    ],
+    "allies": [],
+    "enemies": [
+      "hollow_cult"
+    ],
+    "reputation_scale": {
+      "hostile": -50,
+      "wary": -10,
+      "neutral": 0,
+      "friendly": 25,
+      "honored": 75
+    },
+    "tags": [
+      "shattered_realms"
+    ]
+  },
+  {
+    "id": "emberwood_circle",
+    "name": "Emberwood Circle",
+    "description": "Emberwood Circle faction in Guildhall Crossing.",
+    "goals": [
+      "survive the waking gates",
+      "gain influence"
+    ],
+    "allies": [],
+    "enemies": [
+      "hollow_cult"
+    ],
+    "reputation_scale": {
+      "hostile": -50,
+      "wary": -10,
+      "neutral": 0,
+      "friendly": 25,
+      "honored": 75
+    },
+    "tags": [
+      "shattered_realms"
+    ]
+  },
+  {
+    "id": "hollow_cult",
+    "name": "Hollow Cult",
+    "description": "Hollow Cult faction in Guildhall Crossing.",
+    "goals": [
+      "survive the waking gates",
+      "gain influence"
+    ],
+    "allies": [],
+    "enemies": [
+      "adventurers_guild",
+      "crown_wardens"
+    ],
+    "reputation_scale": {
+      "hostile": -50,
+      "wary": -10,
+      "neutral": 0,
+      "friendly": 25,
+      "honored": 75
+    },
+    "tags": [
+      "shattered_realms"
+    ]
+  },
+  {
+    "id": "gatebound_scholars",
+    "name": "Gatebound Scholars",
+    "description": "Gatebound Scholars faction in Guildhall Crossing.",
+    "goals": [
+      "survive the waking gates",
+      "gain influence"
+    ],
+    "allies": [],
+    "enemies": [
+      "hollow_cult"
+    ],
+    "reputation_scale": {
+      "hostile": -50,
+      "wary": -10,
+      "neutral": 0,
+      "friendly": 25,
+      "honored": 75
+    },
+    "tags": [
+      "shattered_realms"
+    ]
+  },
+  {
+    "id": "rat_catchers_compact",
+    "name": "Rat Catchers Compact",
+    "description": "Rat Catchers Compact faction in Guildhall Crossing.",
+    "goals": [
+      "survive the waking gates",
+      "gain influence"
+    ],
+    "allies": [],
+    "enemies": [
+      "hollow_cult"
+    ],
+    "reputation_scale": {
+      "hostile": -50,
+      "wary": -10,
+      "neutral": 0,
+      "friendly": 25,
+      "honored": 75
+    },
+    "tags": [
+      "shattered_realms"
+    ]
+  },
+  {
+    "id": "common_folk",
+    "name": "Common Folk",
+    "description": "Common Folk faction in Guildhall Crossing.",
+    "goals": [
+      "survive the waking gates",
+      "gain influence"
+    ],
+    "allies": [],
+    "enemies": [
+      "hollow_cult"
+    ],
+    "reputation_scale": {
+      "hostile": -50,
+      "wary": -10,
+      "neutral": 0,
+      "friendly": 25,
+      "honored": 75
+    },
+    "tags": [
+      "shattered_realms"
+    ]
+  }
+]

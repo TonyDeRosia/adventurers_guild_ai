@@ -1,0 +1,282 @@
+[
+  {
+    "id": "trouble_old_gate",
+    "title": "Trouble at the Old Gate",
+    "description": "Trouble at the Old Gate beginner quest.",
+    "starting_room_id": "old_gate_checkpoint",
+    "starting_npc_id": "crown_warden_ilyra",
+    "objectives": [
+      {
+        "type": "talk_to_npc",
+        "target_id": "crown_warden_ilyra"
+      },
+      {
+        "type": "explore_room",
+        "target_id": "old_gate_checkpoint"
+      },
+      {
+        "type": "inspect_object",
+        "target_id": "notice_board"
+      },
+      {
+        "type": "return_to_npc",
+        "target_id": "crown_warden_ilyra"
+      }
+    ],
+    "rewards": {
+      "xp": 25,
+      "gold": 5
+    },
+    "reputation_changes": {
+      "adventurers_guild": 1
+    },
+    "level_range": [
+      1,
+      2
+    ],
+    "tags": [
+      "starter"
+    ],
+    "npc_id": "guild_registrar_maren"
+  },
+  {
+    "id": "missing_courier",
+    "title": "Missing Courier",
+    "description": "Missing Courier beginner quest.",
+    "starting_room_id": "milestone_bend",
+    "starting_npc_id": "road_messenger_pell",
+    "objectives": [
+      {
+        "type": "talk_to_npc",
+        "target_id": "road_messenger_pell"
+      },
+      {
+        "type": "explore_room",
+        "target_id": "milestone_bend"
+      },
+      {
+        "type": "inspect_object",
+        "target_id": "notice_board"
+      },
+      {
+        "type": "return_to_npc",
+        "target_id": "road_messenger_pell"
+      }
+    ],
+    "rewards": {
+      "xp": 25,
+      "gold": 5
+    },
+    "reputation_changes": {
+      "adventurers_guild": 1
+    },
+    "level_range": [
+      1,
+      2
+    ],
+    "tags": [
+      "starter"
+    ],
+    "npc_id": "guild_registrar_maren"
+  },
+  {
+    "id": "rats_cellar",
+    "title": "Rats in the Cellar",
+    "description": "Rats in the Cellar beginner quest.",
+    "starting_room_id": "tavern_common_room",
+    "starting_npc_id": "rat_catcher_nemm",
+    "objectives": [
+      {
+        "type": "talk_to_npc",
+        "target_id": "rat_catcher_nemm"
+      },
+      {
+        "type": "explore_room",
+        "target_id": "tavern_common_room"
+      },
+      {
+        "type": "inspect_object",
+        "target_id": "notice_board"
+      },
+      {
+        "type": "return_to_npc",
+        "target_id": "rat_catcher_nemm"
+      }
+    ],
+    "rewards": {
+      "xp": 25,
+      "gold": 5
+    },
+    "reputation_changes": {
+      "adventurers_guild": 1
+    },
+    "level_range": [
+      1,
+      2
+    ],
+    "tags": [
+      "starter"
+    ],
+    "npc_id": "guild_registrar_maren"
+  },
+  {
+    "id": "merchants_lie",
+    "title": "A Merchant\u2019s Lie",
+    "description": "A Merchant\u2019s Lie beginner quest.",
+    "starting_room_id": "market_lane",
+    "starting_npc_id": "suspicious_merchant_varrik",
+    "objectives": [
+      {
+        "type": "talk_to_npc",
+        "target_id": "suspicious_merchant_varrik"
+      },
+      {
+        "type": "explore_room",
+        "target_id": "market_lane"
+      },
+      {
+        "type": "inspect_object",
+        "target_id": "notice_board"
+      },
+      {
+        "type": "return_to_npc",
+        "target_id": "suspicious_merchant_varrik"
+      }
+    ],
+    "rewards": {
+      "xp": 25,
+      "gold": 5
+    },
+    "reputation_changes": {
+      "adventurers_guild": 1
+    },
+    "level_range": [
+      1,
+      2
+    ],
+    "tags": [
+      "starter"
+    ],
+    "npc_id": "guild_registrar_maren"
+  },
+  {
+    "id": "training_day",
+    "title": "Training Day",
+    "description": "Training Day beginner quest.",
+    "starting_room_id": "training_yard",
+    "starting_npc_id": "training_master_borik",
+    "objectives": [
+      {
+        "type": "talk_to_npc",
+        "target_id": "training_master_borik"
+      },
+      {
+        "type": "explore_room",
+        "target_id": "training_yard"
+      },
+      {
+        "type": "inspect_object",
+        "target_id": "notice_board"
+      },
+      {
+        "type": "return_to_npc",
+        "target_id": "training_master_borik"
+      }
+    ],
+    "rewards": {
+      "xp": 25,
+      "gold": 5
+    },
+    "reputation_changes": {
+      "adventurers_guild": 1
+    },
+    "level_range": [
+      1,
+      2
+    ],
+    "tags": [
+      "starter"
+    ],
+    "npc_id": "guild_registrar_maren"
+  },
+  {
+    "id": "emberwood_tracks",
+    "title": "Emberwood Tracks",
+    "description": "Emberwood Tracks beginner quest.",
+    "starting_room_id": "emberwood_edge",
+    "starting_npc_id": "farmer_tomas",
+    "objectives": [
+      {
+        "type": "talk_to_npc",
+        "target_id": "farmer_tomas"
+      },
+      {
+        "type": "explore_room",
+        "target_id": "emberwood_edge"
+      },
+      {
+        "type": "inspect_object",
+        "target_id": "notice_board"
+      },
+      {
+        "type": "return_to_npc",
+        "target_id": "farmer_tomas"
+      }
+    ],
+    "rewards": {
+      "xp": 25,
+      "gold": 5
+    },
+    "reputation_changes": {
+      "adventurers_guild": 1
+    },
+    "level_range": [
+      1,
+      2
+    ],
+    "tags": [
+      "starter"
+    ],
+    "npc_id": "guild_registrar_maren"
+  },
+  {
+    "id": "registrars_errand",
+    "title": "The Registrar\u2019s Errand",
+    "description": "The Registrar\u2019s Errand beginner quest.",
+    "starting_room_id": "guildhall_registrar_office",
+    "starting_npc_id": "guild_registrar_maren",
+    "objectives": [
+      {
+        "type": "talk_to_npc",
+        "target_id": "guild_registrar_maren"
+      },
+      {
+        "type": "explore_room",
+        "target_id": "guildhall_registrar_office"
+      },
+      {
+        "type": "inspect_object",
+        "target_id": "notice_board"
+      },
+      {
+        "type": "return_to_npc",
+        "target_id": "guild_registrar_maren"
+      }
+    ],
+    "rewards": {
+      "xp": 25,
+      "gold": 5
+    },
+    "reputation_changes": {
+      "adventurers_guild": 1
+    },
+    "level_range": [
+      1,
+      2
+    ],
+    "tags": [
+      "starter"
+    ],
+    "npc_id": "guild_registrar_maren"
+  }
+]

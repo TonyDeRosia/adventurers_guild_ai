@@ -159,8 +159,8 @@ def initialize_scene_v1_from_campaign(state: Any) -> dict[str, Any]:
     meta = getattr(state, "world_meta", None)
     requested_world = _clean(getattr(meta, "world_name", ""))
     requested_location = _clean(getattr(meta, "starting_location_name", ""))
-    if (not requested_world or requested_world == "The Shattered Realms") and (not requested_location or requested_location == "Guildhall Crossing"):
-        return initialize_scene_v1_from_core_game("guildhall_crossing")
+    if not requested_world and not requested_location:
+        return initialize_scene_v1_from_core_game("default_start")
     location = getattr(state, "locations", {}).get(getattr(state, "current_location_id", "")) if isinstance(getattr(state, "locations", {}), dict) else None
     location_name = _clean(getattr(meta, "starting_location_name", "")) or _clean(getattr(location, "name", "")) or "Old Gate"
     if location_name.lower() in {"starting area", "arrival threshold"}:

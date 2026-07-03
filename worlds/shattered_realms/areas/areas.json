@@ -1,0 +1,122 @@
+[
+  {
+    "id": "guildhall_crossing",
+    "name": "Guildhall Crossing",
+    "world_id": "shattered_realms",
+    "description": "Guildhall Crossing beginner area.",
+    "reset_enabled": true,
+    "reset_interval_minutes": 30,
+    "reset_mode": "empty_only",
+    "min_level": 1,
+    "max_level": 5,
+    "reset_rules": []
+  },
+  {
+    "id": "old_gate_road",
+    "name": "Old Gate Road",
+    "world_id": "shattered_realms",
+    "description": "Old Gate Road beginner area.",
+    "reset_enabled": true,
+    "reset_interval_minutes": 30,
+    "reset_mode": "empty_only",
+    "min_level": 1,
+    "max_level": 5,
+    "reset_rules": []
+  },
+  {
+    "id": "market_lane",
+    "name": "Market Lane",
+    "world_id": "shattered_realms",
+    "description": "Market Lane beginner area.",
+    "reset_enabled": true,
+    "reset_interval_minutes": 30,
+    "reset_mode": "empty_only",
+    "min_level": 1,
+    "max_level": 5,
+    "reset_rules": []
+  },
+  {
+    "id": "training_grounds",
+    "name": "Training Grounds",
+    "world_id": "shattered_realms",
+    "description": "Training Grounds beginner area.",
+    "reset_enabled": true,
+    "reset_interval_minutes": 30,
+    "reset_mode": "empty_only",
+    "min_level": 1,
+    "max_level": 5,
+    "reset_rules": []
+  },
+  {
+    "id": "wayfarers_mug",
+    "name": "The Wayfarer\u2019s Mug",
+    "world_id": "shattered_realms",
+    "description": "The Wayfarer\u2019s Mug beginner area.",
+    "reset_enabled": true,
+    "reset_interval_minutes": 30,
+    "reset_mode": "empty_only",
+    "min_level": 1,
+    "max_level": 5,
+    "reset_rules": []
+  },
+  {
+    "id": "registrar_hall",
+    "name": "Registrar Hall",
+    "world_id": "shattered_realms",
+    "description": "Registrar Hall beginner area.",
+    "reset_enabled": true,
+    "reset_interval_minutes": 30,
+    "reset_mode": "empty_only",
+    "min_level": 1,
+    "max_level": 5,
+    "reset_rules": []
+  },
+  {
+    "id": "east_farmland",
+    "name": "East Farmland",
+    "world_id": "shattered_realms",
+    "description": "East Farmland beginner area.",
+    "reset_enabled": true,
+    "reset_interval_minutes": 30,
+    "reset_mode": "empty_only",
+    "min_level": 1,
+    "max_level": 5,
+    "reset_rules": []
+  },
+  {
+    "id": "emberwood_edge",
+    "name": "Emberwood Edge",
+    "world_id": "shattered_realms",
+    "description": "Emberwood Edge beginner area.",
+    "reset_enabled": true,
+    "reset_interval_minutes": 30,
+    "reset_mode": "empty_only",
+    "min_level": 1,
+    "max_level": 5,
+    "reset_rules": []
+  },
+  {
+    "id": "abandoned_watchpost",
+    "name": "Abandoned Watchpost",
+    "world_id": "shattered_realms",
+    "description": "Abandoned Watchpost beginner area.",
+    "reset_enabled": true,
+    "reset_interval_minutes": 30,
+    "reset_mode": "empty_only",
+    "min_level": 1,
+    "max_level": 5,
+    "reset_rules": []
+  },
+  {
+    "id": "rat_cellar",
+    "name": "Rat Cellar",
+    "world_id": "shattered_realms",
+    "description": "Rat Cellar beginner area.",
+    "reset_enabled": true,
+    "reset_interval_minutes": 30,
+    "reset_mode": "empty_only",
+    "min_level": 1,
+    "max_level": 5,
+    "reset_rules": []
+  }
+]

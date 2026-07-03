@@ -1,0 +1,381 @@
+[
+  {
+    "id": "warrior",
+    "name": "Warrior",
+    "description": "Warrior class for Shattered Realms.",
+    "primary_stats": [
+      "Strength",
+      "Constitution"
+    ],
+    "starting_stats": {
+      "Strength": 5,
+      "Dexterity": 5,
+      "Constitution": 5,
+      "Intelligence": 5,
+      "Wisdom": 5,
+      "Charisma": 5
+    },
+    "base_stats": {
+      "Strength": 5,
+      "Dexterity": 5,
+      "Constitution": 5,
+      "Intelligence": 5,
+      "Wisdom": 5,
+      "Charisma": 5
+    },
+    "derived_resource": "class resource",
+    "resource_type": "Stamina",
+    "allowed_armor": [
+      "light"
+    ],
+    "allowed_weapons": [
+      "simple"
+    ],
+    "starting_abilities": [
+      "power_strike",
+      "guard_stance",
+      "parry"
+    ],
+    "starting_items": [
+      "training_sword",
+      "wooden_shield",
+      "minor_healing_potion"
+    ],
+    "level_progression": {
+      "2": [
+        "new ability choice"
+      ]
+    },
+    "level_1_choices": [],
+    "tags": [
+      "warrior",
+      "starter"
+    ],
+    "ability_ids": []
+  },
+  {
+    "id": "mage",
+    "name": "Mage",
+    "description": "Mage class for Shattered Realms.",
+    "primary_stats": [
+      "Intelligence",
+      "Wisdom"
+    ],
+    "starting_stats": {
+      "Strength": 5,
+      "Dexterity": 5,
+      "Constitution": 5,
+      "Intelligence": 5,
+      "Wisdom": 5,
+      "Charisma": 5
+    },
+    "base_stats": {
+      "Strength": 5,
+      "Dexterity": 5,
+      "Constitution": 5,
+      "Intelligence": 5,
+      "Wisdom": 5,
+      "Charisma": 5
+    },
+    "derived_resource": "class resource",
+    "resource_type": "Mana",
+    "allowed_armor": [
+      "light"
+    ],
+    "allowed_weapons": [
+      "simple"
+    ],
+    "starting_abilities": [
+      "arcane_bolt",
+      "mage_ward",
+      "detect_magic"
+    ],
+    "starting_items": [
+      "wooden_staff",
+      "spellbook",
+      "minor_mana_potion"
+    ],
+    "level_progression": {
+      "2": [
+        "new ability choice"
+      ]
+    },
+    "level_1_choices": [],
+    "tags": [
+      "mage",
+      "starter"
+    ],
+    "ability_ids": []
+  },
+  {
+    "id": "rogue",
+    "name": "Rogue",
+    "description": "Rogue class for Shattered Realms.",
+    "primary_stats": [
+      "Dexterity",
+      "Charisma"
+    ],
+    "starting_stats": {
+      "Strength": 5,
+      "Dexterity": 5,
+      "Constitution": 5,
+      "Intelligence": 5,
+      "Wisdom": 5,
+      "Charisma": 5
+    },
+    "base_stats": {
+      "Strength": 5,
+      "Dexterity": 5,
+      "Constitution": 5,
+      "Intelligence": 5,
+      "Wisdom": 5,
+      "Charisma": 5
+    },
+    "derived_resource": "class resource",
+    "resource_type": "Stamina",
+    "allowed_armor": [
+      "light"
+    ],
+    "allowed_weapons": [
+      "simple"
+    ],
+    "starting_abilities": [
+      "sneak",
+      "backstab",
+      "search",
+      "pick_lock"
+    ],
+    "starting_items": [
+      "dagger",
+      "lockpick_set",
+      "padded_vest"
+    ],
+    "level_progression": {
+      "2": [
+        "new ability choice"
+      ]
+    },
+    "level_1_choices": [],
+    "tags": [
+      "rogue",
+      "starter"
+    ],
+    "ability_ids": []
+  },
+  {
+    "id": "cleric",
+    "name": "Cleric",
+    "description": "Cleric class for Shattered Realms.",
+    "primary_stats": [
+      "Wisdom",
+      "Constitution"
+    ],
+    "starting_stats": {
+      "Strength": 5,
+      "Dexterity": 5,
+      "Constitution": 5,
+      "Intelligence": 5,
+      "Wisdom": 5,
+      "Charisma": 5
+    },
+    "base_stats": {
+      "Strength": 5,
+      "Dexterity": 5,
+      "Constitution": 5,
+      "Intelligence": 5,
+      "Wisdom": 5,
+      "Charisma": 5
+    },
+    "derived_resource": "class resource",
+    "resource_type": "Mana",
+    "allowed_armor": [
+      "light"
+    ],
+    "allowed_weapons": [
+      "simple"
+    ],
+    "starting_abilities": [
+      "healing_light",
+      "smite",
+      "first_aid"
+    ],
+    "starting_items": [
+      "rusty_mace",
+      "healers_kit",
+      "wooden_shield"
+    ],
+    "level_progression": {
+      "2": [
+        "new ability choice"
+      ]
+    },
+    "level_1_choices": [],
+    "tags": [
+      "cleric",
+      "starter"
+    ],
+    "ability_ids": []
+  },
+  {
+    "id": "ranger",
+    "name": "Ranger",
+    "description": "Ranger class for Shattered Realms.",
+    "primary_stats": [
+      "Dexterity",
+      "Wisdom"
+    ],
+    "starting_stats": {
+      "Strength": 5,
+      "Dexterity": 5,
+      "Constitution": 5,
+      "Intelligence": 5,
+      "Wisdom": 5,
+      "Charisma": 5
+    },
+    "base_stats": {
+      "Strength": 5,
+      "Dexterity": 5,
+      "Constitution": 5,
+      "Intelligence": 5,
+      "Wisdom": 5,
+      "Charisma": 5
+    },
+    "derived_resource": "class resource",
+    "resource_type": "Stamina",
+    "allowed_armor": [
+      "light"
+    ],
+    "allowed_weapons": [
+      "simple"
+    ],
+    "starting_abilities": [
+      "precise_shot",
+      "track_quarry",
+      "fieldcraft"
+    ],
+    "starting_items": [
+      "short_bow",
+      "side_blade",
+      "ration"
+    ],
+    "level_progression": {
+      "2": [
+        "new ability choice"
+      ]
+    },
+    "level_1_choices": [],
+    "tags": [
+      "ranger",
+      "starter"
+    ],
+    "ability_ids": []
+  },
+  {
+    "id": "battle_mage",
+    "name": "Battle Mage",
+    "description": "Battle Mage class for Shattered Realms.",
+    "primary_stats": [
+      "Strength",
+      "Intelligence"
+    ],
+    "starting_stats": {
+      "Strength": 5,
+      "Dexterity": 5,
+      "Constitution": 5,
+      "Intelligence": 5,
+      "Wisdom": 5,
+      "Charisma": 5
+    },
+    "base_stats": {
+      "Strength": 5,
+      "Dexterity": 5,
+      "Constitution": 5,
+      "Intelligence": 5,
+      "Wisdom": 5,
+      "Charisma": 5
+    },
+    "derived_resource": "class resource",
+    "resource_type": "Mana",
+    "allowed_armor": [
+      "light"
+    ],
+    "allowed_weapons": [
+      "simple"
+    ],
+    "starting_abilities": [
+      "arcane_bolt",
+      "flame_shield",
+      "battle_focus"
+    ],
+    "starting_items": [
+      "battle_focus",
+      "iron_buckler",
+      "reinforced_robes"
+    ],
+    "level_progression": {
+      "2": [
+        "new ability choice"
+      ]
+    },
+    "level_1_choices": [],
+    "tags": [
+      "battle_mage",
+      "starter"
+    ],
+    "ability_ids": []
+  },
+  {
+    "id": "necromancer",
+    "name": "Necromancer",
+    "description": "Necromancer class for Shattered Realms.",
+    "primary_stats": [
+      "Intelligence",
+      "Wisdom"
+    ],
+    "starting_stats": {
+      "Strength": 5,
+      "Dexterity": 5,
+      "Constitution": 5,
+      "Intelligence": 5,
+      "Wisdom": 5,
+      "Charisma": 5
+    },
+    "base_stats": {
+      "Strength": 5,
+      "Dexterity": 5,
+      "Constitution": 5,
+      "Intelligence": 5,
+      "Wisdom": 5,
+      "Charisma": 5
+    },
+    "derived_resource": "class resource",
+    "resource_type": "Mana",
+    "allowed_armor": [
+      "light"
+    ],
+    "allowed_weapons": [
+      "simple"
+    ],
+    "starting_abilities": [
+      "grave_sense",
+      "bone_shard",
+      "grave_touched"
+    ],
+    "starting_items": [
+      "bone_wand",
+      "spellbook",
+      "component_pouch"
+    ],
+    "level_progression": {
+      "2": [
+        "new ability choice"
+      ]
+    },
+    "level_1_choices": [],
+    "tags": [
+      "necromancer",
+      "starter"
+    ],
+    "ability_ids": []
+  }
+]

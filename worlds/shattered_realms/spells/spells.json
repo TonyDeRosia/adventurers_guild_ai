@@ -1,0 +1,340 @@
+[
+  {
+    "id": "arcane_bolt",
+    "name": "Arcane Bolt",
+    "type": "spell",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "Arcane Bolt beginner spell.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Arcane Bolt concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "spell"
+    ]
+  },
+  {
+    "id": "mage_ward",
+    "name": "Mage Ward",
+    "type": "spell",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "Mage Ward beginner spell.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Mage Ward concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "spell"
+    ]
+  },
+  {
+    "id": "detect_magic",
+    "name": "Detect Magic",
+    "type": "spell",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "Detect Magic beginner spell.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Detect Magic concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "spell"
+    ]
+  },
+  {
+    "id": "fire_spark",
+    "name": "Fire Spark",
+    "type": "spell",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "Fire Spark beginner spell.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Fire Spark concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "spell"
+    ]
+  },
+  {
+    "id": "ice_shard",
+    "name": "Ice Shard",
+    "type": "spell",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "Ice Shard beginner spell.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Ice Shard concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "spell"
+    ]
+  },
+  {
+    "id": "flame_shield",
+    "name": "Flame Shield",
+    "type": "spell",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "Flame Shield beginner spell.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Flame Shield concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "spell"
+    ]
+  },
+  {
+    "id": "healing_light",
+    "name": "Healing Light",
+    "type": "spell",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "Healing Light beginner spell.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Healing Light concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "spell"
+    ]
+  },
+  {
+    "id": "smite",
+    "name": "Smite",
+    "type": "spell",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "Smite beginner spell.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Smite concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "spell"
+    ]
+  },
+  {
+    "id": "grave_sense",
+    "name": "Grave Sense",
+    "type": "spell",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "Grave Sense beginner spell.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Grave Sense concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "spell"
+    ]
+  },
+  {
+    "id": "bone_shard",
+    "name": "Bone Shard",
+    "type": "spell",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "Bone Shard beginner spell.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Bone Shard concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "spell"
+    ]
+  },
+  {
+    "id": "shadow_whisper",
+    "name": "Shadow Whisper",
+    "type": "spell",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "Shadow Whisper beginner spell.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Shadow Whisper concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "spell"
+    ]
+  },
+  {
+    "id": "natures_grasp",
+    "name": "Nature\u2019s Grasp",
+    "type": "spell",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "Nature\u2019s Grasp beginner spell.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Nature\u2019s Grasp concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "spell"
+    ]
+  },
+  {
+    "id": "wind_step",
+    "name": "Wind Step",
+    "type": "spell",
+    "class_tags": [
+      "starter"
+    ],
+    "level_requirement": 1,
+    "resource_cost": 3,
+    "cooldown": 0,
+    "target_type": "single",
+    "range": "near",
+    "description": "Wind Step beginner spell.",
+    "mechanical_effect": {
+      "effect": "starter_scale",
+      "value": 1
+    },
+    "narrative_guidance": "Describe Wind Step concisely; do not alter mechanics.",
+    "scaling": {
+      "per_level": 1
+    },
+    "tags": [
+      "starter",
+      "spell"
+    ]
+  }
+]
