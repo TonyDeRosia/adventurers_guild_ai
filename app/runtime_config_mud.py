@@ -84,3 +84,32 @@ def get_default_mud_colors() -> dict[str, str]:
     for field_name in MudColorConfig.__dataclass_fields__:
         result[field_name] = getattr(config, field_name)
     return result
+
+@dataclass
+class MudRuntimeConfig:
+    """Server-side Smart MUD runtime configuration."""
+    default_world_id: str = ""
+    ai_provider: str = "null"
+
+
+class MudRuntimeConfigStore:
+    """JSON config store for Smart MUD startup settings."""
+
+    def __init__(self, path):
+        from pathlib import Path
+        self.path = Path(path)
+
+    def load(self) -> MudRuntimeConfig:
+        import json
+        if not self.path.exists():
+            return MudRuntimeConfig()
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return MudRuntimeConfig()
+        return MudRuntimeConfig(default_world_id=str(data.get("default_world_id", "")), ai_provider=str(data.get("ai_provider", "null")))
+
+    def save(self, config: MudRuntimeConfig) -> None:
+        import json
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps(config.__dict__, indent=2), encoding="utf-8")

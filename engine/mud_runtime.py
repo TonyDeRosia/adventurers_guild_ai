@@ -7,7 +7,11 @@ import sqlite3
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
+
+from engine.mud_commands import MudCommandEngine
+from engine.mud_displays import render_prompt, render_room
+from engine.world_registry import WorldRegistry
 
 
 @dataclass
@@ -329,15 +333,146 @@ class MudWorldRegistry:
 class MudRuntime:
     """Primary Smart MUD application runtime."""
 
-    def __init__(self, root: Path, user_data_dir: Path):
+    def __init__(self, root: Path, user_data_dir: Path, world_registry: WorldRegistry | None = None):
         self.root = root
         self.user_data_dir = user_data_dir
+        self.user_data_dir.mkdir(parents=True, exist_ok=True)
         self.state_store = MudStateStore(user_data_dir / "mud_state.db")
-        self.world_registry = MudWorldRegistry(user_data_dir / "mud_worlds")
+        self.world_registry = world_registry or WorldRegistry()
         self.active_world_id: Optional[str] = None
+        self.active_world: Any = None
         self.sessions: dict[str, MudSession] = {}
+        self.command_engine = MudCommandEngine(self.state_store)
+        self.sqlite_ready = (user_data_dir / "mud_state.db").exists()
         print("[mud-runtime] Smart MUD runtime initialized")
-        print("[mud-runtime] No legacy campaign systems loaded")
+
+    def load_world(self, world_id: str) -> Any:
+        """Load a read-only world template package for gameplay."""
+        self.active_world = self.world_registry.load_world(world_id)
+        self.active_world_id = world_id
+        return self.active_world
+
+    def list_characters(self, world_id: str = "") -> list[dict[str, Any]]:
+        """List SQLite-backed characters for a world."""
+        with sqlite3.connect(self.state_store.db_path) as conn:
+            rows = conn.execute(
+                "SELECT id, world_id, name, role, immortal_level, data FROM characters WHERE (? = '' OR world_id = ?) ORDER BY name",
+                (world_id, world_id),
+            ).fetchall()
+        characters: list[dict[str, Any]] = []
+        for row in rows:
+            data = json.loads(row[5] or "{}")
+            characters.append(
+                {
+                    "character_id": row[0],
+                    "world_id": row[1],
+                    "name": row[2],
+                    "role": row[3],
+                    "immortal_level": row[4],
+                    "room_id": data.get("room_id", ""),
+                    "level": data.get("level", 1),
+                }
+            )
+        return characters
+
+    def create_character(self, *, world_id: str, name: str, race_id: str = "", class_id: str = "") -> dict[str, Any]:
+        """Create one authoritative SQLite character state."""
+        if not self.active_world or self.active_world_id != world_id:
+            self.load_world(world_id)
+        character_id = f"player_{name.lower().strip().replace(' ', '_') or 'player'}"
+        start_room = getattr(self.active_world, "default_starting_room_id", "") or ""
+        char = MudCharacter(
+            id=character_id,
+            name=name,
+            role="player",
+            room_id=start_room,
+            abilities=[value for value in (race_id, class_id) if value],
+        )
+        self.state_store.save_character(char, world_id)
+        return self._character_payload(char, world_id)
+
+    def enter_world(self, character_id: str) -> dict[str, Any]:
+        """Enter the loaded world as a SQLite-backed character."""
+        char = self.state_store.load_character(character_id)
+        if char is None:
+            raise ValueError(f"Character not found: {character_id}")
+        if not self.active_world_id:
+            with sqlite3.connect(self.state_store.db_path) as conn:
+                row = conn.execute("SELECT world_id FROM characters WHERE id = ?", (character_id,)).fetchone()
+            if row and row[0]:
+                self.load_world(str(row[0]))
+        self.sessions[character_id] = MudSession(
+            session_id=character_id,
+            character_id=character_id,
+            world_id=self.active_world_id or "",
+            connected_at=datetime.now(timezone.utc).isoformat(),
+            last_activity=datetime.now(timezone.utc).isoformat(),
+        )
+        return {"ok": True, "character": self._character_payload(char, self.active_world_id or ""), "view": self.play_view(character_id)}
+
+    def play_view(self, character_id: str) -> dict[str, Any]:
+        """Render the current room through the single MUD display pipeline."""
+        char = self.state_store.load_character(character_id) if character_id else None
+        if char is None:
+            return {"html": "", "text": "Create a character to enter the world.", "prompt": ">"}
+        room = self._current_room(char)
+        colors = self.get_effective_mud_colors()
+        html = render_room(room, colors, char)
+        prompt = render_prompt(char, colors)
+        return {"html": html, "text": room.description, "prompt": prompt, "room_id": char.room_id}
+
+    def handle_input(self, character_id: str, command: str) -> dict[str, Any]:
+        """Execute a command and persist command/output scrollback to SQLite."""
+        char = self.state_store.load_character(character_id)
+        if char is None:
+            raise ValueError(f"Character not found: {character_id}")
+        result = self.command_engine.handle_command(char, command)
+        session = self.sessions.get(character_id)
+        turn = (session.command_count + 1) if session else 1
+        self.state_store.save_command(character_id, self.active_world_id or "", turn, command)
+        self.state_store.save_scrollback(character_id, self.active_world_id or "", turn, result.narrative)
+        if session:
+            session.command_count = turn
+            session.last_activity = datetime.now(timezone.utc).isoformat()
+        return {"ok": result.ok, "output": result.narrative, "view": self.play_view(character_id)}
+
+    def _current_room(self, char: MudCharacter) -> MudRoom:
+        if self.active_world is not None:
+            try:
+                room_data = self.active_world.room(char.room_id)
+                return MudRoom(
+                    id=str(room_data.get("id", char.room_id)),
+                    area_id=str(room_data.get("area_id", "")),
+                    title=str(room_data.get("name") or room_data.get("title") or char.room_id),
+                    description=str(room_data.get("description", "")),
+                    exits=list(room_data.get("exits", []) or []),
+                    npcs=list(room_data.get("npcs", []) or []),
+                    objects=list(room_data.get("objects", []) or []),
+                )
+            except Exception:
+                pass
+        return MudRoom(id=char.room_id or "void", area_id="", title="The Void", description="An unfinished room.", exits=[])
+
+    def _character_payload(self, char: MudCharacter, world_id: str) -> dict[str, Any]:
+        return {
+            "character_id": char.id,
+            "world_id": world_id,
+            "name": char.name,
+            "role": char.role,
+            "room_id": char.room_id,
+            "health": {"current": char.hp, "max": char.max_hp},
+            "mana": {"current": char.mana, "max": char.max_mana},
+            "stamina": {"current": char.stamina, "max": char.max_stamina},
+            "experience": char.xp,
+            "gold": char.gold,
+            "inventory": char.inventory,
+            "equipment": char.equipment,
+            "known_abilities": char.abilities,
+            "known_skills": [a for a in char.abilities if str(a).startswith("skill_")],
+            "quest_progress": {},
+            "npc_relationships": {},
+            "faction_reputation": {},
+        }
 
     def get_effective_mud_colors(self) -> dict[str, str]:
         """Get current MUD color configuration."""

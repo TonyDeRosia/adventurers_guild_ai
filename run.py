@@ -1,4 +1,4 @@
-"""Primary launcher for Adventurer Guild AI."""
+"""Primary launcher for Smart MUD."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ BACKEND_READY_TIMEOUT_SECONDS = 30.0
 
 def _print_banner() -> None:
     print("=" * 36)
-    print("      Adventurer Guild AI")
+    print("      Smart MUD")
     print("=" * 36)
 
 
@@ -73,7 +73,7 @@ def _initialize_paths() -> None:
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Start Adventurer Guild AI")
+    parser = argparse.ArgumentParser(description="Start Smart MUD")
     parser.add_argument(
         "--terminal",
         action="store_true",
@@ -172,7 +172,7 @@ def _launch_webview_window(url: str) -> None:
             "Install dependencies (pip install -r requirements.txt) and try again."
         ) from exc
 
-    webview.create_window("Adventurers Guild AI", url, width=1280, height=800, resizable=True)
+    webview.create_window("Smart MUD", url, width=1280, height=800, resizable=True)
     webview.start()
 
 
@@ -199,7 +199,7 @@ def _run_backend_server(host: str, port: int) -> int:
     return 0
 def main() -> int:
     _print_banner()
-    print("[startup] Initializing systems...")
+    print("[startup] Loading configuration...")
     _log_startup("Startup sequence started.")
 
     try:
@@ -251,7 +251,7 @@ def main() -> int:
 
         from app.main import main as terminal_main
 
-        print("Starting terminal mode (fallback/debug)...")
+        print("Starting Smart MUD terminal shell...")
         terminal_main()
         _log_startup("Terminal mode exited cleanly.")
         return 0
