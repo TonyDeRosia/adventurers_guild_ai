@@ -74,7 +74,7 @@ from engine.game_state_manager import GameStateManager
 from engine.scene_simulation import ensure_scene_v1
 from engine.core_game import auto_allocate_stats, by_id, calculate_derived_stats, load_core_game
 from engine.world_registry import WorldRegistry, by_id as world_by_id
-from engine.mud_rendering import PRESETS, render_room, render_semantic_html, semantic
+from engine.mud_rendering import PRESETS, SEMANTIC_COLOR_ROLES, render_room, render_semantic_html, semantic
 from engine.mud_state_store import MUDStateStore
 from engine.spellbook import normalize_spellbook_entry
 from images.base import ImageGenerationRequest, ImageGenerationResult, ImageGeneratorAdapter, NullImageAdapter
@@ -4658,10 +4658,10 @@ class WebRuntime:
             "character": character,
             "room": room,
             "output": output,
-            "output_html": render_semantic_html(output),
+            "output_html": render_semantic_html(output, self._effective_mud_colors()),
             "prompt_text": prompt_text,
             "semantic_prompt": semantic_prompt,
-            "prompt_html": render_semantic_html(semantic_prompt),
+            "prompt_html": render_semantic_html(semantic_prompt, self._effective_mud_colors()),
         }
 
     def mud_input(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -4669,7 +4669,10 @@ class WebRuntime:
         if not text:
             raise ValueError("text is required")
         result = process_player_input(self, text, "ic")
-        return {"result": result.response, **self.mud_play_view()}
+        with suppress(Exception):
+            self.save_active_campaign(self.session.active_slot)
+        play_view = self.mud_play_view()
+        return {"ok": True, "result": result.response, "play_view": play_view, **play_view}
 
     def get_mud_memory_inspector(self) -> dict[str, Any]:
         state = self.session.state
@@ -7391,6 +7394,8 @@ class WebRuntime:
             "fallback_mode_label": "Basic DM/null provider fallback mode" if fallback_mode else "Provider decision mode available",
             "force_gm_orchestrator": bool(getattr(self.app_config.model, "force_gm_orchestrator", False)),
             "python_multipart": getattr(self, "python_multipart_status", ensure_python_multipart_available()),
+            "mud_color_presets": PRESETS,
+            "mud_colors": self._effective_mud_colors(),
         }
 
     def set_gm_orchestrator_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -7433,6 +7438,17 @@ class WebRuntime:
             "fallback_mode": not provider_available,
         }
 
+
+    def _effective_mud_colors(self) -> dict[str, str]:
+        colors = dict(PRESETS["Dark Fantasy"])
+        custom = getattr(self.app_config, "mud_colors", {}) or {}
+        if isinstance(custom, dict):
+            for role in SEMANTIC_COLOR_ROLES:
+                value = str(custom.get(role, "")).strip()
+                if re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+                    colors[role] = value
+        return colors
+
     def get_global_settings(self) -> dict[str, Any]:
         path_status = self.get_path_configuration_status()
         return {
@@ -7470,6 +7486,8 @@ class WebRuntime:
             "dependency_readiness": self.get_dependency_readiness(),
             "supported_models": self.get_supported_model_inventory(refresh=False),
             "python_multipart": getattr(self, "python_multipart_status", ensure_python_multipart_available()),
+            "mud_color_presets": PRESETS,
+            "mud_colors": self._effective_mud_colors(),
         }
 
     def set_global_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -7523,6 +7541,14 @@ class WebRuntime:
             managed_install_path=str(image_payload.get("managed_install_path", self.app_config.image.managed_install_path)),
             managed_logs_path=str(image_payload.get("managed_logs_path", self.app_config.image.managed_logs_path)),
         )
+        mud_color_payload = payload.get("mud_colors", getattr(self.app_config, "mud_colors", {}))
+        if isinstance(mud_color_payload, dict):
+            clean_colors: dict[str, str] = {}
+            for role in SEMANTIC_COLOR_ROLES:
+                value = str(mud_color_payload.get(role, "")).strip()
+                if re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+                    clean_colors[role] = value
+            self.app_config.mud_colors = clean_colors
         self.config_store.save(self.app_config)
         self.engine.model = self._create_model_adapter()
         self.image_adapter = self._create_image_adapter()
@@ -7687,6 +7713,14 @@ class WebRuntime:
             timeout_seconds=self.app_config.model.timeout_seconds,
             ollama_path=self.app_config.model.ollama_path,
         )
+        mud_color_payload = payload.get("mud_colors", getattr(self.app_config, "mud_colors", {}))
+        if isinstance(mud_color_payload, dict):
+            clean_colors: dict[str, str] = {}
+            for role in SEMANTIC_COLOR_ROLES:
+                value = str(mud_color_payload.get(role, "")).strip()
+                if re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+                    clean_colors[role] = value
+            self.app_config.mud_colors = clean_colors
         self.config_store.save(self.app_config)
         self.engine.model = self._create_model_adapter()
         status = self.get_model_status()

@@ -52,6 +52,11 @@ def test_smart_mud_layout_uses_terminal_prompt_and_compact_command_row() -> None
     assert 'id="mud-player-prompt"' in html
     assert 'class="input-bar compose-bar mud-command-row"' in html
     assert 'class="btn-primary mud-send-button"' in html
+    assert 'id="mud-menu-settings"' in html
+    assert 'id="mud-colors-settings"' in html
+    assert 'id="mud-color-preset"' in html
+    assert 'id="mud-color-roles"' in html
+    assert 'legacy-sidebar' in html
     assert html.index('id="dialogue-feed"') < html.index('id="mud-player-prompt"') < html.index('id="chat-input"')
     assert 'Campaign Log' not in html
     assert 'Adventure Panel' not in html

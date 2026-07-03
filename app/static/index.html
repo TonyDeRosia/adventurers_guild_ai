@@ -8,7 +8,7 @@
   </head>
   <body class="smart-mud-mode">
     <div class="app-shell">
-      <aside class="sidebar left-panel">
+      <aside class="sidebar left-panel legacy-sidebar" aria-hidden="true">
         <h2 class="panel-heading">World</h2>
         <p class="panel-subheading">Choose a world and character. Save State updates automatically.</p>
         <button id="open-campaign-browser" type="button">Worlds</button>
@@ -26,12 +26,20 @@
         <header class="chat-header">
           <div class="chat-header-title">
             <h1>The Shattered Realms</h1>
-            <p id="campaign-meta">Loading campaign...</p>
-            <p id="campaign-display-mode-indicator" class="campaign-display-mode-indicator">Display Mode: Story Mode</p>
+            <p id="campaign-meta">Loading Smart MUD...</p>
+            <p id="campaign-display-mode-indicator" class="campaign-display-mode-indicator">Smart MUD</p>
             <p id="creator-mode-badge" class="creator-mode-badge hidden">Creator Mode</p>
           </div>
+          <nav class="mud-top-menu" aria-label="Smart MUD menu">
+            <button id="mud-menu-character" type="button">Character</button>
+            <button id="mud-menu-inventory" type="button">Inventory</button>
+            <button id="mud-menu-equipment" type="button">Equipment</button>
+            <button id="mud-menu-spellbook" type="button">Spellbook</button>
+            <button id="mud-menu-journal" type="button">Journal</button>
+            <button id="mud-menu-settings" type="button">Settings</button>
+          </nav>
         </header>
-        <section id="scene-context-panel" class="scene-context-panel campaign-status-strip" aria-label="Campaign status">
+        <section id="scene-context-panel" class="scene-context-panel campaign-status-strip" aria-label="Smart MUD status">
           <div class="status-pill">
             <span>World</span>
             <strong id="status-campaign-name">Loading...</strong>
@@ -80,10 +88,10 @@
           <input id="chat-input" type="text" placeholder="look" />
           <button id="send-btn" class="btn-primary mud-send-button">Send</button>
         </footer>
-        <div class="status-stack"><div id="status-line" class="scene-visual-meta">Ready.</div><div id="autosave-status" class="autosave-status">Campaigns autosave automatically.</div></div>
+        <div class="status-stack"><div id="status-line" class="scene-visual-meta">Ready.</div><div id="autosave-status" class="autosave-status">Save State ready.</div></div>
       </main>
 
-      <aside class="sidebar right-panel">
+      <aside class="sidebar right-panel legacy-sidebar" aria-hidden="true">
         <div class="panel-title-row">
           <h2 class="panel-heading">Character</h2>
         </div>
@@ -416,7 +424,7 @@
           <h3>Settings</h3>
           <button id="close-setup-modal">Close Settings</button>
         </div>
-        <p class="setup-intro">Tune how your adventure looks, plays, and responds. Basic DM Mode is available for everyone; optional local tools are tucked away for players who want extra setup.</p>
+        <p class="setup-intro">Customize the Smart MUD client. Developer tools are tucked away for players who need them.</p>
 
         <section class="panel-block">
           <h4>General</h4>
@@ -429,6 +437,23 @@
               <option value="dialogue_focused">Dialogue focused</option>
             </select>
           </label>
+        </section>
+
+        <section id="mud-colors-settings" class="panel-block mud-colors-settings">
+          <h4>MUD Colors</h4>
+          <label>Preset
+            <select id="mud-color-preset">
+              <option>Classic MUD</option>
+              <option>Green Terminal</option>
+              <option>Amber Terminal</option>
+              <option selected>Dark Fantasy</option>
+              <option>High Contrast</option>
+              <option>Colorblind Friendly</option>
+            </select>
+          </label>
+          <div id="mud-color-preview" class="mud-color-preview"><span class="mud-room-name">Room</span> <span class="mud-exit">north</span> <span class="mud-prompt-hp">HP:45/45</span> <span class="mud-prompt-mana">MP:30/30</span> <span class="mud-prompt-gold">Gold:10</span></div>
+          <div id="mud-color-roles" class="mud-color-roles"></div>
+          <div class="button-row compact-row"><button id="mud-color-reset" type="button">Reset to preset</button><button id="mud-color-save" type="button" class="btn-primary">Save MUD Colors</button></div>
         </section>
 
         <section class="panel-block">

@@ -3987,6 +3987,39 @@ clearMudMemoryButton?.addEventListener('click', clearMudMemoryInspector);
 let mudWorlds = [];
 let mudSelectedWorld = null;
 let mudCharacters = [];
+const MUD_COLOR_ROLES = ['room_name','area_name','room_description','npc_friendly','npc_neutral','npc_hostile','monster','player','item_common','item_uncommon','item_rare','item_epic','item_legendary','exit','quest','magic','combat','damage','healing','system','warning','error','prompt_marker','prompt_hp','prompt_mana','prompt_stamina','prompt_xp','prompt_gold','dialogue'];
+let mudColorPresets = {};
+let mudColors = {};
+function mudRoleClass(role) { return `mud-${String(role).replaceAll('_', '-')}`; }
+function mudApplyColors(colors = mudColors) {
+  mudColors = { ...mudColors, ...(colors || {}) };
+  const root = document.documentElement;
+  MUD_COLOR_ROLES.forEach((role) => root.style.setProperty(`--${mudRoleClass(role)}-color`, mudColors[role] || '#ffffff'));
+  document.querySelectorAll('[data-mud-role-color]').forEach((input) => { if (mudColors[input.dataset.mudRoleColor]) input.value = mudColors[input.dataset.mudRoleColor]; });
+}
+function mudRenderColorSettings() {
+  const container = document.getElementById('mud-color-roles');
+  if (!container) return;
+  container.innerHTML = MUD_COLOR_ROLES.map((role) => `<label>${escapeHtml(role)} <input type="color" data-mud-role-color="${escapeHtml(role)}" value="${escapeHtml(mudColors[role] || '#ffffff')}"></label>`).join('');
+  container.querySelectorAll('[data-mud-role-color]').forEach((input) => input.addEventListener('input', () => mudApplyColors({ [input.dataset.mudRoleColor]: input.value })));
+}
+function mudResetColorsToPreset() {
+  const preset = document.getElementById('mud-color-preset')?.value || 'Dark Fantasy';
+  mudApplyColors(mudColorPresets[preset] || mudColorPresets['Dark Fantasy'] || {});
+  mudRenderColorSettings();
+}
+async function mudSaveColors() {
+  await api('/api/settings/global', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mud_colors: mudColors }) });
+  setStatus('MUD colors saved.');
+}
+async function mudLoadColorSettings() {
+  try {
+    const data = await api('/api/settings/global');
+    mudColorPresets = data.settings?.mud_color_presets || {};
+    mudApplyColors(data.settings?.mud_colors || mudColorPresets['Dark Fantasy'] || {});
+    mudRenderColorSettings();
+  } catch (error) { console.warn('Unable to load MUD colors', error); }
+}
 async function mudLoadWorlds() { mudWorlds = (await api('/api/mud/worlds')).worlds || []; }
 function mudUpdateChrome(title, subtitle, roomName = '') {
   document.body?.classList.add('smart-mud-mode');
@@ -4003,7 +4036,7 @@ function mudSemanticHtml(text) {
   const escaped = escapeHtml(String(text || ''));
   return escaped.replace(/\{(\/)?([a-z_]+)\}/g, (_m, closing, role) => {
     if (!roles.has(role)) return '';
-    return closing ? '</span>' : `<span class="mud-role mud-${role.replaceAll('_', '-')}">`;
+    return closing ? '</span>' : `<span class="mud-role ${mudRoleClass(role)}" style="color:var(--${mudRoleClass(role)}-color, #ffffff)">`;
   }).replace(/\n/g, '<br>');
 }
 function mudPromptText(data) {
@@ -4013,7 +4046,7 @@ function mudPromptText(data) {
 }
 function mudRenderPrompt(data) {
   if (!mudPlayerPrompt) return;
-  mudPlayerPrompt.innerHTML = data?.prompt_html || mudSemanticHtml(data?.semantic_prompt || mudPromptText(data));
+  mudPlayerPrompt.innerHTML = mudSemanticHtml(data?.semantic_prompt || data?.prompt_text || mudPromptText(data));
 }
 function mudWorldCard(world) { const disabled = world.status !== 'playable'; return `<article class="mud-card ${disabled ? 'disabled' : ''}"><h3>${escapeHtml(world.name || world.id)}</h3><p><strong>Genre:</strong> ${escapeHtml(world.genre || '')}</p><p>${escapeHtml(world.description || '')}</p><p><strong>Status:</strong> ${escapeHtml(disabled ? 'Coming soon' : world.status)} · <strong>Version:</strong> ${escapeHtml(world.version || '')}</p><button type="button" data-mud-world="${escapeHtml(world.id)}" ${disabled ? 'disabled' : ''}>Enter World</button></article>`; }
 function mudRenderWorldSelect() { mudUpdateChrome('World Select', 'Smart MUD · World Select'); if (dialogueFeed) { dialogueFeed.innerHTML = `<section class="mud-world-select"><h2>World Select</h2><div class="mud-card-grid">${mudWorlds.map(mudWorldCard).join('')}</div></section>`; dialogueFeed.querySelectorAll('button[data-mud-world]').forEach((b) => { b.onclick = () => mudSelectWorld(b.dataset.mudWorld); }); } if (mudPlayerPrompt) mudPlayerPrompt.textContent = 'Save State ready.'; if (selectedSaveLabel) selectedSaveLabel.textContent = 'World Select'; }
@@ -4025,6 +4058,7 @@ function mudRenderCharacterCreator() { const races = mudSelectedWorld.races || [
 async function mudCreateCharacter() { const data = await api('/api/mud/characters/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ world_id: mudSelectedWorld.id, character_name: document.getElementById('mud-character-name').value.trim(), race_id: document.querySelector('input[name="mud-race"]:checked')?.value, class_id: document.querySelector('input[name="mud-class"]:checked')?.value, appearance: document.getElementById('mud-appearance').value.trim() }) }); await mudEnterCharacter(data.character.character_id); }
 async function mudEnterCharacter(characterId) { await api('/api/mud/characters/enter', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ world_id: mudSelectedWorld.id, character_id: characterId }) }); await mudRefreshPlayView(); }
 async function mudDeleteCharacter(characterId) { if (!confirm('Delete this character?')) return; await api('/api/mud/characters/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ world_id: mudSelectedWorld.id, character_id: characterId, confirm: true }) }); await mudLoadCharacters(); mudRenderCharacterSelect(); }
-async function mudRefreshPlayView(data = null) { data = data || await api('/api/mud/play-view'); mudUpdateChrome(data.world?.name || 'World', data.character?.name || 'Character', data.room?.name || 'Room'); if (dialogueFeed) dialogueFeed.innerHTML = `<div id="mud-terminal-output" class="mud-terminal-output">${data.output_html || mudSemanticHtml(data.output || '')}</div>`; mudRenderPrompt(data); setAutosaveStatus('Saved.'); document.getElementById('chat-input')?.focus(); }
-async function mudSendInput() { const input = document.getElementById('chat-input'); const text = input.value.trim(); if (!text) return; input.value = ''; const data = await api('/api/mud/input', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) }); await mudRefreshPlayView(data); }
-async function initMudShell() { await mudLoadWorlds(); mudRenderWorldSelect(); const sendButton = document.getElementById('send-btn'); const input = document.getElementById('chat-input'); if (sendButton) sendButton.onclick = mudSendInput; if (input) { input.placeholder = 'look'; input.onkeydown = (event) => { if (event.key === 'Enter') mudSendInput(); }; } setAutosaveStatus('Save State ready.'); }
+async function mudRefreshPlayView(data = null) { data = data || await api('/api/mud/play-view'); mudUpdateChrome(data.world?.name || 'World', data.character?.name || 'Character', data.room?.name || 'Room'); if (dialogueFeed) dialogueFeed.innerHTML = `<div id="mud-terminal-output" class="mud-terminal-output">${data.output_html || mudSemanticHtml(data.semantic_output || data.output || '')}</div>`; mudRenderPrompt(data); setAutosaveStatus('Saved.'); document.getElementById('chat-input')?.focus(); }
+async function mudSendInput() { const input = document.getElementById('chat-input'); const text = input.value.trim(); if (!text) return; input.value = ''; setAutosaveStatus('Saving...'); const data = await api('/api/mud/input', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) }); await mudRefreshPlayView(data.play_view || data); }
+async function initMudShell() { await mudLoadColorSettings(); await mudLoadWorlds(); mudRenderWorldSelect(); const sendButton = document.getElementById('send-btn'); const input = document.getElementById('chat-input'); if (sendButton) sendButton.onclick = mudSendInput; if (input) { input.placeholder = 'look'; input.onkeydown = (event) => { if (event.key === 'Enter') mudSendInput(); }; } setAutosaveStatus('Save State ready.'); document.getElementById('mud-color-preset')?.addEventListener('change', mudResetColorsToPreset); document.getElementById('mud-color-reset')?.addEventListener('click', mudResetColorsToPreset); document.getElementById('mud-color-save')?.addEventListener('click', mudSaveColors); document.getElementById('mud-menu-settings')?.addEventListener('click', () => openPrimaryModal('setup-modal')); document.getElementById('mud-menu-character')?.addEventListener('click', () => openPrimaryModal('runtime-character-sheets-modal')); document.getElementById('mud-menu-inventory')?.addEventListener('click', () => openPrimaryModal('runtime-inventory-modal')); document.getElementById('mud-menu-equipment')?.addEventListener('click', () => mudSendMenuCommand('equipment')); document.getElementById('mud-menu-spellbook')?.addEventListener('click', () => openPrimaryModal('runtime-spellbook-modal')); document.getElementById('mud-menu-journal')?.addEventListener('click', () => openPrimaryModal('campaign-events-modal')); }
+async function mudSendMenuCommand(command) { const input = document.getElementById('chat-input'); if (input) input.value = command; await mudSendInput(); }

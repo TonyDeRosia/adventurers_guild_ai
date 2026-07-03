@@ -48,6 +48,11 @@ class ImageRuntimeConfig:
 class AppRuntimeConfig:
     model: ModelRuntimeConfig
     image: ImageRuntimeConfig
+    mud_colors: dict[str, str] = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.mud_colors, dict):
+            self.mud_colors = {}
 
 
 class RuntimeConfigStore:
@@ -122,6 +127,7 @@ class RuntimeConfigStore:
                 managed_install_path=str(image_payload.get("managed_install_path", "")),
                 managed_logs_path=str(image_payload.get("managed_logs_path", "")),
             ),
+            mud_colors=payload.get("mud_colors", {}) if isinstance(payload.get("mud_colors", {}), dict) else {},
         )
 
     def save(self, config: AppRuntimeConfig) -> None:

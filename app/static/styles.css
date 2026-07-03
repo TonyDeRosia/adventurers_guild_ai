@@ -1343,3 +1343,84 @@ body.adventure-mode-enabled .creator-mode-only,
 .mud-role.mud-prompt-xp { color: #d8ffd8; }
 .mud-role.mud-prompt-gold { color: #ffd700; }
 .mud-role.mud-prompt-marker { color: #7ddc8a; font-weight: 700; }
+
+/* Smart MUD terminal-first layout */
+body.smart-mud-mode { overflow: hidden; }
+body.smart-mud-mode .app-shell {
+  display: block;
+  width: calc(100vw - 32px);
+  max-width: 1500px;
+  height: 100vh;
+  margin: 0 auto;
+  padding: clamp(8px, 1.2vw, 16px);
+}
+body.smart-mud-mode .legacy-sidebar,
+body.smart-mud-mode .left-panel,
+body.smart-mud-mode .right-panel,
+body.smart-mud-mode #scene-context-panel,
+body.smart-mud-mode .play-panel-header { display: none !important; }
+body.smart-mud-mode .chat-main {
+  height: calc(100vh - clamp(16px, 2.4vw, 32px));
+  max-height: calc(100vh - clamp(16px, 2.4vw, 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: clamp(10px, 1.3vw, 16px);
+}
+body.smart-mud-mode .chat-header {
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #263a55;
+  padding-bottom: 8px;
+  margin-bottom: 0;
+}
+.mud-top-menu { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.mud-top-menu button, .mud-command-row button { padding: 6px 10px; font-size: .84rem; border-radius: 8px; }
+body.smart-mud-mode .dialogue-panel {
+  flex: 1 1 auto;
+  min-height: clamp(360px, calc(100vh - 220px), 860px);
+  padding: 0;
+  overflow: hidden;
+}
+body.smart-mud-mode .mud-world-output {
+  display: block;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: clamp(14px, 1.5vw, 22px);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: clamp(14px, 1vw, 17px);
+  line-height: 1.55;
+  background: #07111f;
+}
+.mud-terminal-output { white-space: pre-wrap; }
+.mud-player-prompt {
+  flex: 0 0 auto;
+  border: 1px solid #31496a;
+  border-radius: 10px;
+  background: #0b1627;
+  padding: 8px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .95rem;
+  white-space: nowrap;
+  overflow-x: auto;
+}
+body.smart-mud-mode .mud-command-row {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+}
+body.smart-mud-mode .mud-command-row #input-mode-toggle { display: none !important; }
+.mud-command-marker { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #87ceeb; }
+body.smart-mud-mode .status-stack { flex: 0 0 auto; text-align: right; margin: 0; }
+.mud-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.mud-card, .mud-choice-card { border: 1px solid #31496a; border-radius: 10px; padding: 12px; background: #0d1728; }
+.mud-choice-card { display: grid; gap: 5px; }
+.mud-colors-settings label { display: grid; gap: 4px; margin-bottom: 8px; }
+.mud-color-roles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; max-height: 260px; overflow: auto; }
+.mud-color-preview { border: 1px solid #31496a; border-radius: 8px; background: #07111f; padding: 10px; margin: 8px 0; font-family: ui-monospace, monospace; }
