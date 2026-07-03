@@ -3994,12 +3994,66 @@ let mudColorPresets = {};
 let mudColors = {};
 let mudCommandHistory = [];
 let mudHistoryCursor = 0;
+let mudAutoFollowOutput = true;
+let mudJumpToBottomButton = null;
 function mudClientSettings() {
   return {
+    auto_scroll: document.getElementById('mud-auto-scroll')?.checked !== false,
+    pause_auto_scroll_when_scrolled_up: document.getElementById('mud-pause-auto-scroll')?.checked !== false,
     command_echo: document.getElementById('mud-command-echo')?.checked !== false,
     command_history_size: Number(document.getElementById('mud-command-history-size')?.value || 100),
     scrollback_size: Number(document.getElementById('mud-scrollback-size')?.value || 1000),
   };
+}
+function isUserNearBottom(container, thresholdPx = 80) {
+  if (!container) return true;
+  return (container.scrollHeight - container.scrollTop - container.clientHeight) <= thresholdPx;
+}
+function mudTerminalContainer() {
+  return document.getElementById('mud-terminal-output') || dialogueFeed;
+}
+function mudEnsureJumpButton() {
+  if (mudJumpToBottomButton) return mudJumpToBottomButton;
+  mudJumpToBottomButton = document.createElement('button');
+  mudJumpToBottomButton.id = 'mud-jump-to-bottom';
+  mudJumpToBottomButton.type = 'button';
+  mudJumpToBottomButton.className = 'mud-jump-to-bottom hidden';
+  mudJumpToBottomButton.textContent = 'Jump to bottom';
+  mudJumpToBottomButton.addEventListener('click', () => scrollMudTerminalToBottom(true));
+  document.body.appendChild(mudJumpToBottomButton);
+  return mudJumpToBottomButton;
+}
+function mudSetJumpVisible(visible) {
+  mudEnsureJumpButton().classList.toggle('hidden', !visible);
+}
+function scrollMudTerminalToBottom(force = false) {
+  const container = mudTerminalContainer();
+  if (!container) return;
+  if (force || (mudClientSettings().auto_scroll && mudAutoFollowOutput)) {
+    container.scrollTop = container.scrollHeight;
+    if (dialogueFeed && container !== dialogueFeed) dialogueFeed.scrollTop = dialogueFeed.scrollHeight;
+    mudAutoFollowOutput = true;
+    mudSetJumpVisible(false);
+  }
+}
+function mudBindTerminalScroll() {
+  const container = mudTerminalContainer();
+  if (!container || container.dataset.mudScrollBound === '1') return;
+  container.dataset.mudScrollBound = '1';
+  container.addEventListener('scroll', () => {
+    const nearBottom = isUserNearBottom(container);
+    mudAutoFollowOutput = nearBottom || !mudClientSettings().pause_auto_scroll_when_scrolled_up;
+    if (nearBottom) mudSetJumpVisible(false);
+  });
+}
+function mudPersistClientSettings() {
+  return api('/api/settings/global', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mud_client: mudClientSettings(), mud_colors: mudColors }) }).catch((error) => console.warn('Unable to save MUD client settings', error));
+}
+function mudApplyClientSettings(settings = {}) {
+  const map = { 'mud-auto-scroll': 'auto_scroll', 'mud-pause-auto-scroll': 'pause_auto_scroll_when_scrolled_up', 'mud-command-echo': 'command_echo' };
+  Object.entries(map).forEach(([id, key]) => { const el = document.getElementById(id); if (el && key in settings) el.checked = settings[key] !== false; });
+  if (document.getElementById('mud-command-history-size') && settings.command_history_size) document.getElementById('mud-command-history-size').value = settings.command_history_size;
+  if (document.getElementById('mud-scrollback-size') && settings.scrollback_size) document.getElementById('mud-scrollback-size').value = settings.scrollback_size;
 }
 function mudRoleClass(role) { return `mud-${String(role).replaceAll('_', '-')}`; }
 function mudApplyColors(colors = mudColors) {
@@ -4028,6 +4082,7 @@ async function mudLoadColorSettings() {
     const data = await api('/api/settings/global');
     mudColorPresets = data.settings?.mud_color_presets || {};
     mudApplyColors(data.settings?.mud_colors || mudColorPresets['Dark Fantasy'] || {});
+    mudApplyClientSettings(data.settings?.mud_client || {});
     mudRenderColorSettings();
   } catch (error) { console.warn('Unable to load MUD colors', error); }
 }
@@ -4072,7 +4127,7 @@ function mudRenderCharacterCreator() { const races = mudSelectedWorld.races || [
 async function mudCreateCharacter() { const data = await api('/api/mud/characters/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ world_id: mudSelectedWorld.id, character_name: document.getElementById('mud-character-name').value.trim(), race_id: document.querySelector('input[name="mud-race"]:checked')?.value, class_id: document.querySelector('input[name="mud-class"]:checked')?.value, appearance: document.getElementById('mud-appearance').value.trim() }) }); await mudEnterCharacter(data.character.character_id); }
 async function mudEnterCharacter(characterId) { await api('/api/mud/characters/enter', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ world_id: mudSelectedWorld.id, character_id: characterId }) }); await mudRefreshPlayView(); }
 async function mudDeleteCharacter(characterId) { if (!confirm('Delete this character?')) return; await api('/api/mud/characters/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ world_id: mudSelectedWorld.id, character_id: characterId, confirm: true }) }); await mudLoadCharacters(); mudRenderCharacterSelect(); }
-async function mudRefreshPlayView(data = null) { data = data || await api('/api/mud/play-view'); mudUpdateChrome(data.world_name || data.world?.name || 'World', data.character_name || data.character?.name || 'Character', data.room_name || data.room?.name || 'Room'); mudCommandHistory = (data.command_history || []).map((entry) => entry.command_text || entry.text || '').filter(Boolean); mudHistoryCursor = mudCommandHistory.length; if (dialogueFeed) { dialogueFeed.innerHTML = `<div id="mud-terminal-output" class="mud-terminal-output">${data.output_html || mudSemanticHtml(data.semantic_output || data.output_text || data.output || '')}</div>`; dialogueFeed.scrollTop = dialogueFeed.scrollHeight; } mudRenderPrompt(data); setAutosaveStatus(data.save_status || 'Saved.'); document.getElementById('chat-input')?.focus(); }
-async function mudSendInput() { const input = document.getElementById('chat-input'); const text = input.value.trim(); if (!text) return; input.value = ''; setAutosaveStatus('Saving...'); const data = await api('/api/mud/input', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, ...mudClientSettings() }) }); await mudRefreshPlayView(data); }
-async function initMudShell() { await mudLoadColorSettings(); await mudLoadWorlds(); mudRenderWorldSelect(); const sendButton = document.getElementById('send-btn'); const input = document.getElementById('chat-input'); if (sendButton) sendButton.onclick = mudSendInput; if (input) { input.placeholder = 'look'; input.onkeydown = (event) => { if (event.key === 'Enter') { mudSendInput(); } else if (event.key === 'ArrowUp') { event.preventDefault(); if (mudCommandHistory.length) { mudHistoryCursor = Math.max(0, mudHistoryCursor - 1); input.value = mudCommandHistory[mudHistoryCursor] || ''; } } else if (event.key === 'ArrowDown') { event.preventDefault(); if (mudCommandHistory.length) { mudHistoryCursor = Math.min(mudCommandHistory.length, mudHistoryCursor + 1); input.value = mudHistoryCursor >= mudCommandHistory.length ? '' : (mudCommandHistory[mudHistoryCursor] || ''); } } else if (event.key.toLowerCase() === 'l' && event.ctrlKey) { event.preventDefault(); const terminal = document.getElementById('mud-terminal-output'); if (terminal) terminal.innerHTML = ''; } }; } setAutosaveStatus('Save State ready.'); document.getElementById('mud-color-preset')?.addEventListener('change', mudResetColorsToPreset); document.getElementById('mud-color-reset')?.addEventListener('click', mudResetColorsToPreset); document.getElementById('mud-color-save')?.addEventListener('click', mudSaveColors); document.getElementById('mud-menu-settings')?.addEventListener('click', () => openPrimaryModal('setup-modal')); }
+async function mudRefreshPlayView(data = null) { data = data || await api('/api/mud/play-view'); mudUpdateChrome(data.world_name || data.world?.name || 'World', data.character_name || data.character?.name || 'Character', data.room_name || data.room?.name || 'Room'); mudCommandHistory = (data.command_history || []).map((entry) => entry.command_text || entry.text || '').filter(Boolean); mudHistoryCursor = mudCommandHistory.length; const wasNearBottom = isUserNearBottom(mudTerminalContainer()); if (dialogueFeed) { dialogueFeed.innerHTML = `<div id="mud-terminal-output" class="mud-terminal-output">${data.output_html || mudSemanticHtml(data.semantic_output || data.output_text || data.output || '')}</div>`; mudBindTerminalScroll(); if (wasNearBottom) mudAutoFollowOutput = true; scrollMudTerminalToBottom(data.force_scroll === true); if (!mudAutoFollowOutput && !isUserNearBottom(mudTerminalContainer())) mudSetJumpVisible(true); } mudRenderPrompt(data); scrollMudTerminalToBottom(false); setAutosaveStatus(data.save_status || 'Saved.'); document.getElementById('chat-input')?.focus(); }
+async function mudSendInput() { const input = document.getElementById('chat-input'); const text = input.value.trim(); if (!text) return; input.value = ''; mudAutoFollowOutput = true; scrollMudTerminalToBottom(true); setAutosaveStatus('Saving...'); const data = await api('/api/mud/input', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, ...mudClientSettings() }) }); data.force_scroll = true; await mudRefreshPlayView(data); }
+async function initMudShell() { await mudLoadColorSettings(); await mudLoadWorlds(); mudRenderWorldSelect(); const sendButton = document.getElementById('send-btn'); const input = document.getElementById('chat-input'); if (sendButton) sendButton.onclick = mudSendInput; if (input) { input.placeholder = 'look'; input.onkeydown = (event) => { if (event.key === 'Enter') { mudSendInput(); } else if (event.key === 'ArrowUp') { event.preventDefault(); if (mudCommandHistory.length) { mudHistoryCursor = Math.max(0, mudHistoryCursor - 1); input.value = mudCommandHistory[mudHistoryCursor] || ''; } } else if (event.key === 'ArrowDown') { event.preventDefault(); if (mudCommandHistory.length) { mudHistoryCursor = Math.min(mudCommandHistory.length, mudHistoryCursor + 1); input.value = mudHistoryCursor >= mudCommandHistory.length ? '' : (mudCommandHistory[mudHistoryCursor] || ''); } } else if (event.key.toLowerCase() === 'l' && event.ctrlKey) { event.preventDefault(); const terminal = document.getElementById('mud-terminal-output'); if (terminal) terminal.innerHTML = ''; } }; } setAutosaveStatus('Save State ready.'); document.getElementById('mud-color-preset')?.addEventListener('change', mudResetColorsToPreset); document.getElementById('mud-color-reset')?.addEventListener('click', mudResetColorsToPreset); document.getElementById('mud-color-save')?.addEventListener('click', mudSaveColors); ['mud-auto-scroll','mud-pause-auto-scroll','mud-command-echo','mud-command-history-size','mud-scrollback-size'].forEach((id) => document.getElementById(id)?.addEventListener('change', mudPersistClientSettings)); mudEnsureJumpButton(); mudBindTerminalScroll(); document.getElementById('mud-menu-settings')?.addEventListener('click', () => openPrimaryModal('setup-modal')); }
 async function mudSendMenuCommand(command) { const input = document.getElementById('chat-input'); if (input) input.value = command; await mudSendInput(); }

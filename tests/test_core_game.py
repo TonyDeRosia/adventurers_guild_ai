@@ -346,3 +346,21 @@ def test_mud_v2_deterministic_commands_and_diagonal_support(tmp_path, monkeypatc
     assert "Arcane Bolt" in engine.run_turn(state, "spellbook").narrative
     assert "north/south/east/west" in engine.run_turn(state, "help").narrative
     assert "GM Orchestrator receives" in engine.run_turn(state, "ask Guild Registrar Maren about the old gate").narrative
+
+
+def test_mud_command_registry_resolution_help_and_unknown_freeform(tmp_path, monkeypatch):
+    from app.web import WebRuntime
+    from engine.mud_commands import REGISTRY
+    monkeypatch.setenv('ADVENTURERS_GUILD_USER_DATA', str(tmp_path / 'user_data'))
+    assert REGISTRY.resolve('n').command.name == 'north'
+    assert REGISTRY.resolve('l').command.name == 'look'
+    assert REGISTRY.resolve('eq').command.name == 'equipment'
+    ambiguous = REGISTRY.resolve('s')
+    assert ambiguous.command.name == 'south'
+    runtime = WebRuntime(Path.cwd())
+    runtime.create_campaign({'mode': 'mud_v2', 'slot': 'mud_registry', 'character_name': 'Mira', 'race_id': 'human', 'class_id': 'mage'})
+    assert 'Movement commands:' in runtime.mud_input({'text': 'commands movement', 'command_echo': False})['output_text']
+    assert 'Usage: cast <spell> [target]' in runtime.mud_input({'text': 'help cast', 'command_echo': False})['output_text']
+    unknown = runtime.mud_input({'text': 'cartwheel dramatically', 'command_echo': False})
+    assert 'You try to cartwheel dramatically.' in unknown['output_text']
+    assert 'not sure what you want your character to do' not in unknown['output_text']

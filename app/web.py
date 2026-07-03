@@ -18,7 +18,7 @@ import urllib.error
 import urllib.request
 import zipfile
 from difflib import SequenceMatcher
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from copy import deepcopy
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -66,7 +66,7 @@ from app.intelligence import CampaignIntelligenceLibrary
 from engine.dm_reasoning import analyze_player_input, build_ooc_response
 from engine.dm_pipeline import process_player_input
 from app.npc_identity import NPCIdentityRegistry
-from app.runtime_config import AppRuntimeConfig, ImageRuntimeConfig, ModelRuntimeConfig, RuntimeConfigStore
+from app.runtime_config import AppRuntimeConfig, ImageRuntimeConfig, ModelRuntimeConfig, MudClientRuntimeConfig, RuntimeConfigStore
 from engine.campaign_engine import CampaignEngine, TurnResult
 from engine.character_sheets import CharacterSheet, CharacterSheetAbilityEntry
 from engine.entities import CampaignSettings, CampaignState
@@ -74,6 +74,7 @@ from engine.game_state_manager import GameStateManager
 from engine.scene_simulation import ensure_scene_v1
 from engine.core_game import auto_allocate_stats, by_id, calculate_derived_stats, load_core_game
 from engine.world_registry import WorldRegistry, by_id as world_by_id
+from engine.mud_commands import execute_mud_command
 from engine.mud_rendering import PRESETS, SEMANTIC_COLOR_ROLES, render_room, render_semantic_html, render_semantic_plain, semantic, strip_prompt_block
 from engine.mud_state_store import MUDStateStore
 from engine.spellbook import normalize_spellbook_entry
@@ -4696,39 +4697,34 @@ class WebRuntime:
         history_limit = int(payload.get("command_history_size") or 100)
         scrollback_limit = int(payload.get("scrollback_size") or 1000)
         command_echo = bool(payload.get("command_echo", True))
-        store.add_command_history(cid, text, room_id, history_limit)
-        if text.lower() == "clear":
-            store.clear_scrollback(cid)
-            play_view = self.mud_play_view()
-            store.clear_scrollback(cid)
-            play_view["output_text"] = ""
-            play_view["semantic_output"] = ""
-            play_view["output"] = ""
-            play_view["output_html"] = ""
-            play_view["scrollback"] = []
-            play_view.update({"ok": True, "mode": "mud_v2", "save_status": "Saved.", "command_echo": command_echo})
-            return play_view
+        if text == "!!":
+            recent = store.load_command_history(cid, 1)
+            text = str(recent[-1]["command_text"]) if recent else ""
+            if not text:
+                raise ValueError("No command to repeat.")
+        recent = store.load_command_history(cid, 1)
+        if text and (not recent or recent[-1].get("command_text") != text):
+            store.add_command_history(cid, text, room_id, history_limit)
         if command_echo:
             store.add_scrollback(cid, "command", f"> {text}", render_semantic_html(f"> {text}", self._effective_mud_colors()), room_id, scrollback_limit)
-        if text.lower() == "history":
-            hist = store.load_command_history(cid, history_limit)
-            out = "Recent commands:\n" + "\n".join(f"{i + 1}. {h['command_text']}" for i, h in enumerate(hist))
-            store.add_scrollback(cid, "output", out, render_semantic_html(out, self._effective_mud_colors()), room_id, scrollback_limit)
+        result = execute_mud_command(state, store, text, history_limit=history_limit)
+        if text.lower() in {"clear", "cls"}:
+            store.clear_scrollback(cid)
             play_view = self.mud_play_view()
-            play_view.update({"ok": True, "mode": "mud_v2", "save_status": "Saved.", "command_echo": command_echo})
+            play_view.update({"output_text": "", "semantic_output": "", "output": "", "output_html": "", "scrollback": [], "ok": True, "mode": "mud_v2", "save_status": "Saved.", "command_echo": command_echo})
             return play_view
-        # Smart MUD bypasses the legacy campaign/chat input pipeline entirely.
-        self.engine.run_turn(self.session.state, text)
-        output = strip_prompt_block(self.session.state.structured_state.runtime.last_narration or "")
-        if output:
-            store.add_scrollback(cid, "output", render_semantic_plain(output), render_semantic_html(output, self._effective_mud_colors()), self.session.state.structured_state.runtime.current_room_id or room_id, scrollback_limit)
+        if result.output_text:
+            store.add_scrollback(cid, "output", result.output_text, render_semantic_html(result.semantic_output or result.output_text, self._effective_mud_colors()), runtime.current_room_id or room_id, scrollback_limit)
         with suppress(Exception):
             self.save_active_campaign(self.session.active_slot)
         play_view = self.mud_play_view()
-        play_view["ok"] = True
+        play_view["ok"] = result.ok
         play_view["mode"] = "mud_v2"
         play_view["save_status"] = "Saved."
         play_view["command_echo"] = command_echo
+        play_view["ai_required"] = result.ai_required
+        if result.ai_context:
+            play_view["ai_context"] = result.ai_context
         return play_view
 
     def get_mud_memory_inspector(self) -> dict[str, Any]:
@@ -7545,6 +7541,7 @@ class WebRuntime:
             "python_multipart": getattr(self, "python_multipart_status", ensure_python_multipart_available()),
             "mud_color_presets": PRESETS,
             "mud_colors": self._effective_mud_colors(),
+            "mud_client": asdict(self.app_config.mud_client),
         }
 
     def set_global_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -7606,6 +7603,15 @@ class WebRuntime:
                 if re.fullmatch(r"#[0-9a-fA-F]{6}", value):
                     clean_colors[role] = value
             self.app_config.mud_colors = clean_colors
+        mud_client_payload = payload.get("mud_client", {})
+        if isinstance(mud_client_payload, dict):
+            self.app_config.mud_client = MudClientRuntimeConfig(
+                auto_scroll=bool(mud_client_payload.get("auto_scroll", self.app_config.mud_client.auto_scroll)),
+                pause_auto_scroll_when_scrolled_up=bool(mud_client_payload.get("pause_auto_scroll_when_scrolled_up", self.app_config.mud_client.pause_auto_scroll_when_scrolled_up)),
+                command_echo=bool(mud_client_payload.get("command_echo", self.app_config.mud_client.command_echo)),
+                command_history_size=max(10, min(1000, int(mud_client_payload.get("command_history_size", self.app_config.mud_client.command_history_size)))),
+                scrollback_size=max(50, min(10000, int(mud_client_payload.get("scrollback_size", self.app_config.mud_client.scrollback_size)))),
+            )
         self.config_store.save(self.app_config)
         self.engine.model = self._create_model_adapter()
         self.image_adapter = self._create_image_adapter()
@@ -7778,6 +7784,15 @@ class WebRuntime:
                 if re.fullmatch(r"#[0-9a-fA-F]{6}", value):
                     clean_colors[role] = value
             self.app_config.mud_colors = clean_colors
+        mud_client_payload = payload.get("mud_client", {})
+        if isinstance(mud_client_payload, dict):
+            self.app_config.mud_client = MudClientRuntimeConfig(
+                auto_scroll=bool(mud_client_payload.get("auto_scroll", self.app_config.mud_client.auto_scroll)),
+                pause_auto_scroll_when_scrolled_up=bool(mud_client_payload.get("pause_auto_scroll_when_scrolled_up", self.app_config.mud_client.pause_auto_scroll_when_scrolled_up)),
+                command_echo=bool(mud_client_payload.get("command_echo", self.app_config.mud_client.command_echo)),
+                command_history_size=max(10, min(1000, int(mud_client_payload.get("command_history_size", self.app_config.mud_client.command_history_size)))),
+                scrollback_size=max(50, min(10000, int(mud_client_payload.get("scrollback_size", self.app_config.mud_client.scrollback_size)))),
+            )
         self.config_store.save(self.app_config)
         self.engine.model = self._create_model_adapter()
         status = self.get_model_status()
