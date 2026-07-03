@@ -1424,3 +1424,5 @@ body.smart-mud-mode .status-stack { flex: 0 0 auto; text-align: right; margin: 0
 .mud-colors-settings label { display: grid; gap: 4px; margin-bottom: 8px; }
 .mud-color-roles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; max-height: 260px; overflow: auto; }
 .mud-color-preview { border: 1px solid #31496a; border-radius: 8px; background: #07111f; padding: 10px; margin: 8px 0; font-family: ui-monospace, monospace; }
+.mud-jump-to-bottom { position: fixed; right: 24px; bottom: 86px; z-index: 40; border: 1px solid #7ddc8a; background: #031008; color: #d8ffd8; border-radius: 999px; padding: 6px 12px; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+.mud-jump-to-bottom.hidden { display: none; }

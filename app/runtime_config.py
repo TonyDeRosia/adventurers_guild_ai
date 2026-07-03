@@ -45,14 +45,26 @@ class ImageRuntimeConfig:
 
 
 @dataclass
+class MudClientRuntimeConfig:
+    auto_scroll: bool = True
+    pause_auto_scroll_when_scrolled_up: bool = True
+    command_echo: bool = True
+    command_history_size: int = 100
+    scrollback_size: int = 1000
+
+
+@dataclass
 class AppRuntimeConfig:
     model: ModelRuntimeConfig
     image: ImageRuntimeConfig
     mud_colors: dict[str, str] = None
+    mud_client: MudClientRuntimeConfig = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.mud_colors, dict):
             self.mud_colors = {}
+        if not isinstance(self.mud_client, MudClientRuntimeConfig):
+            self.mud_client = MudClientRuntimeConfig()
 
 
 class RuntimeConfigStore:
@@ -128,6 +140,7 @@ class RuntimeConfigStore:
                 managed_logs_path=str(image_payload.get("managed_logs_path", "")),
             ),
             mud_colors=payload.get("mud_colors", {}) if isinstance(payload.get("mud_colors", {}), dict) else {},
+            mud_client=MudClientRuntimeConfig(**{k: v for k, v in (payload.get("mud_client", {}) if isinstance(payload.get("mud_client", {}), dict) else {}).items() if k in MudClientRuntimeConfig.__dataclass_fields__}),
         )
 
     def save(self, config: AppRuntimeConfig) -> None:
