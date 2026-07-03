@@ -1345,14 +1345,22 @@ body.adventure-mode-enabled .creator-mode-only,
 .mud-role.mud-prompt-marker { color: #7ddc8a; font-weight: 700; }
 
 /* Smart MUD terminal-first layout */
-body.smart-mud-mode { overflow: hidden; }
+html:has(body.smart-mud-mode),
+body.smart-mud-mode {
+  height: 100%;
+  overflow: hidden;
+}
 body.smart-mud-mode .app-shell {
-  display: block;
-  width: calc(100vw - 32px);
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
   max-width: 1500px;
   height: 100vh;
+  max-height: 100vh;
+  min-height: 0;
   margin: 0 auto;
   padding: clamp(8px, 1.2vw, 16px);
+  overflow: hidden;
 }
 body.smart-mud-mode .legacy-sidebar,
 body.smart-mud-mode .left-panel,
@@ -1360,12 +1368,15 @@ body.smart-mud-mode .right-panel,
 body.smart-mud-mode #scene-context-panel,
 body.smart-mud-mode .play-panel-header { display: none !important; }
 body.smart-mud-mode .chat-main {
-  height: calc(100vh - clamp(16px, 2.4vw, 32px));
-  max-height: calc(100vh - clamp(16px, 2.4vw, 32px));
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  max-height: none;
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: clamp(10px, 1.3vw, 16px);
+  overflow: hidden;
 }
 body.smart-mud-mode .chat-header {
   flex: 0 0 auto;
@@ -1380,14 +1391,16 @@ body.smart-mud-mode .chat-header {
 .mud-top-menu button, .mud-command-row button { padding: 6px 10px; font-size: .84rem; border-radius: 8px; }
 body.smart-mud-mode .dialogue-panel {
   flex: 1 1 auto;
-  min-height: clamp(360px, calc(100vh - 220px), 860px);
+  min-height: 0;
   padding: 0;
   overflow: hidden;
 }
-body.smart-mud-mode .mud-world-output {
+body.smart-mud-mode #dialogue-feed.mud-world-output {
+  flex: 1 1 auto;
   display: block;
   height: 100%;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: clamp(14px, 1.5vw, 22px);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

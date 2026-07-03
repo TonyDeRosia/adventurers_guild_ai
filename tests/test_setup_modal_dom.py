@@ -66,6 +66,18 @@ def test_smart_mud_layout_uses_terminal_prompt_and_compact_command_row() -> None
     assert 'id="npc-panel-list"' not in html
 
 
+def test_smart_mud_css_pins_shell_and_only_world_output_scrolls() -> None:
+    css = Path("app/static/styles.css").read_text(encoding="utf-8")
+    assert "html:has(body.smart-mud-mode),\nbody.smart-mud-mode" in css
+    assert "body.smart-mud-mode .app-shell {\n  display: flex;\n  flex-direction: column;" in css
+    assert "height: 100vh;\n  max-height: 100vh;\n  min-height: 0;" in css
+    assert "body.smart-mud-mode .chat-main {\n  flex: 1 1 auto;\n  min-height: 0;" in css
+    assert "body.smart-mud-mode .dialogue-panel {\n  flex: 1 1 auto;\n  min-height: 0;\n  padding: 0;\n  overflow: hidden;" in css
+    assert "body.smart-mud-mode #dialogue-feed.mud-world-output" in css
+    assert "overflow-y: auto;" in css
+    assert "min-height: clamp(360px, calc(100vh - 220px), 860px)" not in css
+
+
 def test_guided_image_import_controls_are_present() -> None:
     html = _index_html()
     required_ids = [
