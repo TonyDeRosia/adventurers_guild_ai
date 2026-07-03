@@ -11,7 +11,7 @@ def test_bundled_runtime_dir_prefers_install_dir_in_frozen_mode(tmp_path: Path, 
     (install_root / "runtime_bundle").mkdir(parents=True)
     (meipass / "runtime_bundle").mkdir(parents=True)
 
-    fake_exe = install_root / "AdventurerGuildAI.exe"
+    fake_exe = install_root / "SmartMUD.exe"
     fake_exe.write_text("", encoding="utf-8")
 
     monkeypatch.setattr(pathing.sys, "frozen", True, raising=False)
@@ -27,7 +27,7 @@ def test_bundled_runtime_dir_falls_back_to_meipass_layout_when_needed(tmp_path: 
     install_root.mkdir(parents=True)
     (meipass / "runtime_bundle").mkdir(parents=True)
 
-    fake_exe = install_root / "AdventurerGuildAI.exe"
+    fake_exe = install_root / "SmartMUD.exe"
     fake_exe.write_text("", encoding="utf-8")
 
     monkeypatch.setattr(pathing.sys, "frozen", True, raising=False)
@@ -52,10 +52,10 @@ def test_user_data_dir_defaults_to_localappdata(monkeypatch, tmp_path: Path) -> 
     local_appdata = tmp_path / "LocalAppData"
     monkeypatch.setenv("LOCALAPPDATA", str(local_appdata))
     monkeypatch.delenv("APPDATA", raising=False)
-    monkeypatch.delenv("ADVENTURER_GUILD_AI_USER_DATA_DIR", raising=False)
+    monkeypatch.delenv("SMART_MUD_USER_DATA_DIR", raising=False)
     monkeypatch.setattr(pathing.sys, "frozen", True, raising=False)
 
-    assert pathing.user_data_dir() == local_appdata / "AdventurerGuildAI"
+    assert pathing.user_data_dir() == local_appdata / "SmartMUD"
 
 
 def test_copy_tree_missing_copies_file_when_destination_directory_exists(tmp_path: Path) -> None:

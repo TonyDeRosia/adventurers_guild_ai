@@ -7,7 +7,7 @@ from app.web import WebRuntime
 
 
 def test_normal_startup_initializes_only_smart_mud(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("ADVENTURER_GUILD_AI_USER_DATA_DIR", str(tmp_path / "user_data"))
+    monkeypatch.setenv("SMART_MUD_USER_DATA_DIR", str(tmp_path / "user_data"))
     for name in list(sys.modules):
         if name.startswith(("images", "memory.campaign_memory", "engine.campaign_engine", "engine.scene_simulation")):
             del sys.modules[name]
@@ -28,7 +28,7 @@ def test_normal_startup_initializes_only_smart_mud(tmp_path: Path, monkeypatch) 
 
 
 def test_smart_mud_world_character_and_command_flow(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("ADVENTURER_GUILD_AI_USER_DATA_DIR", str(tmp_path / "user_data"))
+    monkeypatch.setenv("SMART_MUD_USER_DATA_DIR", str(tmp_path / "user_data"))
     runtime = WebRuntime(Path.cwd())
     world_id = runtime.list_worlds()[0]["id"]
     runtime.select_world(world_id)

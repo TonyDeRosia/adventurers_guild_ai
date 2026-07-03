@@ -142,19 +142,11 @@ class MudCommandEngine:
         # Social/freeform - route to AI if available
         if self.ai_provider:
             print(f"[mud-command] AI-assisted: {command_text}")
-            context = {
-                "character": {
-                    "name": character.name,
-                    "role": character.role,
-                    "hp": character.hp,
-                    "max_hp": character.max_hp,
-                },
-                "command": command_text,
-            }
+            context = self._build_ai_context(character, command_text)
             try:
                 ai_response = self.ai_provider.generate(
-                    prompt=f"Character {character.name} says: {command_text}",
-                    system_prompt="You are a MUD game narrator. Respond in 1-2 sentences."
+                    prompt=f"SQLite AI context: {context}\nCharacter {character.name} says: {command_text}",
+                    system_prompt="You are a MUD game narrator. Use the provided SQLite context before responding in 1-2 sentences."
                 )
                 return CommandResult(narrative=ai_response)
             except Exception as e:
@@ -164,6 +156,19 @@ class MudCommandEngine:
         # Fallback
         print(f"[mud-command] Unknown command: {cmd_name}")
         return CommandResult(narrative="That command is not recognized. Type 'help' for a list of commands.")
+
+
+    def _build_ai_context(self, character: Any, command_text: str) -> dict[str, Any]:
+        """Load the authoritative SQLite context required before any LLM call."""
+        character_id = getattr(character, "id", "") or getattr(character, "character_id", "")
+        room_id = getattr(character, "room_id", "") or getattr(character, "current_room_id", "")
+        npc_id = ""
+        tokens = command_text.strip().split()
+        if len(tokens) > 1:
+            npc_id = tokens[-1].lower()
+        if self.state_store and hasattr(self.state_store, "build_ai_context"):
+            return self.state_store.build_ai_context(character_id, npc_id, room_id)
+        return {"character": {"id": character_id, "name": getattr(character, "name", ""), "role": getattr(character, "role", "")}, "command": command_text}
 
     def _cmd_score(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display character score (stats)."""

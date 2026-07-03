@@ -8,9 +8,9 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-APP_DIR_NAME = "AdventurerGuildAI"
-PORTABLE_ENV = "ADVENTURER_GUILD_AI_PORTABLE"
-USER_DATA_ENV = "ADVENTURER_GUILD_AI_USER_DATA_DIR"
+APP_DIR_NAME = "SmartMUD"
+PORTABLE_ENV = "SMART_MUD_PORTABLE"
+USER_DATA_ENV = "SMART_MUD_USER_DATA_DIR"
 
 
 def project_root() -> Path:
@@ -100,8 +100,8 @@ def is_portable_mode() -> bool:
 def user_data_dir() -> Path:
     """Writable runtime data root.
 
-    Installed mode defaults to %LOCALAPPDATA%/AdventurerGuildAI.
-    Portable mode can be enabled with ADVENTURER_GUILD_AI_PORTABLE=1.
+    Installed mode defaults to %LOCALAPPDATA%/SmartMUD.
+    Portable mode can be enabled with SMART_MUD_PORTABLE=1.
     """
     if getattr(sys, "frozen", False) and is_portable_mode():
         return install_dir() / "portable_data"
