@@ -1478,3 +1478,51 @@ body.smart-mud-mode {
 body.smart-mud-mode .status-stack {
   flex: 0 0 auto;
 }
+
+/* Smart MUD single-scroll runtime layout. */
+html, body { height: 100%; overflow: hidden; }
+body.smart-mud-mode { height: 100vh; overflow: hidden; }
+.smart-mud-shell { height: 100vh; max-height: 100vh; display: flex; flex-direction: column; overflow: hidden; padding: 12px; }
+.smart-mud-main { flex: 1 1 auto; min-height: 0; overflow: hidden; width: min(100%, 1200px); margin: 0 auto; }
+.smart-mud-header, .scene-context-panel, .mud-player-prompt, .mud-command-row, .status-stack { flex: 0 0 auto; }
+.mud-terminal-frame { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+#mud-world-output { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+#mud-world-output .mud-role, .mud-player-prompt .mud-role { color: var(--mud-system-color, #d8dee9); }
+.mud-room-name { color: var(--mud-room-name-color, #f2d27c); }
+.mud-area-name { color: var(--mud-area-name-color, #c9b79c); }
+.mud-room-description { color: var(--mud-room-description-color, #c9b79c); }
+.mud-exit { color: var(--mud-exit-color, #87ceeb); }
+.mud-npc, .mud-npc-friendly, .mud-npc-neutral, .mud-npc-hostile, .mud-mob, .mud-monster { color: var(--mud-npc-color, #9be28f); }
+.mud-player { color: var(--mud-player-color, #ffffff); }
+.mud-object { color: var(--mud-object-color, #d8dee9); }
+.mud-item-common { color: var(--mud-item-common-color, #d8dee9); }
+.mud-item-uncommon { color: var(--mud-item-uncommon-color, #56d364); }
+.mud-item-rare { color: var(--mud-item-rare-color, #58a6ff); }
+.mud-item-epic { color: var(--mud-item-epic-color, #bc8cff); }
+.mud-item-legendary { color: var(--mud-item-legendary-color, #ffd700); }
+.mud-command-echo { color: var(--mud-command-echo-color, #b9c8dd); }
+.mud-system { color: var(--mud-system-color, #d8dee9); }
+.mud-error { color: var(--mud-error-color, #ff6b6b); }
+.mud-warning { color: var(--mud-warning-color, #ffd166); }
+.mud-combat { color: var(--mud-combat-color, #ff9f43); }
+.mud-damage { color: var(--mud-damage-color, #ff7777); }
+.mud-healing { color: var(--mud-healing-color, #7ee787); }
+.mud-spell, .mud-magic { color: var(--mud-spell-color, #b48cff); }
+.mud-skill { color: var(--mud-skill-color, #7dd3fc); }
+.mud-quest { color: var(--mud-quest-color, #f2d27c); }
+.mud-score-label { color: var(--mud-score-label-color, #97a5bb); }
+.mud-score-value { color: var(--mud-score-value-color, #ffffff); }
+.mud-equipment-slot { color: var(--mud-equipment-slot-color, #97a5bb); }
+.mud-equipment-item { color: var(--mud-equipment-item-color, #ffffff); }
+.mud-dialogue { color: var(--mud-dialogue-color, #e6e6e6); }
+.mud-prompt-marker { color: var(--mud-prompt-marker-color, #ffffff); }
+.mud-prompt-hp { color: var(--mud-prompt-hp-color, #ff7777); }
+.mud-prompt-mana { color: var(--mud-prompt-mana-color, #7aa2ff); }
+.mud-prompt-stamina { color: var(--mud-prompt-stamina-color, #ffd166); }
+.mud-prompt-xp { color: var(--mud-prompt-xp-color, #c9b79c); }
+.mud-prompt-gold { color: var(--mud-prompt-gold-color, #ffd700); }
+.mud-color-roles { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; }
+.mud-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.mud-card, .mud-choice-card { border: 1px solid #304a6e; border-radius: 10px; padding: 10px; background: #0f1a2d; }
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: grid; place-items: center; z-index: 10; }
+.modal-card { max-height: 90vh; overflow-y: auto; width: min(900px, 96vw); }

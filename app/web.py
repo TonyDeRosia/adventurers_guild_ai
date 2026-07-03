@@ -122,7 +122,7 @@ class WebRuntime:
 
         self.engine = CampaignEngine(self._create_model_adapter(), data_dir=self.paths.content_data)
         self.image_adapter = self._create_image_adapter()
-        default_slot = "autosave" if self.state_manager.can_load("autosave") else "campaign_1"
+        default_slot = "smart_mud_session"
         self.session = WebSession(state=self._load_or_create(default_slot), active_slot=default_slot)
         self.session.message_history = self._history_for_slot(self.session.active_slot)
         self.image_startup_status: dict[str, Any] = {}
@@ -141,8 +141,8 @@ class WebRuntime:
         self._model_install_lock = threading.Lock()
         self._model_install_jobs: dict[str, dict[str, Any]] = {}
         self.last_turn_routing: dict[str, Any] = {}
-        self._apply_managed_image_engine_defaults()
-        print("[web-runtime] session initialized")
+        self.app_config.image = ImageRuntimeConfig(provider="null", enabled=False)
+        print("[web-runtime] Smart MUD session initialized")
 
     def _set_last_turn_routing(self, **payload: Any) -> None:
         self.last_turn_routing = payload
@@ -4706,7 +4706,7 @@ class WebRuntime:
         if text and (not recent or recent[-1].get("command_text") != text):
             store.add_command_history(cid, text, room_id, history_limit)
         if command_echo:
-            store.add_scrollback(cid, "command", f"> {text}", render_semantic_html(f"> {text}", self._effective_mud_colors()), room_id, scrollback_limit)
+            store.add_scrollback(cid, "command", f"> {text}", render_semantic_html(semantic("command_echo", f"> {text}"), self._effective_mud_colors()), room_id, scrollback_limit)
         result = execute_mud_command(state, store, text, history_limit=history_limit)
         if text.lower() in {"clear", "cls"}:
             store.clear_scrollback(cid)
@@ -7503,7 +7503,6 @@ class WebRuntime:
         return colors
 
     def get_global_settings(self) -> dict[str, Any]:
-        path_status = self.get_path_configuration_status()
         return {
             "model": {
                 "provider": self.app_config.model.provider,
@@ -7514,29 +7513,6 @@ class WebRuntime:
                 "force_gm_orchestrator": bool(getattr(self.app_config.model, "force_gm_orchestrator", False)),
             },
             "model_status": self.get_model_status(),
-            "image": {
-                "provider": self.app_config.image.provider,
-                "base_url": self.app_config.image.base_url,
-                "enabled": self.app_config.image.enabled,
-                "comfyui_path": self.app_config.image.comfyui_path,
-                "comfyui_workflow_path": self.app_config.image.comfyui_workflow_path,
-                "comfyui_output_dir": self.app_config.image.comfyui_output_dir,
-                "manual_image_generation_enabled": self.app_config.image.manual_image_generation_enabled,
-                "campaign_auto_visual_timing": self._normalize_campaign_auto_visual_timing(
-                    self.app_config.image.campaign_auto_visual_timing
-                ),
-                "checkpoint_source": self.app_config.image.checkpoint_source,
-                "checkpoint_model_page": self.app_config.image.checkpoint_model_page,
-                "checkpoint_folder": self.app_config.image.checkpoint_folder,
-                "preferred_checkpoint": self.app_config.image.preferred_checkpoint,
-                "preferred_launcher": self.app_config.image.preferred_launcher,
-                "auto_negative_prompt_additions": list(self.app_config.image.auto_negative_prompt_additions),
-                "managed_service_enabled": self.app_config.image.managed_service_enabled,
-                "managed_install_path": self.app_config.image.managed_install_path,
-                "managed_logs_path": self.app_config.image.managed_logs_path,
-            },
-            "path_config": path_status,
-            "dependency_readiness": self.get_dependency_readiness(),
             "supported_models": self.get_supported_model_inventory(refresh=False),
             "python_multipart": getattr(self, "python_multipart_status", ensure_python_multipart_available()),
             "mud_color_presets": PRESETS,
@@ -7546,7 +7522,7 @@ class WebRuntime:
 
     def set_global_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
         model_payload = payload.get("model", {})
-        image_payload = payload.get("image", {})
+        image_payload = {}  # Image generation is removed from normal Smart MUD settings.
         model_provider = str(model_payload.get("provider", self.app_config.model.provider)).lower().strip()
         if model_provider not in {"null", "ollama", "gpt4all", "local_template"}:
             raise ValueError("Unsupported model provider")
@@ -7616,10 +7592,7 @@ class WebRuntime:
         self.engine.model = self._create_model_adapter()
         self.image_adapter = self._create_image_adapter()
         model_status = self.get_model_status()
-        print(
-            f"[settings] model_provider={self.app_config.model.provider} model={self.app_config.model.model_name} "
-            f"image_provider={self.app_config.image.provider} model_ready={model_status.get('ready')}"
-        )
+        print(f"[settings] model_provider={self.app_config.model.provider} model={self.app_config.model.model_name} model_ready={model_status.get('ready')}")
         return self.get_global_settings()
 
     def set_campaign_settings(self, payload: dict[str, Any]) -> dict[str, Any]:

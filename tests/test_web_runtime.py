@@ -6342,3 +6342,23 @@ def test_mud_api_world_character_play_flow(tmp_path: Path, monkeypatch) -> None:
     assert moved["output_text"]
     invalid = runtime.mud_input({"text": "u"})
     assert "You cannot go that way." in invalid["output_text"]
+
+
+def test_smart_mud_global_settings_exclude_image_payload(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path, monkeypatch)
+    settings = runtime.get_global_settings()
+    assert "image" not in settings
+    assert "dependency_readiness" not in settings
+    assert "path_config" not in settings
+    assert "mud_colors" in settings
+    assert "mud_color_presets" in settings
+
+
+def test_mud_color_save_reload_runtime_config(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path, monkeypatch)
+    saved = runtime.set_global_settings({"mud_colors": {"prompt_hp": "#123456", "exit": "#654321"}})
+    assert saved["mud_colors"]["prompt_hp"] == "#123456"
+    from app.runtime_config import RuntimeConfigStore
+    reloaded = RuntimeConfigStore(runtime.config_store.path).load()
+    assert reloaded.mud_colors["prompt_hp"] == "#123456"
+    assert reloaded.mud_colors["exit"] == "#654321"
