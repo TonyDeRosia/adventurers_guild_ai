@@ -74,7 +74,7 @@ from engine.game_state_manager import GameStateManager
 from engine.scene_simulation import ensure_scene_v1
 from engine.core_game import auto_allocate_stats, by_id, calculate_derived_stats, load_core_game
 from engine.world_registry import WorldRegistry, by_id as world_by_id
-from engine.mud_rendering import PRESETS, SEMANTIC_COLOR_ROLES, render_room, render_semantic_html, semantic
+from engine.mud_rendering import PRESETS, SEMANTIC_COLOR_ROLES, render_room, render_semantic_html, render_semantic_plain, semantic, strip_prompt_block
 from engine.mud_state_store import MUDStateStore
 from engine.spellbook import normalize_spellbook_entry
 from images.base import ImageGenerationRequest, ImageGenerationResult, ImageGeneratorAdapter, NullImageAdapter
@@ -4650,15 +4650,26 @@ class WebRuntime:
             {**character, "race": str(character["race"]).title(), "char_class": character["class"]},
         )
         # Older renderers appended a MUD prompt to room output; the normal client owns prompt rendering.
-        prompt_start = output.find("\n" + "{prompt_hp}")
-        if prompt_start >= 0:
-            output = output[:prompt_start].rstrip()
+        output = strip_prompt_block(output)
+        output_html = render_semantic_html(output, self._effective_mud_colors())
         return {
+            "ok": True,
+            "mode": "mud_v2",
+            "world_id": world.id,
+            "character_id": state.player.id or self.session.active_slot or "player_1",
+            "room_id": room.get("id"),
+            "world_name": world.manifest.get("name", world.id),
+            "character_name": state.player.name,
+            "room_name": room.get("name", "Room"),
+            "output_text": render_semantic_plain(output),
+            "semantic_output": output,
+            "output_html": output_html,
+            "save_status": "Saved.",
             "world": world.manifest,
             "character": character,
             "room": room,
-            "output": output,
-            "output_html": render_semantic_html(output, self._effective_mud_colors()),
+            "output": render_semantic_plain(output),
+            "output_html": output_html,
             "prompt_text": prompt_text,
             "semantic_prompt": semantic_prompt,
             "prompt_html": render_semantic_html(semantic_prompt, self._effective_mud_colors()),
@@ -4668,11 +4679,15 @@ class WebRuntime:
         text = str(payload.get("text") or payload.get("command") or "").strip()
         if not text:
             raise ValueError("text is required")
-        result = process_player_input(self, text, "ic")
+        # Smart MUD bypasses the legacy campaign/chat input pipeline entirely.
+        self.engine.run_turn(self.session.state, text)
         with suppress(Exception):
             self.save_active_campaign(self.session.active_slot)
         play_view = self.mud_play_view()
-        return {"ok": True, "result": result.response, "play_view": play_view, **play_view}
+        play_view["ok"] = True
+        play_view["mode"] = "mud_v2"
+        play_view["save_status"] = "Saved."
+        return play_view
 
     def get_mud_memory_inspector(self) -> dict[str, Any]:
         state = self.session.state

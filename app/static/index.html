@@ -31,11 +31,6 @@
             <p id="creator-mode-badge" class="creator-mode-badge hidden">Creator Mode</p>
           </div>
           <nav class="mud-top-menu" aria-label="Smart MUD menu">
-            <button id="mud-menu-character" type="button">Character</button>
-            <button id="mud-menu-inventory" type="button">Inventory</button>
-            <button id="mud-menu-equipment" type="button">Equipment</button>
-            <button id="mud-menu-spellbook" type="button">Spellbook</button>
-            <button id="mud-menu-journal" type="button">Journal</button>
             <button id="mud-menu-settings" type="button">Settings</button>
           </nav>
         </header>
@@ -140,57 +135,16 @@
             <label>Character Name <input id="form-player-name" type="text" required /></label>
             <label>Class <input id="form-player-class" type="text" required list="core-class-options" placeholder="Mage" /></label><datalist id="core-class-options"><option value="Warrior"></option><option value="Ranger"></option><option value="Rogue"></option><option value="Mage"></option><option value="Cleric"></option><option value="Druid"></option><option value="Warlock"></option><option value="Battle Mage"></option><option value="Necromancer"></option></datalist>
             <label>Race / Species <input id="form-species" type="text" list="core-race-options" placeholder="Human" /></label><datalist id="core-race-options"><option value="Human"></option><option value="Elf"></option><option value="Dwarf"></option><option value="Halfling"></option><option value="Orc"></option><option value="Tiefling"></option><option value="Dragonkin"></option><option value="Undead"></option><option value="Custom"></option></datalist>
-            <label>Background / Origin <input id="form-background" type="text" /></label>
-            <label class="full-width">Character Goal <input id="form-goal" type="text" /></label>
             <p id="campaign-wizard-validation" class="status-line error hidden">Character Name and Class / Role are required.</p>
           </section>
           <section class="wizard-step hidden" data-step="4"><h4>Describe Appearance</h4>
             <label class="full-width">Appearance <textarea id="form-player-concept" rows="5" required placeholder="Describe what others see. This is descriptive only and does not change mechanics."></textarea></label>
           </section>
-          <section class="wizard-step hidden" data-step="5"><h4>Review and Enter World</h4><div id="campaign-wizard-review" class="status-card">Review your MUD character, then enter the world.</div></section><section class="wizard-step hidden legacy-setup-field" data-step="50"><h4>Power Level & Stats</h4><p class="runtime-sheet-muted">Core Game V1 uses 30 points across Strength, Dexterity, Constitution, Intelligence, Wisdom, and Charisma. Storybook can auto-allocate; MUD/Stats can edit these values.</p><div class="stat-allocation-grid"><label>STR <input id="form-stat-strength" type="number" min="3" max="10" value="5" /></label><label>DEX <input id="form-stat-dexterity" type="number" min="3" max="10" value="5" /></label><label>CON <input id="form-stat-constitution" type="number" min="3" max="10" value="5" /></label><label>INT <input id="form-stat-intelligence" type="number" min="3" max="10" value="5" /></label><label>WIS <input id="form-stat-wisdom" type="number" min="3" max="10" value="5" /></label><label>CHA <input id="form-stat-charisma" type="number" min="3" max="10" value="5" /></label></div>
-            <label class="wizard-option-card"><input name="form-power-level-choice" type="radio" value="Ordinary Beginner" /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>Ordinary Beginner</strong><small>Start vulnerable and grow through play.</small></span></label>
-            <label class="wizard-option-card"><input name="form-power-level-choice" type="radio" value="Capable Adventurer" checked /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>Capable Adventurer</strong><small>Competent without overshadowing the world.</small></span></label>
-            <label class="wizard-option-card"><input name="form-power-level-choice" type="radio" value="Experienced Veteran" /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>Experienced Veteran</strong><small>Begin with reputation and proven skill.</small></span></label>
-            <label class="wizard-option-card"><input name="form-power-level-choice" type="radio" value="Powerful Hero" /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>Powerful Hero</strong><small>Start with exceptional capability.</small></span></label>
-            <label class="wizard-option-card"><input name="form-power-level-choice" type="radio" value="Legendary Figure" /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>Legendary Figure</strong><small>Begin as a figure of mythic importance.</small></span></label>
-          </section>
-          <section class="wizard-step hidden legacy-setup-field" data-step="60"><h4>Starting Abilities</h4>
-            <label class="wizard-option-card"><input name="form-ability-mode" type="radio" value="suggest" checked /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>suggest</strong><small>Suggest starting abilities from class and description.</small></span></label>
-            <label class="wizard-option-card"><input name="form-ability-mode" type="radio" value="manual" /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>manual</strong><small>I will list my starting abilities.</small></span></label>
-            <label class="full-width">Enter abilities, spells, techniques, or powers separated by commas or new lines. <textarea id="form-starting-abilities" rows="4" placeholder="Fireball&#10;Ice Lance&#10;Arcane Shield"></textarea></label>
-          </section>
-          <section class="wizard-step hidden legacy-setup-field" data-step="70"><h4>Starting Items</h4>
-            <label class="wizard-option-card"><input name="form-item-mode" type="radio" value="suggest" checked /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>suggest</strong><small>Suggest starting items that fit the setup.</small></span></label>
-            <label class="wizard-option-card"><input name="form-item-mode" type="radio" value="manual" /><span class="option-indicator" aria-hidden="true"></span><span class="option-copy"><strong>manual</strong><small>I will list starting items.</small></span></label>
-            <label class="full-width">Starting items, comma/new-line separated. <textarea id="form-starting-items" rows="4" placeholder="old spellbook, frostglass focus"></textarea></label>
-          </section>
+          <section class="wizard-step hidden" data-step="5"><h4>Review and Enter World</h4><div id="campaign-wizard-review" class="status-card">Review your MUD character, then enter the world.</div></section>
+          
+          
           
           <input id="form-starting-location" type="hidden" value="" />
-          <details class="campaign-play-style-group full-width advanced-campaign-rules hidden">
-            <summary>Advanced Campaign Rules</summary>
-            <label><input id="form-allow-freeform-powers" type="checkbox" checked /> Allow freeform powers/actions not yet on sheet</label>
-            <label><input id="form-auto-update-sheet-from-actions" type="checkbox" checked /> Auto-update character sheet from demonstrated actions</label>
-            <label><input id="form-strict-sheet-enforcement" type="checkbox" /> Strictly require sheet-listed powers</label>
-            <label><input id="form-auto-sync-player-identity" type="checkbox" checked /> Auto-sync player-declared identity/name/title</label>
-            <label><input id="form-auto-generate-npc-personalities" type="checkbox" checked /> Auto-generate NPC personalities</label>
-            <label><input id="form-auto-evolve-npc-personalities" type="checkbox" checked /> Auto-evolve NPC personalities over time</label>
-            <label><input id="form-reactive-world-persistence" type="checkbox" checked /> Persist reactive world consequences</label>
-            <label>Narration format
-              <select id="form-narration-format-mode">
-                <option value="book" selected>Book</option>
-                <option value="compact">Compact</option>
-                <option value="dialogue_focused">Dialogue focused</option>
-              </select>
-            </label>
-            <label>Scene visual mode
-              <select id="form-scene-visual-mode">
-                <option value="off" selected>Off</option>
-                <option value="manual">Manual only</option>
-                <option value="before_narration">Before narration</option>
-                <option value="after_narration">After narration</option>
-              </select>
-            </label>
-          </details>
           <div id="character-sheets-manager" class="character-sheets-manager hidden">
             <h4>Character Sheets Manager</h4>
             <div id="character-sheets-list" class="character-sheets-list">No sheets yet.</div>
@@ -428,15 +382,13 @@
 
         <section class="panel-block">
           <h4>General</h4>
-          <p class="setup-intro">Choose comfortable play options for the table.</p>
-          <label><input id="suggested-moves-toggle" type="checkbox" /> Show narrator suggested next moves</label>
-          <label>Narration format
-            <select id="narration-format-mode">
-              <option value="book">Book</option>
-              <option value="compact">Compact</option>
-              <option value="dialogue_focused">Dialogue focused</option>
-            </select>
-          </label>
+          <p class="setup-intro">Player-facing Smart MUD terminal preferences.</p>
+          <label>Font size <input id="mud-font-size" type="number" min="12" max="28" value="16" /></label>
+          <label>Font family <select id="mud-font-family"><option value="monospace" selected>Monospace</option><option value="serif">Serif</option><option value="sans-serif">Sans Serif</option></select></label>
+          <label>Terminal width <input id="mud-terminal-width" type="number" min="60" max="160" value="100" /></label>
+          <label>Terminal height / density <select id="mud-terminal-density"><option value="compact">Compact</option><option value="comfortable" selected>Comfortable</option><option value="tall">Tall</option></select></label>
+          <label><input id="mud-command-echo" type="checkbox" checked /> Command echo</label>
+          <label><input id="mud-show-timestamps" type="checkbox" /> Show timestamps</label>
         </section>
 
         <section id="mud-colors-settings" class="panel-block mud-colors-settings">
@@ -456,7 +408,7 @@
           <div class="button-row compact-row"><button id="mud-color-reset" type="button">Reset to preset</button><button id="mud-color-save" type="button" class="btn-primary">Save MUD Colors</button></div>
         </section>
 
-        <section class="panel-block">
+        <section class="panel-block developer-tool-section hidden">
           <h4>Campaign</h4>
           <div class="settings-shortcut-row button-row">
             <button id="open-narrator-rules" type="button">Narrator Rules</button>
@@ -479,7 +431,7 @@
           </section>
         </section>
 
-        <section class="panel-block">
+        <section class="panel-block developer-tool-section hidden">
           <h4>Story DM</h4>
           <p class="setup-intro">Basic DM Mode is ready without extra setup. Optional local AI and image tools can be enabled from Developer Tools.</p>
           <label>Story DM mode <select id="model-provider"><option value="null">Basic DM Mode</option><option value="ollama">Local AI (optional)</option></select></label>

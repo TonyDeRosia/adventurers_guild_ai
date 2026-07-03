@@ -159,8 +159,9 @@ class CampaignEngine:
         if direction:
             exit_ = next((e for e in room.get("exits", []) if e.get("direction") == direction and not e.get("hidden") and not e.get("locked")), None)
             if not exit_:
-                text = f"You cannot go {direction} from here."
-                return TurnResult(text, [text], [{"type":"system", "text": text}], metadata={"mud_v2": True, "movement": "invalid"})
+                text = "You cannot go that way."
+                state.structured_state.runtime.last_narration = text
+                return TurnResult(text, [], [{"type":"system", "text": text}], metadata={"mud_v2": True, "movement": "invalid"})
             room = world.room(str(exit_["destination_room_id"])); room_id = room["id"]
             state.current_location_id = room_id; state.structured_state.runtime.current_room_id = room_id; state.structured_state.runtime.current_location_id = room_id
             self._mud_store_for_state(state).mark_room_visited(room_id)

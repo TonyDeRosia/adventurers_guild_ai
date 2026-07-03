@@ -6320,5 +6320,17 @@ def test_mud_api_world_character_play_flow(tmp_path: Path, monkeypatch) -> None:
     assert view["prompt_text"].startswith("[Test HP:")
     assert "prompt_html" in view
     look = runtime.mud_input({"text": "look"})
+    assert look["ok"] is True
+    assert look["mode"] == "mud_v2"
+    for key in ["world_id", "character_id", "room_id", "world_name", "character_name", "room_name", "output_text", "output_html", "semantic_output", "prompt_text", "prompt_html", "save_status"]:
+        assert key in look
     assert look["room"]["name"] == "Guildhall Crossing Square"
     assert look["prompt_text"].startswith("[Test HP:")
+    assert "messages" not in look
+    assert "play_view" not in look
+    assert "{prompt_" not in look["output_html"]
+    moved = runtime.mud_input({"text": "n"})
+    assert moved["mode"] == "mud_v2"
+    assert moved["output_text"]
+    invalid = runtime.mud_input({"text": "u"})
+    assert "You cannot go that way." in invalid["output_text"]

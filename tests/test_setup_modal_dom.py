@@ -53,6 +53,8 @@ def test_smart_mud_layout_uses_terminal_prompt_and_compact_command_row() -> None
     assert 'class="input-bar compose-bar mud-command-row"' in html
     assert 'class="btn-primary mud-send-button"' in html
     assert 'id="mud-menu-settings"' in html
+    for removed in ['mud-menu-character', 'mud-menu-inventory', 'mud-menu-equipment', 'mud-menu-spellbook', 'mud-menu-journal']:
+        assert f'id="{removed}"' not in html
     assert 'id="mud-colors-settings"' in html
     assert 'id="mud-color-preset"' in html
     assert 'id="mud-color-roles"' in html
@@ -145,14 +147,6 @@ def test_creator_mode_confirmation_handler_still_opens_confirmation_modal() -> N
 def test_new_character_form_is_smart_mud_focused_by_default() -> None:
     html = _index_html()
     modal = html[html.index('id="new-campaign-modal"'):html.index('id="campaign-browser-modal"')]
-    assert 'id="form-campaign-name"' in modal
-    assert 'id="form-world-theme"' in modal
-    assert 'id="form-tone"' in modal
-    assert 'id="form-premise"' in modal
-    assert 'Advanced Campaign Rules' in modal
-    assert 'class="character-sheets-entry"' not in modal
-    assert '<h4>Character Sheets Manager</h4>' in modal
-    assert 'id="character-sheets-manager" class="character-sheets-manager hidden"' in modal
     for step in [
         "Choose World",
         "Choose Race",
@@ -162,19 +156,34 @@ def test_new_character_form_is_smart_mud_focused_by_default() -> None:
         "Review and Enter World",
     ]:
         assert step in modal
-    for legacy_step in ["Campaign Basics", "Play Style", "Rules Style", "Character Identity"]:
-        assert legacy_step not in modal
+    for legacy_text in ["Campaign Basics", "Play Style", "Rules Style", "story mode", "power level", "background", "goal"]:
+        assert legacy_text.lower() not in modal.lower()
     assert 'id="form-player-name" type="text" required' in modal
     assert 'id="form-player-class" type="text" required' in modal
+    assert 'id="form-species" type="text"' in modal
+    assert 'id="form-player-concept"' in modal
     assert 'id="create-campaign-confirm" class="hidden"' in modal
     assert "ComfyUI" not in modal
-    assert 'advanced-campaign-rules' in modal
+
+
+def test_smart_mud_settings_are_player_facing_by_default() -> None:
+    html = _index_html()
+    modal = html[html.index('id="setup-modal"'):]
+    default_view = modal[:modal.index('id="developer-tools-panel"')]
+    for text in ["Font size", "Font family", "Terminal width", "Command echo", "Show timestamps", "MUD Colors", "Show Developer Tools"]:
+        assert text in default_view
+    assert 'class="panel-block developer-tool-section hidden"' in default_view
+    assert 'id="developer-tools-panel" class="panel-block hidden"' in modal
+    for player_facing in ["Campaign Mode", "Campaign Rules", "Story DM"]:
+        assert player_facing in default_view
+    for hidden in ["ComfyUI", "Image Addon", "Campaign Intelligence Library", "GM Orchestrator Inspector", "MUD Memory Inspector"]:
+        assert hidden not in default_view
 
 
 def test_wizard_option_groups_render_as_option_cards() -> None:
     html = _index_html()
     assert 'class="wizard-option-card"' in html
-    assert html.count('class="wizard-option-card"') >= 18
+    assert html.count('class="wizard-option-card"') >= 8
     assert '<label><input name="form-play-style-choice"' not in html
 
 
@@ -184,9 +193,9 @@ def test_wizard_selected_options_have_card_styling() -> None:
     assert '.wizard-option-card:has(input:checked)' in css
     assert 'name="form-play-style-choice" type="radio" value="Storybook Mode" checked' in html
     assert 'name="form-rules-style-choice" type="radio" value="Hybrid" checked' in html
-    assert 'name="form-power-level-choice" type="radio" value="Capable Adventurer" checked' in html
-    assert 'name="form-ability-mode" type="radio" value="suggest" checked' in html
-    assert 'name="form-item-mode" type="radio" value="suggest" checked' in html
+    assert 'name="form-power-level-choice"' not in html
+    assert 'name="form-ability-mode"' not in html
+    assert 'name="form-item-mode"' not in html
 
 
 def test_campaign_intelligence_uses_file_picker_not_source_path_field() -> None:

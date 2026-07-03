@@ -13,14 +13,20 @@ PRESETS = {
  "Colorblind Friendly": {**{r: "#e6e6e6" for r in SEMANTIC_COLOR_ROLES}, "exit":"#56b4e9", "magic":"#cc79a7", "prompt_gold":"#f0e442", "damage":"#d55e00", "healing":"#009e73"},
 }
 TAG_RE = re.compile(r"\{(/?)([a-z_]+)\}")
+PROMPT_TAG_RE = re.compile(r"\{/?prompt_[a-z_]+\}")
 
 def semantic(role: str, text: Any) -> str:
     role = role if role in SEMANTIC_COLOR_ROLES else "system"
     return f"{{{role}}}{text}{{/{role}}}"
 
+def strip_prompt_block(text: str) -> str:
+    text = str(text or "")
+    text = re.split(r"\n(?=\{prompt_(?:hp|mana|stamina|xp|gold|marker)\})", text, maxsplit=1)[0]
+    return PROMPT_TAG_RE.sub("", text).rstrip()
+
 def render_semantic_html(text: str, colors: dict[str, str] | None = None) -> str:
     colors = colors or PRESETS["Dark Fantasy"]
-    escaped = html.escape(text)
+    escaped = html.escape(strip_prompt_block(text))
     def repl(m: re.Match[str]) -> str:
         closing, role = m.group(1), m.group(2)
         if role not in SEMANTIC_COLOR_ROLES: return ""
@@ -28,7 +34,7 @@ def render_semantic_html(text: str, colors: dict[str, str] | None = None) -> str
     return TAG_RE.sub(repl, escaped).replace("\n", "<br>")
 
 def render_semantic_plain(text: str) -> str:
-    return TAG_RE.sub("", text)
+    return TAG_RE.sub("", strip_prompt_block(text))
 
 def render_room(room: dict[str, Any], world: dict[str, Any], player: dict[str, Any], *, npcs: list[dict[str, Any]] | None = None, objects: list[dict[str, Any]] | None = None, narrative: list[str] | None = None, corpses: list[dict[str, Any]] | None = None) -> str:
     npcs = [n for n in (npcs or []) if str(n.get("status", "alive")) == "alive"]; objects = objects or []; narrative = narrative or []; corpses = corpses or []
