@@ -6,6 +6,7 @@ import json
 import sqlite3
 import re
 import uuid
+import hashlib
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Any, Optional
@@ -433,15 +434,18 @@ class MudRuntime:
         token = f"dev-{uuid.uuid4().hex}"
         now = datetime.now(timezone.utc).isoformat()
         with sqlite3.connect(self.state_store.db_path) as conn:
-            conn.execute("INSERT INTO accounts(account_id,username,password_hash,local_dev_auth_token,created_at,updated_at,status,role,email,notes) VALUES(?,?,?,?,?,?,?,?,?,?)", (account_id, username, "", token, now, now, "active", role, email, notes))
+            conn.execute("INSERT INTO accounts(account_id,username,password_hash,local_dev_auth_token,created_at,updated_at,status,role,email,notes) VALUES(?,?,?,?,?,?,?,?,?,?)", (account_id, username, hashlib.sha256(password.encode()).hexdigest() if password else "", token, now, now, "active", role, email, notes))
             conn.execute("UPDATE characters SET account_id=? WHERE COALESCE(account_id,'')=''", (account_id,))
         self.event_bus.publish("account_created", {"account_id": account_id, "username": username, "role": role}, source_system="account", account_id=account_id)
         return {"account_id": account_id, "username": username, "status": "active", "role": role, "email": email, "local_dev_auth_token": token}
 
     def login_account(self, username: str, password: str = "", session_id: str = "") -> dict[str, Any]:
         with sqlite3.connect(self.state_store.db_path) as conn:
-            row = conn.execute("SELECT account_id,username,status,role,email FROM accounts WHERE lower(username)=lower(?)", (str(username or "").strip(),)).fetchone()
+            row = conn.execute("SELECT account_id,username,status,role,email,password_hash FROM accounts WHERE lower(username)=lower(?)", (str(username or "").strip(),)).fetchone()
             if not row: raise ValueError("Account not found.")
+            stored_hash = row[5] or ""
+            if stored_hash and hashlib.sha256(password.encode()).hexdigest() != stored_hash:
+                raise ValueError("Wrong password.")
             conn.execute("UPDATE accounts SET last_login_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE account_id=?", (row[0],))
         account = self._account_payload(row)
         if session_id in self.sessions:

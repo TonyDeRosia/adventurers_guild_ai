@@ -107,3 +107,11 @@ Phase 2C adds the Smart MUD Event Bus as architecture-only infrastructure. Runti
 ## Phase 2D Account and Session Foundation
 
 Smart MUD now includes a local account/session foundation. See `docs/ACCOUNT_AND_SESSION_MODEL.md` for the SQLite account model, shared web/telnet session lifecycle, account-owned character creation/select/entry rules, role hierarchy, permission helper philosophy, orphan character migration behavior, and account/session/character EventBus events.
+
+### Phase 2D hotfix: explicit account and character flow
+
+Account and character endpoints now return predictable JSON. Successful responses include `ok: true` with account/session/character data where applicable. Expected user errors return `ok: false`, a human-readable `error`, a machine-readable `code`, and a suggested `state` without bubbling validation exceptions into HTTP 500 responses. Missing accounts use `account_not_found`, wrong passwords use `wrong_password`, duplicate accounts use `duplicate_account`, duplicate character names use `duplicate_character_name`, invalid character names use `invalid_character_name`, and ownership/session failures use clean 401/403/409-style responses.
+
+The web client must use explicit character selection. Creating an account or character does not silently enter `Player` / `player_player`; after account login/create and world selection the client lists account-owned characters for that world and offers a Create Character action plus explicit Enter Character buttons. Legacy orphan characters may still be attached to the first local development account by migration for dev convenience, but they are presented in character select instead of auto-entered.
+
+Developer fallback remains limited to account convenience: an empty login can create or reuse the local development account when no account exists. It must not auto-create or auto-enter a gameplay character unless a future explicit dev fallback setting is added.

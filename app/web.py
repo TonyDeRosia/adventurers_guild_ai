@@ -6,13 +6,14 @@ import or initialize campaign, story, scene, image, workflow, or ComfyUI systems
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime, timezone
 import re
 from typing import Any
 
 try:
     from fastapi import FastAPI, HTTPException
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import FileResponse
+    from fastapi.responses import FileResponse, JSONResponse
     from fastapi.staticfiles import StaticFiles
     import uvicorn
 except ModuleNotFoundError:  # pragma: no cover
@@ -20,6 +21,7 @@ except ModuleNotFoundError:  # pragma: no cover
     HTTPException = Exception
     CORSMiddleware = None
     FileResponse = None
+    JSONResponse = None
     StaticFiles = None
     uvicorn = None
 
@@ -179,10 +181,22 @@ class WebRuntime:
         return {"ok": True, "world": manifest}
 
     def list_characters(self) -> list[dict[str, Any]]:
+        if not self.web_session.authenticated or not self.web_session.account_id:
+            raise HTTPException(status_code=401, detail="Authenticate before listing characters.")
         return self.mud_runtime.list_characters(self.active_world_id, self.web_session.account_id or "")
 
     def account_session(self) -> dict[str, Any]:
         return {"session_id": self.web_session.session_id, "transport_type": self.web_session.transport_type, "account_id": self.web_session.account_id, "character_id": self.web_session.character_id, "world_id": self.web_session.world_id, "authenticated": bool(self.web_session.authenticated), "state": self.web_session.state, "account_exists": self.mud_runtime.any_account_exists()}
+
+
+    def publish_flow_failure(self, event_name: str, exc: Exception, username: str = "", world_id: str = "") -> None:
+        self.event_bus.publish(event_name, {
+            "reason": _failure_code(exc),
+            "session_id": self.web_session.session_id,
+            "transport_type": self.web_session.transport_type,
+            "username": username,
+            "world_id": world_id or self.active_world_id,
+        }, source_system="account", session_id=self.web_session.session_id, transport_type=self.web_session.transport_type, world_id=world_id or self.active_world_id)
 
     def create_account(self, payload: dict[str, Any]) -> dict[str, Any]:
         account = self.mud_runtime.create_account(str(payload.get("username") or payload.get("account_name") or "local_dev"), str(payload.get("password") or ""), str(payload.get("email") or ""), str(payload.get("notes") or ""))
@@ -208,6 +222,11 @@ class WebRuntime:
         return result
 
     def create_character(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not self.web_session.authenticated or not self.web_session.account_id:
+            if not self.mud_runtime.any_account_exists():
+                self.create_account({"username": "local_dev"})
+            else:
+                self.login_account({})
         if not self.active_world_id:
             worlds = self.list_worlds()
             if not worlds:
@@ -220,20 +239,21 @@ class WebRuntime:
             class_id=str(payload.get("class_id") or payload.get("class") or payload.get("char_class") or ""),
             account_id=self.web_session.account_id or "",
         )
-        self.active_character_id = character["character_id"]
-        self.web_session.character_id = self.active_character_id
-        self.web_session.world_id = self.active_world_id
-        self.web_session.state = "playing"
-        return {"ok": True, "character": character}
+        return {"ok": True, "state": "character_select", "character": character, "selected_character": None, "characters": self.list_characters(), "session": self.account_session()}
 
     def enter_world(self, character_id: str = "") -> dict[str, Any]:
+        if not self.web_session.authenticated or not self.web_session.account_id:
+            raise HTTPException(status_code=401, detail="Authenticate before entering a character.")
         cid = character_id or self.active_character_id
         if not cid:
             raise HTTPException(status_code=400, detail="Select or create a character before entering the world.")
+        result = self.mud_runtime.enter_world(cid, self.web_session.account_id or "", self.web_session.session_id)
         self.active_character_id = cid
         self.web_session.character_id = cid
         self.web_session.world_id = self.active_world_id
-        return self.mud_runtime.enter_world(cid, self.web_session.account_id or "", self.web_session.session_id)
+        self.web_session.state = "playing"
+        result.update({"state": "playing", "session": self.account_session(), "selected_character": result.get("character")})
+        return result
 
 
     def _room_summary(self, room_id: str) -> dict[str, Any]:
@@ -311,8 +331,14 @@ class WebRuntime:
         return self._normalize_mud_view(self.mud_runtime.play_view(self.active_character_id))
 
     def handle_input(self, command: str, command_echo: bool = True) -> dict[str, Any]:
-        if not self.active_character_id:
-            raise HTTPException(status_code=400, detail="Select or create a character before sending commands.")
+        if not self.web_session.authenticated:
+            raise HTTPException(status_code=401, detail="Authenticate before sending commands.")
+        if not self.active_world_id or not self.web_session.world_id:
+            raise HTTPException(status_code=409, detail="Select a world before sending commands.")
+        if not self.active_character_id or not self.web_session.character_id:
+            raise HTTPException(status_code=409, detail="Select and enter a character before sending commands.")
+        if self.web_session.state != "playing":
+            raise HTTPException(status_code=409, detail="Enter a character before sending commands.")
         response = self.web_transport.handle_message(TransportMessage(session=self.web_session, text=command))
         result = response.metadata.get("result", {})
         command_output = str(result.get("output") or "")
@@ -339,7 +365,23 @@ class WebRuntime:
     def mud_create_character(self, payload: dict[str, Any]) -> dict[str, Any]:
         if payload.get("world_id") and payload.get("world_id") != self.active_world_id:
             self.select_world(str(payload.get("world_id")))
-        return self.create_character(payload)
+        if not self.web_session.authenticated:
+            if not self.mud_runtime.any_account_exists():
+                self.create_account({"username": "local_dev"})
+            else:
+                self.login_account({})
+        try:
+            return self.create_character(payload)
+        except ValueError as exc:
+            if "character with that name" not in str(exc).lower():
+                raise
+            name = str(payload.get("name") or payload.get("player_name") or payload.get("character_name") or "Player")
+            slug = re.sub(r"[^a-z0-9-]+", "_", name.lower().strip()).strip("_") or "player"
+            chars = self.list_characters()
+            existing = next((c for c in chars if c.get("slug") == slug), None)
+            if not existing:
+                raise
+            return {"ok": True, "state": "character_select", "character": existing, "selected_character": None, "characters": chars, "session": self.account_session()}
 
     def mud_enter_character(self, payload: dict[str, Any]) -> dict[str, Any]:
         if payload.get("world_id") and payload.get("world_id") != self.active_world_id:
@@ -357,6 +399,43 @@ class WebRuntime:
 def _resolve_static_root() -> Path:
     return static_dir()
 
+
+
+def _api_success(**payload: Any) -> dict[str, Any]:
+    return {"ok": True, **payload}
+
+def _api_error(status: int, message: str, code: str, state: str = "account_login") -> Any:
+    return JSONResponse(status_code=status, content={"ok": False, "error": message, "code": code, "state": state})
+
+def _failure_code(exc: Exception) -> str:
+    low = (str(exc) or "").lower()
+    if isinstance(exc, PermissionError) or "does not belong" in low: return "character_not_owned"
+    if "account not found" in low: return "account_not_found"
+    if "password" in low: return "wrong_password"
+    if "account" in low and ("exists" in low or "unique constraint" in low): return "duplicate_account"
+    if "character with that name" in low: return "duplicate_character_name"
+    if "character name" in low: return "invalid_character_name"
+    if "character not found" in low: return "character_not_found"
+    return "validation_error"
+
+def _expected_error(exc: Exception, state: str = "account_login") -> Any:
+    msg = str(exc) or "Request failed."
+    low = msg.lower()
+    if isinstance(exc, PermissionError) or "does not belong" in low:
+        return _api_error(403, msg, "character_not_owned", "character_select")
+    if "account not found" in low:
+        return _api_error(404, msg, "account_not_found", "account_login")
+    if "password" in low:
+        return _api_error(401, msg, "wrong_password", "account_login")
+    if "unique constraint failed: accounts" in low or "account" in low and "exists" in low:
+        return _api_error(409, "Account already exists.", "duplicate_account", "account_login")
+    if "character with that name" in low or "unique constraint failed: characters" in low:
+        return _api_error(409, msg, "duplicate_character_name", "character_select")
+    if "character name" in low:
+        return _api_error(400, msg, "invalid_character_name", "character_select")
+    if "character not found" in low:
+        return _api_error(404, msg, "character_not_found", "character_select")
+    return _api_error(400, msg, "validation_error", state)
 
 def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     if FastAPI is None:
@@ -382,15 +461,23 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
 
     @app.get("/api/mud/account/session")
     def account_session() -> dict[str, Any]:
-        return runtime.account_session()
+        return _api_success(session=runtime.account_session(), state=runtime.web_session.state)
 
     @app.post("/api/mud/account/create")
-    def account_create(payload: dict[str, Any]) -> dict[str, Any]:
-        return runtime.create_account(payload)
+    def account_create(payload: dict[str, Any]) -> Any:
+        try:
+            return runtime.create_account(payload)
+        except Exception as exc:
+            runtime.publish_flow_failure("account_create_failed", exc, username=str(payload.get("username") or payload.get("account_name") or ""))
+            return _expected_error(exc, "account_login")
 
     @app.post("/api/mud/account/login")
-    def account_login(payload: dict[str, Any]) -> dict[str, Any]:
-        return runtime.login_account(payload)
+    def account_login(payload: dict[str, Any]) -> Any:
+        try:
+            return runtime.login_account(payload)
+        except Exception as exc:
+            runtime.publish_flow_failure("account_login_failed", exc, username=str(payload.get("username") or payload.get("account_name") or ""))
+            return _expected_error(exc, "account_login")
 
     @app.post("/api/mud/account/logout")
     def account_logout() -> dict[str, Any]:
@@ -405,24 +492,51 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
         return runtime.select_world(str(payload.get("world_id") or payload.get("id") or ""))
 
     @app.get("/api/mud/characters")
-    def characters() -> dict[str, Any]:
-        return {"characters": runtime.list_characters()}
+    def characters(world_id: str = "") -> Any:
+        try:
+            if world_id and world_id != runtime.active_world_id:
+                runtime.select_world(world_id)
+            return _api_success(state=runtime.web_session.state, session=runtime.account_session(), characters=runtime.list_characters())
+        except HTTPException as exc:
+            return _api_error(exc.status_code, str(exc.detail), "unauthenticated" if exc.status_code == 401 else "validation_error", "character_select")
+        except Exception as exc:
+            return _expected_error(exc, "character_select")
 
     @app.post("/api/mud/characters/create")
-    def create_character(payload: dict[str, Any]) -> dict[str, Any]:
-        return runtime.create_character(payload)
+    def create_character(payload: dict[str, Any]) -> Any:
+        try:
+            return runtime.create_character(payload)
+        except HTTPException as exc:
+            runtime.publish_flow_failure("character_create_failed", exc, world_id=runtime.active_world_id)
+            return _api_error(exc.status_code, str(exc.detail), "unauthenticated" if exc.status_code == 401 else "validation_error", "character_select")
+        except Exception as exc:
+            runtime.publish_flow_failure("character_create_failed", exc, world_id=runtime.active_world_id)
+            return _expected_error(exc, "character_select")
 
     @app.post("/api/mud/characters/enter")
-    def enter_character(payload: dict[str, Any]) -> dict[str, Any]:
-        return runtime.enter_world(str(payload.get("character_id") or ""))
+    def enter_character(payload: dict[str, Any]) -> Any:
+        try:
+            return runtime.enter_world(str(payload.get("character_id") or ""))
+        except HTTPException as exc:
+            runtime.publish_flow_failure("character_enter_failed", exc, world_id=runtime.active_world_id)
+            return _api_error(exc.status_code, str(exc.detail), "unauthenticated" if exc.status_code == 401 else "validation_error", "character_select")
+        except Exception as exc:
+            runtime.publish_flow_failure("character_enter_failed", exc, world_id=runtime.active_world_id)
+            return _expected_error(exc, "character_select")
 
     @app.get("/api/mud/play-view")
     def play_view() -> dict[str, Any]:
         return runtime.play_view()
 
     @app.post("/api/mud/input")
-    def mud_input(payload: dict[str, Any]) -> dict[str, Any]:
-        return runtime.handle_input(str(payload.get("command") or payload.get("text") or ""), payload.get("command_echo") is not False)
+    def mud_input(payload: dict[str, Any]) -> Any:
+        try:
+            return runtime.handle_input(str(payload.get("command") or payload.get("text") or ""), payload.get("command_echo") is not False)
+        except HTTPException as exc:
+            code = "unauthenticated" if exc.status_code == 401 else "session_not_playing"
+            return _api_error(exc.status_code, str(exc.detail), code, "character_select")
+        except Exception as exc:
+            return _expected_error(exc, "character_select")
 
     @app.get("/api/developer/mud-memory")
     def mud_memory() -> dict[str, Any]:
