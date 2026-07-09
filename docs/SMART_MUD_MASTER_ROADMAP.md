@@ -213,3 +213,8 @@ Builder commands maintain an explicit editing context and print a `Currently edi
 ## Phase 4C Hotfix 2: Builder polish, aliases, and normalization
 
 Completed: canonical Builder Status output, clearer location-versus-editing state, `redit` detail output, safe room-id and room-name checks, `desc` and save aliases, draft room normalization, and expanded validation categories. Known limits remain unchanged: full visual Builder UI, AI Builder, combat, quests, shops, and spellcasting are future phases.
+
+
+## Phase 4D — Builder Workflow 3.0
+
+Phase 4D polishes Builder Mode into a cohesive professional MUD-building workflow: canonical Builder HUD, status aliases, draft/live/all room listings, partial room search, multiline `rdesc`, safer `rname`, cleaner edit confirmations, exit inspection, standardized dig/save/reload language, stronger validation categories, and Builder-only history commands. It explicitly does not add gameplay, AI, combat, spells, quests, classes, economy, NPC behavior, web editors, or room ID rename execution.

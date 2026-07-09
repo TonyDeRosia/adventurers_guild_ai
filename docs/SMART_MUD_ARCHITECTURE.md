@@ -171,3 +171,8 @@ Builder commands maintain an explicit editing context and print a `Currently edi
 ## Phase 4C Hotfix 2 Builder integrity architecture
 
 BuilderWorkspace normalizes draft room records as workspace data is loaded and before drafts are saved or exported. Normalization is scoped to `worlds/<world_id>/builder/` and does not mutate live package room files. The command layer renders a single canonical Builder Status block and publishes builder status, edit-target, alias, normalization, validation warning, and validation error events for audit-friendly workflows.
+
+
+## Builder Workflow 3.0 Architecture
+
+The Builder workspace remains draft-first and runtime-safe. Builder context tracks current location plus active room/object/feature/exit targets, with a canonical HUD renderer used by edit, save, validate, export, reload, and target-changing flows. Room ID rename is intentionally not implemented in this phase, but validation and documentation now treat exits, builder references, history, draft references, and reload target restoration as the future migration surface.

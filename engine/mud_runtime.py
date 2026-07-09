@@ -99,6 +99,8 @@ class MudCharacter:
     last_created_room_id: str = ""
     edit_room_id: str = ""
     last_edited_target: str = ""
+    builder_desc_editor_room_id: str = ""
+    builder_desc_editor_lines: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -860,12 +862,14 @@ class MudRuntime:
                 msg = msg + "\n" + self.command_engine._builder_room_status(char, target, self.builder.load(self.active_world_id or ""))
             return CommandResult(msg, ok=ok, state_updates={"render_room": ok})
         if cmd in {"rooms", "rlist"}:
-            lines = ["Rooms:"]
-            for rid, (r, src) in sorted(self.all_runtime_rooms(char).items()):
-                exits = r.get("exits") or {}
-                ec = len(exits) if isinstance(exits, dict) else len(exits or [])
-                lines.append(f"{rid} | {r.get('name') or r.get('title') or rid} | {r.get('area_id','')} | {r.get('zone_id','')} | {src} | exits:{ec}")
-            self.event_bus.publish("builder_room_listed", {"character_id": char.id, "count": len(lines) - 1}, source_system="builder")
+            filt = (args[0].lower() if args else "draft")
+            rooms = [(rid, r, src) for rid, (r, src) in self.all_runtime_rooms(char).items() if filt == "all" or src == filt]
+            title = {"draft":"Draft Rooms", "live":"Live Rooms", "all":"All Rooms"}.get(filt, "Draft Rooms")
+            lines = [title, ""]
+            for i, (rid, _r, _src) in enumerate(sorted(rooms), 1):
+                lines.append(f"{i}. {rid}")
+            lines += ["", "Editing:", self.builder.current_room_id(char), "", "Current location:", char.room_id]
+            self.event_bus.publish("builder_room_listed", {"character_id": char.id, "count": len(rooms)}, source_system="builder")
             return CommandResult("\n".join(lines))
         if cmd in {"rfind", "rsearch"}:
             q = " ".join(args).lower()
@@ -875,6 +879,20 @@ class MudRuntime:
                     out.append(f"{rid} | {r.get('name') or r.get('title') or rid} | {src}")
             self.event_bus.publish("builder_room_searched", {"character_id": char.id, "query": q, "count": len(out)}, source_system="builder")
             return CommandResult("Room search results:\n" + ("\n".join(out) if out else "No rooms found."))
+        if cmd == "exits":
+            edict = self.canonical_exits(char, self.builder.current_room_id(char))
+            dirs=["north","south","east","west","up","down"]
+            lines=[]
+            for d in dirs:
+                ex=edict.get(d) or {}; tgt=ex.get("target_room_id") or ex.get("destination_room_id") or ex.get("to") or ex.get("room_id") or "none"
+                lines.append(f"{d.title()} -> {tgt}")
+            return CommandResult("\n".join(lines))
+        if cmd in {"back", "forward"}:
+            return CommandResult("Builder navigation history is available while Builder Mode is on. Use goto last for the previous location.")
+        if cmd in {"examine", "x"} and len(args)>=2 and args[0].lower()=="exit":
+            d=args[1].lower(); edict=self.canonical_exits(char, self.builder.current_room_id(char)); ex=edict.get(d) or {}; tgt=ex.get("target_room_id") or ex.get("destination_room_id") or ex.get("to") or ex.get("room_id") or "none"; rev={"north":"south","south":"north","east":"west","west":"east","up":"down","down":"up"}.get(d, "")
+            status="Valid" if tgt != "none" and self.runtime_room_data(char, str(tgt))[0] is not None else "Missing"
+            return CommandResult("\n".join(["Direction:", d.title(), "", "Destination:", str(tgt), "", "Reverse:", rev.title(), "", "Status:", status]))
         if cmd in {"map", "rmap"}:
             data, _source = self.runtime_room_data(char, char.room_id)
             lines = [f"Current: {char.room_id} {(data or {}).get('name') or (data or {}).get('title') or char.room_id}"]
@@ -893,7 +911,24 @@ class MudRuntime:
         char = self.state_store.load_character(character_id)
         if char is None:
             raise ValueError(f"Character not found: {character_id}")
-        result = self._handle_runtime_command(char, command)
+        if getattr(char, "builder_desc_editor_room_id", ""):
+            from engine.mud_commands import CommandResult
+            line = command.rstrip("\n")
+            if line.strip() == ".cancel":
+                setattr(char, "builder_desc_editor_room_id", ""); setattr(char, "builder_desc_editor_lines", [])
+                result = CommandResult("Description edit cancelled.")
+            elif line.strip() == ".end":
+                rid = getattr(char, "builder_desc_editor_room_id", "")
+                text = "\n".join(getattr(char, "builder_desc_editor_lines", []) or [])
+                self.builder.create_or_update(char, "rooms", rid, {"description": text}, "rdesc", "room")
+                setattr(char, "builder_desc_editor_room_id", ""); setattr(char, "builder_desc_editor_lines", [])
+                data = self.builder.load(self.active_world_id or "").get("rooms",{}).get(rid,{})
+                result = CommandResult("\n".join(["Updated room:", "", "ID:", rid, "", "Name:", data.get("name") or "(unnamed)", "", "Dirty:", "yes"]) + "\n" + self.command_engine._builder_room_status(char, rid, self.builder.load(self.active_world_id or "")))
+            else:
+                lines = list(getattr(char, "builder_desc_editor_lines", []) or []); lines.append(line); setattr(char, "builder_desc_editor_lines", lines)
+                result = CommandResult("")
+        else:
+            result = self._handle_runtime_command(char, command)
         self.state_store.save_character(char, self.active_world_id or "")
         session = self.sessions.get(character_id)
         turn = (session.command_count + 1) if session else 1

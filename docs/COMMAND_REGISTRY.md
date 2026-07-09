@@ -55,3 +55,8 @@ Builder commands maintain an explicit editing context and print a `Currently edi
 The text Builder polish pass keeps builder commands hidden from normal command lists while ensuring common aliases are not unknown. Registered/handled commands include `redit`, `rstat`, `rcreate`, `rname`, `rdesc`, `desc`, `btarget`, `rtarget`, `target`, `save`, `rsave`, `asave`, `bsave`, and `wsave`.
 
 `desc` is intentionally a Builder Mode alias for `rdesc`, not a player look/examine command. Save aliases route to builder export only when Builder Mode is enabled; otherwise normal players receive autosave or Builder Mode-required messages.
+
+
+## Phase 4D Builder Commands
+
+Builder Workflow 3.0 registers `builder status`, `bstatus`, Builder-only `status`, `rooms [draft|live|all]`, `rfind <query>`, `redit next`, `redit previous`, `exits`, `examine exit <dir>`, `x exit <dir>`, `back`, and `forward`. `rdesc` without arguments enters the multiline description editor and uses `.end` / `.cancel` sentinel commands.

@@ -146,6 +146,14 @@ class BuilderWorkspace:
         live_rooms = {str(r.get("id")) for r in _records(self.worlds_dir / world_id, "rooms") if r.get("id")}
         draft_rooms = set(drafts["rooms"].keys()); all_rooms = live_rooms | draft_rooms
         reverse = {"north":"south","south":"north","east":"west","west":"east","up":"down","down":"up","in":"out","out":"in"}
+        seen_names = {}
+        for rid, room in drafts["rooms"].items():
+            nm = str((room or {}).get("name") or "").strip().lower()
+            if nm:
+                seen_names.setdefault(nm, []).append(str(rid))
+        for nm, ids in seen_names.items():
+            if len(ids) > 1:
+                warnings.append(f"duplicate room display name {nm}: {', '.join(ids)}")
         for rid, room in drafts["rooms"].items():
             if not str(rid).strip() or any(ch.isspace() for ch in str(rid)) or not re.fullmatch(r"[a-z0-9]+(?:_[a-z0-9]+)*", str(rid)): errors.append(f"room {rid} has unsafe id")
             if rid in live_rooms: warnings.append(f"room {rid} shadows live room")

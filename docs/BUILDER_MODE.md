@@ -146,3 +146,12 @@ Room ids are machine identifiers and must be lowercase snake_case with no spaces
 Draft room records are normalized on load and before save/export. Every draft room carries `id`, `name`, `description`, `world_id`, `area_id`, `zone_id`, `exits`, `features`, `flags`, `tags`, and `plugin_data`; valid existing data is preserved and live world files are not modified.
 
 `builder validate` reports grouped Errors, Warnings, and Info for unsafe ids, partial drafts, missing or empty room fields, ID-looking names, broken exits, reverse-exit mismatches, self-loops, and draft rooms that shadow live rooms. Visual Builder UI, AI Builder, combat, quests, shops, and spellcasting remain future work.
+
+
+## Phase 4D Builder Workflow 3.0
+
+Builder Mode now uses a canonical HUD instead of ad-hoc status spam. `builder status`, `bstatus`, and Builder-only `status` print the HUD on demand, showing current location, current room edit target, source, and dirty state. Target-changing and editing commands refresh it; passive commands such as `look`, movement, inventory, and score should not spam it.
+
+Room editing supports `redit <room_id>`, `redit next`, and `redit previous` for cycling draft rooms. `rname` rejects blank names and warns about duplicate display names or names that match IDs. `rdesc` with no text opens the multiline in-MUD description editor; finish with `.end` or cancel with `.cancel`.
+
+`exits` lists the six primary exits in `Direction -> destination` form, and `examine exit <direction>` / `x exit <direction>` inspect destination, reverse direction, and validity.

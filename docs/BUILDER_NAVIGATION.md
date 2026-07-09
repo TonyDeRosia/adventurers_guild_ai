@@ -67,3 +67,10 @@ Builder edit commands show a persistent `Currently editing:` block with room id,
 Movement changes the current location. `redit` and `btarget` change only the edit target. `goto` while Builder Mode is enabled intentionally changes both location and edit target. `dig` creates/links the destination, moves the builder there, and selects the new room for editing. Normal directional movement does not secretly change the edit target.
 
 Navigation and editing commands that succeed should render the canonical Builder Status block so builders can see both `Location` and `Currently editing`. `map`/`rmap`, `dig`, `link`, `unlink`, `goto`, `redit`, `rstat`, `rcreate`, `rname`, `rdesc`, `desc`, `builder validate`, `builder save`, `builder snapshot`, and `builder reload` all follow this convention where Builder Mode output is available.
+
+
+## Phase 4D Navigation Polish
+
+Builder navigation keeps the editing context visible through the canonical Builder HUD. `rooms` defaults to draft rooms and also supports `rooms draft`, `rooms live`, and `rooms all`, with the current editing target and current location at the bottom. `rfind` searches room IDs and display names by partial match.
+
+`back` and `forward` are reserved for Builder navigation history while Builder Mode is enabled; they do not replace normal movement commands for players. Current compatibility keeps `goto last` available for the previous location while the history stack is expanded.
