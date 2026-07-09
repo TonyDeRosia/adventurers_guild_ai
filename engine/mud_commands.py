@@ -155,6 +155,8 @@ class MudCommandEngine:
             "affects": self._cmd_affects,
             "who": self._cmd_who,
             "whoami": self._cmd_whoami,
+            "save": self._cmd_save,
+            "recall": self._cmd_generic,
             "grantrole": self._cmd_grantrole,
             "help": self._cmd_help,
             "commands": self._cmd_commands,
@@ -201,6 +203,8 @@ class MudCommandEngine:
             "rsearch": self._cmd_builder_nav,
             "rwhere": self._cmd_builder_nav,
             "btarget": self._cmd_builder_edit,
+            "rtarget": self._cmd_builder_edit,
+            "target": self._cmd_builder_edit,
             "map": self._cmd_builder_nav,
             "rmap": self._cmd_builder_nav,
             "areas": self._cmd_builder_nav,
@@ -224,7 +228,7 @@ class MudCommandEngine:
             "goto": self._cmd_goto,
             "stat": self._cmd_stat,
         }
-        for _name in " redit rstat rcreate rset rdesc rname rexits rfeature rdelete exedit excreate exset exdelete fedit fcreate fset fdesc fdelete oedit ocreate oset odesc odelete ostat medit mcreate mset mdesc mdelete mstat spawnedit spawncreate spawnset spawndelete spawnstat zstat astat wstat btarget".split():
+        for _name in " redit rstat rcreate rset rdesc rname rexits rfeature rdelete exedit excreate exset exdelete fedit fcreate fset fdesc fdelete oedit ocreate oset odesc odelete ostat medit mcreate mset mdesc mdelete mstat spawnedit spawncreate spawnset spawndelete spawnstat zstat astat wstat btarget rtarget target asave bsave wsave".split():
             if _name:
                 self.command_handlers[_name] = self._cmd_builder_edit
 
@@ -506,6 +510,26 @@ Available commands:
         return CommandResult(narrative="\n".join(lines))
 
 
+    def _cmd_save(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        cmd = raw.strip().split()[0].lower() if raw.strip() else "save"
+        role = self._effective_role(character)
+        if role in {"builder", "admin", "owner"}:
+            prefix = "Smart MUD uses builder save/export for Builder Mode drafts."
+            if cmd == "asave":
+                prefix = "ASAVE changed: Smart MUD uses builder save/export instead of area save."
+            if cmd in {"save", "bsave", "wsave", "asave"}:
+                res = self.builder.export(character)
+                return CommandResult(narrative=f"{prefix} Routing to builder save.\n{res.message}", ok=res.ok)
+        runtime = getattr(self, "runtime", None)
+        world_id = getattr(runtime, "active_world_id", "") if runtime else self.builder.world_id(character)
+        if runtime and hasattr(runtime, "state_store"):
+            runtime.state_store.save_character(character, world_id)
+            return CommandResult(narrative="Character state saved. Smart MUD also autosaves character progress.")
+        if self.state_store and hasattr(self.state_store, "save_character"):
+            self.state_store.save_character(character)
+            return CommandResult(narrative="Character state saved. Smart MUD also autosaves character progress.")
+        return CommandResult(narrative="Character state already autosaves.")
+
     def _cmd_generic(self, character: Any, args: list[str], raw: str) -> CommandResult:
         cmd = self.resolve_alias(raw.strip().split()[0].lower()) or raw.strip().split()[0].lower()
         toggles = {"brief", "compact", "autoexits", "autoloot", "autogold", "autosplit", "automap", "afk", "norepeat", "notell", "nosummon"}
@@ -548,9 +572,11 @@ Available commands:
     def _valid_room_id(self, room_id: str) -> bool:
         return bool(re.fullmatch(r"[a-z0-9]+(?:_[a-z0-9]+)*", str(room_id or "")))
 
+    def _room_id_hint(self, attempted: str = "") -> str:
+        return re.sub(r"[^a-z0-9]+", "_", str(attempted).lower()).strip("_") or "test_room_two"
+
     def _room_id_usage(self, attempted: str = "") -> str:
-        hint = re.sub(r"[^a-z0-9]+", "_", str(attempted).lower()).strip("_") or "test_room_two"
-        return f"Room IDs cannot contain spaces or unsafe characters. Use: rcreate {hint}"
+        return f"Room IDs cannot contain spaces or uppercase characters. Room IDs must be lowercase snake_case. Use {self._room_id_hint(attempted)}."
 
     def _cmd_dig(self, character: Any, args: list[str], raw: str) -> CommandResult:
         import shlex
@@ -564,7 +590,7 @@ Available commands:
         direction, rid = args[0].lower(), args[1]
         if not self._valid_room_id(rid):
             self.builder.publish("builder_dig_rejected", character, self.builder.world_id(character), "room", rid, command=raw)
-            return CommandResult('Room IDs cannot contain spaces or unsafe characters. Use lowercase underscore ids, e.g. dig north test_room_two "Test Room Two"', ok=False)
+            return CommandResult(f"Room IDs cannot contain spaces or uppercase characters. Room IDs must be lowercase snake_case. Use {self._room_id_hint(rid)}.", ok=False)
         one_way = "--one-way" in args
         allow_self_loop = "--allow-self-loop" in args
         name_parts = [a for a in args[2:] if a not in {"--one-way", "--allow-self-loop"}]
@@ -597,7 +623,7 @@ Available commands:
         args = [a for a in args if a != "--allow-self-loop"]
         direction,target=args[0].lower(),args[1]
         if not self._valid_room_id(target):
-            return CommandResult("Room IDs cannot contain spaces or unsafe characters. Use lowercase underscore ids.", ok=False)
+            return CommandResult(f"Room IDs cannot contain spaces or uppercase characters. Room IDs must be lowercase snake_case. Use {self._room_id_hint(target)}.", ok=False)
         runtime=getattr(self,"runtime",None)
         if runtime and runtime.runtime_room_data(character,target)[0] is None: return CommandResult(f"Room not found: {target}", ok=False)
         old=self.builder.current_room_id(character)
@@ -650,7 +676,8 @@ Available commands:
         return f"Currently editing:\nRoom: {room_id}\nName: {name}\nSource: {source}\nDirty: {dirty}\nEditing room: {room_id} {name}"
 
     def _cmd_builder_edit(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        cmd = raw.strip().split()[0].lower()
+        token = raw.strip().split()[0].lower()
+        cmd = self.resolve_alias(token) or token
         world_id = self.builder.world_id(character); room_id = self.builder.current_room_id(character)
         self.builder.publish("builder_command_received", character, world_id, "command", cmd, command=raw)
         drafts = self.builder.load(world_id)
@@ -792,7 +819,7 @@ XP: {target.xp}
             "unfollow": "You are not following anyone.", "mount": "Mounts are not implemented yet.", "dismount": "Mounts are not implemented yet.",
             "tell": "Private tells are not implemented yet.", "reply": "You have nobody to reply to.", "ask": "Ask whom about what?", "whisper": "Whisper to whom?",
             "gossip": "Global channels are not implemented yet.", "shout": "You shout, but global shout routing is not implemented yet.", "holler": "Holler is not implemented yet.",
-            "socials": "Social commands are tracked but the socials list is not implemented yet.", "practice": "Practice is not implemented yet.", "train": "Training is not implemented yet.", "study": "Study is not implemented yet.",
+            "socials": "Social commands are tracked but the socials list is not implemented yet.", "recall": "Recall is tracked as a future room-changing command and is not implemented yet.", "practice": "Practice is not implemented yet.", "train": "Training is not implemented yet.", "study": "Study is not implemented yet.",
         }
         meta = getattr(self, "registry", None).commands.get(cmd_name) if getattr(self, "registry", None) else None
         if meta and meta.short_help and meta.status.startswith("future"):

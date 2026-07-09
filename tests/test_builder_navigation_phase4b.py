@@ -171,3 +171,54 @@ def test_builder_edit_target_updates_immediately_and_persists(tmp_path):
     persisted = out(rt2, cid, "rstat")
     assert "Room: test_room_2" in persisted
     assert "Name: Test Room 2" in persisted
+
+
+def test_redit_no_args_reports_current_target_not_placeholder(tmp_path):
+    rt, cid = make_runtime(tmp_path)
+    out(rt, cid, "builder on")
+    out(rt, cid, "rcreate edit_room")
+    result = out(rt, cid, "redit")
+    assert "Currently editing:" in result
+    assert "Room: edit_room" in result
+    assert "The REDIT command is not available yet" not in result
+
+
+def test_redit_room_prints_editing_block(tmp_path):
+    rt, cid = make_runtime(tmp_path)
+    out(rt, cid, "builder on")
+    out(rt, cid, "rcreate first_room")
+    out(rt, cid, "rcreate second_room")
+    result = out(rt, cid, "redit first_room")
+    assert "Currently editing:" in result
+    assert "Room: first_room" in result
+    assert "Name:" in result
+    assert "Source:" in result
+    assert "Dirty:" in result
+
+
+def test_rtarget_alias_works(tmp_path):
+    rt, cid = make_runtime(tmp_path)
+    out(rt, cid, "builder on")
+    out(rt, cid, "rcreate alias_room")
+    out(rt, cid, "rcreate other_room")
+    result = out(rt, cid, "rtarget room alias_room")
+    assert "Builder target set." in result
+    assert "Room: alias_room" in result
+
+
+def test_save_aliases_and_recall_are_not_unknown(tmp_path):
+    rt, cid = make_runtime(tmp_path)
+    out(rt, cid, "builder on")
+    for command in ["save", "asave changed", "bsave", "wsave", "recall"]:
+        result = out(rt, cid, command)
+        assert "Unknown command" not in result
+
+
+def test_uppercase_room_ids_rejected_with_helpful_message(tmp_path):
+    rt, cid = make_runtime(tmp_path)
+    out(rt, cid, "builder on")
+    rcreate = out(rt, cid, "rcreate Testies")
+    assert "Room IDs must be lowercase snake_case. Use testies." in rcreate
+    out(rt, cid, "rcreate source_room")
+    dig = out(rt, cid, "dig north Testies_2")
+    assert "Room IDs must be lowercase snake_case. Use testies_2." in dig
