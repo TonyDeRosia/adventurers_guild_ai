@@ -27,7 +27,7 @@ except ModuleNotFoundError:  # pragma: no cover
 
 from app.pathing import initialize_user_data_paths, static_dir
 from app.runtime_config import MudClientRuntimeConfig, RuntimeConfigStore
-from app.runtime_config_mud import MudRuntimeConfigStore, get_default_mud_colors
+from app.runtime_config_mud import MudRuntimeConfigStore, get_mud_color_presets, normalize_mud_color_overrides, resolve_mud_colors
 from engine.mud_runtime import MudRuntime
 from engine.plugin_system import PluginRegistry
 from smart_mud.world_registry import WorldRegistry, WorldRegistryError, WorldValidationError
@@ -119,19 +119,30 @@ class WebRuntime:
         }
 
     def _mud_color_presets(self) -> dict[str, dict[str, str]]:
-        dark_fantasy = get_default_mud_colors()
-        high_contrast = {**dark_fantasy, "room_description": "#ffffff", "exit": "#7cff7c", "error": "#ff5555", "warning": "#ffff55"}
-        return {"Dark Fantasy": dark_fantasy, "High Contrast": high_contrast}
+        return get_mud_color_presets()
+
+    def _selected_mud_color_preset(self, raw: dict[str, Any] | None = None) -> str:
+        raw = raw if isinstance(raw, dict) else {}
+        candidate = str(raw.get("selected_preset") or "Dark Fantasy")
+        return candidate if candidate in self._mud_color_presets() else "Dark Fantasy"
 
     def get_global_settings(self) -> dict[str, Any]:
         app_config = self.app_config_store.load()
         presets = self._mud_color_presets()
-        mud_colors = {**presets["Dark Fantasy"], **app_config.mud_colors}
+        selected_preset = self._selected_mud_color_preset(app_config.mud_colors)
+        custom_roles = normalize_mud_color_overrides(app_config.mud_colors.get("custom_roles") if isinstance(app_config.mud_colors.get("custom_roles"), dict) else app_config.mud_colors)
+        effective_roles = resolve_mud_colors(selected_preset, custom_roles)
         mud_client = app_config.mud_client.__dict__
+        mud_colors = {
+            **effective_roles,  # Backward-compatible flat role lookup.
+            "selected_preset": selected_preset,
+            "custom_roles": custom_roles,
+            "effective_roles": effective_roles,
+        }
         return {
             "app_name": "Smart MUD",
             "theme": "dark_fantasy",
-            "terminal_colors": mud_colors,
+            "terminal_colors": effective_roles,
             "developer_tools_enabled": True,
             "default_world_id": self.config.default_world_id,
             "runtime_mode": "smart_mud",
@@ -142,18 +153,22 @@ class WebRuntime:
                 "world_count": len(self.available_worlds),
                 "active_world_id": self.active_world_id,
                 "ai_provider": self.config.ai_provider,
+                "mud_colors": mud_colors,
+                "mud_client": mud_client,
             },
         }
 
     def set_global_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
         app_config = self.app_config_store.load()
         if isinstance(payload.get("mud_colors"), dict):
-            allowed = set(get_default_mud_colors())
-            app_config.mud_colors = {
-                key: str(value)
-                for key, value in {**app_config.mud_colors, **payload["mud_colors"]}.items()
-                if key in allowed
-            }
+            incoming = payload["mud_colors"]
+            existing_custom = app_config.mud_colors.get("custom_roles") if isinstance(app_config.mud_colors.get("custom_roles"), dict) else app_config.mud_colors
+            selected_preset = self._selected_mud_color_preset(app_config.mud_colors)
+            if "selected_preset" in incoming:
+                selected_preset = self._selected_mud_color_preset(incoming)
+            incoming_custom = incoming.get("custom_roles") if isinstance(incoming.get("custom_roles"), dict) else incoming
+            custom_roles = normalize_mud_color_overrides({**normalize_mud_color_overrides(existing_custom), **dict(incoming_custom)})
+            app_config.mud_colors = {**custom_roles, "selected_preset": selected_preset, "custom_roles": custom_roles}
         if isinstance(payload.get("mud_client"), dict):
             values = {
                 key: value

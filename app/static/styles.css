@@ -1533,3 +1533,46 @@ body.smart-mud-mode { height: 100vh; overflow: hidden; }
 .mud-card, .mud-choice-card { border: 1px solid #304a6e; border-radius: 10px; padding: 10px; background: #0f1a2d; }
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: grid; place-items: center; z-index: 10; }
 .modal-card { max-height: 90vh; overflow-y: auto; width: min(900px, 96vw); }
+
+/* Canonical Smart MUD semantic color contract. */
+#mud-world-output span[role="room_name"], #mud-player-prompt span[role="room_name"], .mud-role-room_name, .mud-room-name { color: var(--mud-color-room-name, var(--mud-room-name-color, #d8dee9)); }
+#mud-world-output span[role="area_name"], #mud-player-prompt span[role="area_name"], .mud-role-area_name, .mud-area-name { color: var(--mud-color-area-name, var(--mud-area-name-color, #d8dee9)); }
+#mud-world-output span[role="room_description"], #mud-player-prompt span[role="room_description"], .mud-role-room_description, .mud-room-description { color: var(--mud-color-room-description, var(--mud-room-description-color, #d8dee9)); }
+#mud-world-output span[role="exit"], #mud-player-prompt span[role="exit"], .mud-role-exit, .mud-exit { color: var(--mud-color-exit, var(--mud-exit-color, #d8dee9)); }
+#mud-world-output span[role="npc"], #mud-player-prompt span[role="npc"], .mud-role-npc, .mud-npc { color: var(--mud-color-npc, var(--mud-npc-color, #d8dee9)); }
+#mud-world-output span[role="mob"], #mud-player-prompt span[role="mob"], .mud-role-mob, .mud-mob { color: var(--mud-color-mob, var(--mud-mob-color, #d8dee9)); }
+#mud-world-output span[role="player"], #mud-player-prompt span[role="player"], .mud-role-player, .mud-player { color: var(--mud-color-player, var(--mud-player-color, #d8dee9)); }
+#mud-world-output span[role="object"], #mud-player-prompt span[role="object"], .mud-role-object, .mud-object { color: var(--mud-color-object, var(--mud-object-color, #d8dee9)); }
+#mud-world-output span[role="item_common"], #mud-player-prompt span[role="item_common"], .mud-role-item_common, .mud-item-common { color: var(--mud-color-item-common, var(--mud-item-common-color, #d8dee9)); }
+#mud-world-output span[role="item_uncommon"], #mud-player-prompt span[role="item_uncommon"], .mud-role-item_uncommon, .mud-item-uncommon { color: var(--mud-color-item-uncommon, var(--mud-item-uncommon-color, #d8dee9)); }
+#mud-world-output span[role="item_rare"], #mud-player-prompt span[role="item_rare"], .mud-role-item_rare, .mud-item-rare { color: var(--mud-color-item-rare, var(--mud-item-rare-color, #d8dee9)); }
+#mud-world-output span[role="item_epic"], #mud-player-prompt span[role="item_epic"], .mud-role-item_epic, .mud-item-epic { color: var(--mud-color-item-epic, var(--mud-item-epic-color, #d8dee9)); }
+#mud-world-output span[role="item_legendary"], #mud-player-prompt span[role="item_legendary"], .mud-role-item_legendary, .mud-item-legendary { color: var(--mud-color-item-legendary, var(--mud-item-legendary-color, #d8dee9)); }
+#mud-world-output span[role="command_echo"], #mud-player-prompt span[role="command_echo"], .mud-role-command_echo, .mud-command-echo { color: var(--mud-color-command-echo, var(--mud-command-echo-color, #d8dee9)); }
+#mud-world-output span[role="system"], #mud-player-prompt span[role="system"], .mud-role-system, .mud-system { color: var(--mud-color-system, var(--mud-system-color, #d8dee9)); }
+#mud-world-output span[role="error"], #mud-player-prompt span[role="error"], .mud-role-error, .mud-error { color: var(--mud-color-error, var(--mud-error-color, #d8dee9)); }
+#mud-world-output span[role="warning"], #mud-player-prompt span[role="warning"], .mud-role-warning, .mud-warning { color: var(--mud-color-warning, var(--mud-warning-color, #d8dee9)); }
+#mud-world-output span[role="success"], #mud-player-prompt span[role="success"], .mud-role-success, .mud-success { color: var(--mud-color-success, var(--mud-success-color, #d8dee9)); }
+#mud-world-output span[role="combat"], #mud-player-prompt span[role="combat"], .mud-role-combat, .mud-combat { color: var(--mud-color-combat, var(--mud-combat-color, #d8dee9)); }
+#mud-world-output span[role="damage"], #mud-player-prompt span[role="damage"], .mud-role-damage, .mud-damage { color: var(--mud-color-damage, var(--mud-damage-color, #d8dee9)); }
+#mud-world-output span[role="healing"], #mud-player-prompt span[role="healing"], .mud-role-healing, .mud-healing { color: var(--mud-color-healing, var(--mud-healing-color, #d8dee9)); }
+#mud-world-output span[role="spell"], #mud-player-prompt span[role="spell"], .mud-role-spell, .mud-spell { color: var(--mud-color-spell, var(--mud-spell-color, #d8dee9)); }
+#mud-world-output span[role="skill"], #mud-player-prompt span[role="skill"], .mud-role-skill, .mud-skill { color: var(--mud-color-skill, var(--mud-skill-color, #d8dee9)); }
+#mud-world-output span[role="quest"], #mud-player-prompt span[role="quest"], .mud-role-quest, .mud-quest { color: var(--mud-color-quest, var(--mud-quest-color, #d8dee9)); }
+#mud-world-output span[role="score_label"], #mud-player-prompt span[role="score_label"], .mud-role-score_label, .mud-score-label { color: var(--mud-color-score-label, var(--mud-score-label-color, #d8dee9)); }
+#mud-world-output span[role="score_value"], #mud-player-prompt span[role="score_value"], .mud-role-score_value, .mud-score-value { color: var(--mud-color-score-value, var(--mud-score-value-color, #d8dee9)); }
+#mud-world-output span[role="equipment_slot"], #mud-player-prompt span[role="equipment_slot"], .mud-role-equipment_slot, .mud-equipment-slot { color: var(--mud-color-equipment-slot, var(--mud-equipment-slot-color, #d8dee9)); }
+#mud-world-output span[role="equipment_item"], #mud-player-prompt span[role="equipment_item"], .mud-role-equipment_item, .mud-equipment-item { color: var(--mud-color-equipment-item, var(--mud-equipment-item-color, #d8dee9)); }
+#mud-world-output span[role="gold"], #mud-player-prompt span[role="gold"], .mud-role-gold, .mud-gold { color: var(--mud-color-gold, var(--mud-gold-color, #d8dee9)); }
+#mud-world-output span[role="hp"], #mud-player-prompt span[role="hp"], .mud-role-hp, .mud-hp { color: var(--mud-color-hp, var(--mud-hp-color, #d8dee9)); }
+#mud-world-output span[role="mp"], #mud-player-prompt span[role="mp"], .mud-role-mp, .mud-mp { color: var(--mud-color-mp, var(--mud-mp-color, #d8dee9)); }
+#mud-world-output span[role="stamina"], #mud-player-prompt span[role="stamina"], .mud-role-stamina, .mud-stamina { color: var(--mud-color-stamina, var(--mud-stamina-color, #d8dee9)); }
+#mud-world-output span[role="dialogue"], #mud-player-prompt span[role="dialogue"], .mud-role-dialogue, .mud-dialogue { color: var(--mud-color-dialogue, var(--mud-dialogue-color, #d8dee9)); }
+#mud-world-output span[role="prompt"], #mud-player-prompt span[role="prompt"], .mud-role-prompt, .mud-prompt { color: var(--mud-color-prompt, var(--mud-prompt-color, #d8dee9)); }
+#mud-world-output span[role="input"], #mud-player-prompt span[role="input"], .mud-role-input, .mud-input { color: var(--mud-color-input, var(--mud-input-color, #d8dee9)); }
+#mud-world-output span[role="prompt_marker"], #mud-player-prompt span[role="prompt_marker"], .mud-role-prompt_marker, .mud-prompt-marker { color: var(--mud-color-prompt-marker, var(--mud-prompt-marker-color, #d8dee9)); }
+#mud-world-output span[role="prompt_hp"], #mud-player-prompt span[role="prompt_hp"], .mud-role-prompt_hp, .mud-prompt-hp { color: var(--mud-color-prompt-hp, var(--mud-prompt-hp-color, #d8dee9)); }
+#mud-world-output span[role="prompt_mana"], #mud-player-prompt span[role="prompt_mana"], .mud-role-prompt_mana, .mud-prompt-mana { color: var(--mud-color-prompt-mana, var(--mud-prompt-mana-color, #d8dee9)); }
+#mud-world-output span[role="prompt_stamina"], #mud-player-prompt span[role="prompt_stamina"], .mud-role-prompt_stamina, .mud-prompt-stamina { color: var(--mud-color-prompt-stamina, var(--mud-prompt-stamina-color, #d8dee9)); }
+#mud-world-output span[role="prompt_xp"], #mud-player-prompt span[role="prompt_xp"], .mud-role-prompt_xp, .mud-prompt-xp { color: var(--mud-color-prompt-xp, var(--mud-prompt-xp-color, #d8dee9)); }
+#mud-world-output span[role="prompt_gold"], #mud-player-prompt span[role="prompt_gold"], .mud-role-prompt_gold, .mud-prompt-gold { color: var(--mud-color-prompt-gold, var(--mud-prompt-gold-color, #d8dee9)); }

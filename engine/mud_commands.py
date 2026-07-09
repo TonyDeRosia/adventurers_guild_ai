@@ -181,7 +181,7 @@ class MudCommandEngine:
         # Fallback
         print(f"[mud-command] Unknown command: {cmd_name}")
         self._publish("command_unknown", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary="unknown")
-        result = CommandResult(narrative="Unknown command. Type HELP or COMMANDS.", ok=False)
+        result = CommandResult(narrative=semantic("error", "Unknown command. Type HELP or COMMANDS."), ok=False)
         self._publish("command_executed", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary=result.narrative[:120])
         return result
 
