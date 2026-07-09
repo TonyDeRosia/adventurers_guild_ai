@@ -122,3 +122,7 @@ Combat, NPC AI, Builder Mode, crafting, and world expansion remain intentionally
 Smart MUD now includes a canonical runtime entity foundation documented in `docs/ENTITY_SYSTEM.md`. World package templates remain immutable, while SQLite `entity_instances` hold mutable room location, ownership, state, flags, timestamps, and plugin data. `MudRuntime` is the sole authority for spawning, moving, despawning, destroying, state updates, keyword resolution, and visibility queries.
 
 Room rendering uses the entity visibility API so players, NPCs, mobs, and objects/items are displayed in the canonical order without exposing internal entity IDs to normal players. NPCs and mobs can be seeded idempotently from world package data and persist across restart. Corpse and container concepts are reserved for later combat and inventory/container work without replacing the Phase 2E item system. Combat, AI behavior, Builder Mode, shops, doors, pets, summons, and world expansion remain out of scope for Phase 3A.
+
+## Phase 3B Living Entity Runtime
+
+`MudRuntime` is the single authority for living entity lifecycle, spawning, movement, state, visibility, dialogue, behavior flags, and corpse foundation. Web and telnet transports continue to call runtime APIs and render returned semantic output only. World package records remain immutable data; SQLite entity instances hold runtime state and survive world reloads without duplicating room populations.

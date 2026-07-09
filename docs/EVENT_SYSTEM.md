@@ -84,3 +84,7 @@ Item events are emitted by `MudRuntime` from the canonical item pipeline. Pickup
 Smart MUD now includes a canonical runtime entity foundation documented in `docs/ENTITY_SYSTEM.md`. World package templates remain immutable, while SQLite `entity_instances` hold mutable room location, ownership, state, flags, timestamps, and plugin data. `MudRuntime` is the sole authority for spawning, moving, despawning, destroying, state updates, keyword resolution, and visibility queries.
 
 Room rendering uses the entity visibility API so players, NPCs, mobs, and objects/items are displayed in the canonical order without exposing internal entity IDs to normal players. NPCs and mobs can be seeded idempotently from world package data and persist across restart. Corpse and container concepts are reserved for later combat and inventory/container work without replacing the Phase 2E item system. Combat, AI behavior, Builder Mode, shops, doors, pets, summons, and world expansion remain out of scope for Phase 3A.
+
+## Phase 3B Living Entity Events
+
+Living entity APIs publish canonical lifecycle and interaction events: `entity_spawned`, `entity_despawned`, `entity_destroyed`, `entity_reset`, `entity_moved`, `entity_state_changed`, `entity_dialogue`, `room_entities_changed`, plus typed spawn events such as `npc_spawned`, `mob_spawned`, and `corpse_spawned`. Payloads carry entity id, template id, room id, world id, and optional account/session/transport metadata supplied by callers.

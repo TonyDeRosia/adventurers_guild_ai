@@ -35,3 +35,9 @@ Entity APIs publish `entity_spawned`, `entity_despawned`, `entity_moved`, `entit
 ## Future Compatibility
 
 The model intentionally leaves behavior systems outside Phase 3A. Future AI, combat, Builder Mode, doors, shops, pets, summons, mounts, and full containers can attach to the same runtime entity APIs without taking state authority away from `MudRuntime`.
+
+## Phase 3B Living Runtime
+
+Phase 3B expands the same entity foundation into living runtime instances. Templates now normalize spawn rules, wander rules, dialogue packages, behavior flags, visibility flags, profile placeholders, script hooks, and plugin data. Runtime instances expose canonical fields for state, health/mana/stamina, spawn origin, visibility, movement state, dialogue state, custom state, and persistence metadata.
+
+`MudRuntime` now exposes `populate_world`, `find_entities`, `change_entity_state`, `teleport_entity`, `return_to_spawn`, `reset_entity`, `respawn_entity`, `create_corpse`, `get_dialogue`, and `talk_to_entity` alongside the existing spawn/move/despawn/destroy APIs. Visibility is enforced by `find_visible_entities`; hidden or invisible entities are not rendered by the canonical room renderer.

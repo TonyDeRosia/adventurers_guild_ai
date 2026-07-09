@@ -560,7 +560,7 @@ class MudRuntime:
         self._load_item_templates()
         self._load_entity_templates()
         self._seed_room_items()
-        self._seed_room_entities()
+        self.populate_world()
         self.hooks.emit("world_loaded", world_id=world_id, world=self.active_world)
         self.event_bus.publish("world_loaded", {"world_id": world_id}, source_system="runtime", world_id=world_id)
         return self.active_world
@@ -688,6 +688,10 @@ class MudRuntime:
         raw_cmd = tokens[0].lower()
         cmd_name = self.command_engine.resolve_alias(raw_cmd)
         self.event_bus.publish("command_resolved", {"raw_input": command, "canonical_command": cmd_name, "arguments": tokens[1:], "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
+        dialogue_result = self._handle_dialogue_command(char, cmd_name, tokens[1:])
+        if dialogue_result is not None:
+            self.event_bus.publish("command_executed", {"raw_input": command, "canonical_command": cmd_name, "arguments": tokens[1:], "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id, "result_summary": dialogue_result.narrative[:120]}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
+            return dialogue_result
         if cmd_name in {"look", "examine"} and tokens[1:]:
             entity_result = self._look_entity(char.id, char.room_id, " ".join(tokens[1:]))
             if entity_result is not None:
@@ -1004,7 +1008,19 @@ class MudRuntime:
                 "long_description": str(raw.get("long_description") or raw.get("description") or raw.get("short_description") or raw.get("name") or tid),
                 "default_room_id": str(raw.get("default_room_id") or raw.get("room_id") or ""),
                 "faction_id": str(raw.get("faction_id") or ""), "level": level,
-                "state": raw.get("state") or {}, "flags": raw.get("flags") or [], "plugin_data": raw.get("plugin_data") or {},
+                "id": tid,
+                "race": str(raw.get("race") or raw.get("species") or ""), "class": str(raw.get("class") or raw.get("occupation") or ""),
+                "gender": str(raw.get("gender") or ""), "size": str(raw.get("size") or "medium"), "alignment": str(raw.get("alignment") or "neutral"),
+                "spawn_group": str(raw.get("spawn_group") or raw.get("spawn_id") or tid),
+                "spawn_rules": raw.get("spawn_rules") or {"spawn_room": raw.get("default_room_id") or raw.get("room_id") or "", "spawn_count": int(raw.get("spawn_count") or 1), "maximum_population": int(raw.get("max_alive") or raw.get("maximum_population") or 1), "respawn_delay": int(raw.get("respawn_delay_seconds") or raw.get("respawn_delay") or 0), "spawn_probability": float(raw.get("spawn_probability") or 1)},
+                "wander_rules": raw.get("wander_rules") or {"allowed_exits": raw.get("allowed_exits") or [], "wander_probability": float(raw.get("wander_probability") or 0), "wander_delay": int(raw.get("wander_delay") or 0), "restricted_rooms": raw.get("restricted_rooms") or [], "sentinel": bool(raw.get("sentinel") or "sentinel" in (raw.get("flags") or []))},
+                "dialogue_package": raw.get("dialogue_package") or {"greeting": raw.get("greeting") or f"{str(raw.get('name') or tid).title()} greets you.", "farewell": raw.get("farewell") or "Farewell.", "idle_speech": raw.get("idle_speech") or [], "talk_responses": raw.get("talk_responses") or [raw.get("dialogue_seed") or raw.get("description") or "They have nothing more to say."], "keyword_responses": raw.get("keyword_responses") or {}},
+                "behavior_flags": raw.get("behavior_flags") or raw.get("flags") or raw.get("tags") or [],
+                "visibility_flags": raw.get("visibility_flags") or [],
+                "loot_table": raw.get("loot_table") or raw.get("loot_table_id") or "", "merchant_profile": raw.get("merchant_profile") or {},
+                "trainer_profile": raw.get("trainer_profile") or {}, "banker_profile": raw.get("banker_profile") or {}, "healer_profile": raw.get("healer_profile") or {},
+                "quest_profile": raw.get("quest_profile") or {}, "script_hooks": raw.get("script_hooks") or {},
+                "state": raw.get("state") or {"current_state": "idle"}, "flags": raw.get("flags") or raw.get("behavior_flags") or [], "plugin_data": raw.get("plugin_data") or {},
             })
         self.entity_templates = templates
 
@@ -1015,6 +1031,20 @@ class MudRuntime:
             try: data[key] = json.loads(data.get(key) or json.dumps(default))
             except Exception: data[key] = default
         data["room_id"] = data.get("current_room_id", "")
+        state = data.get("state") if isinstance(data.get("state"), dict) else {}
+        tmpl = dict(self.entity_templates.get(str(data.get("template_id") or ""), {}))
+        data["instance_id"] = data.get("entity_id")
+        data["current_state"] = state.get("current_state") or state.get("position") or ("corpse" if data.get("entity_type") == "corpse" else "idle")
+        data["current_health"] = int(state.get("current_health", state.get("health", 1 if data.get("entity_type") == "corpse" else 100)) or 0)
+        data["current_mana"] = int(state.get("current_mana", 0) or 0); data["current_stamina"] = int(state.get("current_stamina", 0) or 0)
+        data["spawn_time"] = data.get("created_at"); data["last_update"] = data.get("updated_at"); data["last_reset"] = state.get("last_reset", "")
+        data["spawn_origin"] = state.get("spawn_origin") or tmpl.get("default_room_id") or data.get("current_room_id", "")
+        data["is_alive"] = bool(state.get("is_alive", data.get("entity_type") != "corpse" and data["current_state"] not in {"dead", "corpse", "despawned"}))
+        data["is_visible"] = bool(state.get("is_visible", not self._entity_hidden(data)))
+        data["movement_state"] = state.get("movement_state", "standing"); data["dialogue_state"] = state.get("dialogue_state", {})
+        data["custom_state"] = state.get("custom_state", {})
+        data["behavior_flags"] = list(tmpl.get("behavior_flags") or data.get("flags") or [])
+        data["visibility_flags"] = list(tmpl.get("visibility_flags") or []) + list(state.get("visibility_flags") or [])
         data["description"] = data.get("long_description") or data.get("short_description") or data.get("name")
         return data
 
@@ -1042,6 +1072,8 @@ class MudRuntime:
     def find_visible_entities(self, room_id: str, viewer: Any = None) -> dict[str, list[dict[str, Any]]]:
         groups = {"players": [], "npcs": [], "mobs": [], "objects": [], "corpses": []}
         for ent in self.find_room_entities(room_id):
+            if not self.is_entity_visible(ent, viewer):
+                continue
             groups[{"npc":"npcs", "mob":"mobs", "corpse":"corpses"}.get(ent.get("entity_type"), "objects")].append(ent)
         groups["objects"].extend(self.get_visible_room_items(room_id))
         return groups
@@ -1078,8 +1110,10 @@ class MudRuntime:
         return bool(ent)
 
     def _publish_entity_event(self, name: str, ent: dict[str, Any], source_system: str = "runtime", **extra: Any) -> None:
-        payload = {"entity_id": ent.get("entity_id"), "entity_type": ent.get("entity_type"), "world_id": ent.get("world_id", self.active_world_id or ""), "room_id": ent.get("current_room_id", ""), "template_id": ent.get("template_id"), "source_system": source_system, **extra}
+        payload = {"entity_id": ent.get("entity_id"), "entity_type": ent.get("entity_type"), "world_id": ent.get("world_id", self.active_world_id or ""), "room_id": ent.get("current_room_id", ""), "template_id": ent.get("template_id"), "source_system": source_system, "timestamp": datetime.now(timezone.utc).isoformat(), **extra}
         self.event_bus.publish(name, payload, source_system=source_system, world_id=payload.get("world_id", ""), character_id=payload.get("character_id", ""), account_id=payload.get("account_id", ""), session_id=payload.get("session_id", ""), room_id=payload.get("room_id", ""))
+        if name == "room_entities_changed":
+            self.event_bus.publish("room_population_changed", payload, source_system=source_system, world_id=payload.get("world_id", ""), character_id=payload.get("character_id", ""), account_id=payload.get("account_id", ""), session_id=payload.get("session_id", ""), room_id=payload.get("room_id", ""))
 
     def _seed_room_entities(self) -> None:
         if not self.active_world_id: return
@@ -1094,6 +1128,78 @@ class MudRuntime:
                 eid=f"ent_{uuid.uuid4().hex}"
                 conn.execute("INSERT INTO entity_instances(entity_id,world_id,entity_type,template_id,name,keywords,short_description,long_description,current_room_id,owner_type,owner_id,faction_id,level,state,flags,created_at,updated_at,plugin_data) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (eid,self.active_world_id,tmpl['entity_type'],tid,tmpl['name'],json.dumps(tmpl['keywords']),tmpl['short_description'],tmpl['long_description'],rid,"room","",tmpl.get('faction_id',''),int(tmpl.get('level',1) or 1),json.dumps(tmpl.get('state',{})),json.dumps(tmpl.get('flags',[])),now,now,json.dumps(tmpl.get('plugin_data',{}))))
 
+
+    ENTITY_STATES = {"idle", "standing", "sitting", "sleeping", "resting", "wandering", "following", "guarding", "trading", "training", "healing", "casting", "dead", "corpse", "despawned"}
+    HIDDEN_VISIBILITY_FLAGS = {"hidden", "invisible", "builder_hidden", "future_stealth"}
+
+    def populate_world(self) -> None:
+        """Idempotently populate all room entity spawn definitions through MudRuntime."""
+        self._seed_room_entities()
+
+    def find_entities(self, **filters: Any) -> list[dict[str, Any]]:
+        clauses = ["world_id=?"]; params: list[Any] = [self.active_world_id or ""]
+        for key, column in {"template_id":"template_id", "entity_type":"entity_type", "room_id":"current_room_id", "owner_type":"owner_type", "owner_id":"owner_id"}.items():
+            if filters.get(key): clauses.append(f"{column}=?"); params.append(str(filters[key]))
+        return self._fetch_entities(" AND ".join(clauses), tuple(params))
+
+    def _entity_hidden(self, ent: dict[str, Any]) -> bool:
+        flags = set(str(v) for v in ent.get("visibility_flags", []) or []) | set(str(v) for v in ent.get("flags", []) or [])
+        state = ent.get("state", {}) if isinstance(ent.get("state"), dict) else {}
+        current = str(state.get("current_state") or ent.get("current_state") or "")
+        return bool(flags & self.HIDDEN_VISIBILITY_FLAGS) or current in {"despawned"} or state.get("is_visible") is False
+
+    def is_entity_visible(self, ent: dict[str, Any], viewer: Any = None) -> bool:
+        return not self._entity_hidden(ent)
+
+    def change_entity_state(self, entity_id: str, current_state: str, source_system: str = "runtime", **ctx: Any) -> dict[str, Any]:
+        if current_state not in self.ENTITY_STATES: raise ValueError(f"Unsupported entity state: {current_state}")
+        ent = self.find_entity(entity_id) or {}; state = dict(ent.get("state") or {})
+        state["current_state"] = current_state; state["is_alive"] = current_state not in {"dead", "corpse", "despawned"}
+        return self.update_entity_state(entity_id, state, source_system=source_system, **ctx)
+
+    def teleport_entity(self, entity_id: str, room_id: str, **ctx: Any) -> dict[str, Any]:
+        return self.move_entity(entity_id, room_id, **ctx)
+
+    def return_to_spawn(self, entity_id: str, **ctx: Any) -> dict[str, Any]:
+        ent = self.find_entity(entity_id) or {}; return self.move_entity(entity_id, ent.get("spawn_origin") or ent.get("room_id") or "", **ctx)
+
+    def reset_entity(self, entity_id: str, source_system: str = "runtime", **ctx: Any) -> dict[str, Any]:
+        ent = self.find_entity(entity_id) or {}; tmpl = dict(self.entity_templates.get(ent.get("template_id", ""), {})); state = dict(tmpl.get("state") or {"current_state":"idle"}); state["last_reset"] = datetime.now(timezone.utc).isoformat()
+        self.update_entity_state(entity_id, state, source_system=source_system, **ctx)
+        if tmpl.get("default_room_id"): self.move_entity(entity_id, tmpl["default_room_id"], source_system=source_system, **ctx)
+        self._publish_entity_event("entity_reset", self.find_entity(entity_id) or ent, source_system=source_system, **ctx)
+        return self.find_entity(entity_id) or {}
+
+    def respawn_entity(self, template_id: str, room_id: str | None = None, **ctx: Any) -> dict[str, Any]:
+        return self.spawn_entity(template_id, room_id=room_id, state={"current_state":"idle", "spawn_origin": room_id or ""}, **ctx)
+
+    def create_corpse(self, entity_id: str, **ctx: Any) -> dict[str, Any]:
+        ent = self.find_entity(entity_id) or {}; corpse = self.spawn_entity(ent.get("template_id", "corpse"), entity_type="corpse", room_id=ent.get("room_id"), state={"current_state":"corpse", "source_entity_id": entity_id, "is_alive": False}, flags=["corpse"], **ctx); return corpse
+
+    def get_dialogue(self, template_id: str) -> dict[str, Any]:
+        return dict((self.entity_templates.get(template_id) or {}).get("dialogue_package") or {})
+
+    def talk_to_entity(self, character_id: str, query: str, keyword: str = "") -> str:
+        char = self.state_store.load_character(character_id); candidates = self.find_visible_entities(char.room_id if char else "").get("npcs", []) + self.find_visible_entities(char.room_id if char else "").get("mobs", [])
+        res = self.resolve_entity_keywords(query, candidates)
+        if res["status"] != "ok": return self._resolve_message(res, "They are not here.")
+        ent = res["entity"]; pkg = self.get_dialogue(ent.get("template_id", "")); text = ""
+        if keyword:
+            text = str((pkg.get("keyword_responses") or {}).get(keyword.lower(), ""))
+        if not text:
+            responses = pkg.get("talk_responses") or []; text = str(responses[0] if responses else pkg.get("greeting") or "They nod silently.")
+        self._publish_entity_event("entity_dialogue", ent, character_id=character_id, dialogue_keyword=keyword, dialogue_text=text)
+        return f'{ent.get("name")} says, "{text}"'
+
+    def _handle_dialogue_command(self, char: MudCharacter, cmd: str, args: list[str]):
+        from engine.mud_commands import CommandResult
+        if cmd not in {"talk", "greet", "hello"}: return None
+        if not args: return CommandResult("Talk to whom?", ok=False)
+        keyword = ""
+        if "about" in [a.lower() for a in args]:
+            idx=[a.lower() for a in args].index("about"); query=" ".join(args[:idx]); keyword=" ".join(args[idx+1:])
+        else: query=" ".join(args)
+        return CommandResult(self.talk_to_entity(char.id, query, keyword))
 
     def _character_payload(self, char: MudCharacter, world_id: str) -> dict[str, Any]:
         return {

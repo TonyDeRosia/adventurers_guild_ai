@@ -40,6 +40,14 @@
 - Acceptance criteria: Core navigation, communication, inventory, stats, help, and admin surfaces behave predictably.
 - Suggested version target: `0.5.0`.
 
+## Phase 3B: Living entity runtime
+- Goal: Replace passive entities with runtime-owned living instances.
+- Completed work: Templates normalize living metadata; SQLite instances persist state/location; runtime spawning, idempotent population, movement, state changes, dialogue, visibility, corpse creation, respawn, and lifecycle events exist.
+- Remaining work: Combat, Builder Mode, AI decision making, quests, shops, spellcasting, and pathfinding are intentionally deferred.
+- Dependencies: Phase 3A entity foundation.
+- Acceptance criteria: Rooms populate from runtime state, visible entities render through `MudRuntime`, and web/telnet remain presentation-only.
+- Suggested version target: `0.3.5`.
+
 ## Phase 6: Deterministic gameplay systems
 - Goal: Implement deterministic combat, skills, spells, quests, shops, trainers, factions, and economy.
 - Completed work: Package directories and some data structures exist.
