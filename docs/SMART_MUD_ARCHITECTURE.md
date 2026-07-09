@@ -90,3 +90,9 @@ Room rendering must use runtime room inventory and render sections in this order
 ### Phase 2E runtime implementation note
 
 `MudRuntime` now exposes the canonical item API and owns template normalization, SQLite-backed item instances, starter spawning, room seeding, inventory/equipment commands, keyword resolution, equipment conflict handling, and item EventBus publishing. Transports continue to call runtime command handling only.
+
+## Phase 2E semantic rendering hotfix
+
+Web MUD output uses semantic HTML spans as the presentation boundary. Runtime and display builders should emit roles such as `room_name`, `room_description`, `exit`, `object`, `player`, `command_echo`, `score_label`, `score_value`, `equipment_slot`, `equipment_item`, `gold`, `hp`, `mp`, and prompt-specific roles instead of embedding fixed color values in command text. The browser maps those roles through the active MUD color settings and CSS variables so changing the preset affects newly rendered output without changing game logic.
+
+Telnet and plain transports remain HTML-safe by converting the same runtime output to ANSI/plain text. Web-only spans must not leak into telnet output, and telnet formatting must not become a separate gameplay rendering path.

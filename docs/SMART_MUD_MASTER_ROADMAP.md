@@ -129,3 +129,7 @@ Phase 2E explicitly does not implement combat, AI behavior, Builder Mode gamepla
 ### Phase 2E implementation status
 
 Phase 2E has an initial runtime implementation: persistent item instances, starter item spawning, runtime room object seeding, inventory/equipment/get/drop/wear/remove/wield/unwield/hold/look-object/examine-object command handling, centralized keyword matching, and deterministic item events. Deferred systems remain out of scope.
+
+### Phase 2E semantic color hotfix
+
+The Phase 2E display path now treats semantic rendering as the standard for web output and ANSI/plain rendering as the standard for telnet. Room, score, worth, equipment, inventory, prompt, command echo, and common informational output are expected to carry semantic roles rather than collapsing into one terminal-green style. This hotfix does not add combat, AI behavior, Builder Mode, or world expansion.

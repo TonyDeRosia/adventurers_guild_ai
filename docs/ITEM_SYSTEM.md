@@ -366,3 +366,7 @@ The initial Phase 2E runtime implementation keeps item ownership in `MudRuntime`
 World package item records are normalized at load time into immutable template mappings. Legacy Shattered Realms fields such as `type`, `slot`, and `description` are normalized to `item_type`, `wear_slots`, and `long_description` without mutating package records during command execution.
 
 Plugins may observe EventBus item events in this phase. A full plugin item-behavior API is intentionally deferred, and plugins must not bypass `MudRuntime` ownership APIs.
+
+## Item rendering note
+
+Item behavior and ownership remain unchanged by semantic color rendering. Web displays should wrap inventory, equipment, and room-object names in semantic item roles (`object`, `equipment_item`, or rarity roles such as `item_common`, `item_uncommon`, `item_rare`, and `item_epic`) so CSS presets can style them. Telnet/plain clients receive stripped or ANSI-rendered text and must not receive HTML spans.

@@ -1504,6 +1504,7 @@ body.smart-mud-mode { height: 100vh; overflow: hidden; }
 .mud-system { color: var(--mud-system-color, #d8dee9); }
 .mud-error { color: var(--mud-error-color, #ff6b6b); }
 .mud-warning { color: var(--mud-warning-color, #ffd166); }
+.mud-success { color: var(--mud-success-color, #7ee787); }
 .mud-combat { color: var(--mud-combat-color, #ff9f43); }
 .mud-damage { color: var(--mud-damage-color, #ff7777); }
 .mud-healing { color: var(--mud-healing-color, #7ee787); }
@@ -1514,7 +1515,13 @@ body.smart-mud-mode { height: 100vh; overflow: hidden; }
 .mud-score-value { color: var(--mud-score-value-color, #ffffff); }
 .mud-equipment-slot { color: var(--mud-equipment-slot-color, #97a5bb); }
 .mud-equipment-item { color: var(--mud-equipment-item-color, #ffffff); }
+.mud-gold { color: var(--mud-gold-color, #ffd700); }
+.mud-hp { color: var(--mud-hp-color, #ff7777); }
+.mud-mp { color: var(--mud-mp-color, #7aa2ff); }
+.mud-stamina { color: var(--mud-stamina-color, #ffd166); }
 .mud-dialogue { color: var(--mud-dialogue-color, #e6e6e6); }
+.mud-prompt { color: var(--mud-prompt-color, #d8dee9); }
+.mud-input { color: var(--mud-input-color, #ffffff); }
 .mud-prompt-marker { color: var(--mud-prompt-marker-color, #ffffff); }
 .mud-prompt-hp { color: var(--mud-prompt-hp-color, #ff7777); }
 .mud-prompt-mana { color: var(--mud-prompt-mana-color, #7aa2ff); }

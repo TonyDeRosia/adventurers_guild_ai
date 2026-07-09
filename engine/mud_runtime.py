@@ -14,7 +14,8 @@ from typing import Any, Optional
 from datetime import datetime, timezone
 
 from engine.mud_commands import MudCommandEngine
-from engine.mud_displays import render_prompt, render_room
+from engine.mud_displays import render_prompt, render_room, semantic
+from engine.mud_rendering import render_semantic_plain
 from smart_mud.world_registry import WorldRegistry
 from smart_mud.event_bus import EventBus
 from engine.plugin_system import HookRegistry, PluginRegistry
@@ -634,7 +635,7 @@ class MudRuntime:
         if session:
             session.command_count = turn
             session.last_activity = datetime.now(timezone.utc).isoformat()
-        return {"ok": result.ok, "output": result.narrative, "view": self.play_view(character_id)}
+        return {"ok": result.ok, "output": render_semantic_plain(result.narrative), "semantic_output": result.narrative, "view": self.play_view(character_id)}
 
     def _handle_runtime_command(self, char: MudCharacter, command: str):
         tokens = command.strip().split()
@@ -870,13 +871,13 @@ class MudRuntime:
 
     def _render_inventory(self, character_id: str) -> str:
         items=self.find_inventory_items(character_id)
-        return "You are carrying nothing." if not items else "You are not carrying anything.\nYou are carrying:\n" + "\n".join(f"  {i['name']}" + (f" x{i['stack_count']}" if i.get('stack_count',1)>1 else "") for i in items)
+        return semantic("system", "You are carrying nothing.") if not items else semantic("system", "You are not carrying anything.") + "\n" + semantic("system", "You are carrying:") + "\n" + "\n".join(f"  {semantic('item_' + str(i.get('rarity', 'common')), i['name'])}" + (f" x{i['stack_count']}" if i.get('stack_count',1)>1 else "") for i in items)
 
     def _render_equipment(self, character_id: str) -> str:
         equipped = self.find_equipped_items(character_id)
         by={i.get("equipped_slot"): i for i in equipped}
-        prefix = "" if equipped else "You are not wearing anything.\n"
-        return prefix + "Equipment:\n" + "\n".join(f"  {s.replace('_',' ').title()}: {by[s]['name'] if s in by else 'nothing'}" for s in self.EQUIPMENT_SLOTS)
+        prefix = "" if equipped else semantic("system", "You are not wearing anything.") + "\n"
+        return prefix + semantic("system", "Equipment:") + "\n" + "\n".join(f"  {semantic('equipment_slot', s.replace('_',' ').title())}: {semantic('equipment_item' if s in by else 'system', by[s]['name'] if s in by else 'nothing')}" for s in self.EQUIPMENT_SLOTS)
 
     def _look_item(self, character_id: str, room_id: str, query: str) -> str:
         res=self.resolve_item_keywords(query, self.get_visible_room_items(room_id)+self.find_inventory_items(character_id)+self.find_equipped_items(character_id))

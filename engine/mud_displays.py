@@ -4,6 +4,25 @@ from __future__ import annotations
 
 from typing import Any, Optional
 import html
+import re
+
+from engine.mud_rendering import SEMANTIC_COLOR_ROLES
+
+_SEMANTIC_TAG_RE = re.compile(r"\{(/?)([a-z_]+)\}")
+
+def semantic_html(text: str) -> str:
+    """Convert trusted semantic role tags to safe HTML spans."""
+    escaped = html.escape(str(text or ""))
+    def repl(match: re.Match[str]) -> str:
+        closing, role = match.group(1), match.group(2)
+        if role not in SEMANTIC_COLOR_ROLES:
+            return ""
+        return "</span>" if closing else f'<span role="{html.escape(role)}">'
+    return _SEMANTIC_TAG_RE.sub(repl, escaped).replace("\n", "<br>")
+
+def semantic(role: str, text: Any) -> str:
+    role = role if role in SEMANTIC_COLOR_ROLES else "system"
+    return f"{{{role}}}{text}{{/{role}}}"
 
 
 def render_room(room: Any, colors: dict[str, str], character: Any = None) -> str:
@@ -72,14 +91,14 @@ def render_prompt(character: Any, colors: dict[str, str]) -> str:
     # Minimal classic MUD prompt style
     prompt = (
         f'<span role="prompt_marker">&gt;</span> '
-        f'<span role="prompt_hp">{character.name}</span> '
-        f'<span role="score_label">HP:</span> <span role="prompt_hp">{character.hp}/{character.max_hp}</span> '
+        f'<span role="player">{html.escape(character.name)}</span> '
+        f'<span role="hp">HP:</span> <span role="prompt_hp">{character.hp}/{character.max_hp}</span> '
     )
     
     # Add mana if > 0
     if character.max_mana > 0:
         prompt += (
-            f'<span role="score_label">MP:</span> <span role="prompt_mana">{character.mana}/{character.max_mana}</span> '
+            f'<span role="mp">MP:</span> <span role="prompt_mana">{character.mana}/{character.max_mana}</span> '
         )
     
     print("[mud-render] Prompt rendered")

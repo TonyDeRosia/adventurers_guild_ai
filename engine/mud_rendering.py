@@ -3,7 +3,7 @@ from __future__ import annotations
 import html, re
 from typing import Any
 
-SEMANTIC_COLOR_ROLES = ["room_name","area_name","room_description","exit","npc","mob","npc_friendly","npc_neutral","npc_hostile","monster","player","object","item_common","item_uncommon","item_rare","item_epic","item_legendary","command_echo","system","error","warning","combat","damage","healing","spell","skill","magic","quest","score_label","score_value","equipment_slot","equipment_item","dialogue","prompt_marker","prompt_hp","prompt_mana","prompt_stamina","prompt_xp","prompt_gold"]
+SEMANTIC_COLOR_ROLES = ["room_name","area_name","room_description","exit","npc","mob","npc_friendly","npc_neutral","npc_hostile","monster","player","object","item_common","item_uncommon","item_rare","item_epic","item_legendary","command_echo","system","error","warning","success","combat","damage","healing","spell","skill","magic","quest","score_label","score_value","equipment_slot","equipment_item","gold","hp","mp","stamina","dialogue","prompt","input","prompt_marker","prompt_hp","prompt_mana","prompt_stamina","prompt_xp","prompt_gold"]
 PRESETS = {
  "Classic MUD": {r: "#d8dee9" for r in SEMANTIC_COLOR_ROLES},
  "Green Terminal": {r: "#33ff66" for r in SEMANTIC_COLOR_ROLES},
@@ -30,7 +30,7 @@ def render_semantic_html(text: str, colors: dict[str, str] | None = None) -> str
     def repl(m: re.Match[str]) -> str:
         closing, role = m.group(1), m.group(2)
         if role not in SEMANTIC_COLOR_ROLES: return ""
-        return "</span>" if closing else f'<span class="mud-{role}" style="color:{html.escape(colors.get(role, "#ffffff"))}">' 
+        return "</span>" if closing else f'<span class="mud-{html.escape(role)}" role="{html.escape(role)}">'
     return TAG_RE.sub(repl, escaped).replace("\n", "<br>")
 
 def render_semantic_plain(text: str) -> str:

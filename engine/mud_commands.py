@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional, Callable
 import re
+from engine.mud_displays import semantic
 
 
 @dataclass
@@ -206,27 +207,27 @@ class MudCommandEngine:
 
     def _cmd_score(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display character score (stats)."""
-        narrative = f"""
-Name: {character.name}
-Level: {character.level}
-HP: {character.hp}/{character.max_hp}
-Mana: {character.mana}/{character.max_mana}
-Stamina: {character.stamina}/{character.max_stamina}
-XP: {character.xp}
-Gold: {character.gold}
-Role: {character.role}
-"""
+        narrative = "\n".join([
+            f"{semantic('score_label', 'Name:')} {semantic('player', character.name)}",
+            f"{semantic('score_label', 'Level:')} {semantic('score_value', character.level)}",
+            f"{semantic('hp', 'HP:')} {semantic('score_value', f'{character.hp}/{character.max_hp}')}",
+            f"{semantic('mp', 'Mana:')} {semantic('score_value', f'{character.mana}/{character.max_mana}')}",
+            f"{semantic('stamina', 'Stamina:')} {semantic('score_value', f'{character.stamina}/{character.max_stamina}')}",
+            f"{semantic('score_label', 'XP:')} {semantic('score_value', character.xp)}",
+            f"{semantic('gold', 'Gold:')} {semantic('gold', character.gold)}",
+            f"{semantic('score_label', 'Role:')} {semantic('score_value', character.role)}",
+        ])
         print(f"[mud-command] Score displayed for {character.name}")
         return CommandResult(narrative=narrative)
 
     def _cmd_inventory(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display inventory."""
         if not character.inventory:
-            narrative = "You are not carrying anything."
+            narrative = semantic("system", "You are not carrying anything.")
         else:
-            items = "\n".join([f"  {i.get('name', 'unknown')} x{i.get('quantity', 1)}" 
+            items = "\n".join([f"  {semantic('item_' + str(i.get('rarity', 'common')), i.get('name', 'unknown'))} x{i.get('quantity', 1)}" 
                               for i in character.inventory])
-            narrative = f"You are carrying:\n{items}"
+            narrative = f"{semantic('system', 'You are carrying:')}\n{items}"
         
         print(f"[mud-command] Inventory for {character.name}")
         return CommandResult(narrative=narrative)
@@ -234,11 +235,11 @@ Role: {character.role}
     def _cmd_equipment(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display equipped items."""
         if not character.equipment:
-            narrative = "You are not wearing anything."
+            narrative = semantic("system", "You are not wearing anything.")
         else:
-            slots = "\n".join([f"  <{slot}> {item.get('name', 'empty')}" 
+            slots = "\n".join([f"  {semantic('equipment_slot', slot)}: {semantic('equipment_item', item.get('name', 'empty') if item else 'nothing')}" 
                               for slot, item in character.equipment.items()])
-            narrative = f"You are wearing:\n{slots}"
+            narrative = f"{semantic('system', 'You are wearing:')}\n{slots}"
         
         print(f"[mud-command] Equipment for {character.name}")
         return CommandResult(narrative=narrative)
@@ -285,12 +286,12 @@ Role: {character.role}
 
     def _cmd_worth(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display net worth."""
-        narrative = f"You have {character.gold} gold coins."
+        narrative = f"{semantic('system', 'You have')} {semantic('gold', character.gold)} {semantic('gold', 'gold coins.')}"
         return CommandResult(narrative=narrative)
 
     def _cmd_who(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """List connected players."""
-        narrative = f"Players currently online:\n{character.name}"
+        narrative = f"{semantic('system', 'Players currently online:')}\n{semantic('player', character.name)}"
         return CommandResult(narrative=narrative)
 
     def _cmd_say(self, character: Any, args: list[str], raw: str) -> CommandResult:

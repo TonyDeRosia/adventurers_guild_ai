@@ -272,19 +272,22 @@ class WebRuntime:
 
     def _normalize_mud_view(self, view: dict[str, Any], command_output: str = "", command: str = "", command_echo: bool = True) -> dict[str, Any]:
         import html
+        from engine.mud_displays import semantic_html
+        from engine.mud_rendering import render_semantic_plain
         room_id = str(view.get("room_id") or "")
         room = self._room_summary(room_id)
         room_output_html = str(view.get("html") or view.get("output_html") or "")
         room_text = self._plain_text(room_output_html)
-        output_text = str(command_output or view.get("output_text") or view.get("text") or room_text)
+        semantic_output_text = str(command_output or view.get("output_text") or view.get("text") or room_text)
+        output_text = render_semantic_plain(semantic_output_text)
         clean_command = command.strip().lower().split()[0] if command.strip() else ""
         room_commands = {"look", "l", "north", "n", "south", "s", "east", "e", "west", "w", "up", "u", "down", "d", "in", "out"}
         include_room_output = not command or clean_command in room_commands
         command_result_text = output_text
         if include_room_output and room_text and room_text in command_result_text:
             command_result_text = command_result_text.replace(room_text, "", 1).strip()
-        command_result_html = "<br>".join(html.escape(line) for line in command_result_text.splitlines()) if command_result_text else ""
-        if command_result_html:
+        command_result_html = (f'<span hidden data-plain="{html.escape(command_result_text, quote=True)}"></span>' + semantic_html(semantic_output_text)) if command_result_text else ""
+        if command_result_html and "<span role=" not in command_result_html:
             command_result_html = f'<span role="system">{command_result_html}</span>'
         command_echo_html = f'<span role="command_echo">&gt; {html.escape(command)}</span>' if command and command_echo else ""
         output_parts = [part for part in [command_echo_html, command_result_html, room_output_html if include_room_output else ""] if part]
@@ -341,7 +344,7 @@ class WebRuntime:
             raise HTTPException(status_code=409, detail="Enter a character before sending commands.")
         response = self.web_transport.handle_message(TransportMessage(session=self.web_session, text=command))
         result = response.metadata.get("result", {})
-        command_output = str(result.get("output") or "")
+        command_output = str(result.get("semantic_output") or result.get("output") or "")
         clean_command = command.strip().lower()
         if clean_command == "history" and "Recent commands:" not in command_output:
             command_output = "Recent commands:\nlook\nscore\nhistory"

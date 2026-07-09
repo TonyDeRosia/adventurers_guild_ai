@@ -33,6 +33,7 @@ class MudColorConfig:
     system: str = "#00ff00"
     error: str = "#ff0000"
     warning: str = "#ffff00"
+    success: str = "#00ff00"
     combat: str = "#ff0000"
     damage: str = "#ff0000"
     healing: str = "#00ff00"
@@ -45,9 +46,15 @@ class MudColorConfig:
     score_value: str = "#ffffff"
     equipment_slot: str = "#00ffff"
     equipment_item: str = "#ffffff"
+    gold: str = "#ffd700"
+    hp: str = "#ff5555"
+    mp: str = "#5599ff"
+    stamina: str = "#ffd166"
     
     # Dialogue
     dialogue: str = "#ffff00"
+    prompt: str = "#d8dee9"
+    input: str = "#ffffff"
     
     # Prompt components
     prompt_marker: str = "#00ff00"
