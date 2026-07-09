@@ -35,6 +35,7 @@ DETERMINISTIC_COMMANDS = {
     "affects": {"category": "info", "aliases": ["aff"], "admin": False},
     "resists": {"category": "info", "admin": False},
     "who": {"category": "info", "admin": False},
+    "whoami": {"category": "info", "admin": False},
     "where": {"category": "info", "admin": False},
     "commands": {"category": "help", "aliases": ["cmds"], "admin": False},
     "help": {"category": "help", "aliases": ["h"], "admin": False},
@@ -153,6 +154,8 @@ class MudCommandEngine:
             "abilities": self._cmd_abilities,
             "affects": self._cmd_affects,
             "who": self._cmd_who,
+            "whoami": self._cmd_whoami,
+            "grantrole": self._cmd_grantrole,
             "help": self._cmd_help,
             "commands": self._cmd_commands,
             "look": self._cmd_look,
@@ -223,7 +226,8 @@ class MudCommandEngine:
         # Check if admin command
         meta = self.registry.commands.get(cmd_name)
         if meta and (meta.admin_only or meta.builder_only):
-            if character.role not in (["admin", "owner", "implementor"] if meta.admin_only else ["builder", "admin", "owner", "implementor"]):
+            effective_role = self._effective_role(character)
+            if effective_role not in (["admin", "owner"] if meta.admin_only else ["builder", "admin", "owner"]):
                 print(f"[mud-command] Access denied: {character.name} not admin")
                 result = CommandResult(narrative="You do not have permission for that command.", ok=False)
                 self._publish("command_executed", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary=result.narrative[:120])
@@ -289,6 +293,42 @@ class MudCommandEngine:
             return self.state_store.build_ai_context(character_id, npc_id, room_id)
         return {"character": {"id": character_id, "name": getattr(character, "name", ""), "role": getattr(character, "role", "")}, "command": command_text}
 
+
+    def _role_rank(self, role: str) -> int:
+        return {"player": 0, "helper": 1, "builder": 2, "admin": 3, "owner": 4}.get(str(role or "player").lower(), 0)
+
+    def _effective_role(self, character: Any) -> str:
+        crole = str(getattr(character, "role", "player") or "player").lower()
+        arole = str(getattr(character, "account_role", "player") or "player").lower()
+        return arole if self._role_rank(arole) > self._role_rank(crole) else crole
+
+    def _cmd_whoami(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        lines = [
+            f"Account: {getattr(character, 'account_id', '') or 'unlinked'}",
+            f"Account Role: {getattr(character, 'account_role', 'player')}",
+            f"Character: {getattr(character, 'name', '')} ({getattr(character, 'id', '')})",
+            f"Character Role: {getattr(character, 'role', 'player')}",
+            f"Effective Role: {self._effective_role(character)}",
+        ]
+        return CommandResult(narrative="\n".join(lines))
+
+    def _cmd_grantrole(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if self._effective_role(character) != "owner":
+            return CommandResult(narrative="You do not have permission for that command.", ok=False)
+        if len(args) != 2 or args[1].lower() not in {"player", "helper", "builder", "admin", "owner"}:
+            return CommandResult(narrative="Usage: grantrole <character/account> <player|helper|builder|admin|owner>", ok=False)
+        if not self.state_store or not hasattr(self.state_store, "grant_role"):
+            return CommandResult(narrative="Role assignment is CLI-only for this runtime.", ok=False)
+        target, role = args[0], args[1].lower()
+        try:
+            rec = self.state_store.grant_role(role=role, account=target, source="game", granted_by_account_id=getattr(character, "account_id", ""), granted_by_character_id=getattr(character, "id", ""))
+        except ValueError:
+            try:
+                rec = self.state_store.grant_role(role=role, character=target, source="game", granted_by_account_id=getattr(character, "account_id", ""), granted_by_character_id=getattr(character, "id", ""))
+            except Exception as exc:
+                return CommandResult(narrative=str(exc), ok=False)
+        return CommandResult(narrative=f"Granted {rec['role']} to account {rec.get('account_id') or 'n/a'} character {rec.get('character_name') or rec.get('character_id') or 'n/a'}.")
+
     def _cmd_score(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display character score (stats)."""
         narrative = "\n".join([
@@ -299,7 +339,8 @@ class MudCommandEngine:
             f"{semantic('stamina', 'Stamina:')} {semantic('score_value', f'{character.stamina}/{character.max_stamina}')}",
             f"{semantic('score_label', 'XP:')} {semantic('score_value', character.xp)}",
             f"{semantic('gold', 'Gold:')} {semantic('gold', character.gold)}",
-            f"{semantic('score_label', 'Role:')} {semantic('score_value', character.role)}",
+            f"{semantic('score_label', 'Character Role:')} {semantic('score_value', getattr(character, 'role', 'player'))}",
+            f"{semantic('score_label', 'Account Role:')} {semantic('score_value', getattr(character, 'account_role', 'player'))}",
         ])
         print(f"[mud-command] Score displayed for {character.name}")
         return CommandResult(narrative=narrative)
