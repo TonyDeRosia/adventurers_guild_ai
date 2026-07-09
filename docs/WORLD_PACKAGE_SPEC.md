@@ -2,13 +2,43 @@
 
 Smart MUD worlds are installable data packages under `worlds/<world_id>/`. The engine loads packages; it does not contain world lore, races, classes, NPCs, items, quests, rooms, spells, factions, or genre assumptions.
 
-## Required layout
+## Required runtime package content
 
-Every package must contain `manifest.json` and these directories:
+Every package must contain `manifest.json` and these runtime gameplay/content directories:
 
-`rules/`, `areas/`, `rooms/`, `zones/`, `npcs/`, `items/`, `quests/`, `shops/`, `trainers/`, `classes/`, `races/`, `skills/`, `spells/`, `abilities/`, `factions/`, `lore/`, `dialogue/`, `intelligence/`, `builder/`, and `colors/`.
+- `rules/`
+- `areas/`
+- `rooms/`
+- `zones/`
+- `npcs/`
+- `items/`
+- `quests/`
+- `shops/`
+- `trainers/`
+- `classes/`
+- `races/`
+- `skills/`
+- `spells/`
+- `abilities/`
+- `factions/`
+- `lore/`
+- `dialogue/`
+- `intelligence/`
+- `colors/`
 
-`builder/` must contain `audit/`, `history/`, `snapshots/`, `exports/`, `imports/`, and `templates/` for future online creation workflows.
+Missing runtime gameplay/content folders are fatal validation errors.
+
+## Auto-created Builder workspace
+
+Builder workspace directories are runtime-prepared infrastructure, not gameplay assets and not fatal install requirements. Startup and registry validation create these folders when missing:
+
+- `builder/`
+- `builder/audit/`
+- `builder/history/`
+- `builder/snapshots/`
+- `builder/imports/`
+- `builder/exports/`
+- `builder/templates/`
 
 ## Manifest authority
 
@@ -18,4 +48,4 @@ The manifest is the authority for loading a world. Required fields are: `world_i
 
 ## Validation
 
-Before loading, Smart MUD refuses invalid packages with descriptive errors. Validation checks required folders, manifest fields, duplicate package IDs, exits to valid rooms, NPC room references, item template references, quest NPC references, trainer class references, spell schools, class abilities, and race records.
+Before loading, Smart MUD refuses invalid packages with descriptive errors. Validation checks required runtime folders, manifest fields, duplicate package IDs, exits to valid rooms, NPC room references, item template references, quest NPC references, trainer class references, spell schools, class abilities, and race records. Builder workspace folders are prepared automatically and are never fatal validation errors.

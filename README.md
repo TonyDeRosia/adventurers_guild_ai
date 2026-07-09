@@ -1,62 +1,50 @@
-# Adventurer's Guild AI
+# Smart MUD
 
-Adventurer's Guild AI is a local-first fantasy campaign application with a desktop-window web UI.
+Smart MUD is a package-driven, SQLite-backed MUD engine. It is not a fantasy campaign app: the engine owns runtime lifecycle, persistence, command routing, plugin discovery, and world package loading, while installable data packages under `worlds/` own genre, lore, rooms, NPCs, items, quests, classes, races, skills, spells, and colors.
 
-## Run from source (normal path)
+## Current startup path
 
-1. Double click `run.bat` from the repository root.
-2. The script checks for Python (`py -3` first, then `python`).
-3. The script installs dependencies from `requirements.txt`.
-4. The script runs `python run.py`.
-5. `run.py` is the only runtime owner: it starts the backend once, waits for `/health`, and opens the native desktop window (PyWebView) for the local UI.
+1. `run.bat` launches `run.py` on Windows.
+2. `run.py` initializes Smart MUD paths, starts the FastAPI backend in web mode, or dispatches to terminal mode.
+3. `app/web.py` performs Smart MUD startup: configuration, SQLite opening and migrations, plugin discovery, plugin dependency resolution, world scanning, runtime package validation, Builder workspace preparation, world asset availability, runtime initialization, and readiness.
+4. `engine/mud_runtime.py` owns the live runtime session, SQLite-backed character state, command handling, and world loading.
+5. `smart_mud/world_registry.py` is the canonical world registry and validation implementation.
 
-If startup fails, keep the console open and read the printed error details.
+Normal startup does not initialize the legacy Adventure Guild AI campaign runtime, campaign save flow, image generation runtime, ComfyUI process ownership, campaign browser, or character-sheet campaign editor.
 
-### Source startup behavior
+## Runtime systems
 
-- Native desktop window UI is the default interface.
-- Terminal mode remains available only for fallback/debug usage.
-- If port `8000` is already in use, `run.py` prints a clear error and exits.
-- If desktop window startup fails, the launcher prints a clear error and exits.
-- `app/web.py` is not a user launcher and is not part of the normal source startup path.
+- **World packages:** Smart MUD loads installable packages from `worlds/<world_id>/`.
+- **SQLite persistence:** Runtime state is stored in SQLite under the user data directory.
+- **Plugins:** Optional extension packages are discovered from `plugins/` and resolved before world loading.
+- **Builder workspace:** `builder/` workspace folders inside a world package are prepared automatically when missing. They are infrastructure for future tools, not gameplay assets.
+- **AI extension layer:** AI may provide optional context or behavior through extensions later, but authored world packages and SQLite runtime state remain the source of truth.
 
-## Packaged EXE build workflow (Windows)
+## Running
 
-For normal packaged EXE builds, use exactly one root script:
-
-```bat
-Build_AdventurersGuildAI.bat
+```bash
+python run.py --mode web
+python run.py --terminal
 ```
 
-What to click from repo root:
-- `run.bat` = run from source
-- `Build_AdventurersGuildAI.bat` = build packaged EXE
+On Windows, use:
 
-There are no additional Windows batch build entry points in `tools/` or `release/`.
+```bat
+run.bat
+```
 
-## Where user data is stored
+The application is ready when startup reports `Ready` and the health endpoint returns `runtime: smart_mud`.
 
-Writable user data is stored in the user profile:
-- Primary location: `%LOCALAPPDATA%\AdventurerGuildAI`
-- Fallback: `%APPDATA%\AdventurerGuildAI`
+## Repository map
 
-Typical folders:
-- `saves/`
-- `config/`
-- `campaign_memory/`
-- `logs/`
-- `generated_images/`
-- `cache/`
-- `workflows/`
-
-## Managed image backend behavior (desktop mode)
-
-- If image provider is configured to `comfyui`, the app can auto-start ComfyUI when startup checks pass.
-- The app detects already-running ComfyUI and avoids duplicate launch.
-- If the app launched ComfyUI as a managed child process, it is stopped when the app exits.
-- If setup is incomplete (missing ComfyUI/workflow/checkpoint), the app keeps running in text mode and surfaces guided setup actions.
-
-## Troubleshooting
-
-- If the desktop window does not open, verify `pywebview` is installed and rerun `pip install -r requirements.txt`.
-- If a port conflict is reported, stop the other process or launch with a different port in developer mode.
+- `app/web.py` — web shell startup and HTTP API.
+- `app/main.py` — terminal shell using the same Smart MUD runtime.
+- `engine/mud_runtime.py` — SQLite-backed runtime sessions and command flow.
+- `smart_mud/world_registry.py` — canonical world package discovery, validation, Builder workspace preparation, and loading.
+- `engine/world_registry.py` — compatibility reexports only.
+- `engine/plugin_system.py` — plugin discovery, registration metadata, dependencies, and hooks.
+- `worlds/` — installable world packages.
+- `plugins/` — installable plugins.
+- `docs/WORLD_PACKAGE_SPEC.md` — world package layout and validation rules.
+- `docs/SMART_MUD_ARCHITECTURE.md` — ownership and lifecycle guide.
+- `docs/SMART_MUD_MASTER_ROADMAP.md` — phased project roadmap.

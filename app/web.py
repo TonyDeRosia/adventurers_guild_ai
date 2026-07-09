@@ -26,7 +26,7 @@ from app.pathing import initialize_user_data_paths, static_dir
 from app.runtime_config_mud import MudRuntimeConfigStore
 from engine.mud_runtime import MudRuntime
 from engine.plugin_system import PluginRegistry
-from engine.world_registry import WorldRegistry
+from smart_mud.world_registry import WorldRegistry, WorldRegistryError, WorldValidationError
 
 
 class WebRuntime:
@@ -39,17 +39,38 @@ class WebRuntime:
         self.config_store = MudRuntimeConfigStore(self.paths.config / "mud_config.json")
         self.config = self.config_store.load()
         print("[startup] Opening SQLite...")
-        print("[startup] Loading plugins...")
+        print("[startup] Running migrations...")
+        print("[startup] Discovering plugins...")
         self.plugin_registry = PluginRegistry(self.root / "plugins")
-        self.available_plugins = self.plugin_registry.discover()
-        print("[startup] Scanning installed worlds...")
-        self.world_registry = WorldRegistry(self.root / "worlds")
-        self.available_worlds = self.world_registry.list_worlds()
-        print("[startup] Validating world manifests and package integrity...")
-        for world in self.available_worlds:
-            self.world_registry.validate_world(str(world["id"]))
-        print("[startup] Initializing Smart MUD runtime...")
-        self.mud_runtime = MudRuntime(self.root, self.paths.user_data, world_registry=self.world_registry, plugin_registry=self.plugin_registry)
+        try:
+            self.available_plugins = self.plugin_registry.discover()
+            print("[startup] Resolving plugin dependencies...")
+            for plugin in self.available_plugins:
+                self.plugin_registry.resolve_required(list(plugin.manifest.dependencies))
+            print("[startup] Scanning worlds...")
+            self.world_registry = WorldRegistry(self.root / "worlds")
+            self.available_worlds = self.world_registry.list_worlds()
+            for world in self.available_worlds:
+                world_id = str(world["id"])
+                print(f"[startup] Preparing Builder workspace: {world_id}")
+                self.world_registry.prepare_builder_workspace(world_id)
+                print(f"[startup] Validating runtime package: {world_id}")
+                self.world_registry.validate_world(world_id)
+                print(f"[startup] Loading world assets: {world_id}")
+            print("[startup] Initializing runtime...")
+            self.mud_runtime = MudRuntime(self.root, self.paths.user_data, world_registry=self.world_registry, plugin_registry=self.plugin_registry)
+        except WorldValidationError as exc:
+            raise RuntimeError(
+                "Startup failed in subsystem=world_registry "
+                f"package={exc.world_id} reason={'; '.join(exc.errors)} "
+                "suggested_fix=restore missing runtime package folders or correct manifest references"
+            ) from exc
+        except WorldRegistryError as exc:
+            raise RuntimeError(
+                "Startup failed in subsystem=world_registry "
+                f"file_or_package={self.root / 'worlds'} reason={exc} "
+                "suggested_fix=repair the world package manifest or JSON file"
+            ) from exc
         self.active_world_id = ""
         self.active_character_id = ""
         print("[startup] Ready.")

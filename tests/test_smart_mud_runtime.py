@@ -39,3 +39,51 @@ def test_smart_mud_world_character_and_command_flow(tmp_path: Path, monkeypatch)
     result = runtime.handle_input("score")
     assert result["ok"] is True
     assert "Aria" in result["output"]
+
+
+def test_actual_app_startup_uses_canonical_world_registry(tmp_path: Path, monkeypatch) -> None:
+    import app.web as web
+    from smart_mud.world_registry import WorldRegistry
+
+    monkeypatch.setenv("SMART_MUD_USER_DATA_DIR", str(tmp_path / "user_data"))
+    runtime = WebRuntime(Path.cwd())
+
+    assert web.WorldRegistry is WorldRegistry
+    assert isinstance(runtime.world_registry, WorldRegistry)
+    assert runtime.mud_runtime.world_registry is runtime.world_registry
+
+
+def test_smart_mud_startup_loads_shattered_realms_after_workspace_creation(tmp_path: Path, monkeypatch) -> None:
+    import shutil
+
+    root = tmp_path / "repo"
+    shutil.copytree(Path.cwd() / "worlds", root / "worlds")
+    shutil.copytree(Path.cwd() / "plugins", root / "plugins")
+    shutil.rmtree(root / "worlds" / "shattered_realms" / "builder", ignore_errors=True)
+    monkeypatch.setenv("SMART_MUD_USER_DATA_DIR", str(tmp_path / "user_data"))
+
+    runtime = WebRuntime(root)
+    runtime.select_world("shattered_realms")
+
+    assert runtime.active_world_id == "shattered_realms"
+    assert (root / "worlds" / "shattered_realms" / "builder" / "audit").is_dir()
+
+
+def test_startup_logs_authoritative_lifecycle_steps(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("SMART_MUD_USER_DATA_DIR", str(tmp_path / "user_data"))
+    WebRuntime(Path.cwd())
+    output = capsys.readouterr().out
+    for marker in (
+        "Loading configuration",
+        "Opening SQLite",
+        "Running migrations",
+        "Discovering plugins",
+        "Resolving plugin dependencies",
+        "Scanning worlds",
+        "Validating runtime package",
+        "Preparing Builder workspace",
+        "Loading world assets",
+        "Initializing runtime",
+        "Ready",
+    ):
+        assert marker in output

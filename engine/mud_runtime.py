@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 
 from engine.mud_commands import MudCommandEngine
 from engine.mud_displays import render_prompt, render_room
-from engine.world_registry import WorldRegistry
+from smart_mud.world_registry import WorldRegistry
 from engine.plugin_system import HookRegistry, PluginRegistry
 
 
@@ -291,44 +291,6 @@ class MudStateStore:
             )
             conn.commit()
         print(f"[mud-builder] Audit: {builder_id} {action} {target_type}:{target_id}")
-
-
-class MudWorldRegistry:
-    """Registry of available MUD worlds."""
-
-    def __init__(self, worlds_dir: Path):
-        self.worlds_dir = worlds_dir
-        self.worlds_dir.mkdir(parents=True, exist_ok=True)
-        print(f"[mud-world] World registry initialized at {self.worlds_dir}")
-
-    def list_worlds(self) -> list[dict[str, Any]]:
-        """List available worlds."""
-        worlds = []
-        for world_file in self.worlds_dir.glob("*.json"):
-            try:
-                data = json.loads(world_file.read_text(encoding="utf-8"))
-                worlds.append({
-                    "id": data.get("id", world_file.stem),
-                    "name": data.get("name", world_file.stem),
-                    "description": data.get("description", ""),
-                    "default_start_room": data.get("default_start_room", ""),
-                })
-            except (json.JSONDecodeError, OSError):
-                pass
-        print(f"[mud-world] Listed {len(worlds)} worlds")
-        return worlds
-
-    def load_world(self, world_id: str) -> Optional[dict[str, Any]]:
-        """Load world definition."""
-        world_file = self.worlds_dir / f"{world_id}.json"
-        if world_file.exists():
-            try:
-                data = json.loads(world_file.read_text(encoding="utf-8"))
-                print(f"[mud-world] Loaded world {world_id}")
-                return data
-            except (json.JSONDecodeError, OSError) as e:
-                print(f"[mud-world] Error loading world {world_id}: {e}")
-        return None
 
 
 class MudRuntime:
