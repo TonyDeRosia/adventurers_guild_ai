@@ -71,3 +71,7 @@ Builder commands maintain an explicit editing context and print a `Currently edi
 ## Builder draft room normalization
 
 Builder draft rooms exported from `builder/exports/` are normalized workspace records. Each draft room includes `id`, `name`, `description`, `world_id`, `area_id`, `zone_id`, `exits`, `features`, `flags`, `tags`, and `plugin_data`. Missing fields in old partial drafts are filled with safe defaults before save/export. This normalization applies to builder drafts only; live package files are not changed by builder save/export.
+
+## Phase 4E Area, Zone, and VNUM Organization
+
+Builder Mode now supports draft areas and zones before room creation. Builders can use `acreate`/`aset current`, `zcreate`/`zset current`, `rcreate <vnum>`, and `dig <direction> <vnum>` to create rooms with canonical `<area_id>_<vnum>` IDs while preserving explicit `custom` legacy room IDs. Builder status shows world, area, zone, location, edit target, and dirty state. Builder export includes `areas`, `zones`, `rooms`, `items`, `entities`, and `spawns`; validation warns on legacy loose rooms and checks area/zone/vnum consistency. See `docs/AREA_ZONE_VNUM_SYSTEM.md`.

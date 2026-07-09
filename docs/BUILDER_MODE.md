@@ -155,3 +155,7 @@ Builder Mode now uses a canonical HUD instead of ad-hoc status spam. `builder st
 Room editing supports `redit <room_id>`, `redit next`, and `redit previous` for cycling draft rooms. `rname` rejects blank names and warns about duplicate display names or names that match IDs. `rdesc` with no text opens the multiline in-MUD description editor; finish with `.end` or cancel with `.cancel`.
 
 `exits` lists the six primary exits in `Direction -> destination` form, and `examine exit <direction>` / `x exit <direction>` inspect destination, reverse direction, and validity.
+
+## Phase 4E Area, Zone, and VNUM Organization
+
+Builder Mode now supports draft areas and zones before room creation. Builders can use `acreate`/`aset current`, `zcreate`/`zset current`, `rcreate <vnum>`, and `dig <direction> <vnum>` to create rooms with canonical `<area_id>_<vnum>` IDs while preserving explicit `custom` legacy room IDs. Builder status shows world, area, zone, location, edit target, and dirty state. Builder export includes `areas`, `zones`, `rooms`, `items`, `entities`, and `spawns`; validation warns on legacy loose rooms and checks area/zone/vnum consistency. See `docs/AREA_ZONE_VNUM_SYSTEM.md`.

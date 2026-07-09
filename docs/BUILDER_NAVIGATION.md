@@ -74,3 +74,7 @@ Navigation and editing commands that succeed should render the canonical Builder
 Builder navigation keeps the editing context visible through the canonical Builder HUD. `rooms` defaults to draft rooms and also supports `rooms draft`, `rooms live`, and `rooms all`, with the current editing target and current location at the bottom. `rfind` searches room IDs and display names by partial match.
 
 `back` and `forward` are reserved for Builder navigation history while Builder Mode is enabled; they do not replace normal movement commands for players. Current compatibility keeps `goto last` available for the previous location while the history stack is expanded.
+
+## Phase 4E Area, Zone, and VNUM Organization
+
+Builder Mode now supports draft areas and zones before room creation. Builders can use `acreate`/`aset current`, `zcreate`/`zset current`, `rcreate <vnum>`, and `dig <direction> <vnum>` to create rooms with canonical `<area_id>_<vnum>` IDs while preserving explicit `custom` legacy room IDs. Builder status shows world, area, zone, location, edit target, and dirty state. Builder export includes `areas`, `zones`, `rooms`, `items`, `entities`, and `spawns`; validation warns on legacy loose rooms and checks area/zone/vnum consistency. See `docs/AREA_ZONE_VNUM_SYSTEM.md`.
