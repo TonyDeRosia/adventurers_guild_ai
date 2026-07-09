@@ -209,3 +209,7 @@ Builder-created draft rooms now participate in a runtime world graph overlay for
 Phase 4C standardizes Builder Mode around a canonical room graph: live world rooms are merged with draft rooms for authorized builders, while normal players continue to see only live package content. Room rendering, look/exits, movement, goto, dig, link/unlink, map/rmap, and builder validation are required to use that shared graph so displayed exits match traversable exits.
 
 Builder commands maintain an explicit editing context and print a `Currently editing:` block for room-editing workflows. `rname` and `rdesc` edit only the selected room target. Room ids must be safe lowercase underscore ids; room names may contain spaces. The primary workflow is `dig <direction> <room_id> ["Room Name"] [--one-way]`, with self-loops blocked unless explicitly allowed. Known limits: visual Builder UI, AI Builder, combat, shops, quests, and spellcasting remain future work and are not introduced by this phase.
+
+## Phase 4C Hotfix 2: Builder polish, aliases, and normalization
+
+Completed: canonical Builder Status output, clearer location-versus-editing state, `redit` detail output, safe room-id and room-name checks, `desc` and save aliases, draft room normalization, and expanded validation categories. Known limits remain unchanged: full visual Builder UI, AI Builder, combat, quests, shops, and spellcasting are future phases.

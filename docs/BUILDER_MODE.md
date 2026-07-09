@@ -117,3 +117,32 @@ Builder-created draft rooms now participate in a runtime world graph overlay for
 Phase 4C standardizes Builder Mode around a canonical room graph: live world rooms are merged with draft rooms for authorized builders, while normal players continue to see only live package content. Room rendering, look/exits, movement, goto, dig, link/unlink, map/rmap, and builder validation are required to use that shared graph so displayed exits match traversable exits.
 
 Builder commands maintain an explicit editing context and print a `Currently editing:` block for room-editing workflows. `rname` and `rdesc` edit only the selected room target. Room ids must be safe lowercase underscore ids; room names may contain spaces. The primary workflow is `dig <direction> <room_id> ["Room Name"] [--one-way]`, with self-loops blocked unless explicitly allowed. Known limits: visual Builder UI, AI Builder, combat, shops, quests, and spellcasting remain future work and are not introduced by this phase.
+
+## Phase 4C Hotfix 2: Builder polish and draft integrity
+
+Builder output now uses one canonical `Builder Status:` block. The block separates the builder's current location from the current edit target so moving around and editing a room are visibly different:
+
+```text
+Builder Status:
+Location:
+  Room: testies_2
+  Name: Testies 2
+  Source: draft
+
+Currently editing:
+  Type: room
+  Room: testies_2
+  Name: Testies 2
+  Source: draft
+  Dirty: yes
+```
+
+If no edit room is selected, the edit section reads `Currently editing: none`. Builder-only status is never shown to normal players.
+
+Room ids are machine identifiers and must be lowercase snake_case with no spaces, uppercase letters, or punctuation other than underscores. Room names are human display names and may contain spaces and capitalization. `rname` rejects ID-looking names such as `testies_two` unless the builder explicitly uses `rname --force testies_two`; room-id migration is reserved for a future command.
+
+`desc <text>` is a Builder Mode alias for `rdesc <text>`. Outside Builder Mode, it explains that Builder Mode must be enabled first. `rsave`, `asave`, `bsave`, `wsave`, and `save` are registered: Builder Mode routes them to the safe builder export path, while normal player `save` explains that characters autosave.
+
+Draft room records are normalized on load and before save/export. Every draft room carries `id`, `name`, `description`, `world_id`, `area_id`, `zone_id`, `exits`, `features`, `flags`, `tags`, and `plugin_data`; valid existing data is preserved and live world files are not modified.
+
+`builder validate` reports grouped Errors, Warnings, and Info for unsafe ids, partial drafts, missing or empty room fields, ID-looking names, broken exits, reverse-exit mismatches, self-loops, and draft rooms that shadow live rooms. Visual Builder UI, AI Builder, combat, quests, shops, and spellcasting remain future work.

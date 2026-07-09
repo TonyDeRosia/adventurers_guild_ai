@@ -156,6 +156,7 @@ class MudCommandEngine:
             "who": self._cmd_who,
             "whoami": self._cmd_whoami,
             "save": self._cmd_save,
+            "desc": self._cmd_builder_edit,
             "recall": self._cmd_generic,
             "grantrole": self._cmd_grantrole,
             "help": self._cmd_help,
@@ -228,7 +229,7 @@ class MudCommandEngine:
             "goto": self._cmd_goto,
             "stat": self._cmd_stat,
         }
-        for _name in " redit rstat rcreate rset rdesc rname rexits rfeature rdelete exedit excreate exset exdelete fedit fcreate fset fdesc fdelete oedit ocreate oset odesc odelete ostat medit mcreate mset mdesc mdelete mstat spawnedit spawncreate spawnset spawndelete spawnstat zstat astat wstat btarget rtarget target asave bsave wsave".split():
+        for _name in " rsave redit rstat rcreate rset rdesc rname rexits rfeature rdelete exedit excreate exset exdelete fedit fcreate fset fdesc fdelete oedit ocreate oset odesc odelete ostat medit mcreate mset mdesc mdelete mstat spawnedit spawncreate spawnset spawndelete spawnstat zstat astat wstat btarget rtarget target asave bsave wsave".split():
             if _name:
                 self.command_handlers[_name] = self._cmd_builder_edit
 
@@ -248,6 +249,11 @@ class MudCommandEngine:
         
         print(f"[mud-command] Routing {raw_cmd_name} as {cmd_name} for {character.name}")
         
+        if cmd_name == "desc":
+            result = self._cmd_builder_edit(character, args, command_text)
+            self._publish("command_executed", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary=result.narrative[:120])
+            return result
+
         # Check if admin command
         meta = self.registry.commands.get(cmd_name)
         if meta and (meta.admin_only or meta.builder_only):
@@ -513,22 +519,25 @@ Available commands:
     def _cmd_save(self, character: Any, args: list[str], raw: str) -> CommandResult:
         cmd = raw.strip().split()[0].lower() if raw.strip() else "save"
         role = self._effective_role(character)
-        if role in {"builder", "admin", "owner"}:
+        if cmd in {"rsave", "asave", "bsave", "wsave"} and not getattr(character, "builder_mode", False):
+            return CommandResult(narrative="Builder save commands require Builder Mode.", ok=False)
+        if role in {"builder", "admin", "owner"} and getattr(character, "builder_mode", False):
             prefix = "Smart MUD uses builder save/export for Builder Mode drafts."
             if cmd == "asave":
                 prefix = "ASAVE changed: Smart MUD uses builder save/export instead of area save."
-            if cmd in {"save", "bsave", "wsave", "asave"}:
+            if cmd in {"save", "rsave", "bsave", "wsave", "asave"}:
+                self.builder.publish("builder_save_alias_used", character, self.builder.world_id(character), "builder", cmd, command=raw)
                 res = self.builder.export(character)
-                return CommandResult(narrative=f"{prefix} Routing to builder save.\n{res.message}", ok=res.ok)
+                return CommandResult(narrative=f"{prefix} Routing to builder save.\n{res.message}\n" + self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))), ok=res.ok)
         runtime = getattr(self, "runtime", None)
         world_id = getattr(runtime, "active_world_id", "") if runtime else self.builder.world_id(character)
         if runtime and hasattr(runtime, "state_store"):
             runtime.state_store.save_character(character, world_id)
-            return CommandResult(narrative="Character state saved. Smart MUD also autosaves character progress.")
+            return CommandResult(narrative="Your character is saved automatically.")
         if self.state_store and hasattr(self.state_store, "save_character"):
             self.state_store.save_character(character)
-            return CommandResult(narrative="Character state saved. Smart MUD also autosaves character progress.")
-        return CommandResult(narrative="Character state already autosaves.")
+            return CommandResult(narrative="Your character is saved automatically.")
+        return CommandResult(narrative="Your character is saved automatically.")
 
     def _cmd_generic(self, character: Any, args: list[str], raw: str) -> CommandResult:
         cmd = self.resolve_alias(raw.strip().split()[0].lower()) or raw.strip().split()[0].lower()
@@ -575,8 +584,27 @@ Available commands:
     def _room_id_hint(self, attempted: str = "") -> str:
         return re.sub(r"[^a-z0-9]+", "_", str(attempted).lower()).strip("_") or "test_room_two"
 
-    def _room_id_usage(self, attempted: str = "") -> str:
-        return f"Room IDs cannot contain spaces or uppercase characters. Room IDs must be lowercase snake_case. Use {self._room_id_hint(attempted)}."
+    def _room_id_usage(self, attempted: str = "", command: str = "rcreate") -> str:
+        hint = self._room_id_hint(attempted)
+        if command == "dig":
+            return f'Room IDs must be lowercase snake_case. Use {hint}.\nUse: dig north {hint} "{hint.replace("_", " ").title()}"'
+        return f"Room IDs cannot contain spaces or uppercase characters. Room IDs must be lowercase snake_case. Use {hint}.\nUse: {command} {hint}"
+
+    def _looks_like_room_id(self, text: str) -> bool:
+        return bool(re.fullmatch(r"[a-z0-9]+(?:_[a-z0-9]+)+", str(text or "")))
+
+    def _room_details(self, room_id: str, drafts: dict[str, Any]) -> str:
+        room = drafts.get("rooms", {}).get(room_id, {})
+        if not room:
+            return f"Room edit details: room {room_id} is not in draft workspace."
+        exits = ", ".join(sorted((room.get("exits") or {}).keys())) or "none"
+        warnings = []
+        if not room.get("name"): warnings.append("missing name")
+        if not room.get("description"): warnings.append("missing description")
+        if self._looks_like_room_id(room.get("name", "")): warnings.append("name looks like a room ID")
+        lines = ["Room edit details:", f"  ID: {room_id}", f"  Name: {room.get('name') or '(empty)'}", f"  Description: {room.get('description') or '(empty)'}", f"  Exits: {exits}"]
+        if warnings: lines += ["Room validation warnings:"] + [f"  - {w}" for w in warnings]
+        return "\n".join(lines)
 
     def _cmd_dig(self, character: Any, args: list[str], raw: str) -> CommandResult:
         import shlex
@@ -590,7 +618,7 @@ Available commands:
         direction, rid = args[0].lower(), args[1]
         if not self._valid_room_id(rid):
             self.builder.publish("builder_dig_rejected", character, self.builder.world_id(character), "room", rid, command=raw)
-            return CommandResult(f"Room IDs cannot contain spaces or uppercase characters. Room IDs must be lowercase snake_case. Use {self._room_id_hint(rid)}.", ok=False)
+            return CommandResult(self._room_id_usage(rid, "dig"), ok=False)
         one_way = "--one-way" in args
         allow_self_loop = "--allow-self-loop" in args
         name_parts = [a for a in args[2:] if a not in {"--one-way", "--allow-self-loop"}]
@@ -623,7 +651,7 @@ Available commands:
         args = [a for a in args if a != "--allow-self-loop"]
         direction,target=args[0].lower(),args[1]
         if not self._valid_room_id(target):
-            return CommandResult(f"Room IDs cannot contain spaces or uppercase characters. Room IDs must be lowercase snake_case. Use {self._room_id_hint(target)}.", ok=False)
+            return CommandResult(self._room_id_usage(target, "link"), ok=False)
         runtime=getattr(self,"runtime",None)
         if runtime and runtime.runtime_room_data(character,target)[0] is None: return CommandResult(f"Room not found: {target}", ok=False)
         old=self.builder.current_room_id(character)
@@ -647,33 +675,41 @@ Available commands:
         sub = args[0].lower() if args else "status"
         if sub in {"on", "enable"} or raw.split()[0].lower() == "build":
             res = self.builder.set_builder_mode(character, True)
-            return CommandResult(narrative=res.message, ok=res.ok)
+            status = self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))) if res.ok else ""
+            return CommandResult(narrative=res.message + (("\n" + status) if status else ""), ok=res.ok)
         if sub in {"off", "disable"}:
             res = self.builder.set_builder_mode(character, False)
             return CommandResult(narrative=res.message, ok=res.ok)
         if sub == "validate":
-            res = self.builder.validate(character); return CommandResult(narrative=res.message, ok=res.ok)
+            res = self.builder.validate(character); return CommandResult(narrative=res.message + "\n" + self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))), ok=res.ok)
         if sub == "save":
-            res = self.builder.export(character); return CommandResult(narrative=res.message, ok=res.ok)
+            res = self.builder.export(character); return CommandResult(narrative=res.message + "\n" + self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))), ok=res.ok)
         if sub == "reload":
             self.builder.publish("builder_reload_requested", character, self.builder.world_id(character), "builder", "reload", command="builder reload")
-            return CommandResult(narrative="Builder drafts reloaded from workspace.")
+            return CommandResult(narrative="Builder drafts reloaded from workspace.\n" + self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))))
         if sub == "snapshot":
-            res = self.builder.snapshot(character); return CommandResult(narrative=res.message, ok=res.ok)
+            res = self.builder.snapshot(character); return CommandResult(narrative=res.message + "\n" + self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))), ok=res.ok)
         if sub == "history":
             res = self.builder.history(character); return CommandResult(narrative=res.message, ok=res.ok)
         return CommandResult(narrative=f"Builder mode is {'ON' if getattr(character, 'builder_mode', False) else 'OFF'}. Use builder on/off, builder validate, builder save, builder snapshot, builder history.")
 
     def _builder_room_status(self, character: Any, room_id: str, drafts: dict[str, Any]) -> str:
-        if not room_id:
-            return "Currently editing: none"
         runtime = getattr(self, "runtime", None)
-        draft = drafts.get("rooms", {}).get(room_id)
-        live = runtime.runtime_room_data(character, room_id)[0] if runtime else None
-        source = "draft" if draft is not None else "live" if live is not None else "draft"
-        name = (draft or live or {}).get("name") or (draft or live or {}).get("title") or "(unnamed)"
-        dirty = "yes" if draft is not None else "no"
-        return f"Currently editing:\nRoom: {room_id}\nName: {name}\nSource: {source}\nDirty: {dirty}\nEditing room: {room_id} {name}"
+        loc_id = str(getattr(character, "room_id", "") or getattr(character, "current_room_id", "") or "start")
+        def info(rid: str):
+            draft = drafts.get("rooms", {}).get(rid)
+            live = runtime.runtime_room_data(character, rid)[0] if runtime and hasattr(runtime, "runtime_room_data") else None
+            rec = draft or live or {}
+            return (rec.get("name") or rec.get("title") or "(unnamed)", "draft" if draft is not None else "live" if live is not None else "unknown", draft is not None)
+        loc_name, loc_source, _ = info(loc_id)
+        lines = ["Builder Status:", "Location:", f"  Room: {loc_id}", f"  Name: {loc_name}", f"  Source: {loc_source}", "", "Currently editing:"]
+        if not room_id:
+            lines[-1] = "Currently editing: none"
+        else:
+            name, source, dirty = info(room_id)
+            lines += ["  Type: room", f"  Room: {room_id}", f"  Name: {name}", f"  Source: {source}", f"  Dirty: {'yes' if dirty else 'no'}", f"Editing room: {room_id} {name}"]
+        self.builder.publish("builder_status_rendered", character, self.builder.world_id(character), "room", room_id or "none", command="builder status")
+        return "\n".join(lines)
 
     def _cmd_builder_edit(self, character: Any, args: list[str], raw: str) -> CommandResult:
         token = raw.strip().split()[0].lower()
@@ -686,39 +722,53 @@ Available commands:
             if not args:
                 return CommandResult(self._builder_room_status(character, room_id, drafts))
             if args[0].lower() == "clear":
-                setattr(character, "edit_room_id", "")
-                setattr(character, "last_edited_target", "")
+                old = room_id; setattr(character, "edit_room_id", ""); setattr(character, "last_edited_target", "")
+                self.builder.publish("builder_edit_target_changed", character, world_id, "room", "none", command=raw)
+                self.builder.audit(character, world_id, "btarget clear", "room", old, old, None)
                 return CommandResult("Currently editing: none")
             if len(args) >= 2 and args[0].lower() == "room":
                 setattr(character, "edit_room_id", args[1]); setattr(character, "last_edited_target", args[1])
+                self.builder.publish("builder_edit_target_changed", character, world_id, "room", args[1], command=raw)
                 return CommandResult("Builder target set.\n" + self._builder_room_status(character, args[1], drafts))
             return CommandResult('Usage: btarget [room <room_id>|clear]', ok=False)
         if cmd == "redit":
             if args:
                 setattr(character, "edit_room_id", args[0]); setattr(character, "last_edited_target", args[0]); room_id = args[0]
-            return CommandResult(self._builder_room_status(character, room_id, drafts))
+                self.builder.publish("builder_edit_target_changed", character, world_id, "room", room_id, command=raw)
+            status = self._builder_room_status(character, room_id, drafts)
+            if not room_id:
+                return CommandResult(status + "\nNo room is currently selected.\nUse redit <room_id>, rcreate <room_id>, goto <room_id>, or btarget room <room_id>.", ok=False)
+            return CommandResult(status + "\n" + self._room_details(room_id, drafts))
         if cmd in {"rstat", "rwhere"}:
             return CommandResult(self._builder_room_status(character, room_id, drafts))
         if cmd == "rcreate":
             if len(args) != 1:
-                return CommandResult(self._room_id_usage(" ".join(args)), ok=False)
+                return CommandResult(self._room_id_usage(" ".join(args), "rcreate"), ok=False)
             rid = args[0]
             if not self._valid_room_id(rid):
-                return CommandResult(self._room_id_usage(rid), ok=False)
+                return CommandResult(self._room_id_usage(rid, "rcreate"), ok=False)
             setattr(character, "last_room_id", getattr(character, "room_id", room_id)); setattr(character, "room_id", rid); setattr(character, "edit_room_id", rid); setattr(character, "last_edited_target", rid); setattr(character, "last_created_room_id", rid)
             res = self.builder.create_or_update(character, "rooms", rid, {"area_id": getattr(character,"current_area_id", getattr(character,"area_id", "")), "zone_id": getattr(character,"current_zone_id", getattr(character,"zone_id", "")), "world_id": world_id, "exits": {}, "features": {}}, "rcreate", "room")
             return CommandResult(res.message + "\n" + self._builder_room_status(character, rid, self.builder.load(world_id)), ok=res.ok)
         if cmd == "rname":
             if not getattr(character, "edit_room_id", "") and not getattr(character, "last_edited_target", ""):
                 return CommandResult("No room is currently selected. Use rcreate, redit <room_id>, goto <room_id>, or btarget room <room_id>.", ok=False)
-            val = self._builder_value(raw,1)
+            force = bool(args and args[0] == "--force")
+            val = self._builder_value(raw,2) if force else self._builder_value(raw,1)
+            if self._looks_like_room_id(val) and not force:
+                self.builder.publish("builder_room_name_warning", character, world_id, "room", room_id, command=raw)
+                return CommandResult("That looks like a room ID, not a display name.\nUse a display name like: " + val.replace("_", " ").title() + ".\nTo change the room ID, use a future room-id migration command.", ok=False)
             res = self.builder.create_or_update(character, "rooms", room_id, {"name": val}, "rname", "room")
-            return CommandResult(narrative=f"Room {room_id} renamed to {val}.\nRoom {room_id} name changed to {val}.\n" + self._builder_room_status(character, room_id, self.builder.load(world_id)), ok=res.ok)
-        if cmd == "rdesc":
+            return CommandResult(narrative=f"Room {room_id} name updated to {val}.\nRoom {room_id} name changed to {val}.\n" + self._builder_room_status(character, room_id, self.builder.load(world_id)), ok=res.ok)
+        if cmd in {"rdesc", "desc"}:
+            if cmd == "desc" and not getattr(character, "builder_mode", False):
+                return CommandResult("desc is a Builder Mode alias for rdesc. Enable Builder Mode first.", ok=False)
+            if cmd == "desc":
+                self.builder.publish("builder_desc_alias_used", character, world_id, "room", room_id, command=raw)
             if not getattr(character, "edit_room_id", "") and not getattr(character, "last_edited_target", ""):
                 return CommandResult("No room is currently selected. Use rcreate, redit <room_id>, goto <room_id>, or btarget room <room_id>.", ok=False)
-            res = self.builder.create_or_update(character, "rooms", room_id, {"description": self._builder_value(raw,1)}, "rdesc", "room")
-            return CommandResult(narrative=f"Room {room_id} description updated.\nRoom {room_id} description changed.\n" + self._builder_room_status(character, room_id, self.builder.load(world_id)), ok=res.ok)
+            res = self.builder.create_or_update(character, "rooms", room_id, {"description": self._builder_value(raw,1)}, cmd, "room")
+            return CommandResult(narrative=f"Description updated for room {room_id}.\nRoom {room_id} description updated.\nRoom {room_id} description changed.\n" + self._builder_room_status(character, room_id, self.builder.load(world_id)), ok=res.ok)
         if cmd == "rset" and len(args)>=2:
             return out(self.builder.create_or_update(character, "rooms", room_id, {args[0]: self._builder_value(raw,2)}, "rset", "room"))
         if cmd in {"rexits", "rfeature"}:
@@ -778,6 +828,10 @@ Builder commands:
         room_id = args[0]
         character.room_id = room_id
         narrative = f"You have been transferred to {room_id}."
+        if getattr(character, "builder_mode", False) and self._effective_role(character) in {"builder", "admin", "owner"}:
+            setattr(character, "edit_room_id", room_id); setattr(character, "last_edited_target", room_id)
+            self.builder.publish("builder_edit_target_changed", character, self.builder.world_id(character), "room", room_id, command=raw)
+            narrative += "\n" + self._builder_room_status(character, room_id, self.builder.load(self.builder.world_id(character)))
         
         print(f"[mud-command] Admin teleport: {character.name} -> {room_id}")
         if self.state_store:

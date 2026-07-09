@@ -46,9 +46,46 @@ class BuilderWorkspace:
 
     def load(self, world_id: str) -> dict[str, Any]:
         root = self.ensure(world_id)
-        return {key: self._read(root / filename, {}) for key, filename in DRAFT_FILES.items()}
+        drafts = {key: self._read(root / filename, {}) for key, filename in DRAFT_FILES.items()}
+        changed = self.normalize_drafts(world_id, drafts)
+        if changed:
+            self.save_drafts(world_id, drafts)
+        return drafts
+
+    def normalize_room(self, world_id: str, room_id: str, room: Any) -> tuple[dict[str, Any], bool]:
+        original = deepcopy(room) if isinstance(room, dict) else room
+        record = deepcopy(room) if isinstance(room, dict) else {}
+        record.setdefault("id", room_id)
+        record.setdefault("name", "")
+        record.setdefault("description", "")
+        record.setdefault("world_id", world_id)
+        record.setdefault("area_id", "")
+        record.setdefault("zone_id", "")
+        if not isinstance(record.get("exits"), dict): record["exits"] = {}
+        if not isinstance(record.get("features"), dict): record["features"] = {}
+        if not isinstance(record.get("flags"), list): record["flags"] = []
+        if not isinstance(record.get("tags"), list): record["tags"] = []
+        if not isinstance(record.get("plugin_data"), dict): record["plugin_data"] = {}
+        ordered = {k: record.get(k) for k in ("id","name","description","world_id","area_id","zone_id","exits","features","flags","tags","plugin_data")}
+        for k, v in record.items():
+            if k not in ordered: ordered[k] = v
+        return ordered, ordered != original
+
+    def normalize_drafts(self, world_id: str, drafts: dict[str, Any], actor: Any | None = None) -> bool:
+        changed = False
+        rooms = drafts.setdefault("rooms", {})
+        for room_id in list(rooms.keys()):
+            normalized, did = self.normalize_room(world_id, str(room_id), rooms[room_id])
+            rooms[room_id] = normalized
+            if did:
+                changed = True
+                if actor is not None:
+                    self.audit(actor, world_id, "draft normalization", "room", str(room_id), None, normalized)
+                    self.publish("builder_draft_room_normalized", actor, world_id, "room", str(room_id), command="draft normalization")
+        return changed
 
     def save_drafts(self, world_id: str, drafts: dict[str, Any]) -> None:
+        self.normalize_drafts(world_id, drafts)
         root = self.ensure(world_id)
         for key, filename in DRAFT_FILES.items():
             (root / filename).write_text(json.dumps(drafts.get(key, {}), indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -98,14 +135,30 @@ class BuilderWorkspace:
         return BuilderResult(True, f"Draft exit {direction} {'created' if create and before is None else 'updated'}.", ex)
 
     def validate(self, actor: Any) -> BuilderResult:
-        world_id = self.world_id(actor); drafts = self.load(world_id); errors=[]; warnings=[]; info=[]
+        world_id = self.world_id(actor); root = self.ensure(world_id); raw_rooms = self._read(root / DRAFT_FILES["rooms"], {})
+        drafts = self.load(world_id); errors=[]; warnings=[]; info=[]
+        required = {"id": str, "name": str, "description": str, "world_id": str, "area_id": str, "zone_id": str, "exits": dict, "features": dict, "flags": list, "tags": list, "plugin_data": dict}
+        for rid, raw in raw_rooms.items():
+            if not isinstance(raw, dict) or any(k not in raw for k in required):
+                warnings.append(f"room {rid} was partial and has been normalized")
+            elif any(not isinstance(raw.get(k), typ) for k, typ in required.items()):
+                warnings.append(f"room {rid} had invalid draft field types and has been normalized")
         live_rooms = {str(r.get("id")) for r in _records(self.worlds_dir / world_id, "rooms") if r.get("id")}
         draft_rooms = set(drafts["rooms"].keys()); all_rooms = live_rooms | draft_rooms
         reverse = {"north":"south","south":"north","east":"west","west":"east","up":"down","down":"up","in":"out","out":"in"}
         for rid, room in drafts["rooms"].items():
             if not str(rid).strip() or any(ch.isspace() for ch in str(rid)) or not re.fullmatch(r"[a-z0-9]+(?:_[a-z0-9]+)*", str(rid)): errors.append(f"room {rid} has unsafe id")
             if rid in live_rooms: warnings.append(f"room {rid} shadows live room")
+            if "world_id" not in room: errors.append(f"room {rid} missing world_id")
+            if "area_id" not in room: warnings.append(f"room {rid} missing area_id field")
+            if "zone_id" not in room: warnings.append(f"room {rid} missing zone_id field")
+            if not isinstance(room.get("exits"), dict): errors.append(f"room {rid} missing exits dictionary")
+            if not isinstance(room.get("features"), dict): warnings.append(f"room {rid} missing features dictionary")
+            if not isinstance(room.get("flags"), list): warnings.append(f"room {rid} missing flags list")
+            if not isinstance(room.get("tags"), list): warnings.append(f"room {rid} missing tags list")
+            if not isinstance(room.get("plugin_data"), dict): warnings.append(f"room {rid} missing plugin_data dictionary")
             if not room.get("name"): warnings.append(f"room {rid} missing name")
+            if self._looks_like_id(room.get("name", "")): warnings.append(f"room {rid} name looks like a room ID")
             if not room.get("description"): warnings.append(f"room {rid} missing description")
             for d, ex in (room.get("exits") or {}).items():
                 target = ex.get("target_room_id") or ex.get("to") or ex.get("room_id")
@@ -146,7 +199,8 @@ class BuilderWorkspace:
 
     def export(self, actor: Any) -> BuilderResult:
         world_id=self.world_id(actor); root=self.ensure(world_id); stamp=self.stamp(); out=root/"exports"/f"builder_export_{stamp}.json"
-        out.write_text(json.dumps(self.load(world_id), indent=2, sort_keys=True)+"\n", encoding="utf-8")
+        drafts = self.load(world_id); self.normalize_drafts(world_id, drafts, actor); self.save_drafts(world_id, drafts)
+        out.write_text(json.dumps(drafts, indent=2, sort_keys=True)+"\n", encoding="utf-8")
         self.audit(actor, world_id, "builder save", "export", out.name, None, {"path": str(out)})
         self.publish("builder_save_requested", actor, world_id, "export", out.name, command="builder save")
         return BuilderResult(True, f"Builder drafts exported safely to {out}.")
@@ -174,6 +228,9 @@ class BuilderWorkspace:
         if self.event_bus:
             payload={"account_id": str(getattr(actor,"account_id", "")), "character_id": str(getattr(actor,"id", "")), "world_id": world_id, "target_type": target_type, "target_id": target_id, "command": command, "timestamp": self.stamp()}
             self.event_bus.publish(name, payload, source_system="builder", account_id=payload["account_id"], character_id=payload["character_id"], world_id=world_id, command=command)
+
+    def _looks_like_id(self, text: str) -> bool:
+        return bool(re.fullmatch(r"[a-z0-9]+(?:_[a-z0-9]+)+", str(text or "")))
 
     def _read(self, path: Path, default: Any) -> Any:
         try: return json.loads(path.read_text(encoding="utf-8")) if path.exists() else deepcopy(default)
