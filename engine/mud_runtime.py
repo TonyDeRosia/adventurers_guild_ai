@@ -7,6 +7,7 @@ import sqlite3
 import re
 import uuid
 import hashlib
+from types import MappingProxyType
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Any, Optional
@@ -192,6 +193,38 @@ class MudStateStore:
                 )
             """)
             
+            # Canonical Phase 2E runtime item instances.
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS item_instances (
+                    instance_id TEXT PRIMARY KEY,
+                    world_id TEXT,
+                    template_id TEXT,
+                    owner_type TEXT,
+                    owner_id TEXT,
+                    room_id TEXT,
+                    equipped_slot TEXT,
+                    stack_count INTEGER DEFAULT 1,
+                    condition TEXT DEFAULT 'normal',
+                    durability INTEGER DEFAULT 100,
+                    created_at TEXT,
+                    updated_at TEXT,
+                    custom_flags JSON,
+                    plugin_data JSON,
+                    destroyed_at TEXT,
+                    destroy_reason TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS room_item_seeds (
+                    world_id TEXT,
+                    room_id TEXT,
+                    template_id TEXT,
+                    seed_key TEXT,
+                    created_at TEXT,
+                    PRIMARY KEY(world_id, room_id, seed_key)
+                )
+            """)
+
             # Command history
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS command_history (
@@ -300,6 +333,11 @@ class MudStateStore:
                 for name, ddl in cols.items():
                     if name not in existing:
                         conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+            existing_items = {r[1] for r in conn.execute("PRAGMA table_info(item_instances)")}
+            for name, ddl in {"world_id":"TEXT","condition":"TEXT DEFAULT 'normal'","durability":"INTEGER DEFAULT 100","custom_flags":"JSON","plugin_data":"JSON","destroyed_at":"TEXT","destroy_reason":"TEXT"}.items():
+                if name not in existing_items:
+                    conn.execute(f"ALTER TABLE item_instances ADD COLUMN {name} {ddl}")
+
             existing = {r[1] for r in conn.execute("PRAGMA table_info(accounts)")}
             for name, ddl in {"password_hash":"TEXT","local_dev_auth_token":"TEXT","last_login_at":"DATETIME","status":"TEXT DEFAULT 'active'","role":"TEXT DEFAULT 'player'","email":"TEXT","notes":"TEXT"}.items():
                 if name not in existing:
@@ -396,6 +434,7 @@ class MudRuntime:
         self.hooks = HookRegistry()
         self.active_world_id: Optional[str] = None
         self.active_world: Any = None
+        self.item_templates: dict[str, MappingProxyType] = {}
         self.sessions: dict[str, MudSession] = {}
         self.command_engine = MudCommandEngine(self.state_store, event_bus=self.event_bus)
         self.sqlite_ready = (user_data_dir / "mud_state.db").exists()
@@ -475,6 +514,8 @@ class MudRuntime:
         self.plugin_registry.resolve_required([str(p) for p in self.active_world.manifest.get("required_plugins", [])])
         self.event_bus.publish("plugins_resolved", {"world_id": world_id}, source_system="plugin", world_id=world_id)
         self.active_world_id = world_id
+        self._load_item_templates()
+        self._seed_room_items()
         self.hooks.emit("world_loaded", world_id=world_id, world=self.active_world)
         self.event_bus.publish("world_loaded", {"world_id": world_id}, source_system="runtime", world_id=world_id)
         return self.active_world
@@ -528,6 +569,7 @@ class MudRuntime:
         if account_id:
             with sqlite3.connect(self.state_store.db_path) as conn:
                 conn.execute("UPDATE characters SET account_id=? WHERE id=?", (account_id, char.id))
+        self._spawn_starter_items(char.id)
         self.hooks.emit("character_creation", world_id=world_id, character=char)
         self.event_bus.publish("character_created", {"account_id": account_id, "character_id": char.id, "character_name": char.name}, source_system="runtime", account_id=account_id, world_id=world_id, character_id=char.id)
         return self._character_payload(char, world_id)
@@ -601,6 +643,10 @@ class MudRuntime:
         raw_cmd = tokens[0].lower()
         cmd_name = self.command_engine.resolve_alias(raw_cmd)
         self.event_bus.publish("command_resolved", {"raw_input": command, "canonical_command": cmd_name, "arguments": tokens[1:], "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
+        item_result = self._handle_item_command(char, command, cmd_name, tokens[1:])
+        if item_result is not None:
+            self.event_bus.publish("command_executed", {"raw_input": command, "canonical_command": cmd_name, "arguments": tokens[1:], "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id, "result_summary": item_result.narrative[:120]}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
+            return item_result
         if cmd_name in {"north", "south", "east", "west", "up", "down", "in", "out"}:
             result = self._move_character(char, cmd_name)
             self.event_bus.publish("command_executed", {"raw_input": command, "canonical_command": cmd_name, "arguments": tokens[1:], "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id, "result_summary": result.narrative[:120]}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
@@ -647,7 +693,7 @@ class MudRuntime:
                     description=str(room_data.get("long_description") or room_data.get("description") or room_data.get("short_description") or ""),
                     exits=list(room_data.get("exits", []) or []),
                     npcs=self._room_npcs(room_data),
-                    objects=self._room_objects(room_data),
+                    objects=self.get_visible_room_items(str(room_data.get("id", char.room_id))),
                 )
             except Exception:
                 pass
@@ -667,6 +713,207 @@ class MudRuntime:
         values = list(room_data.get("objects", []) or [])
         by_id = {str(item.get("id")): item for item in getattr(self.active_world, "items", [])}
         return [by_id.get(str(value), value) if not isinstance(value, dict) else value for value in values]
+
+    EQUIPMENT_SLOTS = ["head","neck","body","back","arms","hands","finger_left","finger_right","waist","legs","feet","main_hand","off_hand","both_hands","ranged","ammo","light"]
+    HAND_SLOTS = {"main_hand", "off_hand", "both_hands", "light"}
+    ARTICLES = {"a", "an", "the"}
+
+    def _load_item_templates(self) -> None:
+        templates: dict[str, MappingProxyType] = {}
+        for raw in getattr(self.active_world, "items", []) or []:
+            if not isinstance(raw, dict):
+                continue
+            tid = str(raw.get("id") or raw.get("template_id") or "").strip()
+            if not tid:
+                continue
+            slot = raw.get("slot")
+            wear_slots = raw.get("wear_slots") or ([] if not slot or slot == "none" else [slot])
+            keywords = raw.get("keywords") or str(raw.get("name") or tid).replace("'", "").split() + [tid]
+            norm = {
+                "id": tid,
+                "name": str(raw.get("name") or tid).title(),
+                "keywords": [str(k).lower() for k in keywords if str(k).strip()],
+                "short_description": str(raw.get("short_description") or raw.get("description") or raw.get("name") or tid),
+                "long_description": str(raw.get("long_description") or raw.get("description") or raw.get("short_description") or raw.get("name") or tid),
+                "item_type": str(raw.get("item_type") or raw.get("type") or "misc"),
+                "weight": raw.get("weight", 0), "value": raw.get("value", 0),
+                "wear_slots": [str(v) for v in wear_slots if str(v) in self.EQUIPMENT_SLOTS],
+                "weapon_flags": raw.get("weapon_flags") or raw.get("flags") or [],
+                "armor_values": raw.get("armor_values") or raw.get("stats") or {},
+                "stackable": bool(raw.get("stackable", False)), "max_stack": int(raw.get("max_stack", 1) or 1),
+                "rarity": str(raw.get("rarity") or "common"),
+                "level_requirement": raw.get("level_requirement") or (raw.get("requirements") or {}).get("level"),
+                "lore": raw.get("lore") or "", "plugin_data": raw.get("plugin_data") or {},
+                "starter": bool(raw.get("starter") or ("starter" in (raw.get("tags") or []))),
+                "starter_quantity": int(raw.get("starter_quantity", 1) or 1),
+                "starter_equipped_slot": raw.get("starter_equipped_slot"),
+            }
+            templates[tid] = MappingProxyType(norm)
+        self.item_templates = templates
+
+    def _item_payload(self, row: Any) -> dict[str, Any]:
+        item = {"instance_id": row[0], "world_id": row[1], "template_id": row[2], "owner_type": row[3], "owner_id": row[4], "room_id": row[5], "equipped_slot": row[6], "stack_count": row[7], "condition": row[8], "durability": row[9], "created_at": row[10], "updated_at": row[11], "custom_flags": json.loads(row[12] or "{}"), "plugin_data": json.loads(row[13] or "{}")}
+        tmpl = dict(self.item_templates.get(item["template_id"], {"id": item["template_id"], "name": item["template_id"], "keywords": [item["template_id"]]}))
+        item["template"] = tmpl; item["name"] = tmpl.get("name", item["template_id"]); item["keywords"] = tmpl.get("keywords", [])
+        item["description"] = tmpl.get("short_description") or tmpl.get("long_description") or item["name"]
+        item["room_description"] = f"{item['name']} - {tmpl.get('short_description') or item['description']}"
+        return item
+
+    def _fetch_items(self, where: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
+        with sqlite3.connect(self.state_store.db_path) as conn:
+            rows = conn.execute(f"SELECT instance_id,world_id,template_id,owner_type,owner_id,room_id,equipped_slot,stack_count,condition,durability,created_at,updated_at,custom_flags,plugin_data FROM item_instances WHERE destroyed_at IS NULL AND {where} ORDER BY created_at, instance_id", params).fetchall()
+        return [self._item_payload(r) for r in rows]
+
+    def spawn_item(self, template_id: str, owner_type: str, owner_id: str | None = None, room_id: str | None = None, stack_count: int = 1, equipped_slot: str | None = None, custom_flags: dict[str, Any] | None = None, plugin_data: dict[str, Any] | None = None) -> dict[str, Any]:
+        if template_id not in self.item_templates: raise ValueError(f"Unknown item template: {template_id}")
+        iid = f"item_{uuid.uuid4().hex}"; now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.state_store.db_path) as conn:
+            conn.execute("INSERT INTO item_instances(instance_id,world_id,template_id,owner_type,owner_id,room_id,equipped_slot,stack_count,condition,durability,created_at,updated_at,custom_flags,plugin_data) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (iid,self.active_world_id or "",template_id,owner_type,owner_id or "",room_id or "",equipped_slot or "",int(stack_count or 1),"normal",100,now,now,json.dumps(custom_flags or {}),json.dumps(plugin_data or {})))
+        item = self.find_item(iid); self._publish_item_event("item_spawned", item); return item
+
+    def destroy_item(self, instance_id: str, reason: str | None = None) -> bool:
+        item = self.find_item(instance_id)
+        with sqlite3.connect(self.state_store.db_path) as conn: conn.execute("UPDATE item_instances SET destroyed_at=?, destroy_reason=?, updated_at=? WHERE instance_id=?", (datetime.now(timezone.utc).isoformat(), reason or "", datetime.now(timezone.utc).isoformat(), instance_id))
+        if item: self._publish_item_event("item_destroyed", item)
+        return bool(item)
+
+    def move_item(self, instance_id: str, owner_type: str, owner_id: str | None = None, room_id: str | None = None, equipped_slot: str | None = None) -> dict[str, Any]:
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.state_store.db_path) as conn: conn.execute("UPDATE item_instances SET owner_type=?, owner_id=?, room_id=?, equipped_slot=?, updated_at=? WHERE instance_id=? AND destroyed_at IS NULL", (owner_type, owner_id or "", room_id or "", equipped_slot or "", now, instance_id))
+        return self.find_item(instance_id)
+
+    def transfer_item(self, instance_id: str, from_owner: Any = None, to_owner: Any = None, room_id: str | None = None, equipped_slot: str | None = None, reason: str | None = None) -> dict[str, Any]:
+        if isinstance(to_owner, tuple): owner_type, owner_id = to_owner
+        elif isinstance(to_owner, dict): owner_type, owner_id = to_owner.get("owner_type"), to_owner.get("owner_id")
+        else: owner_type, owner_id = str(to_owner or "room"), None
+        return self.move_item(instance_id, owner_type, owner_id, room_id, equipped_slot)
+
+    def find_item(self, instance_id: str) -> dict[str, Any] | None: return next(iter(self._fetch_items("instance_id=?", (instance_id,))), None)
+    def find_room_items(self, room_id: str) -> list[dict[str, Any]]: return self._fetch_items("owner_type='room' AND room_id=?", (room_id,))
+    def find_inventory_items(self, character_id: str) -> list[dict[str, Any]]: return self._fetch_items("owner_type='character' AND owner_id=?", (character_id,))
+    def find_equipped_items(self, character_id: str) -> list[dict[str, Any]]: return self._fetch_items("owner_type='equipment' AND owner_id=?", (character_id,))
+    def get_visible_room_items(self, room_id: str) -> list[dict[str, Any]]: return self.find_room_items(room_id)
+
+    def resolve_item_keywords(self, query: str, candidate_items: list[dict[str, Any]]) -> dict[str, Any]:
+        words = [w for w in re.findall(r"[a-z0-9_']+", query.lower()) if w not in self.ARTICLES]
+        q = " ".join(words)
+        if not q: return {"status":"missing", "matches": []}
+        def name(i): return str(i.get("name") or i.get("template",{}).get("name") or "").lower()
+        exact = [i for i in candidate_items if name(i) == q]
+        if len(exact) == 1: return {"status":"ok", "item": exact[0], "matches": exact}
+        if len(exact) > 1: return {"status":"ambiguous", "matches": exact}
+        kw = [i for i in candidate_items if q in [str(k).lower() for k in i.get("keywords", [])]]
+        if len(kw) == 1: return {"status":"ok", "item": kw[0], "matches": kw}
+        if len(kw) > 1: return {"status":"ambiguous", "matches": kw}
+        allwords = [i for i in candidate_items if all(w in set(re.findall(r"[a-z0-9_']+", name(i)) + [str(k).lower() for k in i.get("keywords", [])]) for w in words)]
+        if len(allwords) == 1: return {"status":"ok", "item": allwords[0], "matches": allwords}
+        if len(allwords) > 1: return {"status":"ambiguous", "matches": allwords}
+        partial = [i for i in candidate_items if all(any(w in token for token in re.findall(r"[a-z0-9_']+", name(i)) + [str(k).lower() for k in i.get("keywords", [])]) for w in words)]
+        if len(partial) == 1: return {"status":"ok", "item": partial[0], "matches": partial}
+        return {"status":"ambiguous" if partial else "missing", "matches": partial}
+
+    def validate_equipment(self, character_id: str, item_instance: dict[str, Any], slot: str | None = None) -> dict[str, Any]:
+        allowed = list((item_instance.get("template") or {}).get("wear_slots") or [])
+        if slot and slot not in self.EQUIPMENT_SLOTS: return {"ok": False, "message": "That is not a valid equipment slot."}
+        if slot and slot not in allowed: return {"ok": False, "message": f"You can't equip {item_instance['name']} there."}
+        if not allowed: return {"ok": False, "message": f"You can't equip {item_instance['name']}."}
+        return {"ok": True, "slot": slot or allowed[0]}
+
+    def pickup_item(self, character_id: str, room_id: str, query: str) -> str:
+        res = self.resolve_item_keywords(query, self.get_visible_room_items(room_id))
+        if res["status"] != "ok": return self._resolve_message(res, "You don't see that here.")
+        item = res["item"]; self._publish_item_event("before_item_pickup", item, character_id=character_id, room_id=room_id)
+        moved = self.transfer_item(item["instance_id"], to_owner=("character", character_id)); self._publish_item_event("item_picked_up", moved, character_id=character_id, room_id=room_id); self._publish_item_event("inventory_changed", moved, character_id=character_id); self._publish_item_event("room_inventory_changed", moved, room_id=room_id); self._publish_item_event("after_item_pickup", moved, character_id=character_id, room_id=room_id)
+        return f"You pick up {moved['name']}."
+
+    def drop_item(self, character_id: str, query: str) -> str:
+        char = self.state_store.load_character(character_id); candidates = self.find_inventory_items(character_id)+self.find_equipped_items(character_id); res = self.resolve_item_keywords(query, candidates)
+        if res["status"] != "ok": return self._resolve_message(res, "You aren't carrying that.")
+        item=res["item"]; self._publish_item_event("before_item_drop", item, character_id=character_id, room_id=char.room_id if char else ""); moved=self.transfer_item(item["instance_id"], to_owner=("room", ""), room_id=char.room_id if char else ""); self._publish_item_event("item_dropped", moved, character_id=character_id, room_id=moved.get("room_id")); self._publish_item_event("inventory_changed", moved, character_id=character_id); self._publish_item_event("room_inventory_changed", moved, room_id=moved.get("room_id")); self._publish_item_event("after_item_drop", moved, character_id=character_id, room_id=moved.get("room_id")); return f"You drop {moved['name']}."
+
+    def equip_item(self, character_id: str, query: str, preferred_slot: str | None = None) -> str:
+        res=self.resolve_item_keywords(query, self.find_inventory_items(character_id))
+        if res["status"] != "ok": return self._resolve_message(res, "You aren't carrying that.")
+        item=res["item"]; allowed=list(item["template"].get("wear_slots") or []); slot=preferred_slot if preferred_slot in allowed else (next((s for s in ([preferred_slot] if preferred_slot else [])+allowed if s in allowed), None))
+        valid=self.validate_equipment(character_id,item,slot)
+        if not valid["ok"]: return valid["message"]
+        slot=valid["slot"]; self._publish_item_event("before_item_equip", item, character_id=character_id, equipped_slot=slot)
+        conflicts=[slot] + (["main_hand","off_hand"] if slot=="both_hands" else ["both_hands"] if slot in {"main_hand","off_hand"} else [])
+        for eq in self.find_equipped_items(character_id):
+            if eq.get("equipped_slot") in conflicts: self.move_item(eq["instance_id"], "character", character_id)
+        moved=self.move_item(item["instance_id"], "equipment", character_id, equipped_slot=slot); self._publish_item_event("item_equipped", moved, character_id=character_id, equipped_slot=slot); self._publish_item_event("equipment_changed", moved, character_id=character_id); self._publish_item_event("inventory_changed", moved, character_id=character_id); self._publish_item_event("after_item_equip", moved, character_id=character_id, equipped_slot=slot); return f"You equip {moved['name']} on {slot.replace('_',' ')}."
+
+    def unequip_item(self, character_id: str, query_or_slot: str) -> str:
+        equipped=self.find_equipped_items(character_id); q=query_or_slot.lower().strip(); matches=[i for i in equipped if i.get("equipped_slot")==q]
+        res={"status":"ok","item":matches[0]} if len(matches)==1 else self.resolve_item_keywords(query_or_slot, equipped)
+        if res["status"] != "ok": return self._resolve_message(res, "You aren't using that.")
+        item=res["item"]; self._publish_item_event("before_item_remove", item, character_id=character_id); moved=self.move_item(item["instance_id"], "character", character_id); self._publish_item_event("item_removed", moved, character_id=character_id); self._publish_item_event("equipment_changed", moved, character_id=character_id); self._publish_item_event("inventory_changed", moved, character_id=character_id); self._publish_item_event("after_item_remove", moved, character_id=character_id); return f"You remove {moved['name']}."
+
+    def _handle_item_command(self, char: MudCharacter, command: str, cmd: str, args: list[str]):
+        from engine.mud_commands import CommandResult
+        q=" ".join(args).strip()
+        if cmd in {"inventory"}: return CommandResult(self._render_inventory(char.id))
+        if cmd in {"equipment"}: return CommandResult(self._render_equipment(char.id))
+        if cmd in {"get","take"}: return CommandResult(self.pickup_item(char.id, char.room_id, q) if q else "Get what?")
+        if cmd=="drop": return CommandResult(self.drop_item(char.id, q) if q else "Drop what?")
+        if cmd=="wear": return CommandResult(self.equip_item(char.id, q, self._preferred_slot(q,"wear")) if q else "Wear what?")
+        if cmd=="wield": return CommandResult(self.equip_item(char.id, q, self._preferred_slot(q,"wield")) if q else "Wield what?")
+        if cmd=="hold": return CommandResult(self.equip_item(char.id, q, self._preferred_slot(q,"hold")) if q else "Hold what?")
+        if cmd in {"remove","unwield"}: return CommandResult(self.unequip_item(char.id, q or ("main_hand" if cmd=="unwield" else "")) if q or cmd=="unwield" else "Remove what?")
+        if cmd in {"look","examine"} and q: return CommandResult(self._look_item(char.id, char.room_id, q))
+        return None
+
+    def _preferred_slot(self, query: str, mode: str) -> str | None:
+        if mode == "wield": return "main_hand"
+        if mode == "hold": return "light"
+        return None
+
+    def _render_inventory(self, character_id: str) -> str:
+        items=self.find_inventory_items(character_id)
+        return "You are carrying nothing." if not items else "You are not carrying anything.\nYou are carrying:\n" + "\n".join(f"  {i['name']}" + (f" x{i['stack_count']}" if i.get('stack_count',1)>1 else "") for i in items)
+
+    def _render_equipment(self, character_id: str) -> str:
+        equipped = self.find_equipped_items(character_id)
+        by={i.get("equipped_slot"): i for i in equipped}
+        prefix = "" if equipped else "You are not wearing anything.\n"
+        return prefix + "Equipment:\n" + "\n".join(f"  {s.replace('_',' ').title()}: {by[s]['name'] if s in by else 'nothing'}" for s in self.EQUIPMENT_SLOTS)
+
+    def _look_item(self, character_id: str, room_id: str, query: str) -> str:
+        res=self.resolve_item_keywords(query, self.get_visible_room_items(room_id)+self.find_inventory_items(character_id)+self.find_equipped_items(character_id))
+        if res["status"] != "ok": return self._resolve_message(res, "You don't see that.")
+        t=res["item"].get("template",{}); return str(t.get("long_description") or t.get("short_description") or res["item"]["name"])
+
+    def _resolve_message(self, res: dict[str, Any], missing: str) -> str:
+        if res.get("status") == "ambiguous": return "Which do you mean: " + ", ".join(i["name"] for i in res.get("matches", [])) + "?"
+        return missing
+
+    def _publish_item_event(self, name: str, item: dict[str, Any] | None, **extra: Any) -> None:
+        payload={"world_id": self.active_world_id or "", **(extra or {})}
+        if item: payload.update({"template_id": item.get("template_id"), "instance_id": item.get("instance_id"), "owner_type": item.get("owner_type"), "owner_id": item.get("owner_id"), "room_id": extra.get("room_id", item.get("room_id")), "equipped_slot": extra.get("equipped_slot", item.get("equipped_slot"))})
+        self.event_bus.publish(name, payload, source_system="runtime", world_id=self.active_world_id or "", character_id=payload.get("character_id", ""), room_id=payload.get("room_id", ""))
+
+    def _spawn_starter_items(self, character_id: str) -> None:
+        if self.find_inventory_items(character_id) or self.find_equipped_items(character_id): return
+        for tid,t in self.item_templates.items():
+            if t.get("starter"):
+                item=self.spawn_item(tid,"character",owner_id=character_id,stack_count=int(t.get("starter_quantity") or 1))
+                slot=t.get("starter_equipped_slot")
+                if slot and self.validate_equipment(character_id,item,slot).get("ok"): self.move_item(item["instance_id"],"equipment",character_id,equipped_slot=slot)
+
+    def _seed_room_items(self) -> None:
+        if not self.active_world_id: return
+        now=datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.state_store.db_path) as conn:
+            for room in getattr(self.active_world,"rooms",[]) or []:
+                rid=str(room.get("id") or "")
+                for idx, oid in enumerate(room.get("objects",[]) or []):
+                    tid=str(oid.get("template_id") or oid.get("id") if isinstance(oid,dict) else oid)
+                    if tid not in self.item_templates: continue
+                    seed=f"{idx}:{tid}"
+                    try: conn.execute("INSERT INTO room_item_seeds(world_id,room_id,template_id,seed_key,created_at) VALUES(?,?,?,?,?)", (self.active_world_id,rid,tid,seed,now))
+                    except sqlite3.IntegrityError: continue
+                    iid=f"item_{uuid.uuid4().hex}"
+                    conn.execute("INSERT INTO item_instances(instance_id,world_id,template_id,owner_type,owner_id,room_id,equipped_slot,stack_count,condition,durability,created_at,updated_at,custom_flags,plugin_data) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (iid,self.active_world_id,tid,"room","",rid,"",1,"normal",100,now,now,"{}","{}"))
 
     def _character_payload(self, char: MudCharacter, world_id: str) -> dict[str, Any]:
         return {

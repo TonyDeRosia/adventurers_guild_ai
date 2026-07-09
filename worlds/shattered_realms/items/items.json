@@ -243,7 +243,7 @@
     "id": "wooden_shield",
     "name": "wooden shield",
     "type": "armor",
-    "slot": "body",
+    "slot": "off_hand",
     "rarity": "common",
     "value": 5,
     "weight": 1,
@@ -253,6 +253,13 @@
     "description": "wooden shield for beginner Smart MUD play.",
     "tags": [
       "starter"
+    ],
+    "wear_slots": [
+      "off_hand"
+    ],
+    "keywords": [
+      "wooden",
+      "shield"
     ]
   },
   {
@@ -349,6 +356,13 @@
     "description": "torch for beginner Smart MUD play.",
     "tags": [
       "starter"
+    ],
+    "wear_slots": [
+      "light"
+    ],
+    "keywords": [
+      "torch",
+      "light"
     ]
   },
   {
@@ -587,9 +601,14 @@
     "stats": {},
     "effects": {},
     "description": "old gate for beginner Smart MUD play.",
-    "tags": [
-      "starter"
-    ]
+    "tags": [],
+    "starter": false,
+    "keywords": [
+      "old",
+      "gate"
+    ],
+    "short_description": "old gate for beginner Smart MUD play.",
+    "long_description": "old gate for beginner Smart MUD play."
   },
   {
     "id": "fountain",
@@ -603,9 +622,13 @@
     "stats": {},
     "effects": {},
     "description": "fountain for beginner Smart MUD play.",
-    "tags": [
-      "starter"
-    ]
+    "tags": [],
+    "starter": false,
+    "keywords": [
+      "fountain"
+    ],
+    "short_description": "fountain for beginner Smart MUD play.",
+    "long_description": "fountain for beginner Smart MUD play."
   },
   {
     "id": "notice_board",
@@ -619,8 +642,88 @@
     "stats": {},
     "effects": {},
     "description": "notice board for beginner Smart MUD play.",
-    "tags": [
-      "starter"
-    ]
+    "tags": [],
+    "starter": false,
+    "keywords": [
+      "notice",
+      "board"
+    ],
+    "short_description": "notice board for beginner Smart MUD play.",
+    "long_description": "notice board for beginner Smart MUD play."
+  },
+  {
+    "id": "traveler_pack",
+    "name": "Traveler's Pack",
+    "keywords": [
+      "traveler",
+      "pack",
+      "backpack"
+    ],
+    "short_description": "A sturdy traveler's pack rests here.",
+    "long_description": "A sturdy traveler's pack with weathered straps.",
+    "item_type": "container",
+    "weight": 1,
+    "value": 2,
+    "wear_slots": [
+      "back"
+    ],
+    "rarity": "common",
+    "starter": true
+  },
+  {
+    "id": "rusty_sword",
+    "name": "Rusty Sword",
+    "keywords": [
+      "rusty",
+      "sword"
+    ],
+    "short_description": "A rusty sword lies here.",
+    "long_description": "A rusty sword with a nicked but usable edge.",
+    "item_type": "weapon",
+    "weight": 2,
+    "value": 3,
+    "wear_slots": [
+      "main_hand"
+    ],
+    "rarity": "common",
+    "starter": true
+  },
+  {
+    "id": "cloth_tunic",
+    "name": "Cloth Tunic",
+    "keywords": [
+      "cloth",
+      "tunic"
+    ],
+    "short_description": "A simple cloth tunic is here.",
+    "long_description": "A simple cloth tunic suitable for new adventurers.",
+    "item_type": "armor",
+    "weight": 1,
+    "value": 1,
+    "wear_slots": [
+      "body"
+    ],
+    "rarity": "common",
+    "starter": true
+  },
+  {
+    "id": "small_lantern",
+    "name": "Small Lantern",
+    "keywords": [
+      "small",
+      "lantern",
+      "light"
+    ],
+    "short_description": "A small lantern sits here.",
+    "long_description": "A small lantern with enough oil for a cautious journey.",
+    "item_type": "light",
+    "weight": 1,
+    "value": 2,
+    "wear_slots": [
+      "light",
+      "off_hand"
+    ],
+    "rarity": "common",
+    "starter": true
   }
 ]

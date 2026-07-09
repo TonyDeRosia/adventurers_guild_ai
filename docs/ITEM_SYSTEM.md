@@ -358,3 +358,11 @@ Phase 2E is complete when:
 - Future systems can reuse this architecture without schema redesign.
 
 Combat, AI, Builder Mode gameplay, crafting, shops, quests, and spells remain intentionally unimplemented.
+
+## Phase 2E Implementation Notes
+
+The initial Phase 2E runtime implementation keeps item ownership in `MudRuntime` and persists mutable runtime item instances in SQLite `item_instances`. Compatibility tables from earlier phases may still exist, but item commands use the canonical runtime item API rather than writing ownership rows directly.
+
+World package item records are normalized at load time into immutable template mappings. Legacy Shattered Realms fields such as `type`, `slot`, and `description` are normalized to `item_type`, `wear_slots`, and `long_description` without mutating package records during command execution.
+
+Plugins may observe EventBus item events in this phase. A full plugin item-behavior API is intentionally deferred, and plugins must not bypass `MudRuntime` ownership APIs.

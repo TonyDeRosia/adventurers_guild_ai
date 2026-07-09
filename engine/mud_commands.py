@@ -65,6 +65,13 @@ DETERMINISTIC_COMMANDS = {
     "southwest": {"category": "movement", "aliases": ["sw"], "admin": False},
     "look": {"category": "movement", "aliases": ["l"], "admin": False},
     "examine": {"category": "movement", "admin": False},
+    "get": {"category": "item", "aliases": ["take"], "admin": False},
+    "drop": {"category": "item", "admin": False},
+    "wear": {"category": "item", "admin": False},
+    "remove": {"category": "item", "aliases": ["rem"], "admin": False},
+    "wield": {"category": "item", "admin": False},
+    "unwield": {"category": "item", "admin": False},
+    "hold": {"category": "item", "admin": False},
     "say": {"category": "communication", "admin": False},
     "emote": {"category": "communication", "admin": False},
     

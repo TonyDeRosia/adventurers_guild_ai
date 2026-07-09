@@ -86,3 +86,7 @@ Phase 2E item ownership is centralized in `MudRuntime`. Runtime item templates a
 All object interactions must use the canonical runtime item API documented in `docs/ITEM_SYSTEM.md`. Ownership transfers flow through `transfer_item()`, whether initiated by `get`, `take`, `drop`, `wear`, `remove`, `wield`, future shops, future trading, future Builder Mode tools, or plugins. Equipment is an ownership state of the same item instance, not a duplicate inventory copy.
 
 Room rendering must use runtime room inventory and render sections in this order: room title, room description, exits, visible NPCs, visible players, visible objects, and prompt. Equipped items and carried inventory items must never appear as room objects.
+
+### Phase 2E runtime implementation note
+
+`MudRuntime` now exposes the canonical item API and owns template normalization, SQLite-backed item instances, starter spawning, room seeding, inventory/equipment commands, keyword resolution, equipment conflict handling, and item EventBus publishing. Transports continue to call runtime command handling only.

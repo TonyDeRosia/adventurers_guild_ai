@@ -74,3 +74,7 @@ The item system publishes deterministic EventBus events from the runtime item pi
 Item event payloads should include account, session, character, room, template, instance, and transport identifiers when they are available. Future plugins may observe predictable before/after stages, but they may not replace runtime ownership, write item ownership directly to SQLite, duplicate inventory logic, or bypass `transfer_item()`.
 
 A pickup flow should publish in deterministic order: `before_item_pickup`, `item_picked_up`, `inventory_changed`, `room_inventory_changed`, `after_item_pickup`, `room_rendered`, `prompt_rendered`, and `transport_response_sent`.
+
+### Phase 2E implementation note
+
+Item events are emitted by `MudRuntime` from the canonical item pipeline. Pickup order is `before_item_pickup`, `item_picked_up`, `inventory_changed`, `room_inventory_changed`, and `after_item_pickup`; drop/equip/remove use analogous before/core/change/after ordering.

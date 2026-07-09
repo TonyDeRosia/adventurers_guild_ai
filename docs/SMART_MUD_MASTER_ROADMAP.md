@@ -125,3 +125,7 @@ The runtime remains the sole authority over item ownership. World packages defin
 Required work includes the canonical `MudRuntime` item API (`spawn_item()`, `transfer_item()`, `pickup_item()`, `drop_item()`, `equip_item()`, `unequip_item()`, keyword resolution, visible-room-item lookup, and equipment validation), deterministic EventBus item events, room rendering of real runtime objects, aliases for inventory/equipment/object commands, and focused tests for persistence, starter items, keyword matching, transfer behavior, web output, and telnet output.
 
 Phase 2E explicitly does not implement combat, AI behavior, Builder Mode gameplay, crafting, banking, shops, quests, spells, skills, NPC AI, or playable world expansion beyond existing Shattered Realms data.
+
+### Phase 2E implementation status
+
+Phase 2E has an initial runtime implementation: persistent item instances, starter item spawning, runtime room object seeding, inventory/equipment/get/drop/wear/remove/wield/unwield/hold/look-object/examine-object command handling, centralized keyword matching, and deterministic item events. Deferred systems remain out of scope.
