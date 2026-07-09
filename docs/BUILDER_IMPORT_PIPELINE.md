@@ -91,3 +91,7 @@ builder import apply my_area.json --merge
 ## Starter Guildlands Content Pack v1
 
 The built-in template `starter_guildlands_content_pack_v1.json` can be copied with `builder template copy starter_guildlands_content_pack_v1.json copied_pack.json`, validated with `builder import validate copied_pack.json`, previewed with `builder import preview copied_pack.json`, and applied with `builder import apply copied_pack.json`. It is a merge-style Builder draft bundle using `areas`, `zones`, `rooms`, `features`, `items`, `entities`, and `spawns`.
+
+## Phase 4H localized Builder lists
+
+Builder list commands are local by default: `alist` shows the current area, `zlist` shows the current area's zones, and `rlist`/`rooms` shows the current zone's rooms. Use explicit `all`, `area <area_id>`, `zone <zone_id>`, or VNUM ranges such as `1000-1029` to broaden or focus results. See `docs/BUILDER_LIST_COMMANDS.md`.

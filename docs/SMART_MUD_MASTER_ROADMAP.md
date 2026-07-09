@@ -298,3 +298,7 @@ No combat, AI, quests, shops, skills, classes, spells, or visual Builder UI were
 ## Phase 4H - Starter Guildlands Content Pack v1
 
 Added a Builder-importable Starter Guildlands content pack with 44 draft rooms, room features, reusable features, starter-safe item templates, entity templates with future AI metadata, and spawn placeholders. The phase proves external JSON worldbuilding through Builder import/export without implementing combat, quests, shops, skills, spells, classes, visual Builder UI, AI behavior, or live package changes.
+
+## Phase 4H localized Builder lists
+
+Builder list commands are local by default: `alist` shows the current area, `zlist` shows the current area's zones, and `rlist`/`rooms` shows the current zone's rooms. Use explicit `all`, `area <area_id>`, `zone <zone_id>`, or VNUM ranges such as `1000-1029` to broaden or focus results. See `docs/BUILDER_LIST_COMMANDS.md`.

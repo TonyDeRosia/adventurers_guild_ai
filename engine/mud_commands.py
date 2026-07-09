@@ -514,7 +514,10 @@ Available commands:
             resolved = self.resolve_alias(topic) or topic
             meta = self.registry.commands.get(resolved)
             self._publish("command_help_requested", character, raw, topic=topic, resolved_command=resolved)
-            if meta:
+            builder_help = self._builder_list_help(resolved)
+            if builder_help:
+                narrative = builder_help
+            elif meta:
                 narrative = f"Command: {meta.command}\nPurpose: {meta.long_help or meta.short_help}\nUsage: {meta.usage or meta.command}\nAliases: {', '.join(meta.aliases) if meta.aliases else 'none'}\nCategory: {meta.category}\nStatus: {meta.status}"
             else:
                 narrative = f"Help on '{topic}' is not available."
@@ -701,36 +704,135 @@ Available commands:
         if rid in drafts.get("rooms",{}): return None,None,f"Room ID already exists: {rid}"
         return rid,v,None
 
+    def _builder_list_help(self, cmd: str) -> str:
+        helps = {
+            "alist": "Builder area list usage:\nalist              current area\nalist current      current area\nalist all          all areas\nalist <area_id>    area detail",
+            "areas": "Builder area list usage:\nareas              current area\nareas current      current area\nareas all          all areas\nareas <area_id>    area detail",
+            "zlist": "Builder zone list usage:\nzlist              zones in current area\nzlist current      current zone, or current area zones\nzlist all          all zones\nzlist area <area_id>\nzlist <area_id>|<zone_id>\nzlist 1000-1099    zones overlapping range\nzlist 1000 1099    zones overlapping range",
+            "zones": "Builder zone list usage:\nzones              zones in current area\nzones all          all zones\nzones area <area_id>\nzones 1000-1099    zones overlapping range",
+            "rlist": "Builder room list usage:\nrlist              rooms in current zone\nrlist current      current room\nrlist all          all rooms\nrlist zone <zone_id>\nrlist area <area_id>\nrlist <area_id>|<zone_id>|<vnum>\nrlist 1000-1099    rooms by vnum range\nrlist 1000 1099    rooms by vnum range",
+            "rooms": "Builder room list usage:\nrooms              rooms in current zone\nrooms all          all rooms\nrooms draft [all]  draft rooms local by default\nrooms live [all]   live rooms local by default\nrooms area <area_id>\nrooms zone <zone_id>\nrooms unassigned   legacy/unassigned rooms\nrooms legacy       legacy/unassigned rooms\nrooms 1000-1099    rooms by vnum range",
+            "mlist": "Builder mob list usage:\nmlist              current zone mobs/templates when implemented\nmlist all\nmlist zone <zone_id>\nmlist 1500-1599",
+            "olist": "Builder object list usage:\nolist              current zone objects/templates when implemented\nolist all\nolist zone <zone_id>\nolist 1300-1399",
+        }
+        return helps.get(cmd, "")
+
+    def _parse_list_filter(self, args: list[str]) -> tuple[str, Any, str]:
+        if not args: return "current", None, ""
+        low=[a.lower() for a in args]
+        if low[0] in {"all","current","unassigned","legacy","draft","live"}: return low[0], (low[1:] if len(low)>1 else None), ""
+        if low[0] in {"area","zone"}: return (low[0], args[1], "") if len(args)==2 else ("error", None, f"Usage: {low[0]} <{low[0]}_id>")
+        if len(args)==2 and all(a.isdigit() for a in args):
+            a,b=int(args[0]),int(args[1]); return ("range", (a,b), "") if a<=b else ("error", None, "Invalid range: start must be less than or equal to end.")
+        if len(args)==1:
+            tok=args[0]
+            if re.fullmatch(r"\d+-\d+", tok):
+                a,b=map(int,tok.split("-")); return ("range", (a,b), "") if a<=b else ("error", None, "Invalid range: start must be less than or equal to end.")
+            if re.fullmatch(r"\d+-\D.*|\D.*-\d+|\d+-.+", tok): return "error", None, "Invalid range. Usage: rlist 1000-1099 or rlist 1000 1099."
+            if tok.isdigit(): return "number", int(tok), ""
+            return "id", tok, ""
+        return "error", None, "Invalid list filter. Use all, current, area <area_id>, zone <zone_id>, <id>, <number>, <start>-<end>, or <start> <end>."
+
+    def _current_area_zone(self, character: Any, drafts: dict[str,Any]) -> tuple[str,str]:
+        rid=str(getattr(character,"room_id","") or ""); room=drafts.get("rooms",{}).get(rid,{})
+        return (str(room.get("area_id") or getattr(character,"current_area_id","") or ""), str(room.get("zone_id") or getattr(character,"current_zone_id","") or ""))
+
+    def _list_warn(self, lines: list[str], count: int) -> None:
+        if count > 50: lines.append(f"Large listing: {count} records. Use a zone, area, or vnum range filter to narrow results.")
+
+    def _emit_list_event(self, character: Any, command: str, scope: str, filter_type: str, count: int=0, area_id: str="", zone_id: str="", rng: tuple[int,int]|None=None, invalid: bool=False) -> None:
+        bus = getattr(self.builder, "event_bus", None)
+        if not bus: return
+        payload = {"command": command, "scope": scope, "filter_type": filter_type, "area_id": area_id, "zone_id": zone_id, "vnum_start": (rng or (None, None))[0], "vnum_end": (rng or (None, None))[1], "result_count": count, "actor": str(getattr(character, "id", "")), "world_id": self.builder.world_id(character)}
+        bus.publish("builder_list_filter_invalid" if invalid else "builder_list_rendered", payload, source_system="builder")
+        if count > 50: bus.publish("builder_list_large_result_warning", payload, source_system="builder")
+
+    def _area_line(self, aid: str, a: dict[str,Any], drafts: dict[str,Any], cur: str) -> str:
+        rc=sum(1 for r in drafts.get("rooms",{}).values() if r.get("area_id")==aid); zc=sum(1 for z in drafts.get("zones",{}).values() if z.get("area_id")==aid)
+        return f"{aid} | {a.get('name','')} | {a.get('room_vnum_start') or a.get('vnum_start')}-{a.get('room_vnum_end') or a.get('vnum_end')} | {rc} | {zc} | draft | {'*' if aid==cur else ''}"
+
+    def _cmd_list_areas(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        cmd=raw.split()[0].lower(); drafts=self.builder.load(self.builder.world_id(character)); areas=drafts.get("areas",{}); cur_area,_=self._current_area_zone(character,drafts)
+        f,val,err=self._parse_list_filter(args)
+        if f=="error": self._emit_list_event(character,cmd,"area","invalid",invalid=True); return CommandResult(err+"\n"+self._builder_list_help(cmd), ok=False)
+        if f in {"current"}:
+            if not cur_area: return CommandResult('No current area selected.\nUse "alist all" to list all areas.\nUse "aset current <area_id>" to select one.', ok=False)
+            ids=[cur_area]; tail=['Use "alist all" to list all areas.']
+        elif f=="all": ids=sorted(areas); tail=[]
+        elif f=="id" and val in areas: ids=[val]; tail=[]
+        else: return CommandResult(f"Area not found: {val}", ok=False)
+        lines=["Areas:", "ID | Name | Range | Rooms | Zones | Source | Current"]+[self._area_line(aid,areas[aid],drafts,cur_area) for aid in ids if aid in areas]
+        if len(ids)==1 and ids[0] in areas:
+            a=areas[ids[0]]; lines += ["", "Area detail:", f"room_vnum_start-room_vnum_end: {a.get('room_vnum_start')}-{a.get('room_vnum_end')}", f"object_vnum_start-object_vnum_end: {a.get('object_vnum_start')}-{a.get('object_vnum_end')}", f"mob_vnum_start-mob_vnum_end: {a.get('mob_vnum_start')}-{a.get('mob_vnum_end')}", f"spawn_vnum_start-spawn_vnum_end: {a.get('spawn_vnum_start')}-{a.get('spawn_vnum_end')}", f"tags: {a.get('tags') or []}", f"flags: {a.get('flags') or []}", f"plugin_data: {list((a.get('plugin_data') or {}).keys()) or 'none'}"]
+        lines += tail; self._list_warn(lines,len(ids)); self._emit_list_event(character,cmd,"area",f,len(ids),area_id=cur_area)
+        return CommandResult("\n".join(lines))
+
+    def _zone_line(self, zid: str, z: dict[str,Any], drafts: dict[str,Any], cur: str) -> str:
+        rc=sum(1 for r in drafts.get("rooms",{}).values() if r.get("zone_id")==zid)
+        return f"{zid} | {z.get('area_id')} | {z.get('name','')} | {z.get('vnum_start')}-{z.get('vnum_end')} | {rc} | draft | {'*' if zid==cur else ''}"
+
+    def _cmd_list_zones(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        cmd=raw.split()[0].lower(); drafts=self.builder.load(self.builder.world_id(character)); zones=drafts.get("zones",{}); areas=drafts.get("areas",{}); cur_area,cur_zone=self._current_area_zone(character,drafts); sel=getattr(character,"current_area_id","") or ""
+        f,val,err=self._parse_list_filter(args)
+        if f=="error": self._emit_list_event(character,cmd,"zone","invalid",invalid=True); return CommandResult(err+"\n"+self._builder_list_help(cmd), ok=False)
+        note=[]
+        if f=="all": ids=sorted(zones)
+        elif f=="current" and cur_zone: ids=[cur_zone]
+        elif f=="current": ids=sorted([z for z,r in zones.items() if r.get("area_id")==cur_area])
+        elif f=="area": ids=sorted([z for z,r in zones.items() if r.get("area_id")==val])
+        elif f=="id" and val in areas: ids=sorted([z for z,r in zones.items() if r.get("area_id")==val])
+        elif f=="id" and val in zones: ids=[val]
+        elif f=="range": a,b=val; ids=sorted([z for z,r in zones.items() if int(r.get("vnum_start") or 0) <= b and int(r.get("vnum_end") or 0) >= a])
+        else: return CommandResult(f"Zone or area not found: {val}", ok=False)
+        if not args and cur_area and sel and cur_area!=sel: note=[f"Showing zones for current location area: {cur_area}.", f"Selected builder area is {sel}."]
+        lines=note+["Zones:", "ID | Area | Name | Range | Rooms | Source | Current"]+[self._zone_line(z,zones[z],drafts,cur_zone) for z in ids]
+        if len(ids)==1 and ids[0] in zones:
+            z=zones[ids[0]]; lines += ["", "Zone detail:", f"room_ids count: {len(z.get('room_ids') or [])}", f"vnum_start: {z.get('vnum_start')}", f"vnum_end: {z.get('vnum_end')}", f"tags: {z.get('tags') or []}", f"flags: {z.get('flags') or []}", f"plugin_data: {list((z.get('plugin_data') or {}).keys()) or 'none'}"]
+        self._list_warn(lines,len(ids)); self._emit_list_event(character,cmd,"zone",f,len(ids),area_id=cur_area,zone_id=cur_zone,rng=val if f=="range" else None)
+        return CommandResult("\n".join(lines))
+
     def _cmd_builder_nav(self, character: Any, args: list[str], raw: str) -> CommandResult:
         runtime = getattr(self, "runtime", None)
         cmd = raw.strip().split()[0].lower()
         if runtime and hasattr(runtime, "_builder_nav_command"):
             res = runtime._builder_nav_command(character, cmd, args, raw)
-            if res is not None:
-                return res
-        if cmd in {"areas", "alist"}:
-            return self._cmd_area(character, args, raw)
-        if cmd in {"zones", "zlist"}:
-            return self._cmd_zone(character, args, raw)
+            if res is not None: return res
+        if cmd in {"areas", "alist"}: return self._cmd_list_areas(character, args, raw)
+        if cmd in {"zones", "zlist"}: return self._cmd_list_zones(character, args, raw)
         if cmd in {"rooms","rlist"}:
-            drafts=self.builder.load(self.builder.world_id(character)); rooms=drafts.get("rooms",{}); mode=args[0].lower() if args else "context"; val=args[1] if len(args)>1 else ""
-            title="Draft Rooms"
-            if mode in {"unassigned","legacy"}:
-                title="Legacy / Unassigned Rooms"
-                rooms={k:r for k,r in rooms.items() if not r.get("area_id") and not r.get("zone_id") and r.get("vnum") is None}
-                for rid in rooms: self.builder.publish("builder_room_legacy_warning", character, self.builder.world_id(character), "room", rid, command=raw)
-            elif mode=="area": rooms={k:r for k,r in rooms.items() if r.get("area_id")==val}
-            elif mode=="zone": rooms={k:r for k,r in rooms.items() if r.get("zone_id")==val}
-            elif mode in {"all","draft"}: pass
-            elif mode=="live": rooms={}
-            elif getattr(character,"current_zone_id",""): rooms={k:r for k,r in rooms.items() if r.get("zone_id")==getattr(character,"current_zone_id","")}
-            elif getattr(character,"current_area_id",""): rooms={k:r for k,r in rooms.items() if r.get("area_id")==getattr(character,"current_area_id","")}
-            lines=[title, "ID | Name | Exits | Markers | Area | Zone | VNUM | Source"]
-            for rid,r in sorted(rooms.items()):
-                markers=[]
+            drafts=self.builder.load(self.builder.world_id(character)); allrooms=drafts.get("rooms",{}); zones=drafts.get("zones",{}); areas=drafts.get("areas",{}); cur_area,cur_zone=self._current_area_zone(character,drafts)
+            f,val,err=self._parse_list_filter(args); source_filter=""
+            if f in {"draft","live"}: source_filter=f; f = "all" if val and "all" in val else "current"
+            if f=="error": self._emit_list_event(character,cmd,"room","invalid",invalid=True); return CommandResult(err+"\n"+self._builder_list_help(cmd), ok=False)
+            rooms=allrooms; title="Rooms"
+            if f=="all": pass
+            elif f=="current":
+                if args and args[0].lower()=="current": rooms={k:r for k,r in rooms.items() if k==getattr(character,"room_id","")}; title=f"Current room in zone {cur_zone}"
+                elif cur_zone: rooms={k:r for k,r in rooms.items() if r.get("zone_id")==cur_zone}; title=f"Rooms in zone {cur_zone} ({zones.get(cur_zone,{}).get('name','')}), area {cur_area}."
+                else: return CommandResult('No current zone selected.\nUse "rlist all" to list all rooms.\nUse "zlist" to list zones.\nUse "zset current <zone_id>" to select one.', ok=False)
+            elif f=="unassigned" or f=="legacy": rooms={k:r for k,r in rooms.items() if not r.get("area_id") and not r.get("zone_id") and r.get("vnum") is None}; title="Legacy / Unassigned Rooms"
+            elif f=="area": rooms={k:r for k,r in rooms.items() if r.get("area_id")==val}; title=f"Rooms in area {val}"
+            elif f=="zone": rooms={k:r for k,r in rooms.items() if r.get("zone_id")==val}; title=f"Rooms in zone {val}"
+            elif f=="id" and val in zones: rooms={k:r for k,r in rooms.items() if r.get("zone_id")==val}; title=f"Rooms in zone {val}"
+            elif f=="id" and val in areas: rooms={k:r for k,r in rooms.items() if r.get("area_id")==val}; title=f"Rooms in area {val}"
+            elif f=="range": a,b=val; rooms={k:r for k,r in rooms.items() if r.get("vnum") is not None and a <= int(r.get("vnum")) <= b}; title=f"Rooms in vnum range {a}-{b}"
+            elif f=="number":
+                matches={k:r for k,r in rooms.items() if r.get("vnum")==val and (not cur_area or r.get("area_id")==cur_area)} or {k:r for k,r in rooms.items() if r.get("vnum")==val}
+                rooms=matches; title=f"Rooms with vnum {val}"
+            elif f=="live": rooms={}
+            else: return CommandResult(f"Room filter not found: {val}", ok=False)
+            if source_filter=="live": rooms={}; title+=" (live)"
+            lines=[title]
+            if f=="number" and len(rooms)>1: lines.append(f"Multiple rooms use vnum {val} across different areas. Use rlist area <area_id> or goto <room_id>.")
+            lines.append("ID | VNUM | Name | Exits | Area | Zone | Markers")
+            for rid,r in sorted(rooms.items(), key=lambda kv:(kv[1].get("vnum") if kv[1].get("vnum") is not None else 999999, kv[0])):
+                markers=["draft"]
                 if rid==getattr(character,"room_id",""): markers.append("current location")
                 if rid==self.builder.current_room_id(character): markers.append("current edit target")
-                lines.append(f"{rid} | {r.get('name','')} | {', '.join((r.get('exits') or {}).keys()) or 'none'} | {', '.join(markers)} | area: {r.get('area_id') or 'none'} | zone: {r.get('zone_id') or 'none'} | vnum: {r.get('vnum') if r.get('vnum') is not None else 'none'} | draft")
+                if not r.get("area_id") and not r.get("zone_id") and r.get("vnum") is None: markers.append("legacy/unassigned")
+                if r.get("area_id") and r.get("vnum") is not None and rid != f"{r.get('area_id')}_{r.get('vnum')}": markers.append("id mismatch")
+                lines.append(f"{rid} | {r.get('vnum') if r.get('vnum') is not None else 'none'} | {r.get('name','')} | {', '.join((r.get('exits') or {}).keys()) or 'none'} | {r.get('area_id') or 'none'} | {r.get('zone_id') or 'none'} | {', '.join(markers)}")
+            self._list_warn(lines,len(rooms)); self._emit_list_event(character,cmd,"room",f,len(rooms),area_id=cur_area,zone_id=cur_zone,rng=val if f=="range" else None)
             return CommandResult("\n".join(lines))
         if cmd in {"rfind","rsearch"}:
             if not args: return CommandResult("Usage: rfind <query>", ok=False)
@@ -920,9 +1022,11 @@ Available commands:
 
     def _cmd_builder_list_placeholder(self, character: Any, args: list[str], raw: str) -> CommandResult:
         cmd = raw.strip().split()[0].lower() if raw.strip() else ""
+        drafts = self.builder.load(self.builder.world_id(character))
+        _, current_zone = self._current_area_zone(character, drafts)
         if cmd == "mlist":
-            return CommandResult("Mob/entity listing is not implemented yet. Use future entity builder commands.")
-        return CommandResult("Object/item listing is not implemented yet. Use future item builder commands.")
+            return CommandResult("Mob/entity listing is not implemented yet. Mob/entity listing is not fully implemented yet.\nCurrent zone: " + (current_zone or "none") + "\nFuture usage:\nmlist\nmlist all\nmlist zone <zone_id>\nmlist 1500-1599")
+        return CommandResult("Object/item listing is not implemented yet. Object/item listing is not fully implemented yet.\nCurrent zone: " + (current_zone or "none") + "\nFuture usage:\nolist\nolist all\nolist zone <zone_id>\nolist 1300-1399")
 
     def _cmd_builder(self, character: Any, args: list[str], raw: str) -> CommandResult:
         sub = args[0].lower() if args else "status"

@@ -87,3 +87,7 @@ To exchange the organized starter layer, run `builder export`, then place the ex
 ## Phase 4G Data Contract
 
 The area/zone/vnum system is preserved as the v1-compatible organization model in `WORLD_DATA_SPECIFICATION.md`. Areas own vnum ranges, zones are reset/encounter/ambient containers, and rooms inherit broader context from zones, areas, and optional location hierarchy rather than duplicating hardcoded geography fields.
+
+## Phase 4H localized Builder lists
+
+Builder list commands are local by default: `alist` shows the current area, `zlist` shows the current area's zones, and `rlist`/`rooms` shows the current zone's rooms. Use explicit `all`, `area <area_id>`, `zone <zone_id>`, or VNUM ranges such as `1000-1029` to broaden or focus results. See `docs/BUILDER_LIST_COMMANDS.md`.

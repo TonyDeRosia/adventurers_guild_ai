@@ -236,3 +236,7 @@ When Builder Mode renders a live room that has a draft room overlay, draft featu
 ## Starter Guildlands Content Pack v1 workflow
 
 Builders can copy the starter expansion template with `builder template copy starter_guildlands_content_pack_v1.json copied_pack.json`, then run `builder import validate`, `builder import preview`, `builder import apply`, and `builder validate`. The pack expands Builder drafts only and should be reviewed before any future save/export/package step.
+
+## Phase 4H localized Builder lists
+
+Builder list commands are local by default: `alist` shows the current area, `zlist` shows the current area's zones, and `rlist`/`rooms` shows the current zone's rooms. Use explicit `all`, `area <area_id>`, `zone <zone_id>`, or VNUM ranges such as `1000-1029` to broaden or focus results. See `docs/BUILDER_LIST_COMMANDS.md`.
