@@ -31,7 +31,8 @@ class BuilderWorkspace:
         self.event_bus = event_bus
 
     def can_build(self, actor: Any) -> bool:
-        return str(getattr(actor, "role", "player")).lower() in BUILDER_ROLES
+        roles = {str(getattr(actor, "role", "player")).lower(), str(getattr(actor, "account_role", "player")).lower()}
+        return bool(roles & BUILDER_ROLES)
 
     def ensure(self, world_id: str) -> Path:
         root = self.worlds_dir / world_id / "builder"

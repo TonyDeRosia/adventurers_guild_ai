@@ -20,7 +20,9 @@ from smart_mud.world_registry import WorldRegistry
 from smart_mud.event_bus import EventBus
 from engine.plugin_system import HookRegistry, PluginRegistry
 
-VALID_ROLES = {"player", "builder", "immortal", "admin"}
+VALID_ROLES = {"player", "helper", "builder", "admin", "owner"}
+BUILDER_ROLES = {"builder", "admin", "owner"}
+ADMIN_ROLES = {"admin", "owner"}
 
 def slugify_name(name: str) -> str:
     slug = re.sub(r"[^a-z0-9-]+", "_", name.lower().strip())
@@ -36,6 +38,9 @@ def validate_character_name(name: str) -> str:
         raise ValueError("Character names may contain letters, spaces, and hyphens.")
     return cleaned
 
+def role_rank(role: str) -> int:
+    return {"player": 0, "helper": 1, "builder": 2, "admin": 3, "owner": 4}.get(str(role or "player").lower(), 0)
+
 def _role(subject: Any) -> str:
     return str(getattr(subject, "role", subject.get("role", "player") if isinstance(subject, dict) else subject) or "player")
 
@@ -46,13 +51,13 @@ def _permission_checked(subject: Any, permission: str, allowed: bool) -> bool:
     return allowed
 
 def is_player(subject: Any) -> bool: return _permission_checked(subject, "is_player", _role(subject) in VALID_ROLES)
-def is_builder(subject: Any) -> bool: return _permission_checked(subject, "is_builder", _role(subject) in {"builder", "immortal", "admin"})
-def is_immortal(subject: Any) -> bool: return _permission_checked(subject, "is_immortal", _role(subject) in {"immortal", "admin"} or int(getattr(subject, "immortal_level", subject.get("immortal_level", 0) if isinstance(subject, dict) else 0) or 0) > 0)
-def is_admin(subject: Any) -> bool: return _permission_checked(subject, "is_admin", _role(subject) == "admin")
-def can_build(subject: Any) -> bool: return _permission_checked(subject, "can_build", _role(subject) in {"builder", "immortal", "admin"} or bool(getattr(subject, "builder_enabled", subject.get("builder_enabled", False) if isinstance(subject, dict) else False)))
-def can_use_wizhelp(subject: Any) -> bool: return _permission_checked(subject, "can_use_wizhelp", _role(subject) in {"immortal", "admin"} or int(getattr(subject, "immortal_level", subject.get("immortal_level", 0) if isinstance(subject, dict) else 0) or 0) > 0)
-def can_edit_world_package(subject: Any) -> bool: return _permission_checked(subject, "can_edit_world_package", _role(subject) == "admin")
-def can_manage_accounts(subject: Any) -> bool: return _permission_checked(subject, "can_manage_accounts", _role(subject) == "admin")
+def is_builder(subject: Any) -> bool: return _permission_checked(subject, "is_builder", _role(subject) in BUILDER_ROLES)
+def is_immortal(subject: Any) -> bool: return _permission_checked(subject, "is_immortal", _role(subject) in ADMIN_ROLES or int(getattr(subject, "immortal_level", subject.get("immortal_level", 0) if isinstance(subject, dict) else 0) or 0) > 0)
+def is_admin(subject: Any) -> bool: return _permission_checked(subject, "is_admin", _role(subject) in ADMIN_ROLES)
+def can_build(subject: Any) -> bool: return _permission_checked(subject, "can_build", _role(subject) in BUILDER_ROLES or bool(getattr(subject, "builder_enabled", subject.get("builder_enabled", False) if isinstance(subject, dict) else False)))
+def can_use_wizhelp(subject: Any) -> bool: return _permission_checked(subject, "can_use_wizhelp", _role(subject) in ADMIN_ROLES or int(getattr(subject, "immortal_level", subject.get("immortal_level", 0) if isinstance(subject, dict) else 0) or 0) > 0)
+def can_edit_world_package(subject: Any) -> bool: return _permission_checked(subject, "can_edit_world_package", _role(subject) in ADMIN_ROLES)
+def can_manage_accounts(subject: Any) -> bool: return _permission_checked(subject, "can_manage_accounts", _role(subject) in ADMIN_ROLES)
 
 
 def should_show_room_ids(subject: Any) -> bool:
@@ -84,6 +89,8 @@ class MudCharacter:
     affects: dict[str, Any] = field(default_factory=dict)
     last_input: str = ""
     last_input_time: str = ""
+    account_id: str = ""
+    account_role: str = "player"
 
 
 @dataclass
@@ -162,6 +169,19 @@ class MudStateStore:
                     role TEXT DEFAULT 'player',
                     email TEXT,
                     notes TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS role_grant_log (
+                    id INTEGER PRIMARY KEY,
+                    account_id TEXT,
+                    character_id TEXT,
+                    character_name TEXT,
+                    role TEXT,
+                    source TEXT,
+                    granted_by_account_id TEXT,
+                    granted_by_character_id TEXT,
+                    timestamp TEXT
                 )
             """)
             conn.execute("""
@@ -416,8 +436,19 @@ class MudStateStore:
             ).fetchone()
             if row:
                 data = json.loads(row[0])
+                dbrow = conn.execute("SELECT account_id, role, builder_enabled FROM characters WHERE id = ?", (char_id,)).fetchone()
+                if dbrow:
+                    data["account_id"] = dbrow[0] or data.get("account_id", "")
+                    data["role"] = dbrow[1] or data.get("role", "player")
+                    data["builder_enabled"] = bool(dbrow[2])
+                    if data["account_id"]:
+                        arow = conn.execute("SELECT role FROM accounts WHERE account_id=?", (data["account_id"],)).fetchone()
+                        if arow:
+                            data["account_role"] = arow[0] or "player"
+                            if role_rank(data["account_role"]) > role_rank(data["role"]):
+                                data["role"] = data["account_role"]
                 print(f"[mud-persistence] Loaded character {data.get('name')} ({char_id})")
-                return MudCharacter(**data)
+                return MudCharacter(**{k: v for k, v in data.items() if k in MudCharacter.__dataclass_fields__})
         return None
 
     def save_command(self, char_id: str, world_id: str, turn: int, command: str, account_id: str = "", session_id: str = "") -> None:
@@ -446,6 +477,30 @@ class MudStateStore:
                 (char_id, char_id)
             )
             conn.commit()
+
+    def grant_role(self, *, role: str, account: str = "", character: str = "", source: str = "cli", granted_by_account_id: str = "", granted_by_character_id: str = "") -> dict[str, Any]:
+        role = str(role or "").lower().strip()
+        if role not in VALID_ROLES:
+            raise ValueError(f"Invalid role {role!r}. Valid roles: {', '.join(sorted(VALID_ROLES))}.")
+        if not account and not character:
+            raise ValueError("Provide an account username/id or character name/id.")
+        with sqlite3.connect(self.db_path) as conn:
+            account_id = ""; character_id = ""; character_name = ""
+            if account:
+                row = conn.execute("SELECT account_id FROM accounts WHERE lower(username)=lower(?) OR account_id=?", (account, account)).fetchone()
+                if not row: raise ValueError(f"Account not found: {account}")
+                account_id = row[0]
+                conn.execute("UPDATE accounts SET role=?, updated_at=CURRENT_TIMESTAMP WHERE account_id=?", (role, account_id))
+            if character:
+                row = conn.execute("SELECT id,name,account_id FROM characters WHERE lower(name)=lower(?) OR id=?", (character, character)).fetchone()
+                if not row: raise ValueError(f"Character not found: {character}")
+                character_id, character_name = row[0], row[1]
+                account_id = account_id or (row[2] or "")
+                conn.execute("UPDATE characters SET role=?, builder_enabled=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", (role, 1 if role in BUILDER_ROLES else 0, character_id))
+            timestamp = datetime.now(timezone.utc).isoformat()
+            conn.execute("INSERT INTO role_grant_log(account_id,character_id,character_name,role,source,granted_by_account_id,granted_by_character_id,timestamp) VALUES(?,?,?,?,?,?,?,?)", (account_id, character_id, character_name, role, source, granted_by_account_id, granted_by_character_id, timestamp))
+            conn.commit()
+        return {"account_id": account_id, "character_id": character_id, "character_name": character_name, "role": role, "timestamp": timestamp, "source": source}
 
     def audit_builder_action(self, builder_id: str, action: str, target_type: str, 
                             target_id: str, details: dict) -> None:

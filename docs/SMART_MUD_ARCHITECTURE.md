@@ -151,3 +151,9 @@ Smart MUD supports an in-game Builder foundation for authorized `builder`, `admi
 The Builder workspace uses `audit`, `history`, `snapshots`, `exports`, `imports`, and `templates` folders. Room, exit, feature, item template, entity template, and spawn edits go through Builder services so runtime validation and permission checks remain authoritative. `builder validate` checks draft consistency; `builder save` creates a safe export; `builder reload` reloads drafts where safe; `builder snapshot` captures the current draft state; and `builder history` reads audit records.
 
 Future work may add a richer semantic web Builder UI and AI-assisted Builder tools, but Phase 4A intentionally does not add AI Builder, combat, quests, shops, or spellcasting.
+
+## Phase 4A owner bootstrap and role authority
+
+Local development owner access is explicit and SQLite-backed. No startup path silently promotes all accounts or characters. Project owners can grant themselves persisted access with `python tools/bootstrap_owner.py --account local_dev --role owner` or `python tools/bootstrap_owner.py --character Kraevok --role owner`; both target `user_data/mud_state.db` unless `--db` is provided.
+
+Runtime roles are `player`, `helper`, `builder`, `admin`, and `owner`. Account and character roles are stored separately; command execution uses the higher effective role, so an owner account can use Builder commands after restart even if the selected character was originally a player. Builder commands allow `builder`, `admin`, and `owner`; owner-only role management uses `grantrole` and records every change in the `role_grant_log` SQLite table with account, character, role, timestamp, source, and grantor metadata.

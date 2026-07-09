@@ -45,3 +45,67 @@ def test_builder_validate_catches_broken_exit():
     r = e.handle_command(c, "builder validate")
     assert not r.ok
     assert "missing room" in r.narrative
+
+from pathlib import Path
+from engine.mud_runtime import MudStateStore, MudCharacter
+
+
+def test_owner_and_builder_roles_can_enable_builder():
+    e = MudCommandEngine()
+    assert e.handle_command(char("owner"), "builder on").ok
+    assert e.handle_command(char("admin"), "builder on").ok
+    assert e.handle_command(char("builder"), "builder on").ok
+
+
+def test_whoami_shows_account_and_character_roles():
+    e = MudCommandEngine()
+    c = char("builder")
+    c.account_role = "owner"
+    r = e.handle_command(c, "whoami")
+    assert r.ok
+    assert "Account Role: owner" in r.narrative
+    assert "Character Role: builder" in r.narrative
+    assert "Effective Role: owner" in r.narrative
+
+
+def test_player_cannot_grant_roles(tmp_path: Path):
+    store = MudStateStore(tmp_path / "mud_state.db")
+    e = MudCommandEngine(state_store=store)
+    r = e.handle_command(char("player"), "grantrole Tester builder")
+    assert not r.ok
+    assert "permission" in r.narrative
+
+
+def test_bootstrap_owner_grants_owner_and_persists_after_reload(tmp_path: Path):
+    store = MudStateStore(tmp_path / "mud_state.db")
+    store.create_account = None if False else getattr(store, "create_account", None)
+    # Seed through the runtime store schema directly to mirror local accounts/characters.
+    import sqlite3
+    store._init_schema()
+    with sqlite3.connect(store.db_path) as conn:
+        conn.execute("INSERT INTO accounts(account_id,username,role) VALUES('acct_k','Kraevok','player')")
+        conn.execute("INSERT INTO characters(id,account_id,world_id,name,slug,role,immortal_level,builder_enabled,data) VALUES(?,?,?,?,?,?,?,?,?)", ('char_k','acct_k','shattered_realms','Kraevok','kraevok','player',0,0,'{"id":"char_k","name":"Kraevok","role":"player","room_id":"start"}'))
+    rec = store.grant_role(account="Kraevok", role="owner", source="cli")
+    assert rec["role"] == "owner"
+    reloaded = MudStateStore(tmp_path / "mud_state.db")
+    loaded = reloaded.load_character("char_k")
+    assert loaded.account_role == "owner"
+    assert loaded.role == "owner"
+    assert MudCommandEngine(state_store=reloaded).handle_command(loaded, "builder on").ok
+
+
+def test_owner_can_grant_builder(tmp_path: Path):
+    store = MudStateStore(tmp_path / "mud_state.db")
+    import sqlite3
+    store._init_schema()
+    with sqlite3.connect(store.db_path) as conn:
+        conn.execute("INSERT INTO accounts(account_id,username,role) VALUES('acct_target','Target','player')")
+    e = MudCommandEngine(state_store=store)
+    owner = char("owner")
+    owner.account_id = "acct_owner"
+    r = e.handle_command(owner, "grantrole Target builder")
+    assert r.ok
+    with sqlite3.connect(store.db_path) as conn:
+        assert conn.execute("SELECT role FROM accounts WHERE account_id='acct_target'").fetchone()[0] == "builder"
+        log = conn.execute("SELECT account_id,role,source FROM role_grant_log ORDER BY id DESC LIMIT 1").fetchone()
+        assert log == ("acct_target", "builder", "game")
