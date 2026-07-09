@@ -213,3 +213,8 @@ Use `builder validate` to verify the committed starter draft layer. The starting
 `builder migrate starter` remains available to reset or regenerate the starter drafts from the live Shattered Realms package. Regeneration should update the draft JSON files only; do not commit runtime audit, history, snapshot, export, local database, or user-data artifacts.
 
 To exchange the organized starter layer, run `builder export`, then place the exported bundle in the Builder import folder and run `builder import validate <file>` before applying it.
+
+
+## Phase 4G Builder Data Contract
+
+Builder mode now targets the canonical world data contract in `WORLD_DATA_SPECIFICATION.md`. Drafts remain editable overlays under `worlds/<world_id>/builder/`; imports merge into drafts first; exports produce import-compatible bundles; live package files are not mutated by Builder.

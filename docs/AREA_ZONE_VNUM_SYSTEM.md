@@ -82,3 +82,8 @@ Use `builder validate` to verify the committed starter draft layer. The starting
 `builder migrate starter` remains available to reset or regenerate the starter drafts from the live Shattered Realms package. Regeneration should update the draft JSON files only; do not commit runtime audit, history, snapshot, export, local database, or user-data artifacts.
 
 To exchange the organized starter layer, run `builder export`, then place the exported bundle in the Builder import folder and run `builder import validate <file>` before applying it.
+
+
+## Phase 4G Data Contract
+
+The area/zone/vnum system is preserved as the v1-compatible organization model in `WORLD_DATA_SPECIFICATION.md`. Areas own vnum ranges, zones are reset/encounter/ambient containers, and rooms inherit broader context from zones, areas, and optional location hierarchy rather than duplicating hardcoded geography fields.

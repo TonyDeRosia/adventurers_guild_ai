@@ -224,3 +224,8 @@ Operational commands:
 `builder migrate starter` snapshots the Builder workspace, reads the live Shattered Realms starter package, and writes normalized Builder drafts with `starter_guildlands`, starter zones, preserved room IDs, area/zone assignments, and vnums. Live world package files are not modified.
 
 Builder JSON imports are staged from `worlds/<world_id>/builder/imports/` with `builder import list`, `builder import validate <file>`, `builder import preview <file>`, and `builder import apply <file> [--merge|--replace-drafts]`. The import/export bundle contains `areas`, `zones`, `rooms`, `features`, `items`, `entities`, and `spawns` so draft data can round-trip through `builder export` and import validation.
+
+
+## Phase 4G World Data Architecture
+
+`WORLD_DATA_SPECIFICATION.md` is the canonical world data reference. The engine owns rules and validation, world packages own content, Builder drafts are editable overlays, imports apply to drafts first, and Builder does not mutate live package files. The architecture keeps area/zone/vnum organization while reserving optional future collections and a generic location hierarchy.

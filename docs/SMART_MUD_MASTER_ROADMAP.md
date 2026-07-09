@@ -276,3 +276,8 @@ Use `builder validate` to verify the committed starter draft layer. The starting
 `builder migrate starter` remains available to reset or regenerate the starter drafts from the live Shattered Realms package. Regeneration should update the draft JSON files only; do not commit runtime audit, history, snapshot, export, local database, or user-data artifacts.
 
 To exchange the organized starter layer, run `builder export`, then place the exported bundle in the Builder import folder and run `builder import validate <file>` before applying it.
+
+
+## Phase 4G: World Data Specification v1.0
+
+Before large-scale Shattered Realms expansion, Smart MUD freezes the data contract for world packages and Builder imports in `docs/WORLD_DATA_SPECIFICATION.md`. Phase 4G documents current area/zone/vnum drafts, import/export bundles, optional generic location hierarchy, profile libraries, plugin_data conventions, inheritance, validation, migration, backward compatibility, and tbaMUD design parity without adding combat, AI behavior, quests, shops, classes, skills, spells, or a visual Builder UI.
