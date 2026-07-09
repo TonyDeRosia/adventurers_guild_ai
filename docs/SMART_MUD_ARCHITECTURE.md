@@ -62,3 +62,11 @@ Clients: Smart MUD web desktop, browser, Mudlet/telnet clients
 Transport adapters must not own game rules, world state, character state, inventory, combat, or AI behavior. They only own connection handling, input/output, session metadata, and format negotiation.
 
 The built-in web desktop remains supported and continues to receive web-safe rendering. Telnet clients receive ANSI or plain text rather than HTML.
+
+## Phase 2B playability boundary
+
+Phase 2B keeps game logic centralized in `MudRuntime` and `MudCommandEngine`. Command aliases resolve to canonical deterministic handlers, while transport adapters continue to format runtime results for web HTML or ANSI/plain text without duplicating gameplay logic.
+
+Room rendering now uses loaded package room data plus runtime character location state. Visible NPCs and objects are resolved from world package records when available, with safe ID fallbacks for incomplete data. Movement commands validate current-room exits, persist character location changes in SQLite, and render the new room through the same shared display builder.
+
+Phase 2B is intentionally a playability bridge before world expansion: no combat loop, AI behavior, Builder Mode, or account system is introduced here.

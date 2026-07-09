@@ -395,7 +395,7 @@ class MudRuntime:
         char = self.state_store.load_character(character_id)
         if char is None:
             raise ValueError(f"Character not found: {character_id}")
-        result = self.command_engine.handle_command(char, command)
+        result = self._handle_runtime_command(char, command)
         session = self.sessions.get(character_id)
         turn = (session.command_count + 1) if session else 1
         self.state_store.save_command(character_id, self.active_world_id or "", turn, command)
@@ -405,6 +405,41 @@ class MudRuntime:
             session.last_activity = datetime.now(timezone.utc).isoformat()
         return {"ok": result.ok, "output": result.narrative, "view": self.play_view(character_id)}
 
+    def _handle_runtime_command(self, char: MudCharacter, command: str):
+        tokens = command.strip().split()
+        if not tokens:
+            return self.command_engine.handle_command(char, command)
+        cmd_name = self.command_engine.resolve_alias(tokens[0].lower())
+        if cmd_name in {"north", "south", "east", "west", "up", "down", "in", "out"}:
+            return self._move_character(char, cmd_name)
+        result = self.command_engine.handle_command(char, command)
+        if result.state_updates and result.state_updates.get("render_room"):
+            room = self._current_room(char)
+            result.narrative = self._room_text(room)
+        return result
+
+    def _move_character(self, char: MudCharacter, direction: str):
+        from engine.mud_commands import CommandResult
+        room = self._current_room(char)
+        for exit_data in room.exits:
+            if not isinstance(exit_data, dict):
+                continue
+            exit_direction = str(exit_data.get("direction") or exit_data.get("dir") or "").lower()
+            if exit_direction != direction:
+                continue
+            target = exit_data.get("destination_room_id") or exit_data.get("to") or exit_data.get("room_id") or exit_data.get("target")
+            if not target:
+                break
+            char.room_id = str(target)
+            self.state_store.save_character(char, self.active_world_id or "")
+            new_room = self._current_room(char)
+            return CommandResult(narrative=f"You head {direction}.\n\n{self._room_text(new_room)}")
+        return CommandResult(narrative="You cannot go that way.", ok=False)
+
+    def _room_text(self, room: MudRoom) -> str:
+        from smart_mud.transport import html_to_plain_text
+        return html_to_plain_text(render_room(room, self.get_effective_mud_colors()))
+
     def _current_room(self, char: MudCharacter) -> MudRoom:
         if self.active_world is not None:
             try:
@@ -413,14 +448,29 @@ class MudRuntime:
                     id=str(room_data.get("id", char.room_id)),
                     area_id=str(room_data.get("area_id", "")),
                     title=str(room_data.get("name") or room_data.get("title") or char.room_id),
-                    description=str(room_data.get("description", "")),
+                    description=str(room_data.get("long_description") or room_data.get("description") or room_data.get("short_description") or ""),
                     exits=list(room_data.get("exits", []) or []),
-                    npcs=list(room_data.get("npcs", []) or []),
-                    objects=list(room_data.get("objects", []) or []),
+                    npcs=self._room_npcs(room_data),
+                    objects=self._room_objects(room_data),
                 )
             except Exception:
                 pass
         return MudRoom(id=char.room_id or "void", area_id="", title="The Void", description="An unfinished room.", exits=[])
+
+    def _room_npcs(self, room_data: dict[str, Any]) -> list[Any]:
+        ids = [str(v) for v in room_data.get("npcs", []) or []]
+        direct = [npc for npc in getattr(self.active_world, "npcs", []) if str(npc.get("default_room_id") or npc.get("room_id") or "") == str(room_data.get("id"))]
+        by_id = {str(npc.get("id")): npc for npc in getattr(self.active_world, "npcs", [])}
+        records = [by_id.get(npc_id, npc_id) for npc_id in ids]
+        for npc in direct:
+            if npc not in records:
+                records.append(npc)
+        return records
+
+    def _room_objects(self, room_data: dict[str, Any]) -> list[Any]:
+        values = list(room_data.get("objects", []) or [])
+        by_id = {str(item.get("id")): item for item in getattr(self.active_world, "items", [])}
+        return [by_id.get(str(value), value) if not isinstance(value, dict) else value for value in values]
 
     def _character_payload(self, char: MudCharacter, world_id: str) -> dict[str, Any]:
         return {

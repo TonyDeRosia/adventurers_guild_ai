@@ -24,7 +24,7 @@ DETERMINISTIC_COMMANDS = {
     "score": {"category": "info", "aliases": ["sc"], "admin": False},
     "worth": {"category": "info", "admin": False},
     "finger": {"category": "info", "admin": False},
-    "inventory": {"category": "info", "aliases": ["i"], "admin": False},
+    "inventory": {"category": "info", "aliases": ["inv", "i"], "admin": False},
     "equipment": {"category": "info", "aliases": ["eq"], "admin": False},
     "spells": {"category": "info", "aliases": ["sp"], "admin": False},
     "skills": {"category": "info", "aliases": ["sk"], "admin": False},
@@ -33,8 +33,8 @@ DETERMINISTIC_COMMANDS = {
     "resists": {"category": "info", "admin": False},
     "who": {"category": "info", "admin": False},
     "where": {"category": "info", "admin": False},
-    "commands": {"category": "help", "admin": False},
-    "help": {"category": "help", "admin": False},
+    "commands": {"category": "help", "aliases": ["cmds"], "admin": False},
+    "help": {"category": "help", "aliases": ["h"], "admin": False},
     "socials": {"category": "help", "admin": False},
     "areas": {"category": "info", "admin": False},
     "map": {"category": "info", "admin": False},
@@ -57,12 +57,16 @@ DETERMINISTIC_COMMANDS = {
     "west": {"category": "movement", "aliases": ["w"], "admin": False},
     "up": {"category": "movement", "aliases": ["u"], "admin": False},
     "down": {"category": "movement", "aliases": ["d"], "admin": False},
+    "in": {"category": "movement", "admin": False},
+    "out": {"category": "movement", "admin": False},
     "northeast": {"category": "movement", "aliases": ["ne"], "admin": False},
     "northwest": {"category": "movement", "aliases": ["nw"], "admin": False},
     "southeast": {"category": "movement", "aliases": ["se"], "admin": False},
     "southwest": {"category": "movement", "aliases": ["sw"], "admin": False},
     "look": {"category": "movement", "aliases": ["l"], "admin": False},
     "examine": {"category": "movement", "admin": False},
+    "say": {"category": "communication", "admin": False},
+    "emote": {"category": "communication", "admin": False},
     
     # Admin/builder
     "wizhelp": {"category": "admin", "admin": True},
@@ -103,6 +107,8 @@ class MudCommandEngine:
             "help": self._cmd_help,
             "commands": self._cmd_commands,
             "look": self._cmd_look,
+            "say": self._cmd_say,
+            "emote": self._cmd_emote,
             
             # Admin
             "wizhelp": self._cmd_wizhelp,
@@ -116,10 +122,11 @@ class MudCommandEngine:
         if not cmd_tokens:
             return CommandResult(narrative="")
         
-        cmd_name = cmd_tokens[0].lower()
+        raw_cmd_name = cmd_tokens[0].lower()
+        cmd_name = self.resolve_alias(raw_cmd_name)
         args = cmd_tokens[1:]
         
-        print(f"[mud-command] Routing {cmd_name} for {character.name}")
+        print(f"[mud-command] Routing {raw_cmd_name} as {cmd_name} for {character.name}")
         
         # Check if admin command
         if cmd_name in DETERMINISTIC_COMMANDS and DETERMINISTIC_COMMANDS[cmd_name].get("admin"):
@@ -134,10 +141,8 @@ class MudCommandEngine:
         
         # Known deterministic command with no specific handler
         if cmd_name in DETERMINISTIC_COMMANDS:
-            print(f"[mud-command] Known deterministic stub: {cmd_name}")
-            return CommandResult(
-                narrative=f"You try to use the {cmd_name} command, but it returns no response."
-            )
+            print(f"[mud-command] Known deterministic placeholder: {cmd_name}")
+            return CommandResult(narrative=self._placeholder_for(cmd_name))
         
         # Social/freeform - route to AI if available
         if self.ai_provider:
@@ -155,7 +160,7 @@ class MudCommandEngine:
         
         # Fallback
         print(f"[mud-command] Unknown command: {cmd_name}")
-        return CommandResult(narrative="That command is not recognized. Type 'help' for a list of commands.")
+        return CommandResult(narrative="Unknown command. Type HELP or COMMANDS.", ok=False)
 
 
     def _build_ai_context(self, character: Any, command_text: str) -> dict[str, Any]:
@@ -256,13 +261,24 @@ Role: {character.role}
 
     def _cmd_who(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """List connected players."""
-        narrative = "Online players:\n  You"
+        narrative = f"Players currently online:\n{character.name}"
         return CommandResult(narrative=narrative)
+
+    def _cmd_say(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        text = raw.split(maxsplit=1)[1] if len(raw.split(maxsplit=1)) > 1 else ""
+        if not text:
+            return CommandResult(narrative="Say what?")
+        return CommandResult(narrative=f'You say, "{text}."' if not text.endswith((".", "!", "?")) else f'You say, "{text}"')
+
+    def _cmd_emote(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        text = raw.split(maxsplit=1)[1] if len(raw.split(maxsplit=1)) > 1 else ""
+        if not text:
+            return CommandResult(narrative="Emote what?")
+        return CommandResult(narrative=f"{character.name} {text}")
 
     def _cmd_look(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Look around (stub - real impl in mud_displays)."""
-        narrative = "You see a place. There are exits all around you."
-        return CommandResult(narrative=narrative)
+        return CommandResult(narrative="", state_updates={"render_room": True})
 
     def _cmd_help(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display help."""
@@ -347,6 +363,16 @@ Mana: {target.mana}/{target.max_mana}
 XP: {target.xp}
 """
         return CommandResult(narrative=narrative)
+
+    def _placeholder_for(self, cmd_name: str) -> str:
+        placeholders = {
+            "spells": "You know no spells.",
+            "skills": "You know no skills.",
+            "abilities": "You have no abilities.",
+            "affects": "You have no active affects.",
+            "commands": "Type COMMANDS to list available commands.",
+        }
+        return placeholders.get(cmd_name, f"The {cmd_name.upper()} command is not available yet.")
 
     def resolve_alias(self, cmd: str) -> str:
         """Resolve command aliases to canonical command."""

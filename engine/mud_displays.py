@@ -42,8 +42,26 @@ def render_room(room: Any, colors: dict[str, str], character: Any = None) -> str
     else:
         lines.append('<span role="exit">[ Exits: none ]</span>')
     
-    # NPCs in room (stub)
-    lines.append('<span role="system">(stub: NPC rendering)</span>')
+    visible: list[str] = []
+    for npc in getattr(room, "npcs", []) or []:
+        if isinstance(npc, dict):
+            text = npc.get("room_description") or npc.get("description") or npc.get("name") or npc.get("id")
+        else:
+            text = str(npc)
+        if text:
+            visible.append(f'<span role="npc">{html.escape(str(text))}</span>')
+
+    for obj in getattr(room, "objects", []) or []:
+        if isinstance(obj, dict):
+            text = obj.get("room_description") or obj.get("description") or obj.get("name") or obj.get("id")
+        else:
+            text = str(obj)
+        if text:
+            visible.append(f'<span role="object">{html.escape(str(text))}</span>')
+
+    if visible:
+        lines.append('<span role="system">You see:</span>')
+        lines.extend(f"  {entry}" for entry in visible)
     
     print("[mud-render] Room rendered")
     return "\n".join(lines)

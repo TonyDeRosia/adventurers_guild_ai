@@ -120,8 +120,15 @@ class WebTransportAdapter(RuntimeTransportAdapter):
     output_format = OutputFormat.WEB_HTML
 
     def render_runtime_result(self, session: TransportSession, result: dict[str, Any], command: str = "") -> TransportResponse:
+        import html
         view = result.get("view") or {}
-        return TransportResponse(session=session, output=str(view.get("html") or result.get("output") or ""), output_format=self.output_format, prompt=str(view.get("prompt") or ">"), metadata={"result": result, "used_mud_runtime": True})
+        narrative = str(result.get("output") or "")
+        room_html = str(view.get("html") or "")
+        if narrative and room_html:
+            output = f'<span role="system">{html.escape(narrative)}</span>\n{room_html}'
+        else:
+            output = room_html or (f'<span role="system">{html.escape(narrative)}</span>' if narrative else "")
+        return TransportResponse(session=session, output=output, output_format=self.output_format, prompt=str(view.get("prompt") or ">"), metadata={"result": result, "used_mud_runtime": True})
 
 
 class TelnetTransportAdapter(RuntimeTransportAdapter):

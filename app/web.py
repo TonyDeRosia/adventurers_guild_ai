@@ -375,6 +375,14 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     if static_root.exists():
         app.mount("/static", StaticFiles(directory=str(static_root)), name="static")
 
+    @app.get("/favicon.ico")
+    def favicon() -> Any:
+        favicon_path = static_root / "favicon.ico"
+        if favicon_path.exists():
+            return FileResponse(favicon_path)
+        from fastapi import Response
+        return Response(status_code=204)
+
     @app.get("/")
     def index() -> Any:
         index_path = static_root / "index.html"

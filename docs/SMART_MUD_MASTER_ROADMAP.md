@@ -91,3 +91,11 @@ Phase 2A introduces a shared transport abstraction so the web desktop client and
 - documentation for future websocket support.
 
 This phase explicitly does not add full multiplayer, gameplay systems, account authentication, or AI behavior.
+
+## Phase 2B: Basic MUD playability and room display parity
+
+Phase 2B establishes basic playability before any Shattered Realms content expansion. It adds deterministic command alias parity for core information commands, movement directions, help surfaces, communication placeholders, and clean unknown-command responses.
+
+The phase also replaces room-display stub text with classic MUD room output sourced from loaded world package data and SQLite-backed character location state. Movement checks package-defined exits, persists the new character room to SQLite, and renders the destination through the shared display pipeline used by web and telnet transports.
+
+This phase explicitly does not add combat, AI behavior, Builder Mode, full accounts, or a complete Shattered Realms world build-out.
