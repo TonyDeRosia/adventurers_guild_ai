@@ -681,29 +681,146 @@ class MudRuntime:
             session.last_activity = datetime.now(timezone.utc).isoformat()
         return {"ok": result.ok, "output": render_semantic_plain(result.narrative), "semantic_output": result.narrative, "view": self.play_view(character_id)}
 
+
+    ROOM_FEATURE_NAMES = {"gate", "door", "fountain", "altar", "statue", "portal", "stairs", "bridge", "campfire", "lever", "switch", "tree", "water", "chest", "lock"}
+    FILLER_BY_COMMAND = {"look": {"at"}, "examine": {"at"}, "drink": {"from"}, "get": {"from"}, "put": {"in", "into", "on"}}
+
+    def _parse_interaction_command(self, command: str) -> dict[str, Any]:
+        text = re.sub(r"\s+", " ", str(command or "").strip())
+        words = text.split()
+        if not words:
+            return {"tokens": [], "raw_cmd": "", "cmd": "", "args": []}
+        lower = [w.lower() for w in words]
+        raw = lower[0]
+        alias_note = ""
+        if raw == "pick" and len(lower) > 1 and lower[1] == "up":
+            cmd = "get"; args = words[2:]; alias_note = "pick up"
+        elif raw == "pickup":
+            cmd = "get"; args = words[1:]; alias_note = "pickup"
+        else:
+            cmd = self.command_engine.resolve_alias(raw); args = words[1:]
+        if cmd in {"look", "examine"} and args and args[0].lower() in {"at", "in", "inside"}:
+            if args[0].lower() in {"in", "inside"}: alias_note = "look in"
+            args = args[1:]
+        elif cmd in self.FILLER_BY_COMMAND and args and args[0].lower() in self.FILLER_BY_COMMAND[cmd]:
+            args = args[1:]
+        return {"tokens": words, "raw_cmd": raw, "cmd": cmd, "args": args, "alias_note": alias_note}
+
+    def _publish_interaction_event(self, name: str, char: MudCharacter, cmd: str, raw: str, extra: dict[str, Any] | None = None) -> None:
+        payload = {"world_id": self.active_world_id or "", "character_id": char.id, "character_name": char.name, "room_id": char.room_id, "canonical_command": cmd, "raw_input": raw, **(extra or {})}
+        self.event_bus.publish(name, payload, source_system="interaction", world_id=self.active_world_id or "", character_id=char.id, command=raw, room_id=char.room_id)
+
+    def _room_features(self, room: MudRoom) -> list[dict[str, Any]]:
+        hay = f"{room.id} {room.title} {room.description}".lower()
+        features = []
+        for name in sorted(self.ROOM_FEATURE_NAMES):
+            if name in hay or name in {"gate", "fountain", "chest", "lock"}:
+                features.append({"name": name.title(), "keywords": [name], "feature_id": name, "entity_type": "room_feature"})
+        for ex in room.exits:
+            direction = str(ex.get("direction") or ex.get("dir") or "").lower() if isinstance(ex, dict) else ""
+            if direction:
+                features.append({"name": direction.title(), "keywords": [direction], "feature_id": direction, "entity_type": "exit"})
+        return features
+
+    def _resolve_interaction_target(self, char: MudCharacter, query: str) -> dict[str, Any]:
+        groups = [
+            ("equipped", self.find_equipped_items(char.id)),
+            ("inventory", self.find_inventory_items(char.id)),
+            ("room_object", self.get_visible_room_items(char.room_id)),
+            ("npc", self.find_visible_entities(char.room_id, char).get("npcs", [])),
+            ("mob", self.find_visible_entities(char.room_id, char).get("mobs", [])),
+            ("exit", [{"name": str(e.get("direction") or e.get("dir")), "keywords": [str(e.get("direction") or e.get("dir"))], "entity_type": "exit", "exit": e} for e in self._current_room(char).exits if isinstance(e, dict)]),
+            ("feature", self._room_features(self._current_room(char))),
+        ]
+        for kind, candidates in groups:
+            res = self.resolve_entity_keywords(query, candidates) if kind in {"npc", "mob", "exit", "feature"} else self.resolve_item_keywords(query, candidates)
+            if res.get("status") == "ok": return {"status": "ok", "kind": kind, "target": res.get("entity") or res.get("item")}
+            if res.get("status") == "ambiguous": return {"status": "ambiguous", "matches": res.get("matches", [])}
+        return {"status": "missing", "matches": []}
+
+    def _handle_interaction_command(self, char: MudCharacter, cmd: str, args: list[str], raw: str):
+        from engine.mud_commands import CommandResult
+        q = " ".join(args).strip()
+        interaction_cmds = {"look", "examine", "enter", "leave", "drink", "eat", "open", "close", "lock", "unlock", "pick", "search", "listen", "smell", "sit", "stand", "rest", "sleep", "wake", "give", "put"}
+        if cmd not in interaction_cmds:
+            return None
+        self._publish_interaction_event("interaction_attempted", char, cmd, raw, {"target_query": q})
+        if cmd in {"search", "listen", "smell"} and not q:
+            messages = {"search": "You see nothing unusual.", "listen": "You do not hear anything unusual.", "smell": "You smell nothing unusual."}
+            self._publish_interaction_event("environment_inspected", char, cmd, raw, {"result_summary": messages[cmd]})
+            self._publish_interaction_event("interaction_succeeded", char, cmd, raw, {"result_summary": messages[cmd]})
+            return CommandResult(messages[cmd])
+        if not q:
+            if cmd in {"look", "examine"}:
+                return None
+            prompts = {"enter": "Enter what?", "drink": "Drink from what?", "eat": "Eat what?", "open": "Open what?", "close": "Close what?", "put": "Put what where?"}
+            return CommandResult(prompts.get(cmd, f"{cmd.title()} what?"), ok=False)
+        resolved = self._resolve_interaction_target(char, q)
+        if resolved["status"] == "ambiguous":
+            msg = self._resolve_message(resolved, "You don't see that.")
+            self._publish_interaction_event("interaction_failed", char, cmd, raw, {"reason": "ambiguous"})
+            return CommandResult(msg, ok=False)
+        kind = resolved.get("kind", "")
+        target = resolved.get("target", {})
+        lname = str(target.get("name") or q).lower()
+        event = "container_interaction" if "chest" in lname or kind == "container" or cmd in {"put"} else "entity_interaction" if kind in {"npc", "mob"} else "object_interaction"
+        messages = {
+            "enter": "You cannot enter that.", "leave": "You cannot leave that.", "drink": "You cannot drink from that.", "eat": "You cannot eat that.",
+            "open": f"You cannot open {lname}.", "close": f"You cannot close {lname}.", "lock": "You cannot lock that.", "unlock": "You cannot unlock that.", "pick": "You cannot pick that.",
+            "search": "You see nothing unusual.", "listen": "You do not hear anything unusual.", "smell": "You smell nothing unusual.", "put": "You cannot put that there.",
+            "sit": "You sit down.", "stand": "You stand up.", "rest": "You rest for a moment.", "sleep": "You cannot sleep here.", "wake": "You are awake.",
+        }
+        if cmd in {"look", "examine"}:
+            if kind == "feature": msg = f"You see nothing unusual about the {lname}."
+            else: return None
+        else:
+            msg = messages.get(cmd, "You see nothing unusual.")
+        self._publish_interaction_event(event, char, cmd, raw, {"target_kind": kind, "target_name": target.get("name", q), "result_summary": msg})
+        self._publish_interaction_event("interaction_succeeded" if not msg.startswith("You cannot") else "interaction_failed", char, cmd, raw, {"target_kind": kind, "target_name": target.get("name", q), "result_summary": msg})
+        if cmd in {"search", "listen", "smell", "look", "examine"}:
+            self._publish_interaction_event("environment_inspected", char, cmd, raw, {"target_kind": kind, "target_name": target.get("name", q), "result_summary": msg})
+        return CommandResult(msg, ok=not msg.startswith("You cannot"))
+
     def _handle_runtime_command(self, char: MudCharacter, command: str):
-        tokens = command.strip().split()
+        parsed = self._parse_interaction_command(command)
+        tokens = parsed["tokens"]
         if not tokens:
             return self.command_engine.handle_command(char, command)
-        raw_cmd = tokens[0].lower()
-        cmd_name = self.command_engine.resolve_alias(raw_cmd)
-        self.event_bus.publish("command_resolved", {"raw_input": command, "canonical_command": cmd_name, "arguments": tokens[1:], "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
-        dialogue_result = self._handle_dialogue_command(char, cmd_name, tokens[1:])
+        raw_cmd = parsed["raw_cmd"]
+        cmd_name = parsed["cmd"]
+        args = parsed["args"]
+        self.event_bus.publish("command_resolved", {"raw_input": command, "canonical_command": cmd_name, "arguments": args, "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
+        if raw_cmd != cmd_name or parsed.get("alias_note"):
+            self._publish_interaction_event("command_alias_resolved", char, cmd_name, command, {"raw_command": raw_cmd, "canonical_command": cmd_name, "arguments": args, "note": parsed.get("alias_note", "")})
+        if cmd_name in {"run", "walk"} and args:
+            direction = self.command_engine.resolve_alias(args[0].lower())
+            if direction in {"north", "south", "east", "west", "up", "down", "in", "out", "northeast", "northwest", "southeast", "southwest"}:
+                cmd_name = direction
+                args = []
+        dialogue_result = self._handle_dialogue_command(char, cmd_name, args)
         if dialogue_result is not None:
-            self.event_bus.publish("command_executed", {"raw_input": command, "canonical_command": cmd_name, "arguments": tokens[1:], "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id, "result_summary": dialogue_result.narrative[:120]}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
+            self.event_bus.publish("command_executed", {"raw_input": command, "canonical_command": cmd_name, "arguments": args, "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id, "result_summary": dialogue_result.narrative[:120]}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
             return dialogue_result
-        if cmd_name in {"look", "examine"} and tokens[1:]:
-            entity_result = self._look_entity(char.id, char.room_id, " ".join(tokens[1:]))
+        if cmd_name in {"look", "examine"} and args:
+            feature_result = self._handle_interaction_command(char, cmd_name, args, command)
+            if feature_result is not None:
+                self.event_bus.publish("command_executed", {"raw_input": command, "canonical_command": cmd_name, "arguments": args, "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id, "result_summary": feature_result.narrative[:120]}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
+                return feature_result
+            entity_result = self._look_entity(char.id, char.room_id, " ".join(args))
             if entity_result is not None:
                 from engine.mud_commands import CommandResult
                 return CommandResult(entity_result)
-        item_result = self._handle_item_command(char, command, cmd_name, tokens[1:])
+        item_result = self._handle_item_command(char, command, cmd_name, args)
         if item_result is not None:
-            self.event_bus.publish("command_executed", {"raw_input": command, "canonical_command": cmd_name, "arguments": tokens[1:], "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id, "result_summary": item_result.narrative[:120]}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
+            self.event_bus.publish("command_executed", {"raw_input": command, "canonical_command": cmd_name, "arguments": args, "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id, "result_summary": item_result.narrative[:120]}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
             return item_result
+        interaction_result = self._handle_interaction_command(char, cmd_name, args, command)
+        if interaction_result is not None:
+            self.event_bus.publish("command_executed", {"raw_input": command, "canonical_command": cmd_name, "arguments": args, "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id, "result_summary": interaction_result.narrative[:120]}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
+            return interaction_result
         if cmd_name in {"north", "south", "east", "west", "up", "down", "in", "out"}:
             result = self._move_character(char, cmd_name)
-            self.event_bus.publish("command_executed", {"raw_input": command, "canonical_command": cmd_name, "arguments": tokens[1:], "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id, "result_summary": result.narrative[:120]}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
+            self.event_bus.publish("command_executed", {"raw_input": command, "canonical_command": cmd_name, "arguments": args, "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id, "result_summary": result.narrative[:120]}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
         else:
             result = self.command_engine.handle_command(char, command)
         if result.state_updates and result.state_updates.get("render_room"):
@@ -917,7 +1034,16 @@ class MudRuntime:
         if cmd=="wear": return CommandResult(self.equip_item(char.id, q, self._preferred_slot(q,"wear")) if q else "Wear what?")
         if cmd=="wield": return CommandResult(self.equip_item(char.id, q, self._preferred_slot(q,"wield")) if q else "Wield what?")
         if cmd=="hold": return CommandResult(self.equip_item(char.id, q, self._preferred_slot(q,"hold")) if q else "Hold what?")
-        if cmd in {"remove","unwield"}: return CommandResult(self.unequip_item(char.id, q or ("main_hand" if cmd=="unwield" else "")) if q or cmd=="unwield" else "Remove what?")
+        if cmd=="mainhand": return CommandResult(self.equip_item(char.id, q, "main_hand") if q else "Mainhand what?")
+        if cmd=="offhand": return CommandResult(self.equip_item(char.id, q, "off_hand") if q else "Offhand what?")
+        if cmd=="dual": return CommandResult(self.equip_item(char.id, q, "both_hands") if q else "Dual wield what?")
+        if cmd in {"remove","unwield","unequip"}:
+            if q == "all":
+                equipped = list(self.find_equipped_items(char.id))
+                if not equipped: return CommandResult("You aren't using anything.")
+                for item in equipped: self.move_item(item["instance_id"], "character", char.id)
+                return CommandResult("You remove all equipment.")
+            return CommandResult(self.unequip_item(char.id, q or ("main_hand" if cmd in {"unwield","unequip"} else "")) if q or cmd in {"unwield","unequip"} else "Remove what?")
         if cmd in {"look","examine"} and q: return CommandResult(self._look_item(char.id, char.room_id, q))
         return None
 
@@ -1189,6 +1315,10 @@ class MudRuntime:
         if not text:
             responses = pkg.get("talk_responses") or []; text = str(responses[0] if responses else pkg.get("greeting") or "They nod silently.")
         self._publish_entity_event("entity_dialogue", ent, character_id=character_id, dialogue_keyword=keyword, dialogue_text=text)
+        char_for_event = self.state_store.load_character(character_id)
+        if char_for_event:
+            self._publish_interaction_event("entity_interaction", char_for_event, "talk", f"talk {query}", {"target_kind": ent.get("entity_type"), "target_name": ent.get("name"), "result_summary": text})
+            self._publish_interaction_event("interaction_succeeded", char_for_event, "talk", f"talk {query}", {"target_kind": ent.get("entity_type"), "target_name": ent.get("name"), "result_summary": text})
         return f'{ent.get("name")} says, "{text}"'
 
     def _handle_dialogue_command(self, char: MudCharacter, cmd: str, args: list[str]):
