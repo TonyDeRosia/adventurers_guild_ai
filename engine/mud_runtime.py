@@ -863,8 +863,12 @@ class MudRuntime:
             return CommandResult(msg, ok=ok, state_updates={"render_room": ok})
         if cmd in {"rooms", "rlist"}:
             filt = (args[0].lower() if args else "draft")
-            rooms = [(rid, r, src) for rid, (r, src) in self.all_runtime_rooms(char).items() if filt == "all" or src == filt]
-            title = {"draft":"Draft Rooms", "live":"Live Rooms", "all":"All Rooms"}.get(filt, "Draft Rooms")
+            if filt in {"unassigned", "legacy"}:
+                rooms = [(rid, r, src) for rid, (r, src) in self.all_runtime_rooms(char).items() if src == "draft" and not r.get("area_id") and not r.get("zone_id") and r.get("vnum") is None]
+                title = "Legacy / Unassigned Rooms"
+            else:
+                rooms = [(rid, r, src) for rid, (r, src) in self.all_runtime_rooms(char).items() if filt == "all" or src == filt]
+                title = {"draft":"Draft Rooms", "live":"Live Rooms", "all":"All Rooms"}.get(filt, "Draft Rooms")
             edit_id = self.builder.current_room_id(char)
             lines = [title, "", "ID | Name | Exits | Markers"]
             for rid, r, _src in sorted(rooms):

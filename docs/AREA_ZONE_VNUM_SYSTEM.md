@@ -28,3 +28,41 @@ Room vnums are numeric, but Smart MUD IDs remain descriptive strings. Normal roo
 ## Export Format
 
 Builder export includes `areas`, `zones`, `rooms`, `items`, `entities`, and `spawns`. Older exports without areas or zones load safely because draft normalization creates empty collections.
+
+## Phase 4E organized room workflow hotfix
+
+Builders can now finish the practical area/zone/vnum workflow without mutating live world package files. Draft exports remain under the builder workspace.
+
+Canonical workflow:
+
+```text
+builder on
+acreate test_area 100 110 "Test Area"
+zcreate test_zone 100 110 "Test Zone"
+rcreate 101
+rname Test Room 101
+rdesc This room belongs to the test zone.
+rooms area test_area
+rooms unassigned
+rassign test_two area current zone current vnum 102
+builder validate
+builder save
+builder export
+```
+
+Operational commands:
+
+- `aset current <area_id>` selects the current area and shows the Builder HUD. If the selected area does not contain the current zone, the current zone is cleared.
+- `zset current <zone_id>` selects the zone and also selects that zone's parent area.
+- `rcreate <vnum>` creates an organized draft room with `area_id`, `zone_id`, and `vnum` from the current area and zone. It rejects duplicate vnums and out-of-range vnums with guidance.
+- `dig <direction> <vnum> "Name"` creates an organized linked draft room using the current area and zone and reports the created room plus both link directions.
+- `rooms unassigned` and `rooms legacy` list loose draft rooms where `area_id` and `zone_id` are blank and `vnum` is null. Legacy rooms are warnings, not validation failures.
+- `rassign <here|room_id> area <area_id|current> zone <zone_id|current> vnum <number>` explicitly assigns a loose or existing room to an area, zone, and vnum.
+- `rmove <here|room_id> [area <area_id>] zone <zone_id> vnum <number>` moves an assigned room to another zone/vnum. If the room was unassigned, it uses the assignment workflow and says so.
+- Assigned rooms keep their existing room IDs in Phase 4E. The generated convention is `<area_id>_<vnum>`, and Builder warns when the current ID does not match it.
+- `rrenameid <room_id> <new_room_id>` is registered as a placeholder only. Safe room ID migration is deferred because exits, spawns, builder history, and other references must be rewritten atomically.
+- `builder export`, `build export`, `builder save`, `build save`, `bsave`, `wsave`, and `asave changed` route to the safe builder export/save behavior.
+
+`builder status`, `astat`, `zstat`, and `rstat` should be used as guidance screens: they show current area, current zone, current room, edit target, room organization status, vnum, and the next suggested `rassign` command for legacy rooms.
+
+`builder validate` groups Errors, Warnings, and Info. Organization warnings include legacy loose rooms, assigned room ID convention mismatches, rooms missing vnums, empty areas/zones, and range overlaps. Organization errors include missing referenced areas/zones, duplicate vnums within an area, out-of-range room vnums, and zone/area mismatches.

@@ -229,12 +229,12 @@ class BuilderWorkspace:
             if "area_id" not in room: warnings.append(f"room {rid} missing area_id field")
             if "zone_id" not in room: warnings.append(f"room {rid} missing zone_id field")
             if not room.get("area_id") or not room.get("zone_id"):
-                warnings.append(f"Legacy room {rid} has no area or zone. Use future room move command.")
+                warnings.append(f"legacy loose room {rid}; use rassign <room_id> area current zone current vnum <number>")
             elif room.get("area_id") not in areas: errors.append(f"room {rid} assigned to missing area {room.get('area_id')}")
             elif room.get("zone_id") not in zones: errors.append(f"room {rid} assigned to missing zone {room.get('zone_id')}")
             if room.get("vnum") is not None and room.get("area_id") in areas:
                 v = int(room.get("vnum")); area = areas[room.get("area_id")]; expected = f"{room.get('area_id')}_{v}"
-                if str(rid) != expected: errors.append(f"room {rid} ID does not match generated convention {expected}")
+                if str(rid) != expected: warnings.append(f"assigned room ID does not match generated convention: room {rid} canonical {expected}")
                 if v < int(area.get("room_vnum_start") or area.get("vnum_start") or v) or v > int(area.get("room_vnum_end") or area.get("vnum_end") or v): errors.append(f"room {rid} vnum outside area room range")
                 z = zones.get(room.get("zone_id"))
                 if z and (v < int(z.get("vnum_start") or v) or v > int(z.get("vnum_end") or v)): errors.append(f"room {rid} vnum outside zone range")

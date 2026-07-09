@@ -239,6 +239,9 @@ class MudCommandEngine:
             # Builder foundation
             "builder": self._cmd_builder,
             "build": self._cmd_builder,
+            "rassign": self._cmd_room_assign,
+            "rmove": self._cmd_room_assign,
+            "rrenameid": self._cmd_room_assign,
             # Admin
             "wizhelp": self._cmd_wizhelp,
             "goto": self._cmd_goto,
@@ -247,6 +250,8 @@ class MudCommandEngine:
         for _name in " rsave redit rstat rcreate rset rdesc rname rexits rfeature rdelete exedit excreate exset exdelete fedit fcreate fset fdesc fdelete oedit ocreate oset odesc odelete ostat medit mcreate mset mdesc mdelete mstat spawnedit spawncreate spawnset spawndelete spawnstat zstat astat wstat btarget rtarget target asave bsave wsave".split():
             if _name:
                 self.command_handlers[_name] = self._cmd_builder_edit
+        for _name in ("rassign", "rmove", "rrenameid"):
+            self.command_handlers[_name] = self._cmd_room_assign
 
     def handle_command(self, character: Any, command_text: str) -> CommandResult:
         """Route command to deterministic handler or AI."""
@@ -686,13 +691,14 @@ Available commands:
     def _room_id_for_vnum(self, character: Any, drafts: dict[str,Any], token: str) -> tuple[str|None,int|None,str|None]:
         if not token.isdigit(): return None,None,"vnum must be numeric."
         v=int(token); aid=getattr(character,"current_area_id",""); zid=getattr(character,"current_zone_id",""); area=drafts.get("areas",{}).get(aid); zone=drafts.get("zones",{}).get(zid)
-        if not area: return None,None,"No area selected. Use acreate or aset current <area_id> first."
-        if not zone: return None,None,"No zone selected. Use zcreate or zset current <zone_id> first."
-        if v < int(area.get("room_vnum_start") or area.get("vnum_start") or v) or v > int(area.get("room_vnum_end") or area.get("vnum_end") or v): return None,None,"Room vnum is outside current area room range."
-        if v < int(zone.get("vnum_start") or v) or v > int(zone.get("vnum_end") or v): return None,None,"Room vnum is outside current zone range."
+        if not area: return None,None,'No area selected.\nUse:\nacreate <area_id> <start> <end> "<Area Name>"\nor\naset current <area_id>'
+        if not zone: return None,None,'No zone selected.\nUse:\nzcreate <zone_id> <start> <end> "<Zone Name>"\nor\nzset current <zone_id>'
+        if v < int(area.get("room_vnum_start") or area.get("vnum_start") or v) or v > int(area.get("room_vnum_end") or area.get("vnum_end") or v): return None,None,f"VNUM {v} is outside area {aid} range {area.get('room_vnum_start') or area.get('vnum_start')}-{area.get('room_vnum_end') or area.get('vnum_end')}."
+        if v < int(zone.get("vnum_start") or v) or v > int(zone.get("vnum_end") or v): return None,None,f"VNUM {v} is outside zone {zid} range {zone.get('vnum_start')}-{zone.get('vnum_end')}."
         rid=f"{aid}_{v}"
+        for rrid,r in drafts.get("rooms",{}).items():
+            if r.get("area_id")==aid and r.get("vnum")==v: return None,None,f"VNUM {v} is already used by room {rrid}."
         if rid in drafts.get("rooms",{}): return None,None,f"Room ID already exists: {rid}"
-        if any(r.get("area_id")==aid and r.get("vnum")==v for r in drafts.get("rooms",{}).values()): return None,None,f"Duplicate room vnum {v} in area {aid}."
         return rid,v,None
 
     def _cmd_builder_nav(self, character: Any, args: list[str], raw: str) -> CommandResult:
@@ -708,18 +714,23 @@ Available commands:
             return self._cmd_zone(character, args, raw)
         if cmd in {"rooms","rlist"}:
             drafts=self.builder.load(self.builder.world_id(character)); rooms=drafts.get("rooms",{}); mode=args[0].lower() if args else "context"; val=args[1] if len(args)>1 else ""
-            if mode=="area": rooms={k:r for k,r in rooms.items() if r.get("area_id")==val}
+            title="Draft Rooms"
+            if mode in {"unassigned","legacy"}:
+                title="Legacy / Unassigned Rooms"
+                rooms={k:r for k,r in rooms.items() if not r.get("area_id") and not r.get("zone_id") and r.get("vnum") is None}
+                for rid in rooms: self.builder.publish("builder_room_legacy_warning", character, self.builder.world_id(character), "room", rid, command=raw)
+            elif mode=="area": rooms={k:r for k,r in rooms.items() if r.get("area_id")==val}
             elif mode=="zone": rooms={k:r for k,r in rooms.items() if r.get("zone_id")==val}
             elif mode in {"all","draft"}: pass
             elif mode=="live": rooms={}
             elif getattr(character,"current_zone_id",""): rooms={k:r for k,r in rooms.items() if r.get("zone_id")==getattr(character,"current_zone_id","")}
             elif getattr(character,"current_area_id",""): rooms={k:r for k,r in rooms.items() if r.get("area_id")==getattr(character,"current_area_id","")}
-            lines=["Draft Rooms", "ID | VNUM | Name | Area | Zone | Exits | Markers"]
+            lines=[title, "ID | Name | Exits | Markers | Area | Zone | VNUM | Source"]
             for rid,r in sorted(rooms.items()):
                 markers=[]
                 if rid==getattr(character,"room_id",""): markers.append("current location")
                 if rid==self.builder.current_room_id(character): markers.append("current edit target")
-                lines.append(f"{rid} | {r.get('vnum','')} | {r.get('name','')} | {r.get('area_id','')} | {r.get('zone_id','')} | {', '.join((r.get('exits') or {}).keys()) or 'none'} | {', '.join(markers)}")
+                lines.append(f"{rid} | {r.get('name','')} | {', '.join((r.get('exits') or {}).keys()) or 'none'} | {', '.join(markers)} | area: {r.get('area_id') or 'none'} | zone: {r.get('zone_id') or 'none'} | vnum: {r.get('vnum') if r.get('vnum') is not None else 'none'} | draft")
             return CommandResult("\n".join(lines))
         if cmd in {"rfind","rsearch"}:
             if not args: return CommandResult("Usage: rfind <query>", ok=False)
@@ -807,7 +818,7 @@ Available commands:
         self.builder.publish("builder_room_graph_updated", character, world_id, "room", rid, command=raw)
         runtime = getattr(self, "runtime", None)
         if runtime: runtime.state_store.save_character(character, world_id)
-        return CommandResult(f"Dug {direction} to {rid}.\n" + "\n".join(["Created room:", "", "ID:", rid, "", "Name:", name, "", "Linked:", "", old, f"{direction.title()} -> {rid}", "", rid, f"{self._reverse_dir(direction).title()} -> {old}" if not one_way and self._reverse_dir(direction) else "", "", "Editing:", rid]) + "\n" + self._builder_room_status(character, rid, self.builder.load(world_id)), state_updates={"render_room": True})
+        return CommandResult(f"Dug {direction} to {rid}.\n" + "\n".join(["Created room:", "ID:", rid, "Name:", name, "Area:", getattr(character,"current_area_id", "") or "none", "Zone:", getattr(character,"current_zone_id", "") or "none", "VNUM:", str(vnum) if vnum is not None else "none", "", "Linked:", f"{old} {direction} -> {rid}", f"{rid} {self._reverse_dir(direction)} -> {old}" if not one_way and self._reverse_dir(direction) else "", "", "Editing:", rid]) + "\n" + self._builder_room_status(character, rid, self.builder.load(world_id)), state_updates={"render_room": True})
 
     def _cmd_link(self, character: Any, args: list[str], raw: str) -> CommandResult:
         both = bool(args and args[0].lower()=="both")
@@ -844,6 +855,69 @@ Available commands:
             return self._cmd_unlink(character, [args[1]], raw)
         return CommandResult(f"Syntax: {token} dir <direction> | {token} exit <direction>", ok=False)
 
+    def _resolve_assignment(self, character: Any, args: list[str], raw: str, moving: bool = False) -> tuple[bool, str, str, str, int]:
+        if len(args) < 5:
+            return False, "Usage: rassign <here|room_id> area <area_id|current> zone <zone_id|current> vnum <number>", "", "", 0
+        room_id = self.builder.current_room_id(character) if args[0].lower() == "here" else args[0]
+        tokens = {args[i].lower(): args[i+1] for i in range(1, len(args)-1, 2)}
+        aid = tokens.get("area")
+        zid = tokens.get("zone")
+        if moving and not aid:
+            drafts = self.builder.load(self.builder.world_id(character))
+            aid = (drafts.get("zones", {}).get(zid if zid != "current" else getattr(character, "current_zone_id", ""), {}) or {}).get("area_id") or getattr(character, "current_area_id", "")
+        if aid == "current": aid = getattr(character, "current_area_id", "")
+        if zid == "current": zid = getattr(character, "current_zone_id", "")
+        try: vnum = int(tokens.get("vnum", ""))
+        except ValueError: return False, "VNUM must be numeric.", "", "", 0
+        return True, room_id, aid or "", zid or "", vnum
+
+    def _assign_room(self, character: Any, room_id: str, aid: str, zid: str, vnum: int, raw: str, moving: bool) -> CommandResult:
+        world_id=self.builder.world_id(character); drafts=self.builder.load(world_id); rooms=drafts.setdefault("rooms",{}); areas=drafts.get("areas",{}); zones=drafts.get("zones",{})
+        if room_id not in rooms:
+            return CommandResult(f"Room not found: {room_id}", ok=False)
+        if aid not in areas:
+            self.builder.publish("builder_assignment_failed", character, world_id, "room", room_id, command=raw)
+            return CommandResult(f"Area not found: {aid}", ok=False)
+        if zid not in zones:
+            self.builder.publish("builder_assignment_failed", character, world_id, "room", room_id, command=raw)
+            return CommandResult(f"Zone not found: {zid}", ok=False)
+        if zones[zid].get("area_id") != aid:
+            self.builder.publish("builder_assignment_failed", character, world_id, "room", room_id, command=raw)
+            return CommandResult(f"Zone {zid} does not belong to area {aid}.", ok=False)
+        area=areas[aid]; zone=zones[zid]
+        if vnum < int(area.get("room_vnum_start") or area.get("vnum_start") or vnum) or vnum > int(area.get("room_vnum_end") or area.get("vnum_end") or vnum):
+            self.builder.publish("builder_vnum_out_of_range_rejected", character, world_id, "room", room_id, command=raw)
+            return CommandResult(f"VNUM {vnum} is outside area {aid} range {area.get('room_vnum_start') or area.get('vnum_start')}-{area.get('room_vnum_end') or area.get('vnum_end')}.", ok=False)
+        if vnum < int(zone.get("vnum_start") or vnum) or vnum > int(zone.get("vnum_end") or vnum):
+            self.builder.publish("builder_vnum_out_of_range_rejected", character, world_id, "room", room_id, command=raw)
+            return CommandResult(f"VNUM {vnum} is outside zone {zid} range {zone.get('vnum_start')}-{zone.get('vnum_end')}.", ok=False)
+        for rid,r in rooms.items():
+            if rid != room_id and r.get("area_id")==aid and r.get("vnum")==vnum:
+                self.builder.publish("builder_vnum_duplicate_rejected", character, world_id, "room", room_id, command=raw)
+                return CommandResult(f"VNUM {vnum} is already used by room {rid}.", ok=False)
+        before=dict(rooms[room_id]); was_unassigned=not before.get("area_id") and not before.get("zone_id") and before.get("vnum") is None
+        rooms[room_id].update({"area_id": aid, "zone_id": zid, "vnum": vnum})
+        if room_id not in zone.setdefault("room_ids", []): zone["room_ids"].append(room_id)
+        if zid not in area.setdefault("zone_ids", []): area["zone_ids"].append(zid)
+        self.builder.save_drafts(world_id,drafts); action="rmove" if moving and not was_unassigned else "rassign"
+        self.builder.audit(character,world_id,action,"room",room_id,before,rooms[room_id])
+        self.builder.publish("builder_room_moved" if moving and not was_unassigned else "builder_room_assigned", character, world_id, "room", room_id, command=raw)
+        if before.get("vnum") != vnum: self.builder.publish("builder_room_vnum_changed", character, world_id, "room", room_id, command=raw)
+        gen=f"{aid}_{vnum}"; warn = "" if room_id == gen else "\n\nWarning:\nRoom ID does not match generated convention. Future room-id migration can rename it safely."
+        prefix = "Room was unassigned. Assigned it using rassign workflow.\n" if moving and was_unassigned else ""
+        lines=[prefix+"Room assigned:" if not moving or was_unassigned else "Room moved:", f"Room: {room_id}", f"Name: {rooms[room_id].get('name','')}", f"Area: {aid}, {area.get('name')}", f"Zone: {zid}, {zone.get('name')}", f"VNUM: {vnum}", f"Canonical generated ID would be: {gen}", f"Current ID kept: {room_id}"]
+        return CommandResult("\n".join(lines)+warn+"\n"+self._builder_room_status(character, room_id, self.builder.load(world_id)))
+
+    def _cmd_room_assign(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        cmd = raw.strip().split()[0].lower()
+        if cmd == "rrenameid":
+            target = args[0] if args else ""
+            self.builder.audit(character, self.builder.world_id(character), "rrenameid attempted", "room", target, None, None)
+            return CommandResult("Room ID migration is not implemented yet.\nThis future command will update exits, spawns, builder history, and references safely.")
+        ok, a, b, c, v = self._resolve_assignment(character, args, raw, cmd=="rmove")
+        if not ok: return CommandResult(a, ok=False)
+        return self._assign_room(character, a, b, c, v, raw, cmd=="rmove")
+
     def _cmd_builder_list_placeholder(self, character: Any, args: list[str], raw: str) -> CommandResult:
         cmd = raw.strip().split()[0].lower() if raw.strip() else ""
         if cmd == "mlist":
@@ -854,7 +928,7 @@ Available commands:
         sub = args[0].lower() if args else "status"
         if raw.strip().split()[0].lower() in {"bstatus", "status"}:
             sub = "status"
-        if sub in {"on", "enable"} or raw.split()[0].lower() == "build":
+        if sub in {"on", "enable"} or (raw.split()[0].lower() == "build" and sub == "status"):
             res = self.builder.set_builder_mode(character, True)
             status = self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))) if res.ok else ""
             return CommandResult(narrative=res.message + (("\n" + status) if status else ""), ok=res.ok)
@@ -863,8 +937,11 @@ Available commands:
             return CommandResult(narrative=res.message, ok=res.ok)
         if sub == "validate":
             res = self.builder.validate(character); return CommandResult(narrative=res.message + "\n" + self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))), ok=res.ok)
-        if sub == "save":
-            res = self.builder.export(character); return CommandResult(narrative=res.message + "\n" + self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))), ok=res.ok)
+        if sub in {"save", "export"}:
+            self.builder.publish("builder_export_requested", character, self.builder.world_id(character), "export", sub, command=raw)
+            res = self.builder.export(character); self.builder.publish("builder_export_completed", character, self.builder.world_id(character), "export", sub, command=raw)
+            self.builder.audit(character, self.builder.world_id(character), f"builder {sub}", "export", sub, None, res.data or {})
+            return CommandResult(narrative=res.message + "\n" + self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))), ok=res.ok)
         if sub == "reload":
             self.builder.publish("builder_reload_requested", character, self.builder.world_id(character), "builder", "reload", command="builder reload")
             return CommandResult(narrative="Builder drafts reloaded from workspace.\n" + self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))))
@@ -901,6 +978,19 @@ Available commands:
         else:
             name, source, dirty = info(room_id)
             lines += [f"Room: {room_id}", f"Name: {name}", f"Source: {source}", f"Dirty: {'yes' if dirty else 'no'}", f"Editing room: {room_id} {name}"]
+            room = drafts.get("rooms", {}).get(room_id, {})
+            aid, zid, vnum = room.get("area_id") or "", room.get("zone_id") or "", room.get("vnum")
+            a = drafts.get("areas", {}).get(aid, {})
+            z = drafts.get("zones", {}).get(zid, {})
+            legacy = not aid and not zid and vnum is None
+            area_text = f"{aid}, {a.get('name')}" if aid else "none"
+            zone_text = f"{zid}, {z.get('name')}" if zid else "none"
+            lines += ["", "Room Organization:", f"Area: {area_text}", f"Zone: {zone_text}", f"VNUM: {vnum if vnum is not None else 'none'}", f"Status: {'legacy/unassigned' if legacy else 'assigned'}"]
+            if legacy:
+                ca=getattr(character,"current_area_id","") or "<area_id>"; cz=getattr(character,"current_zone_id","") or "<zone_id>"
+                lines += ["", "Suggested next command:", f"rassign here area {ca} zone {cz} vnum <number>"]
+            elif aid and vnum is not None:
+                lines.append(f"Generated ID: {aid}_{vnum}")
         lines += ["", "================================================"]
         self.builder.publish("builder_status_rendered", character, self.builder.world_id(character), "room", room_id or "none", command="builder status")
         return "\n".join(lines)
