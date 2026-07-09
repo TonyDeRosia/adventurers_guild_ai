@@ -224,7 +224,7 @@ class MudCommandEngine:
             "goto": self._cmd_goto,
             "stat": self._cmd_stat,
         }
-        for _name in " rstat rcreate rset rdesc rname rexits rfeature rdelete exedit excreate exset exdelete fedit fcreate fset fdesc fdelete oedit ocreate oset odesc odelete ostat medit mcreate mset mdesc mdelete mstat spawnedit spawncreate spawnset spawndelete spawnstat zstat astat wstat btarget".split():
+        for _name in " redit rstat rcreate rset rdesc rname rexits rfeature rdelete exedit excreate exset exdelete fedit fcreate fset fdesc fdelete oedit ocreate oset odesc odelete ostat medit mcreate mset mdesc mdelete mstat spawnedit spawncreate spawnset spawndelete spawnstat zstat astat wstat btarget".split():
             if _name:
                 self.command_handlers[_name] = self._cmd_builder_edit
 
@@ -639,6 +639,8 @@ Available commands:
         return CommandResult(narrative=f"Builder mode is {'ON' if getattr(character, 'builder_mode', False) else 'OFF'}. Use builder on/off, builder validate, builder save, builder snapshot, builder history.")
 
     def _builder_room_status(self, character: Any, room_id: str, drafts: dict[str, Any]) -> str:
+        if not room_id:
+            return "Currently editing: none"
         runtime = getattr(self, "runtime", None)
         draft = drafts.get("rooms", {}).get(room_id)
         live = runtime.runtime_room_data(character, room_id)[0] if runtime else None
@@ -657,9 +659,9 @@ Available commands:
             if not args:
                 return CommandResult(self._builder_room_status(character, room_id, drafts))
             if args[0].lower() == "clear":
-                if hasattr(character, "edit_room_id"): delattr(character, "edit_room_id")
+                setattr(character, "edit_room_id", "")
                 setattr(character, "last_edited_target", "")
-                return CommandResult("Builder target cleared.\n" + self._builder_room_status(character, self.builder.current_room_id(character), drafts))
+                return CommandResult("Currently editing: none")
             if len(args) >= 2 and args[0].lower() == "room":
                 setattr(character, "edit_room_id", args[1]); setattr(character, "last_edited_target", args[1])
                 return CommandResult("Builder target set.\n" + self._builder_room_status(character, args[1], drafts))

@@ -97,6 +97,7 @@ class MudCharacter:
     current_zone_id: str = ""
     last_room_id: str = ""
     last_created_room_id: str = ""
+    edit_room_id: str = ""
     last_edited_target: str = ""
 
 

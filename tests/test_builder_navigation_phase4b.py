@@ -132,3 +132,42 @@ def test_get_fountain_nonportable_regression(tmp_path):
     assert result.strip() == "You cannot take that."
     assert "pick up" not in result.lower()
     assert "fountain" not in out(rt, cid, "inventory").lower()
+
+
+def test_builder_edit_target_updates_immediately_and_persists(tmp_path):
+    rt, cid = make_runtime(tmp_path)
+    out(rt, cid, "builder on")
+    created = out(rt, cid, "rcreate test_room_2")
+    assert "Currently editing:" in created
+    assert "Room: test_room_2" in created
+    assert "Source: draft" in created
+    assert "Dirty: yes" in created
+
+    renamed = out(rt, cid, "rname Test Room 2")
+    assert "Room: test_room_2" in renamed
+    assert "Name: Test Room 2" in renamed
+    described = out(rt, cid, "rdesc A second test room.")
+    assert "Room: test_room_2" in described
+    assert "Name: Test Room 2" in described
+
+    out(rt, cid, "rcreate test_room_3")
+    target = out(rt, cid, "btarget room test_room_2")
+    assert "Room: test_room_2" in target
+    assert "Name: Test Room 2" in target
+    redit = out(rt, cid, "redit test_room_3")
+    assert "Room: test_room_3" in redit
+
+    goto = out(rt, cid, "goto test_room_2")
+    assert "Room: test_room_2" in goto
+    dug = out(rt, cid, 'dig east test_room_4 "Test Room 4" --one-way')
+    assert "Room: test_room_4" in dug
+
+    cleared = out(rt, cid, "btarget clear")
+    assert cleared.strip() == "Currently editing: none"
+    out(rt, cid, "btarget room test_room_2")
+
+    rt2 = MudRuntime(Path.cwd(), tmp_path / "user_data")
+    rt2.load_world("shattered_realms")
+    persisted = out(rt2, cid, "rstat")
+    assert "Room: test_room_2" in persisted
+    assert "Name: Test Room 2" in persisted
