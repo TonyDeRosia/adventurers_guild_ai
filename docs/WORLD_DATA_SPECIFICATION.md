@@ -287,3 +287,8 @@ Builder import templates live in `worlds/shattered_realms/builder/templates/`. T
 To create an import file, copy a template into `worlds/shattered_realms/builder/imports/` with `builder template copy area_zone_room_template.json my_area.json`, then run `builder import validate my_area.json` before previewing or applying it. Current engines preserve `plugin_data` on areas, zones, rooms, local room features, and global feature records. Future collections such as `locations`, `factions`, and `ambient_profiles` are warning-only in this phase.
 
 Builder rendering now treats draft room features as the preferred Builder view of nonportable scenery for a room. If a draft room exists for a live room, nonportable live room scenery with the same normalized id or display name is not appended a second time. Portable item instances remain visible because they represent real runtime inventory/item state rather than static scenery.
+
+
+## Phase 4H content-pack records
+
+Starter Guildlands Content Pack v1 demonstrates external JSON authoring for the current Builder bundle keys: `areas`, `zones`, `rooms`, `features`, `items`, `entities`, and `spawns`. Entity `plugin_data.ai_profile` is explicitly non-authoritative metadata for future AI, and spawn records are placeholders until reset/spawn runtime systems exist.
