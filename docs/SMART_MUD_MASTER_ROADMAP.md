@@ -115,3 +115,13 @@ Account and character endpoints now return predictable JSON. Successful response
 The web client must use explicit character selection. Creating an account or character does not silently enter `Player` / `player_player`; after account login/create and world selection the client lists account-owned characters for that world and offers a Create Character action plus explicit Enter Character buttons. Legacy orphan characters may still be attached to the first local development account by migration for dev convenience, but they are presented in character select instead of auto-entered.
 
 Developer fallback remains limited to account convenience: an empty login can create or reuse the local development account when no account exists. It must not auto-create or auto-enter a gameplay character unless a future explicit dev fallback setting is added.
+
+## Phase 2E: Inventory, Equipment, Items, and Object Interaction
+
+Phase 2E builds the canonical item foundation documented in `docs/ITEM_SYSTEM.md`. The phase replaces placeholder inventory and equipment output with persistent runtime item instances, room-owned objects, character-owned inventory, and durable equipment state.
+
+The runtime remains the sole authority over item ownership. World packages define immutable item templates and optional starter item configuration; SQLite persists mutable item instances only; transports and plugins must request item operations through `MudRuntime` instead of updating ownership themselves.
+
+Required work includes the canonical `MudRuntime` item API (`spawn_item()`, `transfer_item()`, `pickup_item()`, `drop_item()`, `equip_item()`, `unequip_item()`, keyword resolution, visible-room-item lookup, and equipment validation), deterministic EventBus item events, room rendering of real runtime objects, aliases for inventory/equipment/object commands, and focused tests for persistence, starter items, keyword matching, transfer behavior, web output, and telnet output.
+
+Phase 2E explicitly does not implement combat, AI behavior, Builder Mode gameplay, crafting, banking, shops, quests, spells, skills, NPC AI, or playable world expansion beyond existing Shattered Realms data.

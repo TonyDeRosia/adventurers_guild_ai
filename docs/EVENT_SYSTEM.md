@@ -66,3 +66,11 @@ The bus is intended to support future AI listeners, builder listeners, multiplay
 ## Phase 2D Account and Session Foundation
 
 Smart MUD now includes a local account/session foundation. See `docs/ACCOUNT_AND_SESSION_MODEL.md` for the SQLite account model, shared web/telnet session lifecycle, account-owned character creation/select/entry rules, role hierarchy, permission helper philosophy, orphan character migration behavior, and account/session/character EventBus events.
+
+## Phase 2E Item Events
+
+The item system publishes deterministic EventBus events from the runtime item pipeline. Core events include `item_spawned`, `item_destroyed`, `item_picked_up`, `item_dropped`, `item_equipped`, `item_removed`, `inventory_changed`, `equipment_changed`, and `room_inventory_changed`.
+
+Item event payloads should include account, session, character, room, template, instance, and transport identifiers when they are available. Future plugins may observe predictable before/after stages, but they may not replace runtime ownership, write item ownership directly to SQLite, duplicate inventory logic, or bypass `transfer_item()`.
+
+A pickup flow should publish in deterministic order: `before_item_pickup`, `item_picked_up`, `inventory_changed`, `room_inventory_changed`, `after_item_pickup`, `room_rendered`, `prompt_rendered`, and `transport_response_sent`.
