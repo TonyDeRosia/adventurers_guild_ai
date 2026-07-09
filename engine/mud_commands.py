@@ -404,7 +404,7 @@ Available commands:
             meta = self.registry.commands.get(resolved)
             self._publish("command_help_requested", character, raw, topic=topic, resolved_command=resolved)
             if meta:
-                narrative = f"Command: {meta.command}\nAliases: {', '.join(meta.aliases) if meta.aliases else 'none'}\nCategory: {meta.category}\nStatus: {meta.status}\nHelp: {meta.long_help or meta.short_help}"
+                narrative = f"Command: {meta.command}\nPurpose: {meta.long_help or meta.short_help}\nUsage: {meta.usage or meta.command}\nAliases: {', '.join(meta.aliases) if meta.aliases else 'none'}\nCategory: {meta.category}\nStatus: {meta.status}"
             else:
                 narrative = f"Help on '{topic}' is not available."
         

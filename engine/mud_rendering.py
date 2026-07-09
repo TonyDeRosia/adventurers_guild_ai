@@ -3,7 +3,7 @@ from __future__ import annotations
 import html, re
 from typing import Any
 
-SEMANTIC_COLOR_ROLES = ["room_name","area_name","room_description","exit","npc","mob","npc_friendly","npc_neutral","npc_hostile","monster","player","object","item_common","item_uncommon","item_rare","item_epic","item_legendary","command_echo","system","error","warning","success","combat","damage","healing","spell","skill","magic","quest","score_label","score_value","equipment_slot","equipment_item","gold","hp","mp","stamina","dialogue","prompt","input","prompt_marker","prompt_hp","prompt_mana","prompt_stamina","prompt_xp","prompt_gold"]
+SEMANTIC_COLOR_ROLES = ["object_title","object_description","object_interaction","usage","placeholder","feature","entity_title","entity_description","direction","room_name","area_name","room_description","exit","npc","mob","npc_friendly","npc_neutral","npc_hostile","monster","player","object","item_common","item_uncommon","item_rare","item_epic","item_legendary","command_echo","system","error","warning","success","combat","damage","healing","spell","skill","magic","quest","score_label","score_value","equipment_slot","equipment_item","gold","hp","mp","stamina","dialogue","prompt","input","prompt_marker","prompt_hp","prompt_mana","prompt_stamina","prompt_xp","prompt_gold"]
 PRESETS = {
  "Classic MUD": {r: "#d8dee9" for r in SEMANTIC_COLOR_ROLES},
  "Green Terminal": {r: "#33ff66" for r in SEMANTIC_COLOR_ROLES},

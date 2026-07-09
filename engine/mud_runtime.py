@@ -682,7 +682,7 @@ class MudRuntime:
         return {"ok": result.ok, "output": render_semantic_plain(result.narrative), "semantic_output": result.narrative, "view": self.play_view(character_id)}
 
 
-    ROOM_FEATURE_NAMES = {"gate", "door", "fountain", "altar", "statue", "portal", "stairs", "bridge", "campfire", "lever", "switch", "tree", "water", "chest", "lock"}
+    ROOM_FEATURE_NAMES = {"gate", "door", "fountain", "altar", "statue", "portal", "stairs", "bridge", "campfire", "lever", "button", "switch", "sign", "window", "windows", "tree", "water", "chest", "lock"}
     FILLER_BY_COMMAND = {"look": {"at"}, "examine": {"at"}, "drink": {"from"}, "get": {"from"}, "put": {"in", "into", "on"}}
 
     def _parse_interaction_command(self, command: str) -> dict[str, Any]:
@@ -751,17 +751,23 @@ class MudRuntime:
         chosen_features = rich_keyword_features or exact_features
         if len(chosen_features) == 1:
             return {"status": "ok", "kind": "feature", "target": chosen_features[0]}
+        player_candidates = [
+            {"name": p.get("name"), "keywords": [p.get("name", "").lower(), *str(p.get("name", "")).lower().split()], "entity_type": "player", "level": p.get("level", 1)}
+            for p in self.list_characters(self.active_world_id or "")
+            if p.get("room_id") == char.room_id and p.get("character_id") != char.id
+        ]
         groups = [
             ("equipped", self.find_equipped_items(char.id)),
             ("inventory", self.find_inventory_items(char.id)),
             ("room_object", [i for i in self.get_visible_room_items(char.room_id) if (i.get("template") or {}).get("portable", True)]),
-            ("feature", features),
+            ("player", player_candidates),
             ("npc", self.find_visible_entities(char.room_id, char).get("npcs", [])),
             ("mob", self.find_visible_entities(char.room_id, char).get("mobs", [])),
             ("exit", [{"name": str(e.get("direction") or e.get("dir")), "keywords": [str(e.get("direction") or e.get("dir"))], "entity_type": "exit", "exit": e, "long_description": e.get("description", "")} for e in self._current_room(char).exits if isinstance(e, dict)]),
+            ("feature", features),
         ]
         for kind, candidates in groups:
-            res = self.resolve_entity_keywords(query, candidates) if kind in {"npc", "mob", "exit", "feature"} else self.resolve_item_keywords(query, candidates)
+            res = self.resolve_entity_keywords(query, candidates) if kind in {"player", "npc", "mob", "exit", "feature"} else self.resolve_item_keywords(query, candidates)
             if res.get("status") == "ok": return {"status": "ok", "kind": kind, "target": res.get("entity") or res.get("item")}
             if res.get("status") == "ambiguous": return {"status": "ambiguous", "matches": res.get("matches", [])}
         return {"status": "missing", "matches": []}
@@ -775,6 +781,21 @@ class MudRuntime:
         self._publish_interaction_event("interaction_attempted", char, cmd, raw, {"target_query": q})
         if cmd == "identify":
             self._publish_interaction_event("identify_attempted", char, cmd, raw, {"target_query": q})
+            self._publish_interaction_event("identify_requested", char, cmd, raw, {"target_query": q})
+        if cmd == "read":
+            self._publish_interaction_event("read_requested", char, cmd, raw, {"target_query": q})
+        if cmd == "use":
+            self._publish_interaction_event("use_requested", char, cmd, raw, {"target_query": q})
+        if cmd in {"look", "examine"} and q.lower() in {"room", "around"}:
+            return None
+        if cmd in {"look", "examine"} and q.lower() in {"self", "me", "myself"}:
+            msg = self._render_self_examination(char)
+            self._publish_interaction_event("self_examined", char, cmd, raw, {"result_summary": msg[:120]})
+            return CommandResult(msg)
+        if cmd in {"look", "examine"} and re.match(r"^\s*(look|l|examine|exa)\s+(in|inside)\b", raw, re.I):
+            msg = semantic("placeholder", "You see nothing unusual.")
+            self._publish_interaction_event("command_placeholder", char, cmd, raw, {"target_query": q, "result_summary": "You see nothing unusual."})
+            return CommandResult(msg)
         if cmd in {"search", "listen", "smell"} and not q:
             messages = {"search": "You see nothing unusual.", "listen": "You do not hear anything unusual.", "smell": "You smell nothing unusual."}
             self._publish_interaction_event("environment_inspected", char, cmd, raw, {"result_summary": messages[cmd]})
@@ -783,8 +804,10 @@ class MudRuntime:
         if not q:
             if cmd in {"look", "examine"}:
                 return None
-            prompts = {"enter": "Enter what?", "drink": "Drink from what?", "eat": "Eat what?", "open": "Open what?", "close": "Close what?", "put": "Put what where?", "identify": "Identify what?", "use": "Use what?", "read": "Read what?", "taste": "Taste what?", "fill": "Fill what?", "pour": "Pour what?", "pray": "Pray at what?", "touch": "Touch what?", "push": "Push what?", "pull": "Pull what?", "climb": "Climb what?"}
-            return CommandResult(prompts.get(cmd, f"{cmd.title()} what?"), ok=False)
+            prompts = {"enter": "Enter what?", "drink": "Drink from what?", "eat": "Eat what?", "open": "Open what?", "close": "Close what?", "put": "Put what where?", "give": "Give what to whom?", "identify": "Identify what?", "use": "Use what?", "read": "Read what?", "taste": "Taste what?", "fill": "Fill what?", "pour": "Pour what?", "pray": "Pray at what?", "touch": "Touch what?", "push": "Push what?", "pull": "Pull what?", "climb": "Climb what?"}
+            msg = prompts.get(cmd, f"{cmd.title()} what?")
+            self._publish_interaction_event("command_usage", char, cmd, raw, {"usage": self.command_engine.registry.commands.get(cmd).usage if cmd in self.command_engine.registry.commands else cmd, "message": msg})
+            return CommandResult(semantic("usage", msg), ok=False)
         resolved = self._resolve_interaction_target(char, q)
         if resolved["status"] == "ambiguous":
             msg = self._resolve_message(resolved, "You don't see that.")
@@ -799,7 +822,7 @@ class MudRuntime:
         event = "container_interaction" if "chest" in lname or kind == "container" or cmd in {"put"} else "entity_interaction" if kind in {"npc", "mob"} else "object_interaction"
         interactions = target.get("default_interactions") or {}
         messages = {
-            "identify": f"You identify {target.get('name', q)} but learn nothing unusual.", "use": f"You find no obvious way to use {target.get('name', q)}.", "read": f"There is nothing readable on {target.get('name', q)}.",
+            "identify": "", "use": "Nothing happens. You find no obvious way to use that.", "read": "There is nothing readable here. There is nothing written there.",
             "pray": "You offer a quiet prayer.", "touch": f"You touch {target.get('name', q)}. Nothing happens.", "push": f"You push {target.get('name', q)}, but it does not move.", "pull": f"You pull {target.get('name', q)}, but it does not move.", "climb": "You cannot climb that.",
             "enter": "You cannot enter that.", "leave": "You cannot leave that.", "drink": "You cannot drink from that.", "eat": "You cannot eat that.",
             "open": f"You cannot open {lname}.", "close": f"You cannot close {lname}.", "lock": "You cannot lock that.", "unlock": "You cannot unlock that.", "pick": "You cannot pick that.",
@@ -808,14 +831,20 @@ class MudRuntime:
             "sit": "You sit down.", "stand": "You stand up.", "rest": "You rest for a moment.", "sleep": "You cannot sleep here.", "wake": "You are awake.",
         }
         if cmd in {"look", "examine"}:
-            desc = target.get("long_description") or target.get("description") or target.get("short_description")
-            if desc:
-                msg = f"{target.get('name', q)}\n{desc}"
+            msg = self._render_examination(target, kind, q)
+            if msg:
+                event_name = "feature_examined" if kind in {"feature", "exit"} else "entity_examined" if kind in {"player", "npc", "mob"} else "object_examined"
+                self._publish_interaction_event(event_name, char, cmd, raw, {"target_kind": kind, "target_name": target.get("name", q), "result_summary": msg[:120]})
             elif kind in {"feature", "exit"}: msg = f"You see nothing unusual about the {lname}."
             else: return None
             self._publish_interaction_event("target_looked", char, cmd, raw, {"target_kind": kind, "target_name": target.get("name", q), "result_summary": msg[:120]})
+        elif cmd == "identify":
+            msg = self._render_identify(target, kind, q)
         else:
             msg = str(interactions.get(cmd) or ("You drink from the fountain." if cmd == "drink" and target.get("drinkable") else messages.get(cmd, "You see nothing unusual.")))
+        if msg in {"Nothing happens.", "Nothing happens. You find no obvious way to use that.", "There is nothing written there.", "There is nothing readable here. There is nothing written there.", "You see nothing unusual."}:
+            self._publish_interaction_event("command_placeholder", char, cmd, raw, {"target_kind": kind, "target_name": target.get("name", q), "result_summary": msg})
+            msg = semantic("placeholder", msg)
         self._publish_interaction_event(event, char, cmd, raw, {"target_kind": kind, "target_name": target.get("name", q), "result_summary": msg})
         failed = msg.startswith("You cannot") or msg.startswith("There is nothing") or "no obvious way" in msg
         self._publish_interaction_event("interaction_succeeded" if not failed else "interaction_failed", char, cmd, raw, {"target_kind": kind, "target_name": target.get("name", q), "result_summary": msg})
@@ -850,14 +879,14 @@ class MudRuntime:
             self.event_bus.publish("command_executed", {"raw_input": command, "canonical_command": cmd_name, "arguments": args, "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id, "result_summary": dialogue_result.narrative[:120]}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
             return dialogue_result
         if cmd_name in {"look", "examine"} and args:
-            item_preview = self._handle_item_command(char, command, cmd_name, args)
-            if item_preview is not None and not item_preview.narrative.startswith("You don't see that") and not item_preview.narrative.startswith("Which do you mean") :
-                self.event_bus.publish("command_executed", {"raw_input": command, "canonical_command": cmd_name, "arguments": args, "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id, "result_summary": item_preview.narrative[:120]}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
-                return item_preview
             feature_result = self._handle_interaction_command(char, cmd_name, args, command)
             if feature_result is not None:
                 self.event_bus.publish("command_executed", {"raw_input": command, "canonical_command": cmd_name, "arguments": args, "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id, "result_summary": feature_result.narrative[:120]}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
                 return feature_result
+            item_preview = self._handle_item_command(char, command, cmd_name, args)
+            if item_preview is not None and not item_preview.narrative.startswith("You don't see that") and not item_preview.narrative.startswith("Which do you mean") :
+                self.event_bus.publish("command_executed", {"raw_input": command, "canonical_command": cmd_name, "arguments": args, "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id, "result_summary": item_preview.narrative[:120]}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
+                return item_preview
             entity_result = self._look_entity(char.id, char.room_id, " ".join(args))
             if entity_result is not None:
                 from engine.mud_commands import CommandResult
@@ -1194,6 +1223,68 @@ class MudRuntime:
         ent = res["entity"]
         from smart_mud.transport import html_to_plain_text
         return html_to_plain_text(render_object({"name": ent.get("name"), "description": ent.get("long_description") or ent.get("short_description"), "long_description": ent.get("long_description")}))
+
+    def _render_examination(self, target: dict[str, Any], kind: str, query: str) -> str:
+        template = target.get("template") or {}
+        name = str(target.get("name") or template.get("name") or query).strip()
+        long_desc = str(target.get("long_description") or template.get("long_description") or target.get("description") or template.get("description") or target.get("short_description") or template.get("short_description") or "").strip()
+        extended = str(target.get("extended_description") or template.get("extended_description") or "").strip()
+        if kind == "exit" and not long_desc:
+            return semantic("direction", name) + "\n" + semantic("placeholder", "You see nothing unusual.")
+        interactions = target.get("interactions") or target.get("default_interactions") or template.get("default_interactions") or {}
+        if not interactions and kind in {"feature", "exit"}:
+            interactions = {"look": True, "use": True}
+        title_role = "entity_title" if kind in {"player", "npc", "mob"} else "feature" if kind in {"feature", "exit"} else "object_title"
+        desc_role = "entity_description" if kind in {"player", "npc", "mob"} else "object_description"
+        lines = [semantic(title_role, name)]
+        if kind == "player" and not long_desc:
+            long_desc = f"{name} is here."
+        if long_desc:
+            lines.append(semantic(desc_role, long_desc))
+        if extended:
+            lines.append(semantic(desc_role, extended))
+        if interactions:
+            lines.append(semantic("object_interaction", "You may:"))
+            for verb in sorted(interactions.keys() if isinstance(interactions, dict) else interactions):
+                lines.append(semantic("object_interaction", str(verb)))
+        return "\n".join(lines) if len(lines) > 1 else ""
+
+    def _render_identify(self, target: dict[str, Any], kind: str, query: str) -> str:
+        template = target.get("template") or {}
+        name = str(target.get("name") or template.get("name") or query)
+        item_type = str(template.get("item_type") or target.get("entity_type") or kind).replace("_", " ").title()
+        weight = template.get("weight", target.get("weight", "None"))
+        value = template.get("value", target.get("value", "None"))
+        condition = str(target.get("condition") or template.get("condition") or "Normal").title()
+        required = template.get("required_level") or template.get("level_required") or "None"
+        return "\n".join([
+            f"You identify {name}.",
+            semantic("object_title", name),
+            semantic("object_description", item_type),
+            f"Weight: {weight}",
+            f"Value: {value}",
+            "Condition:",
+            str(condition),
+            "Required Level:",
+            str(required),
+        ])
+
+    def _render_self_examination(self, char: MudCharacter) -> str:
+        room = self._current_room(char)
+        equipped = self.find_equipped_items(char.id)
+        eq = ", ".join(i.get("name", "something") for i in equipped) if equipped else "nothing equipped"
+        data = getattr(char, "data", {}) if hasattr(char, "data") else {}
+        race = data.get("race") if isinstance(data, dict) else None
+        char_class = data.get("class") if isinstance(data, dict) else None
+        return "\n".join([
+            semantic("entity_title", char.name),
+            f"Race: {race or 'Unknown'}",
+            f"Class: {char_class or 'Unknown'}",
+            f"Title: {getattr(char, 'title', '') or 'None'}",
+            f"Equipment: {eq}",
+            f"Condition: HP {char.hp}/{char.max_hp}, Mana {char.mana}/{char.max_mana}, Stamina {char.stamina}/{char.max_stamina}",
+            f"Current Room: {room.title}",
+        ])
 
     def _resolve_message(self, res: dict[str, Any], missing: str) -> str:
         if res.get("status") == "ambiguous": return "Which do you mean: " + ", ".join(i["name"] for i in res.get("matches", [])) + "?"

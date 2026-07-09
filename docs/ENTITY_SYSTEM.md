@@ -41,3 +41,7 @@ The model intentionally leaves behavior systems outside Phase 3A. Future AI, com
 Phase 3B expands the same entity foundation into living runtime instances. Templates now normalize spawn rules, wander rules, dialogue packages, behavior flags, visibility flags, profile placeholders, script hooks, and plugin data. Runtime instances expose canonical fields for state, health/mana/stamina, spawn origin, visibility, movement state, dialogue state, custom state, and persistence metadata.
 
 `MudRuntime` now exposes `populate_world`, `find_entities`, `change_entity_state`, `teleport_entity`, `return_to_spawn`, `reset_entity`, `respawn_entity`, `create_corpse`, `get_dialogue`, and `talk_to_entity` alongside the existing spawn/move/despawn/destroy APIs. Visibility is enforced by `find_visible_entities`; hidden or invisible entities are not rendered by the canonical room renderer.
+
+## Phase 3E examination and interaction polish
+
+Registered player commands now route through runtime-owned command handling and must execute, show registry usage, return a clean placeholder, or explicitly describe unavailable future work. The examination layer supports room, self, object, entity, direction, and room-feature targets; `identify`, `read`, and `use` publish EventBus events and return semantic output. See `docs/EXAMINATION_AND_INTERACTION.md`.

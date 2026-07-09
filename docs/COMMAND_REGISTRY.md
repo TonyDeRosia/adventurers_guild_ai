@@ -27,3 +27,7 @@ A placeholder command is intentionally recognized and returns useful text withou
 ## Future upgrades
 
 Future systems should upgrade a placeholder by changing its registry status and wiring its handler, preserving aliases and help text wherever possible.
+
+## Phase 3E examination and interaction polish
+
+Registered player commands now route through runtime-owned command handling and must execute, show registry usage, return a clean placeholder, or explicitly describe unavailable future work. The examination layer supports room, self, object, entity, direction, and room-feature targets; `identify`, `read`, and `use` publish EventBus events and return semantic output. See `docs/EXAMINATION_AND_INTERACTION.md`.
