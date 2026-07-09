@@ -121,43 +121,47 @@ class BuilderWorkspace:
         root = self.ensure(self.world_id(actor))/'imports'; files = sorted(p.name for p in root.glob('*.json'))
         return BuilderResult(True, 'Builder import files:\n' + ('\n'.join(files) if files else '- none'))
 
-    def _load_import_bundle(self, world_id: str, filename: str) -> tuple[dict[str, Any]|None, str]:
-        path = self.ensure(world_id)/'imports'/Path(filename).name
-        if not path.exists(): return None, f'Import file not found: {filename}'
-        try: data=json.loads(path.read_text(encoding='utf-8'))
-        except json.JSONDecodeError as e: return None, f'Invalid JSON: {e}'
-        if any(k in data for k in ('areas','zones','rooms','features','items','entities','spawns')):
-            return {k: data.get(k, {}) for k in DRAFT_FILES}, ''
-        return None, 'Import bundle must contain areas, zones, rooms, features, items, entities, or spawns.'
+    def _load_import_bundle(self, world_id: str, filename: str) -> tuple[dict[str, Any] | None, str, list[str]]:
+        path = self.ensure(world_id) / "imports" / Path(filename).name
+        if not path.exists():
+            return None, f"Import file not found: {filename}", []
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            return None, f"Invalid JSON: {e}", []
+        future_keys = [str(k) for k in data.keys() if k not in DRAFT_FILES]
+        if any(k in data for k in DRAFT_FILES):
+            return {k: data.get(k, {}) for k in DRAFT_FILES}, "", future_keys
+        return None, "Import bundle must contain areas, zones, rooms, features, items, entities, or spawns.", future_keys
 
     def import_validate(self, actor: Any, filename: str) -> BuilderResult:
         if not self.can_build(actor):
             return BuilderResult(False, "You do not have permission for that command.")
-        bundle, err = self._load_import_bundle(self.world_id(actor), filename)
+        bundle, err, future_keys = self._load_import_bundle(self.world_id(actor), filename)
         if err: return BuilderResult(False, 'Import validation failed.\n\nErrors:\n- '+err+'\n\nWarnings:\n- none')
         merged = self.load(self.world_id(actor));
         for k,v in bundle.items(): merged.setdefault(k, {}).update(v if isinstance(v,dict) else {})
-        errors=[]; warnings=[]; self._validate_bundle_refs(merged, errors, warnings)
+        errors=[]; warnings=[f"Future top-level collection {key} is not applied by this version." for key in future_keys]; self._validate_bundle_refs(merged, errors, warnings)
         ok=not errors
         return BuilderResult(ok, ('Import validation passed.' if ok else 'Import validation failed.')+'\n\nErrors:\n'+('\n'.join('- '+e for e in errors) if errors else '- none')+'\n\nWarnings:\n'+('\n'.join('- '+w for w in warnings) if warnings else '- none'))
 
     def import_preview(self, actor: Any, filename: str) -> BuilderResult:
         if not self.can_build(actor):
             return BuilderResult(False, "You do not have permission for that command.")
-        bundle, err = self._load_import_bundle(self.world_id(actor), filename)
+        bundle, err, future_keys = self._load_import_bundle(self.world_id(actor), filename)
         if err: return BuilderResult(False, err)
         drafts=self.load(self.world_id(actor)); names=[('areas','Areas'),('zones','Zones'),('rooms','Rooms'),('features','Features'),('items','Items'),('entities','Entities'),('spawns','Spawns')]
         lines=[]
         for k,label in names:
             b=bundle.get(k,{}) if isinstance(bundle.get(k,{}),dict) else {}; add=sum(1 for x in b if x not in drafts.get(k,{})); upd=len(b)-add; lines.append(f'{label} to add/update: {add}/{upd}')
-        errors=[]; warnings=[]; merged=deepcopy(drafts); [merged.setdefault(k,{}).update(v if isinstance(v,dict) else {}) for k,v in bundle.items()]; self._validate_bundle_refs(merged,errors,warnings)
+        errors=[]; warnings=[f"Future top-level collection {key} is not applied by this version." for key in future_keys]; merged=deepcopy(drafts); [merged.setdefault(k,{}).update(v if isinstance(v,dict) else {}) for k,v in bundle.items()]; self._validate_bundle_refs(merged,errors,warnings)
         lines += ['', 'Conflicts:', '- none', 'Legacy/unassigned warnings:', *(('- '+w for w in warnings if 'legacy' in w.lower()) or ['- none']), 'Broken references:', *(('- '+e for e in errors) or ['- none']), '', 'No files changed.']
         return BuilderResult(True, '\n'.join(lines))
 
     def import_apply(self, actor: Any, filename: str, replace: bool=False) -> BuilderResult:
         if not self.can_build(actor):
             return BuilderResult(False, "You do not have permission for that command.")
-        bundle, err = self._load_import_bundle(self.world_id(actor), filename)
+        bundle, err, future_keys = self._load_import_bundle(self.world_id(actor), filename)
         if err: return BuilderResult(False, err)
         if replace: self.snapshot(actor); drafts={k:{} for k in DRAFT_FILES}
         else: drafts=self.load(self.world_id(actor))

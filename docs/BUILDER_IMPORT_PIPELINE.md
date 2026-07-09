@@ -56,3 +56,8 @@ Use `builder validate` to verify the committed starter draft layer. The starting
 `builder migrate starter` remains available to reset or regenerate the starter drafts from the live Shattered Realms package. Regeneration should update the draft JSON files only; do not commit runtime audit, history, snapshot, export, local database, or user-data artifacts.
 
 To exchange the organized starter layer, run `builder export`, then place the exported bundle in the Builder import folder and run `builder import validate <file>` before applying it.
+
+
+## Phase 4G World Data Specification Alignment
+
+The canonical data contract is now defined in [WORLD_DATA_SPECIFICATION.md](WORLD_DATA_SPECIFICATION.md). Import/export bundles remain `{"areas": {}, "zones": {}, "rooms": {}, "features": {}, "items": {}, "entities": {}, "spawns": {}}`. Future optional keys such as `locations`, `factions`, `religions`, `cultures`, `terrain_profiles`, `ambient_profiles`, `weather_profiles`, `lighting_profiles`, `music_profiles`, `dialogue_packages`, `loot_tables`, `encounter_tables`, `quest_templates`, and `shop_templates` are reserved. Current import validation must not crash on those keys; unsupported collections are reported as future ignored warnings and are not applied.
