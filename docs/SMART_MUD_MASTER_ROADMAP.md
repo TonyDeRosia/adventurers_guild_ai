@@ -79,3 +79,15 @@
 - Dependencies: Phases 1-9.
 - Acceptance criteria: Users can install, run, update, and diagnose Smart MUD confidently.
 - Suggested version target: `1.0.0`.
+
+## Phase 2A: Transport abstraction and telnet foundation
+
+Phase 2A introduces a shared transport abstraction so the web desktop client and telnet-style clients can communicate with the same `MudRuntime` command engine. The phase includes:
+
+- shared transport session/message/response concepts;
+- a web adapter preserving the existing Smart MUD desktop UI;
+- a disabled-by-default telnet server foundation on configurable host/port, default port `4000`;
+- output format separation for `web_html`, `ansi_text`, and `plain_text`;
+- documentation for future websocket support.
+
+This phase explicitly does not add full multiplayer, gameplay systems, account authentication, or AI behavior.
