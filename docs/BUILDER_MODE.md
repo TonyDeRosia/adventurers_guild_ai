@@ -231,3 +231,8 @@ Builder Mode includes template helper commands:
 The Shattered Realms starter templates are committed under `worlds/shattered_realms/builder/templates/`, so fresh downloads have import examples without requiring players to create folders or blank JSON files manually. Builder workspace preparation also creates `imports/`, `templates/`, and `examples/` automatically.
 
 When Builder Mode renders a live room that has a draft room overlay, draft features are authoritative for nonportable scenery. This prevents migrated draft features such as `Old Gate` and `Fountain` from being displayed once as draft features and again as live seeded room objects. The dedupe uses normalized ids and display names, while portable runtime item instances continue to render normally.
+
+
+## Starter Guildlands Content Pack v1 workflow
+
+Builders can copy the starter expansion template with `builder template copy starter_guildlands_content_pack_v1.json copied_pack.json`, then run `builder import validate`, `builder import preview`, `builder import apply`, and `builder validate`. The pack expands Builder drafts only and should be reviewed before any future save/export/package step.

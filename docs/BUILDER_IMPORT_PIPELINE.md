@@ -86,3 +86,8 @@ builder import apply my_area.json --merge
 `builder template copy` writes to `worlds/<world_id>/builder/imports/` and refuses to overwrite an existing import file unless `--force` is supplied. When `builder import list` finds no JSON files, it prints the import folder path and the exact template-copy commands needed to get started.
 
 `bad_duplicate_vnum_test.json` is intentionally invalid and should fail validation with a duplicate-vnum error. `future_keys_test.json` contains future top-level collections such as `locations`, `factions`, and `ambient_profiles`; current validation warns that those collections are not applied, but it must not crash.
+
+
+## Starter Guildlands Content Pack v1
+
+The built-in template `starter_guildlands_content_pack_v1.json` can be copied with `builder template copy starter_guildlands_content_pack_v1.json copied_pack.json`, validated with `builder import validate copied_pack.json`, previewed with `builder import preview copied_pack.json`, and applied with `builder import apply copied_pack.json`. It is a merge-style Builder draft bundle using `areas`, `zones`, `rooms`, `features`, `items`, `entities`, and `spawns`.

@@ -293,3 +293,8 @@ Completed hotfix scope:
 - Builder room rendering prefers draft features over duplicate nonportable live scenery while preserving portable runtime item instances.
 
 No combat, AI, quests, shops, skills, classes, spells, or visual Builder UI were added by this hotfix.
+
+
+## Phase 4H - Starter Guildlands Content Pack v1
+
+Added a Builder-importable Starter Guildlands content pack with 44 draft rooms, room features, reusable features, starter-safe item templates, entity templates with future AI metadata, and spawn placeholders. The phase proves external JSON worldbuilding through Builder import/export without implementing combat, quests, shops, skills, spells, classes, visual Builder UI, AI behavior, or live package changes.
