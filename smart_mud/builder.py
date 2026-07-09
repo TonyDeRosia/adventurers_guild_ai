@@ -118,8 +118,46 @@ class BuilderWorkspace:
     def import_list(self, actor: Any) -> BuilderResult:
         if not self.can_build(actor):
             return BuilderResult(False, "You do not have permission for that command.")
-        root = self.ensure(self.world_id(actor))/'imports'; files = sorted(p.name for p in root.glob('*.json'))
-        return BuilderResult(True, 'Builder import files:\n' + ('\n'.join(files) if files else '- none'))
+        world_id = self.world_id(actor)
+        root = self.ensure(world_id)/'imports'; files = sorted(p.name for p in root.glob('*.json'))
+        if not files:
+            return BuilderResult(True, f'No import files found.\n\nCreate one by copying a template:\nbuilder template list\nbuilder template copy area_zone_room_template.json my_area.json\n\nImport folder:\nworlds/{world_id}/builder/imports/')
+        return BuilderResult(True, 'Builder import files:\n' + '\n'.join(files))
+
+
+    def template_list(self, actor: Any) -> BuilderResult:
+        if not self.can_build(actor):
+            return BuilderResult(False, "You do not have permission for that command.")
+        root = self.ensure(self.world_id(actor)) / "templates"
+        files = sorted(p.name for p in root.glob("*.json"))
+        return BuilderResult(True, "Builder import templates:\n" + ("\n".join(files) if files else "- none"))
+
+    def template_show(self, actor: Any, template_name: str) -> BuilderResult:
+        if not self.can_build(actor):
+            return BuilderResult(False, "You do not have permission for that command.")
+        world_id = self.world_id(actor); path = self.ensure(world_id) / "templates" / Path(template_name).name
+        if not path.exists():
+            return BuilderResult(False, f"Template not found: {template_name}")
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            keys = [k for k, v in data.items() if isinstance(v, dict) and v]
+        except Exception:
+            keys = []
+        summary = ", ".join(keys) if keys else "empty/current-key bundle"
+        return BuilderResult(True, f"Template: {path.name}\nPath: worlds/{world_id}/builder/templates/{path.name}\nSummary: {summary}")
+
+    def template_copy(self, actor: Any, template_name: str, new_filename: str, force: bool = False) -> BuilderResult:
+        if not self.can_build(actor):
+            return BuilderResult(False, "You do not have permission for that command.")
+        world_id = self.world_id(actor); root = self.ensure(world_id)
+        src = root / "templates" / Path(template_name).name
+        dest = root / "imports" / Path(new_filename).name
+        if not src.exists():
+            return BuilderResult(False, f"Template not found: {template_name}")
+        if dest.exists() and not force:
+            return BuilderResult(False, f"Import file already exists: {dest.name} (use --force to overwrite)")
+        shutil.copyfile(src, dest)
+        return BuilderResult(True, f"Copied template {src.name} to worlds/{world_id}/builder/imports/{dest.name}")
 
     def _load_import_bundle(self, world_id: str, filename: str) -> tuple[dict[str, Any] | None, str, list[str]]:
         path = self.ensure(world_id) / "imports" / Path(filename).name
@@ -203,7 +241,7 @@ class BuilderWorkspace:
 
     def ensure(self, world_id: str) -> Path:
         root = self.worlds_dir / world_id / "builder"
-        for name in ("audit", "history", "snapshots", "exports", "imports", "templates"):
+        for name in ("audit", "history", "snapshots", "exports", "imports", "templates", "examples"):
             (root / name).mkdir(parents=True, exist_ok=True)
         for key, filename in DRAFT_FILES.items():
             path = root / filename

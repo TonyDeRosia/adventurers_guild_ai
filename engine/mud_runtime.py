@@ -1228,9 +1228,29 @@ class MudRuntime:
         visible = self.find_visible_entities(rid, char)
         exits = list(self.canonical_exits(char, rid).values())
         features = room_data.get("features", {}) or {}
-        objects = visible.get("objects", []) + visible.get("corpses", [])
+        feature_keys: set[tuple[str, str]] = set()
+        def _norm(value: Any) -> str:
+            return str(value or "").strip().lower().replace("_", " ")
         for fid, feat in features.items() if isinstance(features, dict) else []:
             if isinstance(feat, dict):
+                feature_keys.add((_norm(fid), _norm(feat.get("name") or fid)))
+        objects = []
+        for obj in visible.get("objects", []):
+            tmpl = obj.get("template") if isinstance(obj, dict) else {}
+            portable = bool((tmpl or {}).get("portable", obj.get("portable", True) if isinstance(obj, dict) else True))
+            oid = obj.get("template_id") or obj.get("id") if isinstance(obj, dict) else obj
+            name = obj.get("name") or (tmpl or {}).get("name") if isinstance(obj, dict) else obj
+            duplicate_feature = any(_norm(oid) in key or _norm(name) in key for key in feature_keys)
+            if portable or not duplicate_feature:
+                objects.append(obj)
+        objects.extend(visible.get("corpses", []))
+        seen_features: set[tuple[str, str]] = set()
+        for fid, feat in features.items() if isinstance(features, dict) else []:
+            if isinstance(feat, dict):
+                key = (_norm(fid), _norm(feat.get("name") or fid))
+                if key in seen_features:
+                    continue
+                seen_features.add(key)
                 objects.append({"id": fid, "name": feat.get("name") or fid, "short_description": feat.get("short_description", ""), "portable": False})
         return MudRoom(
             id=rid,

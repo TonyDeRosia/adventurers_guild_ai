@@ -939,6 +939,17 @@ Available commands:
             if len(args) >= 2 and args[1].lower() == "starter":
                 res = self.builder.migrate_starter(character); return CommandResult(narrative=res.message, ok=res.ok)
             return CommandResult(narrative="Usage: builder migrate starter", ok=False)
+        if sub == "template":
+            if len(args) < 2:
+                return CommandResult(narrative="Usage: builder template <list|show|copy> [template_name] [new_filename] [--force]", ok=False)
+            action = args[1].lower()
+            if action == "list":
+                res = self.builder.template_list(character); return CommandResult(narrative=res.message, ok=res.ok)
+            if action == "show" and len(args) >= 3:
+                res = self.builder.template_show(character, args[2]); return CommandResult(narrative=res.message, ok=res.ok)
+            if action == "copy" and len(args) >= 4:
+                res = self.builder.template_copy(character, args[2], args[3], force=("--force" in args[4:])); return CommandResult(narrative=res.message, ok=res.ok)
+            return CommandResult(narrative="Usage: builder template <list|show|copy> [template_name] [new_filename] [--force]", ok=False)
         if sub == "import":
             if len(args) < 2:
                 return CommandResult(narrative="Usage: builder import <list|validate|preview|apply> [filename] [--merge|--replace-drafts]", ok=False)

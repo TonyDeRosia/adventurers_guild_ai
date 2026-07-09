@@ -61,3 +61,28 @@ To exchange the organized starter layer, run `builder export`, then place the ex
 ## Phase 4G World Data Specification Alignment
 
 The canonical data contract is now defined in [WORLD_DATA_SPECIFICATION.md](WORLD_DATA_SPECIFICATION.md). Import/export bundles remain `{"areas": {}, "zones": {}, "rooms": {}, "features": {}, "items": {}, "entities": {}, "spawns": {}}`. Future optional keys such as `locations`, `factions`, `religions`, `cultures`, `terrain_profiles`, `ambient_profiles`, `weather_profiles`, `lighting_profiles`, `music_profiles`, `dialogue_packages`, `loot_tables`, `encounter_tables`, `quest_templates`, and `shop_templates` are reserved. Current import validation must not crash on those keys; unsupported collections are reported as future ignored warnings and are not applied.
+
+## Phase 4G Hotfix: import templates and empty-folder guidance
+
+Builder workspace preparation now creates `imports/`, `templates/`, and `examples/` under `worlds/<world_id>/builder/` automatically. Fresh Shattered Realms downloads include ready-to-copy templates in `worlds/shattered_realms/builder/templates/`:
+
+- `empty_bundle_template.json`
+- `area_zone_room_template.json`
+- `bad_duplicate_vnum_test.json`
+- `future_keys_test.json`
+- `feature_library_template.json`
+
+Use these commands inside the game:
+
+```text
+builder template list
+builder template show area_zone_room_template.json
+builder template copy area_zone_room_template.json my_area.json
+builder import validate my_area.json
+builder import preview my_area.json
+builder import apply my_area.json --merge
+```
+
+`builder template copy` writes to `worlds/<world_id>/builder/imports/` and refuses to overwrite an existing import file unless `--force` is supplied. When `builder import list` finds no JSON files, it prints the import folder path and the exact template-copy commands needed to get started.
+
+`bad_duplicate_vnum_test.json` is intentionally invalid and should fail validation with a duplicate-vnum error. `future_keys_test.json` contains future top-level collections such as `locations`, `factions`, and `ambient_profiles`; current validation warns that those collections are not applied, but it must not crash.

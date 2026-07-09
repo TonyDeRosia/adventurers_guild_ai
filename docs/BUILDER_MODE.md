@@ -218,3 +218,16 @@ To exchange the organized starter layer, run `builder export`, then place the ex
 ## Phase 4G Builder Data Contract
 
 Builder mode now targets the canonical world data contract in `WORLD_DATA_SPECIFICATION.md`. Drafts remain editable overlays under `worlds/<world_id>/builder/`; imports merge into drafts first; exports produce import-compatible bundles; live package files are not mutated by Builder.
+
+## Phase 4G Hotfix: templates and Builder scenery rendering
+
+Builder Mode includes template helper commands:
+
+- `builder template list` shows templates available under `worlds/<world_id>/builder/templates/`.
+- `builder template show <template_name>` prints the template path and a short summary.
+- `builder template copy <template_name> <new_filename>` copies the template to `worlds/<world_id>/builder/imports/`.
+- Add `--force` to overwrite an existing import file deliberately.
+
+The Shattered Realms starter templates are committed under `worlds/shattered_realms/builder/templates/`, so fresh downloads have import examples without requiring players to create folders or blank JSON files manually. Builder workspace preparation also creates `imports/`, `templates/`, and `examples/` automatically.
+
+When Builder Mode renders a live room that has a draft room overlay, draft features are authoritative for nonportable scenery. This prevents migrated draft features such as `Old Gate` and `Fountain` from being displayed once as draft features and again as live seeded room objects. The dedupe uses normalized ids and display names, while portable runtime item instances continue to render normally.

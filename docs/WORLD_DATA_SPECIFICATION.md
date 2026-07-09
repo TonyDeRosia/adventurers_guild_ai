@@ -279,3 +279,11 @@ Existing Builder drafts using `areas`, `zones`, `rooms`, `features`, `items`, `e
 ## tbaMUD Design Parity
 
 Smart MUD preserves tbaMUD lessons: zone modularity, vnum organization, builder-first workflow, room/mobile/object/spawn separation, logical exit consistency, area balance planning, offline design before building, and resets/spawns as zone responsibilities. Smart MUD changes the storage and workflow: JSON instead of `.wld/.zon/.mob/.obj/.shp/.trg`, Builder drafts instead of direct live file editing, a generic location hierarchy instead of hardcoded fantasy geography, `plugin_data` extension points, import/export bundles, and AI-readable metadata without AI owning state.
+
+## Phase 4G Hotfix Notes
+
+Builder import templates live in `worlds/shattered_realms/builder/templates/`. They are normal JSON bundles using the v1.0 top-level collections (`areas`, `zones`, `rooms`, `features`, `items`, `entities`, and `spawns`) unless explicitly marked as a future-key or validation-failure example.
+
+To create an import file, copy a template into `worlds/shattered_realms/builder/imports/` with `builder template copy area_zone_room_template.json my_area.json`, then run `builder import validate my_area.json` before previewing or applying it. Current engines preserve `plugin_data` on areas, zones, rooms, local room features, and global feature records. Future collections such as `locations`, `factions`, and `ambient_profiles` are warning-only in this phase.
+
+Builder rendering now treats draft room features as the preferred Builder view of nonportable scenery for a room. If a draft room exists for a live room, nonportable live room scenery with the same normalized id or display name is not appended a second time. Portable item instances remain visible because they represent real runtime inventory/item state rather than static scenery.

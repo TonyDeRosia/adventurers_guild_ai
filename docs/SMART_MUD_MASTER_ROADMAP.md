@@ -281,3 +281,15 @@ To exchange the organized starter layer, run `builder export`, then place the ex
 ## Phase 4G: World Data Specification v1.0
 
 Before large-scale Shattered Realms expansion, Smart MUD freezes the data contract for world packages and Builder imports in `docs/WORLD_DATA_SPECIFICATION.md`. Phase 4G documents current area/zone/vnum drafts, import/export bundles, optional generic location hierarchy, profile libraries, plugin_data conventions, inheritance, validation, migration, backward compatibility, and tbaMUD design parity without adding combat, AI behavior, quests, shops, classes, skills, spells, or a visual Builder UI.
+
+### Phase 4G Hotfix: Builder import templates and duplicate scenery rendering
+
+Completed hotfix scope:
+
+- Builder workspace setup auto-creates `imports/`, `templates/`, and `examples/`.
+- Shattered Realms ships built-in import templates in `worlds/shattered_realms/builder/templates/`.
+- In-game commands `builder template list`, `builder template show`, and `builder template copy` help builders create import files without manual folder/file setup.
+- Import validation covers a valid area/zone/room template, an intentional duplicate-vnum failure example, and future-key warning behavior.
+- Builder room rendering prefers draft features over duplicate nonportable live scenery while preserving portable runtime item instances.
+
+No combat, AI, quests, shops, skills, classes, spells, or visual Builder UI were added by this hotfix.

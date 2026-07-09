@@ -14,7 +14,7 @@ REQUIRED_RUNTIME_DIRS = (
     "trainers", "classes", "races", "skills", "spells", "abilities", "factions",
     "lore", "dialogue", "intelligence", "colors",
 )
-REQUIRED_BUILDER_DIRS = ("audit", "history", "snapshots", "imports", "exports", "templates")
+REQUIRED_BUILDER_DIRS = ("audit", "history", "snapshots", "imports", "exports", "templates", "examples")
 REQUIRED_WORLD_DIRS = REQUIRED_RUNTIME_DIRS  # Backward-compatible alias for runtime-required content.
 REQUIRED_MANIFEST_FIELDS = (
     "world_id", "display_name", "author", "description", "version",
