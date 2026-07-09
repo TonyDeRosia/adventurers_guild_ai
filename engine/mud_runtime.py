@@ -94,7 +94,9 @@ class MudRoom:
     title: str
     description: str
     exits: list[dict[str, str]] = field(default_factory=list)
-    npcs: list[str] = field(default_factory=list)
+    players: list[Any] = field(default_factory=list)
+    npcs: list[Any] = field(default_factory=list)
+    mobs: list[Any] = field(default_factory=list)
     objects: list[dict[str, Any]] = field(default_factory=list)
     ambient_text: str = ""
 
@@ -222,6 +224,40 @@ class MudStateStore:
             """)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS room_item_seeds (
+                    world_id TEXT,
+                    room_id TEXT,
+                    template_id TEXT,
+                    seed_key TEXT,
+                    created_at TEXT,
+                    PRIMARY KEY(world_id, room_id, seed_key)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS entity_instances (
+                    entity_id TEXT PRIMARY KEY,
+                    world_id TEXT,
+                    entity_type TEXT,
+                    template_id TEXT,
+                    name TEXT,
+                    keywords JSON,
+                    short_description TEXT,
+                    long_description TEXT,
+                    current_room_id TEXT,
+                    owner_type TEXT,
+                    owner_id TEXT,
+                    faction_id TEXT,
+                    level INTEGER DEFAULT 1,
+                    state JSON,
+                    flags JSON,
+                    created_at TEXT,
+                    updated_at TEXT,
+                    plugin_data JSON,
+                    destroyed_at TEXT,
+                    destroy_reason TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS room_entity_seeds (
                     world_id TEXT,
                     room_id TEXT,
                     template_id TEXT,
@@ -441,6 +477,7 @@ class MudRuntime:
         self.active_world_id: Optional[str] = None
         self.active_world: Any = None
         self.item_templates: dict[str, MappingProxyType] = {}
+        self.entity_templates: dict[str, MappingProxyType] = {}
         self.sessions: dict[str, MudSession] = {}
         self.command_engine = MudCommandEngine(self.state_store, event_bus=self.event_bus)
         self.sqlite_ready = (user_data_dir / "mud_state.db").exists()
@@ -521,7 +558,9 @@ class MudRuntime:
         self.event_bus.publish("plugins_resolved", {"world_id": world_id}, source_system="plugin", world_id=world_id)
         self.active_world_id = world_id
         self._load_item_templates()
+        self._load_entity_templates()
         self._seed_room_items()
+        self._seed_room_entities()
         self.hooks.emit("world_loaded", world_id=world_id, world=self.active_world)
         self.event_bus.publish("world_loaded", {"world_id": world_id}, source_system="runtime", world_id=world_id)
         return self.active_world
@@ -649,6 +688,11 @@ class MudRuntime:
         raw_cmd = tokens[0].lower()
         cmd_name = self.command_engine.resolve_alias(raw_cmd)
         self.event_bus.publish("command_resolved", {"raw_input": command, "canonical_command": cmd_name, "arguments": tokens[1:], "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
+        if cmd_name in {"look", "examine"} and tokens[1:]:
+            entity_result = self._look_entity(char.id, char.room_id, " ".join(tokens[1:]))
+            if entity_result is not None:
+                from engine.mud_commands import CommandResult
+                return CommandResult(entity_result)
         item_result = self._handle_item_command(char, command, cmd_name, tokens[1:])
         if item_result is not None:
             self.event_bus.publish("command_executed", {"raw_input": command, "canonical_command": cmd_name, "arguments": tokens[1:], "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id, "result_summary": item_result.narrative[:120]}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
@@ -692,14 +736,18 @@ class MudRuntime:
         if self.active_world is not None:
             try:
                 room_data = self.active_world.room(char.room_id)
+                rid = str(room_data.get("id", char.room_id))
+                visible = self.find_visible_entities(rid, char)
                 return MudRoom(
-                    id=str(room_data.get("id", char.room_id)),
+                    id=rid,
                     area_id=str(room_data.get("area_id", "")),
                     title=str(room_data.get("name") or room_data.get("title") or char.room_id),
                     description=str(room_data.get("long_description") or room_data.get("description") or room_data.get("short_description") or ""),
                     exits=list(room_data.get("exits", []) or []),
-                    npcs=self._room_npcs(room_data),
-                    objects=self.get_visible_room_items(str(room_data.get("id", char.room_id))),
+                    players=visible.get("players", []),
+                    npcs=visible.get("npcs", []),
+                    mobs=visible.get("mobs", []),
+                    objects=visible.get("objects", []) + visible.get("corpses", []),
                 )
             except Exception:
                 pass
@@ -893,6 +941,15 @@ class MudRuntime:
         from smart_mud.transport import html_to_plain_text
         return html_to_plain_text(render_object(render_payload))
 
+    def _look_entity(self, character_id: str, room_id: str, query: str) -> str | None:
+        candidates = [e for e in self.find_room_entities(room_id) if e.get("entity_type") in {"npc", "mob", "object", "container", "corpse"}]
+        res = self.resolve_entity_keywords(query, candidates)
+        if res["status"] == "missing": return None
+        if res["status"] != "ok": return self._resolve_message({"status":"ambiguous", "matches": res.get("matches", [])}, "You don't see that.")
+        ent = res["entity"]
+        from smart_mud.transport import html_to_plain_text
+        return html_to_plain_text(render_object({"name": ent.get("name"), "description": ent.get("long_description") or ent.get("short_description"), "long_description": ent.get("long_description")}))
+
     def _resolve_message(self, res: dict[str, Any], missing: str) -> str:
         if res.get("status") == "ambiguous": return "Which do you mean: " + ", ".join(i["name"] for i in res.get("matches", [])) + "?"
         return missing
@@ -924,6 +981,119 @@ class MudRuntime:
                     except sqlite3.IntegrityError: continue
                     iid=f"item_{uuid.uuid4().hex}"
                     conn.execute("INSERT INTO item_instances(instance_id,world_id,template_id,owner_type,owner_id,room_id,equipped_slot,stack_count,condition,durability,created_at,updated_at,custom_flags,plugin_data) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (iid,self.active_world_id,tid,"room","",rid,"",1,"normal",100,now,now,"{}","{}"))
+
+    ENTITY_TYPES = {"player", "npc", "mob", "object", "container", "corpse", "door", "shop", "pet", "summon"}
+
+    def _load_entity_templates(self) -> None:
+        templates: dict[str, MappingProxyType] = {}
+        for raw in getattr(self.active_world, "npcs", []) or []:
+            if not isinstance(raw, dict):
+                continue
+            tid = str(raw.get("id") or raw.get("template_id") or "").strip()
+            if not tid:
+                continue
+            kind = str(raw.get("entity_type") or raw.get("kind") or "npc").lower()
+            entity_type = "mob" if kind in {"mob", "monster", "creature"} else "npc"
+            keywords = raw.get("keywords") or str(raw.get("name") or tid).replace("-", " ").replace("'", "").split() + [tid]
+            level_range = raw.get("level_range") or [raw.get("level", 1)]
+            level = int((level_range[0] if isinstance(level_range, list) and level_range else raw.get("level", 1)) or 1)
+            templates[tid] = MappingProxyType({
+                "template_id": tid, "entity_type": entity_type, "name": str(raw.get("name") or tid).title(),
+                "keywords": [str(k).lower() for k in keywords if str(k).strip()],
+                "short_description": str(raw.get("short_description") or raw.get("description") or raw.get("name") or tid),
+                "long_description": str(raw.get("long_description") or raw.get("description") or raw.get("short_description") or raw.get("name") or tid),
+                "default_room_id": str(raw.get("default_room_id") or raw.get("room_id") or ""),
+                "faction_id": str(raw.get("faction_id") or ""), "level": level,
+                "state": raw.get("state") or {}, "flags": raw.get("flags") or [], "plugin_data": raw.get("plugin_data") or {},
+            })
+        self.entity_templates = templates
+
+    def _entity_payload(self, row: Any) -> dict[str, Any]:
+        keys = ["entity_id","world_id","entity_type","template_id","name","keywords","short_description","long_description","current_room_id","owner_type","owner_id","faction_id","level","state","flags","created_at","updated_at","plugin_data"]
+        data = dict(zip(keys, row))
+        for key, default in (("keywords", []), ("state", {}), ("flags", []), ("plugin_data", {})):
+            try: data[key] = json.loads(data.get(key) or json.dumps(default))
+            except Exception: data[key] = default
+        data["room_id"] = data.get("current_room_id", "")
+        data["description"] = data.get("long_description") or data.get("short_description") or data.get("name")
+        return data
+
+    def _fetch_entities(self, where: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
+        with sqlite3.connect(self.state_store.db_path) as conn:
+            rows = conn.execute(f"SELECT entity_id,world_id,entity_type,template_id,name,keywords,short_description,long_description,current_room_id,owner_type,owner_id,faction_id,level,state,flags,created_at,updated_at,plugin_data FROM entity_instances WHERE destroyed_at IS NULL AND {where} ORDER BY entity_type, created_at, entity_id", params).fetchall()
+        return [self._entity_payload(r) for r in rows]
+
+    def spawn_entity(self, template_id: str, entity_type: str | None = None, room_id: str | None = None, owner_type: str = "room", owner_id: str = "", state: dict[str, Any] | None = None, flags: list[str] | None = None, source_system: str = "runtime", **ctx: Any) -> dict[str, Any]:
+        tmpl = dict(self.entity_templates.get(template_id, {}))
+        etype = entity_type or tmpl.get("entity_type") or "object"
+        if etype not in self.ENTITY_TYPES: raise ValueError(f"Unsupported entity type: {etype}")
+        now = datetime.now(timezone.utc).isoformat(); eid = f"ent_{uuid.uuid4().hex}"
+        payload = (eid, self.active_world_id or tmpl.get("world_id", ""), etype, template_id, tmpl.get("name", template_id), json.dumps(tmpl.get("keywords", [template_id])), tmpl.get("short_description", tmpl.get("name", template_id)), tmpl.get("long_description", tmpl.get("short_description", tmpl.get("name", template_id))), room_id or tmpl.get("default_room_id", ""), owner_type, owner_id, tmpl.get("faction_id", ""), int(tmpl.get("level", 1) or 1), json.dumps(state if state is not None else tmpl.get("state", {})), json.dumps(flags if flags is not None else tmpl.get("flags", [])), now, now, json.dumps(tmpl.get("plugin_data", {})))
+        with sqlite3.connect(self.state_store.db_path) as conn:
+            conn.execute("INSERT INTO entity_instances(entity_id,world_id,entity_type,template_id,name,keywords,short_description,long_description,current_room_id,owner_type,owner_id,faction_id,level,state,flags,created_at,updated_at,plugin_data) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", payload)
+        ent = self.find_entity(eid) or {}
+        self._publish_entity_event("entity_spawned", ent, source_system=source_system, **ctx)
+        if etype in {"npc", "mob", "corpse"}: self._publish_entity_event(f"{etype}_spawned", ent, source_system=source_system, **ctx)
+        self._publish_entity_event("room_entities_changed", ent, source_system=source_system, **ctx)
+        return ent
+
+    def find_entity(self, entity_id: str) -> dict[str, Any] | None: return next(iter(self._fetch_entities("entity_id=?", (entity_id,))), None)
+    def find_room_entities(self, room_id: str) -> list[dict[str, Any]]: return self._fetch_entities("owner_type='room' AND current_room_id=?", (room_id,))
+    def find_visible_entities(self, room_id: str, viewer: Any = None) -> dict[str, list[dict[str, Any]]]:
+        groups = {"players": [], "npcs": [], "mobs": [], "objects": [], "corpses": []}
+        for ent in self.find_room_entities(room_id):
+            groups[{"npc":"npcs", "mob":"mobs", "corpse":"corpses"}.get(ent.get("entity_type"), "objects")].append(ent)
+        groups["objects"].extend(self.get_visible_room_items(room_id))
+        return groups
+
+    def resolve_entity_keywords(self, query: str, candidate_entities: list[dict[str, Any]]) -> dict[str, Any]:
+        words = [w for w in re.findall(r"[a-z0-9_']+", query.lower()) if w not in self.ARTICLES]; q = " ".join(words)
+        if not q: return {"status":"missing", "matches": []}
+        def tokens(e): return set(re.findall(r"[a-z0-9_']+", str(e.get("name","")).lower()) + [str(k).lower() for k in e.get("keywords", [])])
+        matches = [e for e in candidate_entities if str(e.get("name","")).lower() == q] or [e for e in candidate_entities if q in [str(k).lower() for k in e.get("keywords", [])]] or [e for e in candidate_entities if all(w in tokens(e) for w in words)]
+        return {"status": "ok" if len(matches)==1 else "ambiguous" if matches else "missing", "entity": matches[0] if len(matches)==1 else None, "matches": matches}
+
+    def move_entity(self, entity_id: str, room_id: str, source_system: str = "runtime", **ctx: Any) -> dict[str, Any]:
+        old = self.find_entity(entity_id); now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.state_store.db_path) as conn: conn.execute("UPDATE entity_instances SET current_room_id=?, owner_type='room', updated_at=? WHERE entity_id=? AND destroyed_at IS NULL", (room_id, now, entity_id))
+        ent = self.find_entity(entity_id) or {}
+        self._publish_entity_event("entity_moved", ent, source_system=source_system, previous_room_id=(old or {}).get("current_room_id"), **ctx); self._publish_entity_event("room_entities_changed", ent, source_system=source_system, **ctx)
+        return ent
+
+    def update_entity_state(self, entity_id: str, state: dict[str, Any], source_system: str = "runtime", **ctx: Any) -> dict[str, Any]:
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.state_store.db_path) as conn: conn.execute("UPDATE entity_instances SET state=?, updated_at=? WHERE entity_id=? AND destroyed_at IS NULL", (json.dumps(state), now, entity_id))
+        ent = self.find_entity(entity_id) or {}; self._publish_entity_event("entity_state_changed", ent, source_system=source_system, **ctx); return ent
+
+    def despawn_entity(self, entity_id: str, source_system: str = "runtime", **ctx: Any) -> bool:
+        ent = self.find_entity(entity_id)
+        with sqlite3.connect(self.state_store.db_path) as conn: conn.execute("UPDATE entity_instances SET destroyed_at=?, destroy_reason='despawned', updated_at=? WHERE entity_id=?", (datetime.now(timezone.utc).isoformat(), datetime.now(timezone.utc).isoformat(), entity_id))
+        if ent: self._publish_entity_event("entity_despawned", ent, source_system=source_system, **ctx); self._publish_entity_event("room_entities_changed", ent, source_system=source_system, **ctx)
+        return bool(ent)
+
+    def destroy_entity(self, entity_id: str, reason: str = "destroyed", source_system: str = "runtime", **ctx: Any) -> bool:
+        ent = self.find_entity(entity_id)
+        with sqlite3.connect(self.state_store.db_path) as conn: conn.execute("UPDATE entity_instances SET destroyed_at=?, destroy_reason=?, updated_at=? WHERE entity_id=?", (datetime.now(timezone.utc).isoformat(), reason, datetime.now(timezone.utc).isoformat(), entity_id))
+        if ent: self._publish_entity_event("entity_destroyed", ent, source_system=source_system, **ctx); self._publish_entity_event("room_entities_changed", ent, source_system=source_system, **ctx)
+        return bool(ent)
+
+    def _publish_entity_event(self, name: str, ent: dict[str, Any], source_system: str = "runtime", **extra: Any) -> None:
+        payload = {"entity_id": ent.get("entity_id"), "entity_type": ent.get("entity_type"), "world_id": ent.get("world_id", self.active_world_id or ""), "room_id": ent.get("current_room_id", ""), "template_id": ent.get("template_id"), "source_system": source_system, **extra}
+        self.event_bus.publish(name, payload, source_system=source_system, world_id=payload.get("world_id", ""), character_id=payload.get("character_id", ""), account_id=payload.get("account_id", ""), session_id=payload.get("session_id", ""), room_id=payload.get("room_id", ""))
+
+    def _seed_room_entities(self) -> None:
+        if not self.active_world_id: return
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.state_store.db_path) as conn:
+            for tid, tmpl in self.entity_templates.items():
+                rid = str(tmpl.get("default_room_id") or "")
+                if not rid: continue
+                seed = f"{tid}:{rid}:0"
+                try: conn.execute("INSERT INTO room_entity_seeds(world_id,room_id,template_id,seed_key,created_at) VALUES(?,?,?,?,?)", (self.active_world_id, rid, tid, seed, now))
+                except sqlite3.IntegrityError: continue
+                eid=f"ent_{uuid.uuid4().hex}"
+                conn.execute("INSERT INTO entity_instances(entity_id,world_id,entity_type,template_id,name,keywords,short_description,long_description,current_room_id,owner_type,owner_id,faction_id,level,state,flags,created_at,updated_at,plugin_data) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (eid,self.active_world_id,tmpl['entity_type'],tid,tmpl['name'],json.dumps(tmpl['keywords']),tmpl['short_description'],tmpl['long_description'],rid,"room","",tmpl.get('faction_id',''),int(tmpl.get('level',1) or 1),json.dumps(tmpl.get('state',{})),json.dumps(tmpl.get('flags',[])),now,now,json.dumps(tmpl.get('plugin_data',{}))))
+
 
     def _character_payload(self, char: MudCharacter, world_id: str) -> dict[str, Any]:
         return {

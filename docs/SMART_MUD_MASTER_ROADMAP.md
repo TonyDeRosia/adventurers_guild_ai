@@ -149,3 +149,9 @@ Command echo and command output remain line-separated, semantic color roles rema
 Phase 2G centralizes Smart MUD room output in `engine.mud_displays.render_room()`. Login/world entry, `look`, movement, web, and telnet all use that canonical render block, preserving semantic roles and matching line spacing across HTML and plain text. The optional `You see:` section appears only when visible entities exist, orders players before NPCs before mobs before objects, and keeps room object display compact. Object descriptions are handled by targeted `look` / `examine` output instead of normal room rendering.
 
 Future room-changing commands and systems—recall, goto, summon, portal, Builder goto, teleport, AI scene transitions, combat fleeing, and death—must update runtime state and then invoke the canonical renderer. They must not assemble room text themselves. The pinned Smart MUD prompt remains separate, and combat, NPC AI, Builder Mode, crafting, and world expansion remain out of scope.
+
+## Phase 3A Runtime Entity System
+
+Smart MUD now includes a canonical runtime entity foundation documented in `docs/ENTITY_SYSTEM.md`. World package templates remain immutable, while SQLite `entity_instances` hold mutable room location, ownership, state, flags, timestamps, and plugin data. `MudRuntime` is the sole authority for spawning, moving, despawning, destroying, state updates, keyword resolution, and visibility queries.
+
+Room rendering uses the entity visibility API so players, NPCs, mobs, and objects/items are displayed in the canonical order without exposing internal entity IDs to normal players. NPCs and mobs can be seeded idempotently from world package data and persist across restart. Corpse and container concepts are reserved for later combat and inventory/container work without replacing the Phase 2E item system. Combat, AI behavior, Builder Mode, shops, doors, pets, summons, and world expansion remain out of scope for Phase 3A.

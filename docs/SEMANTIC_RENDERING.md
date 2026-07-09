@@ -69,3 +69,9 @@ Normal player room renders must not expose internal room ids. The pinned web pro
 The canonical layout is title, blank line, description, blank line, optional `You see:` section, visible players, NPCs, mobs, objects, blank line, and the final `[ Exits: ... ]` line. The `You see:` section is omitted entirely when no visible entities exist, and empty category headings are never emitted. Room object lines are compact names by default; object descriptions belong to `look <object>` / `examine <object>` via the object renderer, not normal room display.
 
 The pinned Smart MUD prompt remains independent from room rendering and is rendered through prompt roles only.
+
+## Phase 3A Runtime Entity System
+
+Smart MUD now includes a canonical runtime entity foundation documented in `docs/ENTITY_SYSTEM.md`. World package templates remain immutable, while SQLite `entity_instances` hold mutable room location, ownership, state, flags, timestamps, and plugin data. `MudRuntime` is the sole authority for spawning, moving, despawning, destroying, state updates, keyword resolution, and visibility queries.
+
+Room rendering uses the entity visibility API so players, NPCs, mobs, and objects/items are displayed in the canonical order without exposing internal entity IDs to normal players. NPCs and mobs can be seeded idempotently from world package data and persist across restart. Corpse and container concepts are reserved for later combat and inventory/container work without replacing the Phase 2E item system. Combat, AI behavior, Builder Mode, shops, doors, pets, summons, and world expansion remain out of scope for Phase 3A.

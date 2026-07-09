@@ -78,3 +78,9 @@ A pickup flow should publish in deterministic order: `before_item_pickup`, `item
 ### Phase 2E implementation note
 
 Item events are emitted by `MudRuntime` from the canonical item pipeline. Pickup order is `before_item_pickup`, `item_picked_up`, `inventory_changed`, `room_inventory_changed`, and `after_item_pickup`; drop/equip/remove use analogous before/core/change/after ordering.
+
+## Phase 3A Runtime Entity System
+
+Smart MUD now includes a canonical runtime entity foundation documented in `docs/ENTITY_SYSTEM.md`. World package templates remain immutable, while SQLite `entity_instances` hold mutable room location, ownership, state, flags, timestamps, and plugin data. `MudRuntime` is the sole authority for spawning, moving, despawning, destroying, state updates, keyword resolution, and visibility queries.
+
+Room rendering uses the entity visibility API so players, NPCs, mobs, and objects/items are displayed in the canonical order without exposing internal entity IDs to normal players. NPCs and mobs can be seeded idempotently from world package data and persist across restart. Corpse and container concepts are reserved for later combat and inventory/container work without replacing the Phase 2E item system. Combat, AI behavior, Builder Mode, shops, doors, pets, summons, and world expansion remain out of scope for Phase 3A.

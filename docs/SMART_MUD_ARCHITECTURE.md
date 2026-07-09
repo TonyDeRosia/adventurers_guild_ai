@@ -116,3 +116,9 @@ Smart MUD now has one canonical room rendering path: `engine.mud_displays.render
 Any command or future subsystem that changes rooms must call the canonical renderer after changing authoritative runtime state. This includes recall, goto, summon, portal travel, Builder Mode goto, teleportation, future AI scene transitions, future combat fleeing, and future death/respawn. Those systems provide data; the renderer decides presentation.
 
 Combat, NPC AI, Builder Mode, crafting, and world expansion remain intentionally unimplemented here. Their future integrations must not concatenate room text manually.
+
+## Phase 3A Runtime Entity System
+
+Smart MUD now includes a canonical runtime entity foundation documented in `docs/ENTITY_SYSTEM.md`. World package templates remain immutable, while SQLite `entity_instances` hold mutable room location, ownership, state, flags, timestamps, and plugin data. `MudRuntime` is the sole authority for spawning, moving, despawning, destroying, state updates, keyword resolution, and visibility queries.
+
+Room rendering uses the entity visibility API so players, NPCs, mobs, and objects/items are displayed in the canonical order without exposing internal entity IDs to normal players. NPCs and mobs can be seeded idempotently from world package data and persist across restart. Corpse and container concepts are reserved for later combat and inventory/container work without replacing the Phase 2E item system. Combat, AI behavior, Builder Mode, shops, doors, pets, summons, and world expansion remain out of scope for Phase 3A.
