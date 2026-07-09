@@ -137,3 +137,9 @@ The Phase 2E display path now treats semantic rendering as the standard for web 
 #### Phase 2E hotfix acceptance update
 
 Semantic MUD color rendering is wired end-to-end through settings `effective_roles`, frontend `--mud-color-*` variables, role-based CSS selectors, and backend semantic spans. Changing a role color in Settings updates future web output without adding combat, AI behavior, Builder Mode, or world expansion.
+
+### Phase 2F: Classic MUD display formatting
+
+Phase 2F standardizes presentation without adding combat, AI behavior, Builder Mode, world expansion, or runtime authority changes. Room rendering now follows a traditional MUD layout: title, blank line, description, blank line, players, NPCs, mobs, objects, blank line, and one final `[ Exits: ... ]` line. Room ids are hidden from normal players, room names and descriptions render once, movement messages are separated from destination room renders, and `look` produces one room display.
+
+Command echo and command output remain line-separated, semantic color roles remain intact, telnet output stays HTML-free, and the pinned Smart MUD prompt remains separate from room rendering.

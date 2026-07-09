@@ -77,7 +77,8 @@ _TAG_RE = re.compile(r"<[^>]+>")
 
 def html_to_plain_text(value: str) -> str:
     import html
-    text = _TAG_RE.sub("", str(value or ""))
+    text = re.sub(r"<br\s*/?>", "\n", str(value or ""), flags=re.IGNORECASE)
+    text = _TAG_RE.sub("", text)
     return html.unescape(text)
 
 
@@ -86,7 +87,8 @@ def html_to_ansi_text(value: str) -> str:
     def repl(match: re.Match[str]) -> str:
         role, body = match.group(1), html.unescape(_TAG_RE.sub("", match.group(2)))
         return f"{_ROLE_TO_ANSI.get(role, '')}{body}{_RESET if role in _ROLE_TO_ANSI else ''}"
-    return _SPAN_RE.sub(repl, str(value or ""))
+    value = re.sub(r"<br\s*/?>", "\n", str(value or ""), flags=re.IGNORECASE)
+    return _SPAN_RE.sub(repl, value)
 
 
 class RuntimeTransportAdapter:

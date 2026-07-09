@@ -294,21 +294,31 @@ class WebRuntime:
         room_output_html = str(view.get("html") or view.get("output_html") or "")
         room_text = self._plain_text(room_output_html)
         semantic_output_text = str(command_output or view.get("output_text") or view.get("text") or room_text)
-        output_text = render_semantic_plain(semantic_output_text)
         clean_command = command.strip().lower().split()[0] if command.strip() else ""
         room_commands = {"look", "l", "north", "n", "south", "s", "east", "e", "west", "w", "up", "u", "down", "d", "in", "out"}
         include_room_output = not command or clean_command in room_commands
-        command_result_text = output_text
+        command_result_text = render_semantic_plain(semantic_output_text).strip()
+        command_result_semantic = semantic_output_text
         if include_room_output and room_text and room_text in command_result_text:
             command_result_text = command_result_text.replace(room_text, "", 1).strip()
-        command_result_html = (f'<span hidden data-plain="{html.escape(command_result_text, quote=True)}"></span>' + semantic_html(semantic_output_text)) if command_result_text else ""
+            command_result_semantic = command_result_text
+        if include_room_output and clean_command in {"look", "l"}:
+            command_result_text = ""
+            command_result_semantic = ""
+        command_result_html = (f'<span hidden data-plain="{html.escape(command_result_text, quote=True)}"></span>' + semantic_html(command_result_semantic)) if command_result_text else ""
         if command_result_html and "<span role=" not in command_result_html:
             command_result_html = f'<span role="system">{command_result_html}</span>'
         command_echo_html = f'<span role="command_echo">&gt; {html.escape(command)}</span>' if command and command_echo else ""
         output_parts = [part for part in [command_echo_html, command_result_html, room_output_html if include_room_output else ""] if part]
         output_html = "\n".join(output_parts) if command else room_output_html
+        output_text_parts = []
         if command and command_echo:
-            output_text = f"> {command}\n{output_text}"
+            output_text_parts.append(f"> {command}")
+        if command_result_text:
+            output_text_parts.append(command_result_text)
+        if include_room_output and room_text:
+            output_text_parts.append(room_text)
+        output_text = "\n".join(output_text_parts) if (command or include_room_output) else render_semantic_plain(semantic_output_text)
         prompt_html = str(view.get("prompt") or view.get("prompt_html") or "")
         prompt_plain = self._plain_text(prompt_html).strip()
         prompt_parts = prompt_plain.lstrip("> ").split()

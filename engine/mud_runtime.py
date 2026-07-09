@@ -55,6 +55,11 @@ def can_edit_world_package(subject: Any) -> bool: return _permission_checked(sub
 def can_manage_accounts(subject: Any) -> bool: return _permission_checked(subject, "can_manage_accounts", _role(subject) == "admin")
 
 
+def should_show_room_ids(subject: Any) -> bool:
+    """Return true only for future debug/builder contexts, never normal players."""
+    return is_builder(subject) or is_immortal(subject) or is_admin(subject)
+
+
 
 @dataclass
 class MudCharacter:
@@ -675,7 +680,7 @@ class MudRuntime:
             self.state_store.save_character(char, self.active_world_id or "")
             new_room = self._current_room(char)
             self.event_bus.publish("movement_succeeded", {"canonical_command": direction, "character_id": char.id, "character_name": char.name, "current_room_id": room.id, "target_room_id": char.room_id, "result_summary": "moved"}, source_system="movement", world_id=self.active_world_id or "", character_id=char.id, command=direction)
-            return CommandResult(narrative=f"You head {direction}.\n\n{self._room_text(new_room)}")
+            return CommandResult(narrative=f"You head {direction}.")
         self.event_bus.publish("movement_failed", {"canonical_command": direction, "character_id": char.id, "character_name": char.name, "current_room_id": room.id, "result_summary": "no_exit"}, source_system="movement", world_id=self.active_world_id or "", character_id=char.id, command=direction)
         return CommandResult(narrative="You cannot go that way.", ok=False)
 
@@ -871,7 +876,7 @@ class MudRuntime:
 
     def _render_inventory(self, character_id: str) -> str:
         items=self.find_inventory_items(character_id)
-        return semantic("system", "You are carrying nothing.") if not items else semantic("system", "You are not carrying anything.") + "\n" + semantic("system", "You are carrying:") + "\n" + "\n".join(f"  {semantic('item_' + str(i.get('rarity', 'common')), i['name'])}" + (f" x{i['stack_count']}" if i.get('stack_count',1)>1 else "") for i in items)
+        return semantic("system", "You are not carrying anything.") if not items else semantic("system", "You are carrying:") + "\n" + "\n".join(f"  {semantic('item_' + str(i.get('rarity', 'common')), i['name'])}" + (f" x{i['stack_count']}" if i.get('stack_count',1)>1 else "") for i in items)
 
     def _render_equipment(self, character_id: str) -> str:
         equipped = self.find_equipped_items(character_id)

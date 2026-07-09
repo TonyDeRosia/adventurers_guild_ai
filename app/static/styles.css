@@ -1576,3 +1576,9 @@ body.smart-mud-mode { height: 100vh; overflow: hidden; }
 #mud-world-output span[role="prompt_stamina"], #mud-player-prompt span[role="prompt_stamina"], .mud-role-prompt_stamina, .mud-prompt-stamina { color: var(--mud-color-prompt-stamina, var(--mud-prompt-stamina-color, #d8dee9)); }
 #mud-world-output span[role="prompt_xp"], #mud-player-prompt span[role="prompt_xp"], .mud-role-prompt_xp, .mud-prompt-xp { color: var(--mud-color-prompt-xp, var(--mud-prompt-xp-color, #d8dee9)); }
 #mud-world-output span[role="prompt_gold"], #mud-player-prompt span[role="prompt_gold"], .mud-role-prompt_gold, .mud-prompt-gold { color: var(--mud-color-prompt-gold, var(--mud-prompt-gold-color, #d8dee9)); }
+
+/* Phase 2F: classic MUD output preserves backend-authored line breaks. */
+#mud-world-output,
+.mud-output-turn {
+  white-space: pre-wrap;
+}

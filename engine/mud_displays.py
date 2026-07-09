@@ -25,66 +25,82 @@ def semantic(role: str, text: Any) -> str:
     return f"{{{role}}}{text}{{/{role}}}"
 
 
+def _display_name(value: Any) -> str:
+    """Return a player-facing title, never an internal id fallback unless unavoidable."""
+    text = str(value or "").strip()
+    if not text:
+        return "Unknown Room"
+    if "_" in text or text.islower():
+        return text.replace("_", " ").title()
+    return text
+
+
+def _entity_text(entity: Any) -> tuple[str, str]:
+    if isinstance(entity, dict):
+        text = entity.get("room_description") or entity.get("short_description") or entity.get("name") or entity.get("title") or ""
+        desc = entity.get("long_description") or entity.get("description") or ""
+        return str(text).strip(), str(desc).strip()
+    return str(entity).strip(), ""
+
+
 def render_room(room: Any, colors: dict[str, str], character: Any = None) -> str:
-    """Render room description with inline exits using semantic roles."""
-    lines = []
-    
-    # Room area and title
-    if hasattr(room, 'area_id') and room.area_id:
-        lines.append(f'<span role="area_name">{html.escape(room.area_id)}</span>')
-    
-    lines.append(f'<span role="room_name">{html.escape(room.title if hasattr(room, "title") else "Unknown Room")}</span>')
-    
-    # Description
-    desc = room.description if hasattr(room, 'description') else ""
+    """Render one classic MUD room block with semantic roles and stable line breaks."""
+    lines: list[str] = []
+    title = _display_name(getattr(room, "title", "Unknown Room"))
+    lines.append(f'<span role="room_name">{html.escape(title)}</span>')
+    lines.append("")
+
+    desc = str(getattr(room, "description", "") or "").strip()
+    if desc.lower().startswith(title.lower()):
+        desc = desc[len(title):].lstrip(" -:,.	")
+        if desc and desc[0].islower():
+            desc = desc[0].upper() + desc[1:]
     if desc:
-        lines.append(f'<span role="room_description">{html.escape(desc)}</span>')
-    
-    # Inline exits (classic MUD style)
-    exits = getattr(room, 'exits', [])
-    if exits:
-        exit_names = []
-        if isinstance(exits, list):
-            for exit_def in exits:
-                if isinstance(exit_def, dict):
-                    direction = exit_def.get('direction', exit_def.get('dir', ''))
-                else:
-                    direction = str(exit_def)
-                if direction:
-                    exit_names.append(direction)
-        
-        if exit_names:
-            exit_str = "[ Exits: " + " ".join(
-                f'<span role="exit">{html.escape(e)}</span>' for e in exit_names
-            ) + " ]"
-            lines.append(exit_str)
-    else:
-        lines.append('<span role="exit">[ Exits: none ]</span>')
-    
-    visible: list[str] = []
+        paragraphs = [p.strip() for p in re.split(r"\n\s*\n", desc) if p.strip()]
+        for idx, paragraph in enumerate(paragraphs):
+            if idx:
+                lines.append("")
+            lines.append(f'<span role="room_description">{html.escape(paragraph)}</span>')
+    lines.append("")
+
+    for player in getattr(room, "players", []) or []:
+        text, _desc = _entity_text(player)
+        if text:
+            lines.append(f'<span role="player">{html.escape(text)}</span>')
+
     for npc in getattr(room, "npcs", []) or []:
         if isinstance(npc, dict):
-            text = npc.get("room_description") or npc.get("description") or npc.get("name") or npc.get("id")
+            text = str(npc.get("room_description") or npc.get("description") or npc.get("name") or npc.get("id") or "").strip()
         else:
-            text = str(npc)
+            text, _desc = _entity_text(npc)
         if text:
-            visible.append(f'<span role="npc">{html.escape(str(text))}</span>')
+            lines.append(f'<span role="npc">{html.escape(text)}</span>')
+
+    for mob in getattr(room, "mobs", []) or []:
+        text, _desc = _entity_text(mob)
+        if text:
+            lines.append(f'<span role="mob">{html.escape(text)}</span>')
 
     for obj in getattr(room, "objects", []) or []:
-        if isinstance(obj, dict):
-            text = obj.get("room_description") or obj.get("description") or obj.get("name") or obj.get("id")
-        else:
-            text = str(obj)
+        text, desc_text = _entity_text(obj)
         if text:
-            visible.append(f'<span role="object">{html.escape(str(text))}</span>')
+            lines.append(f'<span role="object">{html.escape(text)}</span>')
+            if desc_text and desc_text != text:
+                lines.append(f'  <span role="object">{html.escape(desc_text)}</span>')
 
-    if visible:
-        lines.append('<span role="system">You see:</span>')
-        lines.extend(f"  {entry}" for entry in visible)
-    
+    lines.append("")
+    exits = getattr(room, "exits", []) or []
+    exit_names: list[str] = []
+    if isinstance(exits, list):
+        for exit_def in exits:
+            direction = exit_def.get("direction") or exit_def.get("dir") if isinstance(exit_def, dict) else str(exit_def)
+            if direction:
+                exit_names.append(str(direction))
+    exit_body = " ".join(f'<span role="exit">{html.escape(e)}</span>' for e in exit_names) if exit_names else '<span role="exit">none</span>'
+    lines.append(f'[ Exits: {exit_body} ]')
+
     print("[mud-render] Room rendered")
     return "\n".join(lines)
-
 
 def render_prompt(character: Any, colors: dict[str, str]) -> str:
     """Render MUD prompt with semantic color roles."""

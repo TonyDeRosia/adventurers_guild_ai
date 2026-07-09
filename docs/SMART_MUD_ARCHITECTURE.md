@@ -100,3 +100,11 @@ Telnet and plain transports remain HTML-safe by converting the same runtime outp
 ### Semantic rendering settings pipeline
 
 The web runtime resolves MUD colors through `selected_preset`, `custom_roles`, and `effective_roles`. Web clients consume `effective_roles`, apply `--mud-color-*` CSS variables, and render backend `<span role="...">` semantic output. Telnet clients remain isolated from this CSS contract and receive plain or ANSI output only. See `docs/SEMANTIC_RENDERING.md`.
+
+## Phase 2F display pipeline
+
+Room output is now treated as a single classic-MUD render block. Runtime state is still authoritative in `MudRuntime`; command execution returns command text separately from the current room view, and transports render that shared logical layout for their target format.
+
+Canonical room display order is: room title, blank line, description paragraphs, blank line, players, NPCs, mobs, objects, blank line, then exactly one exits line. Exits are always last. Player-facing output hides runtime room ids; ids are reserved for future debug or Builder contexts only.
+
+The web client preserves backend-authored line breaks and keeps the pinned prompt in `#mud-player-prompt`, separate from scrollback room output in `#mud-world-output`. Telnet receives the same logical layout as plain/ANSI text and never receives HTML.

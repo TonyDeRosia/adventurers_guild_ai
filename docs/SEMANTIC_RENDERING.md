@@ -44,3 +44,20 @@ Backend web HTML should wrap role-specific text with `<span role="role_name">...
 ## Telnet/plain boundary
 
 Telnet and plain transports convert semantic HTML/tags to plain or ANSI output. HTML spans, CSS variables, and web-only classes must not leak into telnet output.
+
+## Phase 2F classic MUD room layout
+
+Smart MUD room rendering is presentation-only and is assembled by the shared MUD display pipeline before web or telnet transport conversion. The canonical room block is:
+
+1. Room title, using `room_name`.
+2. One blank line.
+3. Room description paragraph(s), using `room_description`, preserving paragraph spacing.
+4. One blank line.
+5. Visible players, one per line, using `player`.
+6. Visible NPCs, one per line, using `npc` or disposition-specific NPC roles where available.
+7. Visible mobs, one per line, using `mob`.
+8. Visible objects, one per line, using `object` or item rarity roles; optional object descriptions are indented on following lines.
+9. One blank line.
+10. A single final exits line: `[ Exits: north east south west ]`, with each exit direction using `exit`.
+
+Normal player room renders must not expose internal room ids. The pinned web prompt remains outside the room output and continues to use prompt roles such as `prompt`, `prompt_hp`, `prompt_mana`, `prompt_stamina`, and `prompt_marker`.
