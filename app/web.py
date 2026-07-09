@@ -29,6 +29,8 @@ from app.runtime_config_mud import MudRuntimeConfigStore, get_default_mud_colors
 from engine.mud_runtime import MudRuntime
 from engine.plugin_system import PluginRegistry
 from smart_mud.world_registry import WorldRegistry, WorldRegistryError, WorldValidationError
+from smart_mud.transport import TransportMessage, WebTransportAdapter
+from smart_mud.telnet_server import TelnetServerConfig
 
 
 class WebRuntime:
@@ -74,6 +76,14 @@ class WebRuntime:
                 f"file_or_package={self.root / 'worlds'} reason={exc} "
                 "suggested_fix=repair the world package manifest or JSON file"
             ) from exc
+        self.web_transport = WebTransportAdapter(self.mud_runtime)
+        self.web_session = self.web_transport.create_session(remote_address="web-ui")
+        self.telnet_config = TelnetServerConfig(
+            enabled=self.config.telnet_enabled,
+            host=self.config.telnet_host,
+            port=self.config.telnet_port,
+            max_connections=self.config.telnet_max_connections,
+        )
         self.active_world_id = ""
         self.active_character_id = ""
         print("[startup] Ready.")
@@ -176,6 +186,8 @@ class WebRuntime:
             class_id=str(payload.get("class_id") or payload.get("class") or payload.get("char_class") or ""),
         )
         self.active_character_id = character["character_id"]
+        self.web_session.character_id = self.active_character_id
+        self.web_session.world_id = self.active_world_id
         return {"ok": True, "character": character}
 
     def enter_world(self, character_id: str = "") -> dict[str, Any]:
@@ -184,6 +196,8 @@ class WebRuntime:
             created = self.create_character({"name": "Player"})
             cid = created["character"]["character_id"]
         self.active_character_id = cid
+        self.web_session.character_id = cid
+        self.web_session.world_id = self.active_world_id
         return self.mud_runtime.enter_world(cid)
 
 
@@ -246,7 +260,8 @@ class WebRuntime:
     def handle_input(self, command: str, command_echo: bool = True) -> dict[str, Any]:
         if not self.active_character_id:
             self.enter_world()
-        result = self.mud_runtime.handle_input(self.active_character_id, command)
+        response = self.web_transport.handle_message(TransportMessage(session=self.web_session, text=command))
+        result = response.metadata.get("result", {})
         command_output = str(result.get("output") or "")
         clean_command = command.strip().lower()
         if clean_command == "history" and "Recent commands:" not in command_output:

@@ -90,6 +90,10 @@ class MudRuntimeConfig:
     """Server-side Smart MUD runtime configuration."""
     default_world_id: str = ""
     ai_provider: str = "null"
+    telnet_enabled: bool = False
+    telnet_host: str = "127.0.0.1"
+    telnet_port: int = 4000
+    telnet_max_connections: int = 25
 
 
 class MudRuntimeConfigStore:
@@ -107,7 +111,14 @@ class MudRuntimeConfigStore:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             return MudRuntimeConfig()
-        return MudRuntimeConfig(default_world_id=str(data.get("default_world_id", "")), ai_provider=str(data.get("ai_provider", "null")))
+        return MudRuntimeConfig(
+            default_world_id=str(data.get("default_world_id", "")),
+            ai_provider=str(data.get("ai_provider", "null")),
+            telnet_enabled=bool(data.get("telnet_enabled", False)),
+            telnet_host=str(data.get("telnet_host", "127.0.0.1")),
+            telnet_port=int(data.get("telnet_port", 4000)),
+            telnet_max_connections=int(data.get("telnet_max_connections", 25)),
+        )
 
     def save(self, config: MudRuntimeConfig) -> None:
         import json

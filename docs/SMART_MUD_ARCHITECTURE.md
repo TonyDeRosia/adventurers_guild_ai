@@ -48,3 +48,17 @@ Normal Smart MUD startup must not initialize the Adventure Guild AI campaign run
 - Launcher behavior: `run.py`.
 - Plugin metadata or dependency behavior: `engine/plugin_system.py`.
 - Package layout rules: `docs/WORLD_PACKAGE_SPEC.md`.
+
+## Phase 2A transport architecture
+
+Smart MUD separates engine concerns from client transports. `MudRuntime` remains the owner of command execution, SQLite-backed state, loaded world packages, plugin hooks, and rendering helpers. The transport layer sits between clients and the runtime.
+
+```text
+Engine Core: MudRuntime, command parser, SQLite, worlds, plugins, renderer
+Transport Layer: web transport, telnet transport, future websocket transport
+Clients: Smart MUD web desktop, browser, Mudlet/telnet clients
+```
+
+Transport adapters must not own game rules, world state, character state, inventory, combat, or AI behavior. They only own connection handling, input/output, session metadata, and format negotiation.
+
+The built-in web desktop remains supported and continues to receive web-safe rendering. Telnet clients receive ANSI or plain text rather than HTML.
