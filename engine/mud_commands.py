@@ -935,6 +935,23 @@ Available commands:
         if sub in {"off", "disable"}:
             res = self.builder.set_builder_mode(character, False)
             return CommandResult(narrative=res.message, ok=res.ok)
+        if sub == "migrate":
+            if len(args) >= 2 and args[1].lower() == "starter":
+                res = self.builder.migrate_starter(character); return CommandResult(narrative=res.message, ok=res.ok)
+            return CommandResult(narrative="Usage: builder migrate starter", ok=False)
+        if sub == "import":
+            if len(args) < 2:
+                return CommandResult(narrative="Usage: builder import <list|validate|preview|apply> [filename] [--merge|--replace-drafts]", ok=False)
+            action = args[1].lower()
+            if action == "list":
+                res = self.builder.import_list(character); return CommandResult(narrative=res.message, ok=res.ok)
+            if len(args) < 3:
+                return CommandResult(narrative=f"Usage: builder import {action} <filename>", ok=False)
+            if action == "validate": res = self.builder.import_validate(character, args[2])
+            elif action == "preview": res = self.builder.import_preview(character, args[2])
+            elif action == "apply": res = self.builder.import_apply(character, args[2], replace=("--replace-drafts" in args[3:]))
+            else: return CommandResult(narrative=f"Unknown builder import command: {action}", ok=False)
+            return CommandResult(narrative=res.message, ok=res.ok)
         if sub == "validate":
             res = self.builder.validate(character); return CommandResult(narrative=res.message + "\n" + self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))), ok=res.ok)
         if sub in {"save", "export"}:
@@ -985,7 +1002,7 @@ Available commands:
             legacy = not aid and not zid and vnum is None
             area_text = f"{aid}, {a.get('name')}" if aid else "none"
             zone_text = f"{zid}, {z.get('name')}" if zid else "none"
-            lines += ["", "Room Organization:", f"Area: {area_text}", f"Zone: {zone_text}", f"VNUM: {vnum if vnum is not None else 'none'}", f"Status: {'legacy/unassigned' if legacy else 'assigned'}"]
+            lines += ["", "Room Organization:", f"Area: {area_text}", f"Zone: {zone_text}", f"VNUM: {vnum if vnum is not None else 'none'}", f"Status: {'legacy/unassigned' if legacy else 'organized'}"]
             if legacy:
                 ca=getattr(character,"current_area_id","") or "<area_id>"; cz=getattr(character,"current_zone_id","") or "<zone_id>"
                 lines += ["", "Suggested next command:", f"rassign here area {ca} zone {cz} vnum <number>"]
