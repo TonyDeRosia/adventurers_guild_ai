@@ -792,9 +792,11 @@ class MudRuntime:
             name = (data or {}).get("name") or (data or {}).get("title") or char.room_id
             return CommandResult(f"You are in {name} ({char.room_id}).")
         if cmd == "rwhere":
-            data, source = self.runtime_room_data(char, char.room_id)
-            name = (data or {}).get("name") or (data or {}).get("title") or char.room_id
-            return CommandResult(f"Builder location: {char.room_id}\nName: {name}\nSource: {source}\nLast: {getattr(char,'last_room_id','') or 'none'}")
+            room_id = self.builder.current_room_id(char)
+            data, source = self.runtime_room_data(char, room_id)
+            name = (data or {}).get("name") or (data or {}).get("title") or "(unnamed)"
+            dirty = "yes" if source == "draft" else "no"
+            return CommandResult(f"Editing room: {room_id} {name}\nSource: {source}\nDirty: {dirty}")
         if cmd == "goto":
             if not args:
                 return CommandResult("Syntax: goto <room_id|room name|last|here|home>", ok=False)
@@ -1296,12 +1298,8 @@ class MudRuntime:
         if res["status"] != "ok": return self._resolve_message(res, "You don't see that here.")
         item = res["item"]
         if not (item.get("template") or {}).get("portable", True):
-            char = self.state_store.load_character(character_id)
-            if char and str(getattr(char, "name", "")).endswith("Threec"):
-                return "You cannot take that."
-            nonportable_note = "You cannot take that. "
-        else:
-            nonportable_note = ""
+            return "You cannot take that."
+        nonportable_note = ""
         self._publish_item_event("before_item_pickup", item, character_id=character_id, room_id=room_id)
         moved = self.transfer_item(item["instance_id"], to_owner=("character", character_id)); self._publish_item_event("item_picked_up", moved, character_id=character_id, room_id=room_id); self._publish_item_event("inventory_changed", moved, character_id=character_id); self._publish_item_event("room_inventory_changed", moved, room_id=room_id); self._publish_item_event("after_item_pickup", moved, character_id=character_id, room_id=room_id)
         return f"{nonportable_note}You pick up {moved['name']}."

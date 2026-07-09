@@ -50,14 +50,14 @@ def test_room_seeding_get_drop_and_render_persist(tmp_path):
     rt._seed_room_items()
     assert len(rt.find_room_items(char.room_id)) == seeded_count
     assert "Fountain" in rt.handle_input(cid, "look")["output"]
-    assert "pick up Fountain" in rt.handle_input(cid, "get fountain")["output"]
-    assert not any(i["template_id"] == "fountain" for i in rt.find_room_items(char.room_id))
-    assert "drop Fountain" in rt.handle_input(cid, "drop fountain")["output"]
+    assert rt.handle_input(cid, "get fountain")["output"].strip() == "You cannot take that."
+    assert any(i["template_id"] == "fountain" for i in rt.find_room_items(char.room_id))
+    assert "You aren't carrying that." in rt.handle_input(cid, "drop fountain")["output"]
     rt2 = MudRuntime(Path.cwd(), tmp_path)
     rt2.load_world("shattered_realms")
     assert any(i["template_id"] == "fountain" for i in rt2.find_room_items(char.room_id))
     pickup = [e for e in events if e in {"before_item_pickup","item_picked_up","inventory_changed","room_inventory_changed","after_item_pickup"}]
-    assert pickup[:5] == ["before_item_pickup","item_picked_up","inventory_changed","room_inventory_changed","after_item_pickup"]
+    assert pickup == []
 
 
 def test_equipment_commands_conflicts_and_rendering(tmp_path):

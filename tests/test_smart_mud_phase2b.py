@@ -111,3 +111,14 @@ def test_play_view_initial_load_is_room_only_and_app_js_appends_input() -> None:
     assert "async function sendInput" in app_js
     assert "appendMudOutput([d.command_echo_html,d.command_result_html,d.room_output_html]" in app_js
     assert "await refreshPlayView(d)" not in app_js
+
+
+def test_failed_movement_does_not_rerender_room(tmp_path):
+    from engine.mud_runtime import MudRuntime
+    from pathlib import Path
+    rt = MudRuntime(Path.cwd(), tmp_path / "user_data")
+    rt.load_world("shattered_realms")
+    cid = rt.create_character(world_id="shattered_realms", name="NoExit")['character_id']
+    output = rt.handle_input(cid, "up")["output"]
+    assert output.strip() == "You cannot go that way."
+    assert "Crossing Square" not in output

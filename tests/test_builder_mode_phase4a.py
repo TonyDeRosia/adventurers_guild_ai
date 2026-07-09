@@ -1,4 +1,6 @@
 from types import SimpleNamespace
+import shutil
+from smart_mud.world_registry import WORLDS_DIR
 from engine.mud_commands import MudCommandEngine
 from smart_mud.event_bus import EventBus
 
@@ -15,6 +17,7 @@ def test_player_denied_builder_command():
 
 
 def test_builder_crud_validate_snapshot_history_events():
+    shutil.rmtree(WORLDS_DIR / "shattered_realms" / "builder", ignore_errors=True)
     bus = EventBus(); seen=[]
     for name in ["builder_mode_enabled","builder_room_created","builder_room_updated","builder_exit_created","builder_feature_updated","builder_item_template_created","builder_entity_template_created","builder_spawn_created","builder_validation_run","builder_save_requested","builder_snapshot_created"]:
         bus.subscribe(name, lambda ev: seen.append(ev.event_name), source=name)
@@ -23,7 +26,7 @@ def test_builder_crud_validate_snapshot_history_events():
     assert e.handle_command(c, "rcreate builder_test_room").ok
     assert e.handle_command(c, "rname Builder Test Room").ok
     assert e.handle_command(c, "rdesc A safe draft room.").ok
-    assert e.handle_command(c, "excreate north builder_test_room").ok
+    assert e.handle_command(c, "excreate north guildhall_crossing_square").ok
     assert e.handle_command(c, "fcreate fountain").ok
     assert "fountain" in e.handle_command(c, "look fountain").narrative.lower()
     assert e.handle_command(c, "ocreate widget").ok
@@ -33,7 +36,7 @@ def test_builder_crud_validate_snapshot_history_events():
     assert e.handle_command(c, "builder save").ok
     assert e.handle_command(c, "builder snapshot").ok
     assert "Recent builder history" in e.handle_command(c, "builder history").narrative
-    assert "room_id" in e.handle_command(c, "rstat").narrative or "id" in e.handle_command(c, "rstat").narrative
+    assert "Editing room: builder_test_room" in e.handle_command(c, "rstat").narrative
     assert set(["builder_mode_enabled","builder_room_created","builder_room_updated","builder_exit_created","builder_item_template_created","builder_entity_template_created","builder_spawn_created","builder_validation_run","builder_save_requested","builder_snapshot_created"]).issubset(set(seen))
 
 

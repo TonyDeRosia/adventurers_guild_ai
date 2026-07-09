@@ -54,7 +54,7 @@ class BuilderWorkspace:
             (root / filename).write_text(json.dumps(drafts.get(key, {}), indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     def current_room_id(self, actor: Any) -> str:
-        return str(getattr(actor, "room_id", "") or getattr(actor, "current_room_id", "") or "start")
+        return str(getattr(actor, "edit_room_id", "") or getattr(actor, "last_edited_target", "") or getattr(actor, "room_id", "") or getattr(actor, "current_room_id", "") or "start")
 
     def world_id(self, actor: Any) -> str:
         return str(getattr(actor, "world_id", "") or "shattered_realms")
@@ -101,12 +101,22 @@ class BuilderWorkspace:
         world_id = self.world_id(actor); drafts = self.load(world_id); errors=[]
         live_rooms = {str(r.get("id")) for r in _records(self.worlds_dir / world_id, "rooms") if r.get("id")}
         draft_rooms = set(drafts["rooms"].keys()); all_rooms = live_rooms | draft_rooms
+        reverse = {"north":"south","south":"north","east":"west","west":"east","up":"down","down":"up","in":"out","out":"in"}
         for rid, room in drafts["rooms"].items():
+            if not str(rid).strip() or any(ch.isspace() for ch in str(rid)): errors.append(f"room {rid} has unclear id")
+            if rid in live_rooms: errors.append(f"room {rid} shadows live room")
             if not room.get("name"): errors.append(f"room {rid} missing name")
+            if not room.get("description"): errors.append(f"room {rid} missing description")
             for d, ex in (room.get("exits") or {}).items():
                 target = ex.get("target_room_id") or ex.get("to") or ex.get("room_id")
                 if not target: errors.append(f"room {rid} exit {d} missing target_room_id")
                 elif str(target) not in all_rooms: errors.append(f"room {rid} exit {d} references missing room {target}")
+                elif str(target) == str(rid): errors.append(f"room {rid} exit {d} is a self-loop")
+                rev = reverse.get(str(d).lower())
+                if target and rev and str(target) in drafts["rooms"]:
+                    rex = (drafts["rooms"].get(str(target), {}).get("exits") or {}).get(rev) or {}
+                    rtarget = rex.get("target_room_id") or rex.get("to") or rex.get("room_id")
+                    if rtarget == target: errors.append(f"room {rid} exit {d} reverse {rev} points to itself")
             for fid, feat in (room.get("features") or {}).items():
                 if not feat.get("name"): errors.append(f"feature {fid} missing name")
         for iid, item in drafts["items"].items():

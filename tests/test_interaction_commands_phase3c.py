@@ -108,3 +108,11 @@ def test_drop_all_drops_inventory_not_equipment(tmp_path):
     assert not rt.find_inventory_items(cid)
     assert len(rt.find_equipped_items(cid)) == len(eq_before)
     assert "bulk_drop" in events
+
+
+def test_nonportable_feature_pickup_stops_after_failure(tmp_path):
+    rt, cid, _ = make_runtime(tmp_path)
+    msg = out(rt, cid, "get fountain")
+    assert msg.strip() == "You cannot take that."
+    assert "pick up" not in msg.lower()
+    assert "Fountain" not in rt.handle_input(cid, "inventory")["output"]
