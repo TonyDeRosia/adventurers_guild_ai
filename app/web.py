@@ -216,11 +216,24 @@ class WebRuntime:
         return text.replace("&gt;", ">").replace("&lt;", "<").replace("&amp;", "&")
 
     def _normalize_mud_view(self, view: dict[str, Any], command_output: str = "", command: str = "", command_echo: bool = True) -> dict[str, Any]:
+        import html
         room_id = str(view.get("room_id") or "")
         room = self._room_summary(room_id)
-        output_html = str(view.get("html") or view.get("output_html") or "")
-        room_text = self._plain_text(output_html)
+        room_output_html = str(view.get("html") or view.get("output_html") or "")
+        room_text = self._plain_text(room_output_html)
         output_text = str(command_output or view.get("output_text") or view.get("text") or room_text)
+        clean_command = command.strip().lower().split()[0] if command.strip() else ""
+        room_commands = {"look", "l", "north", "n", "south", "s", "east", "e", "west", "w", "up", "u", "down", "d", "in", "out"}
+        include_room_output = not command or clean_command in room_commands
+        command_result_text = output_text
+        if include_room_output and room_text and room_text in command_result_text:
+            command_result_text = command_result_text.replace(room_text, "", 1).strip()
+        command_result_html = "<br>".join(html.escape(line) for line in command_result_text.splitlines()) if command_result_text else ""
+        if command_result_html:
+            command_result_html = f'<span role="system">{command_result_html}</span>'
+        command_echo_html = f'<span role="command_echo">&gt; {html.escape(command)}</span>' if command and command_echo else ""
+        output_parts = [part for part in [command_echo_html, command_result_html, room_output_html if include_room_output else ""] if part]
+        output_html = "\n".join(output_parts) if command else room_output_html
         if command and command_echo:
             output_text = f"> {command}\n{output_text}"
         prompt_html = str(view.get("prompt") or view.get("prompt_html") or "")
@@ -246,6 +259,11 @@ class WebRuntime:
             "output": output_text or room_text,
             "output_text": output_text or room_text,
             "output_html": output_html,
+            "command_echo_html": command_echo_html,
+            "command_result_html": command_result_html,
+            "command_result_text": command_result_text,
+            "room_output_html": room_output_html if include_room_output else "",
+            "room_output_text": room_text if include_room_output else "",
             "semantic_output": output_html,
             "prompt_text": prompt_text,
             "prompt_html": prompt_html,
