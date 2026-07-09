@@ -143,3 +143,9 @@ Semantic MUD color rendering is wired end-to-end through settings `effective_rol
 Phase 2F standardizes presentation without adding combat, AI behavior, Builder Mode, world expansion, or runtime authority changes. Room rendering now follows a traditional MUD layout: title, blank line, description, blank line, players, NPCs, mobs, objects, blank line, and one final `[ Exits: ... ]` line. Room ids are hidden from normal players, room names and descriptions render once, movement messages are separated from destination room renders, and `look` produces one room display.
 
 Command echo and command output remain line-separated, semantic color roles remain intact, telnet output stays HTML-free, and the pinned Smart MUD prompt remains separate from room rendering.
+
+### Phase 2G: Canonical room renderer and final display polish
+
+Phase 2G centralizes Smart MUD room output in `engine.mud_displays.render_room()`. Login/world entry, `look`, movement, web, and telnet all use that canonical render block, preserving semantic roles and matching line spacing across HTML and plain text. The optional `You see:` section appears only when visible entities exist, orders players before NPCs before mobs before objects, and keeps room object display compact. Object descriptions are handled by targeted `look` / `examine` output instead of normal room rendering.
+
+Future room-changing commands and systems—recall, goto, summon, portal, Builder goto, teleport, AI scene transitions, combat fleeing, and death—must update runtime state and then invoke the canonical renderer. They must not assemble room text themselves. The pinned Smart MUD prompt remains separate, and combat, NPC AI, Builder Mode, crafting, and world expansion remain out of scope.

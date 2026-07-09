@@ -61,3 +61,11 @@ Smart MUD room rendering is presentation-only and is assembled by the shared MUD
 10. A single final exits line: `[ Exits: north east south west ]`, with each exit direction using `exit`.
 
 Normal player room renders must not expose internal room ids. The pinned web prompt remains outside the room output and continues to use prompt roles such as `prompt`, `prompt_hp`, `prompt_mana`, `prompt_stamina`, and `prompt_marker`.
+
+## Phase 2G canonical room renderer
+
+`engine.mud_displays.render_room()` is the single canonical Smart MUD room renderer. Runtime, web, telnet, movement, `look`, login/world entry, and future room-changing commands must route room display through this function. Commands and future systems may contribute data only: players, NPCs, mobs, objects, exits, combat events, AI narration, or Builder visibility metadata. The renderer owns presentation decisions, semantic roles, line spacing, HTML spans, and the plain/ANSI text derived from those spans.
+
+The canonical layout is title, blank line, description, blank line, optional `You see:` section, visible players, NPCs, mobs, objects, blank line, and the final `[ Exits: ... ]` line. The `You see:` section is omitted entirely when no visible entities exist, and empty category headings are never emitted. Room object lines are compact names by default; object descriptions belong to `look <object>` / `examine <object>` via the object renderer, not normal room display.
+
+The pinned Smart MUD prompt remains independent from room rendering and is rendered through prompt roles only.

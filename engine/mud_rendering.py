@@ -36,7 +36,7 @@ def render_semantic_html(text: str, colors: dict[str, str] | None = None) -> str
 def render_semantic_plain(text: str) -> str:
     return TAG_RE.sub("", strip_prompt_block(text))
 
-def render_room(room: dict[str, Any], world: dict[str, Any], player: dict[str, Any], *, npcs: list[dict[str, Any]] | None = None, objects: list[dict[str, Any]] | None = None, narrative: list[str] | None = None, corpses: list[dict[str, Any]] | None = None) -> str:
+def render_legacy_mud_room(room: dict[str, Any], world: dict[str, Any], player: dict[str, Any], *, npcs: list[dict[str, Any]] | None = None, objects: list[dict[str, Any]] | None = None, narrative: list[str] | None = None, corpses: list[dict[str, Any]] | None = None) -> str:
     npcs = [n for n in (npcs or []) if str(n.get("status", "alive")) == "alive"]; objects = objects or []; narrative = narrative or []; corpses = corpses or []
     lines = [semantic("room_name", room.get("name", "Unknown Room")), semantic("area_name", world.get("name", "Unknown World")), "", semantic("room_description", room.get("long_description") or room.get("short_description", "")), "", "You see:"]
     for npc in npcs: lines.append(semantic(f"npc_{npc.get('disposition','neutral')}" if npc.get('disposition') in {'friendly','neutral','hostile'} else "npc_neutral", npc.get("name", npc.get("id", "NPC"))))

@@ -266,7 +266,7 @@ Exits: north east west in
 **File: `engine/mud_displays.py`**
 
 ```python
-def render_room(room, colors):
+def render_legacy_example_room(room, colors):
     lines = []
     lines.append(f'<span role="room_name">{room.title}</span>')
     lines.append(f'<span role="room_description">{room.description}</span>')

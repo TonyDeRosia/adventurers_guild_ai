@@ -14,7 +14,7 @@ from typing import Any, Optional
 from datetime import datetime, timezone
 
 from engine.mud_commands import MudCommandEngine
-from engine.mud_displays import render_prompt, render_room, semantic
+from engine.mud_displays import render_object, render_prompt, render_room, semantic
 from engine.mud_rendering import render_semantic_plain
 from smart_mud.world_registry import WorldRegistry
 from smart_mud.event_bus import EventBus
@@ -625,7 +625,7 @@ class MudRuntime:
         self.event_bus.publish("room_rendered", {"world_id": self.active_world_id or "", "character_id": char.id, "room_id": char.room_id, "output_format": "web_html", "render_kind": "room"}, source_system="render", world_id=self.active_world_id or "", character_id=char.id)
         prompt = render_prompt(char, colors)
         self.event_bus.publish("prompt_rendered", {"world_id": self.active_world_id or "", "character_id": char.id, "room_id": char.room_id, "output_format": "web_html", "render_kind": "prompt"}, source_system="render", world_id=self.active_world_id or "", character_id=char.id)
-        return {"html": html, "text": room.description, "prompt": prompt, "room_id": char.room_id}
+        return {"html": html, "text": self._room_text(room), "prompt": prompt, "room_id": char.room_id}
 
     def handle_input(self, character_id: str, command: str) -> dict[str, Any]:
         """Execute a command and persist command/output scrollback to SQLite."""
@@ -656,11 +656,11 @@ class MudRuntime:
         if cmd_name in {"north", "south", "east", "west", "up", "down", "in", "out"}:
             result = self._move_character(char, cmd_name)
             self.event_bus.publish("command_executed", {"raw_input": command, "canonical_command": cmd_name, "arguments": tokens[1:], "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id, "result_summary": result.narrative[:120]}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
-            return result
-        result = self.command_engine.handle_command(char, command)
+        else:
+            result = self.command_engine.handle_command(char, command)
         if result.state_updates and result.state_updates.get("render_room"):
-            room = self._current_room(char)
-            result.narrative = self._room_text(room)
+            room_text = self._room_text(self._current_room(char))
+            result.narrative = f"{result.narrative}\n\n{room_text}" if result.narrative else room_text
         return result
 
     def _move_character(self, char: MudCharacter, direction: str):
@@ -680,7 +680,7 @@ class MudRuntime:
             self.state_store.save_character(char, self.active_world_id or "")
             new_room = self._current_room(char)
             self.event_bus.publish("movement_succeeded", {"canonical_command": direction, "character_id": char.id, "character_name": char.name, "current_room_id": room.id, "target_room_id": char.room_id, "result_summary": "moved"}, source_system="movement", world_id=self.active_world_id or "", character_id=char.id, command=direction)
-            return CommandResult(narrative=f"You head {direction}.")
+            return CommandResult(narrative=f"You head {direction}.", state_updates={"render_room": True})
         self.event_bus.publish("movement_failed", {"canonical_command": direction, "character_id": char.id, "character_name": char.name, "current_room_id": room.id, "result_summary": "no_exit"}, source_system="movement", world_id=self.active_world_id or "", character_id=char.id, command=direction)
         return CommandResult(narrative="You cannot go that way.", ok=False)
 
@@ -887,7 +887,11 @@ class MudRuntime:
     def _look_item(self, character_id: str, room_id: str, query: str) -> str:
         res=self.resolve_item_keywords(query, self.get_visible_room_items(room_id)+self.find_inventory_items(character_id)+self.find_equipped_items(character_id))
         if res["status"] != "ok": return self._resolve_message(res, "You don't see that.")
-        t=res["item"].get("template",{}); return str(t.get("long_description") or t.get("short_description") or res["item"]["name"])
+        item = res["item"]
+        t = item.get("template", {})
+        render_payload = {**item, "description": str(t.get("long_description") or t.get("short_description") or item.get("description") or item.get("name") or "")}
+        from smart_mud.transport import html_to_plain_text
+        return html_to_plain_text(render_object(render_payload))
 
     def _resolve_message(self, res: dict[str, Any], missing: str) -> str:
         if res.get("status") == "ambiguous": return "Which do you mean: " + ", ".join(i["name"] for i in res.get("matches", [])) + "?"

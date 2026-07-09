@@ -19,7 +19,7 @@ from engine.player_output import filter_player_messages, narrative_needs_player_
 from engine.scene_simulation import ensure_scene_v1, resolve_scene_action, get_scene_entity_counts
 from engine.gm_orchestrator import GMOrchestrator
 from engine.world_registry import WorldRegistry, by_id as world_by_id
-from engine.mud_rendering import render_room
+from engine.mud_rendering import render_legacy_mud_room
 from engine.mud_state_store import MUDStateStore
 from engine.spellbook import normalize_spellbook_entry
 from app.dm_intent import analyze_dm_intent
@@ -188,7 +188,7 @@ class CampaignEngine:
                 narrative = ["The GM Orchestrator receives persistent NPC memory before this social action."]
         else:
             return None
-        text = render_room(room, world.manifest, player, npcs=room_npcs, objects=room_objects, narrative=narrative, corpses=corpses)
+        text = render_legacy_mud_room(room, world.manifest, player, npcs=room_npcs, objects=room_objects, narrative=narrative, corpses=corpses)
         state.structured_state.runtime.room_state = {"authoritative_room_id": room["id"], "room": room, "area": area, "visible_npcs": room_npcs, "visible_objects": room_objects, "corpses": corpses, "pending_respawn_timers": store.load_respawn_timers(room["id"])}
         state.structured_state.runtime.scene_state["mud_room"] = state.structured_state.runtime.room_state
         state.structured_state.runtime.last_narration = text

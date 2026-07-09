@@ -108,3 +108,11 @@ Room output is now treated as a single classic-MUD render block. Runtime state i
 Canonical room display order is: room title, blank line, description paragraphs, blank line, players, NPCs, mobs, objects, blank line, then exactly one exits line. Exits are always last. Player-facing output hides runtime room ids; ids are reserved for future debug or Builder contexts only.
 
 The web client preserves backend-authored line breaks and keeps the pinned prompt in `#mud-player-prompt`, separate from scrollback room output in `#mud-world-output`. Telnet receives the same logical layout as plain/ANSI text and never receives HTML.
+
+## Phase 2G canonical room renderer
+
+Smart MUD now has one canonical room rendering path: `engine.mud_displays.render_room()`. `MudRuntime.play_view()`, `look`, movement, login/world entry, and transport adapters consume that one render block rather than assembling room strings independently. Web output keeps the renderer's semantic spans and line breaks; telnet/plain output is derived from the same block with HTML stripped or converted to ANSI.
+
+Any command or future subsystem that changes rooms must call the canonical renderer after changing authoritative runtime state. This includes recall, goto, summon, portal travel, Builder Mode goto, teleportation, future AI scene transitions, future combat fleeing, and future death/respawn. Those systems provide data; the renderer decides presentation.
+
+Combat, NPC AI, Builder Mode, crafting, and world expansion remain intentionally unimplemented here. Their future integrations must not concatenate room text manually.

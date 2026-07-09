@@ -28,9 +28,9 @@ def test_phase2b_core_aliases_and_clean_unknown(tmp_path: Path, monkeypatch) -> 
     assert "Name: Player" in _text(runtime, "sc")
     assert "You are not wearing anything." in _text(runtime, "equipment")
     assert "You are not wearing anything." in _text(runtime, "eq")
-    assert "You are not carrying anything." in _text(runtime, "inventory")
-    assert "You are not carrying anything." in _text(runtime, "inv")
-    assert "You are not carrying anything." in _text(runtime, "i")
+    assert "You are carrying:" in _text(runtime, "inventory")
+    assert "You are carrying:" in _text(runtime, "inv")
+    assert "You are carrying:" in _text(runtime, "i")
     assert "Available commands" in _text(runtime, "commands")
     assert "Available commands" in _text(runtime, "cmds")
     assert "Available commands" in _text(runtime, "help")
@@ -51,7 +51,8 @@ def test_phase2b_room_rendering_movement_and_visible_data(tmp_path: Path, monkey
     start = _text(runtime, "look")
     assert "(stub: NPC rendering)" not in start
     assert "[ Exits: north east west in ]" in start
-    assert "old gate for beginner Smart MUD play." in start
+    assert "Old Gate" in start
+    assert "old gate for beginner Smart MUD play." not in start
     moved = _text(runtime, "n")
     assert "You head north." in moved
     assert "Old Gate Road" in moved
@@ -59,7 +60,7 @@ def test_phase2b_room_rendering_movement_and_visible_data(tmp_path: Path, monkey
     assert "Guildhall Crossing Square" in returned
     inside = _text(runtime, "in")
     assert "Guildhall Archway" in inside
-    assert "Guild Registrar Maren is a memorable resident" in _text(runtime, "n")
+    assert "Guild Registrar Maren" in _text(runtime, "n")
     assert "You cannot go that way." in _text(runtime, "u")
 
 
