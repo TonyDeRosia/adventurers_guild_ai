@@ -64,3 +64,39 @@ def test_settings_and_css_include_expected_semantic_roles(tmp_path: Path, monkey
     assert "--mud-room-name-color" in css
     assert "--mud-command-echo-color" in css
     assert "--mud-hp-color" in css
+
+
+def test_settings_effective_roles_and_custom_override_contract(tmp_path: Path, monkeypatch) -> None:
+    runtime, _ = _entered_runtime(tmp_path, monkeypatch)
+    settings = runtime.get_global_settings()
+    colors = settings["mud_colors"]
+    assert colors["selected_preset"] == "Dark Fantasy"
+    assert "custom_roles" in colors
+    assert "effective_roles" in colors
+    for role in ["room_name", "room_description", "exit", "object", "score_label", "score_value", "equipment_slot", "equipment_item", "gold", "hp", "mp", "stamina", "prompt", "player"]:
+        assert role in colors["effective_roles"]
+
+    saved = runtime.set_global_settings({"mud_colors": {"custom_roles": {"room_name": "#123456", "hp": "-", "not_a_role": "#ffffff"}}})
+    assert saved["mud_colors"]["custom_roles"] == {"room_name": "#123456"}
+    assert saved["mud_colors"]["effective_roles"]["room_name"] == "#123456"
+    assert saved["mud_colors"]["effective_roles"]["hp"] == saved["mud_color_presets"]["Dark Fantasy"]["hp"]
+    assert "not_a_role" not in saved["mud_colors"]["effective_roles"]
+
+
+def test_unknown_command_uses_error_role(tmp_path: Path, monkeypatch) -> None:
+    runtime, _ = _entered_runtime(tmp_path, monkeypatch)
+    response = runtime.mud_input({"text": "definitelynotacommand"})
+    assert 'role="error"' in response["command_result_html"]
+
+
+def test_frontend_uses_effective_roles_css_variables_and_preserves_markup() -> None:
+    app_js = (Path.cwd() / "app" / "static" / "app.js").read_text(encoding="utf-8")
+    assert "effective_roles" in app_js
+    assert "--mud-color-" in app_js
+    assert "normalizeMudHtml" in app_js
+    assert "appendMudOutput" in app_js
+    assert "custom_roles" in app_js
+    css = (Path.cwd() / "app" / "static" / "styles.css").read_text(encoding="utf-8")
+    for role in ["room_name", "room_description", "exit", "command_echo", "score_label", "score_value", "equipment_slot", "equipment_item", "gold", "hp", "mp", "stamina", "prompt"]:
+        assert f'span[role="{role}"]' in css
+        assert f'--mud-color-{role.replace("_", "-")}' in css

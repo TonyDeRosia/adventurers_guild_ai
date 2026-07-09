@@ -133,3 +133,7 @@ Phase 2E has an initial runtime implementation: persistent item instances, start
 ### Phase 2E semantic color hotfix
 
 The Phase 2E display path now treats semantic rendering as the standard for web output and ANSI/plain rendering as the standard for telnet. Room, score, worth, equipment, inventory, prompt, command echo, and common informational output are expected to carry semantic roles rather than collapsing into one terminal-green style. This hotfix does not add combat, AI behavior, Builder Mode, or world expansion.
+
+#### Phase 2E hotfix acceptance update
+
+Semantic MUD color rendering is wired end-to-end through settings `effective_roles`, frontend `--mud-color-*` variables, role-based CSS selectors, and backend semantic spans. Changing a role color in Settings updates future web output without adding combat, AI behavior, Builder Mode, or world expansion.

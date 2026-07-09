@@ -90,17 +90,22 @@ def render_prompt(character: Any, colors: dict[str, str]) -> str:
     """Render MUD prompt with semantic color roles."""
     # Minimal classic MUD prompt style
     prompt = (
-        f'<span role="prompt_marker">&gt;</span> '
+        f'<span role="prompt"><span role="prompt_marker">&gt;</span> '
         f'<span role="player">{html.escape(character.name)}</span> '
         f'<span role="hp">HP:</span> <span role="prompt_hp">{character.hp}/{character.max_hp}</span> '
     )
-    
+
     # Add mana if > 0
     if character.max_mana > 0:
         prompt += (
             f'<span role="mp">MP:</span> <span role="prompt_mana">{character.mana}/{character.max_mana}</span> '
         )
-    
+    if getattr(character, "max_stamina", 0) > 0:
+        prompt += (
+            f'<span role="stamina">STM:</span> <span role="prompt_stamina">{character.stamina}/{character.max_stamina}</span> '
+        )
+    prompt += '</span>'
+
     print("[mud-render] Prompt rendered")
     return prompt
 

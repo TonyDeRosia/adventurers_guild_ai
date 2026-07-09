@@ -370,3 +370,7 @@ Plugins may observe EventBus item events in this phase. A full plugin item-behav
 ## Item rendering note
 
 Item behavior and ownership remain unchanged by semantic color rendering. Web displays should wrap inventory, equipment, and room-object names in semantic item roles (`object`, `equipment_item`, or rarity roles such as `item_common`, `item_uncommon`, `item_rare`, and `item_epic`) so CSS presets can style them. Telnet/plain clients receive stripped or ANSI-rendered text and must not receive HTML spans.
+
+### Item semantic color roles
+
+Item names shown in rooms, inventory, and equipment should use semantic roles rather than fixed colors. Room objects use `object` or rarity roles (`item_common`, `item_uncommon`, `item_rare`, `item_epic`, `item_legendary`), and equipped names use `equipment_item`; telnet output must remain HTML-free.

@@ -96,3 +96,7 @@ Room rendering must use runtime room inventory and render sections in this order
 Web MUD output uses semantic HTML spans as the presentation boundary. Runtime and display builders should emit roles such as `room_name`, `room_description`, `exit`, `object`, `player`, `command_echo`, `score_label`, `score_value`, `equipment_slot`, `equipment_item`, `gold`, `hp`, `mp`, and prompt-specific roles instead of embedding fixed color values in command text. The browser maps those roles through the active MUD color settings and CSS variables so changing the preset affects newly rendered output without changing game logic.
 
 Telnet and plain transports remain HTML-safe by converting the same runtime output to ANSI/plain text. Web-only spans must not leak into telnet output, and telnet formatting must not become a separate gameplay rendering path.
+
+### Semantic rendering settings pipeline
+
+The web runtime resolves MUD colors through `selected_preset`, `custom_roles`, and `effective_roles`. Web clients consume `effective_roles`, apply `--mud-color-*` CSS variables, and render backend `<span role="...">` semantic output. Telnet clients remain isolated from this CSS contract and receive plain or ANSI output only. See `docs/SEMANTIC_RENDERING.md`.

@@ -92,6 +92,43 @@ def get_default_mud_colors() -> dict[str, str]:
         result[field_name] = getattr(config, field_name)
     return result
 
+SUPPORTED_MUD_COLOR_ROLES = list(MudColorConfig.__dataclass_fields__)
+
+
+def normalize_mud_color_overrides(colors: dict | None) -> dict[str, str]:
+    """Return supported, non-blank custom MUD color overrides."""
+    if not isinstance(colors, dict):
+        return {}
+    allowed = set(SUPPORTED_MUD_COLOR_ROLES)
+    result: dict[str, str] = {}
+    for key, value in colors.items():
+        if key not in allowed:
+            continue
+        clean = str(value or "").strip()
+        if not clean or clean == "-":
+            continue
+        result[key] = clean
+    return result
+
+
+def get_mud_color_presets() -> dict[str, dict[str, str]]:
+    """Built-in MUD color presets keyed by display name."""
+    dark_fantasy = get_default_mud_colors()
+    return {
+        "Dark Fantasy": dark_fantasy,
+        "Classic MUD": {**dark_fantasy, **{role: "#d8dee9" for role in SUPPORTED_MUD_COLOR_ROLES}, "exit": "#33ff66", "command_echo": "#b9c8dd", "error": "#ff6b6b", "warning": "#ffd166", "success": "#7ee787", "gold": "#ffd700", "hp": "#ff7777", "mp": "#7aa2ff", "stamina": "#ffd166"},
+        "Green Terminal": {role: "#33ff66" for role in SUPPORTED_MUD_COLOR_ROLES},
+        "Amber Terminal": {role: "#ffbf00" for role in SUPPORTED_MUD_COLOR_ROLES},
+        "High Contrast": {**dark_fantasy, "room_description": "#ffffff", "exit": "#7cff7c", "error": "#ff5555", "warning": "#ffff55", "score_label": "#00ffff", "score_value": "#ffffff"},
+        "Colorblind Friendly": {**dark_fantasy, "exit": "#56b4e9", "spell": "#cc79a7", "gold": "#f0e442", "damage": "#d55e00", "healing": "#009e73", "hp": "#d55e00", "mp": "#56b4e9"},
+    }
+
+
+def resolve_mud_colors(selected_preset: str | None, custom_roles: dict | None) -> dict[str, str]:
+    presets = get_mud_color_presets()
+    preset_name = selected_preset if selected_preset in presets else "Dark Fantasy"
+    return {**presets[preset_name], **normalize_mud_color_overrides(custom_roles)}
+
 @dataclass
 class MudRuntimeConfig:
     """Server-side Smart MUD runtime configuration."""
