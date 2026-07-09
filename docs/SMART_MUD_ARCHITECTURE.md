@@ -176,3 +176,7 @@ BuilderWorkspace normalizes draft room records as workspace data is loaded and b
 ## Builder Workflow 3.0 Architecture
 
 The Builder workspace remains draft-first and runtime-safe. Builder context tracks current location plus active room/object/feature/exit targets, with a canonical HUD renderer used by edit, save, validate, export, reload, and target-changing flows. Room ID rename is intentionally not implemented in this phase, but validation and documentation now treat exits, builder references, history, draft references, and reload target restoration as the future migration surface.
+
+## Phase 4E Area, Zone, and VNUM Organization
+
+Builder Mode now supports draft areas and zones before room creation. Builders can use `acreate`/`aset current`, `zcreate`/`zset current`, `rcreate <vnum>`, and `dig <direction> <vnum>` to create rooms with canonical `<area_id>_<vnum>` IDs while preserving explicit `custom` legacy room IDs. Builder status shows world, area, zone, location, edit target, and dirty state. Builder export includes `areas`, `zones`, `rooms`, `items`, `entities`, and `spawns`; validation warns on legacy loose rooms and checks area/zone/vnum consistency. See `docs/AREA_ZONE_VNUM_SYSTEM.md`.

@@ -15,7 +15,8 @@ VALID_WEAR_SLOTS = {"head","neck","body","torso","legs","feet","hands","arms","f
 VALID_ENTITY_TYPES = {"npc", "mob", "merchant", "trainer", "banker", "healer", "critter", "object"}
 
 DRAFT_FILES = {
-    "rooms": "rooms.json", "items": "item_templates.json", "entities": "entity_templates.json", "spawns": "spawns.json"
+    "areas": "areas.json", "zones": "zones.json", "rooms": "rooms.json",
+    "items": "item_templates.json", "entities": "entity_templates.json", "spawns": "spawns.json"
 }
 
 @dataclass
@@ -52,6 +53,32 @@ class BuilderWorkspace:
             self.save_drafts(world_id, drafts)
         return drafts
 
+
+    def normalize_area(self, world_id: str, area_id: str, area: Any) -> tuple[dict[str, Any], bool]:
+        original = deepcopy(area) if isinstance(area, dict) else area
+        record = deepcopy(area) if isinstance(area, dict) else {}
+        now = self.stamp()
+        record.setdefault("id", area_id); record.setdefault("name", area_id.replace("_", " ").title())
+        record.setdefault("description", ""); record.setdefault("world_id", world_id)
+        for k in ("vnum_start","vnum_end","room_vnum_start","room_vnum_end","object_vnum_start","object_vnum_end","mob_vnum_start","mob_vnum_end","spawn_vnum_start","spawn_vnum_end"):
+            record.setdefault(k, None)
+        record.setdefault("zone_ids", []); record.setdefault("flags", []); record.setdefault("tags", []); record.setdefault("plugin_data", {})
+        record.setdefault("created_at", now); record.setdefault("updated_at", record.get("created_at") or now)
+        ordered = {k: record.get(k) for k in ("id","name","description","world_id","vnum_start","vnum_end","room_vnum_start","room_vnum_end","object_vnum_start","object_vnum_end","mob_vnum_start","mob_vnum_end","spawn_vnum_start","spawn_vnum_end","zone_ids","flags","tags","plugin_data","created_at","updated_at")}
+        return ordered, ordered != original
+
+    def normalize_zone(self, world_id: str, zone_id: str, zone: Any) -> tuple[dict[str, Any], bool]:
+        original = deepcopy(zone) if isinstance(zone, dict) else zone
+        record = deepcopy(zone) if isinstance(zone, dict) else {}
+        now = self.stamp()
+        record.setdefault("id", zone_id); record.setdefault("name", zone_id.replace("_", " ").title())
+        record.setdefault("description", ""); record.setdefault("world_id", world_id); record.setdefault("area_id", "")
+        record.setdefault("vnum_start", None); record.setdefault("vnum_end", None); record.setdefault("room_ids", [])
+        record.setdefault("flags", []); record.setdefault("tags", []); record.setdefault("plugin_data", {})
+        record.setdefault("created_at", now); record.setdefault("updated_at", record.get("created_at") or now)
+        ordered = {k: record.get(k) for k in ("id","name","description","world_id","area_id","vnum_start","vnum_end","room_ids","flags","tags","plugin_data","created_at","updated_at")}
+        return ordered, ordered != original
+
     def normalize_room(self, world_id: str, room_id: str, room: Any) -> tuple[dict[str, Any], bool]:
         original = deepcopy(room) if isinstance(room, dict) else room
         record = deepcopy(room) if isinstance(room, dict) else {}
@@ -61,18 +88,29 @@ class BuilderWorkspace:
         record.setdefault("world_id", world_id)
         record.setdefault("area_id", "")
         record.setdefault("zone_id", "")
+        record.setdefault("vnum", None)
         if not isinstance(record.get("exits"), dict): record["exits"] = {}
         if not isinstance(record.get("features"), dict): record["features"] = {}
         if not isinstance(record.get("flags"), list): record["flags"] = []
         if not isinstance(record.get("tags"), list): record["tags"] = []
         if not isinstance(record.get("plugin_data"), dict): record["plugin_data"] = {}
-        ordered = {k: record.get(k) for k in ("id","name","description","world_id","area_id","zone_id","exits","features","flags","tags","plugin_data")}
+        ordered = {k: record.get(k) for k in ("id","name","description","world_id","area_id","zone_id","vnum","exits","features","flags","tags","plugin_data")}
         for k, v in record.items():
             if k not in ordered: ordered[k] = v
         return ordered, ordered != original
 
     def normalize_drafts(self, world_id: str, drafts: dict[str, Any], actor: Any | None = None) -> bool:
         changed = False
+        areas = drafts.setdefault("areas", {})
+        for area_id in list(areas.keys()):
+            normalized, did = self.normalize_area(world_id, str(area_id), areas[area_id])
+            areas[area_id] = normalized
+            changed = changed or did
+        zones = drafts.setdefault("zones", {})
+        for zone_id in list(zones.keys()):
+            normalized, did = self.normalize_zone(world_id, str(zone_id), zones[zone_id])
+            zones[zone_id] = normalized
+            changed = changed or did
         rooms = drafts.setdefault("rooms", {})
         for room_id in list(rooms.keys()):
             normalized, did = self.normalize_room(world_id, str(room_id), rooms[room_id])
@@ -143,6 +181,29 @@ class BuilderWorkspace:
                 warnings.append(f"room {rid} was partial and has been normalized")
             elif any(not isinstance(raw.get(k), typ) for k, typ in required.items()):
                 warnings.append(f"room {rid} had invalid draft field types and has been normalized")
+        safe_re = re.compile(r"^[a-z0-9]+(?:_[a-z0-9]+)*$")
+        areas = drafts.get("areas", {}); zones = drafts.get("zones", {})
+        for aid, area in areas.items():
+            if not safe_re.fullmatch(str(aid)): errors.append(f"area {aid} has unsafe id")
+        area_items = list(areas.items())
+        for i, (a1, one) in enumerate(area_items):
+            for a2, two in area_items[i+1:]:
+                if None not in (one.get("vnum_start"), one.get("vnum_end"), two.get("vnum_start"), two.get("vnum_end")) and int(one["vnum_start"]) <= int(two["vnum_end"]) and int(two["vnum_start"]) <= int(one["vnum_end"]):
+                    errors.append(f"area vnum ranges overlap: {a1} and {a2}")
+        for zid, zone in zones.items():
+            if not safe_re.fullmatch(str(zid)): errors.append(f"zone {zid} has unsafe id")
+            aid = zone.get("area_id")
+            if aid not in areas: errors.append(f"zone {zid} assigned to missing area {aid}")
+            else:
+                area = areas[aid]
+                if int(zone.get("vnum_start") or 0) < int(area.get("vnum_start") or 0) or int(zone.get("vnum_end") or 0) > int(area.get("vnum_end") or 0): errors.append(f"zone {zid} range outside area {aid} range")
+        by_area = {}
+        for zid, z in zones.items(): by_area.setdefault(z.get("area_id"), []).append((zid,z))
+        for aid, zs in by_area.items():
+            for i, (z1, one) in enumerate(zs):
+                for z2, two in zs[i+1:]:
+                    if int(one.get("vnum_start") or 0) <= int(two.get("vnum_end") or 0) and int(two.get("vnum_start") or 0) <= int(one.get("vnum_end") or 0): errors.append(f"zone vnum ranges overlap in area {aid}: {z1} and {z2}")
+
         live_rooms = {str(r.get("id")) for r in _records(self.worlds_dir / world_id, "rooms") if r.get("id")}
         draft_rooms = set(drafts["rooms"].keys()); all_rooms = live_rooms | draft_rooms
         reverse = {"north":"south","south":"north","east":"west","west":"east","up":"down","down":"up","in":"out","out":"in"}
@@ -154,12 +215,29 @@ class BuilderWorkspace:
         for nm, ids in seen_names.items():
             if len(ids) > 1:
                 warnings.append(f"duplicate room display name {nm}: {', '.join(ids)}")
+        area_vnums = {}
+        for rid, room in drafts["rooms"].items():
+            key=(room.get("area_id"), room.get("vnum"))
+            if key[0] and key[1] is not None:
+                area_vnums.setdefault(key, []).append(str(rid))
+        for (aid,v), ids in area_vnums.items():
+            if len(ids)>1: errors.append(f"duplicate vnum {v} within area {aid}: {', '.join(ids)}")
         for rid, room in drafts["rooms"].items():
             if not str(rid).strip() or any(ch.isspace() for ch in str(rid)) or not re.fullmatch(r"[a-z0-9]+(?:_[a-z0-9]+)*", str(rid)): errors.append(f"room {rid} has unsafe id")
             if rid in live_rooms: warnings.append(f"room {rid} shadows live room")
             if "world_id" not in room: errors.append(f"room {rid} missing world_id")
             if "area_id" not in room: warnings.append(f"room {rid} missing area_id field")
             if "zone_id" not in room: warnings.append(f"room {rid} missing zone_id field")
+            if not room.get("area_id") or not room.get("zone_id"):
+                warnings.append(f"Legacy room {rid} has no area or zone. Use future room move command.")
+            elif room.get("area_id") not in areas: errors.append(f"room {rid} assigned to missing area {room.get('area_id')}")
+            elif room.get("zone_id") not in zones: errors.append(f"room {rid} assigned to missing zone {room.get('zone_id')}")
+            if room.get("vnum") is not None and room.get("area_id") in areas:
+                v = int(room.get("vnum")); area = areas[room.get("area_id")]; expected = f"{room.get('area_id')}_{v}"
+                if str(rid) != expected: errors.append(f"room {rid} ID does not match generated convention {expected}")
+                if v < int(area.get("room_vnum_start") or area.get("vnum_start") or v) or v > int(area.get("room_vnum_end") or area.get("vnum_end") or v): errors.append(f"room {rid} vnum outside area room range")
+                z = zones.get(room.get("zone_id"))
+                if z and (v < int(z.get("vnum_start") or v) or v > int(z.get("vnum_end") or v)): errors.append(f"room {rid} vnum outside zone range")
             if not isinstance(room.get("exits"), dict): errors.append(f"room {rid} missing exits dictionary")
             if not isinstance(room.get("features"), dict): warnings.append(f"room {rid} missing features dictionary")
             if not isinstance(room.get("flags"), list): warnings.append(f"room {rid} missing flags list")

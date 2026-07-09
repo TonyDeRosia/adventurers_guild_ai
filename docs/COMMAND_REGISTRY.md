@@ -60,3 +60,7 @@ The text Builder polish pass keeps builder commands hidden from normal command l
 ## Phase 4D Builder Commands
 
 Builder Workflow 3.0 registers `builder status`, `bstatus`, Builder-only `status`, `rooms [draft|live|all]`, `rfind <query>`, `redit next`, `redit previous`, `exits`, `examine exit <dir>`, `x exit <dir>`, `back`, and `forward`. `rdesc` without arguments enters the multiline description editor and uses `.end` / `.cancel` sentinel commands.
+
+## Phase 4E Area, Zone, and VNUM Organization
+
+Builder Mode now supports draft areas and zones before room creation. Builders can use `acreate`/`aset current`, `zcreate`/`zset current`, `rcreate <vnum>`, and `dig <direction> <vnum>` to create rooms with canonical `<area_id>_<vnum>` IDs while preserving explicit `custom` legacy room IDs. Builder status shows world, area, zone, location, edit target, and dirty state. Builder export includes `areas`, `zones`, `rooms`, `items`, `entities`, and `spawns`; validation warns on legacy loose rooms and checks area/zone/vnum consistency. See `docs/AREA_ZONE_VNUM_SYSTEM.md`.
