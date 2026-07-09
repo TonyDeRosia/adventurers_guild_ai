@@ -78,3 +78,35 @@ def test_phase2b_transport_rendering_and_favicon(tmp_path: Path, monkeypatch) ->
     route = next(route for route in app.routes if getattr(route, "path", "") == "/favicon.ico")
     response = route.endpoint()
     assert getattr(response, "status_code", 200) != 404
+
+
+def test_mud_input_contract_returns_visible_command_output(tmp_path: Path, monkeypatch) -> None:
+    runtime, _ = _entered_runtime(tmp_path, monkeypatch)
+    for command, expected in [("eq", "You are not wearing anything."), ("sc", "Name: Player"), ("worth", "You have 0 gold coins."), ("frobnicate", "Unknown command. Type HELP or COMMANDS.")]:
+        data = runtime.mud_input({"text": command})
+        assert expected in data["output_text"]
+        assert expected in data["command_result_text"]
+        assert expected in data["command_result_html"]
+        assert data["command_echo_html"]
+        assert data["prompt_html"]
+        assert data["prompt_text"]
+
+
+def test_mud_input_movement_returns_result_and_new_room_render(tmp_path: Path, monkeypatch) -> None:
+    runtime, _ = _entered_runtime(tmp_path, monkeypatch)
+    data = runtime.mud_input({"text": "n"})
+    assert "You head north." in data["command_result_text"]
+    assert "You head north." in data["command_result_html"]
+    assert "Old Gate Road" in data["room_output_text"]
+    assert "Old Gate Road" in data["room_output_html"]
+    assert "You head north." in data["output_text"]
+    assert "Old Gate Road" in data["output_html"]
+
+
+def test_play_view_initial_load_is_room_only_and_app_js_appends_input() -> None:
+    app_js = (Path.cwd() / "app" / "static" / "app.js").read_text(encoding="utf-8")
+    assert "async function refreshPlayView" in app_js
+    assert "dialogueFeed.innerHTML=normalizeMudHtml" in app_js
+    assert "async function sendInput" in app_js
+    assert "appendMudOutput([d.command_echo_html,d.command_result_html,d.room_output_html]" in app_js
+    assert "await refreshPlayView(d)" not in app_js
