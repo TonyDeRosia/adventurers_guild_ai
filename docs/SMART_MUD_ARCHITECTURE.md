@@ -126,3 +126,8 @@ Room rendering uses the entity visibility API so players, NPCs, mobs, and object
 ## Phase 3B Living Entity Runtime
 
 `MudRuntime` is the single authority for living entity lifecycle, spawning, movement, state, visibility, dialogue, behavior flags, and corpse foundation. Web and telnet transports continue to call runtime APIs and render returned semantic output only. World package records remain immutable data; SQLite entity instances hold runtime state and survive world reloads without duplicating room populations.
+
+
+## Runtime Interaction Command Layer
+
+All non-combat interaction commands execute through `MudRuntime`: transport input is parsed, aliases and filler words are normalized, targets are resolved with deterministic priority, runtime APIs publish EventBus events, renderers produce semantic HTML or plain/ANSI text, and transports return the response. Web and telnet transports must not implement gameplay command logic. See `docs/INTERACTION_COMMANDS.md`.

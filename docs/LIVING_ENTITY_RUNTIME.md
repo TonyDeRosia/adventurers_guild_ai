@@ -51,3 +51,8 @@ Living entity operations publish canonical events: `entity_spawned`, `entity_des
 - AI may subscribe to events or request runtime APIs, but must not own state.
 - Combat may call `change_entity_state()` and `create_corpse()`, but must not bypass SQLite runtime instances.
 - Builder Mode may edit package templates in a draft workspace, but live instance transitions still go through `MudRuntime`.
+
+
+## Phase 3C Dialogue Entry Points
+
+The interaction layer routes `talk`, `greet`, and `hello` through the existing runtime dialogue package for visible NPCs and mobs. Dialogue remains deterministic and template-backed; Phase 3C does not add AI decision making or combat behavior. Entity interaction attempts publish interaction EventBus events alongside existing entity dialogue events.

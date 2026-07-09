@@ -163,3 +163,8 @@ Future room-changing commands and systems—recall, goto, summon, portal, Builde
 Smart MUD now includes a canonical runtime entity foundation documented in `docs/ENTITY_SYSTEM.md`. World package templates remain immutable, while SQLite `entity_instances` hold mutable room location, ownership, state, flags, timestamps, and plugin data. `MudRuntime` is the sole authority for spawning, moving, despawning, destroying, state updates, keyword resolution, and visibility queries.
 
 Room rendering uses the entity visibility API so players, NPCs, mobs, and objects/items are displayed in the canonical order without exposing internal entity IDs to normal players. NPCs and mobs can be seeded idempotently from world package data and persist across restart. Corpse and container concepts are reserved for later combat and inventory/container work without replacing the Phase 2E item system. Combat, AI behavior, Builder Mode, shops, doors, pets, summons, and world expansion remain out of scope for Phase 3A.
+
+
+## Phase 3C - Core Interaction Command Layer
+
+Phase 3C adds runtime-owned non-combat interaction commands, pickup aliases, run/walk helpers, entity dialogue aliases, container-safe placeholders, canonical room features, and EventBus interaction events. Combat, AI decision making, Builder Mode, and expanded Shattered Realms content remain out of scope. See `docs/INTERACTION_COMMANDS.md`.
