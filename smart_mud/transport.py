@@ -94,19 +94,27 @@ class RuntimeTransportAdapter:
 
     def __init__(self, mud_runtime: Any) -> None:
         self.mud_runtime = mud_runtime
+        self.event_bus = getattr(mud_runtime, "event_bus", None)
         self.sessions: dict[str, TransportSession] = {}
 
     def create_session(self, remote_address: str = "", **kwargs: Any) -> TransportSession:
         session = TransportSession.create(self.transport_type, remote_address, capabilities={"output_format": self.output_format.value}, **kwargs)
         self.sessions[session.session_id] = session
+        if self.event_bus:
+            self.event_bus.publish("transport_session_created", {"session_id": session.session_id, "transport_type": session.transport_type, "output_format": self.output_format.value, "character_id": session.character_id or "", "world_id": session.world_id or ""}, source_system="transport", session_id=session.session_id, transport_type=session.transport_type, character_id=session.character_id or "", world_id=session.world_id or "")
         return session
 
     def handle_message(self, message: TransportMessage) -> TransportResponse:
         message.session.touch()
+        if self.event_bus:
+            self.event_bus.publish("transport_message_received", {"session_id": message.session.session_id, "transport_type": message.session.transport_type, "output_format": self.output_format.value, "character_id": message.session.character_id or "", "world_id": message.session.world_id or "", "command": message.text}, source_system="transport", session_id=message.session.session_id, transport_type=message.session.transport_type, character_id=message.session.character_id or "", world_id=message.session.world_id or "", command=message.text)
         if not message.session.character_id:
             raise ValueError("Transport session has no character_id; authentication/character selection is required.")
         result = self.mud_runtime.handle_input(message.session.character_id, message.text)
-        return self.render_runtime_result(message.session, result, command=message.text)
+        response = self.render_runtime_result(message.session, result, command=message.text)
+        if self.event_bus:
+            self.event_bus.publish("transport_response_sent", {"session_id": message.session.session_id, "transport_type": message.session.transport_type, "output_format": response.output_format.value, "character_id": message.session.character_id or "", "world_id": message.session.world_id or "", "command": message.text}, source_system="transport", session_id=message.session.session_id, transport_type=message.session.transport_type, character_id=message.session.character_id or "", world_id=message.session.world_id or "", command=message.text)
+        return response
 
     def render_runtime_result(self, session: TransportSession, result: dict[str, Any], command: str = "") -> TransportResponse:
         view = result.get("view") or {}

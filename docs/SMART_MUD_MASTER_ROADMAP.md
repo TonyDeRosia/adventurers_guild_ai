@@ -99,3 +99,7 @@ Phase 2B establishes basic playability before any Shattered Realms content expan
 The phase also replaces room-display stub text with classic MUD room output sourced from loaded world package data and SQLite-backed character location state. Movement checks package-defined exits, persists the new character room to SQLite, and renders the destination through the shared display pipeline used by web and telnet transports.
 
 This phase explicitly does not add combat, AI behavior, Builder Mode, full accounts, or a complete Shattered Realms world build-out.
+
+### Phase 2C Complete: Event Bus Architecture
+
+Phase 2C adds the Smart MUD Event Bus as architecture-only infrastructure. Runtime, commands, movement, rendering, transports, persistence startup, plugin discovery/resolution, and world loading now publish deterministic runtime messages. This prepares future AI listeners, builder listeners, auditing, multiplayer replication, and persistence transaction integration without adding combat, AI behavior, full accounts, Builder Mode commands, or Shattered Realms expansion.

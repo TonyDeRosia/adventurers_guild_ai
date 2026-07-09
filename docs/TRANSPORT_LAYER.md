@@ -46,3 +46,7 @@ A websocket transport can implement the same adapter protocol. It should create 
 ## Client support strategy
 
 Telnet clients are supported because MUD players expect Mudlet, MUSHclient, TinTin, and raw telnet compatibility. They are not required: Smart MUD continues to ship its custom web desktop client as the richest interface.
+
+## EventBus Integration
+
+Transport adapters share the active `MudRuntime.event_bus`. Session creation publishes `transport_session_created`; inbound input publishes `transport_message_received`; generated responses publish `transport_response_sent`. Payloads include session id, transport type, output format, world/character ids when known, and command text where relevant. The transport layer remains a routing/presentation boundary and does not execute game side effects outside `MudRuntime`.

@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from engine.mud_commands import MudCommandEngine
 from engine.mud_displays import render_prompt, render_room
 from smart_mud.world_registry import WorldRegistry
+from smart_mud.event_bus import EventBus
 from engine.plugin_system import HookRegistry, PluginRegistry
 
 
@@ -67,9 +68,14 @@ class MudSession:
 class MudStateStore:
     """SQLite persistence for MUD runtime state."""
 
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path, event_bus: EventBus | None = None):
         self.db_path = db_path
+        self.event_bus = event_bus
+        if self.event_bus:
+            self.event_bus.publish("database_opened", {"db_path": str(db_path)}, source_system="persistence")
         self._init_schema()
+        if self.event_bus:
+            self.event_bus.publish("database_migrated", {"db_path": str(db_path)}, source_system="persistence")
 
     def _init_schema(self) -> None:
         """Initialize SQLite schema for MUD persistence."""
@@ -296,27 +302,32 @@ class MudStateStore:
 class MudRuntime:
     """Primary Smart MUD application runtime."""
 
-    def __init__(self, root: Path, user_data_dir: Path, world_registry: WorldRegistry | None = None, plugin_registry: PluginRegistry | None = None):
+    def __init__(self, root: Path, user_data_dir: Path, world_registry: WorldRegistry | None = None, plugin_registry: PluginRegistry | None = None, event_bus: EventBus | None = None):
+        self.event_bus = event_bus or EventBus()
+        self.event_bus.publish("startup_complete", {"runtime": "mud"}, source_system="runtime")
         self.root = root
         self.user_data_dir = user_data_dir
         self.user_data_dir.mkdir(parents=True, exist_ok=True)
-        self.state_store = MudStateStore(user_data_dir / "mud_state.db")
+        self.state_store = MudStateStore(user_data_dir / "mud_state.db", self.event_bus)
         self.world_registry = world_registry or WorldRegistry()
         self.plugin_registry = plugin_registry or PluginRegistry(root / "plugins")
         self.hooks = HookRegistry()
         self.active_world_id: Optional[str] = None
         self.active_world: Any = None
         self.sessions: dict[str, MudSession] = {}
-        self.command_engine = MudCommandEngine(self.state_store)
+        self.command_engine = MudCommandEngine(self.state_store, event_bus=self.event_bus)
         self.sqlite_ready = (user_data_dir / "mud_state.db").exists()
+        self.event_bus.publish("runtime_ready", {"sqlite_ready": self.sqlite_ready}, source_system="runtime")
         print("[mud-runtime] Smart MUD runtime initialized")
 
     def load_world(self, world_id: str) -> Any:
         """Load a read-only world template package for gameplay."""
         self.active_world = self.world_registry.load_world(world_id)
         self.plugin_registry.resolve_required([str(p) for p in self.active_world.manifest.get("required_plugins", [])])
+        self.event_bus.publish("plugins_resolved", {"world_id": world_id}, source_system="plugin", world_id=world_id)
         self.active_world_id = world_id
         self.hooks.emit("world_loaded", world_id=world_id, world=self.active_world)
+        self.event_bus.publish("world_loaded", {"world_id": world_id}, source_system="runtime", world_id=world_id)
         return self.active_world
 
     def list_characters(self, world_id: str = "") -> list[dict[str, Any]]:
@@ -357,6 +368,7 @@ class MudRuntime:
         )
         self.state_store.save_character(char, world_id)
         self.hooks.emit("character_creation", world_id=world_id, character=char)
+        self.event_bus.publish("character_created", {"character_id": char.id, "character_name": char.name}, source_system="runtime", world_id=world_id, character_id=char.id)
         return self._character_payload(char, world_id)
 
     def enter_world(self, character_id: str) -> dict[str, Any]:
@@ -370,6 +382,7 @@ class MudRuntime:
             if row and row[0]:
                 self.load_world(str(row[0]))
         self.hooks.emit("player_login", world_id=self.active_world_id or "", character=char)
+        self.event_bus.publish("character_loaded", {"character_id": char.id, "character_name": char.name}, source_system="runtime", world_id=self.active_world_id or "", character_id=char.id)
         self.sessions[character_id] = MudSession(
             session_id=character_id,
             character_id=character_id,
@@ -377,6 +390,7 @@ class MudRuntime:
             connected_at=datetime.now(timezone.utc).isoformat(),
             last_activity=datetime.now(timezone.utc).isoformat(),
         )
+        self.event_bus.publish("character_entered_world", {"character_id": char.id, "character_name": char.name, "room_id": char.room_id}, source_system="runtime", world_id=self.active_world_id or "", character_id=char.id)
         return {"ok": True, "character": self._character_payload(char, self.active_world_id or ""), "view": self.play_view(character_id)}
 
     def play_view(self, character_id: str) -> dict[str, Any]:
@@ -387,7 +401,9 @@ class MudRuntime:
         room = self._current_room(char)
         colors = self.get_effective_mud_colors()
         html = render_room(room, colors, char)
+        self.event_bus.publish("room_rendered", {"world_id": self.active_world_id or "", "character_id": char.id, "room_id": char.room_id, "output_format": "web_html", "render_kind": "room"}, source_system="render", world_id=self.active_world_id or "", character_id=char.id)
         prompt = render_prompt(char, colors)
+        self.event_bus.publish("prompt_rendered", {"world_id": self.active_world_id or "", "character_id": char.id, "room_id": char.room_id, "output_format": "web_html", "render_kind": "prompt"}, source_system="render", world_id=self.active_world_id or "", character_id=char.id)
         return {"html": html, "text": room.description, "prompt": prompt, "room_id": char.room_id}
 
     def handle_input(self, character_id: str, command: str) -> dict[str, Any]:
@@ -409,9 +425,13 @@ class MudRuntime:
         tokens = command.strip().split()
         if not tokens:
             return self.command_engine.handle_command(char, command)
-        cmd_name = self.command_engine.resolve_alias(tokens[0].lower())
+        raw_cmd = tokens[0].lower()
+        cmd_name = self.command_engine.resolve_alias(raw_cmd)
+        self.event_bus.publish("command_resolved", {"raw_input": command, "canonical_command": cmd_name, "arguments": tokens[1:], "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
         if cmd_name in {"north", "south", "east", "west", "up", "down", "in", "out"}:
-            return self._move_character(char, cmd_name)
+            result = self._move_character(char, cmd_name)
+            self.event_bus.publish("command_executed", {"raw_input": command, "canonical_command": cmd_name, "arguments": tokens[1:], "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id, "result_summary": result.narrative[:120]}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
+            return result
         result = self.command_engine.handle_command(char, command)
         if result.state_updates and result.state_updates.get("render_room"):
             room = self._current_room(char)
@@ -421,6 +441,7 @@ class MudRuntime:
     def _move_character(self, char: MudCharacter, direction: str):
         from engine.mud_commands import CommandResult
         room = self._current_room(char)
+        self.event_bus.publish("movement_attempted", {"canonical_command": direction, "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id}, source_system="movement", world_id=self.active_world_id or "", character_id=char.id, command=direction)
         for exit_data in room.exits:
             if not isinstance(exit_data, dict):
                 continue
@@ -433,7 +454,9 @@ class MudRuntime:
             char.room_id = str(target)
             self.state_store.save_character(char, self.active_world_id or "")
             new_room = self._current_room(char)
+            self.event_bus.publish("movement_succeeded", {"canonical_command": direction, "character_id": char.id, "character_name": char.name, "current_room_id": room.id, "target_room_id": char.room_id, "result_summary": "moved"}, source_system="movement", world_id=self.active_world_id or "", character_id=char.id, command=direction)
             return CommandResult(narrative=f"You head {direction}.\n\n{self._room_text(new_room)}")
+        self.event_bus.publish("movement_failed", {"canonical_command": direction, "character_id": char.id, "character_name": char.name, "current_room_id": room.id, "result_summary": "no_exit"}, source_system="movement", world_id=self.active_world_id or "", character_id=char.id, command=direction)
         return CommandResult(narrative="You cannot go that way.", ok=False)
 
     def _room_text(self, room: MudRoom) -> str:

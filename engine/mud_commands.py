@@ -29,7 +29,7 @@ DETERMINISTIC_COMMANDS = {
     "spells": {"category": "info", "aliases": ["sp"], "admin": False},
     "skills": {"category": "info", "aliases": ["sk"], "admin": False},
     "abilities": {"category": "info", "admin": False},
-    "affects": {"category": "info", "admin": False},
+    "affects": {"category": "info", "aliases": ["aff"], "admin": False},
     "resists": {"category": "info", "admin": False},
     "who": {"category": "info", "admin": False},
     "where": {"category": "info", "admin": False},
@@ -90,9 +90,10 @@ DETERMINISTIC_COMMANDS = {
 class MudCommandEngine:
     """Command execution engine with deterministic and AI-assisted routing."""
 
-    def __init__(self, state_store=None, ai_provider=None):
+    def __init__(self, state_store=None, ai_provider=None, event_bus=None):
         self.state_store = state_store
         self.ai_provider = ai_provider
+        self.event_bus = event_bus
         self.command_handlers: dict[str, Callable] = {
             # Info commands
             "score": self._cmd_score,
@@ -125,6 +126,7 @@ class MudCommandEngine:
         raw_cmd_name = cmd_tokens[0].lower()
         cmd_name = self.resolve_alias(raw_cmd_name)
         args = cmd_tokens[1:]
+        self._publish("command_received", character, command_text, raw_input=command_text, canonical_command=raw_cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""))
         
         print(f"[mud-command] Routing {raw_cmd_name} as {cmd_name} for {character.name}")
         
@@ -132,17 +134,23 @@ class MudCommandEngine:
         if cmd_name in DETERMINISTIC_COMMANDS and DETERMINISTIC_COMMANDS[cmd_name].get("admin"):
             if character.role not in ["admin", "implementor"]:
                 print(f"[mud-command] Access denied: {character.name} not admin")
-                return CommandResult(narrative="You do not have permission for that command.")
+                result = CommandResult(narrative="You do not have permission for that command.")
+                self._publish("command_executed", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary=result.narrative[:120])
+                return result
         
         # Route to deterministic handler if exists
         if cmd_name in self.command_handlers:
             print(f"[mud-command] Deterministic: {cmd_name}")
-            return self.command_handlers[cmd_name](character, args, command_text)
+            result = self.command_handlers[cmd_name](character, args, command_text)
+            self._publish("command_executed", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary=(result.narrative or "render_room")[:120])
+            return result
         
         # Known deterministic command with no specific handler
         if cmd_name in DETERMINISTIC_COMMANDS:
             print(f"[mud-command] Known deterministic placeholder: {cmd_name}")
-            return CommandResult(narrative=self._placeholder_for(cmd_name))
+            result = CommandResult(narrative=self._placeholder_for(cmd_name))
+            self._publish("command_executed", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary=result.narrative[:120])
+            return result
         
         # Social/freeform - route to AI if available
         if self.ai_provider:
@@ -153,15 +161,29 @@ class MudCommandEngine:
                     prompt=f"SQLite AI context: {context}\nCharacter {character.name} says: {command_text}",
                     system_prompt="You are a MUD game narrator. Use the provided SQLite context before responding in 1-2 sentences."
                 )
-                return CommandResult(narrative=ai_response)
+                result = CommandResult(narrative=ai_response)
+                self._publish("command_executed", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary=result.narrative[:120])
+                return result
             except Exception as e:
                 print(f"[mud-command] AI error: {e}")
-                return CommandResult(narrative="The world responds but remains silent.")
+                result = CommandResult(narrative="The world responds but remains silent.")
+                self._publish("command_executed", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary=result.narrative[:120])
+                return result
         
         # Fallback
         print(f"[mud-command] Unknown command: {cmd_name}")
-        return CommandResult(narrative="Unknown command. Type HELP or COMMANDS.", ok=False)
+        self._publish("command_unknown", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary="unknown")
+        result = CommandResult(narrative="Unknown command. Type HELP or COMMANDS.", ok=False)
+        self._publish("command_executed", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary=result.narrative[:120])
+        return result
 
+
+    def _publish(self, event_name: str, character: Any, command: str, **payload: Any) -> None:
+        if not self.event_bus:
+            return
+        payload.setdefault("character_id", getattr(character, "id", ""))
+        payload.setdefault("character_name", getattr(character, "name", ""))
+        self.event_bus.publish(event_name, payload, source_system="command", character_id=getattr(character, "id", ""), command=command)
 
     def _build_ai_context(self, character: Any, command_text: str) -> dict[str, Any]:
         """Load the authoritative SQLite context required before any LLM call."""

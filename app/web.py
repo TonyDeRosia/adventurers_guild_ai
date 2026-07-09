@@ -31,6 +31,7 @@ from engine.plugin_system import PluginRegistry
 from smart_mud.world_registry import WorldRegistry, WorldRegistryError, WorldValidationError
 from smart_mud.transport import TransportMessage, WebTransportAdapter
 from smart_mud.telnet_server import TelnetServerConfig
+from smart_mud.event_bus import EventBus
 
 
 class WebRuntime:
@@ -38,6 +39,7 @@ class WebRuntime:
 
     def __init__(self, root: Path) -> None:
         self.root = Path(root)
+        self.event_bus = EventBus()
         print("[startup] Loading configuration...")
         self.paths = initialize_user_data_paths()
         self.config_store = MudRuntimeConfigStore(self.paths.config / "mud_config.json")
@@ -49,12 +51,15 @@ class WebRuntime:
         self.plugin_registry = PluginRegistry(self.root / "plugins")
         try:
             self.available_plugins = self.plugin_registry.discover()
+            self.event_bus.publish("plugins_discovered", {"count": len(self.available_plugins)}, source_system="startup")
             print("[startup] Resolving plugin dependencies...")
             for plugin in self.available_plugins:
                 self.plugin_registry.resolve_required(list(plugin.manifest.dependencies))
+            self.event_bus.publish("plugins_resolved", {"count": len(self.available_plugins)}, source_system="startup")
             print("[startup] Scanning worlds...")
             self.world_registry = WorldRegistry(self.root / "worlds")
             self.available_worlds = self.world_registry.list_worlds()
+            self.event_bus.publish("worlds_scanned", {"count": len(self.available_worlds)}, source_system="startup")
             for world in self.available_worlds:
                 world_id = str(world["id"])
                 print(f"[startup] Preparing Builder workspace: {world_id}")
@@ -63,7 +68,7 @@ class WebRuntime:
                 self.world_registry.validate_world(world_id)
                 print(f"[startup] Loading world assets: {world_id}")
             print("[startup] Initializing runtime...")
-            self.mud_runtime = MudRuntime(self.root, self.paths.user_data, world_registry=self.world_registry, plugin_registry=self.plugin_registry)
+            self.mud_runtime = MudRuntime(self.root, self.paths.user_data, world_registry=self.world_registry, plugin_registry=self.plugin_registry, event_bus=self.event_bus)
         except WorldValidationError as exc:
             raise RuntimeError(
                 "Startup failed in subsystem=world_registry "
@@ -86,6 +91,7 @@ class WebRuntime:
         )
         self.active_world_id = ""
         self.active_character_id = ""
+        self.event_bus.publish("runtime_ready", {"transport": "web"}, source_system="startup")
         print("[startup] Ready.")
         print("SQLite Ready")
         print("World Registry Ready")

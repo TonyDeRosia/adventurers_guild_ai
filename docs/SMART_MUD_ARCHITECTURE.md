@@ -70,3 +70,7 @@ Phase 2B keeps game logic centralized in `MudRuntime` and `MudCommandEngine`. Co
 Room rendering now uses loaded package room data plus runtime character location state. Visible NPCs and objects are resolved from world package records when available, with safe ID fallbacks for incomplete data. Movement commands validate current-room exits, persist character location changes in SQLite, and render the new room through the same shared display builder.
 
 Phase 2B is intentionally a playability bridge before world expansion: no combat loop, AI behavior, Builder Mode, or account system is introduced here.
+
+## Phase 2C Event Bus
+
+Smart MUD now includes a canonical deterministic EventBus in `smart_mud/event_bus.py`. `WebRuntime` creates the process runtime bus, passes it into `MudRuntime`, and web/telnet transport adapters use `mud_runtime.event_bus` rather than creating separate buses. Command, movement, render, transport, startup, database, world, and character lifecycle events are published as small structured payloads. The existing plugin registry remains the plugin-facing compatibility API; EventBus exposes the same runtime milestones to future listeners without replacing plugin discovery or hook behavior. See `docs/EVENT_SYSTEM.md` for lifecycle, ordering, strict mode, categories, and after-commit queue details.
