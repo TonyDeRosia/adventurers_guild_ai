@@ -78,3 +78,11 @@ Smart MUD now includes a canonical deterministic EventBus in `smart_mud/event_bu
 ## Phase 2D Account and Session Foundation
 
 Smart MUD now includes a local account/session foundation. See `docs/ACCOUNT_AND_SESSION_MODEL.md` for the SQLite account model, shared web/telnet session lifecycle, account-owned character creation/select/entry rules, role hierarchy, permission helper philosophy, orphan character migration behavior, and account/session/character EventBus events.
+
+## Phase 2E Item Runtime Authority
+
+Phase 2E item ownership is centralized in `MudRuntime`. Runtime item templates are immutable world-package records, while item instances are mutable SQLite-backed runtime records with exactly one owner at a time. Web UI code, telnet transport code, plugins, Builder Mode, world packages, and SQLite helpers must not directly manipulate inventory or equipment state.
+
+All object interactions must use the canonical runtime item API documented in `docs/ITEM_SYSTEM.md`. Ownership transfers flow through `transfer_item()`, whether initiated by `get`, `take`, `drop`, `wear`, `remove`, `wield`, future shops, future trading, future Builder Mode tools, or plugins. Equipment is an ownership state of the same item instance, not a duplicate inventory copy.
+
+Room rendering must use runtime room inventory and render sections in this order: room title, room description, exits, visible NPCs, visible players, visible objects, and prompt. Equipped items and carried inventory items must never appear as room objects.
