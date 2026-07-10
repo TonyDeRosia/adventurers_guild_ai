@@ -1,0 +1,11 @@
+{
+  "written_message_profiles": [
+    {
+      "id": "welcome_mail",
+      "name": "Welcome Mail",
+      "subject": "Welcome to Guildlands",
+      "body": "Welcome to Guildlands. Your mailbox is ready.",
+      "version": 1
+    }
+  ]
+}

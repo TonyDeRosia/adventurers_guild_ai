@@ -1,0 +1,21 @@
+{
+  "bulletin_posting_profiles": [
+    {
+      "id": "public_basic_posting",
+      "name": "Public Basic Posting",
+      "maximum_title_length": 80,
+      "maximum_body_length": 2000,
+      "maximum_posts_per_actor": 20,
+      "posting_cooldown": 0,
+      "reply_cooldown": 0,
+      "currency_cost": {},
+      "allow_edit": true,
+      "edit_window_minutes": 60,
+      "allow_delete": true,
+      "delete_window_minutes": 30,
+      "allow_attachments": false,
+      "require_subject": true,
+      "version": 1
+    }
+  ]
+}

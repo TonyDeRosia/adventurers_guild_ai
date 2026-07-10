@@ -1,0 +1,10 @@
+{
+  "written_render_profiles": [
+    {
+      "id": "default_mud_written",
+      "name": "Default MUD Written",
+      "style": "adventurers_lair",
+      "version": 1
+    }
+  ]
+}

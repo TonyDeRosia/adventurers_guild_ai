@@ -1,0 +1,18 @@
+{
+  "mail_service_profiles": [
+    {
+      "id": "guildlands_post",
+      "name": "Guildlands Post",
+      "currency_id": "copper",
+      "base_postage": 1,
+      "per_recipient_cost": 1,
+      "per_attachment_cost": 1,
+      "maximum_recipients": 5,
+      "maximum_attachments": 3,
+      "delivery_mode": "instant",
+      "delivery_delay_minutes": 0,
+      "return_policy": "return_unclaimed_attachments",
+      "version": 1
+    }
+  ]
+}

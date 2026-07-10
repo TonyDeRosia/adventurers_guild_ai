@@ -1,0 +1,63 @@
+{
+  "bulletin_board_definitions": [
+    {
+      "id": "guildlands_public_board",
+      "name": "Guildlands Public Board",
+      "board_type": "public",
+      "feature_id": "notice_board",
+      "room_ids": [
+        "guildhall_crossing_square"
+      ],
+      "access_profile_id": "public_read_player_post",
+      "posting_profile_id": "public_basic_posting",
+      "moderation_profile_id": "basic_staff_moderation",
+      "retention_profile_id": "keep_audit_default",
+      "maximum_threads": 100,
+      "maximum_posts_per_thread": 50,
+      "allow_replies": true,
+      "allow_anonymous": false,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "adventurers_guild_board",
+      "name": "Adventurers Guild Board",
+      "board_type": "organization",
+      "feature_id": "notice_board",
+      "room_ids": [
+        "guildhall_crossing_square"
+      ],
+      "organization_id": "adventurers_guild",
+      "access_profile_id": "organization_members_only",
+      "posting_profile_id": "public_basic_posting",
+      "moderation_profile_id": "basic_staff_moderation",
+      "retention_profile_id": "keep_audit_default",
+      "maximum_threads": 100,
+      "maximum_posts_per_thread": 50,
+      "allow_replies": true,
+      "allow_anonymous": false,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "town_guard_notice_board",
+      "name": "Town Guard Notice Board",
+      "board_type": "organization",
+      "feature_id": "notice_board",
+      "room_ids": [
+        "guildhall_crossing_square"
+      ],
+      "organization_id": "town_guard",
+      "access_profile_id": "guard_post_only",
+      "posting_profile_id": "public_basic_posting",
+      "moderation_profile_id": "basic_staff_moderation",
+      "retention_profile_id": "keep_audit_default",
+      "maximum_threads": 50,
+      "maximum_posts_per_thread": 10,
+      "allow_replies": false,
+      "allow_anonymous": false,
+      "enabled": true,
+      "version": 1
+    }
+  ]
+}

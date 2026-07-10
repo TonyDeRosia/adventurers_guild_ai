@@ -1,0 +1,13 @@
+{
+  "readable_item_profiles": [
+    {
+      "id": "basic_readable_item",
+      "name": "Basic Readable Item",
+      "content_instance_policy": "shared_definition",
+      "copy_policy": "copy_with_provenance",
+      "authoring_policy": "owner_editable_draft",
+      "sealed": false,
+      "version": 1
+    }
+  ]
+}

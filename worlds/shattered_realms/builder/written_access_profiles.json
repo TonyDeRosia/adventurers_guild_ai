@@ -1,0 +1,55 @@
+{
+  "written_access_profiles": [
+    {
+      "id": "public_read_player_post",
+      "name": "Public Read Player Post",
+      "rules": {
+        "read": [
+          "public"
+        ],
+        "post": [
+          "actor"
+        ],
+        "reply": [
+          "actor"
+        ],
+        "moderate": [
+          "admin"
+        ]
+      },
+      "version": 1
+    },
+    {
+      "id": "organization_members_only",
+      "name": "Organization Members Only",
+      "rules": {
+        "read": [
+          "organization_membership"
+        ],
+        "post": [
+          "organization_membership"
+        ],
+        "moderate": [
+          "organization_role:officer"
+        ]
+      },
+      "version": 1
+    },
+    {
+      "id": "guard_post_only",
+      "name": "Guard Post Only",
+      "rules": {
+        "read": [
+          "public"
+        ],
+        "post": [
+          "organization_role:guard"
+        ],
+        "moderate": [
+          "organization_role:officer"
+        ]
+      },
+      "version": 1
+    }
+  ]
+}

@@ -1,0 +1,102 @@
+{
+  "written_document_definitions": [
+    {
+      "id": "welcome_to_guildlands",
+      "name": "Welcome to Guildlands",
+      "short_name": "welcome",
+      "description": "Short starter orientation notice.",
+      "document_type": "notice",
+      "content_profile_id": "guildlands_notice_profile",
+      "access_profile_id": "public_read_player_post",
+      "render_profile_id": "default_mud_written",
+      "retention_profile_id": "keep_audit_default",
+      "author_type": "system",
+      "author_id": "guildlands_civic_office",
+      "readable_item_template_ids": [
+        "guildlands_guide"
+      ],
+      "feature_ids": [
+        "notice_board"
+      ],
+      "room_ids": [
+        "guildhall_crossing_square"
+      ],
+      "immutable": true,
+      "copyable": true,
+      "editable": false,
+      "enabled": true,
+      "tags": [
+        "starter"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "guildlands_rules_notice",
+      "name": "Guildlands Rules Notice",
+      "document_type": "notice",
+      "content_profile_id": "guildlands_notice_profile",
+      "access_profile_id": "public_read_player_post",
+      "render_profile_id": "default_mud_written",
+      "retention_profile_id": "keep_audit_default",
+      "author_type": "system",
+      "author_id": "town_guard",
+      "immutable": true,
+      "copyable": true,
+      "editable": false,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "blacksmiths_note",
+      "name": "Blacksmith's Note",
+      "document_type": "note",
+      "content_profile_id": "guildlands_notice_profile",
+      "access_profile_id": "public_read_player_post",
+      "render_profile_id": "default_mud_written",
+      "retention_profile_id": "keep_audit_default",
+      "author_type": "npc",
+      "author_id": "blacksmith_harl",
+      "immutable": true,
+      "copyable": true,
+      "editable": false,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "healers_order_primer",
+      "name": "Healer's Order Primer",
+      "document_type": "book",
+      "content_profile_id": "guildlands_notice_profile",
+      "access_profile_id": "public_read_player_post",
+      "render_profile_id": "default_mud_written",
+      "retention_profile_id": "keep_audit_default",
+      "author_type": "organization",
+      "author_id": "healers_order",
+      "immutable": true,
+      "copyable": true,
+      "editable": false,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "cellar_rat_report",
+      "name": "Cellar Rat Report",
+      "document_type": "record",
+      "content_profile_id": "guildlands_notice_profile",
+      "access_profile_id": "public_read_player_post",
+      "render_profile_id": "default_mud_written",
+      "retention_profile_id": "keep_audit_default",
+      "author_type": "npc",
+      "author_id": "guildlands_registrar",
+      "immutable": true,
+      "copyable": true,
+      "editable": false,
+      "enabled": true,
+      "tags": [
+        "rat_cellar"
+      ],
+      "version": 1
+    }
+  ]
+}

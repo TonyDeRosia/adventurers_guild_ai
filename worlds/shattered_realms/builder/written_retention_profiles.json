@@ -1,0 +1,18 @@
+{
+  "written_retention_profiles": [
+    {
+      "id": "keep_audit_default",
+      "name": "Keep Audit Default",
+      "draft_retention_minutes": 10080,
+      "delivered_retention_minutes": 0,
+      "archived_retention_minutes": 0,
+      "deleted_retention_minutes": 43200,
+      "unread_never_expire": true,
+      "return_unclaimed_attachments": true,
+      "purge_content": false,
+      "keep_audit_history": true,
+      "maximum_messages": 1000,
+      "version": 1
+    }
+  ]
+}

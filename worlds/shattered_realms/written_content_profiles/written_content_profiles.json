@@ -1,0 +1,20 @@
+{
+  "written_content_profiles": [
+    {
+      "id": "guildlands_notice_profile",
+      "name": "Guildlands Notice Profile",
+      "format": "plain_text",
+      "page_ids": [
+        "welcome_to_guildlands_p1"
+      ],
+      "maximum_pages": 8,
+      "maximum_characters": 4000,
+      "allow_player_edit": false,
+      "allow_builder_edit": true,
+      "allow_copy": true,
+      "allow_quote": true,
+      "sanitization_profile_id": "plain_safe",
+      "version": 1
+    }
+  ]
+}

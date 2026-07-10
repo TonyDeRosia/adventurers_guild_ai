@@ -1,0 +1,10 @@
+{
+  "journal_profiles": [
+    {
+      "id": "private_actor_journal",
+      "name": "Private Actor Journal",
+      "private_by_default": true,
+      "version": 1
+    }
+  ]
+}

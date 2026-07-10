@@ -1,0 +1,20 @@
+{
+  "written_sanitization_profiles": [
+    {
+      "id": "plain_safe",
+      "name": "Plain Safe Text",
+      "allowed_formats": [
+        "plain_text",
+        "mud_markup"
+      ],
+      "maximum_characters": 8000,
+      "maximum_lines": 200,
+      "blocked_control_characters": [
+        "ansi_escape"
+      ],
+      "allow_semantic_colors": true,
+      "allow_links": false,
+      "version": 1
+    }
+  ]
+}

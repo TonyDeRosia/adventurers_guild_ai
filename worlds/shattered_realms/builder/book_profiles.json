@@ -1,0 +1,10 @@
+{
+  "book_profiles": [
+    {
+      "id": "simple_multipage_book",
+      "name": "Simple Multi-page Book",
+      "supports_pages": true,
+      "version": 1
+    }
+  ]
+}

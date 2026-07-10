@@ -1,0 +1,20 @@
+{
+  "written_moderation_profiles": [
+    {
+      "id": "basic_staff_moderation",
+      "name": "Basic Staff Moderation",
+      "moderator_roles": [
+        "admin",
+        "builder"
+      ],
+      "allow_hide": true,
+      "allow_remove": true,
+      "allow_lock": true,
+      "allow_pin": true,
+      "allow_restore": true,
+      "reason_required": true,
+      "retain_removed_content": true,
+      "version": 1
+    }
+  ]
+}

@@ -7,3 +7,10 @@ Definitions are Builder/world-package JSON collections under `worlds/<world_id>/
 Canonical EventBus events are consumed idempotently by `AchievementEventRouter`; read-only commands do not publish progress events. Achievement rewards use `RewardService` with `source_type=achievement`. Titles and accolades are cosmetic, source-traceable, and never mutate Actor statistics.
 
 Manual acceptance commands: `achievementlist`, `achievementstat first_blood`, `achievementpreview first_blood self`, `achievementtrace self first_blood`, `achievements`, `achievement first_blood`, `titles`, `title select rat_hunter`, `score achievements`, `score titles`, and `collections`.
+
+
+## Phase 10A Written Content Integration
+
+Written communication and readable content now route through `engine.written_content.WrittenContentService`. The canonical model is document instance -> immutable content version -> owner/placement/access -> delivery or publication -> read state -> audit. Integrations should call the service instead of writing mail, board, book, note, journal, or sign rows directly. Postage and service fees are quoted/settled through `EconomyService`; organization and faction decisions remain delegated to their canonical services; quest and achievement progress consumes written-content events.
+
+Builder/world packages may include written document, content, access, retention, render, sanitization, mail service, board, posting, moderation, readable item, book, and journal profile collections. External messaging, unrestricted markup, executable links, arbitrary file attachments, AI-generated authoritative mail, and cross-server messaging remain forbidden.

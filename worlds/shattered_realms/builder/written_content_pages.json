@@ -1,0 +1,13 @@
+{
+  "written_content_pages": [
+    {
+      "id": "welcome_to_guildlands_p1",
+      "content_profile_id": "guildlands_notice_profile",
+      "page_number": 1,
+      "title": "Welcome to Guildlands",
+      "body": "Welcome to Guildlands. Visit the registrar, train safely, and ask the Adventurers Guild for starter work.",
+      "footer": "Guildlands Civic Notice",
+      "version": 1
+    }
+  ]
+}
