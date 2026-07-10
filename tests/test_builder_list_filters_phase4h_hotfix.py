@@ -26,10 +26,8 @@ def actor(role="builder"):
     )
 
 
-def engine_with_pack(tmp_path):
-    worlds = tmp_path / "worlds"
-    shutil.copytree(ROOT / "worlds/shattered_realms", worlds / "shattered_realms", ignore=shutil.ignore_patterns("audit", "history", "snapshots", "exports"))
-    bw = BuilderWorkspace(worlds_dir=worlds)
+def engine_with_pack(isolated_builder_world):
+    bw = isolated_builder_world.workspace
     a = actor()
     assert bw.template_copy(a, PACK, "pack.json").ok
     assert bw.import_apply(a, "pack.json").ok
@@ -42,12 +40,8 @@ def text(engine, a, command):
     return engine.handle_command(a, command).narrative
 
 
-def runtime_with_pack(tmp_path):
-    worlds = tmp_path / "worlds"
-    shutil.copytree(ROOT / "worlds/shattered_realms", worlds / "shattered_realms", ignore=shutil.ignore_patterns("audit", "history", "snapshots", "exports"))
-    rt = MudRuntime(ROOT, tmp_path / "user_data", world_registry=WorldRegistry(worlds))
-    rt.builder = BuilderWorkspace(worlds_dir=worlds, event_bus=rt.event_bus)
-    rt.command_engine.builder = rt.builder
+def runtime_with_pack(isolated_builder_world):
+    rt = isolated_builder_world.runtime
     acct = rt.create_account("Runtime Builder", role="builder")
     rt.load_world("shattered_realms")
     cid = rt.create_character(world_id="shattered_realms", name="Runtime Builder", account_id=acct["account_id"])["character_id"]
@@ -64,8 +58,8 @@ def runtime_text(rt, cid, command):
     return rt.handle_input(cid, command)["output"]
 
 
-def test_alist_defaults_current_and_all_and_id(tmp_path):
-    engine, a = engine_with_pack(tmp_path)
+def test_alist_defaults_current_and_all_and_id(isolated_builder_world):
+    engine, a = engine_with_pack(isolated_builder_world)
     default = text(engine, a, "alist")
     assert "starter_guildlands" in default
     assert 'Use "alist all" to list all areas.' in default
@@ -76,8 +70,8 @@ def test_alist_defaults_current_and_all_and_id(tmp_path):
     assert "room_vnum_start-room_vnum_end" in detail
 
 
-def test_zlist_local_all_area_zone_and_range(tmp_path):
-    engine, a = engine_with_pack(tmp_path)
+def test_zlist_local_all_area_zone_and_range(isolated_builder_world):
+    engine, a = engine_with_pack(isolated_builder_world)
     default = text(engine, a, "zlist")
     assert "guildhall_crossing" in default
     assert "rat_cellar" not in default  # current shows current zone detail only
@@ -91,8 +85,8 @@ def test_zlist_local_all_area_zone_and_range(tmp_path):
     assert "guildhall_crossing" in rng and "registrar_hall" not in rng
 
 
-def test_rlist_and_rooms_filters_and_errors(tmp_path):
-    engine, a = engine_with_pack(tmp_path)
+def test_rlist_and_rooms_filters_and_errors(isolated_builder_world):
+    engine, a = engine_with_pack(isolated_builder_world)
     default = text(engine, a, "rlist")
     assert "Rooms in zone guildhall_crossing" in default
     assert "guildhall_crossing_square" in default
@@ -110,8 +104,8 @@ def test_rlist_and_rooms_filters_and_errors(tmp_path):
     assert text(engine, a, "rooms").splitlines()[0] == default.splitlines()[0]
 
 
-def test_runtime_rlist_and_rooms_filters_use_active_drafts_after_import(tmp_path):
-    rt, cid = runtime_with_pack(tmp_path)
+def test_runtime_rlist_and_rooms_filters_use_active_drafts_after_import(isolated_builder_world):
+    rt, cid = runtime_with_pack(isolated_builder_world)
 
     alist = runtime_text(rt, cid, "alist all")
     assert "starter_guildlands" in alist
@@ -138,8 +132,8 @@ def test_runtime_rlist_and_rooms_filters_use_active_drafts_after_import(tmp_path
     assert "Invalid range. Usage:" in runtime_text(rt, cid, "rlist 1000-east")
 
 
-def test_rooms_legacy_large_warning_and_placeholders(tmp_path):
-    engine, a = engine_with_pack(tmp_path)
+def test_rooms_legacy_large_warning_and_placeholders(isolated_builder_world):
+    engine, a = engine_with_pack(isolated_builder_world)
     drafts = engine.builder.load("shattered_realms")
     drafts["rooms"]["legacy_room"] = {"id": "legacy_room", "name": "Legacy", "exits": {}, "area_id": "", "zone_id": "", "vnum": None}
     engine.builder.save_drafts("shattered_realms", drafts)

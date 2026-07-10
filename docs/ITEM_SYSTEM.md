@@ -382,3 +382,11 @@ Smart MUD supports an in-game Builder foundation for authorized `builder`, `admi
 The Builder workspace uses `audit`, `history`, `snapshots`, `exports`, `imports`, and `templates` folders. Room, exit, feature, item template, entity template, and spawn edits go through Builder services so runtime validation and permission checks remain authoritative. `builder validate` checks draft consistency; `builder save` creates a safe export; `builder reload` reloads drafts where safe; `builder snapshot` captures the current draft state; and `builder history` reads audit records.
 
 Future work may add a richer semantic web Builder UI and AI-assisted Builder tools, but Phase 4A intentionally does not add AI Builder, combat, quests, shops, or spellcasting.
+
+## Bulk Item Commands
+
+`get all`, `take all`, `get everything`, and `take everything` resolve the current room's visible portable item instances and move each eligible instance once through the runtime item-transfer path. NPCs, mobs, exits, and nonportable Builder scenery are ignored. Duplicate names are separate instances: `get iron` takes one deterministic matching Iron Sword, while `get all` takes every portable Iron Sword and other portable item in room order with stable instance ordering.
+
+`drop all` and `drop everything` move carried, unequipped inventory items to the current room without changing item instance IDs. Equipped items are skipped and reported so bulk drop cannot silently delete, duplicate, or unequip gear. `get all` does not disturb equipped items.
+
+Seeded room objects are created once per world/room/template seed key. Looking, moving away and back, saving, or reloading must not reseed collected items or multiply dropped items. Explicit zone or room reset behavior remains a future system.

@@ -5,12 +5,8 @@ from smart_mud.builder import BuilderWorkspace
 from smart_mud.world_registry import WorldRegistry
 
 
-def make_runtime(tmp_path: Path, role="builder"):
-    worlds_dir = tmp_path / "worlds"
-    shutil.copytree(Path.cwd() / "worlds" / "shattered_realms", worlds_dir / "shattered_realms")
-    rt = MudRuntime(Path.cwd(), tmp_path / "user_data", world_registry=WorldRegistry(worlds_dir))
-    rt.builder = BuilderWorkspace(worlds_dir=worlds_dir, event_bus=rt.event_bus)
-    rt.command_engine.builder = rt.builder
+def make_runtime(isolated_builder_world, role="builder"):
+    rt = isolated_builder_world.runtime
     acct = rt.create_account(f"Phase Four {role.title()}", role=role)
     rt.load_world("shattered_realms")
     cid = rt.create_character(world_id="shattered_realms", name=f"Phase Four {role.title()}", account_id=acct["account_id"])["character_id"]
@@ -29,8 +25,8 @@ def setup_area_zone(rt, cid):
     out(rt, cid, 'zcreate test_zone 100 110 "Test Zone"')
 
 
-def test_builder_export_and_assignment_workflow(tmp_path):
-    rt, cid = make_runtime(tmp_path)
+def test_builder_export_and_assignment_workflow(isolated_builder_world):
+    rt, cid = make_runtime(isolated_builder_world)
     setup_area_zone(rt, cid)
     assert "Builder drafts exported safely" in out(rt, cid, "builder export")
     assert "Builder drafts exported safely" in out(rt, cid, "build export")
@@ -45,8 +41,8 @@ def test_builder_export_and_assignment_workflow(tmp_path):
     assert "assigned room ID does not match generated convention" in validate
 
 
-def test_rcreate_dig_duplicates_and_rmove_placeholder(tmp_path):
-    rt, cid = make_runtime(tmp_path)
+def test_rcreate_dig_duplicates_and_rmove_placeholder(isolated_builder_world):
+    rt, cid = make_runtime(isolated_builder_world)
     setup_area_zone(rt, cid)
     created = out(rt, cid, "rcreate 101")
     assert "test_area_101" in created and "VNUM: 101" in created
@@ -59,6 +55,6 @@ def test_rcreate_dig_duplicates_and_rmove_placeholder(tmp_path):
     assert "Room ID migration is not implemented yet" in out(rt, cid, "rrenameid test_area_101 test_area_103")
 
 
-def test_normal_player_denied_builder_organization_commands(tmp_path):
-    rt, cid = make_runtime(tmp_path, role="player")
+def test_normal_player_denied_builder_organization_commands(isolated_builder_world):
+    rt, cid = make_runtime(isolated_builder_world, role="player")
     assert "permission" in out(rt, cid, "rassign here area current zone current vnum 1").lower()

@@ -80,7 +80,7 @@ def test_keyword_resolution_and_object_commands(tmp_path):
     assert rt.resolve_item_keywords("traveler", items)["status"] == "ok"
     assert "nicked" in rt.handle_input(cid, "examine rusty sword")["output"]
     rt.spawn_item("rusty_sword", "character", owner_id=cid)
-    assert "Which do you mean" in rt.handle_input(cid, "drop sword")["output"]
+    assert rt.handle_input(cid, "drop sword")["output"].startswith("You drop ")
     assert "aren't carrying" in rt.handle_input(cid, "drop missingthing")["output"]
 
 

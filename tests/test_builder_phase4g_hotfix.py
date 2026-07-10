@@ -14,23 +14,20 @@ def actor(role="builder"):
     return SimpleNamespace(role=role, account_role=role, world_id="shattered_realms", id="c1", account_id="a1", room_id="guildhall_crossing_square", edit_room_id="guildhall_crossing_square", name="Tester")
 
 
-def workspace(tmp_path):
-    root = tmp_path / "worlds"
-    shutil.copytree(REPO_ROOT / "worlds/shattered_realms", root / "shattered_realms", ignore=shutil.ignore_patterns("builder"))
-    shutil.copytree(REPO_ROOT / "worlds/shattered_realms/builder/templates", root / "shattered_realms/builder/templates")
-    return BuilderWorkspace(worlds_dir=root), root
+def workspace(isolated_builder_world):
+    return isolated_builder_world.workspace, isolated_builder_world.world_root
 
 
-def test_builder_workspace_creates_import_template_example_folders(tmp_path):
-    bw, root = workspace(tmp_path)
+def test_builder_workspace_creates_import_template_example_folders(isolated_builder_world):
+    bw, root = workspace(isolated_builder_world)
     shutil.rmtree(root / "shattered_realms/builder")
     bw.ensure("shattered_realms")
     for dirname in ("imports", "templates", "examples"):
         assert (root / "shattered_realms/builder" / dirname).is_dir()
 
 
-def test_template_files_exist_and_commands_copy_without_overwrite(tmp_path):
-    bw, root = workspace(tmp_path)
+def test_template_files_exist_and_commands_copy_without_overwrite(isolated_builder_world):
+    bw, root = workspace(isolated_builder_world)
     bw.ensure("shattered_realms")
     required = {"empty_bundle_template.json", "area_zone_room_template.json", "bad_duplicate_vnum_test.json", "future_keys_test.json", "feature_library_template.json"}
     assert required <= {p.name for p in (root / "shattered_realms/builder/templates").glob("*.json")}
@@ -46,8 +43,8 @@ def test_template_files_exist_and_commands_copy_without_overwrite(tmp_path):
     assert forced.ok
 
 
-def test_import_list_guidance_and_template_validation_results(tmp_path):
-    bw, root = workspace(tmp_path)
+def test_import_list_guidance_and_template_validation_results(isolated_builder_world):
+    bw, root = workspace(isolated_builder_world)
     bw.ensure("shattered_realms")
     msg = bw.import_list(actor()).message
     assert "No import files found." in msg
@@ -63,8 +60,8 @@ def test_import_list_guidance_and_template_validation_results(tmp_path):
     assert future.ok and "Future top-level collection locations" in future.message
 
 
-def test_builder_starter_room_dedupes_draft_features_against_live_scenery(tmp_path):
-    rt = MudRuntime(REPO_ROOT, tmp_path / "user_data")
+def test_builder_starter_room_dedupes_draft_features_against_live_scenery(isolated_builder_world):
+    rt = isolated_builder_world.runtime
     acct = rt.create_account("Builder", role="builder")
     rt.load_world("shattered_realms")
     cid = rt.create_character(world_id="shattered_realms", name="Builder", account_id=acct["account_id"])["character_id"]
@@ -75,8 +72,8 @@ def test_builder_starter_room_dedupes_draft_features_against_live_scenery(tmp_pa
     assert output.count("Fountain") == 1
 
 
-def test_portable_runtime_items_are_not_hidden_by_feature_dedupe(tmp_path):
-    rt = MudRuntime(REPO_ROOT, tmp_path / "user_data")
+def test_portable_runtime_items_are_not_hidden_by_feature_dedupe(isolated_builder_world):
+    rt = isolated_builder_world.runtime
     acct = rt.create_account("Builder", role="builder")
     rt.load_world("shattered_realms")
     rt.item_templates["rusty_sword"] = {**dict(rt.item_templates["rusty_sword"]), "name": "Fountain", "portable": True}

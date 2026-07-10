@@ -72,8 +72,8 @@ def test_committed_starter_area_zones_rooms_are_organized_and_consistent():
     assert len(starter_vnums) == len(set(starter_vnums))
 
 
-def test_builder_validate_rstat_and_export_import_use_committed_starter_drafts(tmp_path):
-    bw = BuilderWorkspace()
+def test_builder_validate_rstat_and_export_import_use_isolated_starter_drafts(isolated_builder_world):
+    bw = isolated_builder_world.workspace
     a = actor()
     validation = bw.validate(a)
     assert validation.ok, validation.message
@@ -93,10 +93,31 @@ def test_builder_validate_rstat_and_export_import_use_committed_starter_drafts(t
     bundle = json.loads(export_path.read_text(encoding="utf-8"))
     for key in REQUIRED_FILES:
         assert key in bundle
-    import_path = ROOT / "imports" / "committed_round_trip.json"
+    import_path = isolated_builder_world.builder_path / "imports" / "committed_round_trip.json"
     import_path.write_text(export_path.read_text(encoding="utf-8"), encoding="utf-8")
     try:
         assert bw.import_validate(a, import_path.name).ok
     finally:
         import_path.unlink(missing_ok=True)
         export_path.unlink(missing_ok=True)
+
+
+def test_mutating_builder_operations_do_not_change_repository_drafts(isolated_builder_world):
+    protected = [ROOT / filename for filename in REQUIRED_FILES.values()]
+    before = {path: path.read_bytes() for path in protected}
+    noise_dirs = [ROOT / name for name in ("imports", "exports", "history", "audit", "snapshots")]
+    noise_before = {path: sorted(p.relative_to(path).as_posix() for p in path.rglob("*")) if path.exists() else [] for path in noise_dirs}
+
+    bw = isolated_builder_world.workspace
+    a = actor()
+    engine = MudCommandEngine()
+    engine.builder = bw
+    assert engine.handle_command(a, "rcreate repo_integrity_room").ok
+    assert engine.handle_command(a, "rname Repository Integrity Room").ok
+    assert bw.export(a).ok
+    assert bw.template_copy(a, "area_zone_room_template.json", "integrity_import.json", force=True).ok
+    assert bw.import_validate(a, "integrity_import.json").ok
+
+    assert {path: path.read_bytes() for path in protected} == before
+    noise_after = {path: sorted(p.relative_to(path).as_posix() for p in path.rglob("*")) if path.exists() else [] for path in noise_dirs}
+    assert noise_after == noise_before

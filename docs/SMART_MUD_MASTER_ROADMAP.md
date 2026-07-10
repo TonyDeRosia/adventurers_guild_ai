@@ -302,3 +302,7 @@ Added a Builder-importable Starter Guildlands content pack with 44 draft rooms, 
 ## Phase 4H localized Builder lists
 
 Builder list commands are local by default: `alist` shows the current area, `zlist` shows the current area's zones, and `rlist`/`rooms` shows the current zone's rooms. Use explicit `all`, `area <area_id>`, `zone <zone_id>`, or VNUM ranges such as `1000-1029` to broaden or focus results. See `docs/BUILDER_LIST_COMMANDS.md`.
+
+### Phase 4H Stability Hotfix
+
+Builder tests now isolate mutable workspace operations with a temporary copied Shattered Realms package and temporary SQLite database, protecting committed starter drafts from test-order pollution. Item bulk commands now treat duplicate names as distinct instances: `get all`/`take all` collect every portable room item, skip NPCs and nonportable scenery, and `drop all` returns every eligible unequipped carried item while preserving equipped state and instance identity. Seeded room items remain persistent until a future explicit reset system is designed.

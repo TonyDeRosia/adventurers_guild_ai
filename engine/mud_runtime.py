@@ -1384,14 +1384,11 @@ class MudRuntime:
         if not q: return {"status":"missing", "matches": []}
         def name(i): return str(i.get("name") or i.get("template",{}).get("name") or "").lower()
         exact = [i for i in candidate_items if name(i) == q]
-        if len(exact) == 1: return {"status":"ok", "item": exact[0], "matches": exact}
-        if len(exact) > 1: return {"status":"ambiguous", "matches": exact}
+        if exact: return {"status":"ok", "item": exact[0], "matches": exact}
         kw = [i for i in candidate_items if q in [str(k).lower() for k in i.get("keywords", [])]]
-        if len(kw) == 1: return {"status":"ok", "item": kw[0], "matches": kw}
-        if len(kw) > 1: return {"status":"ambiguous", "matches": kw}
+        if kw: return {"status":"ok", "item": kw[0], "matches": kw}
         allwords = [i for i in candidate_items if all(w in set(re.findall(r"[a-z0-9_']+", name(i)) + [str(k).lower() for k in i.get("keywords", [])]) for w in words)]
-        if len(allwords) == 1: return {"status":"ok", "item": allwords[0], "matches": allwords}
-        if len(allwords) > 1: return {"status":"ambiguous", "matches": allwords}
+        if allwords: return {"status":"ok", "item": allwords[0], "matches": allwords}
         partial = [i for i in candidate_items if all(any(w in token for token in re.findall(r"[a-z0-9_']+", name(i)) + [str(k).lower() for k in i.get("keywords", [])]) for w in words)]
         if len(partial) == 1: return {"status":"ok", "item": partial[0], "matches": partial}
         return {"status":"ambiguous" if partial else "missing", "matches": partial}
@@ -1443,10 +1440,10 @@ class MudRuntime:
         if cmd in {"inventory"}: return CommandResult(self._render_inventory(char.id))
         if cmd in {"equipment"}: return CommandResult(self._render_equipment(char.id))
         if cmd in {"get","take"}:
-            if q == "all": return CommandResult(self.bulk_get(char))
+            if q in {"all", "everything"}: return CommandResult(self.bulk_get(char, q))
             return CommandResult(self.pickup_item(char.id, char.room_id, q) if q else "Get what?")
         if cmd=="drop":
-            if q == "all": return CommandResult(self.bulk_drop(char))
+            if q in {"all", "everything"}: return CommandResult(self.bulk_drop(char, q))
             return CommandResult(self.drop_item(char.id, q) if q else "Drop what?")
         if cmd=="wear":
             if q == "all": return CommandResult(self.wear_all(char.id))
@@ -1471,29 +1468,41 @@ class MudRuntime:
         if mode == "hold": return "light"
         return None
 
-    def bulk_get(self, char: MudCharacter) -> str:
+    def bulk_get(self, char: MudCharacter, selector: str = "all") -> str:
         items = [i for i in self.get_visible_room_items(char.room_id) if (i.get("template") or {}).get("portable", True)]
-        self._publish_interaction_event("bulk_get", char, "get", "get all", {"item_count": len(items)})
+        self._publish_interaction_event("bulk_get", char, "get", f"get {selector}", {"item_count": len(items)})
+        self.event_bus.publish("item_bulk_transfer_started", {"actor_id": char.id, "source_kind": "room", "source_id": char.room_id, "destination_kind": "character", "destination_id": char.id, "requested_selector": selector, "attempted_count": len(items)}, source_system="runtime", world_id=self.active_world_id or "", character_id=char.id, room_id=char.room_id)
         if not items:
             return "There is nothing here you can take."
         names = []
+        moved_ids = []
         for item in items:
+            self._publish_item_event("before_item_pickup", item, character_id=char.id, room_id=char.room_id)
             moved = self.transfer_item(item["instance_id"], to_owner=("character", char.id))
-            names.append(moved["name"])
-            self._publish_item_event("item_picked_up", moved, character_id=char.id, room_id=char.room_id)
-        return "You pick up: " + ", ".join(names) + "."
+            names.append(moved["name"]); moved_ids.append(moved["instance_id"])
+            for event in ("item_picked_up", "inventory_changed", "room_inventory_changed", "after_item_pickup"):
+                self._publish_item_event(event, moved, character_id=char.id, room_id=char.room_id)
+        self.event_bus.publish("item_bulk_transfer_completed", {"actor_id": char.id, "source_kind": "room", "source_id": char.room_id, "destination_kind": "character", "destination_id": char.id, "requested_selector": selector, "attempted_count": len(items), "success_count": len(names), "failure_count": 0, "item_instance_ids": moved_ids}, source_system="runtime", world_id=self.active_world_id or "", character_id=char.id, room_id=char.room_id)
+        return "You pick up:\n  " + "\n  ".join(names)
 
-    def bulk_drop(self, char: MudCharacter) -> str:
+    def bulk_drop(self, char: MudCharacter, selector: str = "all") -> str:
         items = list(self.find_inventory_items(char.id))
-        self._publish_interaction_event("bulk_drop", char, "drop", "drop all", {"item_count": len(items)})
+        skipped = list(self.find_equipped_items(char.id))
+        self._publish_interaction_event("bulk_drop", char, "drop", f"drop {selector}", {"item_count": len(items)})
         if not items:
-            return "You are not carrying anything."
+            return "You are not carrying anything you can drop." + (" Equipped items were not dropped." if skipped else "")
         names = []
+        moved_ids = []
         for item in items:
+            self._publish_item_event("before_item_drop", item, character_id=char.id, room_id=char.room_id)
             moved = self.transfer_item(item["instance_id"], to_owner=("room", ""), room_id=char.room_id)
-            names.append(moved["name"])
-            self._publish_item_event("item_dropped", moved, character_id=char.id, room_id=char.room_id)
-        return "You drop: " + ", ".join(names) + "."
+            names.append(moved["name"]); moved_ids.append(moved["instance_id"])
+            for event in ("item_dropped", "inventory_changed", "room_inventory_changed", "after_item_drop"):
+                self._publish_item_event(event, moved, character_id=char.id, room_id=char.room_id)
+        msg = "You drop:\n  " + "\n  ".join(names)
+        if skipped:
+            msg += "\nEquipped items were not dropped."
+        return msg
 
     def wear_all(self, character_id: str) -> str:
         equipped = 0
