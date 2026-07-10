@@ -329,3 +329,8 @@ The equipment/effect/stat-resolution foundation is present: canonical modifiers,
 ## Phase 6C canonical abilities
 
 Smart MUD now has a canonical AbilityDefinition, source-traceable SQLite grants, persistent cooldown and cast records, deterministic targeting, resource costs, healing events, effect application, starter Guildlands pilot abilities/loadouts, ability display commands, safe `spellup cast`, and Builder/Admin inspection commands. Skills, spells, heals, buffs, monster powers, natural attacks, and item abilities use one execution pipeline rather than separate engines.
+
+
+## Phase 6D deterministic combat behavior
+
+Phase 6D introduces canonical NPC combat behavior profiles, hostility evaluation, threat tables, deterministic action candidates, assist/protect/flee/surrender/call-for-help/pursuit hooks, pet modes, and Builder/Admin diagnostics. The system is a validator and selector only: AbilityExecutionService continues to own ability validation, costs, cooldowns, casts, healing, damage components, and effects; CombatEngine continues to own basic attack resolution and lifecycle handoff. Generative AI is not required for combat, and future AI suggestions cannot bypass deterministic validation.

@@ -13,6 +13,7 @@ from engine.score_renderer import ActorScoreRenderer
 from engine.command_registry import CommandRegistry
 from smart_mud.builder import BuilderWorkspace
 from engine.abilities import AbilityExecutionService
+from engine.combat_behavior import CombatBehaviorService
 
 
 @dataclass
@@ -310,6 +311,8 @@ class MudCommandEngine:
                 self.command_handlers[_name] = self._cmd_builder_edit
         for _name in ("rassign", "rmove", "rrenameid"):
             self.command_handlers[_name] = self._cmd_room_assign
+        for _name in "behaviorlist behaviorstat behaviorvalidate behaviorpreview actorbehavior behaviortrace combatdecision combattrace combatcandidates threatlist threatstat threatadd threatclear hostilitytrace combattick protect protectset unprotect protectclear surrender callforhelp assisttrace fleetrace pursuittrace protecttrace combatgrouptrace petmode order".split():
+            self.command_handlers[_name] = self._cmd_combat_behavior
 
     def _living_entity(self, query: str) -> dict[str, Any] | None:
         rt=getattr(self,'runtime',None)
@@ -326,6 +329,59 @@ class MudCommandEngine:
             self._phase5d_formula_engine = FormulaEngine()
         return self._phase5d_formula_engine
 
+
+
+    def _combat_behavior_service(self, character: Any) -> CombatBehaviorService:
+        svc = getattr(self, "combat_behavior_service", None)
+        if not svc:
+            svc = CombatBehaviorService(event_bus=self.event_bus, ability_service=getattr(self, "ability_service", None), world_id=getattr(character, "world_id", ""))
+            self.combat_behavior_service = svc
+        svc.register_actor(actor_from_runtime_character(character, getattr(character, "world_id", "")))
+        return svc
+
+    def _cmd_combat_behavior(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        cmd = raw.split()[0].lower() if raw.split() else ""
+        svc = self._combat_behavior_service(character)
+        role = self._effective_role(character) if hasattr(self, "_effective_role") else str(getattr(character, "role", "player")).lower()
+        admin = role in {"builder", "admin", "owner"} or bool(getattr(character, "builder_mode", False))
+        actor_id = args[0] if args else getattr(character, "id", "")
+        if cmd == "behaviorlist":
+            return CommandResult("Combat behavior profiles\n" + "\n".join(sorted(svc.registry.profiles)))
+        if cmd in {"behaviorstat", "behaviorpreview"}:
+            prof = svc.registry.get(args[0] if args else "civilian_safe")
+            return CommandResult(json.dumps(prof.to_dict(), indent=2, sort_keys=True))
+        if cmd == "behaviorvalidate":
+            errs = svc.registry.validate()
+            return CommandResult("Behavior validation OK." if not errs else "\n".join(errs), ok=not bool(errs))
+        if cmd in {"actorbehavior", "behaviortrace"}:
+            return CommandResult(json.dumps(svc.trace_actor_combat_behavior(actor_id), indent=2, sort_keys=True))
+        if cmd in {"combatdecision", "combattrace"}:
+            return CommandResult(json.dumps(svc.trace_combat_decision(actor_id), indent=2, sort_keys=True))
+        if cmd == "combatcandidates":
+            return CommandResult(json.dumps([c.to_dict() for c in svc.build_combat_action_candidates(actor_id)], indent=2, sort_keys=True))
+        if cmd in {"threatlist", "threatstat"}:
+            return CommandResult(json.dumps(svc.threat.get_actor_threat_table(actor_id), indent=2, sort_keys=True))
+        if cmd == "threatadd":
+            if not admin: return CommandResult("You do not have permission for that command.", ok=False)
+            target = args[1] if len(args)>1 else ""; amount = float(args[2]) if len(args)>2 else 1
+            return CommandResult(json.dumps(svc.threat.add_threat(actor_id, target, amount, "scripted"), indent=2, sort_keys=True))
+        if cmd == "threatclear":
+            if not admin: return CommandResult("You do not have permission for that command.", ok=False)
+            svc.threat.clear_actor_threat(actor_id); return CommandResult("Threat cleared.")
+        if cmd == "hostilitytrace":
+            target = args[1] if len(args)>1 else getattr(character, "id", "")
+            return CommandResult(json.dumps(svc.hostility.evaluate_hostility(actor_id, target), indent=2, sort_keys=True))
+        if cmd == "combattick":
+            count = int(args[0]) if args and args[0].isdigit() else 1
+            results=[]
+            for i in range(count): results.extend(svc.evaluate_world_combat_behavior(getattr(character,"world_id",""), i))
+            return CommandResult(json.dumps(results, indent=2, sort_keys=True))
+        if cmd in {"petmode", "order"}:
+            mode = args[-1].lower() if args else "passive"
+            allowed={"attack","assist","flee","stay","follow","protect","passive","defensive","aggressive"}
+            if mode not in allowed: return CommandResult("Unsupported order. Allowed: " + ", ".join(sorted(allowed)), ok=False)
+            return CommandResult(f"{cmd} accepted: {mode}.")
+        return CommandResult(f"{cmd} intent recorded through combat behavior service.")
 
     def _cmd_phase5f(self, character: Any, args: list[str], raw: str) -> CommandResult:
         if self._effective_role(character) not in {"builder", "admin", "owner"}:

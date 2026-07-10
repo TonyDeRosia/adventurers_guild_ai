@@ -153,3 +153,8 @@ Runtime package loading recognizes schedules plus living-world seed/profile coll
 ## Phase 6C ability package collections
 
 World packages may include `abilities/abilities.json`, `ability_loadouts/ability_loadouts.json`, `ability_schools/ability_schools.json`, `ability_categories/ability_categories.json`, `cooldown_groups/cooldown_groups.json`, `targeting_profiles/targeting_profiles.json`, `healing_profiles/healing_profiles.json`, and `casting_profiles/casting_profiles.json`. Matching Builder drafts live directly under `worlds/<world_id>/builder/`.
+
+
+## Phase 6D deterministic combat behavior
+
+Phase 6D introduces canonical NPC combat behavior profiles, hostility evaluation, threat tables, deterministic action candidates, assist/protect/flee/surrender/call-for-help/pursuit hooks, pet modes, and Builder/Admin diagnostics. The system is a validator and selector only: AbilityExecutionService continues to own ability validation, costs, cooldowns, casts, healing, damage components, and effects; CombatEngine continues to own basic attack resolution and lifecycle handoff. Generative AI is not required for combat, and future AI suggestions cannot bypass deterministic validation.

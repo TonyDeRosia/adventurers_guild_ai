@@ -135,3 +135,8 @@ Added: `worldtime`, `simulation`, `etime`, `eprofile`, `estate`, `eactivity`, `e
 ## Phase 6C canonical ability commands
 
 Phase 6C registers the canonical ability command surface: `abilities`, `skills`, `spells`, `ability <name>`, `use <ability> [target]`, `cast <ability> [target]`, `invoke`, `perform`, `cancel`, `cooldowns`, and safe `spellup cast`. Builder/Admin diagnostics and authoring include `abilitylist`, `abilitystat`, `abilitytrace`, `loadoutlist`, `loadoutstat`, `abilitygrant`, `abilityrevoke`, `actorabilities`, `abilitycooldowns`, and `abilitycasts`. Skills and spells intentionally share the same ability execution service.
+
+
+## Phase 6D deterministic combat behavior
+
+Phase 6D introduces canonical NPC combat behavior profiles, hostility evaluation, threat tables, deterministic action candidates, assist/protect/flee/surrender/call-for-help/pursuit hooks, pet modes, and Builder/Admin diagnostics. The system is a validator and selector only: AbilityExecutionService continues to own ability validation, costs, cooldowns, casts, healing, damage components, and effects; CombatEngine continues to own basic attack resolution and lifecycle handoff. Generative AI is not required for combat, and future AI suggestions cannot bypass deterministic validation.

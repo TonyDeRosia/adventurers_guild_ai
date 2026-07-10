@@ -16,7 +16,7 @@ VALID_ENTITY_TYPES = {"npc", "mob", "merchant", "trainer", "banker", "healer", "
 
 DRAFT_FILES = {
     "areas": "areas.json", "zones": "zones.json", "rooms": "rooms.json",
-    "features": "features.json", "items": "item_templates.json", "item_placements": "item_placements.json", "entities": "entity_templates.json", "spawns": "spawns.json", "schedules": "schedules.json", "relationship_seeds": "relationship_seeds.json", "memory_seeds": "memory_seeds.json", "need_profiles": "need_profiles.json", "goal_profiles": "goal_profiles.json", "formulas": "formulas.json", "modifier_types": "modifier_types.json", "future_formula_templates": "future_formula_templates.json", "abilities": "abilities.json", "ability_loadouts": "ability_loadouts.json", "ability_schools": "ability_schools.json", "ability_categories": "ability_categories.json", "cooldown_groups": "cooldown_groups.json", "targeting_profiles": "targeting_profiles.json", "healing_profiles": "healing_profiles.json", "casting_profiles": "casting_profiles.json"
+    "features": "features.json", "items": "item_templates.json", "item_placements": "item_placements.json", "entities": "entity_templates.json", "spawns": "spawns.json", "schedules": "schedules.json", "relationship_seeds": "relationship_seeds.json", "memory_seeds": "memory_seeds.json", "need_profiles": "need_profiles.json", "goal_profiles": "goal_profiles.json", "formulas": "formulas.json", "modifier_types": "modifier_types.json", "future_formula_templates": "future_formula_templates.json", "abilities": "abilities.json", "ability_loadouts": "ability_loadouts.json", "ability_schools": "ability_schools.json", "ability_categories": "ability_categories.json", "cooldown_groups": "cooldown_groups.json", "targeting_profiles": "targeting_profiles.json", "healing_profiles": "healing_profiles.json", "casting_profiles": "casting_profiles.json", "combat_behavior_profiles": "combat_behavior_profiles.json", "threat_profiles": "threat_profiles.json", "aggression_profiles": "aggression_profiles.json", "assist_profiles": "assist_profiles.json", "flee_profiles": "flee_profiles.json", "surrender_profiles": "surrender_profiles.json", "pursuit_profiles": "pursuit_profiles.json", "combat_groups": "combat_groups.json", "combat_action_rules": "combat_action_rules.json"
 }
 
 @dataclass
@@ -178,7 +178,9 @@ class BuilderWorkspace:
         bundle, err, future_keys = self._load_import_bundle(self.world_id(actor), filename)
         if err: return BuilderResult(False, 'Import validation failed.\n\nErrors:\n- '+err+'\n\nWarnings:\n- none')
         merged = self.load(self.world_id(actor));
-        for k,v in bundle.items(): merged.setdefault(k, {}).update(v if isinstance(v,dict) else {})
+        for k,v in bundle.items():
+            if not isinstance(merged.get(k), dict): merged[k] = {}
+            merged.setdefault(k, {}).update(v if isinstance(v,dict) else {})
         errors=[]; warnings=[f"Future top-level collection {key} is not applied by this version." for key in future_keys]; self._validate_bundle_refs(merged, errors, warnings)
         ok=not errors
         return BuilderResult(ok, ('Import validation passed.' if ok else 'Import validation failed.')+'\n\nErrors:\n'+('\n'.join('- '+e for e in errors) if errors else '- none')+'\n\nWarnings:\n'+('\n'.join('- '+w for w in warnings) if warnings else '- none'))
@@ -192,7 +194,11 @@ class BuilderWorkspace:
         lines=[]
         for k,label in names:
             b=bundle.get(k,{}) if isinstance(bundle.get(k,{}),dict) else {}; add=sum(1 for x in b if x not in drafts.get(k,{})); upd=len(b)-add; lines.append(f'{label} to add/update: {add}/{upd}')
-        errors=[]; warnings=[f"Future top-level collection {key} is not applied by this version." for key in future_keys]; merged=deepcopy(drafts); [merged.setdefault(k,{}).update(v if isinstance(v,dict) else {}) for k,v in bundle.items()]; self._validate_bundle_refs(merged,errors,warnings)
+        errors=[]; warnings=[f"Future top-level collection {key} is not applied by this version." for key in future_keys]; merged=deepcopy(drafts)
+        for k,v in bundle.items():
+            if not isinstance(merged.get(k), dict): merged[k] = {}
+            merged.setdefault(k,{}).update(v if isinstance(v,dict) else {})
+        self._validate_bundle_refs(merged,errors,warnings)
         lines += ['', 'Conflicts:', '- none', 'Legacy/unassigned warnings:', *(('- '+w for w in warnings if 'legacy' in w.lower()) or ['- none']), 'Broken references:', *(('- '+e for e in errors) or ['- none']), '', 'No files changed.']
         return BuilderResult(True, '\n'.join(lines))
 
@@ -203,7 +209,9 @@ class BuilderWorkspace:
         if err: return BuilderResult(False, err)
         if replace: self.snapshot(actor); drafts={k:{} for k in DRAFT_FILES}
         else: drafts=self.load(self.world_id(actor))
-        for k,v in bundle.items(): drafts.setdefault(k,{}).update(v if isinstance(v,dict) else {})
+        for k,v in bundle.items():
+            if not isinstance(drafts.get(k), dict): drafts[k] = {}
+            drafts.setdefault(k,{}).update(v if isinstance(v,dict) else {})
         self.save_drafts(self.world_id(actor), drafts); self.audit(actor,self.world_id(actor),'builder import apply','import',filename,None,{'replace':replace})
         return BuilderResult(True, f'Builder import applied: {filename}\nMode: {"replace-drafts" if replace else "merge"}')
 
