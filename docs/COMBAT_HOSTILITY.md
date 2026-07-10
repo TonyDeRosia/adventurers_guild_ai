@@ -7,3 +7,8 @@ The behavior layer never calculates damage, directly changes Health, applies eff
 Implemented foundations include combat behavior profiles, hostility traces, threat ownership by stable Actor IDs, action candidates with invalid reasons, basic attack fallback, assist/protect/flee/surrender/call-for-help/pursuit policy fields, pet modes, Builder diagnostics commands, and conservative Starter Guildlands pilot profiles.
 
 Manual acceptance starts with: `builder on`, `behaviorlist`, `behaviorstat civilian_safe`, `behaviorstat town_guard_defender`, `actorbehavior <actor>`, `threatlist <actor>`, `combatcandidates <actor>`, and `combatdecision <actor>`.
+
+
+## Phase 8C faction integration note
+
+Phase 8C adds `FactionService` as the canonical owner of faction reputation, standing, diplomacy interpretation, access decisions, faction reward eligibility, and reputation history. Factions link to `OrganizationService` identities; organization membership, roles, permissions, group combat attribution, quests, rewards, economy, combat, and world state remain owned by their existing canonical services. Subsystems must call `FactionService` rather than mutating faction reputation directly. Faction warfare, laws, territory conquest, elections, autonomous politics, and PvP faction rules remain outside this foundation.

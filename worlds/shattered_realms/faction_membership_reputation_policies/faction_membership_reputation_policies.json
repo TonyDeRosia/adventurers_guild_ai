@@ -1,0 +1,25 @@
+{
+  "faction_membership_reputation_policies": [
+    {
+      "description": "Membership grants a conservative reputation floor without making membership identical to reputation.",
+      "id": "standard_membership_reputation",
+      "membership_cap": 3000,
+      "membership_floor": 0,
+      "name": "Standard Membership Reputation",
+      "on_demote_rules": [],
+      "on_join_operation": "membership_grant",
+      "on_join_value": 100,
+      "on_leave_operation": "membership_penalty",
+      "on_leave_value": -50,
+      "on_promote_rules": [],
+      "on_remove_operation": "membership_penalty",
+      "on_remove_value": -150,
+      "plugin_data": {},
+      "restore_previous_on_rejoin": false,
+      "tags": [
+        "phase8c"
+      ],
+      "version": 1
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "faction_economy_modifier_profiles": [
+    {
+      "description": "Small deterministic standing-based blacksmith pricing modifiers.",
+      "hostile_access_policy": "deny_service",
+      "id": "blacksmith_faction_pricing",
+      "maximum_price_multiplier": "1.50",
+      "membership_modifiers": [],
+      "minimum_price_multiplier": "0.80",
+      "name": "Blacksmith Faction Pricing",
+      "plugin_data": {},
+      "role_modifiers": [],
+      "service_access_rules": [],
+      "shop_access_rules": [],
+      "standing_modifiers": [
+        {
+          "bank_fee_multiplier": "1.00",
+          "buy_price_multiplier": "0.95",
+          "metadata": {},
+          "repair_price_multiplier": "0.95",
+          "sell_price_multiplier": "1.02",
+          "service_price_multiplier": "0.95",
+          "standing_tier_id": "friendly",
+          "visible_message": "Your good standing earns a modest blacksmith discount."
+        }
+      ],
+      "tags": [
+        "phase8c"
+      ],
+      "version": 1
+    }
+  ]
+}

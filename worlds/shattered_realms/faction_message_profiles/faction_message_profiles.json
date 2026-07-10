@@ -1,0 +1,17 @@
+{
+  "faction_message_profiles": [
+    {
+      "description": "Default Phase 8C faction messages.",
+      "id": "starter_faction_messages",
+      "messages": {
+        "standing_changed": "Your standing has changed."
+      },
+      "name": "Starter Faction Messages",
+      "plugin_data": {},
+      "tags": [
+        "phase8c"
+      ],
+      "version": 1
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "faction_hostility_profiles": [
+    {
+      "description": "Hostility contribution only; combat and safe-room rules remain authoritative.",
+      "id": "starter_faction_hostility",
+      "name": "Starter Faction Hostility",
+      "plugin_data": {},
+      "rules": [],
+      "tags": [
+        "phase8c"
+      ],
+      "version": 1
+    }
+  ]
+}

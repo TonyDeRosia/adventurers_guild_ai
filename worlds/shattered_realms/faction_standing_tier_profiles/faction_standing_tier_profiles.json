@@ -1,0 +1,209 @@
+{
+  "faction_standing_tier_profiles": [
+    {
+      "description": "Starter standing tiers, author-defined data rather than Python constants.",
+      "id": "standard_faction_standing",
+      "name": "Standard Faction Standing",
+      "plugin_data": {},
+      "tags": [
+        "phase8c"
+      ],
+      "tiers": [
+        {
+          "access_tags": [],
+          "color_role": "danger",
+          "description": "Despised by this faction.",
+          "display_name": "Hated",
+          "hostility_class": "hostile",
+          "id": "hated",
+          "maximum_reputation": -1501,
+          "messages": {},
+          "metadata": {},
+          "minimum_reputation": -3000,
+          "name": "hated",
+          "price_modifier": "1.50",
+          "quest_access_tags": [],
+          "rank_order": 10,
+          "reward_tags": [],
+          "service_access_tags": [],
+          "visible": true
+        },
+        {
+          "access_tags": [],
+          "color_role": "danger",
+          "description": "Openly hostile standing.",
+          "display_name": "Hostile",
+          "hostility_class": "hostile",
+          "id": "hostile",
+          "maximum_reputation": -501,
+          "messages": {},
+          "metadata": {},
+          "minimum_reputation": -1500,
+          "name": "hostile",
+          "price_modifier": "1.25",
+          "quest_access_tags": [],
+          "rank_order": 20,
+          "reward_tags": [],
+          "service_access_tags": [],
+          "visible": true
+        },
+        {
+          "access_tags": [],
+          "color_role": "warning",
+          "description": "Distrusted by this faction.",
+          "display_name": "Unfriendly",
+          "hostility_class": "unfriendly",
+          "id": "unfriendly",
+          "maximum_reputation": -1,
+          "messages": {},
+          "metadata": {},
+          "minimum_reputation": -500,
+          "name": "unfriendly",
+          "price_modifier": "1.10",
+          "quest_access_tags": [],
+          "rank_order": 30,
+          "reward_tags": [],
+          "service_access_tags": [],
+          "visible": true
+        },
+        {
+          "access_tags": [
+            "public_services"
+          ],
+          "color_role": "normal",
+          "description": "Neither trusted nor disliked.",
+          "display_name": "Neutral",
+          "hostility_class": "neutral",
+          "id": "neutral",
+          "maximum_reputation": 499,
+          "messages": {},
+          "metadata": {},
+          "minimum_reputation": 0,
+          "name": "neutral",
+          "price_modifier": "1.00",
+          "quest_access_tags": [
+            "public_quests"
+          ],
+          "rank_order": 40,
+          "reward_tags": [],
+          "service_access_tags": [
+            "public_services"
+          ],
+          "visible": true
+        },
+        {
+          "access_tags": [
+            "public_services",
+            "friendly_services"
+          ],
+          "color_role": "success",
+          "description": "Trusted by this faction.",
+          "display_name": "Friendly",
+          "hostility_class": "friendly",
+          "id": "friendly",
+          "maximum_reputation": 999,
+          "messages": {},
+          "metadata": {},
+          "minimum_reputation": 500,
+          "name": "friendly",
+          "price_modifier": "0.95",
+          "quest_access_tags": [
+            "public_quests",
+            "friendly_quests"
+          ],
+          "rank_order": 50,
+          "reward_tags": [
+            "friendly_rewards"
+          ],
+          "service_access_tags": [
+            "public_services",
+            "friendly_services"
+          ],
+          "visible": true
+        },
+        {
+          "access_tags": [
+            "honored_services"
+          ],
+          "color_role": "success",
+          "description": "Recognized ally.",
+          "display_name": "Honored",
+          "hostility_class": "friendly",
+          "id": "honored",
+          "maximum_reputation": 1749,
+          "messages": {},
+          "metadata": {},
+          "minimum_reputation": 1000,
+          "name": "honored",
+          "price_modifier": "0.90",
+          "quest_access_tags": [
+            "honored_quests"
+          ],
+          "rank_order": 60,
+          "reward_tags": [
+            "honored_rewards"
+          ],
+          "service_access_tags": [
+            "honored_services"
+          ],
+          "visible": true
+        },
+        {
+          "access_tags": [
+            "revered_services"
+          ],
+          "color_role": "success",
+          "description": "Greatly respected.",
+          "display_name": "Revered",
+          "hostility_class": "friendly",
+          "id": "revered",
+          "maximum_reputation": 2499,
+          "messages": {},
+          "metadata": {},
+          "minimum_reputation": 1750,
+          "name": "revered",
+          "price_modifier": "0.85",
+          "quest_access_tags": [
+            "revered_quests"
+          ],
+          "rank_order": 70,
+          "reward_tags": [
+            "revered_rewards"
+          ],
+          "service_access_tags": [
+            "revered_services"
+          ],
+          "visible": true
+        },
+        {
+          "access_tags": [
+            "exalted_services"
+          ],
+          "color_role": "success",
+          "description": "A celebrated friend.",
+          "display_name": "Exalted",
+          "hostility_class": "friendly",
+          "id": "exalted",
+          "maximum_reputation": 3000,
+          "messages": {},
+          "metadata": {},
+          "minimum_reputation": 2500,
+          "name": "exalted",
+          "price_modifier": "0.80",
+          "quest_access_tags": [
+            "exalted_quests"
+          ],
+          "rank_order": 80,
+          "reward_tags": [
+            "exalted_rewards"
+          ],
+          "service_access_tags": [
+            "exalted_services"
+          ],
+          "visible": true
+        }
+      ],
+      "version": 1
+    }
+  ]
+}

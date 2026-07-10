@@ -1,0 +1,44 @@
+{
+  "faction_access_profiles": [
+    {
+      "default_result": "allow",
+      "description": "Allows unconfigured content and gates only explicitly protected targets.",
+      "failure_message": "Your standing is not sufficient.",
+      "id": "starter_faction_access",
+      "name": "Starter Faction Access",
+      "plugin_data": {},
+      "rules": [
+        {
+          "access_type": "service_access",
+          "faction_id": "blacksmiths_circle_faction",
+          "id": "friendly_service_access",
+          "messages": {},
+          "metadata": {},
+          "minimum_standing_tier_id": "friendly",
+          "priority": 100,
+          "result": "allow",
+          "target_id": "friendly_blacksmith_discount",
+          "target_type": "service"
+        },
+        {
+          "access_type": "room_entry",
+          "faction_id": "guildlands_town",
+          "id": "hostile_town_warning",
+          "maximum_standing_tier_id": "hostile",
+          "messages": {
+            "warn": "Town guards watch you carefully."
+          },
+          "metadata": {},
+          "priority": 50,
+          "result": "warn",
+          "target_id": "guildhall_crossing_square",
+          "target_type": "room"
+        }
+      ],
+      "tags": [
+        "phase8c"
+      ],
+      "version": 1
+    }
+  ]
+}

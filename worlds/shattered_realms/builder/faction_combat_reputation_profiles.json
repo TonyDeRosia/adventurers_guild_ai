@@ -1,0 +1,43 @@
+{
+  "faction_combat_reputation_profiles": [
+    {
+      "assist_rules_placeholder": [],
+      "defense_rules_placeholder": [],
+      "description": "Explicit idempotent kill rules only.",
+      "group_credit_policy": "killer_only",
+      "healing_rules_placeholder": [],
+      "id": "starter_combat_reputation",
+      "kill_rules": [
+        {
+          "amount": 1,
+          "conditions": {},
+          "group_credit_policy": "killer_only",
+          "id": "vermin_kill_town_gain",
+          "killer_membership_required": false,
+          "maximum_standing": "friendly",
+          "metadata": {},
+          "minimum_standing": null,
+          "recipient_faction_id": "guildlands_town",
+          "source_population_ids": [
+            "cellar_rat"
+          ],
+          "source_tags": [
+            "vermin"
+          ],
+          "target_faction_id": "cellar_vermin_faction",
+          "target_membership_required": false
+        }
+      ],
+      "level_difference_rules_placeholder": {},
+      "maximum_gain_per_window": 5,
+      "maximum_loss_per_window": 25,
+      "name": "Starter Combat Reputation",
+      "plugin_data": {},
+      "repeat_target_cooldown": 300,
+      "tags": [
+        "phase8c"
+      ],
+      "version": 1
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "faction_reward_profiles": [
+    {
+      "claim_policy": "manual",
+      "description": "Claimable placeholders delivered through RewardService when wired.",
+      "id": "starter_faction_rewards",
+      "name": "Starter Faction Rewards",
+      "plugin_data": {},
+      "repeat_policy": "once_per_actor",
+      "reward_definition_ids": [
+        "starter_friendly_recognition"
+      ],
+      "standing_rewards": [
+        {
+          "claim_source": "manual",
+          "id": "friendly_recognition",
+          "messages": {},
+          "metadata": {},
+          "minimum_reputation": 500,
+          "once_per_actor": true,
+          "requires_membership": false,
+          "reward_definition_id": "starter_friendly_recognition",
+          "standing_tier_id": "friendly"
+        }
+      ],
+      "tags": [
+        "phase8c"
+      ],
+      "version": 1,
+      "visibility": "visible"
+    }
+  ]
+}

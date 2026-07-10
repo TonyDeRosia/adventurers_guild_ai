@@ -39,3 +39,8 @@ Restart: expected stock, balances, bank state, buybacks, transactions, and ledge
 ## Deferred Systems
 
 Crafting, trainers, quest shops, auctions, player trading, mail, autonomous AI economics, dynamic supply/demand, interest, loans, taxes, gambling, premium currencies, and final balance are intentionally separate future systems.
+
+
+## Phase 8C faction integration note
+
+Phase 8C adds `FactionService` as the canonical owner of faction reputation, standing, diplomacy interpretation, access decisions, faction reward eligibility, and reputation history. Factions link to `OrganizationService` identities; organization membership, roles, permissions, group combat attribution, quests, rewards, economy, combat, and world state remain owned by their existing canonical services. Subsystems must call `FactionService` rather than mutating faction reputation directly. Faction warfare, laws, territory conquest, elections, autonomous politics, and PvP faction rules remain outside this foundation.

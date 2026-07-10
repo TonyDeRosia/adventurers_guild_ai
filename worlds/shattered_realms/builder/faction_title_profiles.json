@@ -1,0 +1,20 @@
+{
+  "faction_title_profiles": [
+    {
+      "display_name": "Friend of Guildlands",
+      "faction_id": "guildlands_town",
+      "id": "starter_friend_title_placeholder",
+      "membership_required": false,
+      "minimum_reputation": 500,
+      "minimum_standing_tier_id": "friendly",
+      "name": "Town Friend",
+      "plugin_data": {},
+      "tags": [
+        "phase8c",
+        "placeholder"
+      ],
+      "version": 1,
+      "visible": true
+    }
+  ]
+}

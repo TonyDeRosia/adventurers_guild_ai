@@ -164,6 +164,24 @@
       ],
       "treasury_profile_id": "treasury_placeholder",
       "version": 1
+    },
+    {
+      "default_role_id": "guild_member",
+      "description": "Civil organization representing conservative starter town services.",
+      "id": "guildlands_town_council",
+      "leader_role_id": "guild_leader",
+      "membership_policy_id": "standard_membership_policy",
+      "name": "Guildlands Town Council",
+      "organization_type": "settlement_placeholder",
+      "persistent": true,
+      "plugin_data": {},
+      "short_name": "Town Council",
+      "status": "active",
+      "tags": [
+        "phase8c",
+        "starter"
+      ],
+      "version": 1
     }
   ]
 }

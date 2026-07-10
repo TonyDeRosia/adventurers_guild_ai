@@ -1,0 +1,48 @@
+{
+  "faction_diplomacy_profiles": [
+    {
+      "description": "Conservative starter diplomacy authored as data.",
+      "id": "starter_faction_diplomacy",
+      "name": "Starter Faction Diplomacy",
+      "plugin_data": {},
+      "relationships": [
+        {
+          "access_override": "",
+          "effective_world_time": 0,
+          "expires_world_time": null,
+          "hostility_override": "friendly",
+          "metadata": {},
+          "quest_modifier_placeholder": "",
+          "reciprocal": true,
+          "source_faction_id": "guildlands_town",
+          "source_id": "phase8c_starter",
+          "source_type": "world_data",
+          "state": "allied",
+          "target_faction_id": "town_guard_faction",
+          "trade_modifier_placeholder": "",
+          "value": 100
+        },
+        {
+          "access_override": "",
+          "effective_world_time": 0,
+          "expires_world_time": null,
+          "hostility_override": "hostile",
+          "metadata": {},
+          "quest_modifier_placeholder": "",
+          "reciprocal": true,
+          "source_faction_id": "cellar_vermin_faction",
+          "source_id": "phase8c_starter",
+          "source_type": "world_data",
+          "state": "hostile",
+          "target_faction_id": "guildlands_town",
+          "trade_modifier_placeholder": "",
+          "value": -100
+        }
+      ],
+      "tags": [
+        "phase8c"
+      ],
+      "version": 1
+    }
+  ]
+}

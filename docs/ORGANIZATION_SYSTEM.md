@@ -15,3 +15,8 @@ Quest sharing: `quest share cellar_rat_problem`; the recipient accepts the share
 Guild: an Admin-created guild can run `guild invite <player>`, `guild accept`, `guild members`, and `guild promote <player> guild_officer`.
 
 NPC organization: `orgstat town_guard` and `orgmembers town_guard` should show idempotent static organization membership.
+
+
+## Phase 8C faction integration note
+
+Phase 8C adds `FactionService` as the canonical owner of faction reputation, standing, diplomacy interpretation, access decisions, faction reward eligibility, and reputation history. Factions link to `OrganizationService` identities; organization membership, roles, permissions, group combat attribution, quests, rewards, economy, combat, and world state remain owned by their existing canonical services. Subsystems must call `FactionService` rather than mutating faction reputation directly. Faction warfare, laws, territory conquest, elections, autonomous politics, and PvP faction rules remain outside this foundation.

@@ -1,0 +1,27 @@
+{
+  "faction_reputation_decay_profiles": [
+    {
+      "amount": 0,
+      "applies_when_offline": false,
+      "bounded_catchup": true,
+      "decay_mode": "none",
+      "description": "Decay disabled by default.",
+      "enabled": false,
+      "id": "no_decay",
+      "interval_minutes": 0,
+      "maximum_cycles_per_catchup": 0,
+      "maximum_value": 3000,
+      "minimum_value": -3000,
+      "name": "No Decay",
+      "pause_when_active": true,
+      "pause_when_member": true,
+      "plugin_data": {},
+      "source_filters": [],
+      "tags": [
+        "phase8c"
+      ],
+      "target_value": 0,
+      "version": 1
+    }
+  ]
+}

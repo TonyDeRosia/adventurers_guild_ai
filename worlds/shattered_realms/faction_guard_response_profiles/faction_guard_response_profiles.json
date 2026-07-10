@@ -1,0 +1,39 @@
+{
+  "faction_guard_response_profiles": [
+    {
+      "area_ids": [
+        "starter_guildlands"
+      ],
+      "arrest_placeholder": false,
+      "attack_on_sight": false,
+      "call_for_help": true,
+      "deny_entry": true,
+      "description": "Warns and can deny entry but does not create broad attack-on-sight behavior.",
+      "escort_out_placeholder": false,
+      "guard_organization_id": "town_guard",
+      "id": "starter_town_guard_response",
+      "messages": {
+        "warn": "The guard warns you to keep the peace."
+      },
+      "minimum_hostile_tier": "hostile",
+      "name": "Starter Town Guard Response",
+      "plugin_data": {},
+      "protected_faction_ids": [
+        "guildlands_town",
+        "town_guard_faction"
+      ],
+      "response_cooldown": 60,
+      "room_ids": [
+        "guildhall_crossing_square"
+      ],
+      "tags": [
+        "phase8c"
+      ],
+      "version": 1,
+      "warn_before_attack": true,
+      "zone_ids": [
+        "guildhall_crossing"
+      ]
+    }
+  ]
+}

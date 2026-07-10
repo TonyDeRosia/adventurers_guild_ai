@@ -1,0 +1,46 @@
+{
+  "faction_reputation_profiles": [
+    {
+      "ally_kill_penalty": -25,
+      "cap_rules": {},
+      "default_value": 0,
+      "description": "Conservative bounded reputation profile.",
+      "enemy_kill_reward": 1,
+      "floor_rules": {},
+      "friendly_fire_penalty": -25,
+      "gain_multiplier": 1,
+      "id": "standard_faction_reputation",
+      "loss_multiplier": 1,
+      "maximum_value": 3000,
+      "member_starting_value": 0,
+      "minimum_value": -3000,
+      "name": "Standard Faction Reputation",
+      "nonmember_starting_value": 0,
+      "plugin_data": {},
+      "quest_reward_multiplier": 1,
+      "service_use_gain_placeholder": 0,
+      "source_filters": [
+        "quest",
+        "combat",
+        "organization_membership",
+        "organization_removal",
+        "conversation",
+        "world_event",
+        "reward",
+        "service",
+        "trade_placeholder",
+        "crafting_placeholder",
+        "exploration",
+        "admin",
+        "script",
+        "decay",
+        "recovery",
+        "custom"
+      ],
+      "tags": [
+        "phase8c"
+      ],
+      "version": 1
+    }
+  ]
+}

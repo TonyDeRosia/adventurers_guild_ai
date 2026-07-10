@@ -16,3 +16,8 @@ Phase 8A adds the canonical authored quest and narrative-state foundation. Quest
 Builder: `builder on`, `questlist`, `queststat cellar_rat_problem`, `stagelist cellar_rat_problem`, `objectivelist cellar_rat_problem_kill`, `conversationlist`, `questvalidate cellar_rat_problem`, `questpreview cellar_rat_problem self`.
 
 Player: `talk tavern_keeper_jory`, `reply 1`, `accept cellar_rat_problem`, `quests`, `quest cellar_rat_problem`, kill configured rats, `turnin cellar_rat_problem`. Crafting: `accept first_craft`, `craft training_sword`, advance crafting time, `quests`. World state: `worldstateset world shattered_realms tutorial_complete true`.
+
+
+## Phase 8C faction integration note
+
+Phase 8C adds `FactionService` as the canonical owner of faction reputation, standing, diplomacy interpretation, access decisions, faction reward eligibility, and reputation history. Factions link to `OrganizationService` identities; organization membership, roles, permissions, group combat attribution, quests, rewards, economy, combat, and world state remain owned by their existing canonical services. Subsystems must call `FactionService` rather than mutating faction reputation directly. Faction warfare, laws, territory conquest, elections, autonomous politics, and PvP faction rules remain outside this foundation.

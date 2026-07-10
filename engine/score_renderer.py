@@ -100,14 +100,14 @@ class ActorScoreRenderer:
 
     order = [
         "identity", "resources", "primary_attributes", "derived_attributes", "combat", "equipment",
-        "conditions", "resistances", "affects", "spellup", "abilities", "skills", "spells", "cooldowns", "current_cast", "combat_loadout", "passive_abilities", "progression", "professions", "crafting", "recipes", "quests", "journal", "questhistory", "currencies", "banking", "transactions", "relationships",
+        "conditions", "resistances", "affects", "spellup", "abilities", "skills", "spells", "cooldowns", "current_cast", "combat_loadout", "passive_abilities", "progression", "professions", "crafting", "recipes", "quests", "journal", "questhistory", "currencies", "banking", "transactions", "relationships", "factions", "reputation", "standing", "diplomacy",
         "simulation", "party", "organizations", "guild", "clan", "memberships", "social", "behavior", "threat", "tactics", "diagnostics", "formulas", "raw",
     ]
     aliases = {
         "score": "all", "preview": "all", "actor": "all", "attrs": "primary_attributes", "attributes": "primary_attributes",
         "derived": "derived_attributes", "resists": "resistances", "saff": "affects", "spellups": "spellup",
         "worth": "currencies", "profession": "professions", "recipe": "recipes", "cast": "current_cast", "currency": "currencies", "money": "currencies", "bank": "banking", "banking": "banking", "transactions": "transactions", "builder": "diagnostics",
-        "questlog": "journal", "quest_history": "questhistory", "builder_diagnostics": "diagnostics", "ai": "simulation", "ai_diagnostics": "simulation", "behaviour": "behavior", "membership": "memberships",
+        "questlog": "journal", "quest_history": "questhistory", "builder_diagnostics": "diagnostics", "ai": "simulation", "ai_diagnostics": "simulation", "behaviour": "behavior", "membership": "memberships", "faction_standing": "standing", "relations": "diplomacy",
     }
 
     def __init__(self, formula_registry: FormulaRegistry | None = None, *, ansi: bool = False):
@@ -170,6 +170,39 @@ class ActorScoreRenderer:
 
     def _organization_summary(self, actor: Actor) -> dict[str, Any]:
         return getattr(actor, "organization_summary", None) or (actor.plugin_data or {}).get("organization_summary", {}) or {}
+
+
+    def _faction_summary(self, actor: Actor) -> dict[str, Any]:
+        return getattr(actor, "faction_summary", None) or (actor.plugin_data or {}).get("faction_summary", {}) or {}
+
+    def render_factions(self, actor: Actor, admin: bool = False) -> str:
+        data = self._faction_summary(actor); reps = data.get("reputations", []) or []
+        rows = [_line(f"Known factions: {len(reps)}")]
+        for rep in reps[:8]:
+            name = rep.get("name") or rep.get("faction_name") or rep.get("faction_id", "Faction")
+            rows.append(_line(f"{name}: {_value(rep.get('standing_tier_id') or rep.get('standing'))}"))
+        if admin and data.get("trace"):
+            rows.append(_line(f"Trace: {_value(data.get('trace'))}"))
+        return self._section("SCORE FACTIONS", rows)
+
+    def render_reputation(self, actor: Actor, admin: bool = False) -> str:
+        reps = self._faction_summary(actor).get("reputations", []) or []
+        rows = []
+        for rep in reps[:10]:
+            rows.append(_line(f"{rep.get('name') or rep.get('faction_id','Faction')}: {_value(rep.get('reputation_value'))} ({_value(rep.get('standing_tier_id'))})"))
+            if admin and rep.get('reputation_id'): rows.append(_line(f"  Row: {rep.get('reputation_id')}"))
+        return self._section("SCORE REPUTATION", rows)
+
+    def render_standing(self, actor: Actor, admin: bool = False) -> str:
+        reps = self._faction_summary(actor).get("reputations", []) or []
+        rows = [_line(f"{r.get('name') or r.get('faction_id','Faction')}: {_value(r.get('standing_tier_id') or r.get('standing'))} progress {_value(r.get('progress_to_next','n/a'))}") for r in reps[:10]]
+        return self._section("SCORE STANDING", rows)
+
+    def render_diplomacy(self, actor: Actor, admin: bool = False) -> str:
+        data = self._faction_summary(actor); rels = data.get("relationships", []) or []
+        rows = [_line("Faction relations are summarized without exposing hidden diplomacy." if not admin else "Builder/Admin diplomacy trace follows.")]
+        for rel in rels[:10]: rows.append(_line(f"{rel.get('source_faction_id','?')} -> {rel.get('target_faction_id','?')}: {rel.get('state','neutral')}"))
+        return self._section("SCORE DIPLOMACY", rows)
 
     def render_party(self, actor: Actor, admin: bool = False) -> str:
         data = self._organization_summary(actor).get("party", {})
