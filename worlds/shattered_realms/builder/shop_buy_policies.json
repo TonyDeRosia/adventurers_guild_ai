@@ -1,0 +1,33 @@
+{
+  "shop_buy_policies": [
+    {
+      "accept_bound": false,
+      "accept_broken": false,
+      "accept_stolen_placeholder": false,
+      "accepted_item_tags": [],
+      "accepted_item_types": [
+        "weapon",
+        "armor"
+      ],
+      "condition_requirements": {},
+      "currency_id": "gold",
+      "description": "Buys weapons and armor.",
+      "id": "blacksmith_buys_arms",
+      "maximum_quantity_per_transaction": 10,
+      "maximum_value": "",
+      "messages": {},
+      "minimum_value": 1,
+      "name": "Blacksmith Buys Arms",
+      "plugin_data": {},
+      "pricing_formula_id": "shop_sell_price_v1",
+      "rejected_item_tags": [
+        "quest",
+        "bound"
+      ],
+      "tags": [
+        "phase7b"
+      ],
+      "version": 1
+    }
+  ]
+}

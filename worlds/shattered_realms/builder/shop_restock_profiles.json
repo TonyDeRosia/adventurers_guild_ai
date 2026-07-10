@@ -1,0 +1,20 @@
+{
+  "shop_restock_profiles": [
+    {
+      "active_time_windows": [],
+      "description": "Bounded restore-to-target policy.",
+      "id": "starter_restock",
+      "interval_minutes": 1440,
+      "maximum_cycles_per_catchup": 1,
+      "name": "Starter Restock",
+      "plugin_data": {},
+      "policy": "restore_to_target",
+      "restock_entries": [],
+      "tags": [
+        "phase7b"
+      ],
+      "version": 1,
+      "world_event_placeholder": ""
+    }
+  ]
+}

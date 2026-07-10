@@ -402,3 +402,7 @@ Item templates may declare immutable `modifiers`. Only SQLite item instances who
 ## Phase 7A reward item delivery
 
 Reward item delivery is centralized in `engine.rewards.RewardService`. Item rewards resolve as `RewardEntry` rows and create canonical runtime item instances through `MudRuntime.spawn_item()` when a runtime is available, or through the store item-instance API in legacy contexts. Reward packet and entry ids are stored with item metadata/custom flags so retries can detect already-created instances instead of duplicating items. Templates remain immutable.
+
+## Phase 7B Economy Integration
+
+Phase 7B adds the canonical `engine.economy.EconomyService` for SQLite-authoritative carried balances, immutable ledger entries, price quotes, transactions, shop stock, buyback records, identify/repair service payments, bank accounts, and currency conversion. Economy world data is authored in the dedicated currency, shop, stock, policy, pricing, service, repair, bank, restock, message, and eligibility collections. Reward, item, progression, Actor, command, package, Builder, and roadmap systems integrate by calling EconomyService APIs rather than directly mutating money, stock, item ownership, bank records, or service state. Crafting, trainers, quests, auctions, player trading, and autonomous AI economics remain explicitly deferred.

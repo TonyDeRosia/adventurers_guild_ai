@@ -1,0 +1,28 @@
+{
+  "bank_profiles": [
+    {
+      "access_requirements": {},
+      "account_limit": 1,
+      "currency_ids": [
+        "gold",
+        "silver",
+        "copper"
+      ],
+      "deposit_fee": {},
+      "description": "Starter account profile.",
+      "id": "starter_bank",
+      "maximum_balance": "",
+      "messages": {},
+      "minimum_balance": 0,
+      "name": "Starter Bank",
+      "plugin_data": {},
+      "provider_actor_ids": [],
+      "room_ids": [],
+      "tags": [
+        "phase7b"
+      ],
+      "version": 1,
+      "withdrawal_fee": {}
+    }
+  ]
+}

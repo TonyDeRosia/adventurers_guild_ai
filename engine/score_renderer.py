@@ -100,13 +100,13 @@ class ActorScoreRenderer:
 
     order = [
         "identity", "resources", "primary_attributes", "derived_attributes", "combat", "equipment",
-        "conditions", "resistances", "affects", "spellup", "abilities", "skills", "spells", "cooldowns", "current_cast", "combat_loadout", "passive_abilities", "progression", "currencies", "relationships",
+        "conditions", "resistances", "affects", "spellup", "abilities", "skills", "spells", "cooldowns", "current_cast", "combat_loadout", "passive_abilities", "progression", "currencies", "banking", "transactions", "relationships",
         "simulation", "behavior", "threat", "tactics", "diagnostics", "formulas", "raw",
     ]
     aliases = {
         "score": "all", "preview": "all", "actor": "all", "attrs": "primary_attributes", "attributes": "primary_attributes",
         "derived": "derived_attributes", "resists": "resistances", "saff": "affects", "spellups": "spellup",
-        "worth": "currencies", "cast": "current_cast", "currency": "currencies", "money": "currencies", "builder": "diagnostics",
+        "worth": "currencies", "cast": "current_cast", "currency": "currencies", "money": "currencies", "bank": "banking", "banking": "banking", "transactions": "transactions", "builder": "diagnostics",
         "builder_diagnostics": "diagnostics", "ai": "simulation", "ai_diagnostics": "simulation", "behaviour": "behavior",
     }
 
@@ -331,6 +331,20 @@ class ActorScoreRenderer:
         data = actor.plugin_data.get("currencies", {})
         keys = CURRENCY_FIELDS + [k for k in data if k not in CURRENCY_FIELDS]
         return self._section("CURRENCIES", self._two_col([(_human(k), data.get(k, 0 if k in {"gold", "silver", "copper"} else "future"), "gold" if k in {"gold", "silver", "copper"} else "score_value") for k in keys]))
+
+    def render_banking(self, actor: Actor, admin: bool = False) -> str:
+        data = (actor.plugin_data.get("banking", {}) if getattr(actor, "plugin_data", None) else {})
+        pairs = [("Banked Gold", data.get("gold", 0), "gold"), ("Banked Silver", data.get("silver", 0), "score_value"), ("Banked Copper", data.get("copper", 0), "score_value")]
+        if admin:
+            pairs.append(("Bank Account IDs", data.get("bank_account_ids", "available through EconomyService"), "score_value"))
+        return self._section("BANKING", self._two_col(pairs))
+
+    def render_transactions(self, actor: Actor, admin: bool = False) -> str:
+        data = (actor.plugin_data.get("transactions", []) if getattr(actor, "plugin_data", None) else [])
+        rows = [_line(str(x)[:BOX_WIDTH-6]) for x in data[-5:]] or [_line("Recent transactions are available from EconomyService ledger traces.")]
+        if admin:
+            rows.append(_line("Admin trace includes transaction IDs, quote IDs, and ledger entry IDs."))
+        return self._section("TRANSACTIONS", rows)
 
     def render_relationships(self, actor: Actor, admin: bool = False) -> str:
         data = actor.relationship_profile or {}

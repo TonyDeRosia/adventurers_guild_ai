@@ -1,0 +1,70 @@
+{
+  "pricing_profiles": [
+    {
+      "buy_formula_id": "shop_buy_price_v1",
+      "buy_markup": 10,
+      "description": "Conservative starter merchant pricing.",
+      "id": "standard_merchant_pricing",
+      "maximum_price": "",
+      "minimum_price": 1,
+      "name": "Standard Merchant Pricing",
+      "plugin_data": {},
+      "relationship_modifiers_placeholder": {},
+      "repair_formula_id": "repair_price_v1",
+      "reputation_modifiers_placeholder": {},
+      "rounding_policy": "currency_precision",
+      "sell_formula_id": "shop_sell_price_v1",
+      "sell_markdown": 50,
+      "service_formula_id": "service_price_v1",
+      "stock_modifiers_placeholder": {},
+      "tags": [
+        "phase7b"
+      ],
+      "version": 1
+    },
+    {
+      "buy_formula_id": "shop_buy_price_v1",
+      "buy_markup": 15,
+      "description": "Starter blacksmith pricing.",
+      "id": "blacksmith_pricing",
+      "maximum_price": "",
+      "minimum_price": 1,
+      "name": "Blacksmith Pricing",
+      "plugin_data": {},
+      "relationship_modifiers_placeholder": {},
+      "repair_formula_id": "repair_price_v1",
+      "reputation_modifiers_placeholder": {},
+      "rounding_policy": "currency_precision",
+      "sell_formula_id": "shop_sell_price_v1",
+      "sell_markdown": 45,
+      "service_formula_id": "service_price_v1",
+      "stock_modifiers_placeholder": {},
+      "tags": [
+        "phase7b"
+      ],
+      "version": 1
+    },
+    {
+      "buy_formula_id": "shop_buy_price_v1",
+      "buy_markup": 0,
+      "description": "Starter service pricing.",
+      "id": "service_pricing",
+      "maximum_price": "",
+      "minimum_price": 1,
+      "name": "Service Pricing",
+      "plugin_data": {},
+      "relationship_modifiers_placeholder": {},
+      "repair_formula_id": "repair_price_v1",
+      "reputation_modifiers_placeholder": {},
+      "rounding_policy": "currency_precision",
+      "sell_formula_id": "shop_sell_price_v1",
+      "sell_markdown": 0,
+      "service_formula_id": "service_price_v1",
+      "stock_modifiers_placeholder": {},
+      "tags": [
+        "phase7b"
+      ],
+      "version": 1
+    }
+  ]
+}

@@ -262,3 +262,7 @@ Canonical progression is now represented by `engine.progression.ProgressionServi
 ## Phase 7A canonical rewards
 
 All future reward sources should call `RewardService`: source validation, deterministic resolution, packet persistence, destination resolution, delivery, EventBus publication, and audit/history rows happen in one canonical pipeline. Combat, lifecycle, quests, harvesting, containers, and admin grants must not create separate reward implementations.
+
+## Phase 7B Economy Integration
+
+Phase 7B adds the canonical `engine.economy.EconomyService` for SQLite-authoritative carried balances, immutable ledger entries, price quotes, transactions, shop stock, buyback records, identify/repair service payments, bank accounts, and currency conversion. Economy world data is authored in the dedicated currency, shop, stock, policy, pricing, service, repair, bank, restock, message, and eligibility collections. Reward, item, progression, Actor, command, package, Builder, and roadmap systems integrate by calling EconomyService APIs rather than directly mutating money, stock, item ownership, bank records, or service state. Crafting, trainers, quests, auctions, player trading, and autonomous AI economics remain explicitly deferred.

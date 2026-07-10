@@ -1,0 +1,48 @@
+{
+  "service_definitions": [
+    {
+      "cooldown": {},
+      "costs": {
+        "gold": 1
+      },
+      "delivery_handler": "identify",
+      "description": "Reveals safe item information.",
+      "id": "blacksmith_identify",
+      "messages": {},
+      "name": "Identify Item",
+      "plugin_data": {},
+      "provider_actor_id": "",
+      "provider_shop_id": "blacksmith_shop",
+      "provider_spawn_id": "",
+      "requirements": {},
+      "service_type": "identify",
+      "tags": [
+        "phase7b"
+      ],
+      "version": 1
+    },
+    {
+      "cooldown": {},
+      "costs": {
+        "gold": 2
+      },
+      "delivery_handler": "repair",
+      "description": "Restores item condition foundation.",
+      "id": "blacksmith_repair",
+      "messages": {},
+      "name": "Repair Item",
+      "plugin_data": {
+        "repair_profile_id": "standard_repair"
+      },
+      "provider_actor_id": "",
+      "provider_shop_id": "blacksmith_shop",
+      "provider_spawn_id": "",
+      "requirements": {},
+      "service_type": "repair",
+      "tags": [
+        "phase7b"
+      ],
+      "version": 1
+    }
+  ]
+}

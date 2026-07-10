@@ -117,6 +117,8 @@ class FormulaRegistry:
         reg = cls()
         for stat in sorted(SUPPORTED_STATS):
             reg.register(FormulaDefinition(id=stat, description="Placeholder Builder-overridable formula; no gameplay math is hardcoded.", inputs=[], outputs=[stat], validation={"placeholder": True}))
+        for fid in ["shop_buy_price_v1", "shop_sell_price_v1", "service_price_v1", "repair_price_v1", "currency_conversion_v1"]:
+            reg.register(FormulaDefinition(id=fid, description="Phase 7B conservative economy formula placeholder; EconomyService records the input/output trace and never executes arbitrary Python.", inputs=["quantity", "item_base_value", "service_base_price"], outputs=["price"], validation={"phase7b": True}), replace=True)
         return reg
 
     def validate(self) -> ValidationResult:

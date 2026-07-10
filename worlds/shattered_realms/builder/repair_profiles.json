@@ -1,0 +1,27 @@
+{
+  "repair_profiles": [
+    {
+      "accepted_item_types": [
+        "weapon",
+        "armor"
+      ],
+      "accepted_materials": [],
+      "can_repair_broken": false,
+      "condition_restored": 100,
+      "description": "Conservative repair foundation.",
+      "id": "standard_repair",
+      "maximum_cost": "",
+      "maximum_repair_percent": 100,
+      "messages": {},
+      "minimum_cost": 1,
+      "name": "Standard Repair",
+      "plugin_data": {},
+      "repair_formula_id": "repair_price_v1",
+      "requirements": {},
+      "tags": [
+        "phase7b"
+      ],
+      "version": 1
+    }
+  ]
+}

@@ -232,6 +232,13 @@ class MudCommandEngine:
             "corpsedecaylist": self._cmd_phase7a_reward, "corpsedecaystat": self._cmd_phase7a_reward, "corpsedecaycreate": self._cmd_phase7a_reward, "corpsedecayset": self._cmd_phase7a_reward, "corpsedecaydelete": self._cmd_phase7a_reward, "corpsedecayvalidate": self._cmd_phase7a_reward,
             "nodelist": self._cmd_phase7a_reward, "nodestat": self._cmd_phase7a_reward, "nodecreate": self._cmd_phase7a_reward, "nodeset": self._cmd_phase7a_reward, "nodeclone": self._cmd_phase7a_reward, "nodedelete": self._cmd_phase7a_reward, "nodevalidate": self._cmd_phase7a_reward, "nodepreview": self._cmd_phase7a_reward,
             "rewardresolve": self._cmd_phase7a_reward, "rewarddeliver": self._cmd_phase7a_reward, "rewardretry": self._cmd_phase7a_reward, "rewardcancel": self._cmd_phase7a_reward, "rewardpacket": self._cmd_phase7a_reward, "rewardtrace": self._cmd_phase7a_reward, "lootresolve": self._cmd_phase7a_reward, "loottrace": self._cmd_phase7a_reward, "corpsecontents": self._cmd_phase7a_reward, "corpseloottrace": self._cmd_phase7a_reward, "corpsedecay": self._cmd_phase7a_reward, "grantreward": self._cmd_phase7a_reward, "claimlist": self._cmd_phase7a_reward, "rewards": self._cmd_phase7a_reward, "claim": self._cmd_phase7a_reward, "rewardhistory": self._cmd_phase7a_reward,
+            "currency": self._cmd_phase7b_economy, "transactions": self._cmd_phase7b_economy, "balance": self._cmd_phase7b_economy, "deposit": self._cmd_phase7b_economy, "withdraw": self._cmd_phase7b_economy, "exchange": self._cmd_phase7b_economy,
+            "list": self._cmd_phase7b_economy, "shop": self._cmd_phase7b_economy, "buy": self._cmd_phase7b_economy, "sell": self._cmd_phase7b_economy, "value": self._cmd_phase7b_economy, "appraise": self._cmd_phase7b_economy, "buyback": self._cmd_phase7b_economy, "services": self._cmd_phase7b_economy, "identify": self._cmd_phase7b_economy, "repair": self._cmd_phase7b_economy, "quote": self._cmd_phase7b_economy,
+            "currencylist": self._cmd_phase7b_economy, "currencystat": self._cmd_phase7b_economy, "currencycreate": self._cmd_phase7b_economy, "currencyclone": self._cmd_phase7b_economy, "currencyset": self._cmd_phase7b_economy, "currencydelete": self._cmd_phase7b_economy, "currencyvalidate": self._cmd_phase7b_economy, "currencypreview": self._cmd_phase7b_economy,
+            "shoplist": self._cmd_phase7b_economy, "shopstat": self._cmd_phase7b_economy, "shopcreate": self._cmd_phase7b_economy, "shopclone": self._cmd_phase7b_economy, "shopset": self._cmd_phase7b_economy, "shopdelete": self._cmd_phase7b_economy, "shopvalidate": self._cmd_phase7b_economy, "shoppreview": self._cmd_phase7b_economy, "stocklist": self._cmd_phase7b_economy, "stockadd": self._cmd_phase7b_economy, "stockset": self._cmd_phase7b_economy, "stockdelete": self._cmd_phase7b_economy, "stockvalidate": self._cmd_phase7b_economy, "stockpreview": self._cmd_phase7b_economy,
+            "pricinglist": self._cmd_phase7b_economy, "pricingstat": self._cmd_phase7b_economy, "pricingcreate": self._cmd_phase7b_economy, "pricingclone": self._cmd_phase7b_economy, "pricingset": self._cmd_phase7b_economy, "pricingdelete": self._cmd_phase7b_economy, "pricingvalidate": self._cmd_phase7b_economy, "pricingtrace": self._cmd_phase7b_economy, "servicelist": self._cmd_phase7b_economy, "servicestat": self._cmd_phase7b_economy, "servicecreate": self._cmd_phase7b_economy, "serviceclone": self._cmd_phase7b_economy, "serviceset": self._cmd_phase7b_economy, "servicedelete": self._cmd_phase7b_economy, "servicevalidate": self._cmd_phase7b_economy, "servicepreview": self._cmd_phase7b_economy,
+            "repairprofilelist": self._cmd_phase7b_economy, "repairprofilestat": self._cmd_phase7b_economy, "repairprofilecreate": self._cmd_phase7b_economy, "repairprofileset": self._cmd_phase7b_economy, "repairprofiledelete": self._cmd_phase7b_economy, "repairprofilevalidate": self._cmd_phase7b_economy, "bankprofilelist": self._cmd_phase7b_economy, "bankprofilestat": self._cmd_phase7b_economy, "bankprofilecreate": self._cmd_phase7b_economy, "bankprofileset": self._cmd_phase7b_economy, "bankprofiledelete": self._cmd_phase7b_economy, "bankprofilevalidate": self._cmd_phase7b_economy, "restocklist": self._cmd_phase7b_economy, "restockstat": self._cmd_phase7b_economy, "restockcreate": self._cmd_phase7b_economy, "restockset": self._cmd_phase7b_economy, "restockdelete": self._cmd_phase7b_economy, "restockvalidate": self._cmd_phase7b_economy, "restockpreview": self._cmd_phase7b_economy,
+            "currencybalance": self._cmd_phase7b_economy, "currencygrant": self._cmd_phase7b_economy, "currencyremove": self._cmd_phase7b_economy, "ledger": self._cmd_phase7b_economy, "currencytrace": self._cmd_phase7b_economy, "ledgertrace": self._cmd_phase7b_economy, "transactionstat": self._cmd_phase7b_economy, "transactiontrace": self._cmd_phase7b_economy, "quotetrace": self._cmd_phase7b_economy, "shopstock": self._cmd_phase7b_economy, "shoprestock": self._cmd_phase7b_economy, "shopopen": self._cmd_phase7b_economy, "shopclose": self._cmd_phase7b_economy, "bankaccount": self._cmd_phase7b_economy, "banktrace": self._cmd_phase7b_economy, "economyaudit": self._cmd_phase7b_economy, "shopaudit": self._cmd_phase7b_economy, "shopstocktrace": self._cmd_phase7b_economy, "servicetrace": self._cmd_phase7b_economy, "repairtrace": self._cmd_phase7b_economy, "conversiontrace": self._cmd_phase7b_economy,
             "autoloot": self._cmd_generic,
             "autoexits": self._cmd_generic,
             "compact": self._cmd_generic,
@@ -671,6 +678,57 @@ class MudCommandEngine:
         if cmd in {'rewardvalidate','loottablevalidate','treasurevalidate','deathlootvalidate','corpsedecayvalidate','nodevalidate'}:
             return CommandResult(json.dumps(content.validate(set(getattr(rt,'item_templates',{}).keys()) if rt else set()), indent=2, sort_keys=True))
         return CommandResult('Phase 7A reward command foundation is available; mutating Builder edits are draft-only placeholders in this build.')
+
+
+    def _economy_service(self, character: Any):
+        from engine.economy import EconomyService
+        rt=getattr(self, 'runtime', None); store=getattr(rt, 'state_store', None) or self.state_store
+        db_path=getattr(store, 'db_path', None) or Path('.smartmud_economy.sqlite3')
+        world_id=getattr(rt, 'active_world_id', None) or self.builder.world_id(character)
+        return EconomyService(db_path, world_id=world_id, world_root=Path('worlds')/world_id, event_bus=self.event_bus, runtime=rt)
+
+    def _cmd_phase7b_economy(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        from engine.economy import EconomyContent
+        svc=self._economy_service(character); cmd=(args[0] if args else raw.split()[0]).lower(); actor_id=str(getattr(character,'id',getattr(character,'character_id','self')))
+        coll_map={'currency':'currency_profiles','shop':'shop_definitions','stock':'shop_stock_profiles','pricing':'pricing_profiles','service':'service_definitions','repairprofile':'repair_profiles','bankprofile':'bank_profiles','restock':'shop_restock_profiles'}
+        if cmd in {'currency','currencybalance','balance'}:
+            bals=svc.get_currency_balances('actor', actor_id) or {'gold': svc.get_currency_balance('actor', actor_id, 'gold')}
+            bank=svc.bank_balance(actor_id,'gold') if cmd=='balance' else None
+            text='Carried currency: '+', '.join(f"{v} {k}" for k,v in sorted(bals.items()))
+            if bank is not None: text += f"\nBanked currency: {bank} gold"
+            return CommandResult(text)
+        if cmd in {'currencygrant','currencyremove'}:
+            if len(args)<4: return CommandResult('Usage: currencygrant <actor> <currency> <amount>', ok=False)
+            (svc.credit_currency if cmd=='currencygrant' else svc.debit_currency)('actor', args[1], args[2], int(args[3]), reason='admin_command')
+            return CommandResult('Currency mutation recorded through EconomyService ledger.')
+        if cmd in {'ledger','currencytrace','ledgertrace'}:
+            target=args[1] if len(args)>1 and args[1] != 'self' else actor_id
+            return CommandResult(json.dumps(svc.trace_currency_balance('actor', target, None, int(args[2]) if len(args)>2 and args[2].isdigit() else 20), indent=2, sort_keys=True))
+        if cmd.endswith('list'):
+            prefix=cmd[:-4]; coll=coll_map.get(prefix)
+            return CommandResult('\n'.join(f"{x.get('id')} - {x.get('name','')}" for x in svc.content.list(coll)) if coll else 'Economy collection unavailable.')
+        if cmd.endswith('validate') or cmd=='economyaudit':
+            return CommandResult(json.dumps(svc.content.validate(set(getattr(getattr(self,'runtime',None),'item_templates',{}).keys())), indent=2, sort_keys=True))
+        if cmd in {'shop','shop info'} or (cmd=='shop' and args[1:2]==['info']):
+            shops=svc.content.list('shop_definitions'); return CommandResult('\n'.join(f"{s.get('name')} — {s.get('description')}" for s in shops) or 'No shop is available here.')
+        if cmd in {'list','shopstock','shopstocktrace'}:
+            shop_id=args[1] if len(args)>1 else 'blacksmith_shop'; stock=svc.initialize_shop_stock(shop_id)
+            return CommandResult('\n'.join(f"{i+1}. {r.get('item_template_id')} — {r.get('quantity')-r.get('reserved_quantity',0)} available" for i,r in enumerate(stock)) or 'No stock.')
+        if cmd=='buy':
+            if len(args)<2: return CommandResult('Buy what?', ok=False)
+            q=svc.quote_purchase(actor_id,'blacksmith_shop',' '.join(args[1:])); return CommandResult(f"Quote {q.quote_id}: {q.total}. Use confirm_purchase in EconomyService to commit.")
+        if cmd=='deposit':
+            if len(args)<3: return CommandResult('Usage: deposit <amount> <currency>', ok=False)
+            return CommandResult(f"Deposit transaction {svc.deposit(actor_id,int(args[1]),args[2])} completed.")
+        if cmd=='withdraw':
+            if len(args)<3: return CommandResult('Usage: withdraw <amount> <currency>', ok=False)
+            return CommandResult(f"Withdrawal transaction {svc.withdraw(actor_id,int(args[1]),args[2])} completed.")
+        if cmd=='exchange':
+            if len(args)<5: return CommandResult('Usage: exchange <amount> <from_currency> to <to_currency>', ok=False)
+            return CommandResult(json.dumps(svc.convert_currency(actor_id,int(args[1]),args[2],args[4]), sort_keys=True))
+        if cmd in {'transactions','transactiontrace','transactionstat','quotetrace','pricingtrace','servicetrace','repairtrace','banktrace','conversiontrace','shopaudit'}:
+            return CommandResult('Economy diagnostics are available through EconomyService trace APIs and SQLite ledger rows.')
+        return CommandResult('Phase 7B EconomyService command foundation is available; Builder edits are draft-safe placeholders in this build.')
 
     def _cmd_inventory(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display inventory."""

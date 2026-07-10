@@ -1,0 +1,69 @@
+{
+  "shop_stock_profiles": [
+    {
+      "allow_buyback": true,
+      "buyback_limit": 10,
+      "description": "Starter arms and armor.",
+      "entries": [
+        {
+          "conditions": {},
+          "currency_override": "gold",
+          "id": "iron_sword",
+          "item_template_id": "iron_sword",
+          "maximum_quantity": 3,
+          "metadata": {},
+          "minimum_quantity": 0,
+          "price_override": {
+            "gold": 25
+          },
+          "quantity": 3,
+          "restock_quantity": 1,
+          "sort_order": 1,
+          "visible": true
+        },
+        {
+          "conditions": {},
+          "currency_override": "gold",
+          "id": "training_sword",
+          "item_template_id": "training_sword",
+          "maximum_quantity": 5,
+          "metadata": {},
+          "minimum_quantity": 0,
+          "price_override": {
+            "gold": 5
+          },
+          "quantity": 5,
+          "restock_quantity": 2,
+          "sort_order": 2,
+          "visible": true
+        },
+        {
+          "conditions": {},
+          "currency_override": "gold",
+          "id": "practice_staff",
+          "item_template_id": "practice_staff",
+          "maximum_quantity": 5,
+          "metadata": {},
+          "minimum_quantity": 0,
+          "price_override": {
+            "gold": 5
+          },
+          "quantity": 5,
+          "restock_quantity": 2,
+          "sort_order": 3,
+          "visible": true
+        }
+      ],
+      "id": "blacksmith_stock",
+      "maximum_total_items": 20,
+      "name": "Blacksmith Stock",
+      "plugin_data": {},
+      "restock_policy_id": "starter_restock",
+      "stock_mode": "finite_template",
+      "tags": [
+        "phase7b"
+      ],
+      "version": 1
+    }
+  ]
+}

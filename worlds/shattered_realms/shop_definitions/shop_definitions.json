@@ -1,0 +1,37 @@
+{
+  "shop_definitions": [
+    {
+      "buy_messages": {},
+      "buy_policy_id": "blacksmith_buys_arms",
+      "closed_message": "The blacksmith is not available.",
+      "currency_ids": [
+        "gold",
+        "silver",
+        "copper"
+      ],
+      "description": "Guildlands pilot blacksmith economy shop.",
+      "id": "blacksmith_shop",
+      "keeper_actor_id": "",
+      "keeper_spawn_id": "",
+      "keeper_template_id": "blacksmith_harl",
+      "name": "Blacksmith Harl's Shop",
+      "open_conditions": {},
+      "plugin_data": {},
+      "pricing_profile_id": "blacksmith_pricing",
+      "room_ids": [],
+      "schedule_id": "",
+      "sell_messages": {},
+      "sell_policy_id": "standard_sell_policy",
+      "service_ids": [
+        "blacksmith_identify",
+        "blacksmith_repair"
+      ],
+      "shop_type": "merchant",
+      "stock_profile_id": "blacksmith_stock",
+      "tags": [
+        "phase7b"
+      ],
+      "version": 1
+    }
+  ]
+}

@@ -167,3 +167,7 @@ Canonical progression is now represented by `engine.progression.ProgressionServi
 ## Phase 7A reward collections
 
 World packages may now include `reward_definitions`, `loot_tables`, `treasure_groups`, `death_loot_profiles`, `corpse_decay_profiles`, `resource_node_profiles`, `currency_profiles`, `reward_message_profiles`, `reward_eligibility_profiles`, and `reward_delivery_profiles`. Omitted collections remain valid for backward compatibility.
+
+## Phase 7B Economy Integration
+
+Phase 7B adds the canonical `engine.economy.EconomyService` for SQLite-authoritative carried balances, immutable ledger entries, price quotes, transactions, shop stock, buyback records, identify/repair service payments, bank accounts, and currency conversion. Economy world data is authored in the dedicated currency, shop, stock, policy, pricing, service, repair, bank, restock, message, and eligibility collections. Reward, item, progression, Actor, command, package, Builder, and roadmap systems integrate by calling EconomyService APIs rather than directly mutating money, stock, item ownership, bank records, or service state. Crafting, trainers, quests, auctions, player trading, and autonomous AI economics remain explicitly deferred.

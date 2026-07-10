@@ -1,0 +1,21 @@
+{
+  "shop_sell_policies": [
+    {
+      "allowed_stock_tags": [],
+      "delivery_policy": "inventory",
+      "description": "Normal inventory delivery.",
+      "id": "standard_sell_policy",
+      "inventory_full_policy": "reject",
+      "maximum_quantity": 10,
+      "messages": {},
+      "name": "Standard Sell Policy",
+      "plugin_data": {},
+      "pricing_formula_id": "shop_buy_price_v1",
+      "restricted_actor_tags": [],
+      "tags": [
+        "phase7b"
+      ],
+      "version": 1
+    }
+  ]
+}

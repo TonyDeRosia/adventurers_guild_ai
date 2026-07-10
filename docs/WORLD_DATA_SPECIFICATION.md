@@ -325,3 +325,7 @@ Canonical progression is now represented by `engine.progression.ProgressionServi
 ## Phase 7A reward data
 
 Reward definitions live at `worlds/<world_id>/reward_definitions/reward_definitions.json`; loot tables at `worlds/<world_id>/loot_tables/loot_tables.json`; treasure groups at `worlds/<world_id>/treasure_groups/treasure_groups.json`; death-loot, corpse-decay, resource-node, and currency profiles follow the same collection directory pattern. Validation rejects unsafe ids, invalid reward types, invalid roll modes, invalid chance/quantity bounds, and loot table recursion cycles.
+
+## Phase 7B Economy Integration
+
+Phase 7B adds the canonical `engine.economy.EconomyService` for SQLite-authoritative carried balances, immutable ledger entries, price quotes, transactions, shop stock, buyback records, identify/repair service payments, bank accounts, and currency conversion. Economy world data is authored in the dedicated currency, shop, stock, policy, pricing, service, repair, bank, restock, message, and eligibility collections. Reward, item, progression, Actor, command, package, Builder, and roadmap systems integrate by calling EconomyService APIs rather than directly mutating money, stock, item ownership, bank records, or service state. Crafting, trainers, quests, auctions, player trading, and autonomous AI economics remain explicitly deferred.
