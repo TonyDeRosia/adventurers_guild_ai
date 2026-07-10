@@ -41,7 +41,7 @@ SUPPORTED_STATS = {
     "parry", "block", "dodge", "movement_speed", "cast_speed", "casting_speed",
     "threat", "carry_capacity", "carry_weight", "spell_power", "healing_power",
     "initiative", "mana_regeneration", "movement_regeneration", "defense_rating",
-    "hit_bonus", "damage_bonus", "reach", "range",
+    "hit_bonus", "damage_bonus", "reach", "range", "accuracy", "attack_power", "weapon_damage", "magic_defense", "critical_damage", "armor_penetration", "resistances", "attack_speed", "recovery_speed",
 }
 RESERVED_FORMULA_IDS = {"formula", "modifier", "engine", "registry", "trace"}
 

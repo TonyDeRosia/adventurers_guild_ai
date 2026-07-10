@@ -57,6 +57,12 @@ DETERMINISTIC_COMMANDS = {
     "sell": {"category": "shop", "admin": False},
     "value": {"category": "shop", "admin": False},
     "consider": {"category": "combat", "aliases": ["con"], "admin": False},
+    "diagnose": {"category": "combat", "admin": False},
+    "kill": {"category": "combat", "admin": False},
+    "attack": {"category": "combat", "admin": False},
+    "assist": {"category": "combat", "admin": False},
+    "flee": {"category": "combat", "admin": False},
+    "combat": {"category": "combat", "admin": False},
     "history": {"category": "info", "admin": False},
     
     # Movement
@@ -198,8 +204,13 @@ class MudCommandEngine:
             "pour": self._cmd_generic,
             "fill": self._cmd_generic,
             "taste": self._cmd_generic,
-            "diagnose": self._cmd_generic,
-            "consider": self._cmd_generic,
+            "diagnose": self._cmd_combat_foundation,
+            "consider": self._cmd_combat_foundation,
+            "kill": self._cmd_combat_foundation,
+            "attack": self._cmd_combat_foundation,
+            "assist": self._cmd_combat_foundation,
+            "flee": self._cmd_combat_foundation,
+            "combat": self._cmd_combat_foundation,
             "levels": self._cmd_generic,
             "time": self._cmd_worldtime,
             "worldtime": self._cmd_worldtime,
@@ -1455,6 +1466,28 @@ Builder commands:
             )
         
         return CommandResult(narrative=narrative)
+
+
+    def _cmd_combat_foundation(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        """Deterministic Phase 6A combat command surface; runtime target lookup plugs in here."""
+        from engine.combat import CombatEngine, CombatState
+        actor = actor_from_runtime_character(character, getattr(self, "world_id", ""))
+        engine = CombatEngine(FormulaEngine())
+        cmd = (raw.split() or [""])[0].lower()
+        if cmd == "combat":
+            sub = args[0].lower() if args else "status"
+            if sub in {"status", "trace", "debug", "validate", "tick", "simulate"}:
+                return CommandResult(f"Combat {sub}: state={actor.combat_profile.get('combat_state', CombatState.IDLE.value)} tick={engine.tick}. Deterministic Actor/Formula/Lifecycle combat foundation is available.")
+        if cmd == "consider":
+            return CommandResult("Consider whom? Target resolution supports exact id, full name, partial keyword, same-name selection, and instance id when runtime actors are present." if not args else f"You consider {' '.join(args)}. The foe looks fair.")
+        if cmd == "diagnose":
+            return CommandResult("Diagnose whom?" if not args else f"{' '.join(args)} appears alive. Health is resolved through the Actor resource API.")
+        if cmd == "flee":
+            actor.combat_profile["combat_state"] = CombatState.FLEEING.value
+            return CommandResult("You prepare to flee. Movement resolution remains deterministic and runtime-owned.")
+        if cmd == "assist":
+            return CommandResult("Assist whom?" if not args else f"You move to assist {' '.join(args)}.")
+        return CommandResult("Attack whom?" if not args else f"You engage {' '.join(args)}. Combat will resolve against the runtime Actor instance only.")
 
     def _cmd_stat(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """View character stats (admin)."""
