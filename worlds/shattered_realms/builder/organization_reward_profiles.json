@@ -1,0 +1,23 @@
+{
+  "organization_reward_profiles": [
+    {
+      "advancement_distribution": "individual",
+      "currency_distribution": "individual",
+      "description": "Rewards remain individual by default.",
+      "distance_policy": "participated",
+      "eligibility_policy": "individual",
+      "experience_distribution": "individual",
+      "id": "individual_rewards_default",
+      "item_distribution": "individual",
+      "minimum_contribution": 0,
+      "name": "Individual Rewards Default",
+      "plugin_data": {},
+      "rounding_policy": "floor_remainder_unallocated",
+      "tags": [
+        "phase8b"
+      ],
+      "unallocated_policy": "discard",
+      "version": 1
+    }
+  ]
+}

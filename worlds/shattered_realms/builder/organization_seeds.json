@@ -1,0 +1,62 @@
+{
+  "organization_seeds": [
+    {
+      "enabled": true,
+      "home_area_id": "",
+      "home_room_id": "",
+      "home_zone_id": "",
+      "id": "town_guard_seed",
+      "instance_name": "Town Guard",
+      "leader_actor_ref": "guard_captain_placeholder",
+      "member_refs": [
+        "guard_captain_placeholder"
+      ],
+      "organization_definition_id": "town_guard",
+      "plugin_data": {},
+      "relationship_seeds": [],
+      "role_assignments": {
+        "guard_captain_placeholder": "guard_captain"
+      },
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1
+    },
+    {
+      "enabled": true,
+      "id": "blacksmiths_circle_seed",
+      "instance_name": "Blacksmiths Circle",
+      "leader_actor_ref": "blacksmith_harl",
+      "member_refs": [
+        "blacksmith_harl"
+      ],
+      "organization_definition_id": "blacksmiths_circle",
+      "plugin_data": {},
+      "role_assignments": {
+        "blacksmith_harl": "guild_member"
+      },
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1
+    },
+    {
+      "enabled": true,
+      "id": "healers_order_seed",
+      "instance_name": "Healers Order",
+      "leader_actor_ref": "healer_sella",
+      "member_refs": [
+        "healer_sella"
+      ],
+      "organization_definition_id": "healers_order",
+      "plugin_data": {},
+      "role_assignments": {
+        "healer_sella": "guild_member"
+      },
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1
+    }
+  ]
+}

@@ -101,13 +101,13 @@ class ActorScoreRenderer:
     order = [
         "identity", "resources", "primary_attributes", "derived_attributes", "combat", "equipment",
         "conditions", "resistances", "affects", "spellup", "abilities", "skills", "spells", "cooldowns", "current_cast", "combat_loadout", "passive_abilities", "progression", "professions", "crafting", "recipes", "quests", "journal", "questhistory", "currencies", "banking", "transactions", "relationships",
-        "simulation", "behavior", "threat", "tactics", "diagnostics", "formulas", "raw",
+        "simulation", "party", "organizations", "guild", "clan", "memberships", "social", "behavior", "threat", "tactics", "diagnostics", "formulas", "raw",
     ]
     aliases = {
         "score": "all", "preview": "all", "actor": "all", "attrs": "primary_attributes", "attributes": "primary_attributes",
         "derived": "derived_attributes", "resists": "resistances", "saff": "affects", "spellups": "spellup",
         "worth": "currencies", "profession": "professions", "recipe": "recipes", "cast": "current_cast", "currency": "currencies", "money": "currencies", "bank": "banking", "banking": "banking", "transactions": "transactions", "builder": "diagnostics",
-        "questlog": "journal", "quest_history": "questhistory", "builder_diagnostics": "diagnostics", "ai": "simulation", "ai_diagnostics": "simulation", "behaviour": "behavior",
+        "questlog": "journal", "quest_history": "questhistory", "builder_diagnostics": "diagnostics", "ai": "simulation", "ai_diagnostics": "simulation", "behaviour": "behavior", "membership": "memberships",
     }
 
     def __init__(self, formula_registry: FormulaRegistry | None = None, *, ansi: bool = False):
@@ -166,6 +166,44 @@ class ActorScoreRenderer:
             rows.append(_line(f"{left:<36} {right}"))
         return rows
 
+
+
+    def _organization_summary(self, actor: Actor) -> dict[str, Any]:
+        return getattr(actor, "organization_summary", None) or (actor.plugin_data or {}).get("organization_summary", {}) or {}
+
+    def render_party(self, actor: Actor, admin: bool = False) -> str:
+        data = self._organization_summary(actor).get("party", {})
+        rows = [_line(f"Party: {_value(data.get('name'))}"), _line(f"Role: {_value(data.get('role'))}  Members: {_value(data.get('member_count', 0))}"), _line(f"Status: {_value(data.get('status', 'No active party'))}")]
+        if admin and data.get("organization_instance_id"):
+            rows.append(_line(f"Organization ID: {data.get('organization_instance_id')}"))
+        return self._section("SCORE PARTY", rows)
+
+    def render_organizations(self, actor: Actor, admin: bool = False) -> str:
+        orgs = self._organization_summary(actor).get("organizations", [])
+        rows = [_line(f"{o.get('name', o.get('organization_instance_id','Organization'))}: {o.get('role_id', o.get('role','member'))}") for o in orgs if isinstance(o, dict)]
+        if admin:
+            rows.append(_line("Phase 8B runtime IDs, memberships, invitations, applications, audit, combat, and quest traces are available through orgtrace."))
+        return self._section("SCORE ORGANIZATIONS", rows)
+
+    def render_guild(self, actor: Actor, admin: bool = False) -> str:
+        guild = self._organization_summary(actor).get("guild", {})
+        rows = [_line(f"Guild: {_value(guild.get('name'))}"), _line(f"Role: {_value(guild.get('role'))}  Members: {_value(guild.get('member_count', 0))}"), _line(f"Applications: {_value(guild.get('application_status', '--'))}")]
+        return self._section("SCORE GUILD", rows)
+
+    def render_clan(self, actor: Actor, admin: bool = False) -> str:
+        clan = self._organization_summary(actor).get("clan", {})
+        rows = [_line(f"Clan: {_value(clan.get('name'))}"), _line(f"Role: {_value(clan.get('role'))}  Members: {_value(clan.get('member_count', 0))}")]
+        return self._section("SCORE CLAN", rows)
+
+    def render_memberships(self, actor: Actor, admin: bool = False) -> str:
+        data = self._organization_summary(actor)
+        rows = [_line(f"Invitations: {_value(data.get('invitation_count', 0))}"), _line(f"Applications: {_value(data.get('application_count', 0))}"), _line(f"Primary title: {_value(data.get('primary_title', '--'))}")]
+        return self._section("SCORE MEMBERSHIPS", rows)
+
+    def render_social(self, actor: Actor, admin: bool = False) -> str:
+        data = self._organization_summary(actor)
+        rows = [_line(f"Party: {_value((data.get('party') or {}).get('name'))}"), _line(f"Guild: {_value((data.get('guild') or {}).get('name'))}"), _line(f"Clan: {_value((data.get('clan') or {}).get('name'))}")]
+        return self._section("SCORE SOCIAL", rows)
 
     def render_behavior(self, actor: Actor, admin: bool = False) -> str:
         cb = (actor.plugin_data or {}).get("combat_behavior", {})

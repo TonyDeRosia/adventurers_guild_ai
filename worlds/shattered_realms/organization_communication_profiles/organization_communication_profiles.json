@@ -1,0 +1,86 @@
+{
+  "organization_communication_profiles": [
+    {
+      "channels": [
+        {
+          "id": "party",
+          "permitted_roles": [
+            "party_leader",
+            "party_member"
+          ],
+          "type": "party"
+        }
+      ],
+      "description": "Party channel.",
+      "history_policy": "bounded",
+      "id": "party_communication",
+      "message_retention": 100,
+      "moderation_policy_placeholder": "none",
+      "name": "Party Communication",
+      "offline_delivery_placeholder": false,
+      "permissions": {},
+      "plugin_data": {},
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1
+    },
+    {
+      "channels": [
+        {
+          "id": "guild",
+          "permitted_roles": [
+            "guild_leader",
+            "guild_officer",
+            "guild_member",
+            "guild_recruit"
+          ],
+          "type": "guild"
+        },
+        {
+          "id": "officer",
+          "permitted_roles": [
+            "guild_leader",
+            "guild_officer"
+          ],
+          "type": "officer"
+        }
+      ],
+      "description": "Guild and officer channels.",
+      "history_policy": "bounded",
+      "id": "guild_communication",
+      "message_retention": 500,
+      "moderation_policy_placeholder": "none",
+      "name": "Guild Communication",
+      "offline_delivery_placeholder": false,
+      "permissions": {},
+      "plugin_data": {},
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1
+    },
+    {
+      "channels": [
+        {
+          "id": "guard",
+          "permitted_roles": [
+            "guard_captain",
+            "guard_member"
+          ],
+          "type": "subgroup"
+        }
+      ],
+      "description": "NPC guard channel metadata.",
+      "history_policy": "bounded",
+      "id": "guard_communication",
+      "message_retention": 100,
+      "name": "Guard Communication",
+      "plugin_data": {},
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1
+    }
+  ]
+}

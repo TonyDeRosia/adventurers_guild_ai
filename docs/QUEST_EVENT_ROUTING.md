@@ -16,3 +16,7 @@ Phase 8A adds the canonical authored quest and narrative-state foundation. Quest
 Builder: `builder on`, `questlist`, `queststat cellar_rat_problem`, `stagelist cellar_rat_problem`, `objectivelist cellar_rat_problem_kill`, `conversationlist`, `questvalidate cellar_rat_problem`, `questpreview cellar_rat_problem self`.
 
 Player: `talk tavern_keeper_jory`, `reply 1`, `accept cellar_rat_problem`, `quests`, `quest cellar_rat_problem`, kill configured rats, `turnin cellar_rat_problem`. Crafting: `accept first_craft`, `craft training_sword`, advance crafting time, `quests`. World state: `worldstateset world shattered_realms tutorial_complete true`.
+
+## Phase 8B Organization Integration
+
+Phase 8B adds the canonical `OrganizationService` for parties, guilds, clans, NPC organizations, roles, permissions, invitations, applications, shared quest context, group combat attribution, and organization audit history. These systems provide context only and call existing canonical services for combat, quests, rewards, economy, progression, crafting, and world state.

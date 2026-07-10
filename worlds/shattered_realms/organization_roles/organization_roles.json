@@ -1,0 +1,209 @@
+{
+  "organization_roles": [
+    {
+      "assignable_by_role_ids": [
+        "party_leader"
+      ],
+      "description": "Leads a temporary party.",
+      "id": "party_leader",
+      "inherits_from_role_ids": [
+        "party_member"
+      ],
+      "maximum_members": 1,
+      "name": "Party Leader",
+      "organization_definition_id": "starter_party",
+      "permissions": [
+        "invite",
+        "cancel_invite",
+        "remove_member",
+        "assign_role",
+        "transfer_leadership",
+        "disband",
+        "manage_chat",
+        "manage_shared_quests"
+      ],
+      "plugin_data": {},
+      "rank_order": 0,
+      "removable_by_role_ids": [
+        "party_leader"
+      ],
+      "role_type": "leader",
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1,
+      "visible": true
+    },
+    {
+      "assignable_by_role_ids": [
+        "party_leader"
+      ],
+      "description": "Temporary party member.",
+      "id": "party_member",
+      "inherits_from_role_ids": [],
+      "maximum_members": null,
+      "name": "Party Member",
+      "organization_definition_id": "starter_party",
+      "permissions": [
+        "manage_shared_quests"
+      ],
+      "plugin_data": {},
+      "rank_order": 10,
+      "removable_by_role_ids": [
+        "party_leader"
+      ],
+      "role_type": "member",
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1,
+      "visible": true
+    },
+    {
+      "description": "Persistent organization leader.",
+      "id": "guild_leader",
+      "inherits_from_role_ids": [
+        "guild_officer"
+      ],
+      "name": "Guild Leader",
+      "organization_definition_id": "adventurers_guild_placeholder",
+      "permissions": [
+        "invite",
+        "cancel_invite",
+        "approve_application",
+        "reject_application",
+        "remove_member",
+        "promote_member",
+        "demote_member",
+        "assign_role",
+        "edit_public_note",
+        "edit_officer_note",
+        "edit_organization_name",
+        "edit_organization_description",
+        "set_home",
+        "manage_subgroups",
+        "manage_chat",
+        "manage_shared_quests",
+        "manage_rewards_placeholder",
+        "manage_treasury_placeholder",
+        "view_officer_notes",
+        "view_audit",
+        "transfer_leadership",
+        "disband"
+      ],
+      "plugin_data": {},
+      "rank_order": 0,
+      "role_type": "leader",
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1,
+      "visible": true
+    },
+    {
+      "description": "Officer rank.",
+      "id": "guild_officer",
+      "inherits_from_role_ids": [
+        "guild_member"
+      ],
+      "name": "Guild Officer",
+      "organization_definition_id": "adventurers_guild_placeholder",
+      "permissions": [
+        "invite",
+        "approve_application",
+        "reject_application",
+        "remove_member",
+        "promote_member",
+        "demote_member",
+        "assign_role",
+        "edit_officer_note",
+        "manage_chat",
+        "view_officer_notes",
+        "view_audit"
+      ],
+      "plugin_data": {},
+      "rank_order": 10,
+      "role_type": "officer",
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1,
+      "visible": true
+    },
+    {
+      "description": "Full member.",
+      "id": "guild_member",
+      "inherits_from_role_ids": [
+        "guild_recruit"
+      ],
+      "name": "Guild Member",
+      "organization_definition_id": "adventurers_guild_placeholder",
+      "permissions": [
+        "edit_public_note"
+      ],
+      "plugin_data": {},
+      "rank_order": 20,
+      "role_type": "member",
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1,
+      "visible": true
+    },
+    {
+      "description": "Recruit.",
+      "id": "guild_recruit",
+      "inherits_from_role_ids": [],
+      "name": "Guild Recruit",
+      "organization_definition_id": "adventurers_guild_placeholder",
+      "permissions": [],
+      "plugin_data": {},
+      "rank_order": 30,
+      "role_type": "recruit",
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1,
+      "visible": true
+    },
+    {
+      "description": "Guard leader.",
+      "id": "guard_captain",
+      "inherits_from_role_ids": [
+        "guard_member"
+      ],
+      "name": "Guard Captain",
+      "organization_definition_id": "town_guard",
+      "permissions": [
+        "invite",
+        "remove_member",
+        "assign_role",
+        "view_audit"
+      ],
+      "plugin_data": {},
+      "rank_order": 0,
+      "role_type": "leader",
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1,
+      "visible": true
+    },
+    {
+      "description": "Guard member.",
+      "id": "guard_member",
+      "inherits_from_role_ids": [],
+      "name": "Guard Member",
+      "organization_definition_id": "town_guard",
+      "permissions": [],
+      "plugin_data": {},
+      "rank_order": 10,
+      "role_type": "member",
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1,
+      "visible": true
+    }
+  ]
+}

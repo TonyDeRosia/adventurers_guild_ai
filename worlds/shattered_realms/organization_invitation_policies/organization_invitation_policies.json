@@ -1,0 +1,24 @@
+{
+  "organization_invitation_policies": [
+    {
+      "description": "Invitation only.",
+      "id": "party_invitation_default",
+      "name": "Party Invitation Default",
+      "plugin_data": {},
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1
+    },
+    {
+      "description": "Guild officer invitations.",
+      "id": "guild_invitation_default",
+      "name": "Guild Invitation Default",
+      "plugin_data": {},
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1
+    }
+  ]
+}

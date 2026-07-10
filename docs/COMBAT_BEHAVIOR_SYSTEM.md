@@ -16,3 +16,7 @@ Canonical progression is now represented by `engine.progression.ProgressionServi
 ## Phase 7A reward boundary
 
 Rewards are issued through `engine.rewards.RewardService` and persisted as reward packets. This document's subsystem remains the authority for its own domain; reward delivery calls canonical APIs rather than editing subsystem tables directly.
+
+## Phase 8B Organization Integration
+
+Phase 8B adds the canonical `OrganizationService` for parties, guilds, clans, NPC organizations, roles, permissions, invitations, applications, shared quest context, group combat attribution, and organization audit history. These systems provide context only and call existing canonical services for combat, quests, rewards, economy, progression, crafting, and world state.

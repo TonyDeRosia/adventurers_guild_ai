@@ -1,0 +1,169 @@
+{
+  "organization_definitions": [
+    {
+      "application_policy_id": "none",
+      "communication_profile_id": "party_communication",
+      "default_role_id": "party_member",
+      "description": "Temporary invitation-only party foundation.",
+      "enabled": true,
+      "group_combat_profile_id": "party_combat_default",
+      "guest_role_id": "",
+      "home_area_id": "",
+      "home_room_id": "",
+      "home_zone_id": "",
+      "id": "starter_party",
+      "invitation_policy_id": "party_invitation_default",
+      "leader_role_id": "party_leader",
+      "leadership_policy_id": "single_transferable",
+      "maximum_members": 5,
+      "membership_policy_id": "party_membership_default",
+      "minimum_members": 1,
+      "name": "Adventuring Party",
+      "npc_created": false,
+      "officer_role_ids": [],
+      "organization_type": "party",
+      "permission_profile_id": "party_permissions",
+      "persistent": false,
+      "player_created": true,
+      "plugin_data": {},
+      "relationship_profile_id": "neutral_default",
+      "schedule_id": "",
+      "shared_quest_profile_id": "party_shared_quests",
+      "shared_reward_profile_id": "individual_rewards_default",
+      "short_name": "Party",
+      "tags": [
+        "phase8b"
+      ],
+      "treasury_profile_id": "none",
+      "version": 1,
+      "world_state_scope_id": "organization"
+    },
+    {
+      "application_policy_id": "none",
+      "communication_profile_id": "guard_communication",
+      "default_role_id": "guard_member",
+      "description": "Persistent NPC guard organization.",
+      "enabled": true,
+      "group_combat_profile_id": "party_combat_default",
+      "id": "town_guard",
+      "invitation_policy_id": "admin_only",
+      "leader_role_id": "guard_captain",
+      "leadership_policy_id": "npc_fixed",
+      "maximum_members": null,
+      "membership_policy_id": "npc_membership_default",
+      "minimum_members": 0,
+      "name": "Town Guard",
+      "npc_created": true,
+      "officer_role_ids": [
+        "guard_captain"
+      ],
+      "organization_type": "guard_unit",
+      "permission_profile_id": "guard_permissions",
+      "persistent": true,
+      "player_created": false,
+      "plugin_data": {},
+      "relationship_profile_id": "neutral_default",
+      "shared_quest_profile_id": "none",
+      "shared_reward_profile_id": "individual_rewards_default",
+      "short_name": "Guard",
+      "tags": [
+        "phase8b",
+        "npc"
+      ],
+      "version": 1
+    },
+    {
+      "communication_profile_id": "guild_communication",
+      "default_role_id": "guild_member",
+      "description": "Persistent profession organization foundation.",
+      "enabled": true,
+      "group_combat_profile_id": "noncombat_default",
+      "id": "blacksmiths_circle",
+      "leader_role_id": "guild_leader",
+      "maximum_members": null,
+      "membership_policy_id": "npc_membership_default",
+      "minimum_members": 0,
+      "name": "Blacksmiths Circle",
+      "npc_created": true,
+      "officer_role_ids": [
+        "guild_officer"
+      ],
+      "organization_type": "profession_group",
+      "permission_profile_id": "guild_permissions",
+      "persistent": true,
+      "player_created": false,
+      "plugin_data": {},
+      "shared_quest_profile_id": "none",
+      "shared_reward_profile_id": "individual_rewards_default",
+      "short_name": "Smiths",
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1
+    },
+    {
+      "communication_profile_id": "guild_communication",
+      "default_role_id": "guild_member",
+      "description": "Persistent healer organization foundation.",
+      "enabled": true,
+      "group_combat_profile_id": "noncombat_default",
+      "id": "healers_order",
+      "leader_role_id": "guild_leader",
+      "maximum_members": null,
+      "membership_policy_id": "npc_membership_default",
+      "minimum_members": 0,
+      "name": "Healers Order",
+      "npc_created": true,
+      "officer_role_ids": [
+        "guild_officer"
+      ],
+      "organization_type": "religious_order",
+      "permission_profile_id": "guild_permissions",
+      "persistent": true,
+      "player_created": false,
+      "plugin_data": {},
+      "shared_quest_profile_id": "none",
+      "shared_reward_profile_id": "individual_rewards_default",
+      "short_name": "Healers",
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1
+    },
+    {
+      "application_policy_id": "guild_application_default",
+      "communication_profile_id": "guild_communication",
+      "default_role_id": "guild_recruit",
+      "description": "Valid persistent guild foundation placeholder.",
+      "enabled": true,
+      "group_combat_profile_id": "noncombat_default",
+      "id": "adventurers_guild_placeholder",
+      "invitation_policy_id": "guild_invitation_default",
+      "leader_role_id": "guild_leader",
+      "leadership_policy_id": "single_transferable",
+      "maximum_members": null,
+      "membership_policy_id": "guild_membership_default",
+      "minimum_members": 1,
+      "name": "Adventurers Guild",
+      "npc_created": false,
+      "officer_role_ids": [
+        "guild_officer"
+      ],
+      "organization_type": "guild",
+      "permission_profile_id": "guild_permissions",
+      "persistent": true,
+      "player_created": false,
+      "plugin_data": {},
+      "relationship_profile_id": "neutral_default",
+      "shared_quest_profile_id": "guild_shared_quests_placeholder",
+      "shared_reward_profile_id": "individual_rewards_default",
+      "short_name": "Guild",
+      "tags": [
+        "phase8b",
+        "placeholder"
+      ],
+      "treasury_profile_id": "treasury_placeholder",
+      "version": 1
+    }
+  ]
+}

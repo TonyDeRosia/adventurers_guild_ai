@@ -1,0 +1,46 @@
+{
+  "organization_shared_quest_profiles": [
+    {
+      "description": "Party offer sharing and same-room kill credit.",
+      "distance_policy": "same_room",
+      "id": "party_shared_quests",
+      "late_join_policy": "future_events_only",
+      "leave_policy": "no_future_credit",
+      "membership_snapshot_policy": "event_time",
+      "name": "Party Shared Quests",
+      "objective_types_allowed": [
+        "kill_actor",
+        "kill_template",
+        "kill_tag"
+      ],
+      "offer_sharing_policy": "members_can_share",
+      "plugin_data": {},
+      "progress_sharing_policy": "shared_event_credit",
+      "reward_policy": "individual_rewards",
+      "tags": [
+        "phase8b"
+      ],
+      "turn_in_policy": "individual",
+      "version": 1
+    },
+    {
+      "description": "Placeholder only.",
+      "distance_policy": "participated",
+      "id": "guild_shared_quests_placeholder",
+      "late_join_policy": "none",
+      "leave_policy": "individual",
+      "membership_snapshot_policy": "none",
+      "name": "Guild Shared Quests Placeholder",
+      "objective_types_allowed": [],
+      "offer_sharing_policy": "none",
+      "plugin_data": {},
+      "progress_sharing_policy": "individual",
+      "reward_policy": "individual_rewards",
+      "tags": [
+        "phase8b"
+      ],
+      "turn_in_policy": "individual",
+      "version": 1
+    }
+  ]
+}

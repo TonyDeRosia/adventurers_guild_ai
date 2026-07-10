@@ -7,3 +7,7 @@ The behavior layer never calculates damage, directly changes Health, applies eff
 Implemented foundations include combat behavior profiles, hostility traces, threat ownership by stable Actor IDs, action candidates with invalid reasons, basic attack fallback, assist/protect/flee/surrender/call-for-help/pursuit policy fields, pet modes, Builder diagnostics commands, and conservative Starter Guildlands pilot profiles.
 
 Manual acceptance starts with: `builder on`, `behaviorlist`, `behaviorstat civilian_safe`, `behaviorstat town_guard_defender`, `actorbehavior <actor>`, `threatlist <actor>`, `combatcandidates <actor>`, and `combatdecision <actor>`.
+
+## Phase 8B Organization Integration
+
+Phase 8B adds the canonical `OrganizationService` for parties, guilds, clans, NPC organizations, roles, permissions, invitations, applications, shared quest context, group combat attribution, and organization audit history. These systems provide context only and call existing canonical services for combat, quests, rewards, economy, progression, crafting, and world state.

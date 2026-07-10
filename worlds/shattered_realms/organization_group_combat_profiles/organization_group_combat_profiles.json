@@ -1,0 +1,39 @@
+{
+  "organization_group_combat_profiles": [
+    {
+      "assist_party_members": true,
+      "auto_assist": false,
+      "contribution_tracking": "enabled",
+      "dead_member_policy": "ineligible",
+      "description": "Same-room party contribution and protected friendly fire.",
+      "distance_policy": "same_room",
+      "eligibility_policy": "active_membership",
+      "friendly_fire_policy": "forbidden",
+      "id": "party_combat_default",
+      "late_join_policy": "snapshot_at_event",
+      "name": "Party Combat Default",
+      "pet_owner_attribution": true,
+      "plugin_data": {},
+      "protect_party_members": true,
+      "share_threat_placeholder": false,
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1
+    },
+    {
+      "contribution_tracking": "disabled",
+      "description": "No automatic combat behavior.",
+      "distance_policy": "participated",
+      "friendly_fire_policy": "forbidden",
+      "id": "noncombat_default",
+      "name": "Noncombat Default",
+      "pet_owner_attribution": true,
+      "plugin_data": {},
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1
+    }
+  ]
+}

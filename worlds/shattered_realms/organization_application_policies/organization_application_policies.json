@@ -1,0 +1,24 @@
+{
+  "organization_application_policies": [
+    {
+      "description": "Applications require officer approval.",
+      "id": "guild_application_default",
+      "name": "Guild Applications Default",
+      "plugin_data": {},
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1
+    },
+    {
+      "description": "Applications disabled.",
+      "id": "none",
+      "name": "No Applications",
+      "plugin_data": {},
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1
+    }
+  ]
+}

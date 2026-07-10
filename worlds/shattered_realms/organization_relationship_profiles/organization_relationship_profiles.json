@@ -1,0 +1,15 @@
+{
+  "organization_relationship_profiles": [
+    {
+      "default_relationship": "neutral",
+      "description": "No automatic hostility.",
+      "id": "neutral_default",
+      "name": "Neutral Default",
+      "plugin_data": {},
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1
+    }
+  ]
+}

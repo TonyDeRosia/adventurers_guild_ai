@@ -1,0 +1,62 @@
+{
+  "organization_membership_policies": [
+    {
+      "allow_cross_faction_placeholder": false,
+      "allow_multiple_guilds": false,
+      "allow_multiple_parties": false,
+      "allow_npc_members": false,
+      "allow_pet_members": false,
+      "allow_player_members": true,
+      "automatic_removal_conditions": [],
+      "description": "One active party per Actor, five members maximum.",
+      "id": "party_membership_default",
+      "inactive_timeout": null,
+      "maximum_level": null,
+      "maximum_members": 5,
+      "maximum_organizations_per_actor": 1,
+      "maximum_same_type_memberships": 1,
+      "minimum_level": null,
+      "name": "Party Membership Default",
+      "plugin_data": {},
+      "required_class_ids": [],
+      "required_profession_ids": [],
+      "required_quest_ids": [],
+      "required_race_ids": [],
+      "required_species_ids": [],
+      "required_world_state_conditions": [],
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1
+    },
+    {
+      "allow_multiple_guilds": false,
+      "allow_multiple_parties": false,
+      "allow_npc_members": true,
+      "allow_player_members": true,
+      "description": "One active guild per Actor by default.",
+      "id": "guild_membership_default",
+      "maximum_same_type_memberships": 1,
+      "name": "Guild Membership Default",
+      "plugin_data": {},
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1
+    },
+    {
+      "allow_multiple_guilds": true,
+      "allow_multiple_parties": false,
+      "allow_npc_members": true,
+      "allow_player_members": false,
+      "description": "Static NPC organization membership.",
+      "id": "npc_membership_default",
+      "name": "NPC Membership Default",
+      "plugin_data": {},
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1
+    }
+  ]
+}

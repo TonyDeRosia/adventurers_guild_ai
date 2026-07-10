@@ -1,0 +1,42 @@
+{
+  "organization_leadership_policies": [
+    {
+      "allow_demote": true,
+      "allow_resignation": false,
+      "allow_transfer": true,
+      "description": "One leader with manual transfer.",
+      "disband_if_no_leader": true,
+      "id": "single_transferable",
+      "inactivity_policy": "none",
+      "leadership_mode": "single",
+      "maximum_leaders": 1,
+      "minimum_leaders": 1,
+      "name": "Single Transferable Leader",
+      "plugin_data": {},
+      "succession_policy": "manual",
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1
+    },
+    {
+      "allow_demote": false,
+      "allow_resignation": false,
+      "allow_transfer": false,
+      "description": "Fixed NPC leadership.",
+      "disband_if_no_leader": false,
+      "id": "npc_fixed",
+      "inactivity_policy": "none",
+      "leadership_mode": "npc_fixed",
+      "maximum_leaders": 1,
+      "minimum_leaders": 0,
+      "name": "NPC Fixed Leadership",
+      "plugin_data": {},
+      "succession_policy": "manual",
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1
+    }
+  ]
+}

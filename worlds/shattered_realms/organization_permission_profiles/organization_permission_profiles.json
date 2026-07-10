@@ -1,0 +1,51 @@
+{
+  "organization_permission_profiles": [
+    {
+      "description": "Leader-driven party permissions.",
+      "id": "party_permissions",
+      "name": "Party Permissions",
+      "permissions": {
+        "party_leader": [
+          "invite",
+          "cancel_invite",
+          "remove_member",
+          "assign_role",
+          "transfer_leadership",
+          "disband",
+          "manage_chat",
+          "manage_shared_quests"
+        ],
+        "party_member": [
+          "manage_shared_quests"
+        ]
+      },
+      "plugin_data": {},
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1
+    },
+    {
+      "description": "Guild leader/officer permissions.",
+      "id": "guild_permissions",
+      "name": "Guild Permissions",
+      "permissions": {},
+      "plugin_data": {},
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1
+    },
+    {
+      "description": "Guard permissions.",
+      "id": "guard_permissions",
+      "name": "Guard Permissions",
+      "permissions": {},
+      "plugin_data": {},
+      "tags": [
+        "phase8b"
+      ],
+      "version": 1
+    }
+  ]
+}
