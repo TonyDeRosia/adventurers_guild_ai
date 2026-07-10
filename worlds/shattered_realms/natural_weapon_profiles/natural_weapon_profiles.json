@@ -1,0 +1,5 @@
+[
+ {"id":"rat_bite","name":"Rat Bite","body_profiles":["rat"],"weapon_class":"natural","attack_profile":"bite","damage_profile":"rat_bite","critical_profile":"bleeding","slot":"mouth","occupies_slots":[]},
+ {"id":"wolf_bite","name":"Wolf Bite","body_profiles":["wolf"],"weapon_class":"natural","attack_profile":"bite","damage_profile":"wolf_bite","critical_profile":"bleeding","slot":"mouth","occupies_slots":[]},
+ {"id":"training_dummy_punch","name":"Training Dummy Attack","body_profiles":["training_dummy"],"weapon_class":"natural","attack_profile":"punch","damage_profile":"dummy_punch","critical_profile":"normal","slot":"arm","occupies_slots":[]}
+]

@@ -1,0 +1,6 @@
+[
+ {"id":"normal","name":"Normal","multiplier":2.0,"style":"normal","future_decapitation":"placeholder","future_limb_damage":"placeholder"},
+ {"id":"precise","name":"Precise","multiplier":2.0,"style":"precise"},
+ {"id":"crushing","name":"Crushing","multiplier":2.0,"style":"crushing"},
+ {"id":"bleeding","name":"Bleeding","multiplier":2.0,"style":"bleeding","bleed":"placeholder"}
+]

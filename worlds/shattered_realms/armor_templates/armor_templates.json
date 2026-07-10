@@ -1,0 +1,5 @@
+[
+ {"id":"leather_armor","name":"Leather Armor","armor_class":"leather","armor_value":3,"coverage":["torso"],"material":"leather","weight":8,"occupies_slots":["body"],"resistances":{"slash":1},"modifiers":[],"durability":{"future":"placeholder"},"repair":{"future":"placeholder"},"enchantments":{"future":"placeholder"}},
+ {"id":"training_shield","name":"Training Shield","equipment_type":"shield","armor_class":"shield","armor_value":1,"coverage":["off_hand"],"material":"wood","weight":5,"occupies_slots":["off_hand"],"block_modifiers":{"block":5},"armor_modifiers":{"armor":1},"future_bash":"placeholder","future_magical_shields":"placeholder","resistances":{},"modifiers":[]},
+ {"id":"traveler_clothes","name":"Traveler Clothes","armor_class":"cloth","armor_value":0,"coverage":["body"],"material":"cloth","weight":2,"occupies_slots":["body"],"resistances":{},"modifiers":[]}
+]

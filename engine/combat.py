@@ -13,6 +13,7 @@ from typing import Any
 
 from engine.actors import Actor
 from engine.formulas import FormulaEngine
+from engine.combat_equipment import CombatContentRegistry
 from engine.phase5f import ActorLifecycleManager, BodyProfileRegistry
 
 
@@ -88,10 +89,10 @@ def modify_resource(actor: Actor, resource: str, delta: int, *, source: str = "c
 
 
 class CombatEngine:
-    def __init__(self, formula_engine: FormulaEngine | None = None, *, seed: str = "smartmud", lifecycle: ActorLifecycleManager | None = None, persist_history: bool = False) -> None:
+    def __init__(self, formula_engine: FormulaEngine | None = None, *, seed: str = "smartmud", lifecycle: ActorLifecycleManager | None = None, persist_history: bool = False, content: CombatContentRegistry | None = None) -> None:
         self.formula_engine = formula_engine or FormulaEngine(); self.roller = DeterministicRoller(seed); self.lifecycle = lifecycle
         self.persist_history = persist_history; self.history: list[DamageEvent] = []; self.states: dict[str, CombatState] = {}; self.tick = 0; self.cooldowns: dict[str, int] = {}
-        self.body_profiles = BodyProfileRegistry(); self.damage_types = DamageTypeRegistry()
+        self.body_profiles = BodyProfileRegistry(); self.damage_types = DamageTypeRegistry(); self.content = content or CombatContentRegistry()
 
     def advance(self, ticks: int = 1) -> int:
         self.tick += max(0, int(ticks)); return self.tick
@@ -109,7 +110,8 @@ class CombatEngine:
             self.set_state(attacker, CombatState.RECOVERING); return CombatResult(False, None, self.states[attacker.actor_id].value, self.states[defender.actor_id].value, self._messages(attacker, defender, "miss", None), trace)
         crit_chance = self._stat(attacker,"critical_chance",0,trace); crit = self.roller.roll_percent(attacker.actor_id, defender.actor_id, self.tick, "crit") <= crit_chance
         power = self._stat(attacker,"attack_power",0,trace); base = max(0, attack.base_damage + power); base = int(base * attack.critical_multiplier) if crit else base
-        armor = 0 if attack.damage_type == "true" else self._stat(defender,"armor",0,trace); resist = 0 if attack.damage_type == "true" else _num((defender.resistance_profile or {}).get(attack.damage_type), 0)
+        equipment_armor = self.content.armor_value((defender.equipment_profile or {}).get("equipped") or defender.equipment_profile or {})
+        armor = 0 if attack.damage_type == "true" else self._stat(defender,"armor",equipment_armor,trace); resist = 0 if attack.damage_type == "true" else _num((defender.resistance_profile or {}).get(attack.damage_type), 0)
         mitigation = max(0, armor + resist); final = max(0, base - mitigation); trace.append({"step":"resolve_damage_and_mitigation","base":base,"armor":armor,"resistance":resist,"final":final})
         resource_trace = apply_damage(defender, final, metadata={"attacker_id":attacker.actor_id}); trace.append({"step":"apply_resource_changes", **resource_trace})
         event = DamageEvent(attacker.actor_id, defender.actor_id, attack.metadata.get("weapon", {}), asdict(attack), attack.damage_type, base, crit, mitigation, final, self.tick)
@@ -125,9 +127,14 @@ class CombatEngine:
         r = actor.get_derived_value(stat, self.formula_engine, base_value=base); trace.append({"step":"resolve_derived_stat","actor_id":actor.actor_id,"stat":stat,"formula":r.formula_name,"value":r.final_value,"trace":r.calculation_trace}); return _num(r.final_value, base)
 
     def attack_profile(self, actor: Actor) -> AttackProfile:
-        eq = actor.equipment_profile or {}; weapon = eq.get("weapon") or eq.get("main_hand") or (eq.get("equipped") or {}).get("main_hand")
+        eq = actor.equipment_profile or {}; equipped = eq.get("equipped") or eq
+        weapon = eq.get("weapon") or eq.get("main_hand") or equipped.get("main_hand") or equipped.get("primary_weapon")
         if isinstance(weapon, dict):
-            prof = dict(weapon.get("attack_profile") or weapon); return AttackProfile(id=str(prof.get("id", weapon.get("id", "weapon"))), name=str(prof.get("name", weapon.get("name", "weapon"))), damage_type=str(prof.get("damage_type", (prof.get("damage_types") or ["physical"])[0])), base_damage=_num(prof.get("base_damage", prof.get("damage", 1)),1), speed=max(1,_num(prof.get("speed",1),1)), reach=_num(prof.get("reach",1),1), source="weapon", metadata={"weapon":weapon})
+            data = self.content.weapon_attack_data(weapon) if self.content.weapon_templates or weapon.get("damage_profile") else dict(weapon.get("attack_profile") or weapon)
+            return AttackProfile(id=str(data.get("id", weapon.get("id", "weapon"))), name=str(data.get("name", weapon.get("name", "weapon"))), damage_type=str(data.get("damage_type", (data.get("damage_types") or ["physical"])[0])), base_damage=_num(data.get("base_damage", data.get("damage", 1)),1), speed=max(1,_num(data.get("speed", data.get("attack_speed", 1)),1)), reach=_num(data.get("reach",1),1), critical_multiplier=float(data.get("critical_multiplier", 2.0)), source="weapon", metadata={"weapon":data.get("weapon", weapon), "attack_profile":data.get("attack_profile_record", {}), "damage_profile":data.get("damage_profile_record", {}), "critical_profile":data.get("critical_profile_record", {})})
+        natural_data = self.content.natural_attack_data(actor)
+        if natural_data:
+            return AttackProfile(id=str(natural_data.get("id","natural")), name=str(natural_data.get("name", "natural attack")), damage_type=str(natural_data.get("damage_type","physical")), base_damage=_num(natural_data.get("base_damage",1),1), speed=max(1,_num(natural_data.get("speed",1),1)), reach=_num(natural_data.get("reach",1),1), critical_multiplier=float(natural_data.get("critical_multiplier", 2.0)), source="natural", metadata={"weapon": natural_data.get("weapon", {}), "body_profile": self.body_profiles.get(actor.body_profile_id).id, "attack_profile": natural_data.get("attack_profile_record", {}), "damage_profile": natural_data.get("damage_profile_record", {}), "critical_profile": natural_data.get("critical_profile_record", {})})
         natural = (actor.combat_profile or {}).get("natural_weapons") or []
         if natural:
             n = natural[0]; return AttackProfile(id=str(n.get("id","natural")), name=str(n.get("name", n.get("slot", "natural attack"))), damage_type=str(n.get("damage_type","physical")), base_damage=_num(n.get("base_damage",1),1), speed=max(1,_num(n.get("speed",1),1)), reach=_num(n.get("reach",1),1), source="natural", metadata={"body_profile": self.body_profiles.get(actor.body_profile_id).id, "anatomy": n.get("slot")})
