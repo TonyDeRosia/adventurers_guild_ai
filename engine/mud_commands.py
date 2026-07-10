@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Optional, Callable
+import json
 import re
 from engine.mud_displays import semantic
 from engine.actors import actor_from_runtime_character
+from engine.formulas import FormulaEngine
 from engine.score_renderer import ActorScoreRenderer
 from engine.command_registry import CommandRegistry
 from smart_mud.builder import BuilderWorkspace
@@ -255,6 +257,9 @@ class MudCommandEngine:
             "wizhelp": self._cmd_wizhelp,
             "goto": self._cmd_goto,
             "stat": self._cmd_stat,
+            "formula": self._cmd_formula_diag,
+            "modifier": self._cmd_modifier_diag,
+            "actor": self._cmd_actor_diag,
         }
         for _name in " rsave redit rstat rcreate rset rdesc rname rexits rfeature rdelete exedit excreate exset exdelete fedit fcreate fset fdesc fdelete oedit ocreate oset odesc odelete ostat medit mcreate mset mdesc mdelete mstat spawnedit spawncreate spawnset spawndelete spawnstat zstat astat wstat btarget rtarget target asave bsave wsave".split():
             if _name:
@@ -270,6 +275,50 @@ class MudCommandEngine:
         for e in ents:
             if q in {str(e.get('instance_id','')).lower(), str(e.get('template_id','')).lower()} or q in str(e.get('name','')).lower(): return e
         return None
+
+
+    def _formula_engine(self) -> FormulaEngine:
+        if not hasattr(self, "_phase5d_formula_engine"):
+            self._phase5d_formula_engine = FormulaEngine()
+        return self._phase5d_formula_engine
+
+    def _cmd_formula_diag(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if self._effective_role(character) not in {"builder", "admin", "owner"}:
+            return CommandResult("You do not have permission for that command.", ok=False)
+        engine = self._formula_engine(); action = args[0].lower() if args else "list"
+        if action == "list":
+            ids = [m["id"] for m in engine.formulas.metadata()]
+            return CommandResult("Formula Registry\n" + "\n".join(ids))
+        if action == "show" and len(args) >= 2:
+            f = engine.formulas.get(args[1]); return CommandResult(json.dumps(f.__dict__ if f else {"missing": args[1]}, indent=2, sort_keys=True), ok=bool(f))
+        if action == "trace" and len(args) >= 2:
+            actor = actor_from_runtime_character(character, self.builder.world_id(character)); res = actor.get_derived_value(args[1], engine)
+            return CommandResult(json.dumps(res.__dict__, default=str, indent=2, sort_keys=True))
+        if action in {"validate", "debug"}:
+            v = engine.formulas.validate(); return CommandResult("Formula validation " + ("passed" if v.ok else "failed") + "\nErrors:\n" + ("\n".join(v.errors) or "- none") + "\nWarnings:\n" + ("\n".join(v.warnings) or "- none"), ok=v.ok)
+        return CommandResult("Usage: formula <list|show|trace|validate|debug> [formula_or_stat]", ok=False)
+
+    def _cmd_modifier_diag(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if self._effective_role(character) not in {"builder", "admin", "owner"}:
+            return CommandResult("You do not have permission for that command.", ok=False)
+        engine = self._formula_engine(); action = args[0].lower() if args else "list"
+        if action == "list":
+            return CommandResult("Modifier Registry\n" + ("\n".join(sorted(engine.modifiers.modifiers)) or "- none"))
+        if action in {"trace", "debug"}:
+            stat = args[1] if len(args) > 1 else "attack_rating"
+            mods = [m.__dict__ for m in engine.modifiers.stacked_for_stat(stat)]
+            return CommandResult(json.dumps({"stat": stat, "modifiers": mods}, indent=2, sort_keys=True))
+        return CommandResult("Usage: modifier <list|trace|debug> [stat]", ok=False)
+
+    def _cmd_actor_diag(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if self._effective_role(character) not in {"builder", "admin", "owner"}:
+            return CommandResult("You do not have permission for that command.", ok=False)
+        if not args or args[0].lower() not in {"formulas", "modifiers"}:
+            return CommandResult("Usage: actor <formulas|modifiers>", ok=False)
+        actor = actor_from_runtime_character(character, self.builder.world_id(character))
+        if args[0].lower() == "formulas":
+            return CommandResult("Actor formulas\n" + "\n".join(f"{k}: {v.formula_name}" for k, v in sorted(actor.derived_statistics_cache.items())))
+        return self._cmd_modifier_diag(character, ["list"], raw)
 
     def _cmd_worldtime(self, character: Any, args: list[str], raw: str) -> CommandResult:
         rt=getattr(self,'runtime',None); wid=getattr(rt,'active_world_id','') if rt else self.builder.world_id(character)

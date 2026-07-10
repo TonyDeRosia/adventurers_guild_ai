@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from typing import Any
+from engine.formulas import FormulaEngine, FormulaResult
 
 
 PRIMARY_ATTRIBUTE_DEFAULTS: dict[str, int] = {
@@ -160,6 +161,16 @@ class Actor:
             if hasattr(actor, key):
                 setattr(actor, key, value)
         return actor
+
+    def get_derived_value(self, stat: str, engine: FormulaEngine | None = None, base_value: Any = 0, variables: dict[str, Any] | None = None) -> FormulaResult:
+        """Resolve a derived statistic exclusively through the Formula Engine."""
+        return (engine or FormulaEngine()).calculate(self, stat, base_value=base_value, variables=variables)
+
+    def invalidate_derived_statistics(self) -> None:
+        """Compatibility hook: derived values are not permanently cached in Phase 5D."""
+        for stat in self.derived_statistics_cache.values():
+            stat.value = None
+            stat.status = "invalidated"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
