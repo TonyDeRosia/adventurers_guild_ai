@@ -1,0 +1,61 @@
+{
+  "training_cost_profiles": {
+    "cost_attribute_point_1": {
+      "attribute_points": 1,
+      "currency_costs": {},
+      "id": "cost_attribute_point_1",
+      "item_costs": [],
+      "name": "One attribute point",
+      "plugin_data": {},
+      "practice_sessions": 0,
+      "progression_resource_costs": {},
+      "skill_points": 0,
+      "tags": [],
+      "training_sessions": 0,
+      "version": 1
+    },
+    "cost_free_explicit": {
+      "attribute_points": 0,
+      "currency_costs": {},
+      "free_explicit": true,
+      "id": "cost_free_explicit",
+      "item_costs": [],
+      "name": "Explicitly free",
+      "plugin_data": {},
+      "practice_sessions": 0,
+      "progression_resource_costs": {},
+      "skill_points": 0,
+      "tags": [],
+      "training_sessions": 0,
+      "version": 1
+    },
+    "cost_practice_1": {
+      "attribute_points": 0,
+      "currency_costs": {},
+      "id": "cost_practice_1",
+      "item_costs": [],
+      "name": "One practice",
+      "plugin_data": {},
+      "practice_sessions": 1,
+      "progression_resource_costs": {},
+      "skill_points": 0,
+      "tags": [],
+      "training_sessions": 0,
+      "version": 1
+    },
+    "cost_training_1": {
+      "attribute_points": 0,
+      "currency_costs": {},
+      "id": "cost_training_1",
+      "item_costs": [],
+      "name": "One training",
+      "plugin_data": {},
+      "practice_sessions": 0,
+      "progression_resource_costs": {},
+      "skill_points": 0,
+      "tags": [],
+      "training_sessions": 1,
+      "version": 1
+    }
+  }
+}

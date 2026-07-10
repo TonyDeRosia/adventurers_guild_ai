@@ -1,0 +1,35 @@
+{
+  "respec_profiles": {
+    "respec_starter_ability_rank": {
+      "confirmation_text": "Confirm starter ability rank respec.",
+      "cooldown": {},
+      "cost_profile_id": "cost_free_explicit",
+      "description": "Non-destructive starter respec foundation.",
+      "eligibility_requirements": {},
+      "id": "respec_starter_ability_rank",
+      "maximum_uses": 1,
+      "name": "Starter ability rank respec",
+      "plugin_data": {},
+      "preserve_sources": [
+        "race",
+        "class",
+        "quest"
+      ],
+      "protected_sources": [
+        "race",
+        "class",
+        "quest"
+      ],
+      "refund_profile_id": "starter_refund",
+      "removable_sources": [
+        "training"
+      ],
+      "respec_type": "ability_rank",
+      "result_preview": {},
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    }
+  }
+}
