@@ -1,0 +1,269 @@
+{
+  "achievement_criteria": [
+    {
+      "actor_filters": {},
+      "comparison": "greater_than_or_equal",
+      "conditions": {},
+      "criteria_group_id": "first_blood_group",
+      "criteria_type": "kill_tag",
+      "description": "Event-driven starter criterion",
+      "event_types": [
+        "actor_killed"
+      ],
+      "id": "first_blood_criteria",
+      "name": "First Blood",
+      "plugin_data": {},
+      "progress_mode": "incremental",
+      "required_value": 1,
+      "reset_policy": "never",
+      "source_filters": {},
+      "tags": [],
+      "target_definition": {},
+      "unique_key_fields": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "actor_filters": {},
+      "comparison": "greater_than_or_equal",
+      "conditions": {},
+      "criteria_group_id": "cellar_cleaner_group",
+      "criteria_type": "complete_quest",
+      "description": "Event-driven starter criterion",
+      "event_types": [
+        "quest_completed"
+      ],
+      "id": "cellar_cleaner_criteria",
+      "name": "Cellar Cleaner",
+      "plugin_data": {},
+      "progress_mode": "incremental",
+      "required_value": 1,
+      "reset_policy": "never",
+      "source_filters": {},
+      "tags": [],
+      "target_definition": {
+        "quest_id": "cellar_rat_problem"
+      },
+      "unique_key_fields": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "actor_filters": {},
+      "comparison": "greater_than_or_equal",
+      "conditions": {},
+      "criteria_group_id": "rat_hunter_10_group",
+      "criteria_type": "kill_tag",
+      "description": "Event-driven starter criterion",
+      "event_types": [
+        "actor_killed"
+      ],
+      "id": "rat_hunter_10_criteria",
+      "name": "Rat Hunter 10",
+      "plugin_data": {},
+      "progress_mode": "incremental",
+      "required_value": 10,
+      "reset_policy": "never",
+      "source_filters": {},
+      "tags": [],
+      "target_definition": {
+        "actor_tag": "rat"
+      },
+      "unique_key_fields": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "actor_filters": {},
+      "comparison": "greater_than_or_equal",
+      "conditions": {},
+      "criteria_group_id": "first_steps_group",
+      "criteria_type": "reach_level",
+      "description": "Event-driven starter criterion",
+      "event_types": [
+        "actor_leveled_up"
+      ],
+      "id": "first_steps_criteria",
+      "name": "First Steps",
+      "plugin_data": {},
+      "progress_mode": "derived",
+      "required_value": 2,
+      "reset_policy": "never",
+      "source_filters": {},
+      "tags": [],
+      "target_definition": {},
+      "unique_key_fields": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "actor_filters": {},
+      "comparison": "greater_than_or_equal",
+      "conditions": {},
+      "criteria_group_id": "first_lesson_group",
+      "criteria_type": "complete_training_offer",
+      "description": "Event-driven starter criterion",
+      "event_types": [
+        "training_transaction_completed"
+      ],
+      "id": "first_lesson_criteria",
+      "name": "First Lesson",
+      "plugin_data": {},
+      "progress_mode": "incremental",
+      "required_value": 1,
+      "reset_policy": "never",
+      "source_filters": {},
+      "tags": [],
+      "target_definition": {},
+      "unique_key_fields": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "actor_filters": {},
+      "comparison": "greater_than_or_equal",
+      "conditions": {},
+      "criteria_group_id": "apprentice_smith_group",
+      "criteria_type": "learn_profession",
+      "description": "Event-driven starter criterion",
+      "event_types": [
+        "profession_learned"
+      ],
+      "id": "apprentice_smith_criteria",
+      "name": "Apprentice Smith",
+      "plugin_data": {},
+      "progress_mode": "incremental",
+      "required_value": 1,
+      "reset_policy": "never",
+      "source_filters": {},
+      "tags": [],
+      "target_definition": {
+        "profession_id": "blacksmith"
+      },
+      "unique_key_fields": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "actor_filters": {},
+      "comparison": "greater_than_or_equal",
+      "conditions": {},
+      "criteria_group_id": "first_craft_group",
+      "criteria_type": "craft_item",
+      "description": "Event-driven starter criterion",
+      "event_types": [
+        "crafted_item_created"
+      ],
+      "id": "first_craft_criteria",
+      "name": "First Craft",
+      "plugin_data": {},
+      "progress_mode": "incremental",
+      "required_value": 1,
+      "reset_policy": "never",
+      "source_filters": {},
+      "tags": [],
+      "target_definition": {},
+      "unique_key_fields": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "actor_filters": {},
+      "comparison": "greater_than_or_equal",
+      "conditions": {},
+      "criteria_group_id": "fine_craftsmanship_group",
+      "criteria_type": "craft_quality",
+      "description": "Event-driven starter criterion",
+      "event_types": [
+        "crafted_item_created"
+      ],
+      "id": "fine_craftsmanship_criteria",
+      "name": "Fine Craftsmanship",
+      "plugin_data": {},
+      "progress_mode": "incremental",
+      "required_value": 1,
+      "reset_policy": "never",
+      "source_filters": {},
+      "tags": [],
+      "target_definition": {
+        "quality_profile_id": "fine"
+      },
+      "unique_key_fields": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "actor_filters": {},
+      "comparison": "greater_than_or_equal",
+      "conditions": {},
+      "criteria_group_id": "guildlands_explorer_group",
+      "criteria_type": "visit_room",
+      "description": "Event-driven starter criterion",
+      "event_types": [
+        "room_entered"
+      ],
+      "id": "guildlands_explorer_criteria",
+      "name": "Guildlands Explorer",
+      "plugin_data": {},
+      "progress_mode": "unique_rooms",
+      "required_value": 3,
+      "reset_policy": "never",
+      "source_filters": {},
+      "tags": [],
+      "target_definition": {},
+      "unique_key_fields": [
+        "room_id"
+      ],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "actor_filters": {},
+      "comparison": "greater_than_or_equal",
+      "conditions": {},
+      "criteria_group_id": "friendly_face_group",
+      "criteria_type": "reach_faction_standing",
+      "description": "Event-driven starter criterion",
+      "event_types": [
+        "faction_standing_changed"
+      ],
+      "id": "friendly_face_criteria",
+      "name": "Friendly Face",
+      "plugin_data": {},
+      "progress_mode": "incremental",
+      "required_value": 1,
+      "reset_policy": "never",
+      "source_filters": {},
+      "tags": [],
+      "target_definition": {
+        "standing_tier_id": "friendly"
+      },
+      "unique_key_fields": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "actor_filters": {},
+      "comparison": "greater_than_or_equal",
+      "conditions": {},
+      "criteria_group_id": "party_up_group",
+      "criteria_type": "create_party",
+      "description": "Event-driven starter criterion",
+      "event_types": [
+        "party_created"
+      ],
+      "id": "party_up_criteria",
+      "name": "Party Up",
+      "plugin_data": {},
+      "progress_mode": "incremental",
+      "required_value": 1,
+      "reset_policy": "never",
+      "source_filters": {},
+      "tags": [],
+      "target_definition": {},
+      "unique_key_fields": [],
+      "version": 1,
+      "visibility": "visible"
+    }
+  ]
+}

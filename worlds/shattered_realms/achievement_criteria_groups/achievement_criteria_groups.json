@@ -1,0 +1,180 @@
+{
+  "achievement_criteria_groups": [
+    {
+      "conditions": {},
+      "criteria_ids": [
+        "first_blood_criteria"
+      ],
+      "description": "Starter criteria",
+      "evaluation_mode": "all",
+      "id": "first_blood_group",
+      "name": "First Blood Criteria",
+      "plugin_data": {},
+      "progress_mode": "incremental",
+      "required_count": 1,
+      "reset_policy": "never",
+      "tags": [],
+      "version": 1
+    },
+    {
+      "conditions": {},
+      "criteria_ids": [
+        "cellar_cleaner_criteria"
+      ],
+      "description": "Starter criteria",
+      "evaluation_mode": "all",
+      "id": "cellar_cleaner_group",
+      "name": "Cellar Cleaner Criteria",
+      "plugin_data": {},
+      "progress_mode": "incremental",
+      "required_count": 1,
+      "reset_policy": "never",
+      "tags": [],
+      "version": 1
+    },
+    {
+      "conditions": {},
+      "criteria_ids": [
+        "rat_hunter_10_criteria"
+      ],
+      "description": "Starter criteria",
+      "evaluation_mode": "all",
+      "id": "rat_hunter_10_group",
+      "name": "Rat Hunter 10 Criteria",
+      "plugin_data": {},
+      "progress_mode": "incremental",
+      "required_count": 1,
+      "reset_policy": "never",
+      "tags": [],
+      "version": 1
+    },
+    {
+      "conditions": {},
+      "criteria_ids": [
+        "first_steps_criteria"
+      ],
+      "description": "Starter criteria",
+      "evaluation_mode": "all",
+      "id": "first_steps_group",
+      "name": "First Steps Criteria",
+      "plugin_data": {},
+      "progress_mode": "derived",
+      "required_count": 1,
+      "reset_policy": "never",
+      "tags": [],
+      "version": 1
+    },
+    {
+      "conditions": {},
+      "criteria_ids": [
+        "first_lesson_criteria"
+      ],
+      "description": "Starter criteria",
+      "evaluation_mode": "all",
+      "id": "first_lesson_group",
+      "name": "First Lesson Criteria",
+      "plugin_data": {},
+      "progress_mode": "incremental",
+      "required_count": 1,
+      "reset_policy": "never",
+      "tags": [],
+      "version": 1
+    },
+    {
+      "conditions": {},
+      "criteria_ids": [
+        "apprentice_smith_criteria"
+      ],
+      "description": "Starter criteria",
+      "evaluation_mode": "all",
+      "id": "apprentice_smith_group",
+      "name": "Apprentice Smith Criteria",
+      "plugin_data": {},
+      "progress_mode": "incremental",
+      "required_count": 1,
+      "reset_policy": "never",
+      "tags": [],
+      "version": 1
+    },
+    {
+      "conditions": {},
+      "criteria_ids": [
+        "first_craft_criteria"
+      ],
+      "description": "Starter criteria",
+      "evaluation_mode": "all",
+      "id": "first_craft_group",
+      "name": "First Craft Criteria",
+      "plugin_data": {},
+      "progress_mode": "incremental",
+      "required_count": 1,
+      "reset_policy": "never",
+      "tags": [],
+      "version": 1
+    },
+    {
+      "conditions": {},
+      "criteria_ids": [
+        "fine_craftsmanship_criteria"
+      ],
+      "description": "Starter criteria",
+      "evaluation_mode": "all",
+      "id": "fine_craftsmanship_group",
+      "name": "Fine Craftsmanship Criteria",
+      "plugin_data": {},
+      "progress_mode": "incremental",
+      "required_count": 1,
+      "reset_policy": "never",
+      "tags": [],
+      "version": 1
+    },
+    {
+      "conditions": {},
+      "criteria_ids": [
+        "guildlands_explorer_criteria"
+      ],
+      "description": "Starter criteria",
+      "evaluation_mode": "all",
+      "id": "guildlands_explorer_group",
+      "name": "Guildlands Explorer Criteria",
+      "plugin_data": {},
+      "progress_mode": "unique_rooms",
+      "required_count": 1,
+      "reset_policy": "never",
+      "tags": [],
+      "version": 1
+    },
+    {
+      "conditions": {},
+      "criteria_ids": [
+        "friendly_face_criteria"
+      ],
+      "description": "Starter criteria",
+      "evaluation_mode": "all",
+      "id": "friendly_face_group",
+      "name": "Friendly Face Criteria",
+      "plugin_data": {},
+      "progress_mode": "incremental",
+      "required_count": 1,
+      "reset_policy": "never",
+      "tags": [],
+      "version": 1
+    },
+    {
+      "conditions": {},
+      "criteria_ids": [
+        "party_up_criteria"
+      ],
+      "description": "Starter criteria",
+      "evaluation_mode": "all",
+      "id": "party_up_group",
+      "name": "Party Up Criteria",
+      "plugin_data": {},
+      "progress_mode": "incremental",
+      "required_count": 1,
+      "reset_policy": "never",
+      "tags": [],
+      "version": 1
+    }
+  ]
+}

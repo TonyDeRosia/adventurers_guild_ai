@@ -1,0 +1,368 @@
+{
+  "achievement_definitions": [
+    {
+      "accolade_reward_ids": [
+        "first_victory"
+      ],
+      "achievement_type": "combat",
+      "availability_profile_id": "always",
+      "category_id": "combat",
+      "completion_profile_id": "default",
+      "completion_text": "First Blood complete.",
+      "criteria_group_ids": [
+        "first_blood_group"
+      ],
+      "description": "First Blood",
+      "enabled": true,
+      "hidden_until_completed": false,
+      "hidden_until_progress": false,
+      "id": "first_blood",
+      "milestone_profile_id": "",
+      "name": "First Blood",
+      "parent_achievement_id": "",
+      "plugin_data": {},
+      "point_value": 5,
+      "progress_display_profile_id": "default",
+      "repeat_policy_id": "never",
+      "reward_definition_id": "",
+      "series_id": "",
+      "short_name": "First Blood",
+      "tags": [
+        "phase9b"
+      ],
+      "title_reward_ids": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "accolade_reward_ids": [
+        "first_quest_completed"
+      ],
+      "achievement_type": "quest",
+      "availability_profile_id": "always",
+      "category_id": "quests",
+      "completion_profile_id": "default",
+      "completion_text": "Cellar Cleaner complete.",
+      "criteria_group_ids": [
+        "cellar_cleaner_group"
+      ],
+      "description": "Cellar Cleaner",
+      "enabled": true,
+      "hidden_until_completed": false,
+      "hidden_until_progress": false,
+      "id": "cellar_cleaner",
+      "milestone_profile_id": "",
+      "name": "Cellar Cleaner",
+      "parent_achievement_id": "",
+      "plugin_data": {},
+      "point_value": 5,
+      "progress_display_profile_id": "default",
+      "repeat_policy_id": "never",
+      "reward_definition_id": "",
+      "series_id": "",
+      "short_name": "Cellar Cleaner",
+      "tags": [
+        "phase9b"
+      ],
+      "title_reward_ids": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "accolade_reward_ids": [],
+      "achievement_type": "combat",
+      "availability_profile_id": "always",
+      "category_id": "combat",
+      "completion_profile_id": "default",
+      "completion_text": "Rat Hunter 10 complete.",
+      "criteria_group_ids": [
+        "rat_hunter_10_group"
+      ],
+      "description": "Rat Hunter 10",
+      "enabled": true,
+      "hidden_until_completed": false,
+      "hidden_until_progress": false,
+      "id": "rat_hunter_10",
+      "milestone_profile_id": "",
+      "name": "Rat Hunter 10",
+      "parent_achievement_id": "",
+      "plugin_data": {},
+      "point_value": 5,
+      "progress_display_profile_id": "default",
+      "repeat_policy_id": "never",
+      "reward_definition_id": "",
+      "series_id": "",
+      "short_name": "Rat Hunter 10",
+      "tags": [
+        "phase9b"
+      ],
+      "title_reward_ids": [
+        "rat_hunter"
+      ],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "accolade_reward_ids": [],
+      "achievement_type": "achievement",
+      "availability_profile_id": "always",
+      "category_id": "general",
+      "completion_profile_id": "default",
+      "completion_text": "First Steps complete.",
+      "criteria_group_ids": [
+        "first_steps_group"
+      ],
+      "description": "First Steps",
+      "enabled": true,
+      "hidden_until_completed": false,
+      "hidden_until_progress": false,
+      "id": "first_steps",
+      "milestone_profile_id": "",
+      "name": "First Steps",
+      "parent_achievement_id": "",
+      "plugin_data": {},
+      "point_value": 5,
+      "progress_display_profile_id": "default",
+      "repeat_policy_id": "never",
+      "reward_definition_id": "",
+      "series_id": "",
+      "short_name": "First Steps",
+      "tags": [
+        "phase9b"
+      ],
+      "title_reward_ids": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "accolade_reward_ids": [
+        "first_training_completed"
+      ],
+      "achievement_type": "training",
+      "availability_profile_id": "always",
+      "category_id": "training",
+      "completion_profile_id": "default",
+      "completion_text": "First Lesson complete.",
+      "criteria_group_ids": [
+        "first_lesson_group"
+      ],
+      "description": "First Lesson",
+      "enabled": true,
+      "hidden_until_completed": false,
+      "hidden_until_progress": false,
+      "id": "first_lesson",
+      "milestone_profile_id": "",
+      "name": "First Lesson",
+      "parent_achievement_id": "",
+      "plugin_data": {},
+      "point_value": 5,
+      "progress_display_profile_id": "default",
+      "repeat_policy_id": "never",
+      "reward_definition_id": "",
+      "series_id": "",
+      "short_name": "First Lesson",
+      "tags": [
+        "phase9b"
+      ],
+      "title_reward_ids": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "accolade_reward_ids": [],
+      "achievement_type": "profession",
+      "availability_profile_id": "always",
+      "category_id": "professions",
+      "completion_profile_id": "default",
+      "completion_text": "Apprentice Smith complete.",
+      "criteria_group_ids": [
+        "apprentice_smith_group"
+      ],
+      "description": "Apprentice Smith",
+      "enabled": true,
+      "hidden_until_completed": false,
+      "hidden_until_progress": false,
+      "id": "apprentice_smith",
+      "milestone_profile_id": "",
+      "name": "Apprentice Smith",
+      "parent_achievement_id": "",
+      "plugin_data": {},
+      "point_value": 5,
+      "progress_display_profile_id": "default",
+      "repeat_policy_id": "never",
+      "reward_definition_id": "",
+      "series_id": "",
+      "short_name": "Apprentice Smith",
+      "tags": [
+        "phase9b"
+      ],
+      "title_reward_ids": [
+        "apprentice_smith"
+      ],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "accolade_reward_ids": [],
+      "achievement_type": "crafting",
+      "availability_profile_id": "always",
+      "category_id": "crafting",
+      "completion_profile_id": "default",
+      "completion_text": "First Craft complete.",
+      "criteria_group_ids": [
+        "first_craft_group"
+      ],
+      "description": "First Craft",
+      "enabled": true,
+      "hidden_until_completed": false,
+      "hidden_until_progress": false,
+      "id": "first_craft",
+      "milestone_profile_id": "",
+      "name": "First Craft",
+      "parent_achievement_id": "",
+      "plugin_data": {},
+      "point_value": 5,
+      "progress_display_profile_id": "default",
+      "repeat_policy_id": "never",
+      "reward_definition_id": "",
+      "series_id": "",
+      "short_name": "First Craft",
+      "tags": [
+        "phase9b"
+      ],
+      "title_reward_ids": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "accolade_reward_ids": [],
+      "achievement_type": "crafting",
+      "availability_profile_id": "always",
+      "category_id": "crafting",
+      "completion_profile_id": "default",
+      "completion_text": "Fine Craftsmanship complete.",
+      "criteria_group_ids": [
+        "fine_craftsmanship_group"
+      ],
+      "description": "Fine Craftsmanship",
+      "enabled": true,
+      "hidden_until_completed": false,
+      "hidden_until_progress": false,
+      "id": "fine_craftsmanship",
+      "milestone_profile_id": "",
+      "name": "Fine Craftsmanship",
+      "parent_achievement_id": "",
+      "plugin_data": {},
+      "point_value": 5,
+      "progress_display_profile_id": "default",
+      "repeat_policy_id": "never",
+      "reward_definition_id": "",
+      "series_id": "",
+      "short_name": "Fine Craftsmanship",
+      "tags": [
+        "phase9b"
+      ],
+      "title_reward_ids": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "accolade_reward_ids": [],
+      "achievement_type": "exploration",
+      "availability_profile_id": "always",
+      "category_id": "exploration",
+      "completion_profile_id": "default",
+      "completion_text": "Guildlands Explorer complete.",
+      "criteria_group_ids": [
+        "guildlands_explorer_group"
+      ],
+      "description": "Guildlands Explorer",
+      "enabled": true,
+      "hidden_until_completed": false,
+      "hidden_until_progress": false,
+      "id": "guildlands_explorer",
+      "milestone_profile_id": "",
+      "name": "Guildlands Explorer",
+      "parent_achievement_id": "",
+      "plugin_data": {},
+      "point_value": 5,
+      "progress_display_profile_id": "default",
+      "repeat_policy_id": "never",
+      "reward_definition_id": "",
+      "series_id": "",
+      "short_name": "Guildlands Explorer",
+      "tags": [
+        "phase9b"
+      ],
+      "title_reward_ids": [
+        "guildlands_explorer"
+      ],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "accolade_reward_ids": [],
+      "achievement_type": "faction",
+      "availability_profile_id": "always",
+      "category_id": "factions",
+      "completion_profile_id": "default",
+      "completion_text": "Friendly Face complete.",
+      "criteria_group_ids": [
+        "friendly_face_group"
+      ],
+      "description": "Friendly Face",
+      "enabled": true,
+      "hidden_until_completed": false,
+      "hidden_until_progress": false,
+      "id": "friendly_face",
+      "milestone_profile_id": "",
+      "name": "Friendly Face",
+      "parent_achievement_id": "",
+      "plugin_data": {},
+      "point_value": 5,
+      "progress_display_profile_id": "default",
+      "repeat_policy_id": "never",
+      "reward_definition_id": "",
+      "series_id": "",
+      "short_name": "Friendly Face",
+      "tags": [
+        "phase9b"
+      ],
+      "title_reward_ids": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "accolade_reward_ids": [],
+      "achievement_type": "organization",
+      "availability_profile_id": "always",
+      "category_id": "social",
+      "completion_profile_id": "default",
+      "completion_text": "Party Up complete.",
+      "criteria_group_ids": [
+        "party_up_group"
+      ],
+      "description": "Party Up",
+      "enabled": true,
+      "hidden_until_completed": false,
+      "hidden_until_progress": false,
+      "id": "party_up",
+      "milestone_profile_id": "",
+      "name": "Party Up",
+      "parent_achievement_id": "",
+      "plugin_data": {},
+      "point_value": 5,
+      "progress_display_profile_id": "default",
+      "repeat_policy_id": "never",
+      "reward_definition_id": "",
+      "series_id": "",
+      "short_name": "Party Up",
+      "tags": [
+        "phase9b"
+      ],
+      "title_reward_ids": [],
+      "version": 1,
+      "visibility": "visible"
+    }
+  ]
+}

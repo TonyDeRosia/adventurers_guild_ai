@@ -1,0 +1,23 @@
+{
+  "achievement_series": [
+    {
+      "achievement_ids": [
+        "rat_hunter_10"
+      ],
+      "completion_reward_definition_id": "",
+      "completion_title_ids": [
+        "rat_hunter"
+      ],
+      "description": "Rat hunting milestones",
+      "id": "rat_hunter",
+      "name": "Rat Hunter",
+      "plugin_data": {},
+      "sequence": [
+        "rat_hunter_10"
+      ],
+      "tags": [],
+      "version": 1,
+      "visibility": "visible"
+    }
+  ]
+}

@@ -17,7 +17,7 @@ SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 SOURCE_TYPES = {"combat","corpse","quest","exploration","container","event","harvest","gathering","profession","achievement_placeholder","admin","script","world","custom"}
 RECIPIENT_TYPES = {"actor","character","party_placeholder","group_placeholder","room","corpse","container","world","custom"}
 PACKET_STATUSES = {"pending","resolved","partially_delivered","delivered","failed","cancelled","expired"}
-REWARD_TYPES = {"item","currency","experience","practice_sessions","training_sessions","skill_points","attribute_points","ability","ability_rank","effect","progression_modifier","reputation_placeholder","custom"}
+REWARD_TYPES = {"item","currency","experience","practice_sessions","training_sessions","skill_points","attribute_points","ability","ability_rank","effect","progression_modifier","reputation_placeholder","title","accolade","custom"}
 ROLL_MODES = {"all","weighted_one","weighted_many","chance_each","guaranteed_plus_weighted","explicit_sequence","custom"}
 ADVANCEMENT_CURRENCIES = {"practice_sessions","training_sessions","skill_points","attribute_points"}
 
@@ -225,6 +225,7 @@ class RewardService:
             elif typ in ADVANCEMENT_CURRENCIES: meta=self._grant_advancement(pkt,e,typ); dest="actor_progression"; self.publish("progression_reward_awarded", meta)
             elif typ in {"ability","ability_rank"}: meta=self._grant_ability(pkt,e,typ); dest="actor_progression"; self.publish("ability_reward_granted", meta)
             elif typ=="effect": meta={"placeholder":True,"effect_id":e["definition_id"]}; dest="actor_effects"; self.publish("effect_reward_applied", meta)
+            elif typ in {"title","accolade"}: meta=self._grant_achievement_recognition(pkt,e,typ); dest="actor_achievements"; self.publish(f"{typ}_reward_granted", meta)
             else: raise ValueError(f"unsupported reward type {typ}")
         except Exception as ex:
             result="failed"; meta={"error":str(ex)}
@@ -264,6 +265,15 @@ class RewardService:
     def _grant_ability(self,pkt,e,typ):
         from engine.progression import ProgressionService
         ps=ProgressionService(self.store); return ps.increase_ability_rank(pkt["recipient_id"], e["definition_id"]) if typ=="ability_rank" else ps.learn_ability(pkt["recipient_id"], e["definition_id"], {"source":"reward","reward_packet_id":pkt["reward_packet_id"]})
+    def _grant_achievement_recognition(self,pkt,e,typ):
+        from engine.achievements import AchievementService
+        svc=AchievementService(self.db_path, world_id=self.world_id, event_bus=self.event_bus)
+        if typ=="title":
+            oid=svc.grant_title(pkt["recipient_id"], e["definition_id"], "reward", pkt["reward_packet_id"], pkt.get("resolved_world_time"))
+            return {"actor_title_id":oid,"title_id":e["definition_id"]}
+        oid=svc.grant_accolade(pkt["recipient_id"], e["definition_id"], "reward", pkt["reward_packet_id"], pkt.get("resolved_world_time"))
+        return {"actor_accolade_id":oid,"accolade_id":e["definition_id"]}
+
     def cancel_reward_packet(self, reward_packet_id, reason=None):
         with sqlite3.connect(self.db_path) as con: con.execute("UPDATE reward_packets SET status='cancelled',updated_at=?,metadata_json=json_set(COALESCE(metadata_json,'{}'),'$.cancel_reason',?) WHERE reward_packet_id=?",(utc_now(),reason or "",reward_packet_id))
         self.publish("reward_packet_cancelled", {"reward_packet_id":reward_packet_id,"reason":reason}); return self.get_reward_packet(reward_packet_id)

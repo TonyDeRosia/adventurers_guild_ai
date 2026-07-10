@@ -1,0 +1,18 @@
+{
+  "achievement_completion_profiles": [
+    {
+      "announcement_scope": "actor",
+      "claim_required": false,
+      "description": "Actor-scoped completion",
+      "grant_rewards_automatically": true,
+      "id": "default",
+      "message_profile_id": "default",
+      "name": "Default",
+      "plugin_data": {},
+      "publish_world_event": false,
+      "record_world_state": false,
+      "tags": [],
+      "version": 1
+    }
+  ]
+}

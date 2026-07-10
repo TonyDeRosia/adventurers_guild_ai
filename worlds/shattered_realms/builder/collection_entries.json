@@ -1,0 +1,40 @@
+{
+  "collection_entries": [
+    {
+      "collection_id": "starter_discoveries",
+      "conditions": {},
+      "description": "Visit starter room 1.",
+      "hidden": false,
+      "id": "starter_room_1",
+      "metadata": {},
+      "name": "Town Square",
+      "sort_order": 1,
+      "target_id": "town_square",
+      "target_type": "room"
+    },
+    {
+      "collection_id": "starter_discoveries",
+      "conditions": {},
+      "description": "Visit starter room 2.",
+      "hidden": false,
+      "id": "starter_room_2",
+      "metadata": {},
+      "name": "Training Yard",
+      "sort_order": 2,
+      "target_id": "training_yard",
+      "target_type": "room"
+    },
+    {
+      "collection_id": "starter_discoveries",
+      "conditions": {},
+      "description": "Visit starter room 3.",
+      "hidden": false,
+      "id": "starter_room_3",
+      "metadata": {},
+      "name": "Rat Cellar",
+      "sort_order": 3,
+      "target_id": "rat_cellar",
+      "target_type": "room"
+    }
+  ]
+}

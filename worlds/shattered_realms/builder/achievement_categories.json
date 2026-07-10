@@ -1,0 +1,114 @@
+{
+  "achievement_categories": [
+    {
+      "description": "Phase 9B category",
+      "id": "combat",
+      "name": "Combat",
+      "plugin_data": {},
+      "sort_order": 0,
+      "tags": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "description": "Phase 9B category",
+      "id": "quests",
+      "name": "Quests",
+      "plugin_data": {},
+      "sort_order": 1,
+      "tags": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "description": "Phase 9B category",
+      "id": "exploration",
+      "name": "Exploration",
+      "plugin_data": {},
+      "sort_order": 2,
+      "tags": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "description": "Phase 9B category",
+      "id": "crafting",
+      "name": "Crafting",
+      "plugin_data": {},
+      "sort_order": 3,
+      "tags": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "description": "Phase 9B category",
+      "id": "professions",
+      "name": "Professions",
+      "plugin_data": {},
+      "sort_order": 4,
+      "tags": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "description": "Phase 9B category",
+      "id": "economy",
+      "name": "Economy",
+      "plugin_data": {},
+      "sort_order": 5,
+      "tags": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "description": "Phase 9B category",
+      "id": "social",
+      "name": "Social",
+      "plugin_data": {},
+      "sort_order": 6,
+      "tags": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "description": "Phase 9B category",
+      "id": "factions",
+      "name": "Factions",
+      "plugin_data": {},
+      "sort_order": 7,
+      "tags": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "description": "Phase 9B category",
+      "id": "training",
+      "name": "Training",
+      "plugin_data": {},
+      "sort_order": 8,
+      "tags": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "description": "Phase 9B category",
+      "id": "collections",
+      "name": "Collections",
+      "plugin_data": {},
+      "sort_order": 9,
+      "tags": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "description": "Phase 9B category",
+      "id": "general",
+      "name": "General",
+      "plugin_data": {},
+      "sort_order": 10,
+      "tags": [],
+      "version": 1,
+      "visibility": "visible"
+    }
+  ]
+}

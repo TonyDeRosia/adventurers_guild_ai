@@ -101,13 +101,14 @@ class ActorScoreRenderer:
     order = [
         "identity", "resources", "primary_attributes", "derived_attributes", "combat", "equipment",
         "conditions", "resistances", "affects", "spellup", "abilities", "skills", "spells", "cooldowns", "current_cast", "combat_loadout", "passive_abilities", "progression", "professions", "crafting", "recipes", "quests", "journal", "questhistory", "currencies", "banking", "transactions", "relationships", "factions", "reputation", "standing", "diplomacy",
+        "achievements", "milestones", "titles", "accolades", "collections",
         "simulation", "party", "organizations", "guild", "clan", "memberships", "social", "behavior", "threat", "tactics", "diagnostics", "formulas", "raw",
     ]
     aliases = {
         "score": "all", "preview": "all", "actor": "all", "attrs": "primary_attributes", "attributes": "primary_attributes",
         "derived": "derived_attributes", "resists": "resistances", "saff": "affects", "spellups": "spellup",
         "worth": "currencies", "profession": "professions", "recipe": "recipes", "cast": "current_cast", "currency": "currencies", "money": "currencies", "bank": "banking", "banking": "banking", "transactions": "transactions", "builder": "diagnostics",
-        "questlog": "journal", "quest_history": "questhistory", "builder_diagnostics": "diagnostics", "ai": "simulation", "ai_diagnostics": "simulation", "behaviour": "behavior", "membership": "memberships", "faction_standing": "standing", "relations": "diplomacy",
+        "questlog": "journal", "quest_history": "questhistory", "builder_diagnostics": "diagnostics", "ai": "simulation", "ai_diagnostics": "simulation", "behaviour": "behavior", "membership": "memberships", "faction_standing": "standing", "relations": "diplomacy", "achievement": "achievements", "title": "titles", "collection": "collections",
     }
 
     def __init__(self, formula_registry: FormulaRegistry | None = None, *, ansi: bool = False):
@@ -466,6 +467,41 @@ class ActorScoreRenderer:
     def render_relationships(self, actor: Actor, admin: bool = False) -> str:
         data = actor.relationship_profile or {}
         return self._section("RELATIONSHIPS", self._two_col([(_human(k), data.get(k, "future"), "score_value") for k in RELATIONSHIP_FIELDS]))
+
+
+    def _achievement_data(self, actor: Actor) -> dict[str, Any]:
+        return actor.plugin_data.get("achievements", {}) if getattr(actor, "plugin_data", None) else {}
+
+    def render_achievements(self, actor: Actor, admin: bool = False) -> str:
+        data = self._achievement_data(actor)
+        rows = [_line(f"Achievement Points: {data.get('points', 0)}"), _line(f"Completed: {data.get('completed_count', 0)}")]
+        for item in data.get("recent", [])[:5]: rows.append(_line(f"Recent: {_value(item)}"))
+        if admin: rows.append(_line("Admin detail: actor_achievement_state and achievement_event_consumption hold state IDs and consumed event IDs."))
+        return self._section("ACHIEVEMENTS", rows)
+
+    def render_milestones(self, actor: Actor, admin: bool = False) -> str:
+        data = self._achievement_data(actor).get("milestones", [])
+        rows = [_line(_value(x)) for x in data[:6]] or [_line("No active milestone summary.")]
+        return self._section("MILESTONES", rows)
+
+    def render_titles(self, actor: Actor, admin: bool = False) -> str:
+        data = self._achievement_data(actor)
+        rows = [_line(f"Selected: {_value(data.get('selected_title'))}")]
+        rows += [_line(f"Owned: {_value(x)}") for x in data.get("titles", [])[:8]]
+        if admin: rows.append(_line("Admin detail: actor_titles stores source IDs and selection state."))
+        return self._section("TITLES", rows)
+
+    def render_accolades(self, actor: Actor, admin: bool = False) -> str:
+        data = self._achievement_data(actor).get("accolades", [])
+        rows = [_line(_value(x)) for x in data[:8]] or [_line("No accolades recorded yet.")]
+        if admin: rows.append(_line("Admin detail: actor_accolades stores source IDs."))
+        return self._section("ACCOLADES", rows)
+
+    def render_collections(self, actor: Actor, admin: bool = False) -> str:
+        data = self._achievement_data(actor).get("collections", [])
+        rows = [_line(_value(x)) for x in data[:8]] or [_line("No collection progress recorded yet.")]
+        if admin: rows.append(_line("Admin detail: actor_collection_state stores stable collection entry source IDs."))
+        return self._section("COLLECTIONS", rows)
 
     def render_simulation(self, actor: Actor, admin: bool = False) -> str:
         data = actor.simulation_profile or {}

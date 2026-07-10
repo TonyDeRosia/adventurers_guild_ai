@@ -19,3 +19,7 @@ respec preview respec_starter_ability_rank
 ```
 
 The implementation is intentionally conservative: no talent trees, unrestricted class switching, autonomous teaching, remort/prestige execution, or final balance are included.
+
+## Phase 9B Achievement Integration
+
+Phase 9B routes canonical subsystem events into `engine.achievements.AchievementService`. The achievement service owns achievement/title/accolade/collection runtime state, consumes EventBus events idempotently, and delegates reward delivery to `RewardService` instead of mutating XP, currency, items, abilities, faction reputation, organization roles, quest state, or Actor statistics directly.

@@ -1,0 +1,70 @@
+{
+  "title_definitions": [
+    {
+      "category": "combat",
+      "color_role": "",
+      "description": "Known for thinning the rats.",
+      "display_name": "Rat Hunter",
+      "faction_id": "",
+      "format_template": "{name}, Rat Hunter",
+      "id": "rat_hunter",
+      "name": "Rat Hunter",
+      "organization_id": "",
+      "plugin_data": {},
+      "prefix_text": "",
+      "selection_requirements": {},
+      "source_types": [
+        "achievement"
+      ],
+      "standing_tier_id": "",
+      "suffix_text": "Rat Hunter",
+      "tags": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "category": "profession",
+      "color_role": "",
+      "description": "Learned smithing basics.",
+      "display_name": "Apprentice Smith",
+      "faction_id": "",
+      "format_template": "{name}, Apprentice Smith",
+      "id": "apprentice_smith",
+      "name": "Apprentice Smith",
+      "organization_id": "",
+      "plugin_data": {},
+      "prefix_text": "",
+      "selection_requirements": {},
+      "source_types": [
+        "achievement"
+      ],
+      "standing_tier_id": "",
+      "suffix_text": "Apprentice Smith",
+      "tags": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "category": "exploration",
+      "color_role": "",
+      "description": "Explored starter Guildlands landmarks.",
+      "display_name": "Guildlands Explorer",
+      "faction_id": "",
+      "format_template": "{name}, Guildlands Explorer",
+      "id": "guildlands_explorer",
+      "name": "Guildlands Explorer",
+      "organization_id": "",
+      "plugin_data": {},
+      "prefix_text": "",
+      "selection_requirements": {},
+      "source_types": [
+        "achievement"
+      ],
+      "standing_tier_id": "",
+      "suffix_text": "Guildlands Explorer",
+      "tags": [],
+      "version": 1,
+      "visibility": "visible"
+    }
+  ]
+}

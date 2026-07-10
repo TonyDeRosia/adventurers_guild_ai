@@ -1,0 +1,15 @@
+{
+  "achievement_message_profiles": [
+    {
+      "description": "Conservative actor-scoped messages",
+      "id": "default",
+      "messages": {
+        "completed": "Achievement complete: {name}"
+      },
+      "name": "Default",
+      "plugin_data": {},
+      "tags": [],
+      "version": 1
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "collection_definitions": [
+    {
+      "collection_type": "rooms",
+      "completion_accolade_ids": [],
+      "completion_requirements": {
+        "mode": "all"
+      },
+      "completion_reward_definition_id": "",
+      "completion_title_ids": [
+        "guildlands_explorer"
+      ],
+      "description": "A small starter set of Guildlands discoveries.",
+      "entry_ids": [
+        "starter_room_1",
+        "starter_room_2",
+        "starter_room_3"
+      ],
+      "entry_source_type": "event",
+      "id": "starter_discoveries",
+      "name": "Starter Discoveries",
+      "plugin_data": {},
+      "sort_order": 1,
+      "tags": [
+        "phase9b"
+      ],
+      "version": 1,
+      "visibility": "visible"
+    }
+  ]
+}
