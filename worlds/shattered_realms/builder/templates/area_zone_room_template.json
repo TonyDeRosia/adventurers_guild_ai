@@ -1,0 +1,119 @@
+{
+  "areas": {
+    "sample_area": {
+      "description": "A safe starter import area for Builder experiments.",
+      "flags": [],
+      "id": "sample_area",
+      "mob_vnum_end": 9089,
+      "mob_vnum_start": 9070,
+      "name": "Sample Area",
+      "object_vnum_end": 9069,
+      "object_vnum_start": 9050,
+      "plugin_data": {
+        "notes": "Template area plugin data is preserved."
+      },
+      "room_vnum_end": 9049,
+      "room_vnum_start": 9000,
+      "spawn_vnum_end": 9099,
+      "spawn_vnum_start": 9090,
+      "tags": [
+        "template"
+      ],
+      "vnum_end": 9099,
+      "vnum_start": 9000,
+      "world_id": "shattered_realms",
+      "zone_ids": [
+        "sample_zone"
+      ]
+    }
+  },
+  "entities": {},
+  "features": {},
+  "item_placements": {},
+  "items": {},
+  "rooms": {
+    "sample_entry": {
+      "area_id": "sample_area",
+      "description": "A clean imported entry room with a visible local feature.",
+      "exits": {
+        "north": {
+          "description": "A path leads north.",
+          "direction": "north",
+          "target_room_id": "sample_overlook"
+        }
+      },
+      "features": {
+        "stone_marker": {
+          "id": "stone_marker",
+          "name": "Stone Marker",
+          "plugin_data": {
+            "lore_id": "sample_marker"
+          },
+          "portable": false,
+          "short_description": "A carved stone marker stands here."
+        }
+      },
+      "flags": [],
+      "id": "sample_entry",
+      "name": "Sample Entry",
+      "plugin_data": {
+        "ambient_override": {
+          "sound": "quiet wind"
+        }
+      },
+      "tags": [
+        "template"
+      ],
+      "vnum": 9000,
+      "world_id": "shattered_realms",
+      "zone_id": "sample_zone"
+    },
+    "sample_overlook": {
+      "area_id": "sample_area",
+      "description": "A second imported room linked back to the entry.",
+      "exits": {
+        "south": {
+          "description": "The path returns south.",
+          "direction": "south",
+          "target_room_id": "sample_entry"
+        }
+      },
+      "features": {},
+      "flags": [],
+      "id": "sample_overlook",
+      "name": "Sample Overlook",
+      "plugin_data": {
+        "builder_note": "Safe to rename after copying."
+      },
+      "tags": [
+        "template"
+      ],
+      "vnum": 9001,
+      "world_id": "shattered_realms",
+      "zone_id": "sample_zone"
+    }
+  },
+  "spawns": {},
+  "zones": {
+    "sample_zone": {
+      "area_id": "sample_area",
+      "description": "A two-room zone included as an import template.",
+      "flags": [],
+      "id": "sample_zone",
+      "name": "Sample Zone",
+      "plugin_data": {
+        "climate": "mild"
+      },
+      "room_ids": [
+        "sample_entry",
+        "sample_overlook"
+      ],
+      "tags": [
+        "template"
+      ],
+      "vnum_end": 9049,
+      "vnum_start": 9000,
+      "world_id": "shattered_realms"
+    }
+  }
+}

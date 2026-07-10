@@ -1,0 +1,17 @@
+[
+  {
+    "id": "blacksmith_anvil",
+    "name": "Blacksmith Anvil",
+    "keywords": ["anvil", "blacksmith", "smithing"],
+    "short_description": "A heavy blacksmith anvil anchors the stall.",
+    "long_description": "The anvil is scarred by years of hammer blows and fixed too solidly to carry.",
+    "portable": false,
+    "visible": true,
+    "interactions": {"look": true, "examine": true},
+    "flags": ["static"],
+    "tags": ["starter", "blacksmith_stall"],
+    "plugin_data": {},
+    "source": "live_feature_library",
+    "local_or_shared": "shared"
+  }
+]

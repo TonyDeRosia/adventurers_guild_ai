@@ -60,6 +60,14 @@ cover/
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+*.db
+mud_state.db
+user_data/
+AppData/
+worlds/*/builder/audit/
+worlds/*/builder/history/
+worlds/*/builder/snapshots/
+worlds/*/builder/exports/
 
 # Flask stuff:
 instance/

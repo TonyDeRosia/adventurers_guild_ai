@@ -209,3 +209,104 @@ Builder-created draft rooms now participate in a runtime world graph overlay for
 Phase 4C standardizes Builder Mode around a canonical room graph: live world rooms are merged with draft rooms for authorized builders, while normal players continue to see only live package content. Room rendering, look/exits, movement, goto, dig, link/unlink, map/rmap, and builder validation are required to use that shared graph so displayed exits match traversable exits.
 
 Builder commands maintain an explicit editing context and print a `Currently editing:` block for room-editing workflows. `rname` and `rdesc` edit only the selected room target. Room ids must be safe lowercase underscore ids; room names may contain spaces. The primary workflow is `dig <direction> <room_id> ["Room Name"] [--one-way]`, with self-loops blocked unless explicitly allowed. Known limits: visual Builder UI, AI Builder, combat, shops, quests, and spellcasting remain future work and are not introduced by this phase.
+
+## Phase 4C Hotfix 2: Builder polish, aliases, and normalization
+
+Completed: canonical Builder Status output, clearer location-versus-editing state, `redit` detail output, safe room-id and room-name checks, `desc` and save aliases, draft room normalization, and expanded validation categories. Known limits remain unchanged: full visual Builder UI, AI Builder, combat, quests, shops, and spellcasting are future phases.
+
+
+## Phase 4D — Builder Workflow 3.0
+
+Phase 4D polishes Builder Mode into a cohesive professional MUD-building workflow: canonical Builder HUD, status aliases, draft/live/all room listings, partial room search, multiline `rdesc`, safer `rname`, cleaner edit confirmations, exit inspection, standardized dig/save/reload language, stronger validation categories, and Builder-only history commands. It explicitly does not add gameplay, AI, combat, spells, quests, classes, economy, NPC behavior, web editors, or room ID rename execution.
+
+## Phase 4E Area, Zone, and VNUM Organization
+
+Builder Mode now supports draft areas and zones before room creation. Builders can use `acreate`/`aset current`, `zcreate`/`zset current`, `rcreate <vnum>`, and `dig <direction> <vnum>` to create rooms with canonical `<area_id>_<vnum>` IDs while preserving explicit `custom` legacy room IDs. Builder status shows world, area, zone, location, edit target, and dirty state. Builder export includes `areas`, `zones`, `rooms`, `items`, `entities`, and `spawns`; validation warns on legacy loose rooms and checks area/zone/vnum consistency. See `docs/AREA_ZONE_VNUM_SYSTEM.md`.
+
+## Phase 4E organized room workflow hotfix
+
+Builders can now finish the practical area/zone/vnum workflow without mutating live world package files. Draft exports remain under the builder workspace.
+
+Canonical workflow:
+
+```text
+builder on
+acreate test_area 100 110 "Test Area"
+zcreate test_zone 100 110 "Test Zone"
+rcreate 101
+rname Test Room 101
+rdesc This room belongs to the test zone.
+rooms area test_area
+rooms unassigned
+rassign test_two area current zone current vnum 102
+builder validate
+builder save
+builder export
+```
+
+Operational commands:
+
+- `aset current <area_id>` selects the current area and shows the Builder HUD. If the selected area does not contain the current zone, the current zone is cleared.
+- `zset current <zone_id>` selects the zone and also selects that zone's parent area.
+- `rcreate <vnum>` creates an organized draft room with `area_id`, `zone_id`, and `vnum` from the current area and zone. It rejects duplicate vnums and out-of-range vnums with guidance.
+- `dig <direction> <vnum> "Name"` creates an organized linked draft room using the current area and zone and reports the created room plus both link directions.
+- `rooms unassigned` and `rooms legacy` list loose draft rooms where `area_id` and `zone_id` are blank and `vnum` is null. Legacy rooms are warnings, not validation failures.
+- `rassign <here|room_id> area <area_id|current> zone <zone_id|current> vnum <number>` explicitly assigns a loose or existing room to an area, zone, and vnum.
+- `rmove <here|room_id> [area <area_id>] zone <zone_id> vnum <number>` moves an assigned room to another zone/vnum. If the room was unassigned, it uses the assignment workflow and says so.
+- Assigned rooms keep their existing room IDs in Phase 4E. The generated convention is `<area_id>_<vnum>`, and Builder warns when the current ID does not match it.
+- `rrenameid <room_id> <new_room_id>` is registered as a placeholder only. Safe room ID migration is deferred because exits, spawns, builder history, and other references must be rewritten atomically.
+- `builder export`, `build export`, `builder save`, `build save`, `bsave`, `wsave`, and `asave changed` route to the safe builder export/save behavior.
+
+`builder status`, `astat`, `zstat`, and `rstat` should be used as guidance screens: they show current area, current zone, current room, edit target, room organization status, vnum, and the next suggested `rassign` command for legacy rooms.
+
+`builder validate` groups Errors, Warnings, and Info. Organization warnings include legacy loose rooms, assigned room ID convention mismatches, rooms missing vnums, empty areas/zones, and range overlaps. Organization errors include missing referenced areas/zones, duplicate vnums within an area, out-of-range room vnums, and zone/area mismatches.
+
+## Phase 4F Starter Migration and Builder Import
+
+`builder migrate starter` snapshots the Builder workspace, reads the live Shattered Realms starter package, and writes normalized Builder drafts with `starter_guildlands`, starter zones, preserved room IDs, area/zone assignments, and vnums. Live world package files are not modified.
+
+Builder JSON imports are staged from `worlds/<world_id>/builder/imports/` with `builder import list`, `builder import validate <file>`, `builder import preview <file>`, and `builder import apply <file> [--merge|--replace-drafts]`. The import/export bundle contains `areas`, `zones`, `rooms`, `features`, `items`, `entities`, and `spawns` so draft data can round-trip through `builder export` and import validation.
+
+## Phase 4F Hotfix: committed organized starter drafts
+
+Fresh downloads now include the organized Shattered Realms starter Builder drafts under `worlds/shattered_realms/builder/`. The live package files remain unchanged; the committed Builder drafts are the default editable organized starter layer that Builder Mode overlays at runtime.
+
+Use `builder validate` to verify the committed starter draft layer. The starting room `guildhall_crossing_square` is assigned to `starter_guildlands`, zone `guildhall_crossing`, vnum `1000`, and should report `Status: organized` in `rstat`.
+
+`builder migrate starter` remains available to reset or regenerate the starter drafts from the live Shattered Realms package. Regeneration should update the draft JSON files only; do not commit runtime audit, history, snapshot, export, local database, or user-data artifacts.
+
+To exchange the organized starter layer, run `builder export`, then place the exported bundle in the Builder import folder and run `builder import validate <file>` before applying it.
+
+
+## Phase 4G: World Data Specification v1.0
+
+Before large-scale Shattered Realms expansion, Smart MUD freezes the data contract for world packages and Builder imports in `docs/WORLD_DATA_SPECIFICATION.md`. Phase 4G documents current area/zone/vnum drafts, import/export bundles, optional generic location hierarchy, profile libraries, plugin_data conventions, inheritance, validation, migration, backward compatibility, and tbaMUD design parity without adding combat, AI behavior, quests, shops, classes, skills, spells, or a visual Builder UI.
+
+### Phase 4G Hotfix: Builder import templates and duplicate scenery rendering
+
+Completed hotfix scope:
+
+- Builder workspace setup auto-creates `imports/`, `templates/`, and `examples/`.
+- Shattered Realms ships built-in import templates in `worlds/shattered_realms/builder/templates/`.
+- In-game commands `builder template list`, `builder template show`, and `builder template copy` help builders create import files without manual folder/file setup.
+- Import validation covers a valid area/zone/room template, an intentional duplicate-vnum failure example, and future-key warning behavior.
+- Builder room rendering prefers draft features over duplicate nonportable live scenery while preserving portable runtime item instances.
+
+No combat, AI, quests, shops, skills, classes, spells, or visual Builder UI were added by this hotfix.
+
+
+## Phase 4H - Starter Guildlands Content Pack v1
+
+Added a Builder-importable Starter Guildlands content pack with 44 draft rooms, room features, reusable features, starter-safe item templates, entity templates with future AI metadata, and spawn placeholders. The phase proves external JSON worldbuilding through Builder import/export without implementing combat, quests, shops, skills, spells, classes, visual Builder UI, AI behavior, or live package changes.
+
+## Phase 4H localized Builder lists
+
+Builder list commands are local by default: `alist` shows the current area, `zlist` shows the current area's zones, and `rlist`/`rooms` shows the current zone's rooms. Use explicit `all`, `area <area_id>`, `zone <zone_id>`, or VNUM ranges such as `1000-1029` to broaden or focus results. See `docs/BUILDER_LIST_COMMANDS.md`.
+
+### Phase 4H Stability Hotfix
+
+Builder tests now isolate mutable workspace operations with a temporary copied Shattered Realms package and temporary SQLite database, protecting committed starter drafts from test-order pollution. Item bulk commands now treat duplicate names as distinct instances: `get all`/`take all` collect every portable room item, skip NPCs and nonportable scenery, and `drop all` returns every eligible unequipped carried item while preserving equipped state and instance identity. Seeded room items remain persistent until a future explicit reset system is designed.
+
+## Phase 5A runtime content synchronization
+
+Phase 5A establishes one canonical runtime truth. Item templates and entity templates are definitions only; `item_placements` and `spawns` are declarations; SQLite item/entity rows are live instances. Room rendering, look/examine, get/take, diagnostics, and future perception use canonical runtime room contents. Shared `feature_refs` resolve nonportable scenery alongside local room `features`. Blacksmith Stall now uses an anvil feature, two materialized Iron Sword item instances, one materialized Training Sword item instance, and one materialized Blacksmith Harl entity instance.

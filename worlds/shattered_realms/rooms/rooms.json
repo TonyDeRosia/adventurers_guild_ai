@@ -299,10 +299,7 @@
     "npcs": [
       "blacksmith_harl"
     ],
-    "objects": [
-      "training_sword",
-      "iron_sword"
-    ],
+    "objects": [],
     "exits": [
       {
         "direction": "south",
@@ -313,7 +310,10 @@
     "ambient_messages": [
       "Life continues around Blacksmith Stall."
     ],
-    "active_hooks": []
+    "active_hooks": [],
+    "feature_refs": [
+      "blacksmith_anvil"
+    ]
   },
   {
     "id": "provisioner_stall",

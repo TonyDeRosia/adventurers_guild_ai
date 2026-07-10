@@ -1,0 +1,208 @@
+{
+  "abandoned_watchpost": {
+    "area_id": "starter_guildlands",
+    "created_at": "20260101T000000.000000Z",
+    "description": "Abandoned Watchpost starter zone.",
+    "flags": [],
+    "id": "abandoned_watchpost",
+    "name": "Abandoned Watchpost",
+    "plugin_data": {},
+    "room_ids": [
+      "abandoned_watchpost",
+      "watchpost_entry"
+    ],
+    "tags": [
+      "starter"
+    ],
+    "updated_at": "20260101T000000.000000Z",
+    "vnum_end": 1269,
+    "vnum_start": 1240,
+    "world_id": "shattered_realms"
+  },
+  "east_farmland": {
+    "area_id": "starter_guildlands",
+    "created_at": "20260101T000000.000000Z",
+    "description": "East Farmland starter zone.",
+    "flags": [],
+    "id": "east_farmland",
+    "name": "East Farmland",
+    "plugin_data": {},
+    "room_ids": [
+      "east_farmland_path",
+      "farmer_field",
+      "broken_fence"
+    ],
+    "tags": [
+      "starter"
+    ],
+    "updated_at": "20260101T000000.000000Z",
+    "vnum_end": 1209,
+    "vnum_start": 1180,
+    "world_id": "shattered_realms"
+  },
+  "emberwood_edge": {
+    "area_id": "starter_guildlands",
+    "created_at": "20260101T000000.000000Z",
+    "description": "Emberwood Edge starter zone.",
+    "flags": [],
+    "id": "emberwood_edge",
+    "name": "Emberwood Edge",
+    "plugin_data": {},
+    "room_ids": [
+      "emberwood_edge",
+      "emberwood_game_trail"
+    ],
+    "tags": [
+      "starter"
+    ],
+    "updated_at": "20260101T000000.000000Z",
+    "vnum_end": 1239,
+    "vnum_start": 1210,
+    "world_id": "shattered_realms"
+  },
+  "guildhall_crossing": {
+    "area_id": "starter_guildlands",
+    "created_at": "20260101T000000.000000Z",
+    "description": "Guildhall Crossing starter zone.",
+    "flags": [],
+    "id": "guildhall_crossing",
+    "name": "Guildhall Crossing",
+    "plugin_data": {},
+    "room_ids": [
+      "guildhall_crossing_square",
+      "guildhall_archway"
+    ],
+    "tags": [
+      "starter"
+    ],
+    "updated_at": "20260101T000000.000000Z",
+    "vnum_end": 1029,
+    "vnum_start": 1000,
+    "world_id": "shattered_realms"
+  },
+  "market_lane": {
+    "area_id": "starter_guildlands",
+    "created_at": "20260101T000000.000000Z",
+    "description": "Market Lane starter zone.",
+    "flags": [],
+    "id": "market_lane",
+    "name": "Market Lane",
+    "plugin_data": {},
+    "room_ids": [
+      "market_lane",
+      "blacksmith_stall",
+      "provisioner_stall",
+      "adventurer_notice_board"
+    ],
+    "tags": [
+      "starter"
+    ],
+    "updated_at": "20260101T000000.000000Z",
+    "vnum_end": 1119,
+    "vnum_start": 1080,
+    "world_id": "shattered_realms"
+  },
+  "old_gate_road": {
+    "area_id": "starter_guildlands",
+    "created_at": "20260101T000000.000000Z",
+    "description": "Old Gate Road starter zone.",
+    "flags": [],
+    "id": "old_gate_road",
+    "name": "Old Gate Road",
+    "plugin_data": {},
+    "room_ids": [
+      "old_gate_road",
+      "old_gate_checkpoint",
+      "milestone_bend"
+    ],
+    "tags": [
+      "starter"
+    ],
+    "updated_at": "20260101T000000.000000Z",
+    "vnum_end": 1179,
+    "vnum_start": 1150,
+    "world_id": "shattered_realms"
+  },
+  "rat_cellar": {
+    "area_id": "starter_guildlands",
+    "created_at": "20260101T000000.000000Z",
+    "description": "Rat Cellar starter zone.",
+    "flags": [],
+    "id": "rat_cellar",
+    "name": "Rat Cellar",
+    "plugin_data": {},
+    "room_ids": [
+      "rat_cellar_entry",
+      "rat_cellar_storage",
+      "rat_cellar_nest"
+    ],
+    "tags": [
+      "starter"
+    ],
+    "updated_at": "20260101T000000.000000Z",
+    "vnum_end": 1299,
+    "vnum_start": 1270,
+    "world_id": "shattered_realms"
+  },
+  "registrar_hall": {
+    "area_id": "starter_guildlands",
+    "created_at": "20260101T000000.000000Z",
+    "description": "Registrar Hall starter zone.",
+    "flags": [],
+    "id": "registrar_hall",
+    "name": "Registrar Hall",
+    "plugin_data": {},
+    "room_ids": [
+      "guildhall_registrar_office"
+    ],
+    "tags": [
+      "starter"
+    ],
+    "updated_at": "20260101T000000.000000Z",
+    "vnum_end": 1049,
+    "vnum_start": 1030,
+    "world_id": "shattered_realms"
+  },
+  "training_grounds": {
+    "area_id": "starter_guildlands",
+    "created_at": "20260101T000000.000000Z",
+    "description": "Training Grounds starter zone.",
+    "flags": [],
+    "id": "training_grounds",
+    "name": "Training Grounds",
+    "plugin_data": {},
+    "room_ids": [
+      "training_yard",
+      "weapon_practice_ring",
+      "spell_practice_circle",
+      "healer_corner"
+    ],
+    "tags": [
+      "starter"
+    ],
+    "updated_at": "20260101T000000.000000Z",
+    "vnum_end": 1079,
+    "vnum_start": 1050,
+    "world_id": "shattered_realms"
+  },
+  "wayfarers_mug": {
+    "area_id": "starter_guildlands",
+    "created_at": "20260101T000000.000000Z",
+    "description": "Wayfarer's Mug starter zone.",
+    "flags": [],
+    "id": "wayfarers_mug",
+    "name": "Wayfarer's Mug",
+    "plugin_data": {},
+    "room_ids": [
+      "tavern_common_room",
+      "tavern_back_room"
+    ],
+    "tags": [
+      "starter"
+    ],
+    "updated_at": "20260101T000000.000000Z",
+    "vnum_end": 1149,
+    "vnum_start": 1120,
+    "world_id": "shattered_realms"
+  }
+}

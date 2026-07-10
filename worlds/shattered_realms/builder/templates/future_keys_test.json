@@ -1,0 +1,25 @@
+{
+  "ambient_profiles": {
+    "quiet_square": {
+      "sound": "fountain"
+    }
+  },
+  "areas": {},
+  "entities": {},
+  "factions": {
+    "future_guild": {
+      "name": "Future Guild"
+    }
+  },
+  "features": {},
+  "item_placements": {},
+  "items": {},
+  "locations": {
+    "future_city": {
+      "name": "Future City"
+    }
+  },
+  "rooms": {},
+  "spawns": {},
+  "zones": {}
+}

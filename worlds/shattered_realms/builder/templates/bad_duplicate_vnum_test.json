@@ -1,0 +1,61 @@
+{
+  "areas": {
+    "duplicate_test_area": {
+      "description": "Expected to fail validation.",
+      "id": "duplicate_test_area",
+      "name": "Duplicate Test Area",
+      "room_vnum_end": 9199,
+      "room_vnum_start": 9100,
+      "vnum_end": 9199,
+      "vnum_start": 9100,
+      "world_id": "shattered_realms"
+    }
+  },
+  "entities": {},
+  "features": {},
+  "item_placements": {},
+  "items": {},
+  "rooms": {
+    "duplicate_vnum_one": {
+      "area_id": "duplicate_test_area",
+      "description": "First duplicate room.",
+      "exits": {},
+      "features": {},
+      "flags": [],
+      "id": "duplicate_vnum_one",
+      "name": "Duplicate One",
+      "plugin_data": {},
+      "tags": [],
+      "vnum": 9100,
+      "world_id": "shattered_realms",
+      "zone_id": "duplicate_test_zone"
+    },
+    "duplicate_vnum_two": {
+      "area_id": "duplicate_test_area",
+      "description": "Second duplicate room.",
+      "exits": {},
+      "features": {},
+      "flags": [],
+      "id": "duplicate_vnum_two",
+      "name": "Duplicate Two",
+      "plugin_data": {},
+      "tags": [],
+      "vnum": 9100,
+      "world_id": "shattered_realms",
+      "zone_id": "duplicate_test_zone"
+    }
+  },
+  "spawns": {},
+  "validation_note": "Intentional validation failure example: two rooms use vnum 9100 inside duplicate_test_area.",
+  "zones": {
+    "duplicate_test_zone": {
+      "area_id": "duplicate_test_area",
+      "description": "Expected to fail validation.",
+      "id": "duplicate_test_zone",
+      "name": "Duplicate Test Zone",
+      "vnum_end": 9199,
+      "vnum_start": 9100,
+      "world_id": "shattered_realms"
+    }
+  }
+}

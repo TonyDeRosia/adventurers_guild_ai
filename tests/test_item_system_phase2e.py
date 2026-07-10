@@ -45,17 +45,17 @@ def test_room_seeding_get_drop_and_render_persist(tmp_path):
     rt, events = make_runtime(tmp_path)
     cid = make_char(rt)
     char = rt.state_store.load_character(cid)
-    assert any(i["template_id"] == "fountain" for i in rt.find_room_items(char.room_id))
+    assert any(f.get("id") == "fountain" or f.get("feature_id") == "fountain" for f in rt._room_features(rt._current_room(char)))
     seeded_count = len(rt.find_room_items(char.room_id))
     rt._seed_room_items()
     assert len(rt.find_room_items(char.room_id)) == seeded_count
     assert "Fountain" in rt.handle_input(cid, "look")["output"]
-    assert rt.handle_input(cid, "get fountain")["output"].strip() == "You cannot take that."
-    assert any(i["template_id"] == "fountain" for i in rt.find_room_items(char.room_id))
+    assert rt.handle_input(cid, "get fountain")["output"].strip() == "You don\'t see that here."
+    assert any(f.get("id") == "fountain" or f.get("feature_id") == "fountain" for f in rt._room_features(rt._current_room(char)))
     assert "You aren't carrying that." in rt.handle_input(cid, "drop fountain")["output"]
     rt2 = MudRuntime(Path.cwd(), tmp_path)
     rt2.load_world("shattered_realms")
-    assert any(i["template_id"] == "fountain" for i in rt2.find_room_items(char.room_id))
+    assert any(f.get("id") == "fountain" or f.get("feature_id") == "fountain" for f in rt2._room_features(rt2._current_room(char)))
     pickup = [e for e in events if e in {"before_item_pickup","item_picked_up","inventory_changed","room_inventory_changed","after_item_pickup"}]
     assert pickup == []
 
@@ -80,7 +80,7 @@ def test_keyword_resolution_and_object_commands(tmp_path):
     assert rt.resolve_item_keywords("traveler", items)["status"] == "ok"
     assert "nicked" in rt.handle_input(cid, "examine rusty sword")["output"]
     rt.spawn_item("rusty_sword", "character", owner_id=cid)
-    assert "Which do you mean" in rt.handle_input(cid, "drop sword")["output"]
+    assert rt.handle_input(cid, "drop sword")["output"].startswith("You drop ")
     assert "aren't carrying" in rt.handle_input(cid, "drop missingthing")["output"]
 
 

@@ -1,0 +1,4124 @@
+{
+  "areas": {
+    "starter_guildlands": {
+      "created_at": "20260101T000000.000000Z",
+      "description": "The organized starter region for Shattered Realms, covering the guildhall crossing, civic halls, training spaces, market, tavern, roads, farms, forest edge, watchpost, and rat cellar used by new characters.",
+      "flags": [],
+      "id": "starter_guildlands",
+      "mob_vnum_end": 1699,
+      "mob_vnum_start": 1500,
+      "name": "Starter Guildlands",
+      "object_vnum_end": 1499,
+      "object_vnum_start": 1300,
+      "plugin_data": {
+        "content_pack_update": "starter_guildlands_content_pack_v1"
+      },
+      "room_vnum_end": 1299,
+      "room_vnum_start": 1000,
+      "spawn_vnum_end": 1799,
+      "spawn_vnum_start": 1700,
+      "tags": [
+        "starter"
+      ],
+      "updated_at": "20260101T000000.000000Z",
+      "vnum_end": 1999,
+      "vnum_start": 1000,
+      "world_id": "shattered_realms",
+      "zone_ids": [
+        "guildhall_crossing",
+        "registrar_hall",
+        "training_grounds",
+        "market_lane",
+        "wayfarers_mug",
+        "old_gate_road",
+        "east_farmland",
+        "emberwood_edge",
+        "abandoned_watchpost",
+        "rat_cellar"
+      ]
+    }
+  },
+  "entities": {
+    "cellar_rat": {
+      "description": "A future cellar rat entity template for Starter Guildlands scenes.",
+      "entity_type": "mob",
+      "flags": [],
+      "id": "cellar_rat",
+      "name": "Cellar Rat",
+      "plugin_data": {
+        "ai_profile": {
+          "behavior_notes": "Non-authoritative metadata only; no AI behavior is implemented.",
+          "daily_role": "cellar rat",
+          "fears": [
+            "being treated as authoritative runtime logic"
+          ],
+          "goals": [
+            "support believable world presence"
+          ],
+          "memory_seed": "cellar_rat remembers routine details of the guildlands but has no active memory system yet.",
+          "personality": "grounded, distinct, and starter-safe",
+          "relationships": {
+            "starter_guildlands": "local context"
+          },
+          "speech_style": "brief local observations"
+        },
+        "vnum": 1508
+      },
+      "tags": [
+        "starter",
+        "template"
+      ]
+    },
+    "farmhand": {
+      "description": "A future farmhand entity template for Starter Guildlands scenes.",
+      "entity_type": "npc",
+      "flags": [],
+      "id": "farmhand",
+      "name": "Farmhand",
+      "plugin_data": {
+        "ai_profile": {
+          "behavior_notes": "Non-authoritative metadata only; no AI behavior is implemented.",
+          "daily_role": "farmhand",
+          "fears": [
+            "being treated as authoritative runtime logic"
+          ],
+          "goals": [
+            "support believable world presence"
+          ],
+          "memory_seed": "farmhand remembers routine details of the guildlands but has no active memory system yet.",
+          "personality": "grounded, distinct, and starter-safe",
+          "relationships": {
+            "starter_guildlands": "local context"
+          },
+          "speech_style": "brief local observations"
+        },
+        "vnum": 1505
+      },
+      "tags": [
+        "starter",
+        "template"
+      ]
+    },
+    "forest_forager": {
+      "description": "A future forest forager entity template for Starter Guildlands scenes.",
+      "entity_type": "npc",
+      "flags": [],
+      "id": "forest_forager",
+      "name": "Forest Forager",
+      "plugin_data": {
+        "ai_profile": {
+          "behavior_notes": "Non-authoritative metadata only; no AI behavior is implemented.",
+          "daily_role": "forest forager",
+          "fears": [
+            "being treated as authoritative runtime logic"
+          ],
+          "goals": [
+            "support believable world presence"
+          ],
+          "memory_seed": "forest_forager remembers routine details of the guildlands but has no active memory system yet.",
+          "personality": "grounded, distinct, and starter-safe",
+          "relationships": {
+            "starter_guildlands": "local context"
+          },
+          "speech_style": "brief local observations"
+        },
+        "vnum": 1506
+      },
+      "tags": [
+        "starter",
+        "template"
+      ]
+    },
+    "gate_guard": {
+      "description": "A future gate guard entity template for Starter Guildlands scenes.",
+      "entity_type": "npc",
+      "flags": [],
+      "id": "gate_guard",
+      "name": "Gate Guard",
+      "plugin_data": {
+        "ai_profile": {
+          "behavior_notes": "Non-authoritative metadata only; no AI behavior is implemented.",
+          "daily_role": "gate guard",
+          "fears": [
+            "being treated as authoritative runtime logic"
+          ],
+          "goals": [
+            "support believable world presence"
+          ],
+          "memory_seed": "gate_guard remembers routine details of the guildlands but has no active memory system yet.",
+          "personality": "grounded, distinct, and starter-safe",
+          "relationships": {
+            "starter_guildlands": "local context"
+          },
+          "speech_style": "brief local observations"
+        },
+        "vnum": 1504
+      },
+      "tags": [
+        "starter",
+        "template"
+      ]
+    },
+    "guild_registrar": {
+      "description": "A future guild registrar entity template for Starter Guildlands scenes.",
+      "entity_type": "npc",
+      "flags": [],
+      "id": "guild_registrar",
+      "name": "Guild Registrar",
+      "plugin_data": {
+        "ai_profile": {
+          "behavior_notes": "Non-authoritative metadata only; no AI behavior is implemented.",
+          "daily_role": "guild registrar",
+          "fears": [
+            "being treated as authoritative runtime logic"
+          ],
+          "goals": [
+            "support believable world presence"
+          ],
+          "memory_seed": "guild_registrar remembers routine details of the guildlands but has no active memory system yet.",
+          "personality": "grounded, distinct, and starter-safe",
+          "relationships": {
+            "starter_guildlands": "local context"
+          },
+          "speech_style": "brief local observations"
+        },
+        "vnum": 1500
+      },
+      "tags": [
+        "starter",
+        "template"
+      ]
+    },
+    "large_cellar_rat": {
+      "description": "A future large cellar rat entity template for Starter Guildlands scenes.",
+      "entity_type": "mob",
+      "flags": [],
+      "id": "large_cellar_rat",
+      "name": "Large Cellar Rat",
+      "plugin_data": {
+        "ai_profile": {
+          "behavior_notes": "Non-authoritative metadata only; no AI behavior is implemented.",
+          "daily_role": "large cellar rat",
+          "fears": [
+            "being treated as authoritative runtime logic"
+          ],
+          "goals": [
+            "support believable world presence"
+          ],
+          "memory_seed": "large_cellar_rat remembers routine details of the guildlands but has no active memory system yet.",
+          "personality": "grounded, distinct, and starter-safe",
+          "relationships": {
+            "starter_guildlands": "local context"
+          },
+          "speech_style": "brief local observations"
+        },
+        "vnum": 1509
+      },
+      "tags": [
+        "starter",
+        "template"
+      ]
+    },
+    "market_vendor": {
+      "description": "A future market vendor entity template for Starter Guildlands scenes.",
+      "entity_type": "npc",
+      "flags": [],
+      "id": "market_vendor",
+      "name": "Market Vendor",
+      "plugin_data": {
+        "ai_profile": {
+          "behavior_notes": "Non-authoritative metadata only; no AI behavior is implemented.",
+          "daily_role": "market vendor",
+          "fears": [
+            "being treated as authoritative runtime logic"
+          ],
+          "goals": [
+            "support believable world presence"
+          ],
+          "memory_seed": "market_vendor remembers routine details of the guildlands but has no active memory system yet.",
+          "personality": "grounded, distinct, and starter-safe",
+          "relationships": {
+            "starter_guildlands": "local context"
+          },
+          "speech_style": "brief local observations"
+        },
+        "vnum": 1502
+      },
+      "tags": [
+        "starter",
+        "template"
+      ]
+    },
+    "nervous_recruit": {
+      "description": "A future nervous recruit entity template for Starter Guildlands scenes.",
+      "entity_type": "npc",
+      "flags": [],
+      "id": "nervous_recruit",
+      "name": "Nervous Recruit",
+      "plugin_data": {
+        "ai_profile": {
+          "behavior_notes": "Non-authoritative metadata only; no AI behavior is implemented.",
+          "daily_role": "nervous recruit",
+          "fears": [
+            "being treated as authoritative runtime logic"
+          ],
+          "goals": [
+            "support believable world presence"
+          ],
+          "memory_seed": "nervous_recruit remembers routine details of the guildlands but has no active memory system yet.",
+          "personality": "grounded, distinct, and starter-safe",
+          "relationships": {
+            "starter_guildlands": "local context"
+          },
+          "speech_style": "brief local observations"
+        },
+        "vnum": 1510
+      },
+      "tags": [
+        "starter",
+        "template"
+      ]
+    },
+    "tavern_keeper": {
+      "description": "A future tavern keeper entity template for Starter Guildlands scenes.",
+      "entity_type": "npc",
+      "flags": [],
+      "id": "tavern_keeper",
+      "name": "Tavern Keeper",
+      "plugin_data": {
+        "ai_profile": {
+          "behavior_notes": "Non-authoritative metadata only; no AI behavior is implemented.",
+          "daily_role": "tavern keeper",
+          "fears": [
+            "being treated as authoritative runtime logic"
+          ],
+          "goals": [
+            "support believable world presence"
+          ],
+          "memory_seed": "tavern_keeper remembers routine details of the guildlands but has no active memory system yet.",
+          "personality": "grounded, distinct, and starter-safe",
+          "relationships": {
+            "starter_guildlands": "local context"
+          },
+          "speech_style": "brief local observations"
+        },
+        "vnum": 1503
+      },
+      "tags": [
+        "starter",
+        "template"
+      ]
+    },
+    "training_master": {
+      "description": "A future training master entity template for Starter Guildlands scenes.",
+      "entity_type": "npc",
+      "flags": [],
+      "id": "training_master",
+      "name": "Training Master",
+      "plugin_data": {
+        "ai_profile": {
+          "behavior_notes": "Non-authoritative metadata only; no AI behavior is implemented.",
+          "daily_role": "training master",
+          "fears": [
+            "being treated as authoritative runtime logic"
+          ],
+          "goals": [
+            "support believable world presence"
+          ],
+          "memory_seed": "training_master remembers routine details of the guildlands but has no active memory system yet.",
+          "personality": "grounded, distinct, and starter-safe",
+          "relationships": {
+            "starter_guildlands": "local context"
+          },
+          "speech_style": "brief local observations"
+        },
+        "vnum": 1501
+      },
+      "tags": [
+        "starter",
+        "template"
+      ]
+    },
+    "wandering_messenger": {
+      "description": "A future wandering messenger entity template for Starter Guildlands scenes.",
+      "entity_type": "npc",
+      "flags": [],
+      "id": "wandering_messenger",
+      "name": "Wandering Messenger",
+      "plugin_data": {
+        "ai_profile": {
+          "behavior_notes": "Non-authoritative metadata only; no AI behavior is implemented.",
+          "daily_role": "wandering messenger",
+          "fears": [
+            "being treated as authoritative runtime logic"
+          ],
+          "goals": [
+            "support believable world presence"
+          ],
+          "memory_seed": "wandering_messenger remembers routine details of the guildlands but has no active memory system yet.",
+          "personality": "grounded, distinct, and starter-safe",
+          "relationships": {
+            "starter_guildlands": "local context"
+          },
+          "speech_style": "brief local observations"
+        },
+        "vnum": 1511
+      },
+      "tags": [
+        "starter",
+        "template"
+      ]
+    },
+    "watchpost_scout": {
+      "description": "A future watchpost scout entity template for Starter Guildlands scenes.",
+      "entity_type": "npc",
+      "flags": [],
+      "id": "watchpost_scout",
+      "name": "Watchpost Scout",
+      "plugin_data": {
+        "ai_profile": {
+          "behavior_notes": "Non-authoritative metadata only; no AI behavior is implemented.",
+          "daily_role": "watchpost scout",
+          "fears": [
+            "being treated as authoritative runtime logic"
+          ],
+          "goals": [
+            "support believable world presence"
+          ],
+          "memory_seed": "watchpost_scout remembers routine details of the guildlands but has no active memory system yet.",
+          "personality": "grounded, distinct, and starter-safe",
+          "relationships": {
+            "starter_guildlands": "local context"
+          },
+          "speech_style": "brief local observations"
+        },
+        "vnum": 1507
+      },
+      "tags": [
+        "starter",
+        "template"
+      ]
+    }
+  },
+  "features": {
+    "chalk_circle": {
+      "flags": [],
+      "id": "chalk_circle",
+      "interactions": [
+        "look",
+        "examine"
+      ],
+      "keywords": [
+        "chalk",
+        "circle"
+      ],
+      "long_description": "This reusable scenery record supports future feature-library placement for the Starter Guildlands.",
+      "name": "Chalk Circle",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "vnum": 1303
+      },
+      "portable": false,
+      "short_description": "A reusable chalk circle feature.",
+      "tags": [
+        "starter",
+        "global_feature"
+      ],
+      "visible": true
+    },
+    "field_scarecrow": {
+      "flags": [],
+      "id": "field_scarecrow",
+      "interactions": [
+        "look",
+        "examine"
+      ],
+      "keywords": [
+        "field",
+        "scarecrow"
+      ],
+      "long_description": "This reusable scenery record supports future feature-library placement for the Starter Guildlands.",
+      "name": "Field Scarecrow",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "vnum": 1308
+      },
+      "portable": false,
+      "short_description": "A reusable field scarecrow feature.",
+      "tags": [
+        "starter",
+        "global_feature"
+      ],
+      "visible": true
+    },
+    "forest_shrine": {
+      "flags": [],
+      "id": "forest_shrine",
+      "interactions": [
+        "look",
+        "examine"
+      ],
+      "keywords": [
+        "forest",
+        "shrine"
+      ],
+      "long_description": "This reusable scenery record supports future feature-library placement for the Starter Guildlands.",
+      "name": "Forest Shrine",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "vnum": 1309
+      },
+      "portable": false,
+      "short_description": "A reusable forest shrine feature.",
+      "tags": [
+        "starter",
+        "global_feature"
+      ],
+      "visible": true
+    },
+    "ledger_desk": {
+      "flags": [],
+      "id": "ledger_desk",
+      "interactions": [
+        "look",
+        "examine"
+      ],
+      "keywords": [
+        "ledger",
+        "desk"
+      ],
+      "long_description": "This reusable scenery record supports future feature-library placement for the Starter Guildlands.",
+      "name": "Ledger Desk",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "vnum": 1300
+      },
+      "portable": false,
+      "short_description": "A reusable ledger desk feature.",
+      "tags": [
+        "starter",
+        "global_feature"
+      ],
+      "visible": true
+    },
+    "market_awning": {
+      "flags": [],
+      "id": "market_awning",
+      "interactions": [
+        "look",
+        "examine"
+      ],
+      "keywords": [
+        "market",
+        "awning"
+      ],
+      "long_description": "This reusable scenery record supports future feature-library placement for the Starter Guildlands.",
+      "name": "Market Awning",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "vnum": 1306
+      },
+      "portable": false,
+      "short_description": "A reusable market awning feature.",
+      "tags": [
+        "starter",
+        "global_feature"
+      ],
+      "visible": true
+    },
+    "notice_board": {
+      "flags": [],
+      "id": "notice_board",
+      "interactions": [
+        "look",
+        "examine"
+      ],
+      "keywords": [
+        "notice",
+        "board"
+      ],
+      "long_description": "This reusable scenery record supports future feature-library placement for the Starter Guildlands.",
+      "name": "Notice Board",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "vnum": 1304
+      },
+      "portable": false,
+      "short_description": "A reusable notice board feature.",
+      "tags": [
+        "starter",
+        "global_feature"
+      ],
+      "visible": true
+    },
+    "stable_gate": {
+      "flags": [],
+      "id": "stable_gate",
+      "interactions": [
+        "look",
+        "examine"
+      ],
+      "keywords": [
+        "stable",
+        "gate"
+      ],
+      "long_description": "This reusable scenery record supports future feature-library placement for the Starter Guildlands.",
+      "name": "Stable Gate",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "vnum": 1305
+      },
+      "portable": false,
+      "short_description": "A reusable stable gate feature.",
+      "tags": [
+        "starter",
+        "global_feature"
+      ],
+      "visible": true
+    },
+    "tavern_hearth": {
+      "flags": [],
+      "id": "tavern_hearth",
+      "interactions": [
+        "look",
+        "examine"
+      ],
+      "keywords": [
+        "tavern",
+        "hearth"
+      ],
+      "long_description": "This reusable scenery record supports future feature-library placement for the Starter Guildlands.",
+      "name": "Tavern Hearth",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "vnum": 1307
+      },
+      "portable": false,
+      "short_description": "A reusable tavern hearth feature.",
+      "tags": [
+        "starter",
+        "global_feature"
+      ],
+      "visible": true
+    },
+    "training_dummy": {
+      "flags": [],
+      "id": "training_dummy",
+      "interactions": [
+        "look",
+        "examine"
+      ],
+      "keywords": [
+        "training",
+        "dummy"
+      ],
+      "long_description": "This reusable scenery record supports future feature-library placement for the Starter Guildlands.",
+      "name": "Training Dummy",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "vnum": 1301
+      },
+      "portable": false,
+      "short_description": "A reusable training dummy feature.",
+      "tags": [
+        "starter",
+        "global_feature"
+      ],
+      "visible": true
+    },
+    "weapon_rack": {
+      "flags": [],
+      "id": "weapon_rack",
+      "interactions": [
+        "look",
+        "examine"
+      ],
+      "keywords": [
+        "weapon",
+        "rack"
+      ],
+      "long_description": "This reusable scenery record supports future feature-library placement for the Starter Guildlands.",
+      "name": "Weapon Rack",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "vnum": 1302
+      },
+      "portable": false,
+      "short_description": "A reusable weapon rack feature.",
+      "tags": [
+        "starter",
+        "global_feature"
+      ],
+      "visible": true
+    }
+  },
+  "item_placements": {},
+  "items": {
+    "field_ration": {
+      "description": "A starter-safe field ration template for Builder import testing.",
+      "flags": [],
+      "id": "field_ration",
+      "item_type": "misc",
+      "keywords": [
+        "field",
+        "ration"
+      ],
+      "name": "Field Ration",
+      "plugin_data": {
+        "future_hooks": {
+          "combat_stats": "not implemented"
+        },
+        "vnum": 1304
+      },
+      "tags": [
+        "starter",
+        "template"
+      ],
+      "wear_slots": []
+    },
+    "guild_token": {
+      "description": "A starter-safe guild token template for Builder import testing.",
+      "flags": [],
+      "id": "guild_token",
+      "item_type": "misc",
+      "keywords": [
+        "guild",
+        "token"
+      ],
+      "name": "Guild Token",
+      "plugin_data": {
+        "future_hooks": {
+          "combat_stats": "not implemented"
+        },
+        "vnum": 1302
+      },
+      "tags": [
+        "starter",
+        "template"
+      ],
+      "wear_slots": []
+    },
+    "healer_bandage": {
+      "description": "A starter-safe healer bandage template for Builder import testing.",
+      "flags": [],
+      "id": "healer_bandage",
+      "item_type": "misc",
+      "keywords": [
+        "healer",
+        "bandage"
+      ],
+      "name": "Healer Bandage",
+      "plugin_data": {
+        "future_hooks": {
+          "combat_stats": "not implemented"
+        },
+        "vnum": 1309
+      },
+      "tags": [
+        "starter",
+        "template"
+      ],
+      "wear_slots": []
+    },
+    "market_apple": {
+      "description": "A starter-safe market apple template for Builder import testing.",
+      "flags": [],
+      "id": "market_apple",
+      "item_type": "misc",
+      "keywords": [
+        "market",
+        "apple"
+      ],
+      "name": "Market Apple",
+      "plugin_data": {
+        "future_hooks": {
+          "combat_stats": "not implemented"
+        },
+        "vnum": 1308
+      },
+      "tags": [
+        "starter",
+        "template"
+      ],
+      "wear_slots": []
+    },
+    "practice_shield": {
+      "description": "A starter-safe practice shield template for Builder import testing.",
+      "flags": [],
+      "id": "practice_shield",
+      "item_type": "misc",
+      "keywords": [
+        "practice",
+        "shield"
+      ],
+      "name": "Practice Shield",
+      "plugin_data": {
+        "future_hooks": {
+          "combat_stats": "not implemented"
+        },
+        "vnum": 1301
+      },
+      "tags": [
+        "starter",
+        "template"
+      ],
+      "wear_slots": []
+    },
+    "rat_tail": {
+      "description": "A starter-safe rat tail template for Builder import testing.",
+      "flags": [],
+      "id": "rat_tail",
+      "item_type": "misc",
+      "keywords": [
+        "rat",
+        "tail"
+      ],
+      "name": "Rat Tail",
+      "plugin_data": {
+        "future_hooks": {
+          "combat_stats": "not implemented"
+        },
+        "vnum": 1306
+      },
+      "tags": [
+        "starter",
+        "template"
+      ],
+      "wear_slots": []
+    },
+    "rusty_key": {
+      "description": "A starter-safe rusty key template for Builder import testing.",
+      "flags": [],
+      "id": "rusty_key",
+      "item_type": "misc",
+      "keywords": [
+        "rusty",
+        "key"
+      ],
+      "name": "Rusty Key",
+      "plugin_data": {
+        "future_hooks": {
+          "combat_stats": "not implemented"
+        },
+        "vnum": 1307
+      },
+      "tags": [
+        "starter",
+        "template"
+      ],
+      "wear_slots": []
+    },
+    "sealed_letter": {
+      "description": "A starter-safe sealed letter template for Builder import testing.",
+      "flags": [],
+      "id": "sealed_letter",
+      "item_type": "misc",
+      "keywords": [
+        "sealed",
+        "letter"
+      ],
+      "name": "Sealed Letter",
+      "plugin_data": {
+        "future_hooks": {
+          "combat_stats": "not implemented"
+        },
+        "vnum": 1305
+      },
+      "tags": [
+        "starter",
+        "template"
+      ],
+      "wear_slots": []
+    },
+    "simple_torch": {
+      "description": "A starter-safe simple torch template for Builder import testing.",
+      "flags": [],
+      "id": "simple_torch",
+      "item_type": "misc",
+      "keywords": [
+        "simple",
+        "torch"
+      ],
+      "name": "Simple Torch",
+      "plugin_data": {
+        "future_hooks": {
+          "combat_stats": "not implemented"
+        },
+        "vnum": 1303
+      },
+      "tags": [
+        "starter",
+        "template"
+      ],
+      "wear_slots": []
+    },
+    "training_sword": {
+      "description": "A starter-safe training sword template for Builder import testing.",
+      "flags": [],
+      "id": "training_sword",
+      "item_type": "misc",
+      "keywords": [
+        "training",
+        "sword"
+      ],
+      "name": "Training Sword",
+      "plugin_data": {
+        "future_hooks": {
+          "combat_stats": "not implemented"
+        },
+        "vnum": 1300
+      },
+      "tags": [
+        "starter",
+        "template"
+      ],
+      "wear_slots": []
+    }
+  },
+  "rooms": {
+    "starter_guildlands_1002": {
+      "area_id": "starter_guildlands",
+      "description": "Banner Court extends the Guildhall Crossing with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "back": {
+          "description": "A marked way returns toward Guildhall Crossing Square.",
+          "direction": "back",
+          "target_room_id": "guildhall_crossing_square"
+        },
+        "east": {
+          "description": "The route leads east to Charter Alcove.",
+          "direction": "east",
+          "target_room_id": "starter_guildlands_1003"
+        }
+      },
+      "features": {
+        "banner_court": {
+          "flags": [],
+          "id": "banner_court",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "banner_court",
+            "banner",
+            "court"
+          ],
+          "long_description": "The banner court shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Banner Court Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable banner court detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "guildhall_crossing"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [
+        "one_way"
+      ],
+      "id": "starter_guildlands_1002",
+      "name": "Banner Court",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "guildhall_crossing"
+      ],
+      "vnum": 1002,
+      "world_id": "shattered_realms",
+      "zone_id": "guildhall_crossing"
+    },
+    "starter_guildlands_1003": {
+      "area_id": "starter_guildlands",
+      "description": "Charter Alcove extends the Guildhall Crossing with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "south": {
+          "description": "The route leads south to Torch Gallery.",
+          "direction": "south",
+          "target_room_id": "starter_guildlands_1004"
+        },
+        "west": {
+          "description": "The route leads west to Banner Court.",
+          "direction": "west",
+          "target_room_id": "starter_guildlands_1002"
+        }
+      },
+      "features": {
+        "charter_alcove": {
+          "flags": [],
+          "id": "charter_alcove",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "charter_alcove",
+            "charter",
+            "alcove"
+          ],
+          "long_description": "The charter alcove shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Charter Alcove Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable charter alcove detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "guildhall_crossing"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1003",
+      "name": "Charter Alcove",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "guildhall_crossing"
+      ],
+      "vnum": 1003,
+      "world_id": "shattered_realms",
+      "zone_id": "guildhall_crossing"
+    },
+    "starter_guildlands_1004": {
+      "area_id": "starter_guildlands",
+      "description": "Torch Gallery extends the Guildhall Crossing with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "east": {
+          "description": "The route leads east to Quiet Cloister.",
+          "direction": "east",
+          "target_room_id": "starter_guildlands_1005"
+        },
+        "north": {
+          "description": "The route leads north to Charter Alcove.",
+          "direction": "north",
+          "target_room_id": "starter_guildlands_1003"
+        }
+      },
+      "features": {
+        "torch_gallery": {
+          "flags": [],
+          "id": "torch_gallery",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "torch_gallery",
+            "torch",
+            "gallery"
+          ],
+          "long_description": "The torch gallery shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Torch Gallery Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable torch gallery detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "guildhall_crossing"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1004",
+      "name": "Torch Gallery",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "guildhall_crossing"
+      ],
+      "vnum": 1004,
+      "world_id": "shattered_realms",
+      "zone_id": "guildhall_crossing"
+    },
+    "starter_guildlands_1005": {
+      "area_id": "starter_guildlands",
+      "description": "Quiet Cloister extends the Guildhall Crossing with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "west": {
+          "description": "The route leads west to Torch Gallery.",
+          "direction": "west",
+          "target_room_id": "starter_guildlands_1004"
+        }
+      },
+      "features": {
+        "quiet_cloister": {
+          "flags": [],
+          "id": "quiet_cloister",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "quiet_cloister",
+            "quiet",
+            "cloister"
+          ],
+          "long_description": "The quiet cloister shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Quiet Cloister Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable quiet cloister detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "guildhall_crossing"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1005",
+      "name": "Quiet Cloister",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "guildhall_crossing"
+      ],
+      "vnum": 1005,
+      "world_id": "shattered_realms",
+      "zone_id": "guildhall_crossing"
+    },
+    "starter_guildlands_1031": {
+      "area_id": "starter_guildlands",
+      "description": "Ledger Annex extends the Registrar Hall with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "back": {
+          "description": "A marked way returns toward Guildhall Registrar Office.",
+          "direction": "back",
+          "target_room_id": "guildhall_registrar_office"
+        },
+        "east": {
+          "description": "The route leads east to Seal Cabinet.",
+          "direction": "east",
+          "target_room_id": "starter_guildlands_1032"
+        }
+      },
+      "features": {
+        "ledger_annex": {
+          "flags": [],
+          "id": "ledger_annex",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "ledger_annex",
+            "ledger",
+            "annex"
+          ],
+          "long_description": "The ledger annex shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Ledger Annex Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable ledger annex detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "registrar_hall"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [
+        "one_way"
+      ],
+      "id": "starter_guildlands_1031",
+      "name": "Ledger Annex",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "registrar_hall"
+      ],
+      "vnum": 1031,
+      "world_id": "shattered_realms",
+      "zone_id": "registrar_hall"
+    },
+    "starter_guildlands_1032": {
+      "area_id": "starter_guildlands",
+      "description": "Seal Cabinet extends the Registrar Hall with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "south": {
+          "description": "The route leads south to Waiting Benches.",
+          "direction": "south",
+          "target_room_id": "starter_guildlands_1033"
+        },
+        "west": {
+          "description": "The route leads west to Ledger Annex.",
+          "direction": "west",
+          "target_room_id": "starter_guildlands_1031"
+        }
+      },
+      "features": {
+        "seal_cabinet": {
+          "flags": [],
+          "id": "seal_cabinet",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "seal_cabinet",
+            "seal",
+            "cabinet"
+          ],
+          "long_description": "The seal cabinet shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Seal Cabinet Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable seal cabinet detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "registrar_hall"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1032",
+      "name": "Seal Cabinet",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "registrar_hall"
+      ],
+      "vnum": 1032,
+      "world_id": "shattered_realms",
+      "zone_id": "registrar_hall"
+    },
+    "starter_guildlands_1033": {
+      "area_id": "starter_guildlands",
+      "description": "Waiting Benches extends the Registrar Hall with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "north": {
+          "description": "The route leads north to Seal Cabinet.",
+          "direction": "north",
+          "target_room_id": "starter_guildlands_1032"
+        }
+      },
+      "features": {
+        "waiting_benches": {
+          "flags": [],
+          "id": "waiting_benches",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "waiting_benches",
+            "waiting",
+            "benches"
+          ],
+          "long_description": "The waiting benches shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Waiting Benches Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable waiting benches detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "registrar_hall"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1033",
+      "name": "Waiting Benches",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "registrar_hall"
+      ],
+      "vnum": 1033,
+      "world_id": "shattered_realms",
+      "zone_id": "registrar_hall"
+    },
+    "starter_guildlands_1054": {
+      "area_id": "starter_guildlands",
+      "description": "Dummy Row extends the Training Grounds with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "back": {
+          "description": "A marked way returns toward Training Yard.",
+          "direction": "back",
+          "target_room_id": "training_yard"
+        },
+        "east": {
+          "description": "The route leads east to Shield Yard.",
+          "direction": "east",
+          "target_room_id": "starter_guildlands_1055"
+        }
+      },
+      "features": {
+        "dummy_row": {
+          "flags": [],
+          "id": "dummy_row",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "dummy_row",
+            "dummy",
+            "row"
+          ],
+          "long_description": "The dummy row shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Dummy Row Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable dummy row detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "training_grounds"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [
+        "one_way"
+      ],
+      "id": "starter_guildlands_1054",
+      "name": "Dummy Row",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "training_grounds"
+      ],
+      "vnum": 1054,
+      "world_id": "shattered_realms",
+      "zone_id": "training_grounds"
+    },
+    "starter_guildlands_1055": {
+      "area_id": "starter_guildlands",
+      "description": "Shield Yard extends the Training Grounds with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "south": {
+          "description": "The route leads south to Chalk Circle.",
+          "direction": "south",
+          "target_room_id": "starter_guildlands_1056"
+        },
+        "west": {
+          "description": "The route leads west to Dummy Row.",
+          "direction": "west",
+          "target_room_id": "starter_guildlands_1054"
+        }
+      },
+      "features": {
+        "shield_yard": {
+          "flags": [],
+          "id": "shield_yard",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "shield_yard",
+            "shield",
+            "yard"
+          ],
+          "long_description": "The shield yard shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Shield Yard Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable shield yard detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "training_grounds"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1055",
+      "name": "Shield Yard",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "training_grounds"
+      ],
+      "vnum": 1055,
+      "world_id": "shattered_realms",
+      "zone_id": "training_grounds"
+    },
+    "starter_guildlands_1056": {
+      "area_id": "starter_guildlands",
+      "description": "Chalk Circle extends the Training Grounds with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "east": {
+          "description": "The route leads east to Weapon Rack Shed.",
+          "direction": "east",
+          "target_room_id": "starter_guildlands_1057"
+        },
+        "north": {
+          "description": "The route leads north to Shield Yard.",
+          "direction": "north",
+          "target_room_id": "starter_guildlands_1055"
+        }
+      },
+      "features": {
+        "chalk_circle": {
+          "flags": [],
+          "id": "chalk_circle",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "chalk_circle",
+            "chalk",
+            "circle"
+          ],
+          "long_description": "The chalk circle shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Chalk Circle Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable chalk circle detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "training_grounds"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1056",
+      "name": "Chalk Circle",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "training_grounds"
+      ],
+      "vnum": 1056,
+      "world_id": "shattered_realms",
+      "zone_id": "training_grounds"
+    },
+    "starter_guildlands_1057": {
+      "area_id": "starter_guildlands",
+      "description": "Weapon Rack Shed extends the Training Grounds with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "south": {
+          "description": "The route leads south to Breathing Yard.",
+          "direction": "south",
+          "target_room_id": "starter_guildlands_1058"
+        },
+        "west": {
+          "description": "The route leads west to Chalk Circle.",
+          "direction": "west",
+          "target_room_id": "starter_guildlands_1056"
+        }
+      },
+      "features": {
+        "weapon_rack_shed": {
+          "flags": [],
+          "id": "weapon_rack_shed",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "weapon_rack_shed",
+            "weapon",
+            "rack",
+            "shed"
+          ],
+          "long_description": "The weapon rack shed shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Weapon Rack Shed Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable weapon rack shed detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "training_grounds"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1057",
+      "name": "Weapon Rack Shed",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "training_grounds"
+      ],
+      "vnum": 1057,
+      "world_id": "shattered_realms",
+      "zone_id": "training_grounds"
+    },
+    "starter_guildlands_1058": {
+      "area_id": "starter_guildlands",
+      "description": "Breathing Yard extends the Training Grounds with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "east": {
+          "description": "The route leads east to Sparring Rail.",
+          "direction": "east",
+          "target_room_id": "starter_guildlands_1059"
+        },
+        "north": {
+          "description": "The route leads north to Weapon Rack Shed.",
+          "direction": "north",
+          "target_room_id": "starter_guildlands_1057"
+        }
+      },
+      "features": {
+        "breathing_yard": {
+          "flags": [],
+          "id": "breathing_yard",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "breathing_yard",
+            "breathing",
+            "yard"
+          ],
+          "long_description": "The breathing yard shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Breathing Yard Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable breathing yard detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "training_grounds"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1058",
+      "name": "Breathing Yard",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "training_grounds"
+      ],
+      "vnum": 1058,
+      "world_id": "shattered_realms",
+      "zone_id": "training_grounds"
+    },
+    "starter_guildlands_1059": {
+      "area_id": "starter_guildlands",
+      "description": "Sparring Rail extends the Training Grounds with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "west": {
+          "description": "The route leads west to Breathing Yard.",
+          "direction": "west",
+          "target_room_id": "starter_guildlands_1058"
+        }
+      },
+      "features": {
+        "sparring_rail": {
+          "flags": [],
+          "id": "sparring_rail",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "sparring_rail",
+            "sparring",
+            "rail"
+          ],
+          "long_description": "The sparring rail shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Sparring Rail Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable sparring rail detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "training_grounds"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1059",
+      "name": "Sparring Rail",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "training_grounds"
+      ],
+      "vnum": 1059,
+      "world_id": "shattered_realms",
+      "zone_id": "training_grounds"
+    },
+    "starter_guildlands_1084": {
+      "area_id": "starter_guildlands",
+      "description": "Canvas Arcade extends the Market Lane with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "back": {
+          "description": "A marked way returns toward Market Lane.",
+          "direction": "back",
+          "target_room_id": "market_lane"
+        },
+        "east": {
+          "description": "The route leads east to Apple Crate Corner.",
+          "direction": "east",
+          "target_room_id": "starter_guildlands_1085"
+        }
+      },
+      "features": {
+        "canvas_arcade": {
+          "flags": [],
+          "id": "canvas_arcade",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "canvas_arcade",
+            "canvas",
+            "arcade"
+          ],
+          "long_description": "The canvas arcade shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Canvas Arcade Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable canvas arcade detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "market_lane"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [
+        "one_way"
+      ],
+      "id": "starter_guildlands_1084",
+      "name": "Canvas Arcade",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "market_lane"
+      ],
+      "vnum": 1084,
+      "world_id": "shattered_realms",
+      "zone_id": "market_lane"
+    },
+    "starter_guildlands_1085": {
+      "area_id": "starter_guildlands",
+      "description": "Apple Crate Corner extends the Market Lane with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "south": {
+          "description": "The route leads south to Tinker Nook.",
+          "direction": "south",
+          "target_room_id": "starter_guildlands_1086"
+        },
+        "west": {
+          "description": "The route leads west to Canvas Arcade.",
+          "direction": "west",
+          "target_room_id": "starter_guildlands_1084"
+        }
+      },
+      "features": {
+        "apple_crate_corner": {
+          "flags": [],
+          "id": "apple_crate_corner",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "apple_crate_corner",
+            "apple",
+            "crate",
+            "corner"
+          ],
+          "long_description": "The apple crate corner shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Apple Crate Corner Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable apple crate corner detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "market_lane"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1085",
+      "name": "Apple Crate Corner",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "market_lane"
+      ],
+      "vnum": 1085,
+      "world_id": "shattered_realms",
+      "zone_id": "market_lane"
+    },
+    "starter_guildlands_1086": {
+      "area_id": "starter_guildlands",
+      "description": "Tinker Nook extends the Market Lane with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "east": {
+          "description": "The route leads east to Covered Well.",
+          "direction": "east",
+          "target_room_id": "starter_guildlands_1087"
+        },
+        "north": {
+          "description": "The route leads north to Apple Crate Corner.",
+          "direction": "north",
+          "target_room_id": "starter_guildlands_1085"
+        }
+      },
+      "features": {
+        "tinker_nook": {
+          "flags": [],
+          "id": "tinker_nook",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "tinker_nook",
+            "tinker",
+            "nook"
+          ],
+          "long_description": "The tinker nook shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Tinker Nook Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable tinker nook detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "market_lane"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1086",
+      "name": "Tinker Nook",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "market_lane"
+      ],
+      "vnum": 1086,
+      "world_id": "shattered_realms",
+      "zone_id": "market_lane"
+    },
+    "starter_guildlands_1087": {
+      "area_id": "starter_guildlands",
+      "description": "Covered Well extends the Market Lane with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "south": {
+          "description": "The route leads south to Courier Step.",
+          "direction": "south",
+          "target_room_id": "starter_guildlands_1088"
+        },
+        "west": {
+          "description": "The route leads west to Tinker Nook.",
+          "direction": "west",
+          "target_room_id": "starter_guildlands_1086"
+        }
+      },
+      "features": {
+        "covered_well": {
+          "flags": [],
+          "id": "covered_well",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "covered_well",
+            "covered",
+            "well"
+          ],
+          "long_description": "The covered well shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Covered Well Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable covered well detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "market_lane"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1087",
+      "name": "Covered Well",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "market_lane"
+      ],
+      "vnum": 1087,
+      "world_id": "shattered_realms",
+      "zone_id": "market_lane"
+    },
+    "starter_guildlands_1088": {
+      "area_id": "starter_guildlands",
+      "description": "Courier Step extends the Market Lane with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "east": {
+          "description": "The route leads east to Dyer Stall.",
+          "direction": "east",
+          "target_room_id": "starter_guildlands_1089"
+        },
+        "north": {
+          "description": "The route leads north to Covered Well.",
+          "direction": "north",
+          "target_room_id": "starter_guildlands_1087"
+        }
+      },
+      "features": {
+        "courier_step": {
+          "flags": [],
+          "id": "courier_step",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "courier_step",
+            "courier",
+            "step"
+          ],
+          "long_description": "The courier step shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Courier Step Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable courier step detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "market_lane"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1088",
+      "name": "Courier Step",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "market_lane"
+      ],
+      "vnum": 1088,
+      "world_id": "shattered_realms",
+      "zone_id": "market_lane"
+    },
+    "starter_guildlands_1089": {
+      "area_id": "starter_guildlands",
+      "description": "Dyer Stall extends the Market Lane with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "west": {
+          "description": "The route leads west to Courier Step.",
+          "direction": "west",
+          "target_room_id": "starter_guildlands_1088"
+        }
+      },
+      "features": {
+        "dyer_stall": {
+          "flags": [],
+          "id": "dyer_stall",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "dyer_stall",
+            "dyer",
+            "stall"
+          ],
+          "long_description": "The dyer stall shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Dyer Stall Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable dyer stall detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "market_lane"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1089",
+      "name": "Dyer Stall",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "market_lane"
+      ],
+      "vnum": 1089,
+      "world_id": "shattered_realms",
+      "zone_id": "market_lane"
+    },
+    "starter_guildlands_1122": {
+      "area_id": "starter_guildlands",
+      "description": "Hearth Nook extends the Wayfarer's Mug with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "back": {
+          "description": "A marked way returns toward Tavern Common Room.",
+          "direction": "back",
+          "target_room_id": "tavern_common_room"
+        },
+        "east": {
+          "description": "The route leads east to Mug Shelf.",
+          "direction": "east",
+          "target_room_id": "starter_guildlands_1123"
+        }
+      },
+      "features": {
+        "hearth_nook": {
+          "flags": [],
+          "id": "hearth_nook",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "hearth_nook",
+            "hearth",
+            "nook"
+          ],
+          "long_description": "The hearth nook shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Hearth Nook Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable hearth nook detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "wayfarers_mug"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [
+        "one_way"
+      ],
+      "id": "starter_guildlands_1122",
+      "name": "Hearth Nook",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "wayfarers_mug"
+      ],
+      "vnum": 1122,
+      "world_id": "shattered_realms",
+      "zone_id": "wayfarers_mug"
+    },
+    "starter_guildlands_1123": {
+      "area_id": "starter_guildlands",
+      "description": "Mug Shelf extends the Wayfarer's Mug with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "south": {
+          "description": "The route leads south to Story Table.",
+          "direction": "south",
+          "target_room_id": "starter_guildlands_1124"
+        },
+        "west": {
+          "description": "The route leads west to Hearth Nook.",
+          "direction": "west",
+          "target_room_id": "starter_guildlands_1122"
+        }
+      },
+      "features": {
+        "mug_shelf": {
+          "flags": [],
+          "id": "mug_shelf",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "mug_shelf",
+            "mug",
+            "shelf"
+          ],
+          "long_description": "The mug shelf shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Mug Shelf Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable mug shelf detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "wayfarers_mug"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1123",
+      "name": "Mug Shelf",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "wayfarers_mug"
+      ],
+      "vnum": 1123,
+      "world_id": "shattered_realms",
+      "zone_id": "wayfarers_mug"
+    },
+    "starter_guildlands_1124": {
+      "area_id": "starter_guildlands",
+      "description": "Story Table extends the Wayfarer's Mug with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "east": {
+          "description": "The route leads east to Rain Barrel Yard.",
+          "direction": "east",
+          "target_room_id": "starter_guildlands_1125"
+        },
+        "north": {
+          "description": "The route leads north to Mug Shelf.",
+          "direction": "north",
+          "target_room_id": "starter_guildlands_1123"
+        }
+      },
+      "features": {
+        "story_table": {
+          "flags": [],
+          "id": "story_table",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "story_table",
+            "story",
+            "table"
+          ],
+          "long_description": "The story table shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Story Table Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable story table detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "wayfarers_mug"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1124",
+      "name": "Story Table",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "wayfarers_mug"
+      ],
+      "vnum": 1124,
+      "world_id": "shattered_realms",
+      "zone_id": "wayfarers_mug"
+    },
+    "starter_guildlands_1125": {
+      "area_id": "starter_guildlands",
+      "description": "Rain Barrel Yard extends the Wayfarer's Mug with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "west": {
+          "description": "The route leads west to Story Table.",
+          "direction": "west",
+          "target_room_id": "starter_guildlands_1124"
+        }
+      },
+      "features": {
+        "rain_barrel_yard": {
+          "flags": [],
+          "id": "rain_barrel_yard",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "rain_barrel_yard",
+            "rain",
+            "barrel",
+            "yard"
+          ],
+          "long_description": "The rain barrel yard shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Rain Barrel Yard Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable rain barrel yard detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "wayfarers_mug"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1125",
+      "name": "Rain Barrel Yard",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "wayfarers_mug"
+      ],
+      "vnum": 1125,
+      "world_id": "shattered_realms",
+      "zone_id": "wayfarers_mug"
+    },
+    "starter_guildlands_1153": {
+      "area_id": "starter_guildlands",
+      "description": "Gatehouse Shadow extends the Old Gate Road with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "back": {
+          "description": "A marked way returns toward Old Gate Road.",
+          "direction": "back",
+          "target_room_id": "old_gate_road"
+        },
+        "east": {
+          "description": "The route leads east to Milestone Verge.",
+          "direction": "east",
+          "target_room_id": "starter_guildlands_1154"
+        }
+      },
+      "features": {
+        "gatehouse_shadow": {
+          "flags": [],
+          "id": "gatehouse_shadow",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "gatehouse_shadow",
+            "gatehouse",
+            "shadow"
+          ],
+          "long_description": "The gatehouse shadow shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Gatehouse Shadow Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable gatehouse shadow detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "old_gate_road"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [
+        "one_way"
+      ],
+      "id": "starter_guildlands_1153",
+      "name": "Gatehouse Shadow",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "old_gate_road"
+      ],
+      "vnum": 1153,
+      "world_id": "shattered_realms",
+      "zone_id": "old_gate_road"
+    },
+    "starter_guildlands_1154": {
+      "area_id": "starter_guildlands",
+      "description": "Milestone Verge extends the Old Gate Road with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "south": {
+          "description": "The route leads south to Stable Gate.",
+          "direction": "south",
+          "target_room_id": "starter_guildlands_1155"
+        },
+        "west": {
+          "description": "The route leads west to Gatehouse Shadow.",
+          "direction": "west",
+          "target_room_id": "starter_guildlands_1153"
+        }
+      },
+      "features": {
+        "milestone_verge": {
+          "flags": [],
+          "id": "milestone_verge",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "milestone_verge",
+            "milestone",
+            "verge"
+          ],
+          "long_description": "The milestone verge shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Milestone Verge Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable milestone verge detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "old_gate_road"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1154",
+      "name": "Milestone Verge",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "old_gate_road"
+      ],
+      "vnum": 1154,
+      "world_id": "shattered_realms",
+      "zone_id": "old_gate_road"
+    },
+    "starter_guildlands_1155": {
+      "area_id": "starter_guildlands",
+      "description": "Stable Gate extends the Old Gate Road with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "east": {
+          "description": "The route leads east to Rutted Turnoff.",
+          "direction": "east",
+          "target_room_id": "starter_guildlands_1156"
+        },
+        "north": {
+          "description": "The route leads north to Milestone Verge.",
+          "direction": "north",
+          "target_room_id": "starter_guildlands_1154"
+        }
+      },
+      "features": {
+        "stable_gate": {
+          "flags": [],
+          "id": "stable_gate",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "stable_gate",
+            "stable",
+            "gate"
+          ],
+          "long_description": "The stable gate shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Stable Gate Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable stable gate detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "old_gate_road"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1155",
+      "name": "Stable Gate",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "old_gate_road"
+      ],
+      "vnum": 1155,
+      "world_id": "shattered_realms",
+      "zone_id": "old_gate_road"
+    },
+    "starter_guildlands_1156": {
+      "area_id": "starter_guildlands",
+      "description": "Rutted Turnoff extends the Old Gate Road with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "west": {
+          "description": "The route leads west to Stable Gate.",
+          "direction": "west",
+          "target_room_id": "starter_guildlands_1155"
+        }
+      },
+      "features": {
+        "rutted_turnoff": {
+          "flags": [],
+          "id": "rutted_turnoff",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "rutted_turnoff",
+            "rutted",
+            "turnoff"
+          ],
+          "long_description": "The rutted turnoff shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Rutted Turnoff Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable rutted turnoff detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "old_gate_road"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1156",
+      "name": "Rutted Turnoff",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "old_gate_road"
+      ],
+      "vnum": 1156,
+      "world_id": "shattered_realms",
+      "zone_id": "old_gate_road"
+    },
+    "starter_guildlands_1183": {
+      "area_id": "starter_guildlands",
+      "description": "Scarecrow Field extends the East Farmland with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "back": {
+          "description": "A marked way returns toward East Farmland Path.",
+          "direction": "back",
+          "target_room_id": "east_farmland_path"
+        },
+        "east": {
+          "description": "The route leads east to Irrigation Ditch.",
+          "direction": "east",
+          "target_room_id": "starter_guildlands_1184"
+        }
+      },
+      "features": {
+        "scarecrow_field": {
+          "flags": [],
+          "id": "scarecrow_field",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "scarecrow_field",
+            "scarecrow",
+            "field"
+          ],
+          "long_description": "The scarecrow field shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Scarecrow Field Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable scarecrow field detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "east_farmland"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [
+        "one_way"
+      ],
+      "id": "starter_guildlands_1183",
+      "name": "Scarecrow Field",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "east_farmland"
+      ],
+      "vnum": 1183,
+      "world_id": "shattered_realms",
+      "zone_id": "east_farmland"
+    },
+    "starter_guildlands_1184": {
+      "area_id": "starter_guildlands",
+      "description": "Irrigation Ditch extends the East Farmland with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "south": {
+          "description": "The route leads south to Granary Step.",
+          "direction": "south",
+          "target_room_id": "starter_guildlands_1185"
+        },
+        "west": {
+          "description": "The route leads west to Scarecrow Field.",
+          "direction": "west",
+          "target_room_id": "starter_guildlands_1183"
+        }
+      },
+      "features": {
+        "irrigation_ditch": {
+          "flags": [],
+          "id": "irrigation_ditch",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "irrigation_ditch",
+            "irrigation",
+            "ditch"
+          ],
+          "long_description": "The irrigation ditch shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Irrigation Ditch Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable irrigation ditch detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "east_farmland"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1184",
+      "name": "Irrigation Ditch",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "east_farmland"
+      ],
+      "vnum": 1184,
+      "world_id": "shattered_realms",
+      "zone_id": "east_farmland"
+    },
+    "starter_guildlands_1185": {
+      "area_id": "starter_guildlands",
+      "description": "Granary Step extends the East Farmland with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "east": {
+          "description": "The route leads east to Bean Row.",
+          "direction": "east",
+          "target_room_id": "starter_guildlands_1186"
+        },
+        "north": {
+          "description": "The route leads north to Irrigation Ditch.",
+          "direction": "north",
+          "target_room_id": "starter_guildlands_1184"
+        }
+      },
+      "features": {
+        "granary_step": {
+          "flags": [],
+          "id": "granary_step",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "granary_step",
+            "granary",
+            "step"
+          ],
+          "long_description": "The granary step shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Granary Step Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable granary step detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "east_farmland"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1185",
+      "name": "Granary Step",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "east_farmland"
+      ],
+      "vnum": 1185,
+      "world_id": "shattered_realms",
+      "zone_id": "east_farmland"
+    },
+    "starter_guildlands_1186": {
+      "area_id": "starter_guildlands",
+      "description": "Bean Row extends the East Farmland with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "west": {
+          "description": "The route leads west to Granary Step.",
+          "direction": "west",
+          "target_room_id": "starter_guildlands_1185"
+        }
+      },
+      "features": {
+        "bean_row": {
+          "flags": [],
+          "id": "bean_row",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "bean_row",
+            "bean",
+            "row"
+          ],
+          "long_description": "The bean row shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Bean Row Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable bean row detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "east_farmland"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1186",
+      "name": "Bean Row",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "east_farmland"
+      ],
+      "vnum": 1186,
+      "world_id": "shattered_realms",
+      "zone_id": "east_farmland"
+    },
+    "starter_guildlands_1212": {
+      "area_id": "starter_guildlands",
+      "description": "Fern Hollow extends the Emberwood Edge with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "back": {
+          "description": "A marked way returns toward Emberwood Edge.",
+          "direction": "back",
+          "target_room_id": "emberwood_edge"
+        },
+        "east": {
+          "description": "The route leads east to Old Shrine.",
+          "direction": "east",
+          "target_room_id": "starter_guildlands_1213"
+        }
+      },
+      "features": {
+        "fern_hollow": {
+          "flags": [],
+          "id": "fern_hollow",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "fern_hollow",
+            "fern",
+            "hollow"
+          ],
+          "long_description": "The fern hollow shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Fern Hollow Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable fern hollow detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "emberwood_edge"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [
+        "one_way"
+      ],
+      "id": "starter_guildlands_1212",
+      "name": "Fern Hollow",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "emberwood_edge"
+      ],
+      "vnum": 1212,
+      "world_id": "shattered_realms",
+      "zone_id": "emberwood_edge"
+    },
+    "starter_guildlands_1213": {
+      "area_id": "starter_guildlands",
+      "description": "Old Shrine extends the Emberwood Edge with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "south": {
+          "description": "The route leads south to Charcoal Clearing.",
+          "direction": "south",
+          "target_room_id": "starter_guildlands_1214"
+        },
+        "west": {
+          "description": "The route leads west to Fern Hollow.",
+          "direction": "west",
+          "target_room_id": "starter_guildlands_1212"
+        }
+      },
+      "features": {
+        "old_shrine": {
+          "flags": [],
+          "id": "old_shrine",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "old_shrine",
+            "old",
+            "shrine"
+          ],
+          "long_description": "The old shrine shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Old Shrine Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable old shrine detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "emberwood_edge"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1213",
+      "name": "Old Shrine",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "emberwood_edge"
+      ],
+      "vnum": 1213,
+      "world_id": "shattered_realms",
+      "zone_id": "emberwood_edge"
+    },
+    "starter_guildlands_1214": {
+      "area_id": "starter_guildlands",
+      "description": "Charcoal Clearing extends the Emberwood Edge with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "east": {
+          "description": "The route leads east to Beech Root Path.",
+          "direction": "east",
+          "target_room_id": "starter_guildlands_1215"
+        },
+        "north": {
+          "description": "The route leads north to Old Shrine.",
+          "direction": "north",
+          "target_room_id": "starter_guildlands_1213"
+        }
+      },
+      "features": {
+        "charcoal_clearing": {
+          "flags": [],
+          "id": "charcoal_clearing",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "charcoal_clearing",
+            "charcoal",
+            "clearing"
+          ],
+          "long_description": "The charcoal clearing shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Charcoal Clearing Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable charcoal clearing detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "emberwood_edge"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1214",
+      "name": "Charcoal Clearing",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "emberwood_edge"
+      ],
+      "vnum": 1214,
+      "world_id": "shattered_realms",
+      "zone_id": "emberwood_edge"
+    },
+    "starter_guildlands_1215": {
+      "area_id": "starter_guildlands",
+      "description": "Beech Root Path extends the Emberwood Edge with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "west": {
+          "description": "The route leads west to Charcoal Clearing.",
+          "direction": "west",
+          "target_room_id": "starter_guildlands_1214"
+        }
+      },
+      "features": {
+        "beech_root_path": {
+          "flags": [],
+          "id": "beech_root_path",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "beech_root_path",
+            "beech",
+            "root",
+            "path"
+          ],
+          "long_description": "The beech root path shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Beech Root Path Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable beech root path detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "emberwood_edge"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1215",
+      "name": "Beech Root Path",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "emberwood_edge"
+      ],
+      "vnum": 1215,
+      "world_id": "shattered_realms",
+      "zone_id": "emberwood_edge"
+    },
+    "starter_guildlands_1242": {
+      "area_id": "starter_guildlands",
+      "description": "Collapsed Yard extends the Abandoned Watchpost with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "back": {
+          "description": "A marked way returns toward Abandoned Watchpost.",
+          "direction": "back",
+          "target_room_id": "abandoned_watchpost"
+        },
+        "east": {
+          "description": "The route leads east to Map Room.",
+          "direction": "east",
+          "target_room_id": "starter_guildlands_1243"
+        }
+      },
+      "features": {
+        "collapsed_yard": {
+          "flags": [],
+          "id": "collapsed_yard",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "collapsed_yard",
+            "collapsed",
+            "yard"
+          ],
+          "long_description": "The collapsed yard shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Collapsed Yard Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable collapsed yard detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "abandoned_watchpost"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [
+        "one_way"
+      ],
+      "id": "starter_guildlands_1242",
+      "name": "Collapsed Yard",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "abandoned_watchpost"
+      ],
+      "vnum": 1242,
+      "world_id": "shattered_realms",
+      "zone_id": "abandoned_watchpost"
+    },
+    "starter_guildlands_1243": {
+      "area_id": "starter_guildlands",
+      "description": "Map Room extends the Abandoned Watchpost with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "south": {
+          "description": "The route leads south to Signal Stair.",
+          "direction": "south",
+          "target_room_id": "starter_guildlands_1244"
+        },
+        "west": {
+          "description": "The route leads west to Collapsed Yard.",
+          "direction": "west",
+          "target_room_id": "starter_guildlands_1242"
+        }
+      },
+      "features": {
+        "map_room": {
+          "flags": [],
+          "id": "map_room",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "map_room",
+            "map",
+            "room"
+          ],
+          "long_description": "The map room shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Map Room Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable map room detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "abandoned_watchpost"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1243",
+      "name": "Map Room",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "abandoned_watchpost"
+      ],
+      "vnum": 1243,
+      "world_id": "shattered_realms",
+      "zone_id": "abandoned_watchpost"
+    },
+    "starter_guildlands_1244": {
+      "area_id": "starter_guildlands",
+      "description": "Signal Stair extends the Abandoned Watchpost with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "east": {
+          "description": "The route leads east to Rookery Ledge.",
+          "direction": "east",
+          "target_room_id": "starter_guildlands_1245"
+        },
+        "north": {
+          "description": "The route leads north to Map Room.",
+          "direction": "north",
+          "target_room_id": "starter_guildlands_1243"
+        }
+      },
+      "features": {
+        "signal_stair": {
+          "flags": [],
+          "id": "signal_stair",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "signal_stair",
+            "signal",
+            "stair"
+          ],
+          "long_description": "The signal stair shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Signal Stair Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable signal stair detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "abandoned_watchpost"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1244",
+      "name": "Signal Stair",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "abandoned_watchpost"
+      ],
+      "vnum": 1244,
+      "world_id": "shattered_realms",
+      "zone_id": "abandoned_watchpost"
+    },
+    "starter_guildlands_1245": {
+      "area_id": "starter_guildlands",
+      "description": "Rookery Ledge extends the Abandoned Watchpost with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "west": {
+          "description": "The route leads west to Signal Stair.",
+          "direction": "west",
+          "target_room_id": "starter_guildlands_1244"
+        }
+      },
+      "features": {
+        "rookery_ledge": {
+          "flags": [],
+          "id": "rookery_ledge",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "rookery_ledge",
+            "rookery",
+            "ledge"
+          ],
+          "long_description": "The rookery ledge shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Rookery Ledge Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable rookery ledge detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "abandoned_watchpost"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1245",
+      "name": "Rookery Ledge",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "abandoned_watchpost"
+      ],
+      "vnum": 1245,
+      "world_id": "shattered_realms",
+      "zone_id": "abandoned_watchpost"
+    },
+    "starter_guildlands_1273": {
+      "area_id": "starter_guildlands",
+      "description": "Barrel Maze extends the Rat Cellar with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "back": {
+          "description": "A marked way returns toward Rat Cellar Entry.",
+          "direction": "back",
+          "target_room_id": "rat_cellar_entry"
+        },
+        "east": {
+          "description": "The route leads east to Dripping Alcove.",
+          "direction": "east",
+          "target_room_id": "starter_guildlands_1274"
+        }
+      },
+      "features": {
+        "barrel_maze": {
+          "flags": [],
+          "id": "barrel_maze",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "barrel_maze",
+            "barrel",
+            "maze"
+          ],
+          "long_description": "The barrel maze shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Barrel Maze Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable barrel maze detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "rat_cellar"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [
+        "one_way"
+      ],
+      "id": "starter_guildlands_1273",
+      "name": "Barrel Maze",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "rat_cellar"
+      ],
+      "vnum": 1273,
+      "world_id": "shattered_realms",
+      "zone_id": "rat_cellar"
+    },
+    "starter_guildlands_1274": {
+      "area_id": "starter_guildlands",
+      "description": "Dripping Alcove extends the Rat Cellar with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "south": {
+          "description": "The route leads south to Grate Corner.",
+          "direction": "south",
+          "target_room_id": "starter_guildlands_1275"
+        },
+        "west": {
+          "description": "The route leads west to Barrel Maze.",
+          "direction": "west",
+          "target_room_id": "starter_guildlands_1273"
+        }
+      },
+      "features": {
+        "dripping_alcove": {
+          "flags": [],
+          "id": "dripping_alcove",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "dripping_alcove",
+            "dripping",
+            "alcove"
+          ],
+          "long_description": "The dripping alcove shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Dripping Alcove Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable dripping alcove detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "rat_cellar"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1274",
+      "name": "Dripping Alcove",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "rat_cellar"
+      ],
+      "vnum": 1274,
+      "world_id": "shattered_realms",
+      "zone_id": "rat_cellar"
+    },
+    "starter_guildlands_1275": {
+      "area_id": "starter_guildlands",
+      "description": "Grate Corner extends the Rat Cellar with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "east": {
+          "description": "The route leads east to Root-Cracked Wall.",
+          "direction": "east",
+          "target_room_id": "starter_guildlands_1276"
+        },
+        "north": {
+          "description": "The route leads north to Dripping Alcove.",
+          "direction": "north",
+          "target_room_id": "starter_guildlands_1274"
+        }
+      },
+      "features": {
+        "grate_corner": {
+          "flags": [],
+          "id": "grate_corner",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "grate_corner",
+            "grate",
+            "corner"
+          ],
+          "long_description": "The grate corner shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Grate Corner Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable grate corner detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "rat_cellar"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1275",
+      "name": "Grate Corner",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "rat_cellar"
+      ],
+      "vnum": 1275,
+      "world_id": "shattered_realms",
+      "zone_id": "rat_cellar"
+    },
+    "starter_guildlands_1276": {
+      "area_id": "starter_guildlands",
+      "description": "Root-Cracked Wall extends the Rat Cellar with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "south": {
+          "description": "The route leads south to Nest Burrow.",
+          "direction": "south",
+          "target_room_id": "starter_guildlands_1277"
+        },
+        "west": {
+          "description": "The route leads west to Grate Corner.",
+          "direction": "west",
+          "target_room_id": "starter_guildlands_1275"
+        }
+      },
+      "features": {
+        "rootcracked_wall": {
+          "flags": [],
+          "id": "rootcracked_wall",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "rootcracked_wall",
+            "root-cracked",
+            "wall"
+          ],
+          "long_description": "The root-cracked wall shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Root-Cracked Wall Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable root-cracked wall detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "rat_cellar"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1276",
+      "name": "Root-Cracked Wall",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "rat_cellar"
+      ],
+      "vnum": 1276,
+      "world_id": "shattered_realms",
+      "zone_id": "rat_cellar"
+    },
+    "starter_guildlands_1277": {
+      "area_id": "starter_guildlands",
+      "description": "Nest Burrow extends the Rat Cellar with worked stone, worn paths, and signs of daily starter-guild use. Small details invite examination without implying any hidden exits.",
+      "exits": {
+        "north": {
+          "description": "The route leads north to Root-Cracked Wall.",
+          "direction": "north",
+          "target_room_id": "starter_guildlands_1276"
+        }
+      },
+      "features": {
+        "nest_burrow": {
+          "flags": [],
+          "id": "nest_burrow",
+          "interactions": [
+            "look",
+            "examine"
+          ],
+          "keywords": [
+            "nest_burrow",
+            "nest",
+            "burrow"
+          ],
+          "long_description": "The nest burrow shows careful maintenance and practical use by guild novices, staff, and travelers.",
+          "name": "Nest Burrow Feature",
+          "plugin_data": {
+            "content_pack": "starter_guildlands_content_pack_v1"
+          },
+          "portable": false,
+          "short_description": "A notable nest burrow detail is here.",
+          "tags": [
+            "starter",
+            "scenery",
+            "rat_cellar"
+          ],
+          "visible": true
+        }
+      },
+      "flags": [],
+      "id": "starter_guildlands_1277",
+      "name": "Nest Burrow",
+      "plugin_data": {
+        "authoring_note": "External Builder import JSON; no runtime behavior.",
+        "content_pack": "starter_guildlands_content_pack_v1"
+      },
+      "tags": [
+        "starter",
+        "content_pack_v1",
+        "rat_cellar"
+      ],
+      "vnum": 1277,
+      "world_id": "shattered_realms",
+      "zone_id": "rat_cellar"
+    }
+  },
+  "spawns": {
+    "starter_guildlands_spawn_1700": {
+      "entity_template_id": "guild_registrar",
+      "flags": [
+        "placeholder"
+      ],
+      "id": "starter_guildlands_spawn_1700",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "note": "Placeholder only until reset/spawn systems exist."
+      },
+      "quantity": 1,
+      "respawn_rule": "placeholder_no_runtime_reset",
+      "room_id": "starter_guildlands_1002",
+      "spawn_vnum": 1700,
+      "tags": [
+        "starter",
+        "content_pack_v1"
+      ],
+      "zone_id": "guildhall_crossing"
+    },
+    "starter_guildlands_spawn_1701": {
+      "entity_template_id": "training_master",
+      "flags": [
+        "placeholder"
+      ],
+      "id": "starter_guildlands_spawn_1701",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "note": "Placeholder only until reset/spawn systems exist."
+      },
+      "quantity": 1,
+      "respawn_rule": "placeholder_no_runtime_reset",
+      "room_id": "starter_guildlands_1003",
+      "spawn_vnum": 1701,
+      "tags": [
+        "starter",
+        "content_pack_v1"
+      ],
+      "zone_id": "guildhall_crossing"
+    },
+    "starter_guildlands_spawn_1702": {
+      "entity_template_id": "market_vendor",
+      "flags": [
+        "placeholder"
+      ],
+      "id": "starter_guildlands_spawn_1702",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "note": "Placeholder only until reset/spawn systems exist."
+      },
+      "quantity": 1,
+      "respawn_rule": "placeholder_no_runtime_reset",
+      "room_id": "starter_guildlands_1004",
+      "spawn_vnum": 1702,
+      "tags": [
+        "starter",
+        "content_pack_v1"
+      ],
+      "zone_id": "guildhall_crossing"
+    },
+    "starter_guildlands_spawn_1703": {
+      "entity_template_id": "tavern_keeper",
+      "flags": [
+        "placeholder"
+      ],
+      "id": "starter_guildlands_spawn_1703",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "note": "Placeholder only until reset/spawn systems exist."
+      },
+      "quantity": 1,
+      "respawn_rule": "placeholder_no_runtime_reset",
+      "room_id": "starter_guildlands_1005",
+      "spawn_vnum": 1703,
+      "tags": [
+        "starter",
+        "content_pack_v1"
+      ],
+      "zone_id": "guildhall_crossing"
+    },
+    "starter_guildlands_spawn_1704": {
+      "entity_template_id": "gate_guard",
+      "flags": [
+        "placeholder"
+      ],
+      "id": "starter_guildlands_spawn_1704",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "note": "Placeholder only until reset/spawn systems exist."
+      },
+      "quantity": 1,
+      "respawn_rule": "placeholder_no_runtime_reset",
+      "room_id": "starter_guildlands_1031",
+      "spawn_vnum": 1704,
+      "tags": [
+        "starter",
+        "content_pack_v1"
+      ],
+      "zone_id": "registrar_hall"
+    },
+    "starter_guildlands_spawn_1705": {
+      "entity_template_id": "farmhand",
+      "flags": [
+        "placeholder"
+      ],
+      "id": "starter_guildlands_spawn_1705",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "note": "Placeholder only until reset/spawn systems exist."
+      },
+      "quantity": 1,
+      "respawn_rule": "placeholder_no_runtime_reset",
+      "room_id": "starter_guildlands_1032",
+      "spawn_vnum": 1705,
+      "tags": [
+        "starter",
+        "content_pack_v1"
+      ],
+      "zone_id": "registrar_hall"
+    },
+    "starter_guildlands_spawn_1706": {
+      "entity_template_id": "forest_forager",
+      "flags": [
+        "placeholder"
+      ],
+      "id": "starter_guildlands_spawn_1706",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "note": "Placeholder only until reset/spawn systems exist."
+      },
+      "quantity": 1,
+      "respawn_rule": "placeholder_no_runtime_reset",
+      "room_id": "starter_guildlands_1033",
+      "spawn_vnum": 1706,
+      "tags": [
+        "starter",
+        "content_pack_v1"
+      ],
+      "zone_id": "registrar_hall"
+    },
+    "starter_guildlands_spawn_1707": {
+      "entity_template_id": "watchpost_scout",
+      "flags": [
+        "placeholder"
+      ],
+      "id": "starter_guildlands_spawn_1707",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "note": "Placeholder only until reset/spawn systems exist."
+      },
+      "quantity": 1,
+      "respawn_rule": "placeholder_no_runtime_reset",
+      "room_id": "starter_guildlands_1054",
+      "spawn_vnum": 1707,
+      "tags": [
+        "starter",
+        "content_pack_v1"
+      ],
+      "zone_id": "training_grounds"
+    },
+    "starter_guildlands_spawn_1708": {
+      "entity_template_id": "cellar_rat",
+      "flags": [
+        "placeholder"
+      ],
+      "id": "starter_guildlands_spawn_1708",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "note": "Placeholder only until reset/spawn systems exist."
+      },
+      "quantity": 1,
+      "respawn_rule": "placeholder_no_runtime_reset",
+      "room_id": "starter_guildlands_1055",
+      "spawn_vnum": 1708,
+      "tags": [
+        "starter",
+        "content_pack_v1"
+      ],
+      "zone_id": "training_grounds"
+    },
+    "starter_guildlands_spawn_1709": {
+      "entity_template_id": "large_cellar_rat",
+      "flags": [
+        "placeholder"
+      ],
+      "id": "starter_guildlands_spawn_1709",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "note": "Placeholder only until reset/spawn systems exist."
+      },
+      "quantity": 1,
+      "respawn_rule": "placeholder_no_runtime_reset",
+      "room_id": "starter_guildlands_1056",
+      "spawn_vnum": 1709,
+      "tags": [
+        "starter",
+        "content_pack_v1"
+      ],
+      "zone_id": "training_grounds"
+    },
+    "starter_guildlands_spawn_1710": {
+      "entity_template_id": "nervous_recruit",
+      "flags": [
+        "placeholder"
+      ],
+      "id": "starter_guildlands_spawn_1710",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "note": "Placeholder only until reset/spawn systems exist."
+      },
+      "quantity": 1,
+      "respawn_rule": "placeholder_no_runtime_reset",
+      "room_id": "starter_guildlands_1057",
+      "spawn_vnum": 1710,
+      "tags": [
+        "starter",
+        "content_pack_v1"
+      ],
+      "zone_id": "training_grounds"
+    },
+    "starter_guildlands_spawn_1711": {
+      "entity_template_id": "wandering_messenger",
+      "flags": [
+        "placeholder"
+      ],
+      "id": "starter_guildlands_spawn_1711",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "note": "Placeholder only until reset/spawn systems exist."
+      },
+      "quantity": 1,
+      "respawn_rule": "placeholder_no_runtime_reset",
+      "room_id": "starter_guildlands_1058",
+      "spawn_vnum": 1711,
+      "tags": [
+        "starter",
+        "content_pack_v1"
+      ],
+      "zone_id": "training_grounds"
+    },
+    "starter_guildlands_spawn_1712": {
+      "entity_template_id": "guild_registrar",
+      "flags": [
+        "placeholder"
+      ],
+      "id": "starter_guildlands_spawn_1712",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "note": "Placeholder only until reset/spawn systems exist."
+      },
+      "quantity": 1,
+      "respawn_rule": "placeholder_no_runtime_reset",
+      "room_id": "starter_guildlands_1059",
+      "spawn_vnum": 1712,
+      "tags": [
+        "starter",
+        "content_pack_v1"
+      ],
+      "zone_id": "training_grounds"
+    },
+    "starter_guildlands_spawn_1713": {
+      "entity_template_id": "training_master",
+      "flags": [
+        "placeholder"
+      ],
+      "id": "starter_guildlands_spawn_1713",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "note": "Placeholder only until reset/spawn systems exist."
+      },
+      "quantity": 1,
+      "respawn_rule": "placeholder_no_runtime_reset",
+      "room_id": "starter_guildlands_1084",
+      "spawn_vnum": 1713,
+      "tags": [
+        "starter",
+        "content_pack_v1"
+      ],
+      "zone_id": "market_lane"
+    },
+    "starter_guildlands_spawn_1714": {
+      "entity_template_id": "market_vendor",
+      "flags": [
+        "placeholder"
+      ],
+      "id": "starter_guildlands_spawn_1714",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "note": "Placeholder only until reset/spawn systems exist."
+      },
+      "quantity": 1,
+      "respawn_rule": "placeholder_no_runtime_reset",
+      "room_id": "starter_guildlands_1085",
+      "spawn_vnum": 1714,
+      "tags": [
+        "starter",
+        "content_pack_v1"
+      ],
+      "zone_id": "market_lane"
+    },
+    "starter_guildlands_spawn_1715": {
+      "entity_template_id": "tavern_keeper",
+      "flags": [
+        "placeholder"
+      ],
+      "id": "starter_guildlands_spawn_1715",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "note": "Placeholder only until reset/spawn systems exist."
+      },
+      "quantity": 1,
+      "respawn_rule": "placeholder_no_runtime_reset",
+      "room_id": "starter_guildlands_1086",
+      "spawn_vnum": 1715,
+      "tags": [
+        "starter",
+        "content_pack_v1"
+      ],
+      "zone_id": "market_lane"
+    },
+    "starter_guildlands_spawn_1716": {
+      "entity_template_id": "gate_guard",
+      "flags": [
+        "placeholder"
+      ],
+      "id": "starter_guildlands_spawn_1716",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "note": "Placeholder only until reset/spawn systems exist."
+      },
+      "quantity": 1,
+      "respawn_rule": "placeholder_no_runtime_reset",
+      "room_id": "starter_guildlands_1087",
+      "spawn_vnum": 1716,
+      "tags": [
+        "starter",
+        "content_pack_v1"
+      ],
+      "zone_id": "market_lane"
+    },
+    "starter_guildlands_spawn_1717": {
+      "entity_template_id": "farmhand",
+      "flags": [
+        "placeholder"
+      ],
+      "id": "starter_guildlands_spawn_1717",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "note": "Placeholder only until reset/spawn systems exist."
+      },
+      "quantity": 1,
+      "respawn_rule": "placeholder_no_runtime_reset",
+      "room_id": "starter_guildlands_1088",
+      "spawn_vnum": 1717,
+      "tags": [
+        "starter",
+        "content_pack_v1"
+      ],
+      "zone_id": "market_lane"
+    },
+    "starter_guildlands_spawn_1718": {
+      "entity_template_id": "forest_forager",
+      "flags": [
+        "placeholder"
+      ],
+      "id": "starter_guildlands_spawn_1718",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "note": "Placeholder only until reset/spawn systems exist."
+      },
+      "quantity": 1,
+      "respawn_rule": "placeholder_no_runtime_reset",
+      "room_id": "starter_guildlands_1089",
+      "spawn_vnum": 1718,
+      "tags": [
+        "starter",
+        "content_pack_v1"
+      ],
+      "zone_id": "market_lane"
+    },
+    "starter_guildlands_spawn_1719": {
+      "entity_template_id": "watchpost_scout",
+      "flags": [
+        "placeholder"
+      ],
+      "id": "starter_guildlands_spawn_1719",
+      "plugin_data": {
+        "content_pack": "starter_guildlands_content_pack_v1",
+        "note": "Placeholder only until reset/spawn systems exist."
+      },
+      "quantity": 1,
+      "respawn_rule": "placeholder_no_runtime_reset",
+      "room_id": "starter_guildlands_1122",
+      "spawn_vnum": 1719,
+      "tags": [
+        "starter",
+        "content_pack_v1"
+      ],
+      "zone_id": "wayfarers_mug"
+    }
+  },
+  "zones": {
+    "abandoned_watchpost": {
+      "area_id": "starter_guildlands",
+      "created_at": "20260101T000000.000000Z",
+      "description": "Abandoned Watchpost starter zone.",
+      "flags": [],
+      "id": "abandoned_watchpost",
+      "name": "Abandoned Watchpost",
+      "plugin_data": {
+        "content_pack_update": "starter_guildlands_content_pack_v1"
+      },
+      "room_ids": [
+        "abandoned_watchpost",
+        "watchpost_entry",
+        "starter_guildlands_1242",
+        "starter_guildlands_1243",
+        "starter_guildlands_1244",
+        "starter_guildlands_1245"
+      ],
+      "tags": [
+        "starter"
+      ],
+      "updated_at": "20260101T000000.000000Z",
+      "vnum_end": 1269,
+      "vnum_start": 1240,
+      "world_id": "shattered_realms"
+    },
+    "east_farmland": {
+      "area_id": "starter_guildlands",
+      "created_at": "20260101T000000.000000Z",
+      "description": "East Farmland starter zone.",
+      "flags": [],
+      "id": "east_farmland",
+      "name": "East Farmland",
+      "plugin_data": {
+        "content_pack_update": "starter_guildlands_content_pack_v1"
+      },
+      "room_ids": [
+        "east_farmland_path",
+        "farmer_field",
+        "broken_fence",
+        "starter_guildlands_1183",
+        "starter_guildlands_1184",
+        "starter_guildlands_1185",
+        "starter_guildlands_1186"
+      ],
+      "tags": [
+        "starter"
+      ],
+      "updated_at": "20260101T000000.000000Z",
+      "vnum_end": 1209,
+      "vnum_start": 1180,
+      "world_id": "shattered_realms"
+    },
+    "emberwood_edge": {
+      "area_id": "starter_guildlands",
+      "created_at": "20260101T000000.000000Z",
+      "description": "Emberwood Edge starter zone.",
+      "flags": [],
+      "id": "emberwood_edge",
+      "name": "Emberwood Edge",
+      "plugin_data": {
+        "content_pack_update": "starter_guildlands_content_pack_v1"
+      },
+      "room_ids": [
+        "emberwood_edge",
+        "emberwood_game_trail",
+        "starter_guildlands_1212",
+        "starter_guildlands_1213",
+        "starter_guildlands_1214",
+        "starter_guildlands_1215"
+      ],
+      "tags": [
+        "starter"
+      ],
+      "updated_at": "20260101T000000.000000Z",
+      "vnum_end": 1239,
+      "vnum_start": 1210,
+      "world_id": "shattered_realms"
+    },
+    "guildhall_crossing": {
+      "area_id": "starter_guildlands",
+      "created_at": "20260101T000000.000000Z",
+      "description": "Guildhall Crossing starter zone.",
+      "flags": [],
+      "id": "guildhall_crossing",
+      "name": "Guildhall Crossing",
+      "plugin_data": {
+        "content_pack_update": "starter_guildlands_content_pack_v1"
+      },
+      "room_ids": [
+        "guildhall_crossing_square",
+        "guildhall_archway",
+        "starter_guildlands_1002",
+        "starter_guildlands_1003",
+        "starter_guildlands_1004",
+        "starter_guildlands_1005"
+      ],
+      "tags": [
+        "starter"
+      ],
+      "updated_at": "20260101T000000.000000Z",
+      "vnum_end": 1029,
+      "vnum_start": 1000,
+      "world_id": "shattered_realms"
+    },
+    "market_lane": {
+      "area_id": "starter_guildlands",
+      "created_at": "20260101T000000.000000Z",
+      "description": "Market Lane starter zone.",
+      "flags": [],
+      "id": "market_lane",
+      "name": "Market Lane",
+      "plugin_data": {
+        "content_pack_update": "starter_guildlands_content_pack_v1"
+      },
+      "room_ids": [
+        "market_lane",
+        "blacksmith_stall",
+        "provisioner_stall",
+        "adventurer_notice_board",
+        "starter_guildlands_1084",
+        "starter_guildlands_1085",
+        "starter_guildlands_1086",
+        "starter_guildlands_1087",
+        "starter_guildlands_1088",
+        "starter_guildlands_1089"
+      ],
+      "tags": [
+        "starter"
+      ],
+      "updated_at": "20260101T000000.000000Z",
+      "vnum_end": 1119,
+      "vnum_start": 1080,
+      "world_id": "shattered_realms"
+    },
+    "old_gate_road": {
+      "area_id": "starter_guildlands",
+      "created_at": "20260101T000000.000000Z",
+      "description": "Old Gate Road starter zone.",
+      "flags": [],
+      "id": "old_gate_road",
+      "name": "Old Gate Road",
+      "plugin_data": {
+        "content_pack_update": "starter_guildlands_content_pack_v1"
+      },
+      "room_ids": [
+        "old_gate_road",
+        "old_gate_checkpoint",
+        "milestone_bend",
+        "starter_guildlands_1153",
+        "starter_guildlands_1154",
+        "starter_guildlands_1155",
+        "starter_guildlands_1156"
+      ],
+      "tags": [
+        "starter"
+      ],
+      "updated_at": "20260101T000000.000000Z",
+      "vnum_end": 1179,
+      "vnum_start": 1150,
+      "world_id": "shattered_realms"
+    },
+    "rat_cellar": {
+      "area_id": "starter_guildlands",
+      "created_at": "20260101T000000.000000Z",
+      "description": "Rat Cellar starter zone.",
+      "flags": [],
+      "id": "rat_cellar",
+      "name": "Rat Cellar",
+      "plugin_data": {
+        "content_pack_update": "starter_guildlands_content_pack_v1"
+      },
+      "room_ids": [
+        "rat_cellar_entry",
+        "rat_cellar_storage",
+        "rat_cellar_nest",
+        "starter_guildlands_1273",
+        "starter_guildlands_1274",
+        "starter_guildlands_1275",
+        "starter_guildlands_1276",
+        "starter_guildlands_1277"
+      ],
+      "tags": [
+        "starter"
+      ],
+      "updated_at": "20260101T000000.000000Z",
+      "vnum_end": 1299,
+      "vnum_start": 1270,
+      "world_id": "shattered_realms"
+    },
+    "registrar_hall": {
+      "area_id": "starter_guildlands",
+      "created_at": "20260101T000000.000000Z",
+      "description": "Registrar Hall starter zone.",
+      "flags": [],
+      "id": "registrar_hall",
+      "name": "Registrar Hall",
+      "plugin_data": {
+        "content_pack_update": "starter_guildlands_content_pack_v1"
+      },
+      "room_ids": [
+        "guildhall_registrar_office",
+        "starter_guildlands_1031",
+        "starter_guildlands_1032",
+        "starter_guildlands_1033"
+      ],
+      "tags": [
+        "starter"
+      ],
+      "updated_at": "20260101T000000.000000Z",
+      "vnum_end": 1049,
+      "vnum_start": 1030,
+      "world_id": "shattered_realms"
+    },
+    "training_grounds": {
+      "area_id": "starter_guildlands",
+      "created_at": "20260101T000000.000000Z",
+      "description": "Training Grounds starter zone.",
+      "flags": [],
+      "id": "training_grounds",
+      "name": "Training Grounds",
+      "plugin_data": {
+        "content_pack_update": "starter_guildlands_content_pack_v1"
+      },
+      "room_ids": [
+        "training_yard",
+        "weapon_practice_ring",
+        "spell_practice_circle",
+        "healer_corner",
+        "starter_guildlands_1054",
+        "starter_guildlands_1055",
+        "starter_guildlands_1056",
+        "starter_guildlands_1057",
+        "starter_guildlands_1058",
+        "starter_guildlands_1059"
+      ],
+      "tags": [
+        "starter"
+      ],
+      "updated_at": "20260101T000000.000000Z",
+      "vnum_end": 1079,
+      "vnum_start": 1050,
+      "world_id": "shattered_realms"
+    },
+    "wayfarers_mug": {
+      "area_id": "starter_guildlands",
+      "created_at": "20260101T000000.000000Z",
+      "description": "Wayfarer's Mug starter zone.",
+      "flags": [],
+      "id": "wayfarers_mug",
+      "name": "Wayfarer's Mug",
+      "plugin_data": {
+        "content_pack_update": "starter_guildlands_content_pack_v1"
+      },
+      "room_ids": [
+        "tavern_common_room",
+        "tavern_back_room",
+        "starter_guildlands_1122",
+        "starter_guildlands_1123",
+        "starter_guildlands_1124",
+        "starter_guildlands_1125"
+      ],
+      "tags": [
+        "starter"
+      ],
+      "updated_at": "20260101T000000.000000Z",
+      "vnum_end": 1149,
+      "vnum_start": 1120,
+      "world_id": "shattered_realms"
+    }
+  }
+}

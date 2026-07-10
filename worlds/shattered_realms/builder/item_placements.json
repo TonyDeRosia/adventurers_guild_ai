@@ -1,0 +1,22 @@
+{
+  "blacksmith_stall_iron_swords_once": {
+    "id": "blacksmith_stall_iron_swords_once",
+    "item_template_id": "iron_sword",
+    "room_id": "blacksmith_stall",
+    "quantity": 2,
+    "seed_policy": "once",
+    "flags": [],
+    "tags": ["starter", "blacksmith_stall"],
+    "plugin_data": {"intent": "Two iron swords initially rest at Blacksmith Stall."}
+  },
+  "blacksmith_stall_training_sword_once": {
+    "id": "blacksmith_stall_training_sword_once",
+    "item_template_id": "training_sword",
+    "room_id": "blacksmith_stall",
+    "quantity": 1,
+    "seed_policy": "once",
+    "flags": [],
+    "tags": ["starter", "blacksmith_stall"],
+    "plugin_data": {"intent": "One training sword initially rests at Blacksmith Stall."}
+  }
+}

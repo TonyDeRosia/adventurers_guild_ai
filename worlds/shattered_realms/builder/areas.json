@@ -1,0 +1,37 @@
+{
+  "starter_guildlands": {
+    "created_at": "20260101T000000.000000Z",
+    "description": "The organized starter region for Shattered Realms, covering the guildhall crossing, civic halls, training spaces, market, tavern, roads, farms, forest edge, watchpost, and rat cellar used by new characters.",
+    "flags": [],
+    "id": "starter_guildlands",
+    "mob_vnum_end": 1699,
+    "mob_vnum_start": 1500,
+    "name": "Starter Guildlands",
+    "object_vnum_end": 1499,
+    "object_vnum_start": 1300,
+    "plugin_data": {},
+    "room_vnum_end": 1299,
+    "room_vnum_start": 1000,
+    "spawn_vnum_end": 1799,
+    "spawn_vnum_start": 1700,
+    "tags": [
+      "starter"
+    ],
+    "updated_at": "20260101T000000.000000Z",
+    "vnum_end": 1999,
+    "vnum_start": 1000,
+    "world_id": "shattered_realms",
+    "zone_ids": [
+      "guildhall_crossing",
+      "registrar_hall",
+      "training_grounds",
+      "market_lane",
+      "wayfarers_mug",
+      "old_gate_road",
+      "east_farmland",
+      "emberwood_edge",
+      "abandoned_watchpost",
+      "rat_cellar"
+    ]
+  }
+}
