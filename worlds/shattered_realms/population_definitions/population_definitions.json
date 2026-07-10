@@ -1,0 +1,5 @@
+[
+  {"id":"trainer_unique","spawn_policy":"persistent_unique","template_id":"guild_trainer","actor_id":"npc_guild_trainer","room_id":"guildhall","body_profile_id":"humanoid","target_population":1},
+  {"id":"wolf_den","spawn_policy":"maintain_population","template_id":"forest_wolf","room_id":"forest_path","body_profile_id":"wolf","target_population":2},
+  {"id":"manual_dragon","spawn_policy":"manual_only","template_id":"ancient_dragon","room_id":"dragon_peak","body_profile_id":"dragon","target_population":1}
+]

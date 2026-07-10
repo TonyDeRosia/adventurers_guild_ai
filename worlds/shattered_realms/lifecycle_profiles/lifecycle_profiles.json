@@ -1,0 +1,1 @@
+[{"id":"default","states":["not_spawned","queued","spawned","alive","unconscious","dead","corpse","despawned","respawn_queue"],"corpse_policy":"create_corpse","respawn_policy":"definition"}]

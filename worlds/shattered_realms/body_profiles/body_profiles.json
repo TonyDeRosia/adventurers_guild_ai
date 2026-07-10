@@ -1,0 +1,732 @@
+[
+  {
+    "id": "humanoid",
+    "display_name": "Humanoid",
+    "slots": [
+      {
+        "id": "head",
+        "display_name": "Head",
+        "order": 0,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "face",
+        "display_name": "Face",
+        "order": 10,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "neck",
+        "display_name": "Neck",
+        "order": 20,
+        "visible": true,
+        "allowed_item_categories": [
+          "trinket",
+          "jewelry"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "shoulders",
+        "display_name": "Shoulders",
+        "order": 30,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "back",
+        "display_name": "Back",
+        "order": 40,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing",
+          "container"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "chest",
+        "display_name": "Chest",
+        "order": 50,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "arms",
+        "display_name": "Arms",
+        "order": 60,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "wrists",
+        "display_name": "Wrists",
+        "order": 70,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing",
+          "trinket",
+          "jewelry"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "hands",
+        "display_name": "Hands",
+        "order": 80,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "finger_left",
+        "display_name": "Finger Left",
+        "order": 90,
+        "visible": true,
+        "allowed_item_categories": [
+          "trinket",
+          "jewelry"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "finger_right",
+        "display_name": "Finger Right",
+        "order": 100,
+        "visible": true,
+        "allowed_item_categories": [
+          "trinket",
+          "jewelry"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "waist",
+        "display_name": "Waist",
+        "order": 110,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "legs",
+        "display_name": "Legs",
+        "order": 120,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "feet",
+        "display_name": "Feet",
+        "order": 130,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "main_hand",
+        "display_name": "Main Hand",
+        "order": 140,
+        "visible": true,
+        "allowed_item_categories": [
+          "weapon"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "off_hand",
+        "display_name": "Off Hand",
+        "order": 150,
+        "visible": true,
+        "allowed_item_categories": [
+          "weapon",
+          "shield",
+          "trinket"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "accessory_1",
+        "display_name": "Accessory 1",
+        "order": 160,
+        "visible": true,
+        "allowed_item_categories": [
+          "trinket",
+          "jewelry"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "accessory_2",
+        "display_name": "Accessory 2",
+        "order": 170,
+        "visible": true,
+        "allowed_item_categories": [
+          "trinket",
+          "jewelry"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "light",
+        "display_name": "Light",
+        "order": 180,
+        "visible": true,
+        "allowed_item_categories": [
+          "light",
+          "tool",
+          "trinket"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      }
+    ],
+    "metadata": {}
+  },
+  {
+    "id": "wolf",
+    "display_name": "Wolf",
+    "slots": [
+      {
+        "id": "head",
+        "display_name": "Head",
+        "order": 0,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "body",
+        "display_name": "Body",
+        "order": 10,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "collar",
+        "display_name": "Collar",
+        "order": 20,
+        "visible": true,
+        "allowed_item_categories": [
+          "trinket",
+          "jewelry"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "front_legs",
+        "display_name": "Front Legs",
+        "order": 30,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "rear_legs",
+        "display_name": "Rear Legs",
+        "order": 40,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "tail",
+        "display_name": "Tail",
+        "order": 50,
+        "visible": true,
+        "allowed_item_categories": [
+          "trinket",
+          "jewelry"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      }
+    ],
+    "metadata": {}
+  },
+  {
+    "id": "dragon",
+    "display_name": "Dragon",
+    "slots": [
+      {
+        "id": "head",
+        "display_name": "Head",
+        "order": 0,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "neck",
+        "display_name": "Neck",
+        "order": 10,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "body",
+        "display_name": "Body",
+        "order": 20,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "left_wing",
+        "display_name": "Left Wing",
+        "order": 30,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "right_wing",
+        "display_name": "Right Wing",
+        "order": 40,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "tail",
+        "display_name": "Tail",
+        "order": 50,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "front_claws",
+        "display_name": "Front Claws",
+        "order": 60,
+        "visible": true,
+        "allowed_item_categories": [
+          "weapon"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "rear_claws",
+        "display_name": "Rear Claws",
+        "order": 70,
+        "visible": true,
+        "allowed_item_categories": [
+          "weapon"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      }
+    ],
+    "metadata": {}
+  },
+  {
+    "id": "spider",
+    "display_name": "Spider",
+    "slots": [
+      {
+        "id": "head",
+        "display_name": "Head",
+        "order": 0,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "thorax",
+        "display_name": "Thorax",
+        "order": 10,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "abdomen",
+        "display_name": "Abdomen",
+        "order": 20,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "leg_1",
+        "display_name": "Leg 1",
+        "order": 30,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "leg_2",
+        "display_name": "Leg 2",
+        "order": 40,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "leg_3",
+        "display_name": "Leg 3",
+        "order": 50,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "leg_4",
+        "display_name": "Leg 4",
+        "order": 60,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "leg_5",
+        "display_name": "Leg 5",
+        "order": 70,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "leg_6",
+        "display_name": "Leg 6",
+        "order": 80,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "leg_7",
+        "display_name": "Leg 7",
+        "order": 90,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "leg_8",
+        "display_name": "Leg 8",
+        "order": 100,
+        "visible": true,
+        "allowed_item_categories": [
+          "armor",
+          "clothing"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      }
+    ],
+    "metadata": {}
+  },
+  {
+    "id": "ghost",
+    "display_name": "Ghost",
+    "slots": [
+      {
+        "id": "essence",
+        "display_name": "Essence",
+        "order": 0,
+        "visible": true,
+        "allowed_item_categories": [
+          "trinket",
+          "jewelry"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "aura",
+        "display_name": "Aura",
+        "order": 10,
+        "visible": true,
+        "allowed_item_categories": [
+          "trinket",
+          "jewelry"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "focus",
+        "display_name": "Focus",
+        "order": 20,
+        "visible": true,
+        "allowed_item_categories": [
+          "trinket",
+          "jewelry"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      }
+    ],
+    "metadata": {}
+  },
+  {
+    "id": "elemental",
+    "display_name": "Elemental",
+    "slots": [
+      {
+        "id": "core",
+        "display_name": "Core",
+        "order": 0,
+        "visible": true,
+        "allowed_item_categories": [
+          "trinket",
+          "jewelry"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      },
+      {
+        "id": "aura",
+        "display_name": "Aura",
+        "order": 10,
+        "visible": true,
+        "allowed_item_categories": [
+          "trinket",
+          "jewelry"
+        ],
+        "allows_multiple": false,
+        "exclusive_with": [],
+        "future_hit_location": {},
+        "metadata": {}
+      }
+    ],
+    "metadata": {}
+  }
+]

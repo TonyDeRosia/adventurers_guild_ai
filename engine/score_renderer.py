@@ -13,6 +13,7 @@ from dataclasses import asdict, is_dataclass
 from typing import Any, Callable
 
 from engine.actors import Actor, FormulaRegistry
+from engine.phase5f import BodyProfileRegistry
 from engine.mud_displays import semantic
 
 ADMIN_SECTIONS = {"diagnostics", "formulas", "raw"}
@@ -20,11 +21,7 @@ ADMIN_SECTIONS = {"diagnostics", "formulas", "raw"}
 BOX_WIDTH = 78
 EMPTY = "--"
 
-EQUIPMENT_SLOTS = [
-    "head", "face", "neck", "shoulders", "back", "chest", "arms", "wrists", "hands",
-    "finger_left", "finger_right", "waist", "legs", "feet", "primary_weapon", "secondary_weapon",
-    "shield", "quiver", "accessory_1", "accessory_2", "mount", "pet_equipment",
-]
+REMOVED_GAMEPLAY_SLOTS = {"primary_weapon", "secondary_weapon", "shield", "quiver", "ranged", "ammo", "both_hands"}
 RESOURCE_ROWS = [
     ("health", "Health", "hp"), ("mana", "Mana", "mp"), ("movement", "Movement", "score_value"),
     ("stamina", "Stamina", "stamina"), ("hunger", "Hunger", "score_value"), ("thirst", "Thirst", "score_value"),
@@ -114,6 +111,7 @@ class ActorScoreRenderer:
 
     def __init__(self, formula_registry: FormulaRegistry | None = None, *, ansi: bool = False):
         self.formula_registry = formula_registry or FormulaRegistry.default()
+        self.body_registry = BodyProfileRegistry()
         self.ansi = ansi
         self._renderers: dict[str, Callable[[Actor, bool], str]] = {name: getattr(self, f"render_{name}") for name in self.order}
 
@@ -190,8 +188,18 @@ class ActorScoreRenderer:
 
     def render_equipment(self, actor: Actor, admin: bool = False) -> str:
         eq = actor.equipment_profile.get("equipped", actor.equipment_profile) or {}
-        pairs = [(_human(slot), eq.get(slot) or "nothing", "equipment_item") for slot in EQUIPMENT_SLOTS]
-        return self._section("EQUIPMENT", self._two_col(pairs))
+        profile = self.body_registry.get(getattr(actor, "body_profile_id", "humanoid"))
+        rows = []
+        if admin:
+            rows.append(_line(_field("Body Profile", profile.id, width=70)))
+        pairs = []
+        for slot in profile.slots:
+            if not slot.visible:
+                continue
+            item = eq.get(slot.id) or eq.get(slot.display_name) or "nothing"
+            pairs.append((slot.display_name, item, "equipment_item"))
+        rows.extend(self._two_col(pairs))
+        return self._section("EQUIPMENT", rows)
 
     def render_conditions(self, actor: Actor, admin: bool = False) -> str:
         data = dict(actor.condition_profile or {})

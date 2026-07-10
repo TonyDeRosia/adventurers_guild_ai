@@ -1,0 +1,1 @@
+[{"id":"standard_delay","policy":"respawn_after_delay","delay_world_minutes":60,"restart_safe":true}]

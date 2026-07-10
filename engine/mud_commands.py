@@ -260,6 +260,9 @@ class MudCommandEngine:
             "formula": self._cmd_formula_diag,
             "modifier": self._cmd_modifier_diag,
             "actor": self._cmd_actor_diag,
+            "bodylist": self._cmd_phase5f, "bodyshow": self._cmd_phase5f, "slotlist": self._cmd_phase5f,
+            "spawnlist": self._cmd_phase5f, "spawnshow": self._cmd_phase5f, "population": self._cmd_phase5f,
+            "lifecycle": self._cmd_phase5f, "corpse": self._cmd_phase5f, "respawn": self._cmd_phase5f,
         }
         for _name in " rsave redit rstat rcreate rset rdesc rname rexits rfeature rdelete exedit excreate exset exdelete fedit fcreate fset fdesc fdelete oedit ocreate oset odesc odelete ostat medit mcreate mset mdesc mdelete mstat spawnedit spawncreate spawnset spawndelete spawnstat zstat astat wstat btarget rtarget target asave bsave wsave".split():
             if _name:
@@ -281,6 +284,33 @@ class MudCommandEngine:
         if not hasattr(self, "_phase5d_formula_engine"):
             self._phase5d_formula_engine = FormulaEngine()
         return self._phase5d_formula_engine
+
+
+    def _cmd_phase5f(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if self._effective_role(character) not in {"builder", "admin", "owner"}:
+            return CommandResult("You do not have permission for that command.", ok=False)
+        from engine.phase5f import BodyProfileRegistry, PopulationManager, LIFECYCLE_STATES
+        rt=getattr(self,"runtime",None); world=getattr(rt,"active_world",None) if rt else None; cmd=raw.split()[0].lower()
+        profiles=BodyProfileRegistry(getattr(world,"body_profiles",None) or None)
+        if cmd=="bodylist": return CommandResult("Body Profiles\n"+"\n".join(sorted(profiles.profiles)))
+        if cmd=="bodyshow":
+            prof=profiles.get(args[0] if args else "humanoid"); return CommandResult(json.dumps(prof.to_dict(), indent=2, sort_keys=True))
+        if cmd=="slotlist":
+            prof=profiles.get(args[0] if args else "humanoid"); return CommandResult("Slots for "+prof.id+"\n"+"\n".join(f"{s.order}: {s.id} ({s.display_name})" for s in prof.slots))
+        defs=getattr(world,"population_definitions",None) or getattr(world,"spawns",[]) or []
+        pm=PopulationManager(rt.state_store.db_path, getattr(rt,"active_world_id","") or "", defs) if rt else None
+        if cmd=="spawnlist": return CommandResult("Spawn Definitions\n"+"\n".join(str(d.get("id")) for d in defs))
+        if cmd=="spawnshow":
+            q=args[0] if args else ""; return CommandResult(json.dumps(next((d for d in defs if str(d.get("id"))==q), {}), indent=2, sort_keys=True))
+        if cmd=="population":
+            action=args[0].lower() if args else "diagnostics"
+            if action=="validate": return CommandResult("Population validation\n"+("\n".join(pm.validate()) or "passed"))
+            if action=="reload": return CommandResult("Population definitions reloaded for current world package.")
+            return CommandResult(json.dumps({"definitions":len(defs),"instances":pm.instances() if pm else [],"diagnostics":"deterministic population manager active"}, indent=2, sort_keys=True))
+        if cmd=="lifecycle": return CommandResult("Lifecycle states\n"+" -> ".join(LIFECYCLE_STATES))
+        if cmd=="corpse": return CommandResult("Corpse diagnostics: corpse ownership is stored on corpse_instances; loot is intentionally not implemented.")
+        if cmd=="respawn": return CommandResult("Respawn diagnostics: respawn_queue is persisted by world time.")
+        return CommandResult("Phase 5F command unavailable.", ok=False)
 
     def _cmd_formula_diag(self, character: Any, args: list[str], raw: str) -> CommandResult:
         if self._effective_role(character) not in {"builder", "admin", "owner"}:

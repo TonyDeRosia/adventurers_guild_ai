@@ -138,6 +138,9 @@ class Actor:
     resources: ActorResources = field(default_factory=ActorResources)
     attributes: dict[str, int | None] = field(default_factory=lambda: dict(PRIMARY_ATTRIBUTE_DEFAULTS))
     combat_profile: dict[str, Any] = field(default_factory=lambda: {"aggression": "never", "attack": "none", "flee": "immediate", "combat_profile": "Civilian"})
+    body_profile_id: str = "humanoid"
+    lifecycle_state: str = "alive"
+    lifecycle_profile: dict[str, Any] = field(default_factory=dict)
     equipment_profile: dict[str, Any] = field(default_factory=dict)
     resistance_profile: dict[str, Any] = field(default_factory=dict)
     condition_profile: dict[str, Any] = field(default_factory=dict)

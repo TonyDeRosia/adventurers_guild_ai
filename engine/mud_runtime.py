@@ -1385,7 +1385,7 @@ class MudRuntime:
         by_id = {str(item.get("id")): item for item in getattr(self.active_world, "items", [])}
         return [by_id.get(str(value), value) if not isinstance(value, dict) else value for value in values]
 
-    EQUIPMENT_SLOTS = ["head","face","neck","shoulders","back","chest","arms","wrists","hands","finger_left","finger_right","waist","legs","feet","primary_weapon","secondary_weapon","shield","quiver","accessory_1","accessory_2","main_hand","off_hand","both_hands","ranged","ammo","light"]
+    EQUIPMENT_SLOTS = ["head","face","neck","shoulders","back","chest","arms","wrists","hands","finger_left","finger_right","waist","legs","feet","main_hand","off_hand","accessory_1","accessory_2","light"]
     HAND_SLOTS = {"main_hand", "off_hand", "both_hands", "light"}
     ARTICLES = {"a", "an", "the"}
 
@@ -1408,8 +1408,10 @@ class MudRuntime:
                 "long_description": str(raw.get("long_description") or raw.get("description") or raw.get("short_description") or raw.get("name") or tid),
                 "item_type": str(raw.get("item_type") or raw.get("type") or "misc"),
                 "weight": raw.get("weight", 0), "value": raw.get("value", 0),
-                "wear_slots": [str(v) for v in (raw.get("equipment_slots") or wear_slots) if str(v) in self.EQUIPMENT_SLOTS],
-                "equipment_slots": [str(v) for v in (raw.get("equipment_slots") or wear_slots) if str(v) in self.EQUIPMENT_SLOTS],
+                "wear_slots": [str(v) for v in (raw.get("occupies_slots") or raw.get("equipment_slots") or wear_slots) if str(v) in self.EQUIPMENT_SLOTS],
+                "equipment_slots": [str(v) for v in (raw.get("occupies_slots") or raw.get("equipment_slots") or wear_slots) if str(v) in self.EQUIPMENT_SLOTS],
+                "occupies_slots": [str(v) for v in (raw.get("occupies_slots") or raw.get("equipment_slots") or wear_slots) if str(v) in self.EQUIPMENT_SLOTS],
+                "requires_item_tag": raw.get("requires_item_tag") or raw.get("requires_item_tags") or [],
                 "modifiers": list(raw.get("modifiers") or []),
                 "weapon_flags": raw.get("weapon_flags") or raw.get("flags") or [],
                 "armor_values": raw.get("armor_values") or raw.get("stats") or {},
@@ -1492,15 +1494,22 @@ class MudRuntime:
         return {"status":"ambiguous" if partial else "missing", "matches": partial}
 
     def _normalize_equipment_slot(self, slot: str | None) -> str:
-        aliases = {"main_hand": "primary_weapon", "both_hands": "primary_weapon", "ranged": "primary_weapon", "off_hand": "secondary_weapon", "ammo": "quiver", "body": "chest"}
+        aliases = {"body": "chest", "shield": "off_hand", "primary_weapon": "main_hand", "secondary_weapon": "off_hand"}
         return aliases.get(str(slot or "").strip(), str(slot or "").strip())
 
     def validate_equipment(self, character_id: str, item_instance: dict[str, Any], slot: str | None = None) -> dict[str, Any]:
-        allowed = list((item_instance.get("template") or {}).get("wear_slots") or [])
+        tmpl = item_instance.get("template") or {}
+        raw_allowed = list(tmpl.get("wear_slots") if "both_hands" in (tmpl.get("wear_slots") or []) else (tmpl.get("occupies_slots") or tmpl.get("wear_slots") or []))
+        legacy_both_hands = "both_hands" in raw_allowed
+        if legacy_both_hands:
+            raw_allowed = ["main_hand", "off_hand"]
+        allowed = [self._normalize_equipment_slot(s) for s in raw_allowed]
+        slot = self._normalize_equipment_slot(slot) if slot else None
         if slot and slot not in self.EQUIPMENT_SLOTS: return {"ok": False, "message": "That is not a valid equipment slot."}
         if slot and slot not in allowed: return {"ok": False, "message": f"You can't equip {item_instance['name']} there."}
         if not allowed: return {"ok": False, "message": f"You can't equip {item_instance['name']}."}
-        return {"ok": True, "slot": slot or allowed[0]}
+        store_slot = "both_hands" if legacy_both_hands else ",".join(allowed)
+        return {"ok": True, "slot": store_slot, "occupies_slots": allowed}
 
     def pickup_item(self, character_id: str, room_id: str, query: str) -> str:
         res = self.resolve_item_keywords(query, self.get_visible_room_items(room_id))
@@ -1521,13 +1530,15 @@ class MudRuntime:
     def equip_item(self, character_id: str, query: str, preferred_slot: str | None = None) -> str:
         res=self.resolve_item_keywords(query, self.find_inventory_items(character_id))
         if res["status"] != "ok": return self._resolve_message(res, "You aren't carrying that.")
-        item=res["item"]; allowed=list(item["template"].get("wear_slots") or []); slot=preferred_slot if preferred_slot in allowed else (next((s for s in ([preferred_slot] if preferred_slot else [])+allowed if s in allowed), None))
+        item=res["item"]; raw_allowed=list(item["template"].get("wear_slots") if "both_hands" in (item["template"].get("wear_slots") or []) else (item["template"].get("occupies_slots") or item["template"].get("wear_slots") or [])); raw_allowed=["main_hand","off_hand"] if "both_hands" in raw_allowed else raw_allowed; allowed=[self._normalize_equipment_slot(s) for s in raw_allowed]; pref=self._normalize_equipment_slot(preferred_slot) if preferred_slot else None; slot=pref if pref in allowed else (next((s for s in ([pref] if pref else [])+allowed if s in allowed), None))
         valid=self.validate_equipment(character_id,item,slot)
         if not valid["ok"]: return valid["message"]
         slot=valid["slot"]; self._publish_item_event("before_item_equip", item, character_id=character_id, equipped_slot=slot)
-        conflicts=[slot] + (["main_hand","off_hand"] if slot=="both_hands" else ["both_hands"] if slot in {"main_hand","off_hand"} else [])
+        conflicts=set(valid.get("occupies_slots") or [slot])
         for eq in self.find_equipped_items(character_id):
-            if eq.get("equipped_slot") in conflicts: self.move_item(eq["instance_id"], "character", character_id)
+            eq_slots=set(str(eq.get("equipped_slot") or "").split(","))
+            if "both_hands" in eq_slots: eq_slots.update({"main_hand","off_hand"})
+            if eq_slots & conflicts: self.move_item(eq["instance_id"], "character", character_id)
         moved=self.move_item(item["instance_id"], "equipment", character_id, equipped_slot=slot); self._publish_item_event("actor_equipment_modifiers_invalidated", moved, character_id=character_id, equipped_slot=slot); self._publish_item_event("item_equipped", moved, character_id=character_id, equipped_slot=slot); self._publish_item_event("equipment_changed", moved, character_id=character_id); self._publish_item_event("inventory_changed", moved, character_id=character_id); self._publish_item_event("after_item_equip", moved, character_id=character_id, equipped_slot=slot); return f"You equip {moved['name']} on {slot.replace('_',' ')}."
 
     def unequip_item(self, character_id: str, query_or_slot: str) -> str:
@@ -1628,7 +1639,12 @@ class MudRuntime:
 
     def _render_equipment(self, character_id: str) -> str:
         equipped = self.find_equipped_items(character_id)
-        by={i.get("equipped_slot"): i for i in equipped}
+        by={}
+        for i in equipped:
+            slots=str(i.get("equipped_slot") or "").split(",")
+            if "both_hands" in slots: slots += ["main_hand", "off_hand"]
+            for slot in slots:
+                if slot: by[slot]=i
         prefix = "" if equipped else semantic("system", "You are not wearing anything.") + "\n"
         return prefix + semantic("system", "Equipment:") + "\n" + "\n".join(f"  {semantic('equipment_slot', s.replace('_',' ').title())}: {semantic('equipment_item' if s in by else 'system', by[s]['name'] if s in by else 'nothing')}" for s in self.EQUIPMENT_SLOTS)
 
