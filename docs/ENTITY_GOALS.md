@@ -8,3 +8,8 @@ Phase 5B adds deterministic living-entity infrastructure owned by SQLite and run
 - Player-agency boundaries forbid invented player thoughts, feelings, private inventory knowledge, remote conversations, Builder metadata, and future events.
 
 Manual acceptance commands include: `worldtime status`, `simulation status`, `eprofile harl`, `eschedule harl`, `eneeds harl`, `egoals harl`, `ememories harl`, and `econtext harl`.
+
+
+## Phase 6D deterministic combat behavior
+
+Phase 6D introduces canonical NPC combat behavior profiles, hostility evaluation, threat tables, deterministic action candidates, assist/protect/flee/surrender/call-for-help/pursuit hooks, pet modes, and Builder/Admin diagnostics. The system is a validator and selector only: AbilityExecutionService continues to own ability validation, costs, cooldowns, casts, healing, damage components, and effects; CombatEngine continues to own basic attack resolution and lifecycle handoff. Generative AI is not required for combat, and future AI suggestions cannot bypass deterministic validation.

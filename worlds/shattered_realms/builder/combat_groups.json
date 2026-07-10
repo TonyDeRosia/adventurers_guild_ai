@@ -1,0 +1,19 @@
+{
+  "starter_town_guards": {
+    "id": "starter_town_guards",
+    "maximum_assist_count": 3,
+    "member_ids": [],
+    "name": "Starter Town Guards",
+    "plugin_data": {},
+    "shared_target_policy": "highest"
+  },
+  "starter_wolf_pack": {
+    "id": "starter_wolf_pack",
+    "maximum_assist_count": 3,
+    "member_ids": [],
+    "name": "Starter Wolf Pack",
+    "pack_id": "starter_wolf_pack",
+    "plugin_data": {},
+    "shared_target_policy": "leader_target"
+  }
+}

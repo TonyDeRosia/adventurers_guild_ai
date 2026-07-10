@@ -17,7 +17,7 @@ from engine.phase5f import BodyProfileRegistry
 from engine.combat_equipment import CombatContentRegistry
 from engine.mud_displays import semantic
 
-ADMIN_SECTIONS = {"diagnostics", "formulas", "raw"}
+ADMIN_SECTIONS = {"diagnostics", "formulas", "raw", "behavior", "threat", "tactics"}
 
 BOX_WIDTH = 78
 EMPTY = "--"
@@ -101,13 +101,13 @@ class ActorScoreRenderer:
     order = [
         "identity", "resources", "primary_attributes", "derived_attributes", "combat", "equipment",
         "conditions", "resistances", "affects", "spellup", "abilities", "skills", "spells", "cooldowns", "current_cast", "combat_loadout", "passive_abilities", "progression", "currencies", "relationships",
-        "simulation", "diagnostics", "formulas", "raw",
+        "simulation", "behavior", "threat", "tactics", "diagnostics", "formulas", "raw",
     ]
     aliases = {
         "score": "all", "preview": "all", "actor": "all", "attrs": "primary_attributes", "attributes": "primary_attributes",
         "derived": "derived_attributes", "resists": "resistances", "saff": "affects", "spellups": "spellup",
         "worth": "currencies", "cast": "current_cast", "currency": "currencies", "money": "currencies", "builder": "diagnostics",
-        "builder_diagnostics": "diagnostics", "ai": "simulation", "ai_diagnostics": "simulation",
+        "builder_diagnostics": "diagnostics", "ai": "simulation", "ai_diagnostics": "simulation", "behaviour": "behavior",
     }
 
     def __init__(self, formula_registry: FormulaRegistry | None = None, *, ansi: bool = False):
@@ -146,6 +146,37 @@ class ActorScoreRenderer:
                 right = ""
             rows.append(_line(f"{left:<36} {right}"))
         return rows
+
+
+    def render_behavior(self, actor: Actor, admin: bool = False) -> str:
+        cb = (actor.plugin_data or {}).get("combat_behavior", {})
+        cp = actor.combat_profile or {}
+        rows = self._two_col([
+            ("Behavior Profile", cp.get("combat_behavior_profile_id") or actor.plugin_data.get("combat_behavior_profile_id") or cb.get("profile_id") or "safe_default", "score_value"),
+            ("Aggression Policy", cb.get("aggression_policy") or cp.get("aggression") or "derived", "score_value"),
+            ("Pet Mode", cb.get("pet_mode") or actor.plugin_data.get("pet_mode") or "--", "score_value"),
+            ("Protected Targets", cb.get("protected_actor_ids") or [], "score_value"),
+        ])
+        return self._section("SCORE BEHAVIOR", rows)
+
+    def render_threat(self, actor: Actor, admin: bool = False) -> str:
+        table = (actor.plugin_data or {}).get("threat_table", [])
+        rows = [_line(f"{r.get('target_actor_id')}: {r.get('threat_value')}") for r in table] if isinstance(table, list) else [_line(_value(table))]
+        if not rows: rows = [_line("No active threat entries.")]
+        return self._section("SCORE THREAT", rows)
+
+    def render_tactics(self, actor: Actor, admin: bool = False) -> str:
+        st = (actor.plugin_data or {}).get("combat_behavior_state", {})
+        cp = actor.combat_profile or {}
+        rows = self._two_col([
+            ("Tactical State", st.get("current_tactical_state") or cp.get("combat_state") or "idle", "score_value"),
+            ("Current Target", st.get("current_target_id") or cp.get("target") or "--", "score_value"),
+            ("Current Action", st.get("current_action_type") or "--", "score_value"),
+            ("Selected Ability", st.get("current_ability_id") or "--", "score_value"),
+            ("Next Decision", st.get("next_decision_world_time") or "--", "score_value"),
+            ("Deterministic Seed", st.get("deterministic_seed") or "--", "score_value"),
+        ])
+        return self._section("SCORE TACTICS", rows)
 
     def render_identity(self, actor: Actor, admin: bool = False) -> str:
         i = actor.identity

@@ -1,0 +1,357 @@
+{
+  "apprentice_mage_defensive": {
+    "ability_selection_policy": {},
+    "aggression_policy": {
+      "type": "defensive_only"
+    },
+    "assist_policy": {
+      "type": "never"
+    },
+    "behavior_role": "caster",
+    "call_for_help_policy": {},
+    "control_resistance_policy": {},
+    "cooldown_policy": {},
+    "description": "",
+    "enabled": true,
+    "fallback_rules": [
+      {
+        "action_type": "basic_attack"
+      },
+      {
+        "action_type": "wait"
+      }
+    ],
+    "flee_policy": {},
+    "hostility_policy": {},
+    "id": "apprentice_mage_defensive",
+    "idle_combat_policy": {},
+    "movement_policy": {},
+    "name": "Apprentice Mage Defensive",
+    "plugin_data": {},
+    "priority_rules": [],
+    "protect_policy": {},
+    "pursuit_policy": {
+      "type": "same_room_only"
+    },
+    "resource_policy": {},
+    "surrender_policy": {
+      "type": "never"
+    },
+    "tags": [],
+    "target_selection_policy": {
+      "type": "highest"
+    },
+    "threat_policy": {
+      "type": "highest"
+    },
+    "version": "1.0.0"
+  },
+  "civilian_safe": {
+    "ability_selection_policy": {},
+    "aggression_policy": {
+      "type": "never"
+    },
+    "assist_policy": {
+      "type": "never"
+    },
+    "behavior_role": "civilian",
+    "call_for_help_policy": {
+      "enabled": true,
+      "maximum_room_distance": 0
+    },
+    "control_resistance_policy": {},
+    "cooldown_policy": {},
+    "description": "",
+    "enabled": true,
+    "fallback_rules": [
+      {
+        "action_type": "flee"
+      },
+      {
+        "action_type": "surrender"
+      },
+      {
+        "action_type": "wait"
+      }
+    ],
+    "flee_policy": {
+      "enabled": true,
+      "health_threshold_percent": 90,
+      "priority": 5,
+      "surrender_if_no_exit": true
+    },
+    "hostility_policy": {},
+    "id": "civilian_safe",
+    "idle_combat_policy": {},
+    "movement_policy": {},
+    "name": "Civilian Safe",
+    "plugin_data": {},
+    "priority_rules": [],
+    "protect_policy": {},
+    "pursuit_policy": {
+      "type": "same_room_only"
+    },
+    "resource_policy": {},
+    "surrender_policy": {
+      "health_threshold_percent": 30,
+      "type": "civilian_default"
+    },
+    "tags": [],
+    "target_selection_policy": {
+      "type": "highest"
+    },
+    "threat_policy": {
+      "type": "highest"
+    },
+    "version": "1.0.0"
+  },
+  "healer_support": {
+    "ability_selection_policy": {
+      "prefer": "healing"
+    },
+    "aggression_policy": {
+      "type": "defensive_only"
+    },
+    "assist_policy": {
+      "type": "never"
+    },
+    "behavior_role": "healer",
+    "call_for_help_policy": {},
+    "control_resistance_policy": {},
+    "cooldown_policy": {},
+    "description": "",
+    "enabled": true,
+    "fallback_rules": [
+      {
+        "action_type": "basic_attack"
+      },
+      {
+        "action_type": "wait"
+      }
+    ],
+    "flee_policy": {},
+    "hostility_policy": {},
+    "id": "healer_support",
+    "idle_combat_policy": {},
+    "movement_policy": {},
+    "name": "Healer Support",
+    "plugin_data": {},
+    "priority_rules": [],
+    "protect_policy": {},
+    "pursuit_policy": {
+      "type": "same_room_only"
+    },
+    "resource_policy": {},
+    "surrender_policy": {
+      "type": "never"
+    },
+    "tags": [],
+    "target_selection_policy": {
+      "type": "highest"
+    },
+    "threat_policy": {
+      "type": "highest"
+    },
+    "version": "1.0.0"
+  },
+  "rat_aggressive": {
+    "ability_selection_policy": {},
+    "aggression_policy": {
+      "type": "always"
+    },
+    "assist_policy": {
+      "type": "never"
+    },
+    "behavior_role": "animal",
+    "call_for_help_policy": {},
+    "control_resistance_policy": {},
+    "cooldown_policy": {},
+    "description": "",
+    "enabled": true,
+    "fallback_rules": [
+      {
+        "action_type": "basic_attack"
+      },
+      {
+        "action_type": "wait"
+      }
+    ],
+    "flee_policy": {},
+    "hostility_policy": {},
+    "id": "rat_aggressive",
+    "idle_combat_policy": {},
+    "movement_policy": {},
+    "name": "Rat Aggressive",
+    "plugin_data": {},
+    "priority_rules": [],
+    "protect_policy": {},
+    "pursuit_policy": {
+      "type": "same_room_only"
+    },
+    "resource_policy": {},
+    "surrender_policy": {
+      "type": "never"
+    },
+    "tags": [
+      "animal",
+      "hostile"
+    ],
+    "target_selection_policy": {
+      "type": "highest"
+    },
+    "threat_policy": {
+      "type": "highest"
+    },
+    "version": "1.0.0"
+  },
+  "town_guard_defender": {
+    "ability_selection_policy": {},
+    "aggression_policy": {
+      "type": "protective"
+    },
+    "assist_policy": {
+      "type": "guard"
+    },
+    "behavior_role": "guardian",
+    "call_for_help_policy": {},
+    "control_resistance_policy": {},
+    "cooldown_policy": {},
+    "description": "",
+    "enabled": true,
+    "fallback_rules": [
+      {
+        "action_type": "basic_attack"
+      },
+      {
+        "action_type": "wait"
+      }
+    ],
+    "flee_policy": {},
+    "hostility_policy": {},
+    "id": "town_guard_defender",
+    "idle_combat_policy": {},
+    "movement_policy": {},
+    "name": "Town Guard Defender",
+    "plugin_data": {},
+    "priority_rules": [],
+    "protect_policy": {
+      "actors": [],
+      "rooms": []
+    },
+    "pursuit_policy": {
+      "type": "same_room_only"
+    },
+    "resource_policy": {},
+    "surrender_policy": {
+      "type": "never"
+    },
+    "tags": [],
+    "target_selection_policy": {
+      "type": "highest"
+    },
+    "threat_policy": {
+      "type": "highest"
+    },
+    "version": "1.0.0"
+  },
+  "training_dummy_passive": {
+    "ability_selection_policy": {},
+    "aggression_policy": {
+      "type": "never"
+    },
+    "assist_policy": {
+      "type": "never"
+    },
+    "behavior_role": "training_target",
+    "call_for_help_policy": {
+      "enabled": false
+    },
+    "control_resistance_policy": {},
+    "cooldown_policy": {},
+    "description": "",
+    "enabled": true,
+    "fallback_rules": [
+      {
+        "action_type": "basic_attack"
+      },
+      {
+        "action_type": "wait"
+      }
+    ],
+    "flee_policy": {
+      "enabled": false
+    },
+    "hostility_policy": {},
+    "id": "training_dummy_passive",
+    "idle_combat_policy": {},
+    "movement_policy": {},
+    "name": "Training Dummy Passive",
+    "plugin_data": {},
+    "priority_rules": [],
+    "protect_policy": {},
+    "pursuit_policy": {
+      "type": "same_room_only"
+    },
+    "resource_policy": {},
+    "surrender_policy": {
+      "type": "never"
+    },
+    "tags": [],
+    "target_selection_policy": {
+      "type": "highest"
+    },
+    "threat_policy": {
+      "type": "highest"
+    },
+    "version": "1.0.0"
+  },
+  "wolf_pack": {
+    "ability_selection_policy": {},
+    "aggression_policy": {
+      "type": "always"
+    },
+    "assist_policy": {
+      "type": "pack"
+    },
+    "behavior_role": "pack_hunter",
+    "call_for_help_policy": {},
+    "control_resistance_policy": {},
+    "cooldown_policy": {},
+    "description": "",
+    "enabled": true,
+    "fallback_rules": [
+      {
+        "action_type": "basic_attack"
+      },
+      {
+        "action_type": "wait"
+      }
+    ],
+    "flee_policy": {},
+    "hostility_policy": {},
+    "id": "wolf_pack",
+    "idle_combat_policy": {},
+    "movement_policy": {},
+    "name": "Wolf Pack",
+    "plugin_data": {},
+    "priority_rules": [],
+    "protect_policy": {},
+    "pursuit_policy": {
+      "leash_distance": 2,
+      "maximum_depth": 1,
+      "type": "leash_distance"
+    },
+    "resource_policy": {},
+    "surrender_policy": {
+      "type": "never"
+    },
+    "tags": [],
+    "target_selection_policy": {
+      "type": "highest"
+    },
+    "threat_policy": {
+      "type": "highest"
+    },
+    "version": "1.0.0"
+  }
+}
