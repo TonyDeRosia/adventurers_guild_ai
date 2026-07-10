@@ -493,6 +493,16 @@ CREATE TABLE IF NOT EXISTS room_flags(room_id TEXT,flag TEXT,value INTEGER,PRIMA
 CREATE TABLE IF NOT EXISTS room_variables(room_id TEXT,key TEXT,value_json TEXT,PRIMARY KEY(room_id,key));
 CREATE TABLE IF NOT EXISTS room_reset_state(room_id TEXT PRIMARY KEY,last_reset_at TEXT,next_reset_at TEXT,state_json TEXT);
 CREATE TABLE IF NOT EXISTS item_instances(unique_id TEXT PRIMARY KEY,template_id TEXT,current_owner TEXT,current_room TEXT,durability INTEGER,charges INTEGER,quality TEXT,flags_json TEXT,custom_name TEXT,creator TEXT,created_date TEXT,last_modified TEXT);
+
+CREATE TABLE IF NOT EXISTS actor_progression_state(progression_state_id TEXT PRIMARY KEY,world_id TEXT,actor_type TEXT,actor_id TEXT,species_id TEXT,race_id TEXT,primary_class_id TEXT,primary_class_track_id TEXT,profession_ids_json TEXT,level INTEGER,experience INTEGER,experience_to_next INTEGER,total_experience INTEGER,practice_sessions INTEGER,training_sessions INTEGER,skill_points INTEGER,attribute_points INTEGER,talent_points_placeholder INTEGER,remort_count INTEGER,prestige_rank INTEGER,advancement_flags_json TEXT,last_level_at TEXT,created_at TEXT,updated_at TEXT,metadata_json TEXT,UNIQUE(actor_type,actor_id));
+CREATE INDEX IF NOT EXISTS idx_actor_progression_actor ON actor_progression_state(actor_type,actor_id);
+CREATE TABLE IF NOT EXISTS actor_experience_events(experience_event_id TEXT PRIMARY KEY,world_id TEXT,actor_type TEXT,actor_id TEXT,source_type TEXT,source_id TEXT,amount INTEGER,base_amount INTEGER,modifier_amount INTEGER,final_amount INTEGER,reason TEXT,world_time TEXT,created_at TEXT,metadata_json TEXT);
+CREATE INDEX IF NOT EXISTS idx_actor_xp_events_actor ON actor_experience_events(actor_type,actor_id,created_at);
+CREATE TABLE IF NOT EXISTS actor_advancement_currency_events(event_id TEXT PRIMARY KEY,actor_id TEXT,currency_id TEXT,operation TEXT,amount INTEGER,source_type TEXT,source_id TEXT,reason TEXT,world_time TEXT,created_at TEXT,metadata_json TEXT);
+CREATE INDEX IF NOT EXISTS idx_actor_currency_events_actor ON actor_advancement_currency_events(actor_id,currency_id,created_at);
+CREATE TABLE IF NOT EXISTS actor_progression_modifiers(grant_id TEXT PRIMARY KEY,actor_id TEXT,source_type TEXT,source_id TEXT,target_domain TEXT,target_key TEXT,operation TEXT,value INTEGER,level_granted INTEGER,active INTEGER,metadata_json TEXT);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_actor_progression_mod_unique ON actor_progression_modifiers(actor_id,source_type,source_id,target_domain,target_key,level_granted);
+CREATE TABLE IF NOT EXISTS actor_ability_progression(actor_id TEXT,ability_id TEXT,rank INTEGER,maximum_rank INTEGER,proficiency INTEGER,learned_at_level INTEGER,source_class_id TEXT,source_race_id TEXT,source_profession_id TEXT,source_track_id TEXT,practice_cost INTEGER,training_cost INTEGER,skill_point_cost INTEGER,requirements_json TEXT,active INTEGER,learned_at TEXT,metadata_json TEXT,PRIMARY KEY(actor_id,ability_id));
 CREATE TABLE IF NOT EXISTS world_state(campaign_id TEXT,key TEXT,value_json TEXT,updated_at TEXT,PRIMARY KEY(campaign_id,key));
 CREATE TABLE IF NOT EXISTS factions(faction_id TEXT PRIMARY KEY,name TEXT,state_json TEXT);
 CREATE TABLE IF NOT EXISTS faction_alliances(faction_id TEXT,other_faction_id TEXT,standing INTEGER,state_json TEXT,PRIMARY KEY(faction_id,other_faction_id));

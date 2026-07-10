@@ -1,0 +1,24 @@
+{
+  "experience_reward_profiles": [
+    {
+      "base_experience": 100,
+      "description": "Preview-only test XP reward.",
+      "eligible_source_types": [
+        "admin",
+        "custom"
+      ],
+      "formula_id": "",
+      "group_rules_placeholder": {},
+      "id": "admin_test_reward",
+      "level_difference_rules": {},
+      "maximum_reward": 1000,
+      "minimum_reward": 0,
+      "name": "Admin Test Reward",
+      "plugin_data": {},
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "species_profiles": [
+    {
+      "attribute_modifiers": [],
+      "base_attributes": {},
+      "body_profile_id": "humanoid",
+      "default_natural_weapon_profile_ids": [],
+      "derived_stat_modifiers": [],
+      "description": "Bipedal people and people-like actors.",
+      "granted_abilities": [],
+      "id": "humanoid",
+      "immunities": [],
+      "languages": [
+        "common"
+      ],
+      "movement_modes": [
+        "walk"
+      ],
+      "name": "Humanoid",
+      "plugin_data": {},
+      "resistance_modifiers": [],
+      "resource_modifiers": [],
+      "size_category": "medium",
+      "tags": [
+        "starter"
+      ],
+      "version": 1,
+      "vulnerabilities": []
+    },
+    {
+      "attribute_modifiers": [],
+      "base_attributes": {},
+      "body_profile_id": "quadruped",
+      "default_natural_weapon_profile_ids": [],
+      "derived_stat_modifiers": [],
+      "description": "Natural animals.",
+      "granted_abilities": [],
+      "id": "beast",
+      "immunities": [],
+      "languages": [],
+      "movement_modes": [
+        "walk"
+      ],
+      "name": "Beast",
+      "plugin_data": {},
+      "resistance_modifiers": [],
+      "resource_modifiers": [],
+      "size_category": "medium",
+      "tags": [
+        "starter"
+      ],
+      "version": 1,
+      "vulnerabilities": []
+    },
+    {
+      "attribute_modifiers": [],
+      "base_attributes": {},
+      "body_profile_id": "small_animal",
+      "default_natural_weapon_profile_ids": [],
+      "derived_stat_modifiers": [],
+      "description": "Small pests and swarms.",
+      "granted_abilities": [],
+      "id": "vermin",
+      "immunities": [],
+      "languages": [],
+      "movement_modes": [
+        "walk"
+      ],
+      "name": "Vermin",
+      "plugin_data": {},
+      "resistance_modifiers": [],
+      "resource_modifiers": [],
+      "size_category": "small",
+      "tags": [
+        "starter"
+      ],
+      "version": 1,
+      "vulnerabilities": []
+    }
+  ]
+}

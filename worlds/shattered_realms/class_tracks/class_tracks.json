@@ -1,0 +1,72 @@
+{
+  "class_tracks": [
+    {
+      "ability_grants": [],
+      "allowed_equipment_changes": [],
+      "class_id": "warrior",
+      "description": "Defensive warrior foundation.",
+      "id": "warrior_guardian",
+      "minimum_level": 1,
+      "modifier_grants": [],
+      "name": "Guardian",
+      "plugin_data": {},
+      "requirements": [],
+      "resource_changes": [],
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "ability_grants": [],
+      "allowed_equipment_changes": [],
+      "class_id": "cleric",
+      "description": "Restorative cleric foundation.",
+      "id": "cleric_healer",
+      "minimum_level": 1,
+      "modifier_grants": [],
+      "name": "Healer",
+      "plugin_data": {},
+      "requirements": [],
+      "resource_changes": [],
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "ability_grants": [],
+      "allowed_equipment_changes": [],
+      "class_id": "mage",
+      "description": "Apprentice mage foundation.",
+      "id": "mage_apprentice",
+      "minimum_level": 1,
+      "modifier_grants": [],
+      "name": "Apprentice",
+      "plugin_data": {},
+      "requirements": [],
+      "resource_changes": [],
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "ability_grants": [],
+      "allowed_equipment_changes": [],
+      "class_id": "rogue",
+      "description": "Mobile rogue foundation.",
+      "id": "rogue_skirmisher",
+      "minimum_level": 1,
+      "modifier_grants": [],
+      "name": "Skirmisher",
+      "plugin_data": {},
+      "requirements": [],
+      "resource_changes": [],
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    }
+  ]
+}

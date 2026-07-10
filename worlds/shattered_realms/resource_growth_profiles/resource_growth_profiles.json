@@ -1,0 +1,55 @@
+{
+  "resource_growth_profiles": [
+    {
+      "base_gain_per_level": 5,
+      "description": "Fixed health maximum contribution.",
+      "formula_id": "",
+      "id": "standard_health_growth",
+      "maximum": 0,
+      "milestones": {},
+      "minimum": 0,
+      "name": "Standard Health Growth",
+      "plugin_data": {},
+      "refill_policy": "preserve_percentage",
+      "resource_id": "health",
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "base_gain_per_level": 3,
+      "description": "Fixed mana maximum contribution.",
+      "formula_id": "",
+      "id": "standard_mana_growth",
+      "maximum": 0,
+      "milestones": {},
+      "minimum": 0,
+      "name": "Standard Mana Growth",
+      "plugin_data": {},
+      "refill_policy": "preserve_percentage",
+      "resource_id": "mana",
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "base_gain_per_level": 4,
+      "description": "Fixed stamina maximum contribution.",
+      "formula_id": "",
+      "id": "standard_stamina_growth",
+      "maximum": 0,
+      "milestones": {},
+      "minimum": 0,
+      "name": "Standard Stamina Growth",
+      "plugin_data": {},
+      "refill_policy": "preserve_percentage",
+      "resource_id": "stamina",
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    }
+  ]
+}
