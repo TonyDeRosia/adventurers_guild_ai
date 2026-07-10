@@ -345,8 +345,66 @@ class MudCommandEngine:
             self.command_handlers[_name] = self._cmd_room_assign
         for _name in "recipelist recipestat recipecreate recipeclone recipeset recipedelete recipevalidate recipepreview recipeinput recipeinputentry recipeoutput recipeoutputentry recipetool workstationlist workstationstat workstationcreate workstationclone workstationset workstationdelete workstationvalidate workstationpreview productionlist productionstat productioncreate productionset productionclone productiondelete productionvalidate qualitylist qualitystat qualitycreate qualityset qualityclone qualitydelete qualityvalidate craftpreview craftstart craftjob crafttrace craftcancel crafttick recipegrant reciperevoke actorrecipes professionstat professionxp workstationaudit craftingaudit recipeaudit recipetrace ingredienttrace workstationtrace qualitytrace professiontrace reservationtrace productiontrace".split():
             self.command_handlers[_name] = self._cmd_crafting_builder
+
+        for _name in "quests questlog journal quest accept decline abandon turnin talk reply questlist queststat questcreate questclone questset questdelete questvalidate questpreview questtrace stagelist stagestat stagecreate stageclone stageset stagedelete stagevalidate objectivelist objectivestat objectivecreate objectiveclone objectiveset objectivedelete objectivevalidate objectivepreview branchlist branchadd branchset branchdelete branchvalidate questactionlist questactionadd questactionset questactiondelete questactionvalidate conversationlist conversationstat conversationcreate conversationclone conversationset conversationdelete conversationvalidate conversationpreview convnodelist convnodecreate convnodeset convnodedelete convchoiceadd convchoiceset convchoicedelete worldstatelist worldstatestat worldstateset worldstateclear worldstatehistory actorquests questoffer questaccept questadvance questcomplete questfail questabandon questreset questinstance questinstancetrace objectiveprogress questevent questtick questaudit conversationaudit worldstateaudit availabilitytrace objectivetrace questeventtrace branchtrace questrewardtrace conversationtrace worldstatetrace questtimertrace".split():
+            self.command_handlers[_name] = self._cmd_phase8a_quest
         for _name in "behaviorlist behaviorstat behaviorvalidate behaviorpreview actorbehavior behaviortrace combatdecision combattrace combatcandidates threatlist threatstat threatadd threatclear hostilitytrace combattick protect protectset unprotect protectclear surrender callforhelp assisttrace fleetrace pursuittrace protecttrace combatgrouptrace petmode order".split():
             self.command_handlers[_name] = self._cmd_combat_behavior
+
+
+    def _quest_service(self, character: Any):
+        from engine.quests import QuestService
+        store = self.state_store
+        db_path = getattr(store, "db_path", None) or ":memory:"
+        world_id = getattr(character, "world_id", "") or "shattered_realms"
+        reward_service = getattr(self, "reward_service", None)
+        return QuestService(db_path, world_id=world_id, event_bus=self.event_bus, reward_service=reward_service)
+
+    def _cmd_phase8a_quest(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        from engine.quests import QuestValidator
+        svc = self._quest_service(character)
+        cmd = raw.split()[0].lower() if raw.split() else "quests"
+        actor_id = getattr(character, "id", "") or getattr(character, "character_id", "") or "self"
+        if cmd in {"quests", "questlog", "journal"}:
+            if args and args[0].lower() == "available":
+                qs = svc.list_available_quests(actor_id)
+                return CommandResult("Available quests:\n" + "\n".join(f"{i+1}. {q.get('name')}" for i,q in enumerate(qs)))
+            rows = svc.get_quest_journal(actor_id)
+            if not rows: return CommandResult("Quest Journal:\nNo active quests.")
+            return CommandResult("Quest Journal:\n" + "\n".join(f"{i+1}. {r['name']} - {r['status']} - {r['current_stage']}" for i,r in enumerate(rows)))
+        if cmd == "quest" and args:
+            if args[0].lower() in {"history", "completed"}:
+                return CommandResult("Quest history is recorded in actor_quest_history.")
+            qid = args[-1].replace(" ", "_")
+            q = svc.get_quest_definition(qid)
+            return CommandResult(f"Quest {qid}: {q.get('summary','') if q else 'not found'}", ok=bool(q))
+        if cmd == "accept" and args:
+            inst = svc.accept_quest(actor_id, args[0], {"source_type":"command"})
+            return CommandResult(f"Accepted quest {inst['quest_id']}.")
+        if cmd == "abandon" and args:
+            qs = [q for q in svc.get_actor_quests(actor_id) if q['quest_id'] == args[0] or q['quest_instance_id'] == args[0]]
+            if not qs: return CommandResult("Quest not found.", ok=False)
+            svc.abandon_quest(actor_id, qs[0]['quest_instance_id']); return CommandResult(f"Abandoned {qs[0]['quest_id']}.")
+        if cmd == "turnin" and args:
+            qs = [q for q in svc.get_actor_quests(actor_id) if q['quest_id'] == args[0] or q['quest_instance_id'] == args[0]]
+            if not qs: return CommandResult("Quest not found.", ok=False)
+            svc.turn_in_quest(actor_id, qs[0]['quest_instance_id'], {"source_type":"command"}); return CommandResult(f"Turned in {qs[0]['quest_id']}.")
+        if cmd == "decline": return CommandResult("Quest offer declined.")
+        if cmd == "talk": return CommandResult("Conversation foundation is available; choose a Builder-authored conversation and reply choice when active.")
+        if cmd == "reply": return CommandResult("Reply requires an active canonical conversation choice.")
+        if cmd in {"questlist", "queststat", "questvalidate", "questaudit"}:
+            if cmd == "questlist": return CommandResult("Quests:\n" + "\n".join(q['id'] for q in svc.content.list('quest_definitions')))
+            if cmd == "queststat" and args: return CommandResult(json.dumps(svc.get_quest_definition(args[0]) or {}, indent=2, sort_keys=True))
+            res = QuestValidator(svc.content).validate_quest(args[0]) if args else QuestValidator(svc.content).validate_all()
+            return CommandResult(f"Quest validation: {'ok' if res.ok else 'failed'}\nErrors: {res['errors']}\nWarnings: {res['warnings']}", ok=res.ok)
+        if cmd.startswith("worldstate"):
+            if cmd == "worldstateset" and len(args) >= 4:
+                val = " ".join(args[3:]); parsed = True if val.lower()=="true" else False if val.lower()=="false" else val
+                svc.world_state.set_state(args[0], args[1], args[2], parsed, source_type="command", source_id=actor_id); return CommandResult("World state set.")
+            if cmd == "worldstatehistory" and len(args) >= 3: return CommandResult(json.dumps(svc.world_state.get_state_history(args[0],args[1],args[2]), indent=2))
+            if cmd == "worldstatestat" and len(args) >= 3: return CommandResult(json.dumps(svc.world_state.get_state(args[0],args[1],args[2]) or {}, indent=2))
+            return CommandResult("Usage: worldstateset <scope> <scope_id> <key> <value>")
+        return CommandResult("Phase 8A quest Builder/Admin command foundation is available; edits are stored through Builder draft JSON collections.")
 
     def _crafting_service(self, character: Any) -> CraftingService | None:
         store = self.state_store

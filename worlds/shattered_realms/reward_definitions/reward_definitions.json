@@ -1,3 +1,92 @@
-{"reward_definitions":[
- {"id":"starter_training_reward","name":"Starter Training Reward","description":"Conservative admin/training reward for Phase 7A validation.","entries":[{"id":"practice","reward_type":"practice_sessions","definition_id":"practice_sessions","quantity":1}],"eligibility_rules":[],"delivery_policy":"direct","repeat_policy":"unlimited","cooldown_policy":{},"failure_policy":"partial","visibility":"builder","messages":{},"tags":["phase7a"],"plugin_data":{},"version":1}
-]}
+{
+  "reward_definitions": [
+    {
+      "cooldown_policy": {},
+      "delivery_policy": "direct",
+      "description": "Conservative admin/training reward for Phase 7A validation.",
+      "eligibility_rules": [],
+      "entries": [
+        {
+          "definition_id": "practice_sessions",
+          "id": "practice",
+          "quantity": 1,
+          "reward_type": "practice_sessions"
+        }
+      ],
+      "failure_policy": "partial",
+      "id": "starter_training_reward",
+      "messages": {},
+      "name": "Starter Training Reward",
+      "plugin_data": {},
+      "repeat_policy": "unlimited",
+      "tags": [
+        "phase7a"
+      ],
+      "version": 1,
+      "visibility": "builder"
+    },
+    {
+      "description": "Conservative Phase 8A pilot quest reward.",
+      "eligibility_rules": [],
+      "enabled": true,
+      "entries": [
+        {
+          "definition_id": "xp",
+          "id": "xp",
+          "quantity": 15,
+          "reward_type": "experience"
+        }
+      ],
+      "id": "cellar_rat_problem_reward",
+      "name": "Cellar Rat Problem Reward",
+      "plugin_data": {},
+      "tags": [
+        "quest",
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "description": "Conservative Phase 8A pilot quest reward.",
+      "eligibility_rules": [],
+      "enabled": true,
+      "entries": [
+        {
+          "definition_id": "xp",
+          "id": "xp",
+          "quantity": 10,
+          "reward_type": "experience"
+        }
+      ],
+      "id": "blacksmith_material_request_reward",
+      "name": "Blacksmith Material Request Reward",
+      "plugin_data": {},
+      "tags": [
+        "quest",
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "description": "Conservative Phase 8A pilot quest reward.",
+      "eligibility_rules": [],
+      "enabled": true,
+      "entries": [
+        {
+          "definition_id": "xp",
+          "id": "xp",
+          "quantity": 1,
+          "reward_type": "experience"
+        }
+      ],
+      "id": "first_craft_reward",
+      "name": "First Craft Reward",
+      "plugin_data": {},
+      "tags": [
+        "quest",
+        "starter"
+      ],
+      "version": 1
+    }
+  ]
+}

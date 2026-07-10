@@ -23,3 +23,8 @@ Player: `recipes`, `recipe iron_sword`, `craft preview iron_sword`, `craft iron_
 ## Boundaries
 
 Quest integration, final trainers, autonomous AI production, random affixes, auction houses, player-to-player work orders, and final enchantment mechanics remain separate future systems.
+
+
+## Phase 8A Quest Integration
+
+Phase 8A introduces `engine.quests.QuestService`, `QuestEventRouter`, `ConversationService`, and `WorldStateService` as the canonical quest and authored narrative-state foundation. Quests are Builder/world-package data, consume canonical EventBus-style events idempotently, branch deterministically, persist runtime state in SQLite, and hand rewards to RewardService instead of mutating items, XP, currencies, abilities, progression, Actor stats, or world records directly. Future AI may propose text or actions, but QuestService validates all outcomes; unrestricted scripts remain forbidden.

@@ -1,0 +1,19 @@
+{
+  "quest_series": [
+    {
+      "chapter_ids": [
+        "starter_help"
+      ],
+      "description": "Small starter quest grouping.",
+      "id": "starter_guildlands",
+      "name": "Starter Guildlands",
+      "plugin_data": {},
+      "required_series_ids": [],
+      "tags": [
+        "starter"
+      ],
+      "version": 1,
+      "visibility": "visible"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "quest_availability_profiles": [
+    {
+      "conditions": [],
+      "description": "Available unless gated later.",
+      "id": "starter_available",
+      "name": "Starter Available",
+      "plugin_data": {},
+      "tags": [],
+      "version": 1
+    }
+  ]
+}

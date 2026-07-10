@@ -1,0 +1,16 @@
+{
+  "world_state_definitions": [
+    {
+      "id": "tutorial_complete",
+      "plugin_data": {},
+      "scope_id": "shattered_realms",
+      "scope_type": "world",
+      "state_key": "tutorial_complete",
+      "tags": [
+        "starter"
+      ],
+      "value_type": "boolean",
+      "version": 1
+    }
+  ]
+}

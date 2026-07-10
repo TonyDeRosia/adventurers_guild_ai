@@ -1,0 +1,40 @@
+{
+  "conversation_definitions": [
+    {
+      "description": "Offer and turn-in conversation for the rat pilot quest.",
+      "id": "jory_rat_problem",
+      "name": "Jory's Rat Problem",
+      "participant_requirements": [],
+      "plugin_data": {},
+      "start_node_id": "jory_rat_problem_start",
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "description": "Blacksmith material request conversation.",
+      "id": "harl_material_request",
+      "name": "Harl's Material Request",
+      "participant_requirements": [],
+      "plugin_data": {},
+      "start_node_id": "harl_material_request_start",
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "description": "First crafting quest conversation.",
+      "id": "harl_first_craft",
+      "name": "Harl's First Craft",
+      "participant_requirements": [],
+      "plugin_data": {},
+      "start_node_id": "harl_first_craft_start",
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "quest_failure_profiles": [
+    {
+      "conditions": [],
+      "id": "default_failure",
+      "name": "Default Failure",
+      "plugin_data": {},
+      "tags": [],
+      "version": 1
+    }
+  ]
+}

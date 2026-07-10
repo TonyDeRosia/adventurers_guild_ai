@@ -100,14 +100,14 @@ class ActorScoreRenderer:
 
     order = [
         "identity", "resources", "primary_attributes", "derived_attributes", "combat", "equipment",
-        "conditions", "resistances", "affects", "spellup", "abilities", "skills", "spells", "cooldowns", "current_cast", "combat_loadout", "passive_abilities", "progression", "professions", "crafting", "recipes", "currencies", "banking", "transactions", "relationships",
+        "conditions", "resistances", "affects", "spellup", "abilities", "skills", "spells", "cooldowns", "current_cast", "combat_loadout", "passive_abilities", "progression", "professions", "crafting", "recipes", "quests", "journal", "questhistory", "currencies", "banking", "transactions", "relationships",
         "simulation", "behavior", "threat", "tactics", "diagnostics", "formulas", "raw",
     ]
     aliases = {
         "score": "all", "preview": "all", "actor": "all", "attrs": "primary_attributes", "attributes": "primary_attributes",
         "derived": "derived_attributes", "resists": "resistances", "saff": "affects", "spellups": "spellup",
         "worth": "currencies", "profession": "professions", "recipe": "recipes", "cast": "current_cast", "currency": "currencies", "money": "currencies", "bank": "banking", "banking": "banking", "transactions": "transactions", "builder": "diagnostics",
-        "builder_diagnostics": "diagnostics", "ai": "simulation", "ai_diagnostics": "simulation", "behaviour": "behavior",
+        "questlog": "journal", "quest_history": "questhistory", "builder_diagnostics": "diagnostics", "ai": "simulation", "ai_diagnostics": "simulation", "behaviour": "behavior",
     }
 
     def __init__(self, formula_registry: FormulaRegistry | None = None, *, ansi: bool = False):
@@ -130,6 +130,25 @@ class ActorScoreRenderer:
         if section in ADMIN_SECTIONS and not admin:
             return "That score section is restricted to administrators and Builders."
         return self._renderers[section](actor, admin)
+
+
+    def render_quests(self, actor: Actor, admin: bool = False) -> str:
+        data = getattr(actor, "quest_summary", {}) or {}
+        active = data.get("active_count", len(data.get("active", [])) if isinstance(data.get("active"), list) else 0)
+        ready = data.get("ready_to_turn_in_count", len(data.get("ready_to_turn_in", [])) if isinstance(data.get("ready_to_turn_in"), list) else 0)
+        return self._section("Quests", [_line(f"Active quests: {active}"), _line(f"Ready to turn in: {ready}")])
+
+    def render_journal(self, actor: Actor, admin: bool = False) -> str:
+        quests = (getattr(actor, "quest_summary", {}) or {}).get("active", [])
+        rows = []
+        for q in quests:
+            if isinstance(q, dict): rows.append(_line(f"{q.get('name', q.get('quest_id','Quest'))}: {q.get('current_stage','')}"))
+        return self._section("Quest Journal", rows)
+
+    def render_questhistory(self, actor: Actor, admin: bool = False) -> str:
+        hist = (getattr(actor, "quest_summary", {}) or {}).get("history", [])
+        rows = [_line(str(h.get('operation', h)) if isinstance(h, dict) else str(h)) for h in hist[:10]]
+        return self._section("Quest History", rows)
 
     def _section(self, title: str, rows: list[str]) -> str:
         return "\n".join(_header(title) + (rows or [_line("None.")]) + [_rule("-")])

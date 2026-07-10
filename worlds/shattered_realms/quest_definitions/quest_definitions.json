@@ -1,0 +1,187 @@
+{
+  "quest_definitions": [
+    {
+      "abandon_actions": [],
+      "abandon_profile_id": "default_abandon",
+      "acceptance_profile_id": "default_accept",
+      "availability_profile_id": "starter_available",
+      "category": "starter",
+      "chapter_id": "starter_help",
+      "completion_actions": [],
+      "description": "Tavern Keeper Jory needs a few cellar rats dealt with before supplies are damaged.",
+      "enabled": true,
+      "failure_actions": [],
+      "failure_profile_id": "default_failure",
+      "id": "cellar_rat_problem",
+      "journal_visibility": "visible",
+      "maximum_level": 0,
+      "minimum_level": 1,
+      "name": "Cellar Rat Problem",
+      "offer_sources": [
+        {
+          "conditions": [],
+          "conversation_id": "jory_rat_problem",
+          "metadata": {},
+          "offer_message": "Jory looks worried about noises under the tavern.",
+          "priority": 10,
+          "source_id": "tavern_keeper_jory",
+          "source_type": "actor_template",
+          "turn_in_marker": true,
+          "visible_marker": true
+        }
+      ],
+      "plugin_data": {},
+      "quest_type": "side",
+      "recommended_level": 1,
+      "repeat_policy_id": "once_per_actor",
+      "reward_definition_id": "cellar_rat_problem_reward",
+      "sequence": 1,
+      "series_id": "starter_guildlands",
+      "sharing_profile_id": "not_shareable",
+      "short_name": "Rats",
+      "stage_ids": [
+        "cellar_rat_problem_accept",
+        "cellar_rat_problem_kill",
+        "cellar_rat_problem_return"
+      ],
+      "start_stage_id": "cellar_rat_problem_accept",
+      "summary": "Help clear rats from the tavern cellar.",
+      "tags": [
+        "starter",
+        "pilot"
+      ],
+      "time_limit_profile_id": "",
+      "turn_in_sources": [
+        {
+          "conversation_id": "jory_rat_problem",
+          "priority": 10,
+          "source_id": "tavern_keeper_jory",
+          "source_type": "actor_template"
+        }
+      ],
+      "version": 1
+    },
+    {
+      "abandon_actions": [],
+      "abandon_profile_id": "default_abandon",
+      "acceptance_profile_id": "default_accept",
+      "availability_profile_id": "starter_available",
+      "category": "starter",
+      "chapter_id": "starter_help",
+      "completion_actions": [],
+      "description": "Blacksmith Harl can use spare scrap for training work.",
+      "enabled": true,
+      "failure_actions": [],
+      "failure_profile_id": "default_failure",
+      "id": "blacksmith_material_request",
+      "journal_visibility": "visible",
+      "maximum_level": 0,
+      "minimum_level": 1,
+      "name": "Blacksmith's Material Request",
+      "offer_sources": [
+        {
+          "conditions": [],
+          "conversation_id": "harl_material_request",
+          "metadata": {},
+          "offer_message": "Harl needs a little scrap metal for training repairs.",
+          "priority": 10,
+          "source_id": "blacksmith_harl",
+          "source_type": "actor_template",
+          "turn_in_marker": true,
+          "visible_marker": true
+        }
+      ],
+      "plugin_data": {},
+      "quest_type": "profession",
+      "recommended_level": 1,
+      "repeat_policy_id": "once_per_actor",
+      "reward_definition_id": "blacksmith_material_request_reward",
+      "sequence": 2,
+      "series_id": "starter_guildlands",
+      "sharing_profile_id": "not_shareable",
+      "short_name": "Materials",
+      "stage_ids": [
+        "blacksmith_material_request_collect",
+        "blacksmith_material_request_return"
+      ],
+      "start_stage_id": "blacksmith_material_request_collect",
+      "summary": "Bring Harl a small amount of scrap metal.",
+      "tags": [
+        "starter",
+        "pilot",
+        "crafting"
+      ],
+      "time_limit_profile_id": "",
+      "turn_in_sources": [
+        {
+          "conversation_id": "harl_material_request",
+          "priority": 10,
+          "source_id": "blacksmith_harl",
+          "source_type": "actor_template"
+        }
+      ],
+      "version": 1
+    },
+    {
+      "abandon_actions": [],
+      "abandon_profile_id": "default_abandon",
+      "acceptance_profile_id": "default_accept",
+      "availability_profile_id": "starter_available",
+      "category": "starter",
+      "chapter_id": "starter_help",
+      "completion_actions": [],
+      "description": "Use the training sword recipe and a workstation to craft one training sword.",
+      "enabled": true,
+      "failure_actions": [],
+      "failure_profile_id": "default_failure",
+      "id": "first_craft",
+      "journal_visibility": "visible",
+      "maximum_level": 0,
+      "minimum_level": 1,
+      "name": "First Craft",
+      "offer_sources": [
+        {
+          "conditions": [],
+          "conversation_id": "harl_first_craft",
+          "metadata": {},
+          "offer_message": "Harl offers to inspect a training sword once you craft it.",
+          "priority": 9,
+          "source_id": "blacksmith_harl",
+          "source_type": "actor_template",
+          "turn_in_marker": true,
+          "visible_marker": true
+        }
+      ],
+      "plugin_data": {},
+      "quest_type": "profession",
+      "recommended_level": 1,
+      "repeat_policy_id": "once_per_actor",
+      "reward_definition_id": "first_craft_reward",
+      "sequence": 3,
+      "series_id": "starter_guildlands",
+      "sharing_profile_id": "not_shareable",
+      "short_name": "First Craft",
+      "stage_ids": [
+        "first_craft_make",
+        "first_craft_return"
+      ],
+      "start_stage_id": "first_craft_make",
+      "summary": "Craft a training sword for Harl.",
+      "tags": [
+        "starter",
+        "pilot",
+        "crafting"
+      ],
+      "time_limit_profile_id": "",
+      "turn_in_sources": [
+        {
+          "conversation_id": "harl_first_craft",
+          "priority": 10,
+          "source_id": "blacksmith_harl",
+          "source_type": "actor_template"
+        }
+      ],
+      "version": 1
+    }
+  ]
+}

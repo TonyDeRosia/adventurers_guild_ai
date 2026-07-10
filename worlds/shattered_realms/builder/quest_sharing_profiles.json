@@ -1,0 +1,12 @@
+{
+  "quest_sharing_profiles": [
+    {
+      "id": "not_shareable",
+      "name": "Not Shareable",
+      "plugin_data": {},
+      "policy": "not_shareable",
+      "tags": [],
+      "version": 1
+    }
+  ]
+}

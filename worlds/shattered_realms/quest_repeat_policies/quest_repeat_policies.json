@@ -1,0 +1,19 @@
+{
+  "quest_repeat_policies": [
+    {
+      "cooldown_minutes": 0,
+      "id": "once_per_actor",
+      "maximum_completions": 1,
+      "name": "Once Per Actor",
+      "plugin_data": {},
+      "policy": "once_per_actor",
+      "repeat_key_components": [
+        "actor_id",
+        "quest_id"
+      ],
+      "reset_world_time_rule": "",
+      "tags": [],
+      "version": 1
+    }
+  ]
+}

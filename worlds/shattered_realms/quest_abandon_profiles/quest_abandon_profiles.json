@@ -1,0 +1,17 @@
+{
+  "quest_abandon_profiles": [
+    {
+      "abandon_message": "Quest abandoned.",
+      "allow_abandon": true,
+      "clear_timers": true,
+      "cooldown_before_reaccept": 0,
+      "failure_message": "",
+      "id": "default_abandon",
+      "plugin_data": {},
+      "remove_quest_effects": false,
+      "return_quest_items": false,
+      "tags": [],
+      "version": 1
+    }
+  ]
+}

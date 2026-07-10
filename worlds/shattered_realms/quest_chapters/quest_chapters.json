@@ -1,0 +1,23 @@
+{
+  "quest_chapters": [
+    {
+      "completion_conditions": [],
+      "description": "A conservative pilot chapter.",
+      "id": "starter_help",
+      "name": "First Local Requests",
+      "plugin_data": {},
+      "quest_ids": [
+        "cellar_rat_problem",
+        "blacksmith_material_request",
+        "first_craft"
+      ],
+      "sequence": 1,
+      "series_id": "starter_guildlands",
+      "tags": [
+        "starter"
+      ],
+      "unlock_conditions": [],
+      "version": 1
+    }
+  ]
+}

@@ -1,0 +1,97 @@
+{
+  "conversation_choices": [
+    {
+      "actions": [
+        {
+          "action_type": "offer_quest",
+          "quest_id": "cellar_rat_problem"
+        }
+      ],
+      "conditions": [],
+      "conversation_id": "jory_rat_problem",
+      "ends_conversation": false,
+      "id": "jory_rat_problem_start_offer",
+      "next_node_id": "jory_rat_problem_start_end",
+      "node_id": "jory_rat_problem_start",
+      "plugin_data": {},
+      "tags": [],
+      "text": "Tell me about the task.",
+      "version": 1
+    },
+    {
+      "actions": [],
+      "conditions": [],
+      "conversation_id": "jory_rat_problem",
+      "ends_conversation": true,
+      "id": "jory_rat_problem_start_bye",
+      "next_node_id": "",
+      "node_id": "jory_rat_problem_start",
+      "plugin_data": {},
+      "tags": [],
+      "text": "Not right now.",
+      "version": 1
+    },
+    {
+      "actions": [
+        {
+          "action_type": "offer_quest",
+          "quest_id": "blacksmith_material_request"
+        }
+      ],
+      "conditions": [],
+      "conversation_id": "harl_material_request",
+      "ends_conversation": false,
+      "id": "harl_material_request_start_offer",
+      "next_node_id": "harl_material_request_start_end",
+      "node_id": "harl_material_request_start",
+      "plugin_data": {},
+      "tags": [],
+      "text": "Tell me about the task.",
+      "version": 1
+    },
+    {
+      "actions": [],
+      "conditions": [],
+      "conversation_id": "harl_material_request",
+      "ends_conversation": true,
+      "id": "harl_material_request_start_bye",
+      "next_node_id": "",
+      "node_id": "harl_material_request_start",
+      "plugin_data": {},
+      "tags": [],
+      "text": "Not right now.",
+      "version": 1
+    },
+    {
+      "actions": [
+        {
+          "action_type": "offer_quest",
+          "quest_id": "first_craft"
+        }
+      ],
+      "conditions": [],
+      "conversation_id": "harl_first_craft",
+      "ends_conversation": false,
+      "id": "harl_first_craft_start_offer",
+      "next_node_id": "harl_first_craft_start_end",
+      "node_id": "harl_first_craft_start",
+      "plugin_data": {},
+      "tags": [],
+      "text": "Tell me about the task.",
+      "version": 1
+    },
+    {
+      "actions": [],
+      "conditions": [],
+      "conversation_id": "harl_first_craft",
+      "ends_conversation": true,
+      "id": "harl_first_craft_start_bye",
+      "next_node_id": "",
+      "node_id": "harl_first_craft_start",
+      "plugin_data": {},
+      "tags": [],
+      "text": "Not right now.",
+      "version": 1
+    }
+  ]
+}

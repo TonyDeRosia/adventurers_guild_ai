@@ -1,0 +1,21 @@
+{
+  "quest_acceptance_profiles": [
+    {
+      "auto_accept": false,
+      "category_limit": 0,
+      "consume_items": false,
+      "costs": [],
+      "description": "No cost, explicit acceptance.",
+      "id": "default_accept",
+      "maximum_simultaneous": 25,
+      "messages": {},
+      "name": "Default Accept",
+      "plugin_data": {},
+      "prerequisite_conditions": [],
+      "required_items": [],
+      "requires_confirmation": true,
+      "tags": [],
+      "version": 1
+    }
+  ]
+}

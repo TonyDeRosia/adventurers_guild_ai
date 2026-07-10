@@ -1,0 +1,109 @@
+{
+  "conversation_nodes": [
+    {
+      "choice_ids": [
+        "jory_rat_problem_start_offer",
+        "jory_rat_problem_start_bye"
+      ],
+      "conversation_id": "jory_rat_problem",
+      "entry_conditions": [],
+      "id": "jory_rat_problem_start",
+      "journal_note": "",
+      "on_enter_actions": [],
+      "plugin_data": {},
+      "speaker_ref": {
+        "type": "actor_template"
+      },
+      "tags": [],
+      "terminal": false,
+      "text": "I have a small task if you are willing.",
+      "version": 1
+    },
+    {
+      "choice_ids": [],
+      "conversation_id": "jory_rat_problem",
+      "entry_conditions": [],
+      "id": "jory_rat_problem_start_end",
+      "journal_note": "",
+      "on_enter_actions": [],
+      "plugin_data": {},
+      "speaker_ref": {
+        "type": "actor_template"
+      },
+      "tags": [],
+      "terminal": true,
+      "text": "Thank you.",
+      "version": 1
+    },
+    {
+      "choice_ids": [
+        "harl_material_request_start_offer",
+        "harl_material_request_start_bye"
+      ],
+      "conversation_id": "harl_material_request",
+      "entry_conditions": [],
+      "id": "harl_material_request_start",
+      "journal_note": "",
+      "on_enter_actions": [],
+      "plugin_data": {},
+      "speaker_ref": {
+        "type": "actor_template"
+      },
+      "tags": [],
+      "terminal": false,
+      "text": "I have a small task if you are willing.",
+      "version": 1
+    },
+    {
+      "choice_ids": [],
+      "conversation_id": "harl_material_request",
+      "entry_conditions": [],
+      "id": "harl_material_request_start_end",
+      "journal_note": "",
+      "on_enter_actions": [],
+      "plugin_data": {},
+      "speaker_ref": {
+        "type": "actor_template"
+      },
+      "tags": [],
+      "terminal": true,
+      "text": "Thank you.",
+      "version": 1
+    },
+    {
+      "choice_ids": [
+        "harl_first_craft_start_offer",
+        "harl_first_craft_start_bye"
+      ],
+      "conversation_id": "harl_first_craft",
+      "entry_conditions": [],
+      "id": "harl_first_craft_start",
+      "journal_note": "",
+      "on_enter_actions": [],
+      "plugin_data": {},
+      "speaker_ref": {
+        "type": "actor_template"
+      },
+      "tags": [],
+      "terminal": false,
+      "text": "I have a small task if you are willing.",
+      "version": 1
+    },
+    {
+      "choice_ids": [],
+      "conversation_id": "harl_first_craft",
+      "entry_conditions": [],
+      "id": "harl_first_craft_start_end",
+      "journal_note": "",
+      "on_enter_actions": [],
+      "plugin_data": {},
+      "speaker_ref": {
+        "type": "actor_template"
+      },
+      "tags": [],
+      "terminal": true,
+      "text": "Thank you.",
+      "version": 1
+    }
+  ]
+}

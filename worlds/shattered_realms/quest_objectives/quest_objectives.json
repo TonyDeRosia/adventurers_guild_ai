@@ -1,0 +1,166 @@
+{
+  "quest_objectives": [
+    {
+      "completion_conditions": [],
+      "description": "Complete the quest-offer conversation.",
+      "failure_conditions": [],
+      "id": "cellar_rat_problem_accept_obj",
+      "messages": {},
+      "name": "Accept Jory's request",
+      "objective_type": "conversation_complete",
+      "optional": false,
+      "plugin_data": {},
+      "progress_mode": "binary",
+      "quest_id": "cellar_rat_problem",
+      "required_count": 1,
+      "reset_policy": "never",
+      "shared_progress_policy": "individual",
+      "stage_id": "cellar_rat_problem_accept",
+      "tags": [],
+      "target_definition": {
+        "custom_target_id": "jory_rat_problem"
+      },
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "completion_conditions": [],
+      "description": "Defeat 3 cellar rats.",
+      "failure_conditions": [],
+      "id": "cellar_rat_problem_kill_rats",
+      "messages": {},
+      "name": "Defeat cellar rats",
+      "objective_type": "kill_tag",
+      "optional": false,
+      "plugin_data": {},
+      "progress_mode": "unique_instances",
+      "quest_id": "cellar_rat_problem",
+      "required_count": 3,
+      "reset_policy": "never",
+      "shared_progress_policy": "individual",
+      "stage_id": "cellar_rat_problem_kill",
+      "tags": [],
+      "target_definition": {
+        "actor_tag": "cellar_rat"
+      },
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "completion_conditions": [],
+      "description": "Speak with Jory again.",
+      "failure_conditions": [],
+      "id": "cellar_rat_problem_return_jory",
+      "messages": {},
+      "name": "Return to Jory",
+      "objective_type": "conversation_complete",
+      "optional": false,
+      "plugin_data": {},
+      "progress_mode": "binary",
+      "quest_id": "cellar_rat_problem",
+      "required_count": 1,
+      "reset_policy": "never",
+      "shared_progress_policy": "individual",
+      "stage_id": "cellar_rat_problem_return",
+      "tags": [],
+      "target_definition": {
+        "custom_target_id": "jory_rat_problem"
+      },
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "completion_conditions": [],
+      "description": "Collect 2 scrap metal items.",
+      "failure_conditions": [],
+      "id": "blacksmith_material_request_scrap",
+      "messages": {},
+      "name": "Collect scrap metal",
+      "objective_type": "collect_item",
+      "optional": false,
+      "plugin_data": {},
+      "progress_mode": "unique_instances",
+      "quest_id": "blacksmith_material_request",
+      "required_count": 2,
+      "reset_policy": "never",
+      "shared_progress_policy": "individual",
+      "stage_id": "blacksmith_material_request_collect",
+      "tags": [],
+      "target_definition": {
+        "item_tag": "scrap_metal"
+      },
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "completion_conditions": [],
+      "description": "Deliver 2 exact scrap item instances.",
+      "failure_conditions": [],
+      "id": "blacksmith_material_request_deliver",
+      "messages": {},
+      "name": "Deliver scrap to Harl",
+      "objective_type": "deliver_item",
+      "optional": false,
+      "plugin_data": {},
+      "progress_mode": "unique_instances",
+      "quest_id": "blacksmith_material_request",
+      "required_count": 2,
+      "reset_policy": "never",
+      "shared_progress_policy": "individual",
+      "stage_id": "blacksmith_material_request_return",
+      "tags": [],
+      "target_definition": {
+        "actor_template_id": "blacksmith_harl",
+        "item_tag": "scrap_metal"
+      },
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "completion_conditions": [],
+      "description": "Craft one Training Sword.",
+      "failure_conditions": [],
+      "id": "first_craft_training_sword",
+      "messages": {},
+      "name": "Craft Training Sword",
+      "objective_type": "craft_recipe",
+      "optional": false,
+      "plugin_data": {},
+      "progress_mode": "unique_instances",
+      "quest_id": "first_craft",
+      "required_count": 1,
+      "reset_policy": "never",
+      "shared_progress_policy": "individual",
+      "stage_id": "first_craft_make",
+      "tags": [],
+      "target_definition": {
+        "recipe_id": "training_sword_recipe"
+      },
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "completion_conditions": [],
+      "description": "Speak with Harl.",
+      "failure_conditions": [],
+      "id": "first_craft_return_harl",
+      "messages": {},
+      "name": "Return to Harl",
+      "objective_type": "conversation_complete",
+      "optional": false,
+      "plugin_data": {},
+      "progress_mode": "binary",
+      "quest_id": "first_craft",
+      "required_count": 1,
+      "reset_policy": "never",
+      "shared_progress_policy": "individual",
+      "stage_id": "first_craft_return",
+      "tags": [],
+      "target_definition": {
+        "custom_target_id": "harl_first_craft"
+      },
+      "version": 1,
+      "visibility": "visible"
+    }
+  ]
+}
