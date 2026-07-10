@@ -103,3 +103,7 @@ Phase 5A establishes one canonical runtime truth. Item templates and entity temp
 ## Phase 5B living-world import/export
 
 Builder import bundles may include schedules, relationship seeds, memory seeds, need profiles, and goal profiles alongside existing content collections.
+
+## Phase 6C ability integration
+
+The canonical AbilityExecutionService extends this system without replacing it. Ability damage is handed to CombatEngine, healing uses Actor resource APIs and HealingEvent records, effects are stored as canonical actor effect instances, costs use Actor resources, definitions and loadouts are world/Builder data, and future AI must select abilities through runtime authority.

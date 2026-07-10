@@ -149,3 +149,7 @@ Canonical spawns supersede equivalent legacy declarations by world, room, templa
 ## Phase 5B package additions
 
 Runtime package loading recognizes schedules plus living-world seed/profile collections for deterministic simulation authoring.
+
+## Phase 6C ability package collections
+
+World packages may include `abilities/abilities.json`, `ability_loadouts/ability_loadouts.json`, `ability_schools/ability_schools.json`, `ability_categories/ability_categories.json`, `cooldown_groups/cooldown_groups.json`, `targeting_profiles/targeting_profiles.json`, `healing_profiles/healing_profiles.json`, and `casting_profiles/casting_profiles.json`. Matching Builder drafts live directly under `worlds/<world_id>/builder/`.

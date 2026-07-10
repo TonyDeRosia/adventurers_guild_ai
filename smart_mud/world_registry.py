@@ -113,6 +113,13 @@ class WorldPackage:
     natural_weapon_profiles: list[dict[str, Any]] = None
     material_profiles: list[dict[str, Any]] = None
     equipment_sets: list[dict[str, Any]] = None
+    ability_loadouts: list[dict[str, Any]] = None
+    ability_schools: list[dict[str, Any]] = None
+    ability_categories: list[dict[str, Any]] = None
+    cooldown_groups: list[dict[str, Any]] = None
+    targeting_profiles: list[dict[str, Any]] = None
+    healing_profiles: list[dict[str, Any]] = None
+    casting_profiles: list[dict[str, Any]] = None
 
     @property
     def id(self) -> str: return str(self.manifest["world_id"])
@@ -217,6 +224,9 @@ class WorldRegistry:
                 errors.append("Race record has invalid data")
         combat_content = CombatContentRegistry(records={name: _records(root, name) for name in ("weapon_classes", "weapon_templates", "armor_classes", "armor_templates", "attack_profiles", "critical_profiles", "damage_profiles", "natural_weapon_profiles", "material_profiles", "equipment_sets")})
         errors.extend(combat_content.validate())
+        from engine.abilities import AbilityRegistry
+        ability_content = AbilityRegistry(records={name: _records(root, name) for name in ("abilities", "ability_loadouts", "ability_schools", "ability_categories", "cooldown_groups", "targeting_profiles", "healing_profiles", "casting_profiles", "effect_templates", "resource_profiles", "damage_profiles", "combat_formulas")})
+        errors.extend(ability_content.validate())
         if errors:
             raise WorldValidationError(actual_id, errors)
 
@@ -226,7 +236,7 @@ class WorldRegistry:
         manifest = self._manifest(root)
         rules = {p.stem: _read_json(p, {}) for p in sorted((root / "rules").glob("*.json"))}
         intelligence = {p.stem: p.read_text(encoding="utf-8") for p in sorted((root / "intelligence").glob("*.md"))}
-        return WorldPackage(root, manifest, rules, _records(root,"races"), _records(root,"classes"), _records(root,"abilities"), _records(root,"skills"), _records(root,"spells"), _records(root,"items"), _records(root,"item_placements"), _records(root,"areas"), _records(root,"rooms"), _records(root,"zones"), _records(root,"factions"), _records(root,"npcs"), _records(root,"spawns"), _records(root,"features"), _records(root,"quests"), _records(root,"shops"), _records(root,"trainers"), _records(root,"lore"), _records(root,"dialogue"), intelligence, _records(root,"schedules"), _records(root,"relationship_seeds"), _records(root,"memory_seeds"), _records(root,"need_profiles"), _records(root,"goal_profiles"), _records(root,"body_profiles"), _records(root,"population_definitions"), _records(root,"lifecycle_profiles"), _records(root,"respawn_definitions"), _records(root,"equipment_slot_profiles"), _records(root,"effect_templates"), _records(root,"resource_profiles"), _records(root,"resistance_profiles"), _records(root,"combat_formulas"), _records(root,"modifier_types"), _records(root,"weapon_classes"), _records(root,"weapon_templates"), _records(root,"armor_classes"), _records(root,"armor_templates"), _records(root,"attack_profiles"), _records(root,"critical_profiles"), _records(root,"damage_profiles"), _records(root,"natural_weapon_profiles"), _records(root,"material_profiles"), _records(root,"equipment_sets"))
+        return WorldPackage(root, manifest, rules, _records(root,"races"), _records(root,"classes"), _records(root,"abilities"), _records(root,"skills"), _records(root,"spells"), _records(root,"items"), _records(root,"item_placements"), _records(root,"areas"), _records(root,"rooms"), _records(root,"zones"), _records(root,"factions"), _records(root,"npcs"), _records(root,"spawns"), _records(root,"features"), _records(root,"quests"), _records(root,"shops"), _records(root,"trainers"), _records(root,"lore"), _records(root,"dialogue"), intelligence, _records(root,"schedules"), _records(root,"relationship_seeds"), _records(root,"memory_seeds"), _records(root,"need_profiles"), _records(root,"goal_profiles"), _records(root,"body_profiles"), _records(root,"population_definitions"), _records(root,"lifecycle_profiles"), _records(root,"respawn_definitions"), _records(root,"equipment_slot_profiles"), _records(root,"effect_templates"), _records(root,"resource_profiles"), _records(root,"resistance_profiles"), _records(root,"combat_formulas"), _records(root,"modifier_types"), _records(root,"weapon_classes"), _records(root,"weapon_templates"), _records(root,"armor_classes"), _records(root,"armor_templates"), _records(root,"attack_profiles"), _records(root,"critical_profiles"), _records(root,"damage_profiles"), _records(root,"natural_weapon_profiles"), _records(root,"material_profiles"), _records(root,"equipment_sets"), _records(root,"ability_loadouts"), _records(root,"ability_schools"), _records(root,"ability_categories"), _records(root,"cooldown_groups"), _records(root,"targeting_profiles"), _records(root,"healing_profiles"), _records(root,"casting_profiles"))
 
     def reload_room(self, world: WorldPackage, room_id: str) -> dict[str, Any]:
         return self.load_world(world.id).room(room_id)

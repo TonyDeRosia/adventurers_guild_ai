@@ -16,7 +16,7 @@ VALID_ENTITY_TYPES = {"npc", "mob", "merchant", "trainer", "banker", "healer", "
 
 DRAFT_FILES = {
     "areas": "areas.json", "zones": "zones.json", "rooms": "rooms.json",
-    "features": "features.json", "items": "item_templates.json", "item_placements": "item_placements.json", "entities": "entity_templates.json", "spawns": "spawns.json", "schedules": "schedules.json", "relationship_seeds": "relationship_seeds.json", "memory_seeds": "memory_seeds.json", "need_profiles": "need_profiles.json", "goal_profiles": "goal_profiles.json", "formulas": "formulas.json", "modifier_types": "modifier_types.json", "future_formula_templates": "future_formula_templates.json"
+    "features": "features.json", "items": "item_templates.json", "item_placements": "item_placements.json", "entities": "entity_templates.json", "spawns": "spawns.json", "schedules": "schedules.json", "relationship_seeds": "relationship_seeds.json", "memory_seeds": "memory_seeds.json", "need_profiles": "need_profiles.json", "goal_profiles": "goal_profiles.json", "formulas": "formulas.json", "modifier_types": "modifier_types.json", "future_formula_templates": "future_formula_templates.json", "abilities": "abilities.json", "ability_loadouts": "ability_loadouts.json", "ability_schools": "ability_schools.json", "ability_categories": "ability_categories.json", "cooldown_groups": "cooldown_groups.json", "targeting_profiles": "targeting_profiles.json", "healing_profiles": "healing_profiles.json", "casting_profiles": "casting_profiles.json"
 }
 
 @dataclass
@@ -188,7 +188,7 @@ class BuilderWorkspace:
             return BuilderResult(False, "You do not have permission for that command.")
         bundle, err, future_keys = self._load_import_bundle(self.world_id(actor), filename)
         if err: return BuilderResult(False, err)
-        drafts=self.load(self.world_id(actor)); names=[('areas','Areas'),('zones','Zones'),('rooms','Rooms'),('features','Features'),('items','Items'),('item_placements','Item placements'),('entities','Entities'),('spawns','Spawns'),('schedules','Schedules'),('relationship_seeds','Relationship seeds'),('memory_seeds','Memory seeds'),('need_profiles','Need profiles'),('goal_profiles','Goal profiles'),('formulas','Formulas'),('modifier_types','Modifier types'),('future_formula_templates','Future formula templates')]
+        drafts=self.load(self.world_id(actor)); names=[('areas','Areas'),('zones','Zones'),('rooms','Rooms'),('features','Features'),('items','Items'),('item_placements','Item placements'),('entities','Entities'),('spawns','Spawns'),('schedules','Schedules'),('relationship_seeds','Relationship seeds'),('memory_seeds','Memory seeds'),('need_profiles','Need profiles'),('goal_profiles','Goal profiles'),('formulas','Formulas'),('modifier_types','Modifier types'),('future_formula_templates','Future formula templates'),('abilities','Abilities'),('ability_loadouts','Ability loadouts'),('ability_schools','Ability schools'),('ability_categories','Ability categories'),('cooldown_groups','Cooldown groups'),('targeting_profiles','Targeting profiles'),('healing_profiles','Healing profiles'),('casting_profiles','Casting profiles')]
         lines=[]
         for k,label in names:
             b=bundle.get(k,{}) if isinstance(bundle.get(k,{}),dict) else {}; add=sum(1 for x in b if x not in drafts.get(k,{})); upd=len(b)-add; lines.append(f'{label} to add/update: {add}/{upd}')

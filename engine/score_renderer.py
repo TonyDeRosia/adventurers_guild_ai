@@ -100,13 +100,13 @@ class ActorScoreRenderer:
 
     order = [
         "identity", "resources", "primary_attributes", "derived_attributes", "combat", "equipment",
-        "conditions", "resistances", "affects", "spellup", "progression", "currencies", "relationships",
+        "conditions", "resistances", "affects", "spellup", "abilities", "skills", "spells", "cooldowns", "current_cast", "combat_loadout", "passive_abilities", "progression", "currencies", "relationships",
         "simulation", "diagnostics", "formulas", "raw",
     ]
     aliases = {
         "score": "all", "preview": "all", "actor": "all", "attrs": "primary_attributes", "attributes": "primary_attributes",
         "derived": "derived_attributes", "resists": "resistances", "saff": "affects", "spellups": "spellup",
-        "worth": "currencies", "currency": "currencies", "money": "currencies", "builder": "diagnostics",
+        "worth": "currencies", "cast": "current_cast", "currency": "currencies", "money": "currencies", "builder": "diagnostics",
         "builder_diagnostics": "diagnostics", "ai": "simulation", "ai_diagnostics": "simulation",
     }
 
@@ -257,6 +257,40 @@ class ActorScoreRenderer:
 
     def render_spellup(self, actor: Actor, admin: bool = False) -> str:
         return self._section("SPELLUP", self._grouped_effect_rows(actor.effect_container.get("spellup", {}), SPELLUP_GROUPS))
+
+    def _ability_rows(self, actor: Actor, kinds: set[str] | None = None) -> list[str]:
+        abilities = actor.plugin_data.get("abilities", []) or []
+        if isinstance(abilities, dict): abilities = list(abilities.values())
+        rows = []
+        for a in abilities:
+            if not isinstance(a, dict): a = {"name": str(a), "ability_type": "custom"}
+            if kinds and str(a.get("ability_type")) not in kinds: continue
+            rows.append(_line(f"{_value(a.get('name', a.get('id'))):<24} {_value(a.get('ability_type','custom')):<12} Cost={_value(a.get('cost','--')):<10} Cooldown={_value(a.get('cooldown','--')):<8} Cast={_value(a.get('cast_time','0'))}"))
+        return rows or [_line("No abilities available in this actor view.")]
+
+    def render_abilities(self, actor: Actor, admin: bool = False) -> str:
+        return self._section("ABILITIES", self._ability_rows(actor))
+
+    def render_skills(self, actor: Actor, admin: bool = False) -> str:
+        return self._section("SKILLS", self._ability_rows(actor, {"skill", "technique"}))
+
+    def render_spells(self, actor: Actor, admin: bool = False) -> str:
+        return self._section("SPELLS", self._ability_rows(actor, {"spell", "heal", "buff", "debuff"}))
+
+    def render_cooldowns(self, actor: Actor, admin: bool = False) -> str:
+        rows = [_line(f"{_value(c.get('ability_id','')):<24} Ready={_value(c.get('ready_world_time','--')):<10} Group={_value(c.get('cooldown_group','--'))}") for c in actor.plugin_data.get("cooldowns", []) if isinstance(c, dict)]
+        return self._section("COOLDOWNS", rows or [_line("No active cooldowns.")])
+
+    def render_current_cast(self, actor: Actor, admin: bool = False) -> str:
+        cast = actor.plugin_data.get("current_cast") or {}
+        rows = [_line(f"{_human(k)}: {_value(v)}") for k, v in cast.items()] if isinstance(cast, dict) and cast else [_line("No current cast.")]
+        return self._section("CURRENT CAST", rows)
+
+    def render_combat_loadout(self, actor: Actor, admin: bool = False) -> str:
+        return self._section("COMBAT LOADOUT", [_line(_field("Ability Loadout", actor.combat_profile.get("ability_loadout_id", "--"), width=70))])
+
+    def render_passive_abilities(self, actor: Actor, admin: bool = False) -> str:
+        return self._section("PASSIVE ABILITIES", self._ability_rows(actor, {"passive"}))
 
     def render_progression(self, actor: Actor, admin: bool = False) -> str:
         data = actor.progression_profile or {}

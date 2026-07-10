@@ -21,6 +21,7 @@ from smart_mud.builder import BuilderWorkspace
 from smart_mud.event_bus import EventBus
 from engine.plugin_system import HookRegistry, PluginRegistry
 from engine.living_world import LivingWorldService, init_living_schema
+from engine.abilities import AbilityExecutionService, init_ability_schema
 
 VALID_ROLES = {"player", "helper", "builder", "admin", "owner"}
 BUILDER_ROLES = {"builder", "admin", "owner"}
@@ -446,6 +447,7 @@ class MudStateStore:
                     conn.execute(f"ALTER TABLE accounts ADD COLUMN {name} {ddl}")
 
             init_living_schema(self.db_path)
+            init_ability_schema(self.db_path)
             conn.commit()
 
     def save_character(self, char: MudCharacter, world_id: str) -> None:
@@ -576,6 +578,7 @@ class MudRuntime:
         self.entity_templates: dict[str, MappingProxyType] = {}
         self.sessions: dict[str, MudSession] = {}
         self.command_engine = MudCommandEngine(self.state_store, event_bus=self.event_bus)
+        self.abilities = None
         self.builder = BuilderWorkspace(event_bus=self.event_bus)
         self.command_engine.runtime = self
         self.living_world = LivingWorldService(self)
@@ -683,6 +686,9 @@ class MudRuntime:
         self._load_entity_templates()
         self.materialize_world_content(world_id)
         self.living_world.ensure_world_time(world_id)
+        self.abilities = AbilityExecutionService(self.state_store.db_path, self.active_world, self.event_bus, world_id)
+        self.command_engine.ability_service = self.abilities
+        self.command_engine.world_id = world_id
         self.hooks.emit("world_loaded", world_id=world_id, world=self.active_world)
         self.event_bus.publish("world_loaded", {"world_id": world_id}, source_system="runtime", world_id=world_id)
         return self.active_world
@@ -1251,6 +1257,8 @@ class MudRuntime:
             if entity_result is not None:
                 from engine.mud_commands import CommandResult
                 return CommandResult(entity_result)
+        if cmd_name in {"use", "cast", "invoke", "perform", "ability", "abilities", "skills", "spells", "cancel", "cooldowns", "abilitylist", "abilitystat", "abilitycreate", "abilityclone", "abilityset", "abilitydelete", "abilityvalidate", "abilitypreview", "abilitytrace", "loadoutlist", "loadoutstat", "loadoutcreate", "loadoutclone", "loadoutset", "loadoutability", "loadoutdelete", "loadoutvalidate", "abilitygrant", "abilityrevoke", "actorabilities", "abilitycooldowns", "abilitycasts"}:
+            return self.command_engine.handle_command(char, command)
         item_result = self._handle_item_command(char, command, cmd_name, args)
         if item_result is not None:
             self.event_bus.publish("command_executed", {"raw_input": command, "canonical_command": cmd_name, "arguments": args, "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id, "result_summary": item_result.narrative[:120]}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)

@@ -35,6 +35,15 @@
     ],
     "occupies_slots": [
       "main_hand"
+    ],
+    "granted_abilities": [
+      {
+        "ability_id": "power_strike",
+        "grant_while": "equipped",
+        "charges_placeholder": null,
+        "cooldown_group_override": "",
+        "metadata": {}
+      }
     ]
   },
   {
@@ -101,6 +110,15 @@
     "occupies_slots": [
       "main_hand",
       "off_hand"
+    ],
+    "granted_abilities": [
+      {
+        "ability_id": "minor_heal",
+        "grant_while": "equipped",
+        "charges_placeholder": null,
+        "cooldown_group_override": "",
+        "metadata": {}
+      }
     ]
   },
   {

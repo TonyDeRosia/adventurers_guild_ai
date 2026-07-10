@@ -12,6 +12,7 @@ from engine.formulas import FormulaEngine
 from engine.score_renderer import ActorScoreRenderer
 from engine.command_registry import CommandRegistry
 from smart_mud.builder import BuilderWorkspace
+from engine.abilities import AbilityExecutionService
 
 
 @dataclass
@@ -165,6 +166,35 @@ class MudCommandEngine:
             "spells": self._cmd_spells,
             "skills": self._cmd_skills,
             "abilities": self._cmd_abilities,
+            "ability": self._cmd_ability_detail,
+            "use": self._cmd_use_ability,
+            "cast": self._cmd_use_ability,
+            "invoke": self._cmd_use_ability,
+            "perform": self._cmd_use_ability,
+            "cancel": self._cmd_cancel_ability,
+            "cooldowns": self._cmd_cooldowns,
+            "abilitylist": self._cmd_builder_ability,
+            "abilitystat": self._cmd_builder_ability,
+            "abilitycreate": self._cmd_builder_ability,
+            "abilityclone": self._cmd_builder_ability,
+            "abilityset": self._cmd_builder_ability,
+            "abilitydelete": self._cmd_builder_ability,
+            "abilityvalidate": self._cmd_builder_ability,
+            "abilitypreview": self._cmd_builder_ability,
+            "abilitytrace": self._cmd_builder_ability,
+            "loadoutlist": self._cmd_builder_loadout,
+            "loadoutstat": self._cmd_builder_loadout,
+            "loadoutcreate": self._cmd_builder_loadout,
+            "loadoutclone": self._cmd_builder_loadout,
+            "loadoutset": self._cmd_builder_loadout,
+            "loadoutability": self._cmd_builder_loadout,
+            "loadoutdelete": self._cmd_builder_loadout,
+            "loadoutvalidate": self._cmd_builder_loadout,
+            "abilitygrant": self._cmd_ability_grant,
+            "abilityrevoke": self._cmd_ability_grant,
+            "actorabilities": self._cmd_actorabilities,
+            "abilitycooldowns": self._cmd_abilitycooldowns,
+            "abilitycasts": self._cmd_abilitycasts,
             "affects": self._cmd_affects,
             "who": self._cmd_who,
             "whoami": self._cmd_whoami,
@@ -579,38 +609,123 @@ class MudCommandEngine:
         """Display resistances through the single score renderer."""
         return CommandResult(narrative=self._render_score_section(character, "resistances"))
 
+    def _ability_service(self, character: Any) -> AbilityExecutionService | None:
+        svc = getattr(self, "ability_service", None)
+        if svc:
+            svc.actor_from_character(character)
+        return svc
+
+    def _ability_rows(self, character: Any, kinds: set[str] | None = None) -> list[dict[str, Any]]:
+        svc = self._ability_service(character)
+        rows = svc.get_actor_abilities(character.id) if svc else []
+        if not rows and getattr(character, "abilities", None):
+            rows = [{"id": str(a), "name": str(a).replace("_", " ").title(), "ability_type": "custom", "description": "Legacy character ability.", "costs": [], "cooldowns": {}, "timing": {}} for a in character.abilities]
+        if kinds:
+            rows = [r for r in rows if str(r.get("ability_type")) in kinds]
+        return rows
+
+    def _format_ability_list(self, rows: list[dict[str, Any]], empty: str) -> str:
+        if not rows: return empty
+        lines = ["Available abilities:"]
+        for r in rows:
+            costs = ", ".join(f"{c.get('amount', c.get('percentage', 0))} {c.get('resource_id')}" for c in r.get("costs", [])) or "no cost"
+            cd = (r.get("cooldowns") or {}).get("cooldown_duration", (r.get("cooldowns") or {}).get("duration", 0))
+            cast = (r.get("timing") or {}).get("cast_time", 0)
+            lines.append(f"- {r.get('name') or r.get('id')} ({r.get('ability_type')}): {costs}; cooldown {cd}; cast {cast}. {r.get('description','')}")
+        return "\n".join(lines)
+
     def _cmd_spellup(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        """Display spellup through the single score renderer."""
+        if args and args[0].lower() == "cast":
+            svc = self._ability_service(character)
+            if not svc: return CommandResult("Spellup casting is unavailable.", ok=False)
+            rows = [r for r in self._ability_rows(character) if "spellup_eligible" in (r.get("tags") or []) and (r.get("targeting") or {}).get("mode", "self") == "self" and not r.get("damage_components")]
+            done=[]
+            for r in sorted(rows, key=lambda x: ((x.get("plugin_data") or {}).get("spellup_priority", 100), x.get("id"))):
+                res = svc.execute_instant_ability(character.id, r["id"], "self")
+                done.append(f"{r.get('name')}: {'cast' if res.get('ok') else 'skipped'}")
+                if not res.get("ok"): break
+            return CommandResult("Spellup cast summary:\n" + ("\n".join(done) if done else "No eligible self buffs."))
         return CommandResult(narrative=self._render_score_section(character, "spellup"))
 
     def _cmd_spells(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        """Display known spells."""
-        spells = [a for a in character.abilities if a.startswith("spell_")]
-        if not spells:
-            narrative = "You know no spells."
-        else:
-            narrative = f"You know: {', '.join(spells)}"
-        
-        return CommandResult(narrative=narrative)
+        return CommandResult(self._format_ability_list(self._ability_rows(character, {"spell","heal","buff","debuff"}), "You know no spells."))
 
     def _cmd_skills(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        """Display known skills."""
-        skills = [a for a in character.abilities if a.startswith("skill_")]
-        if not skills:
-            narrative = "You know no skills."
-        else:
-            narrative = f"You know: {', '.join(skills)}"
-        
-        return CommandResult(narrative=narrative)
+        return CommandResult(self._format_ability_list(self._ability_rows(character, {"skill","technique"}), "You know no skills."))
 
     def _cmd_abilities(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        """Display abilities."""
-        if not character.abilities:
-            narrative = "You have no abilities."
-        else:
-            narrative = f"Your abilities:\n" + "\n".join(f"  {a}" for a in character.abilities)
-        
-        return CommandResult(narrative=narrative)
+        return CommandResult(self._format_ability_list(self._ability_rows(character), "You have no abilities."))
+
+    def _cmd_ability_detail(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        q = " ".join(args).lower().replace(" ", "_")
+        for r in self._ability_rows(character):
+            if q in {str(r.get("id")).lower(), str(r.get("name")).lower().replace(" ", "_")}:
+                return CommandResult(self._format_ability_list([r], "Ability not found."))
+        return CommandResult("Ability not found.", ok=False)
+
+    def _cmd_use_ability(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if not args: return CommandResult("Use which ability?", ok=False)
+        svc = self._ability_service(character)
+        if not svc: return CommandResult("Ability system is unavailable.", ok=False)
+        aid = args[0].lower().replace(" ", "_"); target = " ".join(args[1:]) or "self"
+        by_name = {str(r.get("name")).lower().replace(" ", "_"): r.get("id") for r in svc.registry.abilities.values()}
+        aid = aid if aid in svc.registry.abilities else by_name.get(aid, aid)
+        res = svc.start_ability(character.id, aid, target) if aid in svc.registry.abilities else {"ok": False, "message": "Unknown ability."}
+        return CommandResult(res.get("message") or ("Ability activated." if res.get("ok") else "You cannot use that ability."), ok=bool(res.get("ok")))
+
+    def _cmd_cancel_ability(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        svc = self._ability_service(character)
+        if not svc or not svc.db_path: return CommandResult("No current cast.", ok=False)
+        import sqlite3
+        with sqlite3.connect(svc.db_path) as c: row=c.execute("SELECT cast_id FROM actor_ability_casts WHERE actor_id=? AND state IN ('casting','channeling','pending') ORDER BY started_world_time DESC LIMIT 1", (character.id,)).fetchone()
+        if not row: return CommandResult("No current cast.", ok=False)
+        svc.cancel_ability(row[0], "player_cancelled")
+        return CommandResult("You cancel your current cast.")
+
+    def _cmd_cooldowns(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        return self._cmd_abilitycooldowns(character, ["self"], raw)
+
+    def _cmd_builder_ability(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        svc=self._ability_service(character); cmd=raw.split()[0].lower()
+        if not svc: return CommandResult("Ability registry unavailable.", ok=False)
+        if cmd == "abilitylist": return CommandResult("Abilities:\n" + "\n".join(sorted(svc.registry.abilities)) )
+        if args and args[0] in svc.registry.abilities:
+            a=svc.registry.abilities[args[0]]; errs,warns=svc.registry.validate_ability(a); return CommandResult(f"Ability {a.id}: {a.name}\nType: {a.ability_type}\nErrors: {errs or ['none']}\nWarnings: {warns or ['none']}\nData: {a.to_dict()}")
+        return CommandResult(f"{cmd} is available for Builder draft authoring; use abilitylist or abilitystat <ability_id>.")
+
+    def _cmd_builder_loadout(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        svc=self._ability_service(character); cmd=raw.split()[0].lower()
+        if not svc: return CommandResult("Ability registry unavailable.", ok=False)
+        if cmd == "loadoutlist": return CommandResult("Loadouts:\n" + "\n".join(sorted(svc.registry.loadouts)))
+        if args and args[0] in svc.registry.loadouts:
+            l=svc.registry.loadouts[args[0]]; return CommandResult(f"Loadout {l.id}: {l.name}\nAbilities: {', '.join(l.ability_ids)}\nSpellup: {', '.join(l.spellup_priority)}")
+        return CommandResult(f"{cmd} is available for Builder draft loadout authoring.")
+
+    def _cmd_ability_grant(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        svc=self._ability_service(character); cmd=raw.split()[0].lower()
+        if not svc or len(args)<2: return CommandResult(f"Usage: {cmd} <actor> <ability_id>", ok=False)
+        actor_id = character.id if args[0] == "self" else args[0]
+        n = svc.revoke_ability(actor_id,args[1],"admin") if cmd=="abilityrevoke" else svc.grant_ability(actor_id,args[1],"admin",character.id)
+        return CommandResult(f"{cmd}: {n}")
+
+    def _cmd_actorabilities(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        return self._cmd_abilities(character,args,raw)
+
+    def _cmd_abilitycooldowns(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        svc=self._ability_service(character)
+        if not svc or not svc.db_path: return CommandResult("No cooldowns.")
+        import sqlite3
+        actor_id=character.id if not args or args[0]=="self" else args[0]
+        with sqlite3.connect(svc.db_path) as c: rows=c.execute("SELECT ability_id,cooldown_group,ready_world_time,charges_current,charges_maximum FROM actor_ability_cooldowns WHERE actor_id=? AND active=1 ORDER BY ready_world_time,ability_id", (actor_id,)).fetchall()
+        return CommandResult("Cooldowns:\n" + ("\n".join(f"- {r[0]} group={r[1]} ready={r[2]} charges={r[3]}/{r[4]}" for r in rows) if rows else "- none"))
+
+    def _cmd_abilitycasts(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        svc=self._ability_service(character)
+        if not svc or not svc.db_path: return CommandResult("No casts.")
+        import sqlite3
+        actor_id=character.id if not args or args[0]=="self" else args[0]
+        with sqlite3.connect(svc.db_path) as c: rows=c.execute("SELECT cast_id,ability_id,state,completes_world_time FROM actor_ability_casts WHERE actor_id=? ORDER BY started_world_time DESC LIMIT 10", (actor_id,)).fetchall()
+        return CommandResult("Ability casts:\n" + ("\n".join(f"- {r[0]} {r[1]} {r[2]} completes={r[3]}" for r in rows) if rows else "- none"))
 
     def _cmd_affects(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display active affects/buffs through the single score renderer."""

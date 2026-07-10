@@ -131,3 +131,7 @@ Canonical spawns supersede equivalent legacy declarations by world, room, templa
 ## Phase 5B commands
 
 Added: `worldtime`, `simulation`, `etime`, `eprofile`, `estate`, `eactivity`, `eneeds`, `egoals`, `eschedule`, `erelationships`, `ememories`, `econtext`, `schedulelist`, `needlist`, `goallist`, `relationshiplist`, and `memorylist`.
+
+## Phase 6C canonical ability commands
+
+Phase 6C registers the canonical ability command surface: `abilities`, `skills`, `spells`, `ability <name>`, `use <ability> [target]`, `cast <ability> [target]`, `invoke`, `perform`, `cancel`, `cooldowns`, and safe `spellup cast`. Builder/Admin diagnostics and authoring include `abilitylist`, `abilitystat`, `abilitytrace`, `loadoutlist`, `loadoutstat`, `abilitygrant`, `abilityrevoke`, `actorabilities`, `abilitycooldowns`, and `abilitycasts`. Skills and spells intentionally share the same ability execution service.
