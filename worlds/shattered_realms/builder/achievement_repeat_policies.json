@@ -1,0 +1,32 @@
+{
+  "achievement_repeat_policies": [
+    {
+      "cooldown_minutes": 0,
+      "description": "Complete once",
+      "id": "never",
+      "maximum_completions": 1,
+      "name": "Never repeat",
+      "plugin_data": {},
+      "policy": "never",
+      "repeat_key_components": [],
+      "reset_world_time_rule": "",
+      "tags": [],
+      "version": 1
+    },
+    {
+      "cooldown_minutes": 0,
+      "description": "Repeatable",
+      "id": "unlimited",
+      "maximum_completions": 0,
+      "name": "Unlimited",
+      "plugin_data": {},
+      "policy": "unlimited",
+      "repeat_key_components": [
+        "event_id"
+      ],
+      "reset_world_time_rule": "",
+      "tags": [],
+      "version": 1
+    }
+  ]
+}

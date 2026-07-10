@@ -1,0 +1,20 @@
+{
+  "achievement_progress_display_profiles": [
+    {
+      "compact_format": "{name}: {current}/{required}",
+      "description": "Show safe progress",
+      "detailed_format": "{description}\n{criteria}",
+      "id": "default",
+      "name": "Default",
+      "plugin_data": {},
+      "show_completion_date": true,
+      "show_hidden_criteria": false,
+      "show_numeric_progress": true,
+      "show_percentage": true,
+      "show_reward_preview": true,
+      "show_subcriteria": true,
+      "tags": [],
+      "version": 1
+    }
+  ]
+}

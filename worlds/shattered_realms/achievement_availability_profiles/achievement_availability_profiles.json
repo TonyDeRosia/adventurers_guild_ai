@@ -1,0 +1,13 @@
+{
+  "achievement_availability_profiles": [
+    {
+      "conditions": [],
+      "description": "Available by default",
+      "id": "always",
+      "name": "Always",
+      "plugin_data": {},
+      "tags": [],
+      "version": 1
+    }
+  ]
+}

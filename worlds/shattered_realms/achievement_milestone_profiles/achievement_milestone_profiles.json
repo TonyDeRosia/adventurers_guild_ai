@@ -1,0 +1,28 @@
+{
+  "achievement_milestone_profiles": [
+    {
+      "completion_mode": "threshold",
+      "description": "Kill thresholds",
+      "id": "rat_hunter_chain",
+      "milestones": [
+        {
+          "accolade_ids": [],
+          "achievement_id": "rat_hunter_10",
+          "id": "rats_10",
+          "messages": {},
+          "metadata": {},
+          "reward_definition_id": "",
+          "threshold": 10,
+          "title_ids": [
+            "rat_hunter"
+          ]
+        }
+      ],
+      "name": "Rat Hunter Chain",
+      "plugin_data": {},
+      "progress_source": "rat_kills",
+      "tags": [],
+      "version": 1
+    }
+  ]
+}

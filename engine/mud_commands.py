@@ -48,6 +48,15 @@ DETERMINISTIC_COMMANDS = {
     "spells": {"category": "info", "aliases": ["sp"], "admin": False},
     "skills": {"category": "info", "aliases": ["sk"], "admin": False},
     "abilities": {"category": "info", "admin": False},
+    "achievements": {"category": "info", "admin": False},
+    "achievement": {"category": "info", "admin": False},
+    "milestones": {"category": "info", "admin": False},
+    "collections": {"category": "info", "admin": False},
+    "collection": {"category": "info", "admin": False},
+    "titles": {"category": "info", "admin": False},
+    "title": {"category": "info", "admin": False},
+    "accolades": {"category": "info", "admin": False},
+    "profile": {"category": "info", "admin": False},
     "affects": {"category": "info", "aliases": ["aff", "saff"], "admin": False},
     "spellup": {"category": "info", "admin": False},
     "resists": {"category": "info", "aliases": ["resistances"], "admin": False},
@@ -185,6 +194,15 @@ class MudCommandEngine:
             "spells": self._cmd_spells,
             "skills": self._cmd_skills,
             "abilities": self._cmd_abilities,
+            "achievements": self._cmd_achievements,
+            "achievement": self._cmd_achievements,
+            "milestones": self._cmd_achievements,
+            "collections": self._cmd_achievements,
+            "collection": self._cmd_achievements,
+            "titles": self._cmd_achievements,
+            "title": self._cmd_achievements,
+            "accolades": self._cmd_achievements,
+            "profile": self._cmd_achievements,
             "ability": self._cmd_ability_detail,
             "use": self._cmd_use_ability,
             "cast": self._cmd_use_ability,
@@ -345,6 +363,8 @@ class MudCommandEngine:
             self.command_handlers[_name] = self._cmd_room_assign
         for _name in "recipelist recipestat recipecreate recipeclone recipeset recipedelete recipevalidate recipepreview recipeinput recipeinputentry recipeoutput recipeoutputentry recipetool workstationlist workstationstat workstationcreate workstationclone workstationset workstationdelete workstationvalidate workstationpreview productionlist productionstat productioncreate productionset productionclone productiondelete productionvalidate qualitylist qualitystat qualitycreate qualityset qualityclone qualitydelete qualityvalidate craftpreview craftstart craftjob crafttrace craftcancel crafttick recipegrant reciperevoke actorrecipes professionstat professionxp workstationaudit craftingaudit recipeaudit recipetrace ingredienttrace workstationtrace qualitytrace professiontrace reservationtrace productiontrace".split():
             self.command_handlers[_name] = self._cmd_crafting_builder
+        for _name in "achievementlist achievementstat achievementcreate achievementclone achievementset achievementdelete achievementvalidate achievementpreview criteriagrouplist criteriagroupstat criteriagroupcreate criteriagroupset criteriagroupdelete criteriagroupvalidate criterialist criteriastat criteriacreate criteriaclone criteriaset criteriadelete criteriavalidate criteriapreview titlelist titlestat titlecreate titleclone titleset titledelete titlevalidate accoladelist accoladestat accoladecreate accoladeset accoladedelete accoladevalidate collectionlist collectionstat collectioncreate collectionset collectiondelete collectionvalidate actorachievements achievementgrant achievementrevoke achievementprogress achievementreset achievementcomplete achievementtrace achievementevent achievementaudit titlegrant titlerevoke titleselect accoladegrant collectiongrant achievementeventtrace criteriatrace milestonetrace achievementrewardtrace titletrace accoladetrace collectiontrace".split():
+            self.command_handlers[_name]=self._cmd_builder_achievement
 
         for _name in "quests questlog journal quest accept decline abandon turnin talk reply questlist queststat questcreate questclone questset questdelete questvalidate questpreview questtrace stagelist stagestat stagecreate stageclone stageset stagedelete stagevalidate objectivelist objectivestat objectivecreate objectiveclone objectiveset objectivedelete objectivevalidate objectivepreview branchlist branchadd branchset branchdelete branchvalidate questactionlist questactionadd questactionset questactiondelete questactionvalidate conversationlist conversationstat conversationcreate conversationclone conversationset conversationdelete conversationvalidate conversationpreview convnodelist convnodecreate convnodeset convnodedelete convchoiceadd convchoiceset convchoicedelete worldstatelist worldstatestat worldstateset worldstateclear worldstatehistory actorquests questoffer questaccept questadvance questcomplete questfail questabandon questreset questinstance questinstancetrace objectiveprogress questevent questtick questaudit conversationaudit worldstateaudit availabilitytrace objectivetrace questeventtrace branchtrace questrewardtrace conversationtrace worldstatetrace questtimertrace".split():
             self.command_handlers[_name] = self._cmd_phase8a_quest
@@ -422,6 +442,59 @@ class MudCommandEngine:
             if q in vals or any(q and q in v for v in vals):
                 return r
         return None
+
+
+    def _achievement_service(self, character: Any = None):
+        from engine.achievements import AchievementService
+        db_path = getattr(self.state_store, "db_path", None) or Path("/tmp/smartmud-achievements.sqlite3")
+        world_id = getattr(character, "current_world", None) or getattr(self.state_store, "world_id", "shattered_realms") or "shattered_realms"
+        return AchievementService(db_path, world_id=world_id, world_root=Path("worlds") / world_id, event_bus=self.event_bus)
+
+    def _actor_id_for_achievements(self, character: Any = None) -> str:
+        return str(getattr(character, "actor_id", None) or getattr(character, "id", None) or getattr(character, "name", None) or "self")
+
+    def _cmd_achievements(self, character: Any, args: list[str], command: str = "achievements") -> CommandResult:
+        svc = self._achievement_service(character); actor_id = self._actor_id_for_achievements(character)
+        cmd = command
+        if cmd == "profile" and args and args[0] in {"achievements", "titles"}: cmd = args[0]
+        if cmd in {"achievements", "achievement"}:
+            if args and args[0] == "completed":
+                rows = svc.get_actor_achievements(actor_id, "completed")
+                return CommandResult("Completed achievements:\n" + "\n".join(f"{i+1}. {r['achievement_id']}" for i,r in enumerate(rows)))
+            if args and args[0] in {"available", "categories", "series"}:
+                key = "achievement_definitions" if args[0] == "available" else "achievement_" + args[0]
+                return CommandResult(json.dumps(svc.content.data.get(key, {}), indent=2, default=str))
+            if args and args[0] not in {"progress"}:
+                return CommandResult(json.dumps(svc.trace_achievement(actor_id, args[0]), indent=2, default=str))
+            defs=svc.list_achievements(actor_id)
+            return CommandResult("Achievements:\n" + "\n".join(f"{i+1}. {a.get('name')}" for i,a in enumerate(defs)))
+        if cmd == "titles":
+            return CommandResult("Titles:\n" + "\n".join(f"{i+1}. {t['title_id']}{' (selected)' if t.get('selected') else ''}" for i,t in enumerate(svc.list_titles(actor_id))))
+        if cmd == "title":
+            if args[:1] == ["clear"]: svc.clear_selected_title(actor_id); return CommandResult("Selected title cleared.")
+            if len(args) >= 2 and args[0] == "select": svc.select_title(actor_id, args[1]); return CommandResult(f"Selected title: {args[1]}")
+            return self._cmd_achievements(character, [], "titles")
+        if cmd == "accolades":
+            return CommandResult("Accolades:\n" + "\n".join(f"{i+1}. {a['accolade_id']}" for i,a in enumerate(svc.list_accolades(actor_id))))
+        if cmd in {"collections", "collection"}:
+            if args: return CommandResult(json.dumps(svc.get_collection_progress(actor_id,args[0]), indent=2, default=str))
+            return CommandResult("Collections:\n" + "\n".join(f"{i+1}. {c.get('name')}" for i,c in enumerate(svc.content.list('collection_definitions'))))
+        if cmd == "milestones": return CommandResult(json.dumps(svc.content.data.get('achievement_milestone_profiles', {}), indent=2, default=str))
+        return CommandResult(json.dumps(svc.trace_achievement(actor_id, args[0] if args else 'first_blood'), indent=2, default=str))
+
+    def _cmd_builder_achievement(self, character: Any, args: list[str], command: str = "achievementlist") -> CommandResult:
+        svc = self._achievement_service(character); cmd=command
+        mapping={"achievement":"achievement_definitions","criteriagroup":"achievement_criteria_groups","criteria":"achievement_criteria","title":"title_definitions","accolade":"accolade_definitions","collection":"collection_definitions"}
+        base=next((v for k,v in mapping.items() if cmd.startswith(k)), "achievement_definitions")
+        if cmd.endswith("list"): return CommandResult(json.dumps(svc.content.list(base), indent=2, default=str))
+        if "stat" in cmd or "preview" in cmd or "trace" in cmd: return CommandResult(json.dumps(svc.content.get(base,args[0]) if args else svc.content.validate(), indent=2, default=str))
+        if "validate" in cmd or cmd == "achievementaudit": return CommandResult(json.dumps(svc.content.validate(), indent=2, default=str))
+        if cmd == "achievementcomplete" and len(args)>=2: return CommandResult(json.dumps(svc.complete_achievement(args[0],args[1]), indent=2, default=str))
+        if cmd == "titlegrant" and len(args)>=2: return CommandResult(str(svc.grant_title(args[0],args[1],"admin","command")))
+        if cmd == "titleselect" and len(args)>=2: svc.select_title(args[0],args[1]); return CommandResult("Title selected.")
+        if cmd == "accoladegrant" and len(args)>=2: return CommandResult(str(svc.grant_accolade(args[0],args[1],"admin","command")))
+        if cmd == "collectiongrant" and len(args)>=3: return CommandResult(str(svc.add_collection_entry(args[0],args[1],args[2],"admin","command")))
+        return CommandResult("Phase 9B Builder achievement command foundation is available; edit JSON drafts through Builder workspace/import pipeline.")
 
     def _cmd_crafting_player(self, character: Any, args: list[str], raw: str) -> CommandResult:
         svc = self._crafting_service(character)

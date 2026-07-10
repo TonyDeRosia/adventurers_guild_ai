@@ -1,0 +1,52 @@
+{
+  "accolade_definitions": [
+    {
+      "category": "combat",
+      "description": "Won a first fight.",
+      "display_name": "First Victory",
+      "icon_placeholder": "",
+      "id": "first_victory",
+      "name": "First Victory",
+      "plugin_data": {},
+      "sort_order": 1,
+      "source_types": [
+        "achievement"
+      ],
+      "tags": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "category": "quest",
+      "description": "Completed a first quest.",
+      "display_name": "First Quest Completed",
+      "icon_placeholder": "",
+      "id": "first_quest_completed",
+      "name": "First Quest Completed",
+      "plugin_data": {},
+      "sort_order": 2,
+      "source_types": [
+        "achievement"
+      ],
+      "tags": [],
+      "version": 1,
+      "visibility": "visible"
+    },
+    {
+      "category": "training",
+      "description": "Completed training.",
+      "display_name": "First Training Completed",
+      "icon_placeholder": "",
+      "id": "first_training_completed",
+      "name": "First Training Completed",
+      "plugin_data": {},
+      "sort_order": 3,
+      "source_types": [
+        "achievement"
+      ],
+      "tags": [],
+      "version": 1,
+      "visibility": "visible"
+    }
+  ]
+}

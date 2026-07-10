@@ -21,3 +21,7 @@ Starter data defines `guildlands_town`, `town_guard_faction`, `blacksmiths_circl
 ## Manual acceptance outline
 
 Inspect with `factionlist`, `factionstat guildlands_town`, `factionstat town_guard_faction`, `reputation self`, and `standing self guildlands_town`. Quest, shop, access, guard, combat, and restart acceptance should confirm that reputation events are idempotent, history-backed, standing-aware, and persisted after restart.
+
+## Phase 9B Achievement Integration
+
+Phase 9B routes canonical subsystem events into `engine.achievements.AchievementService`. The achievement service owns achievement/title/accolade/collection runtime state, consumes EventBus events idempotently, and delegates reward delivery to `RewardService` instead of mutating XP, currency, items, abilities, faction reputation, organization roles, quest state, or Actor statistics directly.
