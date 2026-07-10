@@ -3,7 +3,7 @@
     "id": "training_sword",
     "name": "training sword",
     "type": "weapon",
-    "slot": "main_hand",
+    "slot": "primary_weapon",
     "rarity": "common",
     "value": 5,
     "weight": 1,
@@ -13,13 +13,32 @@
     "description": "training sword for beginner Smart MUD play.",
     "tags": [
       "starter"
+    ],
+    "equipment_slots": [
+      "primary_weapon"
+    ],
+    "wear_slots": [
+      "primary_weapon"
+    ],
+    "modifiers": [
+      {
+        "id": "training_sword_attack_power",
+        "target_domain": "derived_stat",
+        "target_key": "attack_power",
+        "operation": "add",
+        "value": 2,
+        "priority": 100,
+        "stacking_group": "equipment_attack_power",
+        "stacking_policy": "stack",
+        "visible": true
+      }
     ]
   },
   {
     "id": "iron_sword",
     "name": "iron sword",
     "type": "weapon",
-    "slot": "main_hand",
+    "slot": "primary_weapon",
     "rarity": "common",
     "value": 5,
     "weight": 1,
@@ -29,6 +48,25 @@
     "description": "iron sword for beginner Smart MUD play.",
     "tags": [
       "starter"
+    ],
+    "equipment_slots": [
+      "primary_weapon"
+    ],
+    "wear_slots": [
+      "primary_weapon"
+    ],
+    "modifiers": [
+      {
+        "id": "iron_sword_attack_power",
+        "target_domain": "derived_stat",
+        "target_key": "attack_power",
+        "operation": "add",
+        "value": 4,
+        "priority": 100,
+        "stacking_group": "equipment_attack_power",
+        "stacking_policy": "stack",
+        "visible": true
+      }
     ]
   },
   {

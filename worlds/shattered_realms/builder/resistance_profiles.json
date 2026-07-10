@@ -1,0 +1,17 @@
+[
+{"id":"physical","display_name":"Physical","base":0,"formula_id":"physical_resistance_v1","visible":true,"minimum":0,"maximum":100},
+{"id":"slash","display_name":"Slash","base":0,"formula_id":"physical_resistance_v1","visible":true,"minimum":0,"maximum":100},
+{"id":"pierce","display_name":"Pierce","base":0,"formula_id":"physical_resistance_v1","visible":true,"minimum":0,"maximum":100},
+{"id":"blunt","display_name":"Blunt","base":0,"formula_id":"physical_resistance_v1","visible":true,"minimum":0,"maximum":100},
+{"id":"fire","display_name":"Fire","base":0,"formula_id":"magic_resistance_v1","visible":true,"minimum":0,"maximum":100},
+{"id":"cold","display_name":"Cold","base":0,"formula_id":"magic_resistance_v1","visible":true,"minimum":0,"maximum":100},
+{"id":"lightning","display_name":"Lightning","base":0,"formula_id":"magic_resistance_v1","visible":true,"minimum":0,"maximum":100},
+{"id":"poison","display_name":"Poison","base":0,"formula_id":"physical_resistance_v1","visible":true,"minimum":0,"maximum":100},
+{"id":"disease","display_name":"Disease","base":0,"formula_id":"physical_resistance_v1","visible":true,"minimum":0,"maximum":100},
+{"id":"holy","display_name":"Holy","base":0,"formula_id":"magic_resistance_v1","visible":true,"minimum":0,"maximum":100},
+{"id":"shadow","display_name":"Shadow","base":0,"formula_id":"magic_resistance_v1","visible":true,"minimum":0,"maximum":100},
+{"id":"arcane","display_name":"Arcane","base":0,"formula_id":"magic_resistance_v1","visible":true,"minimum":0,"maximum":100},
+{"id":"mental","display_name":"Mental","base":0,"formula_id":"magic_resistance_v1","visible":true,"minimum":0,"maximum":100},
+{"id":"bleeding","display_name":"Bleeding","base":0,"formula_id":"physical_resistance_v1","visible":true,"minimum":0,"maximum":100},
+{"id":"magic","display_name":"Magic","base":0,"formula_id":"magic_resistance_v1","visible":true,"minimum":0,"maximum":100}
+]

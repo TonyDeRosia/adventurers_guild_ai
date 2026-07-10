@@ -321,3 +321,7 @@ Canonical spawns supersede equivalent legacy declarations by world, room, templa
 ## Phase 5B completed foundation
 
 Persistent living entity identity, schedules, needs, goals, memories, relationships, deterministic world time, and non-AI context contracts are established as the substrate for future controlled AI influence.
+
+## Phase 5E status
+
+The equipment/effect/stat-resolution foundation is present: canonical modifiers, SQLite effect instances, pilot slot/effect/resource/resistance/formula data, safe expressions, and focused tests. Combat execution remains explicitly out of scope.

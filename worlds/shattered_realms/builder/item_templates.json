@@ -1,1 +1,767 @@
-{}
+{
+  "training_sword": {
+    "id": "training_sword",
+    "name": "training sword",
+    "type": "weapon",
+    "slot": "primary_weapon",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "training sword for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ],
+    "equipment_slots": [
+      "primary_weapon"
+    ],
+    "wear_slots": [
+      "primary_weapon"
+    ],
+    "modifiers": [
+      {
+        "id": "training_sword_attack_power",
+        "target_domain": "derived_stat",
+        "target_key": "attack_power",
+        "operation": "add",
+        "value": 2,
+        "priority": 100,
+        "stacking_group": "equipment_attack_power",
+        "stacking_policy": "stack",
+        "visible": true
+      }
+    ]
+  },
+  "iron_sword": {
+    "id": "iron_sword",
+    "name": "iron sword",
+    "type": "weapon",
+    "slot": "primary_weapon",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "iron sword for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ],
+    "equipment_slots": [
+      "primary_weapon"
+    ],
+    "wear_slots": [
+      "primary_weapon"
+    ],
+    "modifiers": [
+      {
+        "id": "iron_sword_attack_power",
+        "target_domain": "derived_stat",
+        "target_key": "attack_power",
+        "operation": "add",
+        "value": 4,
+        "priority": 100,
+        "stacking_group": "equipment_attack_power",
+        "stacking_policy": "stack",
+        "visible": true
+      }
+    ]
+  },
+  "wooden_staff": {
+    "id": "wooden_staff",
+    "name": "wooden staff",
+    "type": "weapon",
+    "slot": "main_hand",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "wooden staff for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "oak_staff": {
+    "id": "oak_staff",
+    "name": "oak staff",
+    "type": "weapon",
+    "slot": "main_hand",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "oak staff for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "dagger": {
+    "id": "dagger",
+    "name": "dagger",
+    "type": "weapon",
+    "slot": "main_hand",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "dagger for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "short_bow": {
+    "id": "short_bow",
+    "name": "short bow",
+    "type": "weapon",
+    "slot": "main_hand",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "short bow for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "side_blade": {
+    "id": "side_blade",
+    "name": "side blade",
+    "type": "weapon",
+    "slot": "main_hand",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "side blade for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "rusty_mace": {
+    "id": "rusty_mace",
+    "name": "rusty mace",
+    "type": "weapon",
+    "slot": "main_hand",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "rusty mace for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "battle_focus": {
+    "id": "battle_focus",
+    "name": "battle focus",
+    "type": "weapon",
+    "slot": "main_hand",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "battle focus for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "bone_wand": {
+    "id": "bone_wand",
+    "name": "bone wand",
+    "type": "weapon",
+    "slot": "main_hand",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "bone wand for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "travel_robes": {
+    "id": "travel_robes",
+    "name": "travel robes",
+    "type": "armor",
+    "slot": "body",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "travel robes for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "reinforced_robes": {
+    "id": "reinforced_robes",
+    "name": "reinforced robes",
+    "type": "armor",
+    "slot": "body",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "reinforced robes for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "leather_armor": {
+    "id": "leather_armor",
+    "name": "leather armor",
+    "type": "armor",
+    "slot": "body",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "leather armor for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "chain_shirt": {
+    "id": "chain_shirt",
+    "name": "chain shirt",
+    "type": "armor",
+    "slot": "body",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "chain shirt for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "padded_vest": {
+    "id": "padded_vest",
+    "name": "padded vest",
+    "type": "armor",
+    "slot": "body",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "padded vest for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "wooden_shield": {
+    "id": "wooden_shield",
+    "name": "wooden shield",
+    "type": "armor",
+    "slot": "off_hand",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "wooden shield for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ],
+    "wear_slots": [
+      "off_hand"
+    ],
+    "keywords": [
+      "wooden",
+      "shield"
+    ]
+  },
+  "iron_buckler": {
+    "id": "iron_buckler",
+    "name": "iron buckler",
+    "type": "armor",
+    "slot": "body",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "iron buckler for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "minor_healing_potion": {
+    "id": "minor_healing_potion",
+    "name": "minor healing potion",
+    "type": "consumable",
+    "slot": "none",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "minor healing potion for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "minor_mana_potion": {
+    "id": "minor_mana_potion",
+    "name": "minor mana potion",
+    "type": "consumable",
+    "slot": "none",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "minor mana potion for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "ration": {
+    "id": "ration",
+    "name": "ration",
+    "type": "consumable",
+    "slot": "none",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "ration for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "clean_water_flask": {
+    "id": "clean_water_flask",
+    "name": "clean water flask",
+    "type": "consumable",
+    "slot": "none",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "clean water flask for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "torch": {
+    "id": "torch",
+    "name": "torch",
+    "type": "consumable",
+    "slot": "none",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "torch for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ],
+    "wear_slots": [
+      "light"
+    ],
+    "keywords": [
+      "torch",
+      "light"
+    ]
+  },
+  "spellbook": {
+    "id": "spellbook",
+    "name": "spellbook",
+    "type": "tool",
+    "slot": "none",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "spellbook for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "arcane_focus": {
+    "id": "arcane_focus",
+    "name": "arcane focus",
+    "type": "tool",
+    "slot": "none",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "arcane focus for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "component_pouch": {
+    "id": "component_pouch",
+    "name": "component pouch",
+    "type": "tool",
+    "slot": "none",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "component pouch for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "lockpick_set": {
+    "id": "lockpick_set",
+    "name": "lockpick set",
+    "type": "tool",
+    "slot": "none",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "lockpick set for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "healers_kit": {
+    "id": "healers_kit",
+    "name": "healer\u2019s kit",
+    "type": "tool",
+    "slot": "none",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "healer\u2019s kit for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "rope": {
+    "id": "rope",
+    "name": "rope",
+    "type": "tool",
+    "slot": "none",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "rope for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "tinderbox": {
+    "id": "tinderbox",
+    "name": "tinderbox",
+    "type": "tool",
+    "slot": "none",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "tinderbox for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "guild_charter": {
+    "id": "guild_charter",
+    "name": "guild charter",
+    "type": "tool",
+    "slot": "none",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "guild charter for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "empty_vial": {
+    "id": "empty_vial",
+    "name": "empty vial",
+    "type": "tool",
+    "slot": "none",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "empty vial for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "sealed_courier_satchel": {
+    "id": "sealed_courier_satchel",
+    "name": "sealed courier satchel",
+    "type": "quest",
+    "slot": "none",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "sealed courier satchel for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "old_gate_shard": {
+    "id": "old_gate_shard",
+    "name": "old gate shard",
+    "type": "quest",
+    "slot": "none",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "old gate shard for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "rat_tail": {
+    "id": "rat_tail",
+    "name": "rat tail",
+    "type": "quest",
+    "slot": "none",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "rat tail for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "suspicious_ledger": {
+    "id": "suspicious_ledger",
+    "name": "suspicious ledger",
+    "type": "quest",
+    "slot": "none",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "suspicious ledger for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "guild_token": {
+    "id": "guild_token",
+    "name": "guild token",
+    "type": "quest",
+    "slot": "none",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "guild token for beginner Smart MUD play.",
+    "tags": [
+      "starter"
+    ]
+  },
+  "old_gate": {
+    "id": "old_gate",
+    "name": "old gate",
+    "type": "quest",
+    "slot": "none",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "old gate for beginner Smart MUD play.",
+    "tags": [],
+    "starter": false,
+    "keywords": [
+      "old",
+      "gate"
+    ],
+    "short_description": "old gate for beginner Smart MUD play.",
+    "long_description": "old gate for beginner Smart MUD play."
+  },
+  "fountain": {
+    "id": "fountain",
+    "name": "fountain",
+    "type": "quest",
+    "slot": "none",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "fountain for beginner Smart MUD play.",
+    "tags": [],
+    "starter": false,
+    "keywords": [
+      "fountain"
+    ],
+    "short_description": "fountain for beginner Smart MUD play.",
+    "long_description": "fountain for beginner Smart MUD play."
+  },
+  "notice_board": {
+    "id": "notice_board",
+    "name": "notice board",
+    "type": "quest",
+    "slot": "none",
+    "rarity": "common",
+    "value": 5,
+    "weight": 1,
+    "requirements": {},
+    "stats": {},
+    "effects": {},
+    "description": "notice board for beginner Smart MUD play.",
+    "tags": [],
+    "starter": false,
+    "keywords": [
+      "notice",
+      "board"
+    ],
+    "short_description": "notice board for beginner Smart MUD play.",
+    "long_description": "notice board for beginner Smart MUD play."
+  },
+  "traveler_pack": {
+    "id": "traveler_pack",
+    "name": "Traveler's Pack",
+    "keywords": [
+      "traveler",
+      "pack",
+      "backpack"
+    ],
+    "short_description": "A sturdy traveler's pack rests here.",
+    "long_description": "A sturdy traveler's pack with weathered straps.",
+    "item_type": "container",
+    "weight": 1,
+    "value": 2,
+    "wear_slots": [
+      "back"
+    ],
+    "rarity": "common",
+    "starter": true
+  },
+  "rusty_sword": {
+    "id": "rusty_sword",
+    "name": "Rusty Sword",
+    "keywords": [
+      "rusty",
+      "sword"
+    ],
+    "short_description": "A rusty sword lies here.",
+    "long_description": "A rusty sword with a nicked but usable edge.",
+    "item_type": "weapon",
+    "weight": 2,
+    "value": 3,
+    "wear_slots": [
+      "main_hand"
+    ],
+    "rarity": "common",
+    "starter": true
+  },
+  "cloth_tunic": {
+    "id": "cloth_tunic",
+    "name": "Cloth Tunic",
+    "keywords": [
+      "cloth",
+      "tunic"
+    ],
+    "short_description": "A simple cloth tunic is here.",
+    "long_description": "A simple cloth tunic suitable for new adventurers.",
+    "item_type": "armor",
+    "weight": 1,
+    "value": 1,
+    "wear_slots": [
+      "body"
+    ],
+    "rarity": "common",
+    "starter": true
+  },
+  "small_lantern": {
+    "id": "small_lantern",
+    "name": "Small Lantern",
+    "keywords": [
+      "small",
+      "lantern",
+      "light"
+    ],
+    "short_description": "A small lantern sits here.",
+    "long_description": "A small lantern with enough oil for a cautious journey.",
+    "item_type": "light",
+    "weight": 1,
+    "value": 2,
+    "wear_slots": [
+      "light",
+      "off_hand"
+    ],
+    "rarity": "common",
+    "starter": true
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "attack_rating": {
+    "builder_owner": null,
+    "dependencies": [],
+    "description": "Starter placeholder; Builders may replace this formula later.",
+    "display_name": "Attack Rating",
+    "id": "attack_rating",
+    "inputs": [],
+    "outputs": [
+      "attack_rating"
+    ],
+    "plugin_data": {},
+    "plugin_owner": null,
+    "validation": {
+      "placeholder": true
+    },
+    "version": "1.0.0",
+    "world_overrides": {}
+  }
+}

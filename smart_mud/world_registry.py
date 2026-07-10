@@ -91,6 +91,12 @@ class WorldPackage:
     memory_seeds: list[dict[str, Any]]
     need_profiles: list[dict[str, Any]]
     goal_profiles: list[dict[str, Any]]
+    equipment_slot_profiles: list[dict[str, Any]] = None
+    effect_templates: list[dict[str, Any]] = None
+    resource_profiles: list[dict[str, Any]] = None
+    resistance_profiles: list[dict[str, Any]] = None
+    combat_formulas: list[dict[str, Any]] = None
+    modifier_types: list[dict[str, Any]] = None
 
     @property
     def id(self) -> str: return str(self.manifest["world_id"])
@@ -202,7 +208,7 @@ class WorldRegistry:
         manifest = self._manifest(root)
         rules = {p.stem: _read_json(p, {}) for p in sorted((root / "rules").glob("*.json"))}
         intelligence = {p.stem: p.read_text(encoding="utf-8") for p in sorted((root / "intelligence").glob("*.md"))}
-        return WorldPackage(root, manifest, rules, _records(root,"races"), _records(root,"classes"), _records(root,"abilities"), _records(root,"skills"), _records(root,"spells"), _records(root,"items"), _records(root,"item_placements"), _records(root,"areas"), _records(root,"rooms"), _records(root,"zones"), _records(root,"factions"), _records(root,"npcs"), _records(root,"spawns"), _records(root,"features"), _records(root,"quests"), _records(root,"shops"), _records(root,"trainers"), _records(root,"lore"), _records(root,"dialogue"), intelligence, _records(root,"schedules"), _records(root,"relationship_seeds"), _records(root,"memory_seeds"), _records(root,"need_profiles"), _records(root,"goal_profiles"))
+        return WorldPackage(root, manifest, rules, _records(root,"races"), _records(root,"classes"), _records(root,"abilities"), _records(root,"skills"), _records(root,"spells"), _records(root,"items"), _records(root,"item_placements"), _records(root,"areas"), _records(root,"rooms"), _records(root,"zones"), _records(root,"factions"), _records(root,"npcs"), _records(root,"spawns"), _records(root,"features"), _records(root,"quests"), _records(root,"shops"), _records(root,"trainers"), _records(root,"lore"), _records(root,"dialogue"), intelligence, _records(root,"schedules"), _records(root,"relationship_seeds"), _records(root,"memory_seeds"), _records(root,"need_profiles"), _records(root,"goal_profiles"), _records(root,"equipment_slot_profiles"), _records(root,"effect_templates"), _records(root,"resource_profiles"), _records(root,"resistance_profiles"), _records(root,"combat_formulas"), _records(root,"modifier_types"))
 
     def reload_room(self, world: WorldPackage, room_id: str) -> dict[str, Any]:
         return self.load_world(world.id).room(room_id)

@@ -1,0 +1,20 @@
+{
+  "derived_stat_template": {
+    "builder_owner": "builder",
+    "dependencies": [],
+    "description": "Copy this shape when authoring a future formula.",
+    "display_name": "Builder Defined Stat",
+    "id": "builder_defined_stat",
+    "inputs": [
+      "future_variable"
+    ],
+    "outputs": [
+      "builder_defined_stat"
+    ],
+    "plugin_data": {},
+    "plugin_owner": null,
+    "validation": {},
+    "version": "1.0.0",
+    "world_overrides": {}
+  }
+}

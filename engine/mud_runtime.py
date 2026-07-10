@@ -255,6 +255,22 @@ class MudStateStore:
                 )
             """)
             conn.execute("""
+                CREATE TABLE IF NOT EXISTS actor_effect_instances (
+                    effect_instance_id TEXT PRIMARY KEY, world_id TEXT, effect_template_id TEXT,
+                    target_actor_type TEXT, target_actor_id TEXT, source_actor_type TEXT, source_actor_id TEXT,
+                    source_ability_id TEXT, source_item_instance_id TEXT, category TEXT, disposition TEXT,
+                    visibility TEXT, stack_group TEXT, stack_count INTEGER, maximum_stacks INTEGER,
+                    started_world_time INTEGER, expires_world_time INTEGER, remaining_duration INTEGER,
+                    next_tick_world_time INTEGER, active INTEGER, suspended INTEGER, removal_reason TEXT,
+                    created_at TEXT, updated_at TEXT, metadata_json TEXT
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_actor_effect_target ON actor_effect_instances(target_actor_type,target_actor_id,active)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_actor_effect_source ON actor_effect_instances(source_actor_type,source_actor_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_actor_effect_template ON actor_effect_instances(effect_template_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_actor_effect_expire ON actor_effect_instances(world_id,expires_world_time,active)")
+
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS room_item_seeds (
                     world_id TEXT,
                     room_id TEXT,
@@ -1369,7 +1385,7 @@ class MudRuntime:
         by_id = {str(item.get("id")): item for item in getattr(self.active_world, "items", [])}
         return [by_id.get(str(value), value) if not isinstance(value, dict) else value for value in values]
 
-    EQUIPMENT_SLOTS = ["head","neck","body","back","arms","hands","finger_left","finger_right","waist","legs","feet","main_hand","off_hand","both_hands","ranged","ammo","light"]
+    EQUIPMENT_SLOTS = ["head","face","neck","shoulders","back","chest","arms","wrists","hands","finger_left","finger_right","waist","legs","feet","primary_weapon","secondary_weapon","shield","quiver","accessory_1","accessory_2","main_hand","off_hand","both_hands","ranged","ammo","light"]
     HAND_SLOTS = {"main_hand", "off_hand", "both_hands", "light"}
     ARTICLES = {"a", "an", "the"}
 
@@ -1392,7 +1408,9 @@ class MudRuntime:
                 "long_description": str(raw.get("long_description") or raw.get("description") or raw.get("short_description") or raw.get("name") or tid),
                 "item_type": str(raw.get("item_type") or raw.get("type") or "misc"),
                 "weight": raw.get("weight", 0), "value": raw.get("value", 0),
-                "wear_slots": [str(v) for v in wear_slots if str(v) in self.EQUIPMENT_SLOTS],
+                "wear_slots": [str(v) for v in (raw.get("equipment_slots") or wear_slots) if str(v) in self.EQUIPMENT_SLOTS],
+                "equipment_slots": [str(v) for v in (raw.get("equipment_slots") or wear_slots) if str(v) in self.EQUIPMENT_SLOTS],
+                "modifiers": list(raw.get("modifiers") or []),
                 "weapon_flags": raw.get("weapon_flags") or raw.get("flags") or [],
                 "armor_values": raw.get("armor_values") or raw.get("stats") or {},
                 "stackable": bool(raw.get("stackable", False)), "max_stack": int(raw.get("max_stack", 1) or 1),
@@ -1473,6 +1491,10 @@ class MudRuntime:
         if len(partial) == 1: return {"status":"ok", "item": partial[0], "matches": partial}
         return {"status":"ambiguous" if partial else "missing", "matches": partial}
 
+    def _normalize_equipment_slot(self, slot: str | None) -> str:
+        aliases = {"main_hand": "primary_weapon", "both_hands": "primary_weapon", "ranged": "primary_weapon", "off_hand": "secondary_weapon", "ammo": "quiver", "body": "chest"}
+        return aliases.get(str(slot or "").strip(), str(slot or "").strip())
+
     def validate_equipment(self, character_id: str, item_instance: dict[str, Any], slot: str | None = None) -> dict[str, Any]:
         allowed = list((item_instance.get("template") or {}).get("wear_slots") or [])
         if slot and slot not in self.EQUIPMENT_SLOTS: return {"ok": False, "message": "That is not a valid equipment slot."}
@@ -1506,13 +1528,13 @@ class MudRuntime:
         conflicts=[slot] + (["main_hand","off_hand"] if slot=="both_hands" else ["both_hands"] if slot in {"main_hand","off_hand"} else [])
         for eq in self.find_equipped_items(character_id):
             if eq.get("equipped_slot") in conflicts: self.move_item(eq["instance_id"], "character", character_id)
-        moved=self.move_item(item["instance_id"], "equipment", character_id, equipped_slot=slot); self._publish_item_event("item_equipped", moved, character_id=character_id, equipped_slot=slot); self._publish_item_event("equipment_changed", moved, character_id=character_id); self._publish_item_event("inventory_changed", moved, character_id=character_id); self._publish_item_event("after_item_equip", moved, character_id=character_id, equipped_slot=slot); return f"You equip {moved['name']} on {slot.replace('_',' ')}."
+        moved=self.move_item(item["instance_id"], "equipment", character_id, equipped_slot=slot); self._publish_item_event("actor_equipment_modifiers_invalidated", moved, character_id=character_id, equipped_slot=slot); self._publish_item_event("item_equipped", moved, character_id=character_id, equipped_slot=slot); self._publish_item_event("equipment_changed", moved, character_id=character_id); self._publish_item_event("inventory_changed", moved, character_id=character_id); self._publish_item_event("after_item_equip", moved, character_id=character_id, equipped_slot=slot); return f"You equip {moved['name']} on {slot.replace('_',' ')}."
 
     def unequip_item(self, character_id: str, query_or_slot: str) -> str:
         equipped=self.find_equipped_items(character_id); q=query_or_slot.lower().strip(); matches=[i for i in equipped if i.get("equipped_slot")==q]
         res={"status":"ok","item":matches[0]} if len(matches)==1 else self.resolve_item_keywords(query_or_slot, equipped)
         if res["status"] != "ok": return self._resolve_message(res, "You aren't using that.")
-        item=res["item"]; self._publish_item_event("before_item_remove", item, character_id=character_id); moved=self.move_item(item["instance_id"], "character", character_id); self._publish_item_event("item_removed", moved, character_id=character_id); self._publish_item_event("equipment_changed", moved, character_id=character_id); self._publish_item_event("inventory_changed", moved, character_id=character_id); self._publish_item_event("after_item_remove", moved, character_id=character_id); return f"You remove {moved['name']}."
+        item=res["item"]; self._publish_item_event("before_item_remove", item, character_id=character_id); moved=self.move_item(item["instance_id"], "character", character_id); self._publish_item_event("actor_equipment_modifiers_invalidated", moved, character_id=character_id); self._publish_item_event("item_removed", moved, character_id=character_id); self._publish_item_event("equipment_changed", moved, character_id=character_id); self._publish_item_event("inventory_changed", moved, character_id=character_id); self._publish_item_event("after_item_remove", moved, character_id=character_id); return f"You remove {moved['name']}."
 
     def _handle_item_command(self, char: MudCharacter, command: str, cmd: str, args: list[str]):
         from engine.mud_commands import CommandResult

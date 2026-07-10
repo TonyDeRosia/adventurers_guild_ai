@@ -394,3 +394,7 @@ Seeded room objects are created once per world/room/template seed key. Looking, 
 ## Phase 5A runtime content synchronization
 
 Phase 5A establishes one canonical runtime truth. Item templates and entity templates are definitions only; `item_placements` and `spawns` are declarations; SQLite item/entity rows are live instances. Room rendering, look/examine, get/take, diagnostics, and future perception use canonical runtime room contents. Shared `feature_refs` resolve nonportable scenery alongside local room `features`. Blacksmith Stall now uses an anvil feature, two materialized Iron Sword item instances, one materialized Training Sword item instance, and one materialized Blacksmith Harl entity instance.
+
+## Phase 5E equipment modifier bridge
+
+Item templates may declare immutable `modifiers`. Only SQLite item instances whose runtime owner is `equipment` activate those declarations. The runtime modifier source includes the item instance ID and template ID; inventory and room items do not contribute.

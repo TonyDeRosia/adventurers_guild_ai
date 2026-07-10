@@ -11,7 +11,7 @@ from typing import Any
 from smart_mud.world_registry import WORLDS_DIR, _records
 
 BUILDER_ROLES = {"builder", "admin", "owner"}
-VALID_WEAR_SLOTS = {"head","neck","body","torso","legs","feet","hands","arms","finger","wrist","waist","back","mainhand","offhand","held","wield","shield"}
+VALID_WEAR_SLOTS = {"head","face","neck","shoulders","back","chest","body","torso","arms","wrists","hands","finger","wrist","finger_left","finger_right","waist","legs","feet","mainhand","main_hand","primary_weapon","offhand","off_hand","secondary_weapon","held","wield","shield","quiver","ammo","ranged","light","accessory_1","accessory_2"}
 VALID_ENTITY_TYPES = {"npc", "mob", "merchant", "trainer", "banker", "healer", "critter", "object"}
 
 DRAFT_FILES = {

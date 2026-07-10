@@ -1,0 +1,5 @@
+[
+{"id":"health","display_label":"Health","base_maximum":100,"maximum_formula_id":"resource_maximum_health_v1","regeneration_formula_id":"","minimum":0,"maximum_cap":9999,"visible":true,"aliases":["hp"],"plugin_data":{}},
+{"id":"mana","display_label":"Mana","base_maximum":50,"maximum_formula_id":"resource_maximum_mana_v1","regeneration_formula_id":"","minimum":0,"maximum_cap":9999,"visible":true,"aliases":["mp"],"plugin_data":{}},
+{"id":"stamina","display_label":"Stamina","base_maximum":100,"maximum_formula_id":"resource_maximum_stamina_v1","regeneration_formula_id":"","minimum":0,"maximum_cap":9999,"visible":true,"aliases":["movement"],"plugin_data":{"movement_compatibility":"movement remains a display alias for stamina where older saves use movement."}}
+]

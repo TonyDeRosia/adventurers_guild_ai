@@ -1,0 +1,42 @@
+{
+  "add": {
+    "id": "add",
+    "display_name": "Add"
+  },
+  "subtract": {
+    "id": "subtract",
+    "display_name": "Subtract"
+  },
+  "multiply": {
+    "id": "multiply",
+    "display_name": "Multiply"
+  },
+  "divide": {
+    "id": "divide",
+    "display_name": "Divide"
+  },
+  "percentage_increase": {
+    "id": "percentage_increase",
+    "display_name": "Percentage Increase"
+  },
+  "percentage_reduction": {
+    "id": "percentage_reduction",
+    "display_name": "Percentage Reduction"
+  },
+  "minimum": {
+    "id": "minimum",
+    "display_name": "Minimum"
+  },
+  "maximum": {
+    "id": "maximum",
+    "display_name": "Maximum"
+  },
+  "override": {
+    "id": "override",
+    "display_name": "Override"
+  },
+  "clamp": {
+    "id": "clamp",
+    "display_name": "Clamp"
+  }
+}

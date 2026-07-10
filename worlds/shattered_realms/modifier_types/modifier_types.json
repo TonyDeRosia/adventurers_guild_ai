@@ -1,0 +1,3 @@
+[
+{"id":"add","display_name":"Add"},{"id":"subtract","display_name":"Subtract"},{"id":"multiply","display_name":"Multiply"},{"id":"divide","display_name":"Divide"},{"id":"percentage_increase","display_name":"Percentage Increase"},{"id":"percentage_reduction","display_name":"Percentage Reduction"},{"id":"minimum","display_name":"Minimum"},{"id":"maximum","display_name":"Maximum"},{"id":"override","display_name":"Override"},{"id":"clamp","display_name":"Clamp"}
+]

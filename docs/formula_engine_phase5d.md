@@ -35,3 +35,7 @@ Builder drafts now recognize `formulas.json`, `modifier_types.json`, and `future
 ## Validation
 
 Validation covers duplicate formula IDs, missing dependencies, circular dependencies, invalid operations, unknown target stats, reserved names, version conflicts, and unknown modifier types. Plugin ownership and world override fields are retained as extension points for Phase 5E and later.
+
+## Phase 5E execution safety extension
+
+Phase 5E adds `engine.phase5e.SafeExpression` and canonical modifier execution. The supported expression language is numeric constants, named inputs, arithmetic, parentheses, and `min`, `max`, `clamp`, `floor`, `ceil`, `round`, and `abs`. Arbitrary Python execution, imports, attribute access, comprehensions, loops, and mutation are rejected.

@@ -1,0 +1,135 @@
+[
+  {
+    "id": "attribute_effective_v1",
+    "name": "Attribute Effective v1",
+    "expression": "base + modifier_total",
+    "version": "1.0.0",
+    "description": "Phase 5E conservative starter formula; not final combat balance."
+  },
+  {
+    "id": "resource_maximum_health_v1",
+    "name": "Health Maximum v1",
+    "expression": "base + constitution * 5 + modifier_total",
+    "minimum": 1,
+    "version": "1.0.0",
+    "description": "Phase 5E conservative starter formula; not final combat balance."
+  },
+  {
+    "id": "resource_maximum_mana_v1",
+    "name": "Mana Maximum v1",
+    "expression": "base + intelligence * 3 + wisdom * 2 + modifier_total",
+    "minimum": 0,
+    "version": "1.0.0",
+    "description": "Phase 5E conservative starter formula; not final combat balance."
+  },
+  {
+    "id": "resource_maximum_stamina_v1",
+    "name": "Stamina Maximum v1",
+    "expression": "base + constitution * 3 + strength * 2 + modifier_total",
+    "minimum": 0,
+    "version": "1.0.0",
+    "description": "Phase 5E conservative starter formula; not final combat balance."
+  },
+  {
+    "id": "attack_rating_v1",
+    "name": "Attack Rating v1",
+    "expression": "strength + dexterity + modifier_total",
+    "version": "1.0.0",
+    "description": "Phase 5E conservative starter formula; not final combat balance."
+  },
+  {
+    "id": "attack_power_v1",
+    "name": "Attack Power v1",
+    "expression": "strength * 2 + modifier_total",
+    "version": "1.0.0",
+    "description": "Phase 5E conservative starter formula; not final combat balance."
+  },
+  {
+    "id": "accuracy_v1",
+    "name": "Accuracy v1",
+    "expression": "dexterity + modifier_total",
+    "version": "1.0.0",
+    "description": "Phase 5E conservative starter formula; not final combat balance."
+  },
+  {
+    "id": "armor_rating_v1",
+    "name": "Armor Rating v1",
+    "expression": "base + modifier_total",
+    "version": "1.0.0",
+    "description": "Phase 5E conservative starter formula; not final combat balance."
+  },
+  {
+    "id": "evasion_rating_v1",
+    "name": "Evasion Rating v1",
+    "expression": "dexterity + modifier_total",
+    "version": "1.0.0",
+    "description": "Phase 5E conservative starter formula; not final combat balance."
+  },
+  {
+    "id": "spell_power_v1",
+    "name": "Spell Power v1",
+    "expression": "intelligence * 2 + modifier_total",
+    "version": "1.0.0",
+    "description": "Phase 5E conservative starter formula; not final combat balance."
+  },
+  {
+    "id": "healing_power_v1",
+    "name": "Healing Power v1",
+    "expression": "wisdom * 2 + modifier_total",
+    "version": "1.0.0",
+    "description": "Phase 5E conservative starter formula; not final combat balance."
+  },
+  {
+    "id": "critical_chance_v1",
+    "name": "Critical Chance v1",
+    "expression": "clamp(5 + dexterity / 5 + modifier_total, 0, 100)",
+    "version": "1.0.0",
+    "description": "Phase 5E conservative starter formula; not final combat balance."
+  },
+  {
+    "id": "critical_damage_v1",
+    "name": "Critical Damage v1",
+    "expression": "150 + modifier_total",
+    "version": "1.0.0",
+    "description": "Phase 5E conservative starter formula; not final combat balance."
+  },
+  {
+    "id": "initiative_v1",
+    "name": "Initiative v1",
+    "expression": "dexterity + wisdom + modifier_total",
+    "version": "1.0.0",
+    "description": "Phase 5E conservative starter formula; not final combat balance."
+  },
+  {
+    "id": "carry_capacity_v1",
+    "name": "Carry Capacity v1",
+    "expression": "strength * 10 + modifier_total",
+    "version": "1.0.0",
+    "description": "Phase 5E conservative starter formula; not final combat balance."
+  },
+  {
+    "id": "encumbrance_v1",
+    "name": "Encumbrance v1",
+    "expression": "carry_weight - carry_capacity",
+    "version": "1.0.0",
+    "description": "Phase 5E conservative starter formula; not final combat balance."
+  },
+  {
+    "id": "physical_resistance_v1",
+    "name": "Physical Resistance v1",
+    "expression": "base + modifier_total",
+    "minimum": 0,
+    "maximum": 100,
+    "version": "1.0.0",
+    "description": "Phase 5E conservative starter formula; not final combat balance."
+  },
+  {
+    "id": "magic_resistance_v1",
+    "name": "Magic Resistance v1",
+    "expression": "base + modifier_total",
+    "minimum": 0,
+    "maximum": 100,
+    "version": "1.0.0",
+    "description": "Phase 5E conservative starter formula; not final combat balance."
+  }
+]
