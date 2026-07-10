@@ -37,6 +37,16 @@ DERIVED_STAT_FORMULAS: dict[str, str] = {
     "healing_power": "healing_power",
     "hit_bonus": "hit_bonus",
     "damage_bonus": "damage_bonus",
+    "accuracy": "accuracy",
+    "attack_power": "attack_power",
+    "weapon_damage": "weapon_damage",
+    "magic_defense": "magic_defense",
+    "critical_chance": "critical_chance",
+    "critical_damage": "critical_damage",
+    "armor_penetration": "armor_penetration",
+    "resistances": "resistances",
+    "attack_speed": "attack_speed",
+    "recovery_speed": "recovery_speed",
     "movement_speed": "movement_speed",
     "casting_speed": "casting_speed",
     "carry_weight": "carry_weight",
@@ -164,6 +174,18 @@ class Actor:
             if hasattr(actor, key):
                 setattr(actor, key, value)
         return actor
+
+    def apply_damage(self, amount: int, **metadata: Any) -> dict[str, Any]:
+        from engine.combat import apply_damage
+        return apply_damage(self, amount, metadata=metadata)
+
+    def apply_healing(self, amount: int, **metadata: Any) -> dict[str, Any]:
+        from engine.combat import apply_healing
+        return apply_healing(self, amount, metadata=metadata)
+
+    def modify_resource(self, resource: str, delta: int, **metadata: Any) -> dict[str, Any]:
+        from engine.combat import modify_resource
+        return modify_resource(self, resource, delta, metadata=metadata)
 
     def get_derived_value(self, stat: str, engine: FormulaEngine | None = None, base_value: Any = 0, variables: dict[str, Any] | None = None) -> FormulaResult:
         """Resolve a derived statistic exclusively through the Formula Engine."""
