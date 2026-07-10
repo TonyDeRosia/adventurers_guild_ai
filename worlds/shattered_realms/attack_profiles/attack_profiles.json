@@ -1,0 +1,6 @@
+[
+ {"id":"slash","name":"Slash","verbs":{"hit":"slash"},"damage_category":"slash","critical_style":"precise","attack_messages":{"hit":"{attacker} slashes {defender}."},"default_recovery":2,"animation":"future","future_sound_ids":[],"future_visual_ids":[]},
+ {"id":"blunt","name":"Blunt","verbs":{"hit":"strike"},"damage_category":"blunt","critical_style":"crushing","attack_messages":{},"default_recovery":2},
+ {"id":"bite","name":"Bite","verbs":{"hit":"bite"},"damage_category":"pierce","critical_style":"bleeding","attack_messages":{},"default_recovery":2},
+ {"id":"punch","name":"Punch","verbs":{"hit":"punch"},"damage_category":"blunt","critical_style":"normal","attack_messages":{},"default_recovery":1}
+]

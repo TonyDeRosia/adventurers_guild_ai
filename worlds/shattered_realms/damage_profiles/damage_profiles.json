@@ -1,0 +1,8 @@
+[
+ {"id":"iron_sword","name":"Iron Sword","damage_types":["slash"],"base_damage":7,"category":"weapon"},
+ {"id":"training_sword","name":"Training Sword","damage_types":["slash"],"base_damage":3,"category":"weapon"},
+ {"id":"wood_club","name":"Wood Club","damage_types":["blunt"],"base_damage":4,"category":"weapon"},
+ {"id":"wolf_bite","name":"Wolf Bite","damage_types":["pierce"],"base_damage":6,"bleed":"placeholder"},
+ {"id":"rat_bite","name":"Rat Bite","damage_types":["pierce"],"base_damage":2},
+ {"id":"dummy_punch","name":"Training Dummy Punch","damage_types":["blunt"],"base_damage":1}
+]

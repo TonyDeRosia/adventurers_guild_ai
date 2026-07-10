@@ -14,6 +14,7 @@ from typing import Any, Callable
 
 from engine.actors import Actor, FormulaRegistry
 from engine.phase5f import BodyProfileRegistry
+from engine.combat_equipment import CombatContentRegistry
 from engine.mud_displays import semantic
 
 ADMIN_SECTIONS = {"diagnostics", "formulas", "raw"}
@@ -113,6 +114,7 @@ class ActorScoreRenderer:
         self.formula_registry = formula_registry or FormulaRegistry.default()
         self.body_registry = BodyProfileRegistry()
         self.ansi = ansi
+        self.combat_content = CombatContentRegistry()
         self._renderers: dict[str, Callable[[Actor, bool], str]] = {name: getattr(self, f"render_{name}") for name in self.order}
 
     def render(self, actor: Actor, section: str = "all", *, admin: bool = False, ansi: bool | None = None) -> str:
@@ -199,6 +201,18 @@ class ActorScoreRenderer:
             item = eq.get(slot.id) or eq.get(slot.display_name) or "nothing"
             pairs.append((slot.display_name, item, "equipment_item"))
         rows.extend(self._two_col(pairs))
+        weapon = eq.get("main_hand") or eq.get("primary_weapon") or eq.get("weapon")
+        if isinstance(weapon, dict):
+            rows.append(_line(_field("Current Weapon", weapon.get("name", weapon.get("id")), width=70)))
+            rows.append(_line(_field("Attack Profile", weapon.get("attack_profile", "--"), width=34) + " " + _field("Weapon Class", weapon.get("weapon_class", "--"), width=34)))
+            rows.append(_line(_field("Damage Profile", weapon.get("damage_profile", "--"), width=34) + " " + _field("Critical Profile", weapon.get("critical_profile", "--"), width=34)))
+        armors = [item for item in eq.values() if isinstance(item, dict) and ("armor_class" in item or "armor_value" in item)]
+        armor_value = sum(int(item.get("armor_value", 0) or 0) for item in armors)
+        armor_classes = ", ".join(str(item.get("armor_class")) for item in armors if item.get("armor_class")) or "--"
+        rows.append(_line(_field("Armor Class", armor_classes, width=34) + " " + _field("Armor Value", armor_value, width=34)))
+        naturals = actor.combat_profile.get("natural_weapon_profile_ids") or actor.combat_profile.get("natural_weapons") or []
+        rows.append(_line(_field("Natural Weapons", naturals or "--", width=70)))
+        rows.append(_line(_field("Equipment Summary", f"{len([v for v in eq.values() if v and v != 'nothing'])} equipped", width=70)))
         return self._section("EQUIPMENT", rows)
 
     def render_conditions(self, actor: Actor, admin: bool = False) -> str:
