@@ -34,8 +34,9 @@ DETERMINISTIC_COMMANDS = {
     "spells": {"category": "info", "aliases": ["sp"], "admin": False},
     "skills": {"category": "info", "aliases": ["sk"], "admin": False},
     "abilities": {"category": "info", "admin": False},
-    "affects": {"category": "info", "aliases": ["aff"], "admin": False},
-    "resists": {"category": "info", "admin": False},
+    "affects": {"category": "info", "aliases": ["aff", "saff"], "admin": False},
+    "spellup": {"category": "info", "admin": False},
+    "resists": {"category": "info", "aliases": ["resistances"], "admin": False},
     "who": {"category": "info", "admin": False},
     "whoami": {"category": "info", "admin": False},
     "where": {"category": "info", "admin": False},
@@ -151,6 +152,8 @@ class MudCommandEngine:
             "worth": self._cmd_worth,
             "inventory": self._cmd_inventory,
             "equipment": self._cmd_equipment,
+            "resists": self._cmd_resists,
+            "spellup": self._cmd_spellup,
             "spells": self._cmd_spells,
             "skills": self._cmd_skills,
             "abilities": self._cmd_abilities,
@@ -444,12 +447,19 @@ class MudCommandEngine:
                 return CommandResult(narrative=str(exc), ok=False)
         return CommandResult(narrative=f"Granted {rec['role']} to account {rec.get('account_id') or 'n/a'} character {rec.get('character_name') or rec.get('character_id') or 'n/a'}.")
 
+    def _is_score_admin(self, character: Any) -> bool:
+        return str(getattr(character, "role", "player")).lower() in {"builder", "admin", "owner"} or bool(getattr(character, "builder_enabled", False)) or bool(getattr(character, "builder_mode", False))
+
+    def _render_score_section(self, character: Any, section: str = "all") -> str:
+        actor = actor_from_runtime_character(character, getattr(self, "world_id", ""))
+        return ActorScoreRenderer().render(actor, section, admin=self._is_score_admin(character))
+
     def _cmd_score(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display the modular Actor score sheet or one score section."""
-        actor = actor_from_runtime_character(character, getattr(self, "world_id", ""))
         section = args[0].lower() if args else "all"
-        admin = str(getattr(character, "role", "player")).lower() in {"builder", "admin", "owner"} or bool(getattr(character, "builder_enabled", False))
-        narrative = ActorScoreRenderer().render(actor, section, admin=admin)
+        if section == "preview" and len(args) > 1:
+            section = args[1].lower()
+        narrative = self._render_score_section(character, section)
         if section == "all":
             legacy_top = "\n".join([
                 f"{semantic('score_label', 'Name:')} {semantic('player', character.name)}",
@@ -472,16 +482,16 @@ class MudCommandEngine:
         return CommandResult(narrative=narrative)
 
     def _cmd_equipment(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        """Display equipped items."""
-        if not character.equipment:
-            narrative = semantic("system", "You are not wearing anything.")
-        else:
-            slots = "\n".join([f"  {semantic('equipment_slot', slot)}: {semantic('equipment_item', item.get('name', 'empty') if item else 'nothing')}" 
-                              for slot, item in character.equipment.items()])
-            narrative = f"{semantic('system', 'You are wearing:')}\n{slots}"
-        
-        print(f"[mud-command] Equipment for {character.name}")
-        return CommandResult(narrative=narrative)
+        """Display equipped items through the single score renderer."""
+        return CommandResult(narrative=self._render_score_section(character, "equipment"))
+
+    def _cmd_resists(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        """Display resistances through the single score renderer."""
+        return CommandResult(narrative=self._render_score_section(character, "resistances"))
+
+    def _cmd_spellup(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        """Display spellup through the single score renderer."""
+        return CommandResult(narrative=self._render_score_section(character, "spellup"))
 
     def _cmd_spells(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display known spells."""
@@ -513,20 +523,12 @@ class MudCommandEngine:
         return CommandResult(narrative=narrative)
 
     def _cmd_affects(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        """Display active affects/buffs."""
-        if not character.affects:
-            narrative = "You have no active affects."
-        else:
-            narrative = "Active affects:\n" + "\n".join(
-                f"  {k}: {v}" for k, v in character.affects.items()
-            )
-        
-        return CommandResult(narrative=narrative)
+        """Display active affects/buffs through the single score renderer."""
+        return CommandResult(narrative=self._render_score_section(character, "affects"))
 
     def _cmd_worth(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        """Display net worth."""
-        narrative = f"{semantic('system', 'You have')} {semantic('gold', character.gold)} {semantic('gold', 'gold coins.')}"
-        return CommandResult(narrative=narrative)
+        """Display net worth through the single score renderer."""
+        return CommandResult(narrative=self._render_score_section(character, "currencies"))
 
     def _cmd_who(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """List connected players."""
