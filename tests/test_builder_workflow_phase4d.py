@@ -2,8 +2,8 @@ from pathlib import Path
 from engine.mud_runtime import MudRuntime
 
 
-def make_runtime(tmp_path: Path):
-    rt = MudRuntime(Path.cwd(), tmp_path / "user_data")
+def make_runtime(isolated_builder_world):
+    rt = isolated_builder_world.runtime
     acct = rt.create_account("Builder Four", role="builder")
     rt.load_world("shattered_realms")
     cid = rt.create_character(world_id="shattered_realms", name="Builder Four", account_id=acct["account_id"])["character_id"]
@@ -16,8 +16,8 @@ def out(rt, cid, cmd):
     return rt.handle_input(cid, cmd)["output"]
 
 
-def test_builder_status_rooms_rfind_and_exits(tmp_path):
-    rt, cid = make_runtime(tmp_path)
+def test_builder_status_rooms_rfind_and_exits(isolated_builder_world):
+    rt, cid = make_runtime(isolated_builder_world)
     out(rt, cid, "rcreate alpha_room")
     out(rt, cid, "rname Alpha Room")
     out(rt, cid, 'dig north beta_room "Beta Room"')
@@ -33,8 +33,8 @@ def test_builder_status_rooms_rfind_and_exits(tmp_path):
     assert "Direction:\nSouth" in inspected and "Destination:\nalpha_room" in inspected and "Status:\nValid" in inspected
 
 
-def test_multiline_rdesc_end_cancel_and_redit_cycle(tmp_path):
-    rt, cid = make_runtime(tmp_path)
+def test_multiline_rdesc_end_cancel_and_redit_cycle(isolated_builder_world):
+    rt, cid = make_runtime(isolated_builder_world)
     out(rt, cid, "rcreate first_phase4d")
     out(rt, cid, "rcreate second_phase4d")
     assert "Description editor" in out(rt, cid, "rdesc")
@@ -49,8 +49,8 @@ def test_multiline_rdesc_end_cancel_and_redit_cycle(tmp_path):
     assert "Room: first_phase4d" in prev
 
 
-def test_phase4d_hotfix_builder_usability(tmp_path):
-    rt, cid = make_runtime(tmp_path)
+def test_phase4d_hotfix_builder_usability(isolated_builder_world):
+    rt, cid = make_runtime(isolated_builder_world)
     out(rt, cid, "rcreate testies_two")
     out(rt, cid, "rname testies")
     one = out(rt, cid, "rdesc testies room")

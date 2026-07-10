@@ -66,10 +66,9 @@ def test_phase4h_room_vnums_exits_zones_spawns_and_ai_profiles():
     for entity in data['entities'].values():
         assert required <= set(entity.get('plugin_data', {}).get('ai_profile', {}))
 
-def test_phase4h_builder_import_pipeline_and_template_copy(tmp_path):
-    worlds_dir = tmp_path / 'worlds'
-    shutil.copytree(Path('worlds/shattered_realms'), worlds_dir / 'shattered_realms', ignore=shutil.ignore_patterns('audit','history','snapshots','exports'))
-    bw = BuilderWorkspace(worlds_dir=worlds_dir)
+def test_phase4h_builder_import_pipeline_and_template_copy(isolated_builder_world):
+    worlds_dir = isolated_builder_world.world_root
+    bw = isolated_builder_world.workspace
     a = actor()
     assert PACK in bw.template_list(a).message
     copy = bw.template_copy(a, PACK, 'copied_pack.json')

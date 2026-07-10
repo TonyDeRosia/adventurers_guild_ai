@@ -10,14 +10,12 @@ def actor(role="builder"):
     return SimpleNamespace(role=role, account_role=role, world_id="shattered_realms", id="c1", account_id="a1", room_id="guildhall_crossing_square", edit_room_id="guildhall_crossing_square", name="Tester")
 
 
-def workspace(tmp_path):
-    root = tmp_path / "worlds"
-    shutil.copytree(Path("worlds/shattered_realms"), root / "shattered_realms", ignore=shutil.ignore_patterns("builder"))
-    return BuilderWorkspace(worlds_dir=root), root
+def workspace(isolated_builder_world):
+    return isolated_builder_world.workspace, isolated_builder_world.world_root
 
 
-def test_builder_migrate_starter_assigns_area_zone_vnums_and_preserves_live(tmp_path):
-    bw, root = workspace(tmp_path)
+def test_builder_migrate_starter_assigns_area_zone_vnums_and_preserves_live(isolated_builder_world):
+    bw, root = workspace(isolated_builder_world)
     live_rooms_path = root / "shattered_realms/rooms/rooms.json"
     before = live_rooms_path.read_text()
     res = bw.migrate_starter(actor())
@@ -37,8 +35,8 @@ def test_builder_migrate_starter_assigns_area_zone_vnums_and_preserves_live(tmp_
     assert drafts["rooms"]["guildhall_crossing_square"]["vnum"] == 1000
 
 
-def test_builder_import_validate_preview_apply_round_trip(tmp_path):
-    bw, root = workspace(tmp_path)
+def test_builder_import_validate_preview_apply_round_trip(isolated_builder_world):
+    bw, root = workspace(isolated_builder_world)
     a = actor()
     bw.ensure("shattered_realms")
     imp = root / "shattered_realms/builder/imports/my_area.json"
@@ -63,8 +61,8 @@ def test_builder_import_validate_preview_apply_round_trip(tmp_path):
     assert bw.import_validate(a, "round_trip.json").ok
 
 
-def test_builder_import_broken_bundle_fails_and_player_denied(tmp_path):
-    bw, root = workspace(tmp_path)
+def test_builder_import_broken_bundle_fails_and_player_denied(isolated_builder_world):
+    bw, root = workspace(isolated_builder_world)
     bw.ensure("shattered_realms")
     (root / "shattered_realms/builder/imports/bad.json").write_text(json.dumps({"rooms":{"bad_room":{"id":"bad_room"}}}))
     assert not bw.import_validate(actor(), "bad.json").ok

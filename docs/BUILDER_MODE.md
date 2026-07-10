@@ -240,3 +240,7 @@ Builders can copy the starter expansion template with `builder template copy sta
 ## Phase 4H localized Builder lists
 
 Builder list commands are local by default: `alist` shows the current area, `zlist` shows the current area's zones, and `rlist`/`rooms` shows the current zone's rooms. Use explicit `all`, `area <area_id>`, `zone <zone_id>`, or VNUM ranges such as `1000-1029` to broaden or focus results. See `docs/BUILDER_LIST_COMMANDS.md`.
+
+## Builder Test Isolation
+
+Mutating Builder tests use the shared `isolated_builder_world` pytest fixture instead of the repository `worlds/shattered_realms/builder/` directory. The fixture copies the Shattered Realms package into `tmp_path`, points `BuilderWorkspace`, `MudRuntime`, and the world registry at that copy, and uses a temporary SQLite database. This keeps starter drafts byte-for-byte stable and prevents import/export/history/snapshot noise from being committed accidentally. See `docs/BUILDER_TEST_ISOLATION.md`.

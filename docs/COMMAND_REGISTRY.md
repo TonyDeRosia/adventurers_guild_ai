@@ -112,3 +112,7 @@ Builder JSON imports are staged from `worlds/<world_id>/builder/imports/` with `
 ## Phase 4H localized Builder lists
 
 Builder list commands are local by default: `alist` shows the current area, `zlist` shows the current area's zones, and `rlist`/`rooms` shows the current zone's rooms. Use explicit `all`, `area <area_id>`, `zone <zone_id>`, or VNUM ranges such as `1000-1029` to broaden or focus results. See `docs/BUILDER_LIST_COMMANDS.md`.
+
+## Phase 4H Bulk Item Routing
+
+`get all`, `take all`, `get everything`, and `take everything` share one bulk pickup implementation. `drop all` and `drop everything` share one bulk drop implementation. Bulk commands use runtime-owned item movement APIs and publish the normal per-item transfer events for each moved instance; bulk pickup also emits aggregate start/completed metadata for audit consumers.
