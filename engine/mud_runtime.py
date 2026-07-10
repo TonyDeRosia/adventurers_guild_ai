@@ -1168,7 +1168,7 @@ class MudRuntime:
             from engine.mud_commands import CommandResult
             choices = parsed["alias_note"].split(":", 1)[1].strip()
             return CommandResult(f"Which command did you mean? {choices}", ok=False)
-        if raw_cmd in {"rcontents", "istat", "itemstat", "mstat", "estat", "sstat", "seedstat"}:
+        if raw_cmd in {"rcontents", "istat", "itemstat", "mstat", "estat", "sstat", "seedstat", "entityaudit"}:
             from engine.mud_commands import CommandResult
             if not self._builder_visible(char): return CommandResult("You do not have permission for that command.", ok=False)
             return CommandResult(self._builder_content_diagnostic(char, raw_cmd, args))
@@ -1254,14 +1254,20 @@ class MudRuntime:
             with sqlite3.connect(self.state_store.db_path) as conn:
                 for row in conn.execute("SELECT declaration_kind,declaration_id,status,instance_ids_json FROM content_materializations WHERE world_id=? ORDER BY declaration_kind,declaration_id", (self.active_world_id or "",)):
                     mats.append(f"{row[0]} {row[1]} {row[2]} {row[3]}")
+            legacy = self._legacy_room_entity_declarations(rid)
             lines=[f"Room: {rid}", "Resolved source: canonical runtime content", "Features:"]
             lines += [f"- {f.get('id')}: {f.get('name')} portable={f.get('portable', False)} source={f.get('source','')}" for f in contents['features']] or ["- none"]
             lines += ["Runtime item instances:"] + ([f"- {i.get('instance_id')} template={i.get('template_id')} name={i.get('name')} location={i.get('owner_type')}:{i.get('room_id') or i.get('owner_id')} portable={(i.get('template') or {}).get('portable', True)} seed={(i.get('custom_flags') or {}).get('source_seed_id','')}" for i in contents['item_instances']] or ["- none"])
             lines += ["Runtime entity instances:"] + ([f"- {e.get('instance_id')} template={e.get('template_id')} name={e.get('name')} type={e.get('entity_type')} room={e.get('room_id')} spawn={(e.get('state') or {}).get('source_spawn_id','')}" for e in contents['entity_instances']] or ["- none"])
             lines += ["Players:", "- none", "Item placement declarations:"] + ([f"- {p.get('id')} template={p.get('item_template_id')} room={p.get('room_id')} qty={p.get('quantity')} policy={p.get('seed_policy','once')}" for p in contents.get('item_placement_declarations', [])] or ["- none"])
             lines += ["Entity spawn declarations:"] + ([f"- {sp.get('id')} template={sp.get('entity_template_id')} room={sp.get('room_id')} qty={sp.get('quantity')} policy={sp.get('spawn_policy','once')}" for sp in contents.get('entity_spawn_declarations', [])] or ["- none"])
+            lines += ["Legacy room NPC declarations:"] + ([f"- {d.get('source')} template={d.get('template_id')} name={d.get('name')} room={d.get('room_id')}" for d in legacy] or ["- none"])
+            lines += ["Builder draft entity declarations:", "- not merged into ordinary runtime rendering"]
             lines += ["Materialization records:"] + (mats or ["- none"])
             return "\n".join(lines)
+        if cmd == "entityaudit":
+            target = char.room_id if q in {"", "here"} else q
+            return self.entity_duplication_audit(target)
         if cmd in {"istat", "itemstat"}:
             item = self.find_item(q) or (self.resolve_item_keywords(q, self.get_visible_room_items(char.room_id)).get('item') if q else None)
             if not item: return "Item not found."
@@ -1900,11 +1906,54 @@ class MudRuntime:
         sp=self._live_entity_spawns().get(spawn_id); ids=[]; now=datetime.now(timezone.utc).isoformat()
         if not sp or sp.get("spawn_policy", "once") == "disabled": return {"instance_ids": [], "status": "disabled"}
         tid=str(sp.get("entity_template_id") or sp.get("template_id") or ""); rid=str(sp.get("room_id") or ""); qty=max(0, int(sp.get("quantity") or 1))
-        for _ in range(qty):
+        existing = [e for e in self.find_room_entities(rid) if e.get("template_id") == tid and ((e.get("state") or {}).get("source_spawn_id") in {None, "", spawn_id})]
+        for ent in existing[:qty]:
+            ids.append(ent.get("entity_id") or ent.get("instance_id"))
+        for _ in range(max(0, qty - len(ids))):
             ent=self.spawn_entity(tid, room_id=rid, state={"current_state":"idle", "spawn_origin": rid, "source_spawn_id": spawn_id, "custom_state": {}}, source_system="materializer"); ids.append(ent.get("entity_id") or ent.get("instance_id"))
-        with sqlite3.connect(self.state_store.db_path) as conn: conn.execute("INSERT INTO content_materializations(world_id,declaration_kind,declaration_id,materialized_at,instance_ids_json,status,metadata_json) VALUES(?,?,?,?,?,?,?)", (self.active_world_id or "","entity_spawn",spawn_id,now,json.dumps(ids),"materialized",json.dumps({"template_id": tid, "room_id": rid, "quantity": qty})))
+        with sqlite3.connect(self.state_store.db_path) as conn: conn.execute("INSERT INTO content_materializations(world_id,declaration_kind,declaration_id,materialized_at,instance_ids_json,status,metadata_json) VALUES(?,?,?,?,?,?,?)", (self.active_world_id or "","entity_spawn",spawn_id,now,json.dumps(ids),"materialized",json.dumps({"template_id": tid, "room_id": rid, "quantity": qty, "adopted_existing": len(existing[:qty]), "duplicate_candidates": [e.get("instance_id") for e in existing[qty:]]})))
         self.event_bus.publish("entity_spawn_materialized", {"world_id": self.active_world_id or "", "declaration_id": spawn_id, "template_id": tid, "room_id": rid, "instance_ids": ids, "quantity": qty, "policy": sp.get("spawn_policy", "once")}, source_system="runtime", world_id=self.active_world_id or "", room_id=rid)
         return {"instance_ids": ids, "status":"materialized", "materialized_at": now}
+
+    def _legacy_room_entity_declarations(self, room_id: str) -> list[dict[str, Any]]:
+        out=[]
+        for room in getattr(self.active_world, "rooms", []) or []:
+            if str(room.get("id") or "") != str(room_id):
+                continue
+            for raw in room.get("npcs", []) or room.get("entities", []) or []:
+                tid = str(raw.get("template_id") or raw.get("id") if isinstance(raw, dict) else raw)
+                tmpl = self.entity_templates.get(tid, {})
+                out.append({"source":"room.npcs", "template_id":tid, "name": tmpl.get("name", tid), "room_id": room_id})
+        for tid, tmpl in self.entity_templates.items():
+            if str(tmpl.get("default_room_id") or "") == str(room_id):
+                out.append({"source":"entity_template.default_room_id", "template_id":tid, "name": tmpl.get("name", tid), "room_id": room_id})
+        return out
+
+    def entity_duplication_audit(self, target: str) -> str:
+        room_id = target
+        if target in self.entity_templates:
+            ents = self.find_entities(template_id=target)
+            room_id = ents[0].get("room_id", "") if ents else ""
+        elif self.find_entity(target):
+            ent = self.find_entity(target) or {}
+            room_id = ent.get("room_id", "")
+        contents = self.get_room_contents(room_id, include_builder_metadata=True) if room_id else {"entity_instances": [], "entity_spawn_declarations": []}
+        mats=[]
+        with sqlite3.connect(self.state_store.db_path) as conn:
+            for row in conn.execute("SELECT declaration_id,instance_ids_json,metadata_json FROM content_materializations WHERE world_id=? AND declaration_kind='entity_spawn'", (self.active_world_id or "",)):
+                meta=json.loads(row[2] or "{}")
+                if not room_id or str(meta.get("room_id")) == str(room_id): mats.append((row[0], row[1], meta))
+        groups={}
+        for e in contents.get("entity_instances", []):
+            groups.setdefault((e.get("template_id"), e.get("room_id")), []).append(e)
+        risks=[f"duplicate runtime instances template={k[0]} room={k[1]} ids={[e.get('instance_id') for e in v]}" for k,v in groups.items() if len(v)>1]
+        lines=[f"Room: {room_id or target}", "Runtime instances:"]
+        lines += [f"- {e.get('instance_id')} template={e.get('template_id')} name={e.get('name')} room={e.get('room_id')} spawn={(e.get('state') or {}).get('source_spawn_id','')} alive={e.get('is_alive')} visible={e.get('is_visible')} created={e.get('created_at')}" for e in contents.get("entity_instances", [])] or ["- none"]
+        lines += ["Spawn declarations:"] + ([f"- {s.get('id')} template={s.get('entity_template_id')} room={s.get('room_id')} qty={s.get('quantity',1)}" for s in contents.get("entity_spawn_declarations", [])] or ["- none"])
+        lines += ["Legacy declarations:"] + ([f"- {d.get('source')} template={d.get('template_id')} name={d.get('name')}" for d in self._legacy_room_entity_declarations(room_id)] or ["- none"])
+        lines += ["Materialization records:"] + ([f"- {m[0]} ids={m[1]} meta={json.dumps(m[2], sort_keys=True)}" for m in mats] or ["- none"])
+        lines += ["Duplicate risks:"] + (risks or ["- none"]); lines += ["Recommended repair:", "- prevent new duplicates by materialization adoption; inspect duplicate risks before manual cleanup"]
+        return "\n".join(lines)
 
     def _publish_entity_event(self, name: str, ent: dict[str, Any], source_system: str = "runtime", **extra: Any) -> None:
         payload = {"entity_id": ent.get("entity_id"), "entity_type": ent.get("entity_type"), "world_id": ent.get("world_id", self.active_world_id or ""), "room_id": ent.get("current_room_id", ""), "template_id": ent.get("template_id"), "source_system": source_system, "timestamp": datetime.now(timezone.utc).isoformat(), **extra}
