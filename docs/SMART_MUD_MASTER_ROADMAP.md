@@ -339,3 +339,7 @@ Phase 6D introduces canonical NPC combat behavior profiles, hostility evaluation
 ## Phase 6E Progression Integration
 
 Canonical progression is now represented by `engine.progression.ProgressionService`, SQLite `actor_progression_state`, XP/currency/grant history tables, and world package collections for species, races, classes, tracks, professions, curves, progression profiles, and growth profiles. Quest, loot, trainer, crafting, faction, and final balance systems remain separate and must award progression only through canonical APIs.
+
+## Phase 7A completed foundation
+
+Canonical reward packets, reward entries, loot tables, treasure groups, currency service, progression integration hooks, corpse inventory state, pending claims, resource-node state, pilot Shattered Realms content, tests, and documentation now exist as the foundation for future quests, crafting, economy, achievements, and simulation rewards.

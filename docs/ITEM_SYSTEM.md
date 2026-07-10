@@ -398,3 +398,7 @@ Phase 5A establishes one canonical runtime truth. Item templates and entity temp
 ## Phase 5E equipment modifier bridge
 
 Item templates may declare immutable `modifiers`. Only SQLite item instances whose runtime owner is `equipment` activate those declarations. The runtime modifier source includes the item instance ID and template ID; inventory and room items do not contribute.
+
+## Phase 7A reward item delivery
+
+Reward item delivery is centralized in `engine.rewards.RewardService`. Item rewards resolve as `RewardEntry` rows and create canonical runtime item instances through `MudRuntime.spawn_item()` when a runtime is available, or through the store item-instance API in legacy contexts. Reward packet and entry ids are stored with item metadata/custom flags so retries can detect already-created instances instead of duplicating items. Templates remain immutable.

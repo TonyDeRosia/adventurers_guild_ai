@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Optional, Callable
 import json
 import re
+from pathlib import Path
 from engine.mud_displays import semantic
 from engine.actors import actor_from_runtime_character
 from engine.formulas import FormulaEngine
@@ -224,6 +225,13 @@ class MudCommandEngine:
             "automap": self._cmd_generic,
             "autosplit": self._cmd_generic,
             "autogold": self._cmd_generic,
+            "rewardlist": self._cmd_phase7a_reward, "rewardstat": self._cmd_phase7a_reward, "rewardcreate": self._cmd_phase7a_reward, "rewardclone": self._cmd_phase7a_reward, "rewardset": self._cmd_phase7a_reward, "rewardentry": self._cmd_phase7a_reward, "rewarddelete": self._cmd_phase7a_reward, "rewardvalidate": self._cmd_phase7a_reward, "rewardpreview": self._cmd_phase7a_reward,
+            "loottablelist": self._cmd_phase7a_reward, "loottablestat": self._cmd_phase7a_reward, "loottablecreate": self._cmd_phase7a_reward, "loottableclone": self._cmd_phase7a_reward, "loottableset": self._cmd_phase7a_reward, "lootentry": self._cmd_phase7a_reward, "loottabledelete": self._cmd_phase7a_reward, "loottablevalidate": self._cmd_phase7a_reward, "loottablepreview": self._cmd_phase7a_reward,
+            "treasurelist": self._cmd_phase7a_reward, "treasurestat": self._cmd_phase7a_reward, "treasurecreate": self._cmd_phase7a_reward, "treasureclone": self._cmd_phase7a_reward, "treasureset": self._cmd_phase7a_reward, "treasuredelete": self._cmd_phase7a_reward, "treasurevalidate": self._cmd_phase7a_reward, "treasurepreview": self._cmd_phase7a_reward,
+            "deathlootlist": self._cmd_phase7a_reward, "deathlootstat": self._cmd_phase7a_reward, "deathlootcreate": self._cmd_phase7a_reward, "deathlootset": self._cmd_phase7a_reward, "deathlootclone": self._cmd_phase7a_reward, "deathlootdelete": self._cmd_phase7a_reward, "deathlootvalidate": self._cmd_phase7a_reward,
+            "corpsedecaylist": self._cmd_phase7a_reward, "corpsedecaystat": self._cmd_phase7a_reward, "corpsedecaycreate": self._cmd_phase7a_reward, "corpsedecayset": self._cmd_phase7a_reward, "corpsedecaydelete": self._cmd_phase7a_reward, "corpsedecayvalidate": self._cmd_phase7a_reward,
+            "nodelist": self._cmd_phase7a_reward, "nodestat": self._cmd_phase7a_reward, "nodecreate": self._cmd_phase7a_reward, "nodeset": self._cmd_phase7a_reward, "nodeclone": self._cmd_phase7a_reward, "nodedelete": self._cmd_phase7a_reward, "nodevalidate": self._cmd_phase7a_reward, "nodepreview": self._cmd_phase7a_reward,
+            "rewardresolve": self._cmd_phase7a_reward, "rewarddeliver": self._cmd_phase7a_reward, "rewardretry": self._cmd_phase7a_reward, "rewardcancel": self._cmd_phase7a_reward, "rewardpacket": self._cmd_phase7a_reward, "rewardtrace": self._cmd_phase7a_reward, "lootresolve": self._cmd_phase7a_reward, "loottrace": self._cmd_phase7a_reward, "corpsecontents": self._cmd_phase7a_reward, "corpseloottrace": self._cmd_phase7a_reward, "corpsedecay": self._cmd_phase7a_reward, "grantreward": self._cmd_phase7a_reward, "claimlist": self._cmd_phase7a_reward, "rewards": self._cmd_phase7a_reward, "claim": self._cmd_phase7a_reward, "rewardhistory": self._cmd_phase7a_reward,
             "autoloot": self._cmd_generic,
             "autoexits": self._cmd_generic,
             "compact": self._cmd_generic,
@@ -644,6 +652,25 @@ class MudCommandEngine:
             narrative = legacy_top + "\n" + narrative
         print(f"[mud-command] Score displayed for {character.name} section={section}")
         return CommandResult(narrative=narrative)
+
+
+    def _cmd_phase7a_reward(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        from engine.rewards import RewardContent, RewardService
+        rt=getattr(self, 'runtime', None); store=getattr(rt, 'state_store', None)
+        world_id=getattr(rt, 'active_world_id', None) or self.builder.world_id(character)
+        content=RewardContent(Path('worlds')/world_id)
+        cmd=(args[0] if args else raw.split()[0]).lower(); target=args[1] if len(args)>1 else ''
+        if cmd.endswith('list') or cmd in {'rewards','claimlist'}:
+            mapping={'rewardlist':'reward_definitions','loottablelist':'loot_tables','treasurelist':'treasure_groups','deathlootlist':'death_loot_profiles','corpsedecaylist':'corpse_decay_profiles','nodelist':'resource_node_profiles'}
+            coll=mapping.get(cmd)
+            if cmd in {'rewards','claimlist'}: return CommandResult('Pending reward claims: none.')
+            return CommandResult('\n'.join(f"{i.get('id')} - {i.get('name','')}" for i in content.list(coll)) or f'No {coll}.')
+        if cmd in {'loottablepreview','loottrace'} and target:
+            svc=RewardService(store=store, runtime=rt, content=content, world_id=world_id)
+            seed=args[2] if len(args)>2 else None; return CommandResult(json.dumps(svc.trace_loot_table(target, seed=seed), indent=2, sort_keys=True))
+        if cmd in {'rewardvalidate','loottablevalidate','treasurevalidate','deathlootvalidate','corpsedecayvalidate','nodevalidate'}:
+            return CommandResult(json.dumps(content.validate(set(getattr(rt,'item_templates',{}).keys()) if rt else set()), indent=2, sort_keys=True))
+        return CommandResult('Phase 7A reward command foundation is available; mutating Builder edits are draft-only placeholders in this build.')
 
     def _cmd_inventory(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display inventory."""

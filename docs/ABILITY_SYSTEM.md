@@ -33,3 +33,7 @@ Phase 6D introduces canonical NPC combat behavior profiles, hostility evaluation
 ## Phase 6E Progression Integration
 
 Canonical progression is now represented by `engine.progression.ProgressionService`, SQLite `actor_progression_state`, XP/currency/grant history tables, and world package collections for species, races, classes, tracks, professions, curves, progression profiles, and growth profiles. Quest, loot, trainer, crafting, faction, and final balance systems remain separate and must award progression only through canonical APIs.
+
+## Phase 7A reward boundary
+
+Rewards are issued through `engine.rewards.RewardService` and persisted as reward packets. This document's subsystem remains the authority for its own domain; reward delivery calls canonical APIs rather than editing subsystem tables directly.

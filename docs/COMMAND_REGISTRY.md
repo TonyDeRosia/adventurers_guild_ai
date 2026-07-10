@@ -145,3 +145,7 @@ Phase 6D introduces canonical NPC combat behavior profiles, hostility evaluation
 ## Phase 6E Progression Integration
 
 Canonical progression is now represented by `engine.progression.ProgressionService`, SQLite `actor_progression_state`, XP/currency/grant history tables, and world package collections for species, races, classes, tracks, professions, curves, progression profiles, and growth profiles. Quest, loot, trainer, crafting, faction, and final balance systems remain separate and must award progression only through canonical APIs.
+
+## Phase 7A reward command surface
+
+Phase 7A reserves and documents reward, loot, treasure, corpse-loot, claim, and resource-node commands for the Smart MUD client: `rewardlist`, `rewardstat`, `rewardcreate`, `rewardentry`, `loottablelist`, `loottablepreview`, `treasurelist`, `deathlootlist`, `corpsedecaylist`, `nodelist`, `rewardresolve`, `rewarddeliver`, `rewardretry`, `rewardcancel`, `rewardpacket`, `rewardtrace`, `loottrace`, `corpsecontents`, `corpseloottrace`, `grantreward`, `claimlist`, `rewards`, and `claim`.

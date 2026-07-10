@@ -1,0 +1,1 @@
+{"currency_profiles":[{"id":"copper","name":"Copper","description":"Default low-value Shattered Realms pilot currency.","minimum":0,"maximum":999999,"tags":["phase7a"],"plugin_data":{},"version":1}]}

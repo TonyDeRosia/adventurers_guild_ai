@@ -1,0 +1,5 @@
+{"corpse_decay_profiles":[
+ {"id":"quick_vermin_corpse","name":"Quick Vermin Corpse","description":"Short-lived vermin corpse.","decay_minutes":5,"warning_minutes":1,"empty_decay_minutes":1,"protected_item_policy":"preserve","remaining_item_policy":"destroy","decay_message":"The small corpse decays.","tags":["phase7a"],"plugin_data":{},"version":1},
+ {"id":"standard_mob_corpse","name":"Standard Mob Corpse","description":"Default non-player corpse decay foundation.","decay_minutes":30,"warning_minutes":5,"empty_decay_minutes":5,"protected_item_policy":"preserve","remaining_item_policy":"drop_to_room","decay_message":"The corpse decays.","tags":["phase7a"],"plugin_data":{},"version":1},
+ {"id":"persistent_player_corpse_placeholder","name":"Persistent Player Corpse Placeholder","description":"Protected player corpse placeholder.","decay_minutes":0,"warning_minutes":0,"empty_decay_minutes":0,"protected_item_policy":"preserve","remaining_item_policy":"preserve_corpse","decay_message":"","tags":["phase7a","player"],"plugin_data":{},"version":1}
+]}

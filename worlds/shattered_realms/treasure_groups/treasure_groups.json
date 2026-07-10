@@ -1,0 +1,5 @@
+{"treasure_groups":[
+ {"id":"cellar_rat_treasure","name":"Cellar Rat Treasure","description":"Uses rat_common_loot once.","loot_table_ids":["rat_common_loot"],"guaranteed_rewards":[],"bonus_rolls":[],"conditions":[],"delivery_policy":"corpse_inventory","tags":["phase7a"],"plugin_data":{},"version":1},
+ {"id":"giant_cellar_rat_treasure","name":"Giant Cellar Rat Treasure","description":"Uses giant_rat_loot once.","loot_table_ids":["giant_rat_loot"],"guaranteed_rewards":[],"bonus_rolls":[],"conditions":[],"delivery_policy":"corpse_inventory","tags":["phase7a"],"plugin_data":{},"version":1},
+ {"id":"starter_training_reward","name":"Starter Training Reward","description":"Treasure-group wrapper for the starter training reward.","loot_table_ids":[],"guaranteed_rewards":[{"id":"practice","reward_type":"practice_sessions","definition_id":"practice_sessions","quantity":1}],"bonus_rolls":[],"conditions":[],"delivery_policy":"direct","tags":["phase7a"],"plugin_data":{},"version":1}
+]}
