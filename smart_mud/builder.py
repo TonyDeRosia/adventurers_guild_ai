@@ -16,7 +16,7 @@ VALID_ENTITY_TYPES = {"npc", "mob", "merchant", "trainer", "banker", "healer", "
 
 DRAFT_FILES = {
     "areas": "areas.json", "zones": "zones.json", "rooms": "rooms.json",
-    "features": "features.json", "items": "item_templates.json", "item_placements": "item_placements.json", "entities": "entity_templates.json", "spawns": "spawns.json", "schedules": "schedules.json", "relationship_seeds": "relationship_seeds.json", "memory_seeds": "memory_seeds.json", "need_profiles": "need_profiles.json", "goal_profiles": "goal_profiles.json"
+    "features": "features.json", "items": "item_templates.json", "item_placements": "item_placements.json", "entities": "entity_templates.json", "spawns": "spawns.json", "schedules": "schedules.json", "relationship_seeds": "relationship_seeds.json", "memory_seeds": "memory_seeds.json", "need_profiles": "need_profiles.json", "goal_profiles": "goal_profiles.json", "formulas": "formulas.json", "modifier_types": "modifier_types.json", "future_formula_templates": "future_formula_templates.json"
 }
 
 @dataclass
@@ -188,7 +188,7 @@ class BuilderWorkspace:
             return BuilderResult(False, "You do not have permission for that command.")
         bundle, err, future_keys = self._load_import_bundle(self.world_id(actor), filename)
         if err: return BuilderResult(False, err)
-        drafts=self.load(self.world_id(actor)); names=[('areas','Areas'),('zones','Zones'),('rooms','Rooms'),('features','Features'),('items','Items'),('item_placements','Item placements'),('entities','Entities'),('spawns','Spawns'),('schedules','Schedules'),('relationship_seeds','Relationship seeds'),('memory_seeds','Memory seeds'),('need_profiles','Need profiles'),('goal_profiles','Goal profiles')]
+        drafts=self.load(self.world_id(actor)); names=[('areas','Areas'),('zones','Zones'),('rooms','Rooms'),('features','Features'),('items','Items'),('item_placements','Item placements'),('entities','Entities'),('spawns','Spawns'),('schedules','Schedules'),('relationship_seeds','Relationship seeds'),('memory_seeds','Memory seeds'),('need_profiles','Need profiles'),('goal_profiles','Goal profiles'),('formulas','Formulas'),('modifier_types','Modifier types'),('future_formula_templates','Future formula templates')]
         lines=[]
         for k,label in names:
             b=bundle.get(k,{}) if isinstance(bundle.get(k,{}),dict) else {}; add=sum(1 for x in b if x not in drafts.get(k,{})); upd=len(b)-add; lines.append(f'{label} to add/update: {add}/{upd}')
@@ -238,6 +238,19 @@ class BuilderWorkspace:
             if not safe.fullmatch(str(pid)): errors.append(f'item placement ID unsafe: {pid}')
             if pl.get('item_template_id') not in drafts.get('items', {}) and pl.get('item_template_id') not in live_items: errors.append(f'item placement {pid} references missing item template {pl.get("item_template_id")}')
             if pl.get('room_id') not in rooms: errors.append(f'item placement {pid} references missing room {pl.get("room_id")}')
+        from engine.formulas import FormulaDefinition, FormulaRegistry, ModifierRegistry
+        freg = FormulaRegistry()
+        for fid, raw in drafts.get("formulas", {}).items():
+            if not isinstance(raw, dict): errors.append(f"formula {fid} must be an object"); continue
+            try:
+                freg.register(FormulaDefinition(id=str(raw.get("id") or fid), display_name=str(raw.get("display_name") or ""), description=str(raw.get("description") or ""), version=str(raw.get("version") or "1.0.0"), dependencies=list(raw.get("dependencies") or []), inputs=list(raw.get("inputs") or []), outputs=list(raw.get("outputs") or []), validation=dict(raw.get("validation") or {}), plugin_owner=raw.get("plugin_owner"), builder_owner=raw.get("builder_owner"), world_overrides=dict(raw.get("world_overrides") or {}), plugin_data=dict(raw.get("plugin_data") or {})))
+            except ValueError as exc: errors.append(str(exc))
+        fv = freg.validate(); errors.extend(fv.errors); warnings.extend(fv.warnings)
+        known = ModifierRegistry().modifier_types
+        for mid, raw in drafts.get("modifier_types", {}).items():
+            if not isinstance(raw, dict): warnings.append(f"unknown modifier type {mid} must be an object"); continue
+            op = str(raw.get("operation") or raw.get("id") or mid)
+            if op not in known: warnings.append(f"unknown modifier type {mid}")
 
     def can_build(self, actor: Any) -> bool:
         roles = {str(getattr(actor, "role", "player")).lower(), str(getattr(actor, "account_role", "player")).lower()}
@@ -247,10 +260,15 @@ class BuilderWorkspace:
         root = self.worlds_dir / world_id / "builder"
         for name in ("audit", "history", "snapshots", "exports", "imports", "templates", "examples"):
             (root / name).mkdir(parents=True, exist_ok=True)
+        starters = {
+            "formulas": {"attack_rating": {"id": "attack_rating", "display_name": "Attack Rating", "description": "Starter placeholder; Builders may replace this formula later.", "version": "1.0.0", "dependencies": [], "inputs": [], "outputs": ["attack_rating"], "validation": {"placeholder": True}, "plugin_owner": None, "builder_owner": None, "world_overrides": {}, "plugin_data": {}}},
+            "modifier_types": {"add": {"id": "add", "operation": "add", "description": "Adds a contributed value without defining gameplay math."}, "custom": {"id": "custom", "operation": "custom", "description": "Reserved for future plugin or Builder-defined modifier handling."}},
+            "future_formula_templates": {"derived_stat_template": {"id": "builder_defined_stat", "display_name": "Builder Defined Stat", "description": "Copy this shape when authoring a future formula.", "version": "1.0.0", "dependencies": [], "inputs": ["future_variable"], "outputs": ["builder_defined_stat"], "validation": {}, "plugin_owner": None, "builder_owner": "builder", "world_overrides": {}, "plugin_data": {}}},
+        }
         for key, filename in DRAFT_FILES.items():
             path = root / filename
             if not path.exists():
-                path.write_text("{}\n", encoding="utf-8")
+                path.write_text(json.dumps(starters.get(key, {}), indent=2, sort_keys=True) + "\n", encoding="utf-8")
         return root
 
     def load(self, world_id: str) -> dict[str, Any]:
@@ -496,6 +514,19 @@ class BuilderWorkspace:
         for sid, sp in drafts["spawns"].items():
             if sp.get("entity_template_id") not in drafts["entities"]: errors.append(f"spawn {sid} references missing entity template {sp.get('entity_template_id')}")
             if sp.get("room_id") and sp.get("room_id") not in all_rooms: errors.append(f"spawn {sid} references missing room {sp.get('room_id')}")
+        # Formula/modifier diagnostics collections are accepted now and validated conservatively.
+        from engine.formulas import FormulaDefinition, FormulaRegistry, Modifier, ModifierRegistry
+        freg = FormulaRegistry()
+        for fid, raw in drafts.get("formulas", {}).items():
+            if not isinstance(raw, dict): errors.append(f"formula {fid} must be an object"); continue
+            try: freg.register(FormulaDefinition(id=str(raw.get("id") or fid), display_name=str(raw.get("display_name") or ""), description=str(raw.get("description") or ""), version=str(raw.get("version") or "1.0.0"), dependencies=list(raw.get("dependencies") or []), inputs=list(raw.get("inputs") or []), outputs=list(raw.get("outputs") or []), validation=dict(raw.get("validation") or {}), plugin_owner=raw.get("plugin_owner"), builder_owner=raw.get("builder_owner"), world_overrides=dict(raw.get("world_overrides") or {}), plugin_data=dict(raw.get("plugin_data") or {})))
+            except ValueError as exc: errors.append(str(exc))
+        fv = freg.validate(); errors.extend(fv.errors); warnings.extend(fv.warnings)
+        mreg = ModifierRegistry()
+        for mid, raw in drafts.get("modifier_types", {}).items():
+            if not isinstance(raw, dict): warnings.append(f"unknown modifier type {mid} must be an object"); continue
+            op = str(raw.get("operation") or raw.get("id") or mid)
+            if op not in mreg.modifier_types: warnings.append(f"unknown modifier type {mid}")
         current = str(getattr(actor, "edit_room_id", "") or getattr(actor, "last_edited_target", ""))
         if current and current not in all_rooms: errors.append(f"builder current target missing: {current}")
         if current: info.append(f"builder current target: {current}")
