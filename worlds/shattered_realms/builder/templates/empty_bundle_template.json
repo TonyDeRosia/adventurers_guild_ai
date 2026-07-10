@@ -2,9 +2,14 @@
   "areas": {},
   "entities": {},
   "features": {},
+  "goal_profiles": {},
   "item_placements": {},
   "items": {},
+  "memory_seeds": {},
+  "need_profiles": {},
+  "relationship_seeds": {},
   "rooms": {},
+  "schedules": {},
   "spawns": {},
   "zones": {}
 }

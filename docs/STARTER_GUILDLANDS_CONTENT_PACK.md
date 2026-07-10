@@ -62,3 +62,7 @@ The `spawns` collection connects entity templates to draft rooms with spawn vnum
 ## Phase 5A runtime content synchronization
 
 Phase 5A establishes one canonical runtime truth. Item templates and entity templates are definitions only; `item_placements` and `spawns` are declarations; SQLite item/entity rows are live instances. Room rendering, look/examine, get/take, diagnostics, and future perception use canonical runtime room contents. Shared `feature_refs` resolve nonportable scenery alongside local room `features`. Blacksmith Stall now uses an anvil feature, two materialized Iron Sword item instances, one materialized Training Sword item instance, and one materialized Blacksmith Harl entity instance.
+
+## Phase 5B starter population
+
+Blacksmith Harl, Training Master Borik, Apprentice Mage Lina, Healer Sella, and Tavern Keeper Jory include conservative profile and simulation metadata with valid work/home room references.

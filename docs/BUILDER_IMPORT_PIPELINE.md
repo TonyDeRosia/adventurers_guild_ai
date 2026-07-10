@@ -99,3 +99,7 @@ Builder list commands are local by default: `alist` shows the current area, `zli
 ## Phase 5A runtime content synchronization
 
 Phase 5A establishes one canonical runtime truth. Item templates and entity templates are definitions only; `item_placements` and `spawns` are declarations; SQLite item/entity rows are live instances. Room rendering, look/examine, get/take, diagnostics, and future perception use canonical runtime room contents. Shared `feature_refs` resolve nonportable scenery alongside local room `features`. Blacksmith Stall now uses an anvil feature, two materialized Iron Sword item instances, one materialized Training Sword item instance, and one materialized Blacksmith Harl entity instance.
+
+## Phase 5B living-world import/export
+
+Builder import bundles may include schedules, relationship seeds, memory seeds, need profiles, and goal profiles alongside existing content collections.

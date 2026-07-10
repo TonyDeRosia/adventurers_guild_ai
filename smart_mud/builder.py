@@ -16,7 +16,7 @@ VALID_ENTITY_TYPES = {"npc", "mob", "merchant", "trainer", "banker", "healer", "
 
 DRAFT_FILES = {
     "areas": "areas.json", "zones": "zones.json", "rooms": "rooms.json",
-    "features": "features.json", "items": "item_templates.json", "item_placements": "item_placements.json", "entities": "entity_templates.json", "spawns": "spawns.json"
+    "features": "features.json", "items": "item_templates.json", "item_placements": "item_placements.json", "entities": "entity_templates.json", "spawns": "spawns.json", "schedules": "schedules.json", "relationship_seeds": "relationship_seeds.json", "memory_seeds": "memory_seeds.json", "need_profiles": "need_profiles.json", "goal_profiles": "goal_profiles.json"
 }
 
 @dataclass
@@ -170,7 +170,7 @@ class BuilderWorkspace:
         future_keys = [str(k) for k in data.keys() if k not in DRAFT_FILES]
         if any(k in data for k in DRAFT_FILES):
             return {k: data.get(k, {}) for k in DRAFT_FILES}, "", future_keys
-        return None, "Import bundle must contain areas, zones, rooms, features, items, entities, or spawns.", future_keys
+        return None, "Import bundle must contain areas, zones, rooms, features, items, entities, spawns, schedules, relationship_seeds, memory_seeds, need_profiles, or goal_profiles.", future_keys
 
     def import_validate(self, actor: Any, filename: str) -> BuilderResult:
         if not self.can_build(actor):
@@ -188,7 +188,7 @@ class BuilderWorkspace:
             return BuilderResult(False, "You do not have permission for that command.")
         bundle, err, future_keys = self._load_import_bundle(self.world_id(actor), filename)
         if err: return BuilderResult(False, err)
-        drafts=self.load(self.world_id(actor)); names=[('areas','Areas'),('zones','Zones'),('rooms','Rooms'),('features','Features'),('items','Items'),('item_placements','Item placements'),('entities','Entities'),('spawns','Spawns')]
+        drafts=self.load(self.world_id(actor)); names=[('areas','Areas'),('zones','Zones'),('rooms','Rooms'),('features','Features'),('items','Items'),('item_placements','Item placements'),('entities','Entities'),('spawns','Spawns'),('schedules','Schedules'),('relationship_seeds','Relationship seeds'),('memory_seeds','Memory seeds'),('need_profiles','Need profiles'),('goal_profiles','Goal profiles')]
         lines=[]
         for k,label in names:
             b=bundle.get(k,{}) if isinstance(bundle.get(k,{}),dict) else {}; add=sum(1 for x in b if x not in drafts.get(k,{})); upd=len(b)-add; lines.append(f'{label} to add/update: {add}/{upd}')

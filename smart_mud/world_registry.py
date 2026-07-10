@@ -12,7 +12,7 @@ WORLDS_DIR = PROJECT_ROOT / "worlds"
 REQUIRED_RUNTIME_DIRS = (
     "rules", "areas", "rooms", "zones", "npcs", "items", "quests", "shops",
     "trainers", "classes", "races", "skills", "spells", "abilities", "factions",
-    "lore", "dialogue", "intelligence", "colors",
+    "lore", "dialogue", "intelligence", "colors", "schedules",
 )
 REQUIRED_BUILDER_DIRS = ("audit", "history", "snapshots", "imports", "exports", "templates", "examples")
 REQUIRED_WORLD_DIRS = REQUIRED_RUNTIME_DIRS  # Backward-compatible alias for runtime-required content.
@@ -86,6 +86,11 @@ class WorldPackage:
     lore: list[dict[str, Any]]
     dialogue: list[dict[str, Any]]
     intelligence: dict[str, str]
+    schedules: list[dict[str, Any]]
+    relationship_seeds: list[dict[str, Any]]
+    memory_seeds: list[dict[str, Any]]
+    need_profiles: list[dict[str, Any]]
+    goal_profiles: list[dict[str, Any]]
 
     @property
     def id(self) -> str: return str(self.manifest["world_id"])
@@ -197,7 +202,7 @@ class WorldRegistry:
         manifest = self._manifest(root)
         rules = {p.stem: _read_json(p, {}) for p in sorted((root / "rules").glob("*.json"))}
         intelligence = {p.stem: p.read_text(encoding="utf-8") for p in sorted((root / "intelligence").glob("*.md"))}
-        return WorldPackage(root, manifest, rules, _records(root,"races"), _records(root,"classes"), _records(root,"abilities"), _records(root,"skills"), _records(root,"spells"), _records(root,"items"), _records(root,"item_placements"), _records(root,"areas"), _records(root,"rooms"), _records(root,"zones"), _records(root,"factions"), _records(root,"npcs"), _records(root,"spawns"), _records(root,"features"), _records(root,"quests"), _records(root,"shops"), _records(root,"trainers"), _records(root,"lore"), _records(root,"dialogue"), intelligence)
+        return WorldPackage(root, manifest, rules, _records(root,"races"), _records(root,"classes"), _records(root,"abilities"), _records(root,"skills"), _records(root,"spells"), _records(root,"items"), _records(root,"item_placements"), _records(root,"areas"), _records(root,"rooms"), _records(root,"zones"), _records(root,"factions"), _records(root,"npcs"), _records(root,"spawns"), _records(root,"features"), _records(root,"quests"), _records(root,"shops"), _records(root,"trainers"), _records(root,"lore"), _records(root,"dialogue"), intelligence, _records(root,"schedules"), _records(root,"relationship_seeds"), _records(root,"memory_seeds"), _records(root,"need_profiles"), _records(root,"goal_profiles"))
 
     def reload_room(self, world: WorldPackage, room_id: str) -> dict[str, Any]:
         return self.load_world(world.id).room(room_id)

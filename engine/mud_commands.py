@@ -194,7 +194,9 @@ class MudCommandEngine:
             "diagnose": self._cmd_generic,
             "consider": self._cmd_generic,
             "levels": self._cmd_generic,
-            "time": self._cmd_generic,
+            "time": self._cmd_worldtime,
+            "worldtime": self._cmd_worldtime,
+            "simulation": self._cmd_simulation,
             "weather": self._cmd_generic,
             "where": self._cmd_generic,
             "home": self._cmd_goto,
@@ -228,6 +230,8 @@ class MudCommandEngine:
             "del": self._cmd_delete_alias,
             "delete": self._cmd_delete_alias,
             "mlist": self._cmd_builder_list_placeholder,
+            "eprofile": self._cmd_living_entity, "etime": self._cmd_living_entity, "estate": self._cmd_living_entity, "eactivity": self._cmd_living_entity, "eneeds": self._cmd_living_entity, "egoals": self._cmd_living_entity, "goals": self._cmd_living_entity, "eschedule": self._cmd_living_entity, "erelationships": self._cmd_living_entity, "ememories": self._cmd_living_entity, "econtext": self._cmd_living_entity,
+            "schedulelist": self._cmd_living_list, "needlist": self._cmd_living_list, "goallist": self._cmd_living_list, "relationshiplist": self._cmd_living_list, "memorylist": self._cmd_living_list,
             "olist": self._cmd_builder_list_placeholder,
             "exits": self._cmd_builder_nav,
             "x": self._cmd_builder_nav,
@@ -252,6 +256,60 @@ class MudCommandEngine:
                 self.command_handlers[_name] = self._cmd_builder_edit
         for _name in ("rassign", "rmove", "rrenameid"):
             self.command_handlers[_name] = self._cmd_room_assign
+
+    def _living_entity(self, query: str) -> dict[str, Any] | None:
+        rt=getattr(self,'runtime',None)
+        if not rt: return None
+        ents=rt._fetch_entities('world_id=?',(getattr(rt,'active_world_id','') or '',))
+        q=str(query or '').lower()
+        for e in ents:
+            if q in {str(e.get('instance_id','')).lower(), str(e.get('template_id','')).lower()} or q in str(e.get('name','')).lower(): return e
+        return None
+
+    def _cmd_worldtime(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        rt=getattr(self,'runtime',None); wid=getattr(rt,'active_world_id','') if rt else self.builder.world_id(character)
+        if not rt: return CommandResult('Runtime unavailable.', ok=False)
+        if args and args[0]=='set' and len(args)>=3: t=rt.set_world_time(wid,int(args[1]),args[2])
+        elif args and args[0]=='advance' and len(args)>=2: t=rt.advance_world_time(wid,int(args[1]))
+        elif args and args[0]=='pause': t=rt.pause_world_time(wid)
+        elif args and args[0]=='resume': t=rt.resume_world_time(wid)
+        else: t=rt.get_world_time(wid)
+        return CommandResult(f"World time status\nWorld: {wid}\nDay: {t['day']}\nTime: {int(t['hour']):02d}:{int(t['minute']):02d}\nPaused: {t['paused']}\nScale: {t['time_scale']}")
+
+    def _cmd_simulation(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        rt=getattr(self,'runtime',None); wid=getattr(rt,'active_world_id','') if rt else self.builder.world_id(character)
+        if not rt: return CommandResult('Runtime unavailable.', ok=False)
+        if args and args[0]=='tick' and len(args)>=2:
+            t=rt.simulate_world(wid,int(args[1])); return CommandResult(f"Simulation tick completed.\nWorld: {wid}\nMinutes: {int(args[1])}\nTime: day {t['day']} {t['hour']:02d}:{t['minute']:02d}")
+        if args and args[0]=='pause': rt.pause_world_time(wid); return CommandResult('Simulation paused.')
+        if args and args[0]=='resume': rt.resume_world_time(wid); return CommandResult('Simulation resumed.')
+        return CommandResult(f"Simulation status\nWorld: {wid}\n{rt.get_world_time(wid)}")
+
+    def _cmd_living_entity(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        rt=getattr(self,'runtime',None); cmd=raw.split()[0].lower(); ent=self._living_entity(' '.join(args) or (args[0] if args else ''))
+        if not rt or not ent: return CommandResult('Entity not found.', ok=False)
+        eid=ent['instance_id']
+        if cmd in {'eprofile'}: data=rt.get_entity_profile(eid)
+        elif cmd in {'econtext'}: data=rt.get_entity_context(eid)
+        elif cmd in {'eschedule','etime'}: data=rt.evaluate_entity_schedule(eid)
+        elif cmd in {'eneeds'}: data=rt.living_world.list_needs(eid)
+        elif cmd in {'egoals','goals'}: data=rt.list_entity_goals(eid)
+        elif cmd in {'erelationships'}: data=[]
+        elif cmd in {'ememories'}: data=rt.get_recent_memories(eid)
+        elif cmd in {'estate'}: data={'state':ent.get('current_state'), 'raw':ent.get('state')}
+        elif cmd in {'eactivity'}: data={'activity':(ent.get('state') or {}).get('current_activity','idle')}
+        else: data=ent
+        return CommandResult(json.dumps(data, indent=2, sort_keys=True))
+
+    def _cmd_living_list(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        rt=getattr(self,'runtime',None); cmd=raw.split()[0].lower()
+        if not rt: return CommandResult('Runtime unavailable.', ok=False)
+        if cmd=='schedulelist': vals=[s.get('id') for s in getattr(rt.active_world,'schedules',[]) or []]
+        elif cmd=='needlist': vals=list(__import__('engine.living_world', fromlist=['NEED_TYPES']).NEED_TYPES)
+        elif cmd=='goallist': vals=['follow_schedule','go_to_room','work','rest','sleep','guard','patrol','socialize','return_home','return_to_work','idle']
+        elif cmd=='relationshiplist': vals=['stranger','acquaintance','friend','ally','rival','enemy','family','coworker','custom']
+        else: vals=['observation','interaction','conversation','schedule','location','relationship','gift','world_event','custom']
+        return CommandResult('\n'.join(vals))
 
     def handle_command(self, character: Any, command_text: str) -> CommandResult:
         """Route command to deterministic handler or AI."""

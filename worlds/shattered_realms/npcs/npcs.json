@@ -133,7 +133,84 @@
     "level_range": [
       1,
       5
-    ]
+    ],
+    "plugin_data": {
+      "ai_profile": {
+        "identity": {
+          "personal_name": "Training Master Borik",
+          "occupation": "Training master",
+          "social_role": "starter guildlands resident"
+        },
+        "behavior": {
+          "daily_role": "Training master",
+          "default_activity": "working"
+        },
+        "knowledge": {
+          "known_location_ids": [
+            "training_yard",
+            "tavern_common_room"
+          ],
+          "known_topics": [
+            "starter guildlands",
+            "own duties"
+          ],
+          "forbidden_knowledge": [
+            "private player inventory",
+            "remote conversations",
+            "builder metadata"
+          ]
+        },
+        "boundaries": {
+          "never_rules": [
+            "Do not claim knowledge of private player thoughts, private player inventory, remote conversations, builder metadata, or future events."
+          ],
+          "identity_constraints": [
+            "Remain the same persistent runtime individual."
+          ]
+        }
+      },
+      "simulation": {
+        "schedule_id": "starter_day_worker",
+        "home_room_id": "tavern_common_room",
+        "work_room_id": "training_yard",
+        "simulation_enabled": true,
+        "default_activity": "working"
+      },
+      "need_profile": {
+        "energy": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "hunger": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "thirst": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "safety": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "social": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "duty": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "comfort": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        }
+      }
+    },
+    "schedule_id": "starter_day_worker",
+    "home_room_id": "tavern_common_room",
+    "work_room_id": "training_yard",
+    "simulation_enabled": true
   },
   {
     "id": "apprentice_mage_lina",
@@ -201,7 +278,84 @@
     "level_range": [
       1,
       5
-    ]
+    ],
+    "plugin_data": {
+      "ai_profile": {
+        "identity": {
+          "personal_name": "Apprentice Mage Lina",
+          "occupation": "Apprentice mage",
+          "social_role": "starter guildlands resident"
+        },
+        "behavior": {
+          "daily_role": "Apprentice mage",
+          "default_activity": "working"
+        },
+        "knowledge": {
+          "known_location_ids": [
+            "spell_practice_circle",
+            "tavern_common_room"
+          ],
+          "known_topics": [
+            "starter guildlands",
+            "own duties"
+          ],
+          "forbidden_knowledge": [
+            "private player inventory",
+            "remote conversations",
+            "builder metadata"
+          ]
+        },
+        "boundaries": {
+          "never_rules": [
+            "Do not claim knowledge of private player thoughts, private player inventory, remote conversations, builder metadata, or future events."
+          ],
+          "identity_constraints": [
+            "Remain the same persistent runtime individual."
+          ]
+        }
+      },
+      "simulation": {
+        "schedule_id": "starter_day_worker",
+        "home_room_id": "tavern_common_room",
+        "work_room_id": "spell_practice_circle",
+        "simulation_enabled": true,
+        "default_activity": "working"
+      },
+      "need_profile": {
+        "energy": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "hunger": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "thirst": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "safety": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "social": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "duty": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "comfort": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        }
+      }
+    },
+    "schedule_id": "starter_day_worker",
+    "home_room_id": "tavern_common_room",
+    "work_room_id": "spell_practice_circle",
+    "simulation_enabled": true
   },
   {
     "id": "healer_sella",
@@ -268,7 +422,84 @@
     "level_range": [
       1,
       5
-    ]
+    ],
+    "plugin_data": {
+      "ai_profile": {
+        "identity": {
+          "personal_name": "Healer Sella",
+          "occupation": "Healer",
+          "social_role": "starter guildlands resident"
+        },
+        "behavior": {
+          "daily_role": "Healer",
+          "default_activity": "working"
+        },
+        "knowledge": {
+          "known_location_ids": [
+            "healer_corner",
+            "tavern_common_room"
+          ],
+          "known_topics": [
+            "starter guildlands",
+            "own duties"
+          ],
+          "forbidden_knowledge": [
+            "private player inventory",
+            "remote conversations",
+            "builder metadata"
+          ]
+        },
+        "boundaries": {
+          "never_rules": [
+            "Do not claim knowledge of private player thoughts, private player inventory, remote conversations, builder metadata, or future events."
+          ],
+          "identity_constraints": [
+            "Remain the same persistent runtime individual."
+          ]
+        }
+      },
+      "simulation": {
+        "schedule_id": "starter_day_worker",
+        "home_room_id": "tavern_common_room",
+        "work_room_id": "healer_corner",
+        "simulation_enabled": true,
+        "default_activity": "working"
+      },
+      "need_profile": {
+        "energy": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "hunger": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "thirst": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "safety": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "social": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "duty": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "comfort": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        }
+      }
+    },
+    "schedule_id": "starter_day_worker",
+    "home_room_id": "tavern_common_room",
+    "work_room_id": "healer_corner",
+    "simulation_enabled": true
   },
   {
     "id": "suspicious_merchant_varrik",
@@ -403,7 +634,84 @@
     "level_range": [
       1,
       5
-    ]
+    ],
+    "plugin_data": {
+      "ai_profile": {
+        "identity": {
+          "personal_name": "Tavern Keeper Jory",
+          "occupation": "Tavern keeper",
+          "social_role": "starter guildlands resident"
+        },
+        "behavior": {
+          "daily_role": "Tavern keeper",
+          "default_activity": "working"
+        },
+        "knowledge": {
+          "known_location_ids": [
+            "tavern_common_room",
+            "tavern_back_room"
+          ],
+          "known_topics": [
+            "starter guildlands",
+            "own duties"
+          ],
+          "forbidden_knowledge": [
+            "private player inventory",
+            "remote conversations",
+            "builder metadata"
+          ]
+        },
+        "boundaries": {
+          "never_rules": [
+            "Do not claim knowledge of private player thoughts, private player inventory, remote conversations, builder metadata, or future events."
+          ],
+          "identity_constraints": [
+            "Remain the same persistent runtime individual."
+          ]
+        }
+      },
+      "simulation": {
+        "schedule_id": "starter_day_worker",
+        "home_room_id": "tavern_back_room",
+        "work_room_id": "tavern_common_room",
+        "simulation_enabled": true,
+        "default_activity": "working"
+      },
+      "need_profile": {
+        "energy": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "hunger": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "thirst": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "safety": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "social": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "duty": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "comfort": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        }
+      }
+    },
+    "schedule_id": "starter_day_worker",
+    "home_room_id": "tavern_back_room",
+    "work_room_id": "tavern_common_room",
+    "simulation_enabled": true
   },
   {
     "id": "road_messenger_pell",
@@ -672,7 +980,84 @@
     "level_range": [
       1,
       5
-    ]
+    ],
+    "plugin_data": {
+      "ai_profile": {
+        "identity": {
+          "personal_name": "Blacksmith Harl",
+          "occupation": "Blacksmith",
+          "social_role": "starter guildlands resident"
+        },
+        "behavior": {
+          "daily_role": "Blacksmith",
+          "default_activity": "working"
+        },
+        "knowledge": {
+          "known_location_ids": [
+            "blacksmith_stall",
+            "tavern_common_room"
+          ],
+          "known_topics": [
+            "starter guildlands",
+            "own duties"
+          ],
+          "forbidden_knowledge": [
+            "private player inventory",
+            "remote conversations",
+            "builder metadata"
+          ]
+        },
+        "boundaries": {
+          "never_rules": [
+            "Do not claim knowledge of private player thoughts, private player inventory, remote conversations, builder metadata, or future events."
+          ],
+          "identity_constraints": [
+            "Remain the same persistent runtime individual."
+          ]
+        }
+      },
+      "simulation": {
+        "schedule_id": "starter_day_worker",
+        "home_room_id": "tavern_common_room",
+        "work_room_id": "blacksmith_stall",
+        "simulation_enabled": true,
+        "default_activity": "working"
+      },
+      "need_profile": {
+        "energy": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "hunger": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "thirst": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "safety": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "social": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "duty": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        },
+        "comfort": {
+          "current_value": 90,
+          "decay_rate": 0.01
+        }
+      }
+    },
+    "schedule_id": "starter_day_worker",
+    "home_room_id": "tavern_common_room",
+    "work_room_id": "blacksmith_stall",
+    "simulation_enabled": true
   },
   {
     "id": "rat_catcher_nemm",

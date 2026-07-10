@@ -1,0 +1,7 @@
+[
+  {"id":"starter_day_worker","name":"Starter day worker","description":"Deterministic work/home rhythm for named starter NPCs.","world_id":"shattered_realms","timezone_or_clock":"deterministic_24h","entries":[
+    {"id":"night_sleep","start_time":"22:00","end_time":"06:00","days":["all"],"activity":"sleeping","target_room_id":"","required_state":"sleeping","movement_mode":"step","priority":10,"fallback_activity":"resting","fallback_room_id":"","flags":[],"tags":["night"],"plugin_data":{}},
+    {"id":"morning_work","start_time":"06:00","end_time":"18:00","days":["all"],"activity":"working","target_room_id":"","required_state":"working","movement_mode":"step","priority":20,"fallback_activity":"idle","fallback_room_id":"","flags":[],"tags":["work"],"plugin_data":{}},
+    {"id":"evening_social","start_time":"18:00","end_time":"22:00","days":["all"],"activity":"socializing","target_room_id":"tavern_common_room","required_state":"relaxed","movement_mode":"step","priority":10,"fallback_activity":"resting","fallback_room_id":"","flags":[],"tags":["evening"],"plugin_data":{}}
+  ],"flags":[],"tags":["starter","phase5b"],"plugin_data":{}}
+]

@@ -20,6 +20,7 @@ from smart_mud.world_registry import WorldRegistry
 from smart_mud.builder import BuilderWorkspace
 from smart_mud.event_bus import EventBus
 from engine.plugin_system import HookRegistry, PluginRegistry
+from engine.living_world import LivingWorldService, init_living_schema
 
 VALID_ROLES = {"player", "helper", "builder", "admin", "owner"}
 BUILDER_ROLES = {"builder", "admin", "owner"}
@@ -427,6 +428,7 @@ class MudStateStore:
                 if name not in existing:
                     conn.execute(f"ALTER TABLE accounts ADD COLUMN {name} {ddl}")
 
+            init_living_schema(self.db_path)
             conn.commit()
 
     def save_character(self, char: MudCharacter, world_id: str) -> None:
@@ -559,9 +561,33 @@ class MudRuntime:
         self.command_engine = MudCommandEngine(self.state_store, event_bus=self.event_bus)
         self.builder = BuilderWorkspace(event_bus=self.event_bus)
         self.command_engine.runtime = self
+        self.living_world = LivingWorldService(self)
         self.sqlite_ready = (user_data_dir / "mud_state.db").exists()
         self.event_bus.publish("runtime_ready", {"sqlite_ready": self.sqlite_ready}, source_system="runtime")
         print("[mud-runtime] Smart MUD runtime initialized")
+
+
+    # Phase 5B living-world facade APIs.
+    def get_world_time(self, world_id: str | None = None) -> dict[str, Any]: return self.living_world.ensure_world_time(world_id or self.active_world_id or "")
+    def set_world_time(self, world_id: str, day: int, hhmm: str | None = None, hour: int | None = None, minute: int | None = None) -> dict[str, Any]: return self.living_world.set_world_time(world_id, day, hhmm, hour, minute)
+    def advance_world_time(self, world_id: str, minutes: int) -> dict[str, Any]: return self.living_world.advance_world_time(world_id, minutes)
+    def pause_world_time(self, world_id: str) -> dict[str, Any]: return self.living_world.pause_world_time(world_id)
+    def resume_world_time(self, world_id: str) -> dict[str, Any]: return self.living_world.resume_world_time(world_id)
+    def get_entity_profile(self, instance_id: str) -> dict[str, Any]: return self.living_world.get_entity_profile(instance_id)
+    def get_entity_context(self, instance_id: str) -> dict[str, Any]: return self.living_world.get_context(instance_id)
+    def evaluate_entity_schedule(self, instance_id: str, world_time: dict[str, Any] | None = None) -> dict[str, Any]: return self.living_world.evaluate_schedule(instance_id, world_time)
+    def apply_entity_schedule(self, instance_id: str, world_time: dict[str, Any] | None = None) -> dict[str, Any]: return self.living_world.apply_schedule(instance_id, world_time)
+    def find_room_path(self, start_room_id: str, target_room_id: str, max_depth: int = 20) -> dict[str, Any]: return self.living_world.find_room_path(start_room_id, target_room_id, max_depth)
+    def move_entity_along_path(self, instance_id: str, path: list[str], steps: int = 1) -> dict[str, Any]: return self.move_entity(instance_id, path[min(steps, len(path)-1)]) if path else {}
+    def simulate_world(self, world_id: str, minutes: int) -> dict[str, Any]: return self.living_world.simulate_world(world_id, minutes)
+    def simulate_entity(self, instance_id: str, minutes: int) -> dict[str, Any]: self.living_world.advance_needs(instance_id, minutes); return self.apply_entity_schedule(instance_id)
+    def create_entity_goal(self, *args: Any, **kwargs: Any) -> str: return self.living_world.create_entity_goal(*args, **kwargs)
+    def list_entity_goals(self, instance_id: str, status: str | None = None) -> list[dict[str, Any]]: return self.living_world.list_goals(instance_id, status)
+    def select_deterministic_goal(self, instance_id: str) -> dict[str, Any] | None: return self.living_world.select_goal(instance_id)
+    def record_entity_memory(self, *args: Any, **kwargs: Any) -> str: return self.living_world.record_memory(*args, **kwargs)
+    def query_entity_memories(self, instance_id: str, **kwargs: Any) -> list[dict[str, Any]]: return self.living_world.query_memories(instance_id, **kwargs)
+    def get_recent_memories(self, instance_id: str, limit: int = 10) -> list[dict[str, Any]]: return self.living_world.query_memories(instance_id, limit=limit)
+    def get_memories_about(self, instance_id: str, subject_type: str, subject_id: str) -> list[dict[str, Any]]: return self.living_world.query_memories(instance_id, subject_type, subject_id)
 
     def create_runtime_session(self, transport_type: str, remote_address: str = "") -> MudSession:
         now = datetime.now(timezone.utc).isoformat()
@@ -639,6 +665,7 @@ class MudRuntime:
         self._load_item_templates()
         self._load_entity_templates()
         self.materialize_world_content(world_id)
+        self.living_world.ensure_world_time(world_id)
         self.hooks.emit("world_loaded", world_id=world_id, world=self.active_world)
         self.event_bus.publish("world_loaded", {"world_id": world_id}, source_system="runtime", world_id=world_id)
         return self.active_world
