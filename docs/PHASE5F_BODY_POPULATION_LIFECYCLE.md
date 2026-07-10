@@ -39,3 +39,7 @@ Builder/Admin commands include `bodylist`, `bodyshow`, `slotlist`, `spawnlist`, 
 ## Migration
 
 Legacy item slot names are migrated to canonical body slots: primary weapon and ranged become `main_hand`; secondary weapon and shield become `off_hand`; two-handed items declare both hand slots; quiver/ammo are removed as slots and reserved for future metadata.
+
+## Phase 6C ability integration
+
+The canonical AbilityExecutionService extends this system without replacing it. Ability damage is handed to CombatEngine, healing uses Actor resource APIs and HealingEvent records, effects are stored as canonical actor effect instances, costs use Actor resources, definitions and loadouts are world/Builder data, and future AI must select abilities through runtime authority.

@@ -65,7 +65,8 @@
     "level_range": [
       1,
       5
-    ]
+    ],
+    "ability_loadout_id": "civilian_basic"
   },
   {
     "id": "training_master_borik",
@@ -210,7 +211,8 @@
     "schedule_id": "starter_day_worker",
     "home_room_id": "tavern_common_room",
     "work_room_id": "training_yard",
-    "simulation_enabled": true
+    "simulation_enabled": true,
+    "ability_loadout_id": "town_guard_basic"
   },
   {
     "id": "apprentice_mage_lina",
@@ -355,7 +357,8 @@
     "schedule_id": "starter_day_worker",
     "home_room_id": "tavern_common_room",
     "work_room_id": "spell_practice_circle",
-    "simulation_enabled": true
+    "simulation_enabled": true,
+    "ability_loadout_id": "apprentice_mage_basic"
   },
   {
     "id": "healer_sella",
@@ -499,7 +502,8 @@
     "schedule_id": "starter_day_worker",
     "home_room_id": "tavern_common_room",
     "work_room_id": "healer_corner",
-    "simulation_enabled": true
+    "simulation_enabled": true,
+    "ability_loadout_id": "healer_basic"
   },
   {
     "id": "suspicious_merchant_varrik",
@@ -567,7 +571,8 @@
     "level_range": [
       1,
       5
-    ]
+    ],
+    "ability_loadout_id": "civilian_basic"
   },
   {
     "id": "tavern_keeper_jory",
@@ -711,7 +716,8 @@
     "schedule_id": "starter_day_worker",
     "home_room_id": "tavern_back_room",
     "work_room_id": "tavern_common_room",
-    "simulation_enabled": true
+    "simulation_enabled": true,
+    "ability_loadout_id": "civilian_basic"
   },
   {
     "id": "road_messenger_pell",
@@ -778,7 +784,8 @@
     "level_range": [
       1,
       5
-    ]
+    ],
+    "ability_loadout_id": "civilian_basic"
   },
   {
     "id": "crown_warden_ilyra",
@@ -846,7 +853,8 @@
     "level_range": [
       1,
       5
-    ]
+    ],
+    "ability_loadout_id": "civilian_basic"
   },
   {
     "id": "farmer_tomas",
@@ -913,7 +921,8 @@
     "level_range": [
       1,
       5
-    ]
+    ],
+    "ability_loadout_id": "civilian_basic"
   },
   {
     "id": "blacksmith_harl",
@@ -1057,7 +1066,8 @@
     "schedule_id": "starter_day_worker",
     "home_room_id": "tavern_common_room",
     "work_room_id": "blacksmith_stall",
-    "simulation_enabled": true
+    "simulation_enabled": true,
+    "ability_loadout_id": "civilian_basic"
   },
   {
     "id": "rat_catcher_nemm",
@@ -1124,7 +1134,8 @@
     "level_range": [
       1,
       5
-    ]
+    ],
+    "ability_loadout_id": "rat_basic"
   },
   {
     "id": "old_gate_watcher",
@@ -1191,7 +1202,8 @@
     "level_range": [
       1,
       5
-    ]
+    ],
+    "ability_loadout_id": "civilian_basic"
   },
   {
     "id": "cellar_rats",
@@ -1258,7 +1270,8 @@
     "level_range": [
       1,
       2
-    ]
+    ],
+    "ability_loadout_id": "rat_basic"
   },
   {
     "id": "giant_cellar_rat",
@@ -1325,6 +1338,7 @@
     "level_range": [
       1,
       2
-    ]
+    ],
+    "ability_loadout_id": "rat_basic"
   }
 ]

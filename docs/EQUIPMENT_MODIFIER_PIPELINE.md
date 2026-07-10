@@ -82,3 +82,7 @@ score effects
 score attributes
 score resistances
 ```
+
+## Phase 6C ability integration
+
+The canonical AbilityExecutionService extends this system without replacing it. Ability damage is handed to CombatEngine, healing uses Actor resource APIs and HealingEvent records, effects are stored as canonical actor effect instances, costs use Actor resources, definitions and loadouts are world/Builder data, and future AI must select abilities through runtime authority.

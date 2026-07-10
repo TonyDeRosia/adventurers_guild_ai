@@ -244,3 +244,7 @@ Canonical spawns supersede equivalent legacy declarations by world, room, templa
 ## Phase 5B deterministic simulation
 
 The living-world service advances world time, evaluates schedules, decays needs, selects deterministic goals, moves entities through bounded pathfinding, and exposes context without AI calls or daemon threads.
+
+## Phase 6C ability integration
+
+The canonical AbilityExecutionService extends this system without replacing it. Ability damage is handed to CombatEngine, healing uses Actor resource APIs and HealingEvent records, effects are stored as canonical actor effect instances, costs use Actor resources, definitions and loadouts are world/Builder data, and future AI must select abilities through runtime authority.

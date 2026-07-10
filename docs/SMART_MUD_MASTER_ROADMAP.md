@@ -325,3 +325,7 @@ Persistent living entity identity, schedules, needs, goals, memories, relationsh
 ## Phase 5E status
 
 The equipment/effect/stat-resolution foundation is present: canonical modifiers, SQLite effect instances, pilot slot/effect/resource/resistance/formula data, safe expressions, and focused tests. Combat execution remains explicitly out of scope.
+
+## Phase 6C canonical abilities
+
+Smart MUD now has a canonical AbilityDefinition, source-traceable SQLite grants, persistent cooldown and cast records, deterministic targeting, resource costs, healing events, effect application, starter Guildlands pilot abilities/loadouts, ability display commands, safe `spellup cast`, and Builder/Admin inspection commands. Skills, spells, heals, buffs, monster powers, natural attacks, and item abilities use one execution pipeline rather than separate engines.

@@ -82,3 +82,7 @@ score effects
 score attributes
 score resistances
 ```
+
+## Phase 6C ability formula boundary
+
+Ability definitions may reference formula IDs for costs, cooldowns, damage, healing, chances, durations, stacks, and state changes. Formula resolution remains owned by the Formula Engine; AbilityExecutionService records formula IDs and traces and does not create a separate spell/skill formula language.
