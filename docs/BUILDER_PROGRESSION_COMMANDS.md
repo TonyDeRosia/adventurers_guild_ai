@@ -1,0 +1,3 @@
+# Builder Progression Commands
+
+Builder collections: species_profiles, race_profiles, class_profiles, class_tracks, profession_profiles, experience_curves, progression_profiles, growth profiles, remort/prestige, and XP rewards. Edits should target builder drafts, validate, preview, then apply through existing package flow. Manual acceptance commands: builder on; specieslist; racelist; classlist; tracklist; professionlist; xpcurvelist; growthlist attribute; growthlist resource; progressionstat self; progressiontrace self; score progression; level; experience; practice; train; class; race; profession; abilities; grantxp self 100 test; xphistory self; leveltrace self.

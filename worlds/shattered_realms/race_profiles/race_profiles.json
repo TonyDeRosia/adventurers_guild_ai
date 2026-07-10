@@ -1,0 +1,71 @@
+{
+  "race_profiles": [
+    {
+      "base_attribute_adjustments": {},
+      "default_class_options": [
+        "adventurer",
+        "warrior",
+        "cleric",
+        "mage",
+        "rogue"
+      ],
+      "default_height": "average",
+      "default_profession_options": [],
+      "default_weight": "average",
+      "derived_stat_modifiers": [],
+      "description": "Starter Guildlands human lineage.",
+      "granted_abilities": [],
+      "granted_effects": [],
+      "id": "human",
+      "languages": [
+        "common"
+      ],
+      "maximum_age": 100,
+      "minimum_age": 16,
+      "name": "Human",
+      "playable": true,
+      "plugin_data": {},
+      "resistance_modifiers": [],
+      "resource_adjustments": {},
+      "restricted_class_ids": [],
+      "selectable": true,
+      "species_id": "humanoid",
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "base_attribute_adjustments": {},
+      "default_class_options": [
+        "adventurer",
+        "rogue"
+      ],
+      "default_height": "short",
+      "default_profession_options": [],
+      "default_weight": "light",
+      "derived_stat_modifiers": [],
+      "description": "Small humanoid lineage.",
+      "granted_abilities": [],
+      "granted_effects": [],
+      "id": "halfling",
+      "languages": [
+        "common"
+      ],
+      "maximum_age": 120,
+      "minimum_age": 20,
+      "name": "Halfling",
+      "playable": true,
+      "plugin_data": {},
+      "resistance_modifiers": [],
+      "resource_adjustments": {},
+      "restricted_class_ids": [],
+      "selectable": true,
+      "species_id": "humanoid",
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    }
+  ]
+}

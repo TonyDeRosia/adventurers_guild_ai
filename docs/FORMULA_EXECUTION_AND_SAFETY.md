@@ -86,3 +86,8 @@ score resistances
 ## Phase 6C ability formula boundary
 
 Ability definitions may reference formula IDs for costs, cooldowns, damage, healing, chances, durations, stacks, and state changes. Formula resolution remains owned by the Formula Engine; AbilityExecutionService records formula IDs and traces and does not create a separate spell/skill formula language.
+
+
+## Phase 6E Progression Integration
+
+Canonical progression is now represented by `engine.progression.ProgressionService`, SQLite `actor_progression_state`, XP/currency/grant history tables, and world package collections for species, races, classes, tracks, professions, curves, progression profiles, and growth profiles. Quest, loot, trainer, crafting, faction, and final balance systems remain separate and must award progression only through canonical APIs.

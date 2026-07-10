@@ -68,3 +68,8 @@ Builder diagnostics expose architecture, not editing workflows. The diagnostic s
 ## Why this exists before combat
 
 Combat, AI, skills, spells, equipment bonuses, classes, races, factions, quests, and behavior trees will all depend on the same living-entity foundation. Building the Actor model first prevents later systems from hardcoding player-only stats, NPC-only combat data, or derived values that cannot be overridden by Builders.
+
+
+## Phase 6E Progression Integration
+
+Canonical progression is now represented by `engine.progression.ProgressionService`, SQLite `actor_progression_state`, XP/currency/grant history tables, and world package collections for species, races, classes, tracks, professions, curves, progression profiles, and growth profiles. Quest, loot, trainer, crafting, faction, and final balance systems remain separate and must award progression only through canonical APIs.

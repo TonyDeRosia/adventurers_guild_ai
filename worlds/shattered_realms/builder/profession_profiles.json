@@ -1,0 +1,100 @@
+{
+  "profession_profiles": [
+    {
+      "description": "Starter noncombat profession identity.",
+      "experience_curve_id": "civilian_curve",
+      "granted_abilities": [],
+      "id": "blacksmith",
+      "maximum_rank": 5,
+      "modifier_grants": [],
+      "name": "Blacksmith",
+      "plugin_data": {},
+      "profession_type": "blacksmith",
+      "rank_names": [
+        "novice",
+        "apprentice",
+        "journeyman",
+        "expert",
+        "master"
+      ],
+      "requirements": [],
+      "resource_grants": [],
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "description": "Starter noncombat profession identity.",
+      "experience_curve_id": "civilian_curve",
+      "granted_abilities": [],
+      "id": "healer",
+      "maximum_rank": 5,
+      "modifier_grants": [],
+      "name": "Healer",
+      "plugin_data": {},
+      "profession_type": "healer",
+      "rank_names": [
+        "novice",
+        "apprentice",
+        "journeyman",
+        "expert",
+        "master"
+      ],
+      "requirements": [],
+      "resource_grants": [],
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "description": "Starter noncombat profession identity.",
+      "experience_curve_id": "civilian_curve",
+      "granted_abilities": [],
+      "id": "trainer",
+      "maximum_rank": 5,
+      "modifier_grants": [],
+      "name": "Trainer",
+      "plugin_data": {},
+      "profession_type": "trainer",
+      "rank_names": [
+        "novice",
+        "apprentice",
+        "journeyman",
+        "expert",
+        "master"
+      ],
+      "requirements": [],
+      "resource_grants": [],
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "description": "Starter noncombat profession identity.",
+      "experience_curve_id": "civilian_curve",
+      "granted_abilities": [],
+      "id": "merchant",
+      "maximum_rank": 5,
+      "modifier_grants": [],
+      "name": "Merchant",
+      "plugin_data": {},
+      "profession_type": "merchant",
+      "rank_names": [
+        "novice",
+        "apprentice",
+        "journeyman",
+        "expert",
+        "master"
+      ],
+      "requirements": [],
+      "resource_grants": [],
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    }
+  ]
+}

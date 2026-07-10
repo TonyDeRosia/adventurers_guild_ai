@@ -1,0 +1,26 @@
+{
+  "attribute_growth_profiles": [
+    {
+      "automatic_distribution": {},
+      "description": "Traceable fixed attribute growth.",
+      "formula_ids": {},
+      "granted_attribute_points": 1,
+      "growth_mode": "fixed",
+      "id": "standard_humanoid_attributes",
+      "manual_distribution_allowed": true,
+      "maximum_values": {},
+      "milestones": {},
+      "minimum_values": {},
+      "name": "Standard Humanoid Attributes",
+      "per_level": {
+        "constitution": 1,
+        "strength": 1
+      },
+      "plugin_data": {},
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    }
+  ]
+}

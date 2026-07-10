@@ -1,0 +1,85 @@
+{
+  "experience_curves": [
+    {
+      "curve_type": "explicit_thresholds",
+      "description": "Conservative explicit starter thresholds.",
+      "formula_id": "",
+      "id": "standard_adventurer_curve",
+      "level_offset": 0,
+      "maximum_increment": 0,
+      "maximum_level": 10,
+      "minimum_increment": 100,
+      "multiplier": 100,
+      "name": "Standard Adventurer Curve",
+      "plugin_data": {},
+      "tags": [
+        "starter"
+      ],
+      "thresholds": {
+        "1": 0,
+        "10": 4500,
+        "2": 100,
+        "3": 300,
+        "4": 600,
+        "5": 1000,
+        "6": 1500,
+        "7": 2100,
+        "8": 2800,
+        "9": 3600
+      },
+      "version": 1,
+      "world_scaling_placeholder": {}
+    },
+    {
+      "curve_type": "explicit_thresholds",
+      "description": "Slow civilian foundation.",
+      "formula_id": "",
+      "id": "civilian_curve",
+      "level_offset": 0,
+      "maximum_increment": 0,
+      "maximum_level": 10,
+      "minimum_increment": 100,
+      "multiplier": 100,
+      "name": "Civilian Curve",
+      "plugin_data": {},
+      "tags": [
+        "starter"
+      ],
+      "thresholds": {
+        "1": 0,
+        "10": 6750,
+        "2": 150,
+        "3": 450,
+        "4": 900,
+        "5": 1500,
+        "6": 2250,
+        "7": 3150,
+        "8": 4200,
+        "9": 5400
+      },
+      "version": 1,
+      "world_scaling_placeholder": {}
+    },
+    {
+      "curve_type": "explicit_thresholds",
+      "description": "Fixed level placeholder for generic monsters.",
+      "formula_id": "",
+      "id": "monster_fixed_curve",
+      "level_offset": 0,
+      "maximum_increment": 0,
+      "maximum_level": 1,
+      "minimum_increment": 0,
+      "multiplier": 0,
+      "name": "Monster Fixed Curve",
+      "plugin_data": {},
+      "tags": [
+        "starter"
+      ],
+      "thresholds": {
+        "1": 0
+      },
+      "version": 1,
+      "world_scaling_placeholder": {}
+    }
+  ]
+}

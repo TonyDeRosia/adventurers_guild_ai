@@ -1,0 +1,45 @@
+{
+  "progression_profiles": [
+    {
+      "class_experience": {},
+      "class_level_mode": "single_level",
+      "class_levels": {},
+      "description": "Default starter character progression.",
+      "experience": 0,
+      "id": "player_starter",
+      "level": 1,
+      "name": "Player Starter",
+      "plugin_data": {},
+      "primary_class_id": "adventurer",
+      "primary_class_track_id": "",
+      "profession_ids": [],
+      "progression_policy": "persistent_growth",
+      "race_id": "human",
+      "secondary_class_ids": [],
+      "shared_character_level": true,
+      "species_id": "humanoid",
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "description": "Generic respawned mob progression policy.",
+      "experience": 0,
+      "id": "generic_monster",
+      "level": 1,
+      "name": "Generic Monster",
+      "plugin_data": {},
+      "primary_class_id": "monster",
+      "primary_class_track_id": "",
+      "profession_ids": [],
+      "progression_policy": "reset_on_respawn",
+      "race_id": "",
+      "species_id": "vermin",
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    }
+  ]
+}

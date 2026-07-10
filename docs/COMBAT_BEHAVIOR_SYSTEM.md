@@ -7,3 +7,8 @@ The behavior layer never calculates damage, directly changes Health, applies eff
 Implemented foundations include combat behavior profiles, hostility traces, threat ownership by stable Actor IDs, action candidates with invalid reasons, basic attack fallback, assist/protect/flee/surrender/call-for-help/pursuit policy fields, pet modes, Builder diagnostics commands, and conservative Starter Guildlands pilot profiles.
 
 Manual acceptance starts with: `builder on`, `behaviorlist`, `behaviorstat civilian_safe`, `behaviorstat town_guard_defender`, `actorbehavior <actor>`, `threatlist <actor>`, `combatcandidates <actor>`, and `combatdecision <actor>`.
+
+
+## Phase 6E Progression Integration
+
+Canonical progression is now represented by `engine.progression.ProgressionService`, SQLite `actor_progression_state`, XP/currency/grant history tables, and world package collections for species, races, classes, tracks, professions, curves, progression profiles, and growth profiles. Quest, loot, trainer, crafting, faction, and final balance systems remain separate and must award progression only through canonical APIs.
