@@ -1,0 +1,28 @@
+{
+  "trainer_availability_profiles": {
+    "starter_training_hours": {
+      "closed_message": "The trainer is unavailable.",
+      "description": "Always available while trainer is placed and enabled.",
+      "disabled_message": "Training is disabled.",
+      "id": "starter_training_hours",
+      "name": "Starter training hours",
+      "plugin_data": {},
+      "required_actor_state": {},
+      "required_faction_access": {},
+      "required_organization_access": {},
+      "required_world_state": {},
+      "room_ids": [
+        "training_yard",
+        "weapon_practice_ring",
+        "spell_practice_circle",
+        "healer_corner",
+        "blacksmith_stall"
+      ],
+      "schedule_id": "",
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    }
+  }
+}

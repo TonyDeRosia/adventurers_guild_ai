@@ -1,0 +1,21 @@
+{
+  "training_requirement_profiles": {
+    "req_blacksmith_known": {
+      "id": "req_blacksmith_known",
+      "minimum_level": 1,
+      "name": "Blacksmith known",
+      "plugin_data": {},
+      "profession_id": "blacksmith",
+      "tags": [],
+      "version": 1
+    },
+    "req_level_1": {
+      "id": "req_level_1",
+      "minimum_level": 1,
+      "name": "Level 1",
+      "plugin_data": {},
+      "tags": [],
+      "version": 1
+    }
+  }
+}

@@ -1,0 +1,113 @@
+{
+  "trainer_definitions": {
+    "apprentice_mage_lina": {
+      "actor_instance_id": "",
+      "actor_template_id": "",
+      "availability_profile_id": "starter_training_hours",
+      "communication_profile_id": "",
+      "description": "A starter-level spell instructor.",
+      "enabled": true,
+      "faction_id": "",
+      "id": "apprentice_mage_lina",
+      "name": "Apprentice Mage Lina",
+      "offer_profile_ids": [],
+      "organization_id": "",
+      "plugin_data": {},
+      "room_ids": [
+        "spell_practice_circle"
+      ],
+      "schedule_id": "",
+      "service_profile_id": "",
+      "shop_id": "",
+      "spawn_definition_id": "",
+      "tags": [
+        "starter",
+        "spell"
+      ],
+      "trainer_type": "spell",
+      "version": 1
+    },
+    "blacksmith_harl_profession_trainer": {
+      "actor_instance_id": "",
+      "actor_template_id": "",
+      "availability_profile_id": "starter_training_hours",
+      "communication_profile_id": "",
+      "description": "A basic blacksmith profession trainer.",
+      "enabled": true,
+      "faction_id": "",
+      "id": "blacksmith_harl_profession_trainer",
+      "name": "Blacksmith Harl",
+      "offer_profile_ids": [],
+      "organization_id": "blacksmiths_circle",
+      "plugin_data": {},
+      "room_ids": [
+        "blacksmith_stall"
+      ],
+      "schedule_id": "",
+      "service_profile_id": "",
+      "shop_id": "",
+      "spawn_definition_id": "",
+      "tags": [
+        "starter",
+        "profession"
+      ],
+      "trainer_type": "profession",
+      "version": 1
+    },
+    "healer_sella_trainer": {
+      "actor_instance_id": "",
+      "actor_template_id": "",
+      "availability_profile_id": "starter_training_hours",
+      "communication_profile_id": "",
+      "description": "A healing and support instructor with conservative access.",
+      "enabled": true,
+      "faction_id": "",
+      "id": "healer_sella_trainer",
+      "name": "Healer Sella",
+      "offer_profile_ids": [],
+      "organization_id": "healers_order",
+      "plugin_data": {},
+      "room_ids": [
+        "healer_corner"
+      ],
+      "schedule_id": "",
+      "service_profile_id": "",
+      "shop_id": "",
+      "spawn_definition_id": "",
+      "tags": [
+        "starter",
+        "healer"
+      ],
+      "trainer_type": "ability",
+      "version": 1
+    },
+    "training_master_borik": {
+      "actor_instance_id": "",
+      "actor_template_id": "",
+      "availability_profile_id": "starter_training_hours",
+      "communication_profile_id": "",
+      "description": "A conservative martial instructor for starter ability and class-track training.",
+      "enabled": true,
+      "faction_id": "",
+      "id": "training_master_borik",
+      "name": "Training Master Borik",
+      "offer_profile_ids": [],
+      "organization_id": "",
+      "plugin_data": {},
+      "room_ids": [
+        "training_yard",
+        "weapon_practice_ring"
+      ],
+      "schedule_id": "",
+      "service_profile_id": "",
+      "shop_id": "",
+      "spawn_definition_id": "",
+      "tags": [
+        "starter",
+        "martial"
+      ],
+      "trainer_type": "general",
+      "version": 1
+    }
+  }
+}

@@ -1,0 +1,230 @@
+{
+  "training_result_profiles": {
+    "result_basic_attack": {
+      "ability_grants": [],
+      "ability_rank_changes": [],
+      "attribute_modifiers": {},
+      "class_assignment": {},
+      "class_track_assignment": {},
+      "description": "Starter pilot result profile.",
+      "effects": [],
+      "id": "result_basic_attack",
+      "messages": {},
+      "name": "Result Basic Attack",
+      "plugin_data": {},
+      "profession_grants": [],
+      "profession_rank_changes": [],
+      "progression_modifiers": [],
+      "recipe_grants": [],
+      "resource_modifiers": {},
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    "result_basic_heal": {
+      "ability_grants": [],
+      "ability_rank_changes": [],
+      "attribute_modifiers": {},
+      "class_assignment": {},
+      "class_track_assignment": {},
+      "description": "Starter pilot result profile.",
+      "effects": [],
+      "id": "result_basic_heal",
+      "messages": {},
+      "name": "Result Basic Heal",
+      "plugin_data": {},
+      "profession_grants": [],
+      "profession_rank_changes": [],
+      "progression_modifiers": [],
+      "recipe_grants": [],
+      "resource_modifiers": {},
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    "result_basic_spell": {
+      "ability_grants": [],
+      "ability_rank_changes": [],
+      "attribute_modifiers": {},
+      "class_assignment": {},
+      "class_track_assignment": {},
+      "description": "Starter pilot result profile.",
+      "effects": [],
+      "id": "result_basic_spell",
+      "messages": {},
+      "name": "Result Basic Spell",
+      "plugin_data": {},
+      "profession_grants": [],
+      "profession_rank_changes": [],
+      "progression_modifiers": [],
+      "recipe_grants": [],
+      "resource_modifiers": {},
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    "result_blacksmith_profession": {
+      "ability_grants": [],
+      "ability_rank_changes": [],
+      "attribute_modifiers": {},
+      "class_assignment": {},
+      "class_track_assignment": {},
+      "description": "Starter pilot result profile.",
+      "effects": [],
+      "id": "result_blacksmith_profession",
+      "messages": {},
+      "name": "Result Blacksmith Profession",
+      "plugin_data": {},
+      "profession_grants": [],
+      "profession_rank_changes": [],
+      "progression_modifiers": [],
+      "recipe_grants": [],
+      "resource_modifiers": {},
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    "result_blacksmith_rank_1": {
+      "ability_grants": [],
+      "ability_rank_changes": [],
+      "attribute_modifiers": {},
+      "class_assignment": {},
+      "class_track_assignment": {},
+      "description": "Starter pilot result profile.",
+      "effects": [],
+      "id": "result_blacksmith_rank_1",
+      "messages": {},
+      "name": "Result Blacksmith Rank 1",
+      "plugin_data": {},
+      "profession_grants": [],
+      "profession_rank_changes": [],
+      "progression_modifiers": [],
+      "recipe_grants": [],
+      "resource_modifiers": {},
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    "result_guard_stance": {
+      "ability_grants": [],
+      "ability_rank_changes": [],
+      "attribute_modifiers": {},
+      "class_assignment": {},
+      "class_track_assignment": {},
+      "description": "Starter pilot result profile.",
+      "effects": [],
+      "id": "result_guard_stance",
+      "messages": {},
+      "name": "Result Guard Stance",
+      "plugin_data": {},
+      "profession_grants": [],
+      "profession_rank_changes": [],
+      "progression_modifiers": [],
+      "recipe_grants": [],
+      "resource_modifiers": {},
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    "result_health_once": {
+      "ability_grants": [],
+      "ability_rank_changes": [],
+      "attribute_modifiers": {},
+      "class_assignment": {},
+      "class_track_assignment": {},
+      "description": "Starter pilot result profile.",
+      "effects": [],
+      "id": "result_health_once",
+      "messages": {},
+      "name": "Result Health Once",
+      "plugin_data": {},
+      "profession_grants": [],
+      "profession_rank_changes": [],
+      "progression_modifiers": [],
+      "recipe_grants": [],
+      "resource_modifiers": {
+        "health": 5
+      },
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    "result_respec_preview": {
+      "ability_grants": [],
+      "ability_rank_changes": [],
+      "attribute_modifiers": {},
+      "class_assignment": {},
+      "class_track_assignment": {},
+      "description": "Starter pilot result profile.",
+      "effects": [],
+      "id": "result_respec_preview",
+      "messages": {},
+      "name": "Result Respec Preview",
+      "plugin_data": {},
+      "profession_grants": [],
+      "profession_rank_changes": [],
+      "progression_modifiers": [],
+      "recipe_grants": [],
+      "resource_modifiers": {},
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    "result_strength_once": {
+      "ability_grants": [],
+      "ability_rank_changes": [],
+      "attribute_modifiers": {
+        "strength": 1
+      },
+      "class_assignment": {},
+      "class_track_assignment": {},
+      "description": "Starter pilot result profile.",
+      "effects": [],
+      "id": "result_strength_once",
+      "messages": {},
+      "name": "Result Strength Once",
+      "plugin_data": {},
+      "profession_grants": [],
+      "profession_rank_changes": [],
+      "progression_modifiers": [],
+      "recipe_grants": [],
+      "resource_modifiers": {},
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    "result_wisdom_once": {
+      "ability_grants": [],
+      "ability_rank_changes": [],
+      "attribute_modifiers": {
+        "wisdom": 1
+      },
+      "class_assignment": {},
+      "class_track_assignment": {},
+      "description": "Starter pilot result profile.",
+      "effects": [],
+      "id": "result_wisdom_once",
+      "messages": {},
+      "name": "Result Wisdom Once",
+      "plugin_data": {},
+      "profession_grants": [],
+      "profession_rank_changes": [],
+      "progression_modifiers": [],
+      "recipe_grants": [],
+      "resource_modifiers": {},
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    }
+  }
+}

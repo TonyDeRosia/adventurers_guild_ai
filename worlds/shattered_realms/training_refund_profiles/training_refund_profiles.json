@@ -1,0 +1,22 @@
+{
+  "training_refund_profiles": {
+    "starter_refund": {
+      "administrative_only": false,
+      "description": "Conservative linked refund foundation.",
+      "id": "starter_refund",
+      "name": "Starter refund",
+      "plugin_data": {},
+      "refund_attribute_points_percentage": 100,
+      "refund_currency_percentage": 100,
+      "refund_items": false,
+      "refund_practice_percentage": 100,
+      "refund_skill_points_percentage": 100,
+      "refund_time_window": 0,
+      "refund_training_percentage": 100,
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    }
+  }
+}
