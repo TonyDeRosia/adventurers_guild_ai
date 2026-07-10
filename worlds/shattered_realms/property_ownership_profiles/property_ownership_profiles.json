@@ -1,0 +1,29 @@
+{
+  "property_ownership_profiles": [
+    {
+      "allow_abandon": true,
+      "allow_coowners": true,
+      "allow_sale": false,
+      "allow_transfer": false,
+      "allowed_owner_types": [
+        "actor"
+      ],
+      "default_access_role": "tenant",
+      "description": "Actor leaseholder with no sale.",
+      "faction_requirements": {},
+      "id": "standard_rental_ownership",
+      "level_requirements": {},
+      "maximum_properties": 3,
+      "name": "Standard Rental Ownership",
+      "organization_role_requirements": {},
+      "ownership_mode": "actor",
+      "plugin_data": {},
+      "purchase_required": false,
+      "quest_requirements": {},
+      "tags": [
+        "phase10b"
+      ],
+      "version": 1
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "property_render_profiles": [
+    {
+      "description": "Phase 10B placeholder profile implemented by PropertyService foundations.",
+      "id": "standard_render",
+      "name": "Standard property_render_profiles",
+      "plugin_data": {},
+      "tags": [
+        "phase10b"
+      ],
+      "version": 1
+    }
+  ]
+}

@@ -102,6 +102,7 @@ class ActorScoreRenderer:
         "identity", "resources", "primary_attributes", "derived_attributes", "combat", "equipment",
         "conditions", "resistances", "affects", "spellup", "abilities", "skills", "spells", "cooldowns", "current_cast", "combat_loadout", "passive_abilities", "progression", "professions", "crafting", "recipes", "quests", "journal", "questhistory", "currencies", "banking", "transactions", "relationships", "factions", "reputation", "standing", "diplomacy",
         "achievements", "milestones", "titles", "accolades", "collections",
+        "property", "housing", "leases", "storage", "home",
         "simulation", "party", "organizations", "guild", "clan", "memberships", "social", "behavior", "threat", "tactics", "diagnostics", "formulas", "raw",
     ]
     aliases = {
@@ -175,6 +176,28 @@ class ActorScoreRenderer:
 
     def _faction_summary(self, actor: Actor) -> dict[str, Any]:
         return getattr(actor, "faction_summary", None) or (actor.plugin_data or {}).get("faction_summary", {}) or {}
+
+    def _property_summary(self, actor: Actor) -> dict[str, Any]:
+        return getattr(actor, "property_summary", None) or (getattr(actor, "plugin_data", {}) or {}).get("property_summary", {}) or {}
+
+    def render_property(self, actor: Actor, admin: bool = False) -> str:
+        data = self._property_summary(actor)
+        return self._section("Property", [_line(f"Owned properties: {data.get('owned_count', 0)}"), _line(f"Active leases: {data.get('active_lease_count', 0)}"), _line(f"Home: {_value(data.get('home_location'))}")])
+
+    def render_housing(self, actor: Actor, admin: bool = False) -> str:
+        rows=[_line(_value(p)) for p in self._property_summary(actor).get('housing', [])[:10]]
+        return self._section("Housing", rows)
+
+    def render_leases(self, actor: Actor, admin: bool = False) -> str:
+        rows=[_line(_value(l)) for l in self._property_summary(actor).get('leases', [])[:10]]
+        return self._section("Leases", rows)
+
+    def render_storage(self, actor: Actor, admin: bool = False) -> str:
+        rows=[_line(_value(s)) for s in self._property_summary(actor).get('storage', [])[:10]]
+        return self._section("Property Storage", rows)
+
+    def render_home(self, actor: Actor, admin: bool = False) -> str:
+        return self._section("Home", [_line(f"Home location: {_value(self._property_summary(actor).get('home_location'))}")])
 
     def render_factions(self, actor: Actor, admin: bool = False) -> str:
         data = self._faction_summary(actor); reps = data.get("reputations", []) or []

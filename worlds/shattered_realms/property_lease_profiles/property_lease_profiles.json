@@ -1,0 +1,27 @@
+{
+  "property_lease_profiles": [
+    {
+      "automatic_renewal": false,
+      "deposit_required": false,
+      "description": "World-time inn stay.",
+      "duration_minutes": 1440,
+      "early_termination_policy_id": "",
+      "eviction_policy_id": "standard_expiration",
+      "grace_period_minutes": 60,
+      "guest_policy_id": "standard_guest_policy",
+      "id": "standard_inn_lease",
+      "late_fee_profile_id": "",
+      "lease_type": "inn_stay",
+      "maximum_duration_minutes": 10080,
+      "name": "Standard Inn Lease",
+      "plugin_data": {},
+      "refund_profile_id": "",
+      "renewal_policy": "tenant_renewal",
+      "rent_interval_minutes": 1440,
+      "tags": [
+        "phase10b"
+      ],
+      "version": 1
+    }
+  ]
+}

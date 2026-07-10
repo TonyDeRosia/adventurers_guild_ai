@@ -1,0 +1,76 @@
+{
+  "property_storage_profiles": [
+    {
+      "access_profile_id": "standard_property_access",
+      "allow_currency_placeholder": false,
+      "allowed_item_tags": [],
+      "allowed_item_types": [],
+      "capacity_items": 5,
+      "capacity_volume_placeholder": 0,
+      "capacity_weight": 50,
+      "description": "Small personal locker.",
+      "forbidden_item_tags": [
+        "quest_bound"
+      ],
+      "id": "personal_locker_storage",
+      "name": "Personal Locker",
+      "organization_shared": false,
+      "overflow_policy": "reject",
+      "plugin_data": {},
+      "retention_policy_id": "safe_item_retention",
+      "storage_type": "locker",
+      "tags": [
+        "phase10b"
+      ],
+      "version": 1
+    },
+    {
+      "access_profile_id": "standard_property_access",
+      "allow_currency_placeholder": false,
+      "allowed_item_tags": [],
+      "allowed_item_types": [],
+      "capacity_items": 8,
+      "capacity_volume_placeholder": 0,
+      "capacity_weight": 80,
+      "description": "Small chest for rented rooms.",
+      "forbidden_item_tags": [
+        "quest_bound"
+      ],
+      "id": "inn_room_storage",
+      "name": "Inn Room Chest",
+      "organization_shared": false,
+      "overflow_policy": "reject",
+      "plugin_data": {},
+      "retention_policy_id": "safe_item_retention",
+      "storage_type": "chest",
+      "tags": [
+        "phase10b"
+      ],
+      "version": 1
+    },
+    {
+      "access_profile_id": "standard_property_access",
+      "allow_currency_placeholder": false,
+      "allowed_item_tags": [],
+      "allowed_item_types": [],
+      "capacity_items": 4,
+      "capacity_volume_placeholder": 0,
+      "capacity_weight": 25,
+      "description": "Bank-linked safe box for items only.",
+      "forbidden_item_tags": [
+        "currency"
+      ],
+      "id": "safe_deposit_storage",
+      "name": "Safe Deposit Box",
+      "organization_shared": false,
+      "overflow_policy": "reject",
+      "plugin_data": {},
+      "retention_policy_id": "safe_item_retention",
+      "storage_type": "safe",
+      "tags": [
+        "phase10b"
+      ],
+      "version": 1
+    }
+  ]
+}

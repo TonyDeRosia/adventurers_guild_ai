@@ -1,0 +1,14 @@
+{
+  "property_occupancy_profiles": [
+    {
+      "description": "Phase 10B placeholder profile implemented by PropertyService foundations.",
+      "id": "standard_occupancy",
+      "name": "Standard property_occupancy_profiles",
+      "plugin_data": {},
+      "tags": [
+        "phase10b"
+      ],
+      "version": 1
+    }
+  ]
+}

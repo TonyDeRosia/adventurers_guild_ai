@@ -1,0 +1,27 @@
+{
+  "property_pricing_profiles": [
+    {
+      "currency_id": "gold",
+      "deposit_amount": 0,
+      "description": "Integer gold prices for pilot properties.",
+      "faction_modifier_profile_id": "",
+      "id": "standard_property_pricing",
+      "key_replacement_fee": 5,
+      "late_fee": 2,
+      "maximum_price": 100000,
+      "minimum_price": 0,
+      "name": "Standard Property Pricing",
+      "organization_modifier_profile_id": "",
+      "plugin_data": {},
+      "pricing_formula_id": "property_flat_price_v1",
+      "purchase_price": 1000,
+      "renewal_price": 10,
+      "rent_price": 10,
+      "storage_fee": 1,
+      "tags": [
+        "phase10b"
+      ],
+      "version": 1
+    }
+  ]
+}

@@ -1,0 +1,174 @@
+{
+  "property_definitions": [
+    {
+      "access_profile_id": "standard_property_access",
+      "description": "A modest rentable inn room with a lockable chest.",
+      "enabled": true,
+      "entry_room_id": "",
+      "faction_id": "",
+      "home_location_enabled": true,
+      "id": "wayfarers_mug_room_1",
+      "interior_room_ids": [],
+      "key_profile_id": "temporary_room_key",
+      "landlord_actor_id": "",
+      "landlord_organization_id": "",
+      "lease_profile_id": "standard_inn_lease",
+      "name": "Wayfarers Mug Room 1",
+      "occupancy_profile_id": "standard_occupancy",
+      "organization_id": "",
+      "ownership_profile_id": "standard_rental_ownership",
+      "persistent": true,
+      "plugin_data": {},
+      "pricing_profile_id": "standard_property_pricing",
+      "private": true,
+      "property_type": "inn_room",
+      "room_ids": [],
+      "service_provider_id": "wayfarers_mug",
+      "short_name": "Room 1",
+      "storage_profile_ids": [
+        "inn_room_storage"
+      ],
+      "tags": [
+        "pilot",
+        "inn"
+      ],
+      "version": 1
+    },
+    {
+      "access_profile_id": "standard_property_access",
+      "description": "A second modest rentable inn room.",
+      "enabled": true,
+      "entry_room_id": "",
+      "faction_id": "",
+      "home_location_enabled": true,
+      "id": "wayfarers_mug_room_2",
+      "interior_room_ids": [],
+      "key_profile_id": "temporary_room_key",
+      "landlord_actor_id": "",
+      "landlord_organization_id": "",
+      "lease_profile_id": "standard_inn_lease",
+      "name": "Wayfarers Mug Room 2",
+      "occupancy_profile_id": "standard_occupancy",
+      "organization_id": "",
+      "ownership_profile_id": "standard_rental_ownership",
+      "persistent": true,
+      "plugin_data": {},
+      "pricing_profile_id": "standard_property_pricing",
+      "private": true,
+      "property_type": "inn_room",
+      "room_ids": [],
+      "service_provider_id": "wayfarers_mug",
+      "short_name": "Room 2",
+      "storage_profile_ids": [
+        "inn_room_storage"
+      ],
+      "tags": [
+        "pilot",
+        "inn"
+      ],
+      "version": 1
+    },
+    {
+      "access_profile_id": "standard_property_access",
+      "description": "A personal guild locker foundation.",
+      "enabled": true,
+      "entry_room_id": "",
+      "faction_id": "",
+      "home_location_enabled": false,
+      "id": "adventurers_guild_locker",
+      "interior_room_ids": [],
+      "key_profile_id": "",
+      "landlord_actor_id": "",
+      "landlord_organization_id": "adventurers_guild",
+      "lease_profile_id": "standard_inn_lease",
+      "name": "Adventurers Guild Locker",
+      "occupancy_profile_id": "standard_occupancy",
+      "organization_id": "adventurers_guild",
+      "ownership_profile_id": "standard_rental_ownership",
+      "persistent": true,
+      "plugin_data": {},
+      "pricing_profile_id": "standard_property_pricing",
+      "private": true,
+      "property_type": "locker",
+      "room_ids": [],
+      "service_provider_id": "adventurers_guild",
+      "short_name": "Guild Locker",
+      "storage_profile_ids": [
+        "personal_locker_storage"
+      ],
+      "tags": [
+        "pilot",
+        "locker"
+      ],
+      "version": 1
+    },
+    {
+      "access_profile_id": "standard_property_access",
+      "description": "A small bank-linked safe-deposit box.",
+      "enabled": true,
+      "entry_room_id": "",
+      "faction_id": "",
+      "home_location_enabled": false,
+      "id": "guildlands_bank_safe_box",
+      "interior_room_ids": [],
+      "key_profile_id": "",
+      "landlord_actor_id": "",
+      "landlord_organization_id": "",
+      "lease_profile_id": "standard_inn_lease",
+      "name": "Guildlands Bank Safe Box",
+      "occupancy_profile_id": "standard_occupancy",
+      "organization_id": "",
+      "ownership_profile_id": "standard_rental_ownership",
+      "persistent": true,
+      "plugin_data": {},
+      "pricing_profile_id": "standard_property_pricing",
+      "private": true,
+      "property_type": "safe_deposit_box",
+      "room_ids": [],
+      "service_provider_id": "guildlands_bank",
+      "short_name": "Safe Box",
+      "storage_profile_ids": [
+        "safe_deposit_storage"
+      ],
+      "tags": [
+        "pilot",
+        "bank"
+      ],
+      "version": 1
+    },
+    {
+      "access_profile_id": "standard_property_access",
+      "description": "Builder example for persistent housing; intentionally unassigned to rooms.",
+      "enabled": true,
+      "entry_room_id": "",
+      "faction_id": "",
+      "home_location_enabled": true,
+      "id": "starter_apartment_example",
+      "interior_room_ids": [],
+      "key_profile_id": "temporary_room_key",
+      "landlord_actor_id": "",
+      "landlord_organization_id": "",
+      "lease_profile_id": "standard_inn_lease",
+      "name": "Starter Apartment Example",
+      "occupancy_profile_id": "standard_occupancy",
+      "organization_id": "",
+      "ownership_profile_id": "standard_rental_ownership",
+      "persistent": true,
+      "plugin_data": {},
+      "pricing_profile_id": "standard_property_pricing",
+      "private": true,
+      "property_type": "apartment",
+      "room_ids": [],
+      "service_provider_id": "",
+      "short_name": "Apartment",
+      "storage_profile_ids": [
+        "personal_locker_storage"
+      ],
+      "tags": [
+        "example",
+        "apartment"
+      ],
+      "version": 1
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "property_key_profiles": [
+    {
+      "copyable": false,
+      "credential_type": "virtual_lease",
+      "description": "Lease-scoped virtual/physical room credential.",
+      "expires_with_lease": true,
+      "faction_bound": false,
+      "id": "temporary_room_key",
+      "item_template_id": "",
+      "key_type": "lease_credential",
+      "maximum_copies": 1,
+      "name": "Temporary Room Key",
+      "organization_bound": false,
+      "plugin_data": {},
+      "replaceable": true,
+      "replacement_cost_profile_id": "standard_property_pricing",
+      "tags": [
+        "phase10b"
+      ],
+      "version": 1
+    }
+  ]
+}

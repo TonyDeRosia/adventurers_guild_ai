@@ -1,0 +1,14 @@
+{
+  "property_message_profiles": [
+    {
+      "description": "Phase 10B placeholder profile implemented by PropertyService foundations.",
+      "id": "standard_message",
+      "name": "Standard property_message_profiles",
+      "plugin_data": {},
+      "tags": [
+        "phase10b"
+      ],
+      "version": 1
+    }
+  ]
+}

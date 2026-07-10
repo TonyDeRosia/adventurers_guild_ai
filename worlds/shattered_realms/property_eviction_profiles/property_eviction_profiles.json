@@ -1,0 +1,21 @@
+{
+  "property_eviction_profiles": [
+    {
+      "access_removed": true,
+      "description": "Conservative access removal without item loss.",
+      "grace_period_minutes": 60,
+      "id": "standard_expiration",
+      "items_policy": "retain_locked",
+      "keys_invalidated": true,
+      "name": "Standard Expiration",
+      "notification_document_id": "",
+      "plugin_data": {},
+      "refund_policy_id": "",
+      "tags": [
+        "phase10b"
+      ],
+      "trigger": "lease_expired",
+      "version": 1
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "property_guest_profiles": [
+    {
+      "automatic_expiration": true,
+      "coowner_can_invite": true,
+      "description": "Explicit temporary guests.",
+      "guest_duration_minutes": 1440,
+      "guest_permissions": [
+        "enter",
+        "exit"
+      ],
+      "id": "standard_guest_policy",
+      "maximum_guests": 3,
+      "name": "Standard Guest Policy",
+      "organization_roles_allowed": [
+        "manage_access",
+        "invite_guest"
+      ],
+      "owner_can_invite": true,
+      "plugin_data": {},
+      "tags": [
+        "phase10b"
+      ],
+      "tenant_can_invite": true,
+      "version": 1
+    }
+  ]
+}

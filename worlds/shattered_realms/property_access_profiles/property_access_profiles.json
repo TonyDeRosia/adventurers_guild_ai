@@ -1,0 +1,35 @@
+{
+  "property_access_profiles": [
+    {
+      "actions": [
+        "enter",
+        "exit",
+        "store",
+        "retrieve",
+        "invite_guest",
+        "remove_guest",
+        "manage_access",
+        "renew",
+        "terminate",
+        "inspect"
+      ],
+      "default_private_policy": "deny",
+      "description": "Default private property access.",
+      "id": "standard_property_access",
+      "name": "Standard Property Access",
+      "plugin_data": {},
+      "public_entrance": false,
+      "requirements": [
+        "owner",
+        "tenant",
+        "coowner",
+        "guest",
+        "key"
+      ],
+      "tags": [
+        "phase10b"
+      ],
+      "version": 1
+    }
+  ]
+}

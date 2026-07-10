@@ -1,0 +1,21 @@
+{
+  "property_retention_profiles": [
+    {
+      "abandoned_property_item_policy": "retain_locked",
+      "delinquent_item_policy": "retain_locked",
+      "description": "Preserve all stored items on expiry.",
+      "expired_lease_item_policy": "retain_locked",
+      "grace_period_minutes": 60,
+      "id": "safe_item_retention",
+      "mail_notification": true,
+      "name": "Safe Item Retention",
+      "plugin_data": {},
+      "retain_audit_history": true,
+      "return_destination": "pending_claim",
+      "tags": [
+        "phase10b"
+      ],
+      "version": 1
+    }
+  ]
+}
