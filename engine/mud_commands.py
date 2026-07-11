@@ -575,7 +575,7 @@ class MudCommandEngine:
 
     def _cmd_survival_needs(self, character: Any, args: list[str], raw: str) -> CommandResult:
         svc=self._survival_service(character); cmd=raw.split()[0].lower(); actor_id=str(getattr(character,'id',getattr(character,'character_id','self')))
-        if cmd in {'rest','sleep','wake','camp','campfire','campsite','fire','make','break','light','extinguish','add','inspect','stop'}:
+        if cmd in {'rest','sleep','wake','camp','campfire','campsite','fire','make','break','light','extinguish','add','inspect','stop','set','build'}:
             phrase=' '.join([cmd]+args).lower().strip()
             if phrase in {'rest status','sleep status'}: return CommandResult("Rest status is available. You can REST or SLEEP when the area is safe.")
             if phrase in {'stop resting','wake'} or cmd=='wake':
@@ -1699,9 +1699,9 @@ class MudCommandEngine:
                 self.event_bus.publish("movement_succeeded", {"canonical_command":"recall", "character_id": character.id, "current_room_id": old_room, "target_room_id": dest}, source_system="movement", character_id=character.id, room_id=dest)
             return CommandResult(f"{pdata.get('casting_text') or 'You cast Recall.'}\n{pdata.get('arrival_text') or 'You arrive at the recall point.'}", state_updates={"render_room": True})
         if aid == "set_camp":
-            return self._cmd_survival_needs(character, ["here"], "camp here")
+            return self._cmd_survival_needs(character, ["camp"], "set camp")
         if aid == "build_campfire":
-            return self._cmd_survival_needs(character, ["create"], "campfire create")
+            return self._cmd_survival_needs(character, ["campfire"], "build campfire")
         return CommandResult(res.get("message") or "Ability activated.", ok=True)
 
     def _cmd_cancel_ability(self, character: Any, args: list[str], raw: str) -> CommandResult:

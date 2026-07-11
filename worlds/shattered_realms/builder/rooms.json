@@ -198,6 +198,11 @@
         "description": "south to emberwood edge.",
         "direction": "south",
         "target_room_id": "emberwood_edge"
+      },
+      "north": {
+        "description": "north to forest trail.",
+        "direction": "north",
+        "target_room_id": "forest_trail"
       }
     },
     "features": {},
@@ -857,5 +862,138 @@
     "vnum": 1051,
     "world_id": "shattered_realms",
     "zone_id": "training_grounds"
+  },
+  "forest_trail": {
+    "area_id": "starter_guildlands",
+    "description": "A simple woodland trail loops between trees and low brush.",
+    "exits": {
+      "south": {
+        "description": "south to emberwood game trail.",
+        "direction": "south",
+        "target_room_id": "emberwood_game_trail"
+      },
+      "east": {
+        "description": "east to wolf trail.",
+        "direction": "east",
+        "target_room_id": "wolf_trail"
+      },
+      "north": {
+        "description": "north to woodland camp.",
+        "direction": "north",
+        "target_room_id": "woodland_camp"
+      }
+    },
+    "features": {},
+    "flags": [],
+    "id": "forest_trail",
+    "name": "Forest Trail",
+    "plugin_data": {
+      "phase": "12d1",
+      "purpose": "engine_validation_sandbox"
+    },
+    "tags": [
+      "starter",
+      "phase12d1",
+      "outdoor"
+    ],
+    "vnum": 1212,
+    "world_id": "shattered_realms",
+    "zone_id": "emberwood_edge"
+  },
+  "wolf_trail": {
+    "area_id": "starter_guildlands",
+    "description": "A narrow animal trail runs past clawed trunks and scattered stones.",
+    "exits": {
+      "west": {
+        "description": "west to forest trail.",
+        "direction": "west",
+        "target_room_id": "forest_trail"
+      },
+      "north": {
+        "description": "north to wolf den.",
+        "direction": "north",
+        "target_room_id": "wolf_den"
+      }
+    },
+    "features": {},
+    "flags": [],
+    "id": "wolf_trail",
+    "name": "Wolf Trail",
+    "plugin_data": {
+      "phase": "12d1",
+      "purpose": "engine_validation_sandbox"
+    },
+    "tags": [
+      "starter",
+      "phase12d1",
+      "outdoor"
+    ],
+    "vnum": 1213,
+    "world_id": "shattered_realms",
+    "zone_id": "emberwood_edge"
+  },
+  "wolf_den": {
+    "area_id": "starter_guildlands",
+    "description": "A shallow den lies beneath roots and stone at the edge of the trail.",
+    "exits": {
+      "south": {
+        "description": "south to wolf trail.",
+        "direction": "south",
+        "target_room_id": "wolf_trail"
+      },
+      "west": {
+        "description": "west to woodland camp.",
+        "direction": "west",
+        "target_room_id": "woodland_camp"
+      }
+    },
+    "features": {},
+    "flags": [],
+    "id": "wolf_den",
+    "name": "Wolf Den",
+    "plugin_data": {
+      "phase": "12d1",
+      "purpose": "engine_validation_sandbox"
+    },
+    "tags": [
+      "starter",
+      "phase12d1",
+      "outdoor"
+    ],
+    "vnum": 1214,
+    "world_id": "shattered_realms",
+    "zone_id": "emberwood_edge"
+  },
+  "woodland_camp": {
+    "area_id": "starter_guildlands",
+    "description": "A clear patch of ground offers room for testing camps and firelight.",
+    "exits": {
+      "east": {
+        "description": "east to wolf den.",
+        "direction": "east",
+        "target_room_id": "wolf_den"
+      },
+      "south": {
+        "description": "south to forest trail.",
+        "direction": "south",
+        "target_room_id": "forest_trail"
+      }
+    },
+    "features": {},
+    "flags": [],
+    "id": "woodland_camp",
+    "name": "Woodland Camp",
+    "plugin_data": {
+      "phase": "12d1",
+      "purpose": "engine_validation_sandbox"
+    },
+    "tags": [
+      "starter",
+      "phase12d1",
+      "outdoor"
+    ],
+    "vnum": 1215,
+    "world_id": "shattered_realms",
+    "zone_id": "emberwood_edge"
   }
 }

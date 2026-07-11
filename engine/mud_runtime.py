@@ -1801,7 +1801,7 @@ class MudRuntime:
                     out.append({"id": r["campsite_instance_id"], "name": "a small campsite", "keywords": ["campsite", "camp", "small campsite"], "entity_type": "campsite", "short_description": "A small campsite has been established here.", "long_description": "Bedroll space and a cleared patch of ground mark this as a simple campsite."})
                 for r in conn.execute("SELECT * FROM campfire_instances WHERE room_id=? AND status IN ('unlit','lit','extinguished','low_fuel') AND (expires_world_time IS NULL OR expires_world_time>(SELECT ((current_day-1)*1440+current_hour*60+current_minute) FROM world_time WHERE world_id=campfire_instances.world_id))", (room_id,)):
                     status = str(r["status"] or "unlit")
-                    label = "a crackling campfire" if status == "lit" else "a bed of cold ashes" if status == "extinguished" else "an unlit campfire"
+                    label = "a lit campfire" if status == "lit" else "a bed of cold ashes" if status == "extinguished" else "an unlit campfire"
                     desc = "Warm flames crackle from a small ring of stones." if status == "lit" else "Cold ash and charred wood sit within a small ring of stones." if status == "extinguished" else "Kindling and stacked wood wait within a small ring of stones."
                     out.append({"id": r["campfire_instance_id"], "name": label, "keywords": ["campfire", "fire", label], "entity_type": "campfire", "status": status, "short_description": label, "long_description": desc})
         except sqlite3.Error:

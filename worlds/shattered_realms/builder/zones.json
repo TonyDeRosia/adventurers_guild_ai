@@ -50,7 +50,11 @@
     "plugin_data": {},
     "room_ids": [
       "emberwood_edge",
-      "emberwood_game_trail"
+      "emberwood_game_trail",
+      "forest_trail",
+      "wolf_trail",
+      "wolf_den",
+      "woodland_camp"
     ],
     "tags": [
       "starter"
