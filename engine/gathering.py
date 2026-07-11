@@ -19,6 +19,7 @@ GATHERING_COLLECTIONS = (
     "gathering_profiles", "gathering_tool_profiles", "resource_yield_profiles",
     "gathering_resource_cost_profiles", "gathering_interruption_profiles", "gathering_cooldown_profiles",
     "gathering_profession_xp_profiles", "gathering_message_profiles", "gathering_render_profiles", "gathering_access_profiles",
+    "corpse_extraction_profiles",
 )
 RESOURCE_TYPES = {"herb","plant","wood","timber","ore","stone","gem","fish","hide","meat","bone","fiber","mushroom","mineral","clay","salt","water_placeholder","salvage","excavation","forage","custom"}
 NODE_STATUSES = {"available","partially_depleted","depleted","regenerating","dormant","seasonally_unavailable","weather_blocked","disabled","destroyed_placeholder","archived"}
@@ -247,6 +248,27 @@ class GatheringService:
             self.publish("corpse_skinned", {"corpse_instance_id":corpse_instance_id,"resource_definition_id":resource_id,"gathering_session_id":s["gathering_session_id"]})
         return r
     butcher_corpse=skin_corpse
+    harvest_corpse=skin_corpse
+    def get_corpse_extraction_profile(self, profile_id):
+        return self.records.get("corpse_extraction_profiles", {}).get(str(profile_id))
+    def resolve_corpse_extraction_profile(self, actor_template_id):
+        profiles=self.records.get("corpse_extraction_profiles", {})
+        for p in profiles.values():
+            if p.get("enabled", True) and str(actor_template_id) in set(map(str, p.get("actor_template_ids") or [])):
+                return p
+        return None
+    def process_corpse(self, actor_id, corpse_instance_id, actor_template_id, operation, tool_id=None, world_time=0):
+        profile=self.resolve_corpse_extraction_profile(actor_template_id)
+        if not profile: return {"ok":False,"reason":"missing_corpse_extraction_profile"}
+        step=next((x for x in profile.get("extractions", []) if x.get("operation")==operation), None)
+        if not step: return {"ok":False,"reason":"unsupported_corpse_operation","profile_id":profile.get("id")}
+        node=self.materialize_node(step.get("node_definition_id"), corpse_instance_id, world_time)
+        result=self.skin_corpse(actor_id, corpse_instance_id, node["node_instance_id"], step.get("resource_definition_id"), tool_id, world_time)
+        if result.get("ok"):
+            result["corpse_extraction_profile_id"]=profile.get("id")
+            result["corpse_operation"]=operation
+            self.publish("corpse_processed", {"actor_id":actor_id,"corpse_instance_id":corpse_instance_id,"actor_template_id":actor_template_id,"operation":operation,"resource_definition_id":step.get("resource_definition_id"),"gathering_session_id":result.get("gathering_session_id"),"yields":result.get("yields",[])})
+        return result
     def interrupt_gathering(self, session_id, reason):
         with sqlite3.connect(self.db_path) as c: c.execute("UPDATE gathering_sessions SET status='interrupted',failure_reason=?,updated_at=CURRENT_TIMESTAMP WHERE gathering_session_id=? AND status IN ('started','in_progress')",(reason,session_id)); self._audit(c,"","",session_id,"interrupt","ok",reason,0,{})
         self.publish("resource_node_gathering_interrupted", {"gathering_session_id":session_id,"reason":reason}); return {"ok":True}

@@ -251,6 +251,87 @@
       "visible": true,
       "yield_item_template_id": "clay_placeholder",
       "yield_profile_id": "common_clay_yield"
+    },
+    {
+      "description": "Builder-authored corpse skinning resource for starter forest wolf corpses.",
+      "discoverable": true,
+      "enabled": true,
+      "gathering_profile_id": "basic_skinning",
+      "id": "starter_wolf_pelt_skinning",
+      "minimum_profession_rank": 0,
+      "name": "Starter Wolf Pelt Skinning",
+      "plugin_data": {
+        "corpse_operation": "skinning"
+      },
+      "profession_id": "skinning",
+      "quality_profile_id": "standard_quality",
+      "rarity": 1,
+      "renewable": false,
+      "resource_type": "hide",
+      "short_name": "wolf pelt",
+      "tags": [
+        "phase11f",
+        "corpse_processing"
+      ],
+      "tool_profile_id": "",
+      "version": "1.0.0",
+      "visible": true,
+      "yield_item_template_id": "wolf_pelt",
+      "yield_profile_id": "starter_wolf_pelt_yield"
+    },
+    {
+      "description": "Builder-authored corpse butchering resource for starter forest wolf corpses.",
+      "discoverable": true,
+      "enabled": true,
+      "gathering_profile_id": "basic_butchering",
+      "id": "starter_wolf_meat_butchering",
+      "minimum_profession_rank": 0,
+      "name": "Starter Wolf Meat Butchering",
+      "plugin_data": {
+        "corpse_operation": "butchering"
+      },
+      "profession_id": "skinning",
+      "quality_profile_id": "standard_quality",
+      "rarity": 1,
+      "renewable": false,
+      "resource_type": "meat",
+      "short_name": "wolf meat",
+      "tags": [
+        "phase11f",
+        "corpse_processing"
+      ],
+      "tool_profile_id": "",
+      "version": "1.0.0",
+      "visible": true,
+      "yield_item_template_id": "small_meat",
+      "yield_profile_id": "starter_wolf_meat_yield"
+    },
+    {
+      "description": "Builder-authored corpse harvesting resource for leftover starter wolf materials.",
+      "discoverable": true,
+      "enabled": true,
+      "gathering_profile_id": "basic_harvesting",
+      "id": "starter_wolf_torn_hide_harvesting",
+      "minimum_profession_rank": 0,
+      "name": "Starter Wolf Torn Hide Harvesting",
+      "plugin_data": {
+        "corpse_operation": "harvesting"
+      },
+      "profession_id": "skinning",
+      "quality_profile_id": "standard_quality",
+      "rarity": 1,
+      "renewable": false,
+      "resource_type": "hide",
+      "short_name": "torn hide",
+      "tags": [
+        "phase11f",
+        "corpse_processing"
+      ],
+      "tool_profile_id": "",
+      "version": "1.0.0",
+      "visible": true,
+      "yield_item_template_id": "torn_hide",
+      "yield_profile_id": "starter_wolf_torn_hide_yield"
     }
   ]
 }

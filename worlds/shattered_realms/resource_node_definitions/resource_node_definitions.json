@@ -282,6 +282,87 @@
       ],
       "version": "1.0.0",
       "zone_ids": []
+    },
+    {
+      "access_profile_id": "open_access",
+      "area_ids": [],
+      "availability_profile_id": "always_available",
+      "capacity_profile_id": "small_shared_patch",
+      "description": "Corpse-scoped node materialized by GatheringService for the Guildlands survival loop.",
+      "enabled": true,
+      "feature_ids": [],
+      "id": "starter_wolf_skinning_node",
+      "name": "Starter Wolf Skinning Node",
+      "node_type": "corpse_extraction",
+      "personal_state_policy": "none",
+      "placement_type": "room",
+      "plugin_data": {},
+      "regeneration_profile_id": "corpse_no_regeneration",
+      "resource_definition_ids": [
+        "starter_wolf_pelt_skinning"
+      ],
+      "room_ids": [],
+      "shared_state_policy": "shared",
+      "tags": [
+        "phase11f",
+        "corpse_processing"
+      ],
+      "version": "1.0.0",
+      "zone_ids": []
+    },
+    {
+      "access_profile_id": "open_access",
+      "area_ids": [],
+      "availability_profile_id": "always_available",
+      "capacity_profile_id": "small_shared_patch",
+      "description": "Corpse-scoped node materialized by GatheringService for the Guildlands survival loop.",
+      "enabled": true,
+      "feature_ids": [],
+      "id": "starter_wolf_butchering_node",
+      "name": "Starter Wolf Butchering Node",
+      "node_type": "corpse_extraction",
+      "personal_state_policy": "none",
+      "placement_type": "room",
+      "plugin_data": {},
+      "regeneration_profile_id": "corpse_no_regeneration",
+      "resource_definition_ids": [
+        "starter_wolf_meat_butchering"
+      ],
+      "room_ids": [],
+      "shared_state_policy": "shared",
+      "tags": [
+        "phase11f",
+        "corpse_processing"
+      ],
+      "version": "1.0.0",
+      "zone_ids": []
+    },
+    {
+      "access_profile_id": "open_access",
+      "area_ids": [],
+      "availability_profile_id": "always_available",
+      "capacity_profile_id": "small_shared_patch",
+      "description": "Corpse-scoped node materialized by GatheringService for the Guildlands survival loop.",
+      "enabled": true,
+      "feature_ids": [],
+      "id": "starter_wolf_harvesting_node",
+      "name": "Starter Wolf Harvesting Node",
+      "node_type": "corpse_extraction",
+      "personal_state_policy": "none",
+      "placement_type": "room",
+      "plugin_data": {},
+      "regeneration_profile_id": "corpse_no_regeneration",
+      "resource_definition_ids": [
+        "starter_wolf_torn_hide_harvesting"
+      ],
+      "room_ids": [],
+      "shared_state_policy": "shared",
+      "tags": [
+        "phase11f",
+        "corpse_processing"
+      ],
+      "version": "1.0.0",
+      "zone_ids": []
     }
   ]
 }

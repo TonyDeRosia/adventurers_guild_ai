@@ -150,6 +150,23 @@
       ],
       "tool_profile_id": "",
       "version": "1.0.0"
+    },
+    {
+      "description": "Phase 11F corpse butchering adapter over GatheringService.",
+      "duration_minutes": 0,
+      "enabled": true,
+      "failure_policy": "no_yield",
+      "gathering_type": "butchering",
+      "id": "basic_butchering",
+      "minimum_profession_rank": 0,
+      "name": "Basic Butchering",
+      "plugin_data": {},
+      "required_profession_id": "skinning",
+      "tags": [
+        "phase11f"
+      ],
+      "tool_profile_id": "",
+      "version": "1.0.0"
     }
   ]
 }

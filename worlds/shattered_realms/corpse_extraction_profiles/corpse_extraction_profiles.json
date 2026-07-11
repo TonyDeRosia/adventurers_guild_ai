@@ -1,0 +1,36 @@
+{
+  "corpse_extraction_profiles": [
+    {
+      "actor_template_ids": [
+        "forest_wolf"
+      ],
+      "description": "Builder-authored skin/butcher/harvest profile for the Guildlands starter wolf.",
+      "enabled": true,
+      "extractions": [
+        {
+          "node_definition_id": "starter_wolf_skinning_node",
+          "operation": "skinning",
+          "resource_definition_id": "starter_wolf_pelt_skinning"
+        },
+        {
+          "node_definition_id": "starter_wolf_butchering_node",
+          "operation": "butchering",
+          "resource_definition_id": "starter_wolf_meat_butchering"
+        },
+        {
+          "node_definition_id": "starter_wolf_harvesting_node",
+          "operation": "harvesting",
+          "resource_definition_id": "starter_wolf_torn_hide_harvesting"
+        }
+      ],
+      "id": "starter_forest_wolf_corpse_processing",
+      "name": "Starter Forest Wolf Corpse Processing",
+      "plugin_data": {},
+      "tags": [
+        "phase11f",
+        "guildlands"
+      ],
+      "version": "1.0.0"
+    }
+  ]
+}

@@ -223,6 +223,69 @@
       "tags": [
         "phase11c2"
       ]
+    },
+    {
+      "base_yields": [
+        {
+          "id": "base",
+          "item_template_id": "wolf_pelt",
+          "maximum_quantity": 1,
+          "minimum_quantity": 1,
+          "quality_profile_id": "standard_quality",
+          "weight": 1
+        }
+      ],
+      "description": "Deterministic Guildlands starter wolf corpse yield.",
+      "id": "starter_wolf_pelt_yield",
+      "inventory_overflow_policy": "claimable_reward",
+      "maximum_total_items": 1,
+      "name": "Starter Wolf Pelt Yield",
+      "rare_yields": [],
+      "tags": [
+        "phase11f"
+      ]
+    },
+    {
+      "base_yields": [
+        {
+          "id": "base",
+          "item_template_id": "small_meat",
+          "maximum_quantity": 2,
+          "minimum_quantity": 2,
+          "quality_profile_id": "standard_quality",
+          "weight": 1
+        }
+      ],
+      "description": "Deterministic Guildlands starter wolf corpse yield.",
+      "id": "starter_wolf_meat_yield",
+      "inventory_overflow_policy": "claimable_reward",
+      "maximum_total_items": 1,
+      "name": "Starter Wolf Meat Yield",
+      "rare_yields": [],
+      "tags": [
+        "phase11f"
+      ]
+    },
+    {
+      "base_yields": [
+        {
+          "id": "base",
+          "item_template_id": "torn_hide",
+          "maximum_quantity": 1,
+          "minimum_quantity": 1,
+          "quality_profile_id": "standard_quality",
+          "weight": 1
+        }
+      ],
+      "description": "Deterministic Guildlands starter wolf corpse yield.",
+      "id": "starter_wolf_torn_hide_yield",
+      "inventory_overflow_policy": "claimable_reward",
+      "maximum_total_items": 1,
+      "name": "Starter Wolf Torn Hide Yield",
+      "rare_yields": [],
+      "tags": [
+        "phase11f"
+      ]
     }
   ]
 }
