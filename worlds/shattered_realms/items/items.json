@@ -708,13 +708,13 @@
     "weight": 1
   },
   {
-    "description": "healer\u2019s kit for beginner Smart MUD play.",
+    "description": "healer’s kit for beginner Smart MUD play.",
     "effects": {},
     "equipment_slots": [
       "none"
     ],
     "id": "healers_kit",
-    "name": "healer\u2019s kit",
+    "name": "healer’s kit",
     "occupies_slots": [
       "none"
     ],
@@ -1439,6 +1439,81 @@
       "container",
       "phase11d1"
     ],
+    "version": 1
+  },
+  {
+    "id": "wolf_pelt",
+    "name": "wolf pelt",
+    "description": "A tagged quest pelt recovered from a starter forest wolf corpse.",
+    "type": "material",
+    "rarity": "common",
+    "value": 2,
+    "weight": 1,
+    "stackable": true,
+    "tags": [
+      "starter",
+      "quest_item",
+      "crafting_material",
+      "wolf"
+    ],
+    "plugin_data": {},
+    "version": 1
+  },
+  {
+    "id": "torn_hide",
+    "name": "torn hide",
+    "description": "A rough crafting material from a starter wolf.",
+    "type": "material",
+    "rarity": "common",
+    "value": 1,
+    "weight": 1,
+    "stackable": true,
+    "tags": [
+      "starter",
+      "crafting_material",
+      "wolf"
+    ],
+    "plugin_data": {},
+    "version": 1
+  },
+  {
+    "id": "training_dagger",
+    "name": "training dagger",
+    "description": "A rare starter equipment roll from the first hunting trail.",
+    "type": "weapon",
+    "slot": "main_hand",
+    "equipment_slots": [
+      "main_hand"
+    ],
+    "wear_slots": [
+      "main_hand"
+    ],
+    "occupies_slots": [
+      "main_hand"
+    ],
+    "rarity": "uncommon",
+    "value": 6,
+    "weight": 1,
+    "stats": {},
+    "effects": {},
+    "modifiers": [
+      {
+        "id": "training_dagger_attack_power",
+        "target_domain": "derived_stat",
+        "target_key": "attack_power",
+        "operation": "add",
+        "value": 1,
+        "priority": 100,
+        "stacking_group": "equipment_attack_power",
+        "stacking_policy": "stack",
+        "visible": true
+      }
+    ],
+    "tags": [
+      "starter",
+      "rare_roll"
+    ],
+    "plugin_data": {},
     "version": 1
   }
 ]

@@ -1,6 +1,186 @@
-{"loot_tables":[
- {"id":"rat_common_loot","name":"Rat Common Loot","description":"Tiny deterministic currency-only pilot table; no speculative gear.","roll_mode":"chance_each","roll_count":1,"entries":[{"id":"small_coin","reward_type":"currency","currency_id":"copper","amount":1,"minimum_quantity":1,"maximum_quantity":2,"weight":1,"chance":0.5,"guaranteed":false,"unique_group":"","maximum_per_resolution":1,"conditions":[],"quality_placeholder":"","metadata":{}}],"nested_table_ids":[],"eligibility_rules":[],"empty_result_policy":"allow_empty","resolution_policy":"seeded","tags":["phase7a","vermin"],"plugin_data":{},"version":1},
- {"id":"giant_rat_loot","name":"Giant Rat Loot","description":"Slightly larger conservative rat loot.","roll_mode":"guaranteed_plus_weighted","roll_count":1,"entries":[{"id":"coin","reward_type":"currency","currency_id":"copper","amount":2,"minimum_quantity":1,"maximum_quantity":3,"weight":1,"chance":1,"guaranteed":true,"unique_group":"","maximum_per_resolution":1,"conditions":[],"quality_placeholder":"","metadata":{}}],"nested_table_ids":["rat_common_loot"],"eligibility_rules":[],"empty_result_policy":"allow_empty","resolution_policy":"seeded","tags":["phase7a","vermin"],"plugin_data":{},"version":1},
- {"id":"wolf_common_loot","name":"Wolf Common Loot","description":"Placeholder safe wolf loot with a small chance of copper only.","roll_mode":"chance_each","roll_count":1,"entries":[{"id":"small_coin","reward_type":"currency","currency_id":"copper","amount":1,"minimum_quantity":1,"maximum_quantity":2,"weight":1,"chance":0.25,"guaranteed":false,"unique_group":"","maximum_per_resolution":1,"conditions":[],"quality_placeholder":"","metadata":{}}],"nested_table_ids":[],"eligibility_rules":[],"empty_result_policy":"allow_empty","resolution_policy":"seeded","tags":["phase7a"],"plugin_data":{},"version":1},
- {"id":"guard_training_loot_placeholder","name":"Guard Training Loot Placeholder","description":"Intentionally empty so guards are not farmable treasure sources.","roll_mode":"all","roll_count":0,"entries":[],"nested_table_ids":[],"eligibility_rules":[],"empty_result_policy":"allow_empty","resolution_policy":"seeded","tags":["phase7a","safe"],"plugin_data":{},"version":1}
-]}
+{
+  "loot_tables": [
+    {
+      "id": "rat_common_loot",
+      "name": "Rat Common Loot",
+      "description": "Tiny deterministic currency-only pilot table; no speculative gear.",
+      "roll_mode": "chance_each",
+      "roll_count": 1,
+      "entries": [
+        {
+          "id": "small_coin",
+          "reward_type": "currency",
+          "currency_id": "copper",
+          "amount": 1,
+          "minimum_quantity": 1,
+          "maximum_quantity": 2,
+          "weight": 1,
+          "chance": 0.5,
+          "guaranteed": false,
+          "unique_group": "",
+          "maximum_per_resolution": 1,
+          "conditions": [],
+          "quality_placeholder": "",
+          "metadata": {}
+        }
+      ],
+      "nested_table_ids": [],
+      "eligibility_rules": [],
+      "empty_result_policy": "allow_empty",
+      "resolution_policy": "seeded",
+      "tags": [
+        "phase7a",
+        "vermin"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "giant_rat_loot",
+      "name": "Giant Rat Loot",
+      "description": "Slightly larger conservative rat loot.",
+      "roll_mode": "guaranteed_plus_weighted",
+      "roll_count": 1,
+      "entries": [
+        {
+          "id": "coin",
+          "reward_type": "currency",
+          "currency_id": "copper",
+          "amount": 2,
+          "minimum_quantity": 1,
+          "maximum_quantity": 3,
+          "weight": 1,
+          "chance": 1,
+          "guaranteed": true,
+          "unique_group": "",
+          "maximum_per_resolution": 1,
+          "conditions": [],
+          "quality_placeholder": "",
+          "metadata": {}
+        }
+      ],
+      "nested_table_ids": [
+        "rat_common_loot"
+      ],
+      "eligibility_rules": [],
+      "empty_result_policy": "allow_empty",
+      "resolution_policy": "seeded",
+      "tags": [
+        "phase7a",
+        "vermin"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "guard_training_loot_placeholder",
+      "name": "Guard Training Loot Placeholder",
+      "description": "Intentionally empty so guards are not farmable treasure sources.",
+      "roll_mode": "all",
+      "roll_count": 0,
+      "entries": [],
+      "nested_table_ids": [],
+      "eligibility_rules": [],
+      "empty_result_policy": "allow_empty",
+      "resolution_policy": "seeded",
+      "tags": [
+        "phase7a",
+        "safe"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "wolf_common_loot",
+      "name": "Wolf Common Loot",
+      "description": "Starter wolf loot for the Guildlands combat vertical slice: guaranteed quest pelt, currency, material, and rare starter gear roll.",
+      "roll_mode": "guaranteed_plus_weighted",
+      "roll_count": 1,
+      "entries": [
+        {
+          "id": "wolf_pelt",
+          "reward_type": "item",
+          "definition_id": "wolf_pelt",
+          "item_template_id": "wolf_pelt",
+          "minimum_quantity": 1,
+          "maximum_quantity": 1,
+          "quantity": 1,
+          "weight": 1,
+          "chance": 1,
+          "guaranteed": true,
+          "unique_group": "quest_pelt",
+          "maximum_per_resolution": 1,
+          "conditions": [],
+          "quality_placeholder": "",
+          "metadata": {
+            "quest_item": true
+          }
+        },
+        {
+          "id": "small_coin",
+          "reward_type": "currency",
+          "currency_id": "copper",
+          "amount": 2,
+          "minimum_quantity": 1,
+          "maximum_quantity": 3,
+          "weight": 1,
+          "chance": 1,
+          "guaranteed": true,
+          "unique_group": "",
+          "maximum_per_resolution": 1,
+          "conditions": [],
+          "quality_placeholder": "",
+          "metadata": {}
+        },
+        {
+          "id": "torn_hide",
+          "reward_type": "item",
+          "definition_id": "torn_hide",
+          "item_template_id": "torn_hide",
+          "minimum_quantity": 1,
+          "maximum_quantity": 2,
+          "quantity": 1,
+          "weight": 1,
+          "chance": 1,
+          "guaranteed": true,
+          "unique_group": "material",
+          "maximum_per_resolution": 1,
+          "conditions": [],
+          "quality_placeholder": "",
+          "metadata": {}
+        },
+        {
+          "id": "training_dagger_rare",
+          "reward_type": "item",
+          "definition_id": "training_dagger",
+          "item_template_id": "training_dagger",
+          "minimum_quantity": 1,
+          "maximum_quantity": 1,
+          "quantity": 1,
+          "weight": 1,
+          "chance": 0.05,
+          "guaranteed": false,
+          "unique_group": "rare_equipment",
+          "maximum_per_resolution": 1,
+          "conditions": [],
+          "quality_placeholder": "rare_roll",
+          "metadata": {
+            "rare_roll": true
+          }
+        }
+      ],
+      "nested_table_ids": [],
+      "eligibility_rules": [],
+      "empty_result_policy": "allow_empty",
+      "resolution_policy": "seeded",
+      "tags": [
+        "phase7a",
+        "phase11f",
+        "wolf",
+        "starter"
+      ],
+      "plugin_data": {},
+      "version": 1
+    }
+  ]
+}

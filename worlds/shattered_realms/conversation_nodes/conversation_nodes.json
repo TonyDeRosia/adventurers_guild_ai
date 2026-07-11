@@ -241,7 +241,7 @@
     {
       "id": "maren_emberleaf_done",
       "conversation_id": "maren_emberleaf_errand",
-      "text": "\"You have already completed the emberleaf errand. I can now discuss your next steps.\"",
+      "text": "\"You have completed the emberleaf errand. Your next assignment is a controlled hunt on the Emberwood trail.\"",
       "terminal": false,
       "choice_ids": [],
       "entry_conditions": [],
@@ -291,6 +291,106 @@
       "journal_note": "",
       "tags": [
         "phase11f"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "maren_wolf_offer",
+      "conversation_id": "maren_emberleaf_errand",
+      "text": "\"You handled the emberleaf. Now prove you can survive a controlled fight: take the north road to the Emberwood hunting trail, defeat one forest wolf, and bring back a pelt from its corpse.\"",
+      "terminal": false,
+      "choice_ids": [],
+      "entry_conditions": [],
+      "on_enter_actions": [],
+      "speaker_ref": {
+        "type": "actor_template",
+        "id": "guild_registrar_maren"
+      },
+      "journal_note": "Maren offers the first combat patrol.",
+      "tags": [
+        "phase11f",
+        "combat"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "maren_wolf_accept",
+      "conversation_id": "maren_emberleaf_errand",
+      "text": "\"Good. Use consider before you strike, then kill or attack the wolf. Loot the corpse and return with the pelt.\"",
+      "terminal": false,
+      "choice_ids": [],
+      "entry_conditions": [],
+      "on_enter_actions": [],
+      "speaker_ref": {
+        "type": "actor_template",
+        "id": "guild_registrar_maren"
+      },
+      "journal_note": "Travel north to the hunting trail.",
+      "tags": [
+        "phase11f",
+        "combat"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "maren_wolf_progress",
+      "conversation_id": "maren_emberleaf_errand",
+      "text": "\"Your journal will update when the wolf dies and when the pelt is obtained through corpse loot.\"",
+      "terminal": false,
+      "choice_ids": [],
+      "entry_conditions": [],
+      "on_enter_actions": [],
+      "speaker_ref": {
+        "type": "actor_template",
+        "id": "guild_registrar_maren"
+      },
+      "journal_note": "Combat progress is EventBus-driven.",
+      "tags": [
+        "phase11f",
+        "combat"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "maren_wolf_complete",
+      "conversation_id": "maren_emberleaf_errand",
+      "text": "\"The pelt is recorded and the patrol is complete. You have proven the first combat loop.\"",
+      "terminal": false,
+      "choice_ids": [],
+      "entry_conditions": [],
+      "on_enter_actions": [],
+      "speaker_ref": {
+        "type": "actor_template",
+        "id": "guild_registrar_maren"
+      },
+      "journal_note": "First Hunt complete.",
+      "tags": [
+        "phase11f",
+        "combat"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "maren_wolf_future",
+      "conversation_id": "maren_emberleaf_errand",
+      "text": "\"Next we will expand your assignments beyond the crossing. For now, keep your gear ready.\"",
+      "terminal": true,
+      "choice_ids": [],
+      "entry_conditions": [],
+      "on_enter_actions": [],
+      "speaker_ref": {
+        "type": "actor_template",
+        "id": "guild_registrar_maren"
+      },
+      "journal_note": "Future Guildlands work placeholder.",
+      "tags": [
+        "phase11f",
+        "future_placeholder"
       ],
       "plugin_data": {},
       "version": 1

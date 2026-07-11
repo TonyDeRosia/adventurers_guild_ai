@@ -226,6 +226,35 @@
       ],
       "plugin_data": {},
       "version": 1
+    },
+    {
+      "id": "guildlands_wolf_pelts_hunt",
+      "quest_id": "guildlands_wolf_pelts",
+      "name": "Hunt a Forest Wolf",
+      "description": "Defeat one starter forest wolf and recover a pelt from its corpse.",
+      "journal_text": "Travel north from Guildhall Crossing to the Emberwood hunting trail, defeat a forest wolf, loot its corpse, and return to Maren.",
+      "objective_ids": [
+        "guildlands_wolf_pelts_kill_one",
+        "guildlands_wolf_pelts_obtain_pelt"
+      ],
+      "next_stage_id": "",
+      "terminal_state": "completed",
+      "branch_rules": [],
+      "completion_conditions": [],
+      "entry_conditions": [],
+      "failure_conditions": [],
+      "on_enter_actions": [],
+      "on_progress_actions": [],
+      "on_complete_actions": [],
+      "on_fail_actions": [],
+      "messages": {},
+      "visibility": "visible",
+      "tags": [
+        "phase11f",
+        "combat"
+      ],
+      "plugin_data": {},
+      "version": 1
     }
   ]
 }

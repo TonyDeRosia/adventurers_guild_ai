@@ -585,7 +585,7 @@
     "personality": [
       "warm",
       "gossipy",
-      "remembers everyone\u2019s drink"
+      "remembers everyone’s drink"
     ],
     "speech_style": "character-specific, concise, MUD-friendly",
     "goals": [
@@ -1340,5 +1340,98 @@
       2
     ],
     "ability_loadout_id": "rat_basic"
+  },
+  {
+    "id": "forest_wolf",
+    "name": "Forest Wolf",
+    "kind": "creature",
+    "description": "A cautious starter wolf prowling the Emberwood hunting trail.",
+    "faction_id": "wildlife",
+    "default_room_id": "emberwood_hunting_trail",
+    "occupation": "starter hunting threat",
+    "personality": [
+      "territorial",
+      "hungry",
+      "wary"
+    ],
+    "speech_style": "animal cues only",
+    "goals": [
+      "guard the trail",
+      "avoid larger threats"
+    ],
+    "fears": [
+      "fire",
+      "loud steel"
+    ],
+    "likes": [
+      "quiet woods"
+    ],
+    "dislikes": [
+      "intruders"
+    ],
+    "knowledge": [
+      "nearby trails"
+    ],
+    "relationship_defaults": {
+      "friendly": -50,
+      "wary": -20,
+      "annoyed": -30,
+      "hostile": -75,
+      "afraid": -20,
+      "impressed": 0,
+      "dismissive": 0,
+      "suspicious": -20
+    },
+    "hostility_threshold": -50,
+    "affection_threshold": 30,
+    "memory_policy": "wildlife does not hold dialogue memories",
+    "dialogue_seed": "The Forest Wolf communicates through posture and growls, not speech.",
+    "tags": [
+      "starter",
+      "wolf",
+      "hostile",
+      "wildlife",
+      "phase11f"
+    ],
+    "spawn_id": "spawn_emberwood_forest_wolf",
+    "npc_id": "forest_wolf",
+    "mob_id": "forest_wolf",
+    "room_id": "emberwood_hunting_trail",
+    "max_alive": 1,
+    "respawn_enabled": true,
+    "respawn_delay_seconds": 120,
+    "respawn_mode": "normal",
+    "corpse_decay_seconds": 1800,
+    "corpse_profile_id": "standard_mob_corpse",
+    "death_loot_profile_id": "starter_wolf_death_loot",
+    "loot_table_id": "wolf_common_loot",
+    "treasure_group_id": "starter_wolf_treasure",
+    "combat_behavior_profile_id": "wolf_pack",
+    "behavior_profile_id": "wolf_pack",
+    "ability_loadout_id": "wolf_basic",
+    "natural_weapon_profile_id": "wolf_bite",
+    "aggro_profile_id": "territorial_wildlife",
+    "perception_profile_id": "nearby_hostile_wildlife",
+    "environment_profile_id": "guildlands_temperate",
+    "level_range": [
+      1,
+      1
+    ],
+    "stats": {
+      "level": 1,
+      "max_health": 18,
+      "attack_power": 4,
+      "defense": 1
+    },
+    "builder": {
+      "authored": true,
+      "editable_collections": [
+        "npcs",
+        "combat_behavior_profiles",
+        "loot_tables",
+        "death_loot_profiles",
+        "corpse_decay_profiles"
+      ]
+    }
   }
 ]

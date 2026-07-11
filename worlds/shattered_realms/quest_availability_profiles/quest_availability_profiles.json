@@ -24,6 +24,23 @@
       ],
       "plugin_data": {},
       "version": 1
+    },
+    {
+      "id": "after_guildlands_wolf_pelts",
+      "name": "After First Hunt",
+      "description": "Available after the Guildlands wolf-pelt combat quest is complete.",
+      "tags": [
+        "starter",
+        "phase11f"
+      ],
+      "plugin_data": {},
+      "version": 1,
+      "conditions": [
+        {
+          "condition_type": "quest_completed",
+          "quest_id": "guildlands_wolf_pelts"
+        }
+      ]
     }
   ]
 }

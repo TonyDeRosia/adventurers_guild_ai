@@ -247,6 +247,101 @@
       ],
       "plugin_data": {},
       "version": 1
+    },
+    {
+      "id": "maren_wolf_offer_choice",
+      "conversation_id": "maren_emberleaf_errand",
+      "node_id": "maren_emberleaf_done",
+      "text": "What is my combat assignment?",
+      "next_node_id": "maren_wolf_offer",
+      "ends_conversation": false,
+      "actions": [],
+      "conditions": [
+        {
+          "type": "quest_completed",
+          "quest_id": "guildlands_emberleaf_errand"
+        }
+      ],
+      "tags": [
+        "phase11f",
+        "combat"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "maren_wolf_accept_choice",
+      "conversation_id": "maren_emberleaf_errand",
+      "node_id": "maren_wolf_offer",
+      "text": "I accept the hunting patrol.",
+      "next_node_id": "maren_wolf_accept",
+      "ends_conversation": false,
+      "actions": [
+        {
+          "action_type": "accept_quest",
+          "quest_id": "guildlands_wolf_pelts"
+        }
+      ],
+      "conditions": [],
+      "tags": [
+        "phase11f",
+        "combat"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "maren_wolf_progress_choice",
+      "conversation_id": "maren_emberleaf_errand",
+      "node_id": "maren_wolf_accept",
+      "text": "How will my journal update?",
+      "next_node_id": "maren_wolf_progress",
+      "ends_conversation": false,
+      "actions": [],
+      "conditions": [],
+      "tags": [
+        "phase11f",
+        "combat"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "maren_wolf_turnin_choice",
+      "conversation_id": "maren_emberleaf_errand",
+      "node_id": "maren_wolf_progress",
+      "text": "I have returned with the wolf pelt.",
+      "next_node_id": "maren_wolf_complete",
+      "ends_conversation": false,
+      "actions": [
+        {
+          "action_type": "turn_in_quest",
+          "quest_id": "guildlands_wolf_pelts"
+        }
+      ],
+      "conditions": [],
+      "tags": [
+        "phase11f",
+        "combat"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "maren_wolf_future_choice",
+      "conversation_id": "maren_emberleaf_errand",
+      "node_id": "maren_wolf_complete",
+      "text": "What comes next?",
+      "next_node_id": "maren_wolf_future",
+      "ends_conversation": false,
+      "actions": [],
+      "conditions": [],
+      "tags": [
+        "phase11f",
+        "future_placeholder"
+      ],
+      "plugin_data": {},
+      "version": 1
     }
   ]
 }

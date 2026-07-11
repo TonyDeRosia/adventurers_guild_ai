@@ -81,3 +81,76 @@ def test_insufficient_turnin_rejected_and_decline_branch(tmp_path):
         assert 'not ready' in str(exc)
     else:
         raise AssertionError('turn-in should reject insufficient progress')
+
+
+def test_starter_combat_content_builder_owned_and_world_loaded():
+    content=QuestContent(WORLD)
+    result=QuestValidator(content).validate_all()
+    assert result.ok, result
+    q=content.get('quest_definitions','guildlands_wolf_pelts')
+    assert q['availability_profile_id']=='after_emberleaf_errand'
+    assert q['reward_definition_id']=='guildlands_wolf_pelts_reward'
+    kill=content.get('quest_objectives','guildlands_wolf_pelts_kill_one')
+    pelt=content.get('quest_objectives','guildlands_wolf_pelts_obtain_pelt')
+    assert kill['objective_type']=='kill_template'
+    assert kill['target_definition']['actor_template_id']=='forest_wolf'
+    assert pelt['target_definition']['item_template_id']=='wolf_pelt'
+    npcs=json_load(WORLD/'npcs/npcs.json')
+    wolf=[n for n in npcs if n['id']=='forest_wolf'][0]
+    assert wolf['combat_behavior_profile_id']=='wolf_pack'
+    assert wolf['ability_loadout_id']=='wolf_basic'
+    assert wolf['death_loot_profile_id']=='starter_wolf_death_loot'
+    rooms=json_load(WORLD/'rooms/rooms.json')
+    trail=[r for r in rooms if r['id']=='emberwood_hunting_trail'][0]
+    assert 'forest_wolf' in trail['npcs']
+    assert trail['exits'][0]['destination_room_id']=='old_gate_road'
+
+
+def test_combat_eventbus_kill_pelt_progress_duplicate_protection_and_restart(tmp_path):
+    db, qs, _ = services(tmp_path); actor='wolf_recruit'
+    # prerequisite completed through canonical quest state, not custom flags
+    ember=qs.accept_quest(actor,'guildlands_emberleaf_errand')
+    qs.process_quest_event({'event_type':'resource_gathered','event_id':'ember-1','actor_id':actor,'item_template_id':'emberleaf','quantity':1})
+    qs.turn_in_quest(actor, ember['quest_instance_id'])
+    inst=qs.accept_quest(actor,'guildlands_wolf_pelts')
+    router=QuestEventRouter(qs)
+    kill={'event_type':'enemy_killed','event_id':'wolf-kill-1','actor_id':actor,'target_actor_id':'forest_wolf_spawn_1','target_actor_template_id':'forest_wolf','target_actor_tags':['wolf','starter'], 'world_time':10}
+    assert router.handle_event(kill)['matched']==1
+    assert router.handle_event(kill)['matched']==0
+    pelt={'event_type':'quest_item_obtained','event_id':'wolf-pelt-1','actor_id':actor,'item_template_id':'wolf_pelt','item_instance_id':'pelt-instance-1','quantity':1,'corpse_id':'corpse_wolf_1','world_time':11}
+    assert router.handle_event(pelt)['matched']==1
+    ready=[q for q in QuestService(db, WORLD).get_actor_quests(actor) if q['quest_id']=='guildlands_wolf_pelts'][0]
+    assert ready['quest_id']=='guildlands_wolf_pelts'
+    assert ready['status']=='ready_to_turn_in'
+    trace=QuestService(db, WORLD).trace_quest(inst['quest_instance_id'])
+    assert len(trace['consumed_events'])==2
+
+
+def test_starter_wolf_loot_rewardservice_and_corpse_persistence(tmp_path):
+    from engine.mud_state_store import MUDStateStore
+    rewards=RewardService(db_path=tmp_path/'loot.db')
+    packet=rewards.resolve_loot_table('wolf_common_loot', {'source_type':'corpse','source_id':'forest_wolf','source_instance_id':'spawn_emberwood_forest_wolf'}, {'recipient_type':'corpse','recipient_id':'corpse_wolf_1'}, seed='starter-wolf')
+    entries={e['definition_id'] for e in packet['resolved_entries']}
+    assert {'wolf_pelt','torn_hide','copper'} <= entries
+    store=MUDStateStore('camp','shattered_realms', db_path=tmp_path/'state.db')
+    store.create_corpse('corpse_wolf_1','emberwood_hunting_trail',owner='forest_wolf',gold=2,decay_seconds=1800,items=['wolf_pelt'])
+    reloaded=MUDStateStore('camp','shattered_realms', db_path=tmp_path/'state.db')
+    corpses=reloaded.load_persistent_corpses('emberwood_hunting_trail')
+    assert corpses[0]['corpse_id']=='corpse_wolf_1'
+    assert corpses[0]['items']==['wolf_pelt']
+
+
+def test_eventbus_aliases_for_corpse_looted_and_item_collected(tmp_path):
+    db, qs, _ = services(tmp_path); actor='alias_recruit'
+    ember=qs.accept_quest(actor,'guildlands_emberleaf_errand')
+    qs.process_quest_event({'event_type':'resource_gathered','event_id':'ember-alias','actor_id':actor,'item_template_id':'emberleaf','quantity':1})
+    qs.turn_in_quest(actor, ember['quest_instance_id'])
+    qs.accept_quest(actor,'guildlands_wolf_pelts')
+    assert QuestEventRouter(qs).handle_event({'event_type':'item_collected','event_id':'item-1','actor_id':actor,'item_template_id':'wolf_pelt','quantity':1})['matched']==1
+    # corpse_looted routes through the same collect-item objective family and remains idempotent per event id.
+    assert QuestEventRouter(qs).handle_event({'event_type':'corpse_looted','event_id':'corpse-loot-1','actor_id':actor,'item_template_id':'wolf_pelt','quantity':1,'corpse_id':'corpse_wolf_1'})['matched']==1
+
+
+def json_load(path):
+    import json
+    return json.loads(Path(path).read_text())

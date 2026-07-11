@@ -471,6 +471,11 @@
         "direction": "north",
         "destination_room_id": "old_gate_checkpoint",
         "description": "north to old gate checkpoint."
+      },
+      {
+        "direction": "north",
+        "destination_room_id": "emberwood_hunting_trail",
+        "description": "north to the Emberwood hunting trail."
       }
     ],
     "ambient_messages": [
@@ -870,5 +875,38 @@
       "Life continues around Rat Cellar Nest."
     ],
     "active_hooks": []
+  },
+  {
+    "id": "emberwood_hunting_trail",
+    "area_id": "emberwood_edge",
+    "name": "Emberwood Hunting Trail",
+    "short_description": "A narrow starter hunting trail just beyond Old Gate Road.",
+    "long_description": "The Emberwood Hunting Trail is a contained starter combat area with a clear return path south to Old Gate Road and one conservative forest wolf encounter.",
+    "terrain": "forest",
+    "lighting": "daylight",
+    "weather": "breezy",
+    "tags": [
+      "starter",
+      "emberwood_edge",
+      "combat",
+      "phase11f"
+    ],
+    "npcs": [
+      "forest_wolf"
+    ],
+    "objects": [],
+    "exits": [
+      {
+        "direction": "south",
+        "destination_room_id": "old_gate_road",
+        "description": "south to old gate road."
+      }
+    ],
+    "ambient_messages": [
+      "Brush rustles along the edge of the starter hunting trail."
+    ],
+    "active_hooks": [
+      "starter_combat_vertical_slice"
+    ]
   }
 ]

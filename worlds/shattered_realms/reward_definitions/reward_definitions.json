@@ -131,6 +131,44 @@
       ],
       "plugin_data": {},
       "version": 1
+    },
+    {
+      "id": "guildlands_wolf_pelts_reward",
+      "name": "First Hunt Reward",
+      "description": "Conservative starter combat quest reward delivered through RewardService.",
+      "enabled": true,
+      "delivery_policy": "direct",
+      "eligibility_rules": [],
+      "entries": [
+        {
+          "id": "xp",
+          "reward_type": "experience",
+          "definition_id": "xp",
+          "quantity": 25
+        },
+        {
+          "id": "copper",
+          "reward_type": "currency",
+          "currency_id": "copper",
+          "definition_id": "copper",
+          "quantity": 8,
+          "amount": 8
+        },
+        {
+          "id": "practice",
+          "reward_type": "practice_sessions",
+          "definition_id": "practice_sessions",
+          "quantity": 1
+        }
+      ],
+      "tags": [
+        "quest",
+        "starter",
+        "phase11f",
+        "combat"
+      ],
+      "plugin_data": {},
+      "version": 1
     }
   ]
 }

@@ -186,6 +186,60 @@
       ],
       "plugin_data": {},
       "version": 1
+    },
+    {
+      "id": "guildlands_wolf_pelts_kill_one",
+      "quest_id": "guildlands_wolf_pelts",
+      "stage_id": "guildlands_wolf_pelts_hunt",
+      "name": "Defeat a Forest Wolf",
+      "description": "Defeat 1 Forest Wolf using the combat system.",
+      "objective_type": "kill_template",
+      "progress_mode": "unique_targets",
+      "required_count": 1,
+      "target_definition": {
+        "actor_template_id": "forest_wolf"
+      },
+      "optional": false,
+      "reset_policy": "never",
+      "shared_progress_policy": "individual",
+      "completion_conditions": [],
+      "failure_conditions": [],
+      "messages": {},
+      "visibility": "visible",
+      "tags": [
+        "phase11f",
+        "combat",
+        "enemy_killed"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "guildlands_wolf_pelts_obtain_pelt",
+      "quest_id": "guildlands_wolf_pelts",
+      "stage_id": "guildlands_wolf_pelts_hunt",
+      "name": "Recover a Wolf Pelt",
+      "description": "Loot 1 Wolf Pelt from the wolf corpse.",
+      "objective_type": "collect_item",
+      "progress_mode": "accumulate_amount",
+      "required_count": 1,
+      "target_definition": {
+        "item_template_id": "wolf_pelt"
+      },
+      "optional": false,
+      "reset_policy": "never",
+      "shared_progress_policy": "individual",
+      "completion_conditions": [],
+      "failure_conditions": [],
+      "messages": {},
+      "visibility": "visible",
+      "tags": [
+        "phase11f",
+        "corpse_loot",
+        "quest_item_obtained"
+      ],
+      "plugin_data": {},
+      "version": 1
     }
   ]
 }
