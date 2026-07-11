@@ -1071,6 +1071,8 @@ class MudRuntime:
             cmd = self.command_engine.resolve_alias(raw); args = words[1:]
             if kind.startswith("ambiguous"):
                 return {"tokens": words, "raw_cmd": raw, "cmd": "", "args": args, "alias_note": kind}
+        if raw in {"inspect"}:
+            cmd = "examine"
         if cmd in {"look", "examine"} and args and args[0].lower() in {"at", "in", "inside"}:
             if args[0].lower() in {"in", "inside"}: alias_note = "look in"
             args = args[1:]
@@ -1140,10 +1142,11 @@ class MudRuntime:
             ("npc", self.find_visible_entities(char.room_id, char).get("npcs", [])),
             ("mob", self.find_visible_entities(char.room_id, char).get("mobs", [])),
             ("exit", [{"name": str(e.get("direction") or e.get("dir")), "keywords": [str(e.get("direction") or e.get("dir"))], "entity_type": "exit", "exit": e, "long_description": e.get("description", "")} for e in self._current_room(char).exits if isinstance(e, dict)]),
+            ("world_object", self._runtime_world_objects(char.room_id)),
             ("feature", features),
         ]
         for kind, candidates in groups:
-            res = self.resolve_entity_keywords(query, candidates) if kind in {"player", "npc", "mob", "exit", "feature"} else self.resolve_item_keywords(query, candidates)
+            res = self.resolve_entity_keywords(query, candidates) if kind in {"player", "npc", "mob", "exit", "feature", "world_object"} else self.resolve_item_keywords(query, candidates)
             if res.get("status") == "ok": return {"status": "ok", "kind": kind, "target": res.get("entity") or res.get("item")}
             if res.get("status") == "ambiguous": return {"status": "ambiguous", "matches": res.get("matches", [])}
         return {"status": "missing", "matches": []}
@@ -1231,6 +1234,13 @@ class MudRuntime:
         return CommandResult(msg, ok=not failed)
 
     def _handle_runtime_command(self, char: MudCharacter, command: str):
+        normalized_command = re.sub(r"\s+", " ", str(command or "").strip()).lower()
+        if normalized_command == "set camp":
+            return self.command_engine.handle_command(char, "camp here")
+        if normalized_command == "build campfire":
+            return self.command_engine.handle_command(char, "campfire create")
+        if normalized_command in getattr(self.command_engine, "SOCIAL_DEFINITIONS", {}):
+            return self.command_engine.handle_command(char, command)
         parsed = self._parse_interaction_command(command)
         tokens = parsed["tokens"]
         if not tokens:
@@ -1238,6 +1248,12 @@ class MudRuntime:
         raw_cmd = parsed["raw_cmd"]
         cmd_name = parsed["cmd"]
         args = parsed["args"]
+        if raw_cmd == "inspect":
+            cmd_name = "examine"
+        if raw_cmd == "set" and " ".join(args).lower() == "camp":
+            cmd_name = "camp"; args = ["here"]
+        if raw_cmd == "build" and " ".join(args).lower() == "campfire":
+            cmd_name = "campfire"; args = ["create"]
         if not cmd_name and str(parsed.get("alias_note", "")).startswith("ambiguous"):
             from engine.mud_commands import CommandResult
             choices = parsed["alias_note"].split(":", 1)[1].strip()
@@ -1281,7 +1297,7 @@ class MudRuntime:
             if entity_result is not None:
                 from engine.mud_commands import CommandResult
                 return CommandResult(entity_result)
-        if cmd_name in {"use", "cast", "invoke", "perform", "ability", "abilities", "skills", "spells", "cancel", "cooldowns", "abilitylist", "abilitystat", "abilitycreate", "abilityclone", "abilityset", "abilitydelete", "abilityvalidate", "abilitypreview", "abilitytrace", "loadoutlist", "loadoutstat", "loadoutcreate", "loadoutclone", "loadoutset", "loadoutability", "loadoutdelete", "loadoutvalidate", "abilitygrant", "abilityrevoke", "actorabilities", "abilitycooldowns", "abilitycasts"}:
+        if cmd_name in {"cast", "invoke", "perform", "ability", "abilities", "skills", "spells", "cancel", "cooldowns", "abilitylist", "abilitystat", "abilitycreate", "abilityclone", "abilityset", "abilitydelete", "abilityvalidate", "abilitypreview", "abilitytrace", "loadoutlist", "loadoutstat", "loadoutcreate", "loadoutclone", "loadoutset", "loadoutability", "loadoutdelete", "loadoutvalidate", "abilitygrant", "abilityrevoke", "actorabilities", "abilitycooldowns", "abilitycasts"}:
             return self.command_engine.handle_command(char, command)
         item_result = self._handle_item_command(char, command, cmd_name, args)
         if item_result is not None:
@@ -1382,6 +1398,7 @@ class MudRuntime:
             if portable or not duplicate_feature:
                 objects.append(obj)
         objects.extend(visible.get("corpses", []))
+        objects.extend(self._runtime_world_objects(rid))
         seen_features: set[tuple[str, str]] = set()
         for fid, feat in features.items() if isinstance(features, dict) else []:
             if isinstance(feat, dict):
@@ -1703,6 +1720,27 @@ class MudRuntime:
         ent = res["entity"]
         from smart_mud.transport import html_to_plain_text
         return html_to_plain_text(render_object({"name": ent.get("name"), "description": ent.get("long_description") or ent.get("short_description"), "long_description": ent.get("long_description")}))
+
+
+    def _runtime_world_objects(self, room_id: str) -> list[dict[str, Any]]:
+        """Return persisted service-backed room objects for canonical rendering and inspection."""
+        out: list[dict[str, Any]] = []
+        db = getattr(self.state_store, "db_path", "")
+        if not db:
+            return out
+        try:
+            with sqlite3.connect(db) as conn:
+                conn.row_factory = sqlite3.Row
+                for r in conn.execute("SELECT * FROM campsite_instances WHERE room_id=? AND status IN ('active','occupied','abandoned')", (room_id,)):
+                    out.append({"id": r["campsite_instance_id"], "name": "a small campsite", "keywords": ["campsite", "camp", "small campsite"], "entity_type": "campsite", "short_description": "A small campsite has been established here.", "long_description": "Bedroll space and a cleared patch of ground mark this as a simple campsite."})
+                for r in conn.execute("SELECT * FROM campfire_instances WHERE room_id=?", (room_id,)):
+                    status = str(r["status"] or "unlit")
+                    label = "a lit campfire" if status == "lit" else "an extinguished campfire" if status == "extinguished" else "a small campfire"
+                    desc = "Warm flames crackle from a small ring of stones." if status == "lit" else "Cold ash and charred wood sit within a small ring of stones." if status == "extinguished" else "Kindling and stacked wood wait within a small ring of stones."
+                    out.append({"id": r["campfire_instance_id"], "name": label, "keywords": ["campfire", "fire", label], "entity_type": "campfire", "status": status, "short_description": label, "long_description": desc})
+        except sqlite3.Error:
+            return out
+        return out
 
     def _render_examination(self, target: dict[str, Any], kind: str, query: str) -> str:
         template = target.get("template") or {}
