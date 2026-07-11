@@ -1336,7 +1336,7 @@ body.adventure-mode-enabled .creator-mode-only,
 .mud-role.mud-room-name { color: #f2d27c; font-weight: 700; }
 .mud-role.mud-area-name { color: #9be28f; }
 .mud-role.mud-exit { color: #87ceeb; font-weight: 700; }
-.mud-role.mud-dialogue { color: #c9b79c; }
+.mud-role.mud-dialogue { color: #ffffff; }
 .mud-role.mud-prompt-hp { color: #ff7777; }
 .mud-role.mud-prompt-mana { color: #7aa2ff; }
 .mud-role.mud-prompt-stamina { color: #ffd166; }
@@ -1519,7 +1519,7 @@ body.smart-mud-mode { height: 100vh; overflow: hidden; }
 .mud-hp { color: var(--mud-hp-color, #ff7777); }
 .mud-mp { color: var(--mud-mp-color, #7aa2ff); }
 .mud-stamina { color: var(--mud-stamina-color, #ffd166); }
-.mud-dialogue { color: var(--mud-dialogue-color, #e6e6e6); }
+.mud-dialogue { color: var(--mud-dialogue-color, #ffffff); }
 .mud-prompt { color: var(--mud-prompt-color, #d8dee9); }
 .mud-input { color: var(--mud-input-color, #ffffff); }
 .mud-prompt-marker { color: var(--mud-prompt-marker-color, #ffffff); }
@@ -1567,7 +1567,7 @@ body.smart-mud-mode { height: 100vh; overflow: hidden; }
 #mud-world-output span[role="hp"], #mud-player-prompt span[role="hp"], .mud-role-hp, .mud-hp { color: var(--mud-color-hp, var(--mud-hp-color, #d8dee9)); }
 #mud-world-output span[role="mp"], #mud-player-prompt span[role="mp"], .mud-role-mp, .mud-mp { color: var(--mud-color-mp, var(--mud-mp-color, #d8dee9)); }
 #mud-world-output span[role="stamina"], #mud-player-prompt span[role="stamina"], .mud-role-stamina, .mud-stamina { color: var(--mud-color-stamina, var(--mud-stamina-color, #d8dee9)); }
-#mud-world-output span[role="dialogue"], #mud-player-prompt span[role="dialogue"], .mud-role-dialogue, .mud-dialogue { color: var(--mud-color-dialogue, var(--mud-dialogue-color, #d8dee9)); }
+#mud-world-output span[role="dialogue"], #mud-player-prompt span[role="dialogue"], .mud-role-dialogue, .mud-dialogue { color: #ffffff; }
 #mud-world-output span[role="prompt"], #mud-player-prompt span[role="prompt"], .mud-role-prompt, .mud-prompt { color: var(--mud-color-prompt, var(--mud-prompt-color, #d8dee9)); }
 #mud-world-output span[role="input"], #mud-player-prompt span[role="input"], .mud-role-input, .mud-input { color: var(--mud-color-input, var(--mud-input-color, #d8dee9)); }
 #mud-world-output span[role="prompt_marker"], #mud-player-prompt span[role="prompt_marker"], .mud-role-prompt_marker, .mud-prompt-marker { color: var(--mud-color-prompt-marker, var(--mud-prompt-marker-color, #d8dee9)); }

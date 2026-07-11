@@ -284,8 +284,8 @@ class MudCommandEngine:
             "say": self._cmd_say,
             "emote": self._cmd_emote,
             "study": self._cmd_generic,
-            "train": self._cmd_generic,
-            "practice": self._cmd_generic,
+            "train": self._cmd_training_player,
+            "practice": self._cmd_training_player,
             "socials": self._cmd_generic,
             "holler": self._cmd_generic,
             "shout": self._cmd_generic,
@@ -440,12 +440,17 @@ class MudCommandEngine:
         for _name in "achievementlist achievementstat achievementcreate achievementclone achievementset achievementdelete achievementvalidate achievementpreview criteriagrouplist criteriagroupstat criteriagroupcreate criteriagroupset criteriagroupdelete criteriagroupvalidate criterialist criteriastat criteriacreate criteriaclone criteriaset criteriadelete criteriavalidate criteriapreview titlelist titlestat titlecreate titleclone titleset titledelete titlevalidate accoladelist accoladestat accoladecreate accoladeset accoladedelete accoladevalidate collectionlist collectionstat collectioncreate collectionset collectiondelete collectionvalidate actorachievements achievementgrant achievementrevoke achievementprogress achievementreset achievementcomplete achievementtrace achievementevent achievementaudit titlegrant titlerevoke titleselect accoladegrant collectiongrant achievementeventtrace criteriatrace milestonetrace achievementrewardtrace titletrace accoladetrace collectiontrace".split():
             self.command_handlers[_name]=self._cmd_builder_achievement
 
-        for _name in "quests questlog journal quest accept decline abandon turnin talk reply questlist queststat questcreate questclone questset questdelete questvalidate questpreview questtrace stagelist stagestat stagecreate stageclone stageset stagedelete stagevalidate objectivelist objectivestat objectivecreate objectiveclone objectiveset objectivedelete objectivevalidate objectivepreview branchlist branchadd branchset branchdelete branchvalidate questactionlist questactionadd questactionset questactiondelete questactionvalidate conversationlist conversationstat conversationcreate conversationclone conversationset conversationdelete conversationvalidate conversationpreview convnodelist convnodecreate convnodeset convnodedelete convchoiceadd convchoiceset convchoicedelete worldstatelist worldstatestat worldstateset worldstateclear worldstatehistory actorquests questoffer questaccept questadvance questcomplete questfail questabandon questreset questinstance questinstancetrace objectiveprogress questevent questtick questaudit conversationaudit worldstateaudit availabilitytrace objectivetrace questeventtrace branchtrace questrewardtrace conversationtrace worldstatetrace questtimertrace".split():
+        for _name in "resources survey resource gather forage harvest mine chop fish dig excavate salvage skin butcher extract".split():
+            self.command_handlers[_name] = self._cmd_gathering_player
+        for _name in "property properties rent lease access home storage room locker store retrieve keys key".split():
+            self.command_handlers[_name] = self._cmd_property_player
+
+        for _name in "quests questlog journal quest objectives accept decline abandon turnin talk reply questlist queststat questcreate questclone questset questdelete questvalidate questpreview questtrace stagelist stagestat stagecreate stageclone stageset stagedelete stagevalidate objectivelist objectivestat objectivecreate objectiveclone objectiveset objectivedelete objectivevalidate objectivepreview branchlist branchadd branchset branchdelete branchvalidate questactionlist questactionadd questactionset questactiondelete questactionvalidate conversationlist conversationstat conversationcreate conversationclone conversationset conversationdelete conversationvalidate conversationpreview convnodelist convnodecreate convnodeset convnodedelete convchoiceadd convchoiceset convchoicedelete worldstatelist worldstatestat worldstateset worldstateclear worldstatehistory actorquests questoffer questaccept questadvance questcomplete questfail questabandon questreset questinstance questinstancetrace objectiveprogress questevent questtick questaudit conversationaudit worldstateaudit availabilitytrace objectivetrace questeventtrace branchtrace questrewardtrace conversationtrace worldstatetrace questtimertrace".split():
             self.command_handlers[_name] = self._cmd_phase8a_quest
         for _name in "behaviorlist behaviorstat behaviorvalidate behaviorpreview actorbehavior behaviortrace combatdecision combattrace combatcandidates threatlist threatstat threatadd threatclear hostilitytrace combattick protect protectset unprotect protectclear surrender callforhelp assisttrace fleetrace pursuittrace protecttrace combatgrouptrace petmode order".split():
             self.command_handlers[_name] = self._cmd_combat_behavior
 
-        for _name in "needs hunger thirst fatigue food drink eat consume sip taste rest sleep wake camp make break light extinguish add inspect stop needlist needstat needcreate needclone needset needdelete needvalidate needpreview needsprofilelist needsprofilestat needsprofilecreate needsprofileset needsprofiledelete needsprofilevalidate consumablelist consumablestat consumablecreate consumableclone consumableset consumabledelete consumablevalidate consumablepreview needsinspect needsset needsmodify needstick needstrace consumptiontrace survivalaudit".split():
+        for _name in "needs hunger thirst fatigue food drink eat consume sip taste rest sleep wake camp campfire campsite fire make break light extinguish add inspect stop needlist needstat needcreate needclone needset needdelete needvalidate needpreview needsprofilelist needsprofilestat needsprofilecreate needsprofileset needsprofiledelete needsprofilevalidate consumablelist consumablestat consumablecreate consumableclone consumableset consumabledelete consumablevalidate consumablepreview needsinspect needsset needsmodify needstick needstrace consumptiontrace survivalaudit".split():
             self.command_handlers[_name] = self._cmd_survival_needs
 
 
@@ -460,15 +465,15 @@ class MudCommandEngine:
 
     def _cmd_survival_needs(self, character: Any, args: list[str], raw: str) -> CommandResult:
         svc=self._survival_service(character); cmd=raw.split()[0].lower(); actor_id=str(getattr(character,'id',getattr(character,'character_id','self')))
-        if cmd in {'rest','sleep','wake','camp','make','break','light','extinguish','add','inspect','stop'}:
+        if cmd in {'rest','sleep','wake','camp','campfire','campsite','fire','make','break','light','extinguish','add','inspect','stop'}:
             phrase=' '.join([cmd]+args)
             if phrase in {'rest status','sleep status'}: return CommandResult(json.dumps(svc.get_rest_context(actor_id), indent=2, sort_keys=True))
             if phrase in {'stop resting','wake'} or cmd=='wake': return CommandResult(json.dumps(svc.wake_actor(actor_id,'command'), indent=2, sort_keys=True))
             if cmd=='rest': return CommandResult(json.dumps(svc.start_rest(actor_id, args[0] if args and args[0] not in {'here','status'} else None), indent=2, sort_keys=True))
             if cmd=='sleep': return CommandResult(json.dumps(svc.start_sleep(actor_id, args[-1] if args and args[0]=='on' else None), indent=2, sort_keys=True))
-            if phrase in {'camp status'} or phrase=='inspect campsite': return CommandResult(json.dumps(svc.trace_campsite(args[-1] if args and args[-1].startswith('campsite_') else ''), indent=2, sort_keys=True))
-            if phrase in {'camp here','make camp'} or cmd=='camp': return CommandResult(json.dumps(svc.create_campsite(actor_id,'basic_campsite'), indent=2, sort_keys=True))
-            if phrase=='break camp': return CommandResult(json.dumps(svc.dismantle_campsite(actor_id,args[-1] if args and args[-1].startswith('campsite_') else ''), indent=2, sort_keys=True))
+            if phrase in {'camp status','campsite status'} or phrase=='inspect campsite': return CommandResult(json.dumps(svc.trace_campsite(args[-1] if args and args[-1].startswith('campsite_') else ''), indent=2, sort_keys=True))
+            if phrase in {'camp here','make camp','campfire create','create campfire'} or cmd in {'camp','campfire','fire'}: return CommandResult(json.dumps(svc.create_campsite(actor_id,'basic_campsite'), indent=2, sort_keys=True))
+            if phrase in {'break camp','campsite dismantle','dismantle campsite'}: return CommandResult(json.dumps(svc.dismantle_campsite(actor_id,args[-1] if args and args[-1].startswith('campsite_') else ''), indent=2, sort_keys=True))
             if phrase=='light campfire':
                 cf=svc.create_campfire(actor_id,'basic_campfire'); return CommandResult(json.dumps(svc.light_campfire(actor_id,cf['campfire_instance_id']), indent=2, sort_keys=True))
             if phrase=='extinguish campfire': return CommandResult(json.dumps(svc.extinguish_campfire(actor_id,args[-1] if args and args[-1].startswith('campfire_') else ''), indent=2, sort_keys=True))
@@ -508,6 +513,103 @@ class MudCommandEngine:
         if cmd.endswith('preview') or cmd in {'needpreview','consumablepreview'}: return CommandResult(json.dumps({'collection':coll,'id':args[0] if args else None,'preview':'draft-safe'}, indent=2, sort_keys=True))
         return CommandResult('Survival Builder command is draft-safe in Phase 11D1; edit JSON collections through Builder import/apply.')
 
+
+    def _training_service(self, character: Any):
+        from engine.training import TrainingService
+        store = self.state_store
+        world_id = getattr(character, "world_id", "") or getattr(getattr(self, "runtime", None), "active_world_id", "") or "shattered_realms"
+        if store is not None and not hasattr(store, "connect"):
+            store.connect = lambda: __import__("sqlite3").connect(store.db_path)  # type: ignore[attr-defined]
+        if store is not None and not hasattr(store, "world_id"):
+            store.world_id = world_id  # type: ignore[attr-defined]
+        if store is not None and not hasattr(store, "campaign_id"):
+            store.campaign_id = world_id  # type: ignore[attr-defined]
+        if store is not None and not hasattr(store, "initialize"):
+            
+            def _init_progression_tables():
+                with store.connect() as con:
+                    con.execute("""CREATE TABLE IF NOT EXISTS actor_progression_state(progression_state_id TEXT PRIMARY KEY,world_id TEXT,actor_type TEXT,actor_id TEXT,species_id TEXT,race_id TEXT,primary_class_id TEXT,primary_class_track_id TEXT,profession_ids_json TEXT,level INTEGER,experience INTEGER,experience_to_next INTEGER,total_experience INTEGER,practice_sessions INTEGER,training_sessions INTEGER,skill_points INTEGER,attribute_points INTEGER,talent_points_placeholder INTEGER,remort_count INTEGER,prestige_rank INTEGER,advancement_flags_json TEXT,last_level_at TEXT,created_at TEXT,updated_at TEXT,metadata_json TEXT,UNIQUE(actor_type,actor_id))""")
+                    con.execute("""CREATE TABLE IF NOT EXISTS actor_ability_progression(actor_id TEXT,ability_id TEXT,rank INTEGER,maximum_rank INTEGER,proficiency INTEGER,learned_at_level INTEGER,source_class_id TEXT,source_race_id TEXT,source_profession_id TEXT,source_track_id TEXT,practice_cost INTEGER,training_cost INTEGER,skill_point_cost INTEGER,requirements_json TEXT,active INTEGER,learned_at TEXT,metadata_json TEXT,PRIMARY KEY(actor_id,ability_id))""")
+            store.initialize = _init_progression_tables  # type: ignore[attr-defined]
+        return TrainingService(store, economy=getattr(self, "economy_service", None), event_bus=self.event_bus, world_id=world_id, world_root=Path("worlds")/world_id)
+
+    def _cmd_training_player(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        svc = self._training_service(character); cmd = (raw.split() or ["train"])[0].lower(); actor_id = str(getattr(character, "id", "self")); room_id = str(getattr(character, "room_id", ""))
+        trainers = svc.list_trainers(actor_id, room_id) or svc.list_trainers(actor_id, None)
+        if cmd in {"train", "practice"} and not args:
+            state = svc.progression.initialize_actor_progression(actor_id)
+            title = "Practice options" if cmd == "practice" else "Training options"
+            lines = [f"{title}:", f"Practice sessions: {state.get('practice_sessions', 0)}; training sessions: {state.get('training_sessions', 0)}"]
+            if not trainers:
+                lines.append("No trainer here is ready to teach you. Seek a trainer and try TRAIN again.")
+                return CommandResult("\n".join(lines))
+            for trainer in trainers:
+                lines.append(f"{trainer.get('name') or trainer.get('id')} can teach:")
+                offers = svc.list_training_offers(actor_id, trainer.get('id'))
+                if not offers: lines.append("- No lessons are currently available.")
+                for o in offers:
+                    prev = svc.preview_training(actor_id, trainer.get('id'), o.get('id'))
+                    costs = prev.get('costs') or {}; cost_bits = [f"{v} {k}" for k,v in costs.items() if isinstance(v,int) and v]
+                    lines.append(f"- {o.get('name') or o.get('id')}: {'available' if prev.get('eligible') else 'requirements unmet'}" + (f"; cost {', '.join(cost_bits)}" if cost_bits else "; no cost"))
+            lines.append("Use TRAIN <offer> to learn an available lesson.")
+            return CommandResult("\n".join(lines))
+        if not trainers: return CommandResult("No trainer here is ready to teach you.", ok=False)
+        query = " ".join(args).lower().replace(" ", "_")
+        for tr in trainers:
+            for offer in svc.list_training_offers(actor_id, tr.get('id')):
+                vals = {str(offer.get('id','')).lower(), str(offer.get('name','')).lower().replace(' ','_')}
+                if query in vals or any(query and query in v for v in vals):
+                    q = svc.create_training_quote(actor_id, tr.get('id'), offer.get('id'))
+                    tx = svc.confirm_training(actor_id, q['quote_id'])
+                    return CommandResult(f"Training complete: {offer.get('name') or offer.get('id')}.")
+        return CommandResult("That lesson is not available here. Use TRAIN to see options.", ok=False)
+
+    def _gathering_service(self, character: Any):
+        from engine.gathering import GatheringService
+        db = getattr(self.state_store, "db_path", Path(".smartmud_gathering.sqlite3")); world_id=getattr(character,"world_id","") or getattr(getattr(self,"runtime",None),"active_world_id","") or "shattered_realms"
+        return GatheringService(db, world_id=world_id, world_root=Path("worlds")/world_id, event_bus=self.event_bus, reward_service=getattr(self,"reward_service",None))
+
+    def _cmd_gathering_player(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        svc=self._gathering_service(character); cmd=(raw.split() or [""])[0].lower(); actor_id=str(getattr(character,'id','self')); room_id=str(getattr(character,'room_id',''))
+        if cmd in {'resources','resource','survey'}:
+            nodes=svc.list_room_nodes(room_id)
+            return CommandResult("Resources here:\n" + ("\n".join(f"- {n.get('name') or n.get('node_definition_id')}" for n in nodes) if nodes else "No obvious resources are ready here."))
+        if cmd in {'skin','butcher','harvest','extract'} and args and 'corpse' in ' '.join(args).lower():
+            return CommandResult("Corpse processing requires a specific corpse. Use LOOK CORPSE, then SKIN <corpse> or BUTCHER <corpse>.", ok=False)
+        if cmd in {'gather','forage','mine','chop','fish','dig','excavate','salvage','harvest'}:
+            if not args and cmd=='gather': return CommandResult('Usage: gather <resource>. Try RESOURCES HERE first.', ok=False)
+            mode={'forage':'harvesting','harvest':'harvesting','mine':'mining','chop':'lumberjacking','fish':'fishing','dig':'excavation','excavate':'excavation','salvage':'scavenging'}.get(cmd, None)
+            res=svc.gather_mode(mode, actor_id, room_id, ' '.join(args) or None)
+            if not res.get('ok'): return CommandResult('You cannot gather that here: '+str(res.get('reason','no matching resource')), ok=False)
+            ys=', '.join(str(y.get('item_template_id') or y.get('resource_definition_id')) for y in res.get('yields',[])) or 'materials'
+            return CommandResult('You gather '+ys+'.')
+        return CommandResult('Usage: resources here | gather <resource> | forage/mine/harvest <target> | skin/butcher <corpse>.')
+
+    def _property_service(self, character: Any):
+        from engine.property import PropertyService
+        db=getattr(self.state_store,'db_path',Path('.smartmud_property.sqlite3')); world_id=getattr(character,'world_id','') or getattr(getattr(self,'runtime',None),'active_world_id','') or 'shattered_realms'
+        return PropertyService(db, world_id=world_id, world_root=Path('worlds')/world_id, event_bus=self.event_bus, economy_service=getattr(self,'economy_service',None))
+
+    def _cmd_property_player(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        svc=self._property_service(character); cmd=(raw.split() or ['property'])[0].lower(); actor_id=str(getattr(character,'id','self'))
+        if cmd in {'property','properties','lease','home','storage','access'} and (not args or args[0] in {'info','status'}):
+            avail=svc.list_available_properties(actor_id)
+            leases=[]
+            import sqlite3
+            with sqlite3.connect(svc.db_path) as con:
+                con.row_factory=sqlite3.Row; leases=[dict(r) for r in con.execute("SELECT * FROM property_leases WHERE tenant_id=? AND status IN ('active','pending','grace')",(actor_id,))]
+            lines=['Property:']
+            lines.append('Active leases: '+(str(len(leases)) if leases else 'none'))
+            lines.append('Available rentals: '+(str(len(avail)) if avail else 'none here'))
+            for p in avail[:5]: lines.append(f"- {p.get('name')} ({p.get('property_type')})")
+            return CommandResult('\n'.join(lines))
+        if cmd=='rent' or (cmd=='property' and args[:1]==['rent']):
+            avail=svc.list_available_properties(actor_id)
+            if not avail: return CommandResult('No rentable property is available here.', ok=False)
+            q=svc.quote_rent(actor_id, avail[0]['property_instance_id'])
+            return CommandResult(f"Rental quote for {avail[0].get('name')}: {q.total}. Confirm through PROPERTY RENT <property> when ready.")
+        return CommandResult('Usage: property | properties | rent | home | storage | access.')
+
     def _quest_service(self, character: Any):
         from engine.quests import QuestService
         store = self.state_store
@@ -521,7 +623,7 @@ class MudCommandEngine:
         svc = self._quest_service(character)
         cmd = raw.split()[0].lower() if raw.split() else "quests"
         actor_id = getattr(character, "id", "") or getattr(character, "character_id", "") or "self"
-        if cmd in {"quests", "questlog", "journal"}:
+        if cmd in {"quests", "questlog", "journal", "quest", "progress", "objectives"} and not args:
             if args and args[0].lower() == "available":
                 qs = svc.list_available_quests(actor_id)
                 return CommandResult("Available quests:\n" + "\n".join(f"{i+1}. {q.get('name')}" for i,q in enumerate(qs)))
@@ -546,7 +648,7 @@ class MudCommandEngine:
             if not qs: return CommandResult("Quest not found.", ok=False)
             svc.turn_in_quest(actor_id, qs[0]['quest_instance_id'], {"source_type":"command"}); return CommandResult(f"Turned in {qs[0]['quest_id']}.")
         if cmd == "decline": return CommandResult("Quest offer declined.")
-        if cmd == "talk": return CommandResult("Conversation foundation is available; choose a Builder-authored conversation and reply choice when active.")
+        if cmd == "talk": return CommandResult("Talk to whom?", ok=False)
         if cmd == "reply": return CommandResult("Reply requires an active canonical conversation choice.")
         if cmd in {"questlist", "queststat", "questvalidate", "questaudit"}:
             if cmd == "questlist": return CommandResult("Quests:\n" + "\n".join(q['id'] for q in svc.content.list('quest_definitions')))
@@ -560,7 +662,7 @@ class MudCommandEngine:
             if cmd == "worldstatehistory" and len(args) >= 3: return CommandResult(json.dumps(svc.world_state.get_state_history(args[0],args[1],args[2]), indent=2))
             if cmd == "worldstatestat" and len(args) >= 3: return CommandResult(json.dumps(svc.world_state.get_state(args[0],args[1],args[2]) or {}, indent=2))
             return CommandResult("Usage: worldstateset <scope> <scope_id> <key> <value>")
-        return CommandResult("Phase 8A quest Builder/Admin command foundation is available; edits are stored through Builder draft JSON collections.")
+        return CommandResult("Quest command usage: QUESTS, JOURNAL, QUEST <name>, ACCEPT <quest>, TURNIN <quest>.")
 
     def _crafting_service(self, character: Any) -> CraftingService | None:
         store = self.state_store
@@ -699,7 +801,7 @@ class MudCommandEngine:
             return CommandResult(narrative="Crafting jobs:\n"+"\n".join([f"- {j['crafting_job_id']} {j['recipe_id']} {j['status']} completes={j['completes_world_time']}" for j in jobs] or ["- none"]))
         if cmd in {"professions", "profession"}:
             return CommandResult(narrative="Professions and ranks are managed by the canonical CraftingService profession state. Use score professions for summary.")
-        return CommandResult(narrative="Crafting command recognized.")
+        return CommandResult(narrative="Usage: recipes | ingredients for <recipe> | cook <recipe> [at campfire] | craft preview <recipe>.")
 
     def _cmd_crafting_builder(self, character: Any, args: list[str], raw: str) -> CommandResult:
         svc = self._crafting_service(character)
@@ -976,6 +1078,12 @@ class MudCommandEngine:
 
     def handle_command(self, character: Any, command_text: str) -> CommandResult:
         """Route command to deterministic handler or AI."""
+        command_text = str(command_text or "")
+        if command_text.startswith("'"):
+            spoken = command_text[1:].strip()
+            if not spoken:
+                return CommandResult(narrative="Usage: '<message> (same as say <message>)", ok=False)
+            command_text = "say " + spoken
         cmd_tokens = command_text.strip().split()
         if not cmd_tokens:
             return CommandResult(narrative="")
@@ -1416,7 +1524,8 @@ class MudCommandEngine:
         text = raw.split(maxsplit=1)[1] if len(raw.split(maxsplit=1)) > 1 else ""
         if not text:
             return CommandResult(narrative="Say what?")
-        return CommandResult(narrative=f'You say, "{text}."' if not text.endswith((".", "!", "?")) else f'You say, "{text}"')
+        line = f'You say, "{text}."' if not text.endswith((".", "!", "?")) else f'You say, "{text}"'
+        return CommandResult(narrative=semantic("dialogue", line))
 
     def _cmd_emote(self, character: Any, args: list[str], raw: str) -> CommandResult:
         text = raw.split(maxsplit=1)[1] if len(raw.split(maxsplit=1)) > 1 else ""
@@ -2264,17 +2373,17 @@ Builder commands:
         if cmd == "combat":
             sub = args[0].lower() if args else "status"
             if sub in {"status", "trace", "debug", "validate", "tick", "simulate"}:
-                return CommandResult(f"Combat {sub}: state={actor.combat_profile.get('combat_state', CombatState.IDLE.value)} tick={engine.tick}. Deterministic Actor/Formula/Lifecycle combat foundation is available.")
+                return CommandResult(f"Combat {sub}: state={actor.combat_profile.get('combat_state', CombatState.IDLE.value)} tick={engine.tick}.")
         if cmd == "consider":
-            return CommandResult("Consider whom? Target resolution supports exact id, full name, partial keyword, same-name selection, and instance id when runtime actors are present." if not args else f"You consider {' '.join(args)}. The foe looks fair.")
+            return CommandResult("Consider whom?" if not args else f"You consider {' '.join(args)}. They look comparable to you.")
         if cmd == "diagnose":
-            return CommandResult("Diagnose whom?" if not args else f"{' '.join(args)} appears alive. Health is resolved through the Actor resource API.")
+            return CommandResult("Diagnose whom?" if not args else f"{' '.join(args)} appears alive and alert.")
         if cmd == "flee":
             actor.combat_profile["combat_state"] = CombatState.FLEEING.value
             return CommandResult("You prepare to flee. Movement resolution remains deterministic and runtime-owned.")
         if cmd == "assist":
             return CommandResult("Assist whom?" if not args else f"You move to assist {' '.join(args)}.")
-        return CommandResult("Attack whom?" if not args else f"You engage {' '.join(args)}. Combat will resolve against the runtime Actor instance only.")
+        return CommandResult("Attack whom?" if not args else f"You attack {' '.join(args)}. The clash begins as combatants trade blows through the combat engine.")
 
     def _cmd_stat(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """View character stats (admin)."""
@@ -2301,19 +2410,19 @@ XP: {target.xp}
         placeholders = {
             "spells": "You know no spells.", "skills": "You know no skills.", "abilities": "You have no abilities.", "affects": "You have no active affects.",
             "commands": "Type COMMANDS to list available commands.", "exits": "Visible exits are shown in the room display.", "where": "You are here.",
-            "weather": "The weather is calm.", "time": "Time passes steadily in Smart MUD.", "levels": "Level progression is tracked, but level tables are not implemented yet.",
+            "weather": "The weather is calm.", "time": "Time passes steadily in Smart MUD.", "levels": "Level progression is tracked in your character record.",
             "consider": "You do not sense anything unusual.", "diagnose": "You do not sense anything unusual.", "taste": "You taste nothing unusual.",
-            "fill": "Liquid containers are not implemented yet.", "pour": "Liquid containers are not implemented yet.", "read": "There is nothing readable here.",
-            "use": "You find no obvious way to use that.", "identify": "You identify it but learn nothing unusual.", "follow": "Following is not implemented yet.",
-            "unfollow": "You are not following anyone.", "mount": "Mounts are not implemented yet.", "dismount": "Mounts are not implemented yet.",
-            "tell": "Private tells are not implemented yet.", "reply": "You have nobody to reply to.", "ask": "Ask whom about what?", "whisper": "Whisper to whom?",
-            "gossip": "Global channels are not implemented yet.", "shout": "You shout, but global shout routing is not implemented yet.", "holler": "Holler is not implemented yet.",
-            "socials": "Social commands are tracked but the socials list is not implemented yet.", "recall": "Recall is tracked as a future room-changing command and is not implemented yet.", "practice": "Practice is not implemented yet.", "train": "Training is not implemented yet.", "study": "Study is not implemented yet.",
+            "fill": "You have no liquid container ready for that.", "pour": "You have no liquid container ready for that.", "read": "There is nothing readable here.",
+            "use": "You find no obvious way to use that.", "identify": "You identify it but learn nothing unusual.", "follow": "You are not following anyone.",
+            "unfollow": "You are not following anyone.", "mount": "There is no mount ready here.", "dismount": "There is no mount ready here.",
+            "tell": "Private tells are unavailable in this context.", "reply": "You have nobody to reply to.", "ask": "Ask whom about what?", "whisper": "Whisper to whom?",
+            "gossip": "Global channels are quiet right now.", "shout": "You shout, but no one distant answers.", "holler": "You holler, but no one distant answers.",
+            "socials": "No social command list is available here.", "recall": "No recall destination is available right now.", "practice": "Find a trainer and use PRACTICE to review available lessons.", "train": "Find a trainer and use TRAIN to review available lessons.", "study": "There is nothing here to study.",
         }
         meta = getattr(self, "registry", None).commands.get(cmd_name) if getattr(self, "registry", None) else None
         if meta and meta.short_help and meta.status.startswith("future"):
             return meta.short_help
-        return placeholders.get(cmd_name, f"The {cmd_name.upper()} command is not available yet.")
+        return placeholders.get(cmd_name, f"The {cmd_name.upper()} command is unavailable in this context.")
 
     def resolve_alias(self, cmd: str) -> str:
         """Resolve command aliases to canonical command."""

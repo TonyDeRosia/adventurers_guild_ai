@@ -152,6 +152,11 @@ class MudStateStore:
         if self.event_bus:
             self.event_bus.publish("database_migrated", {"db_path": str(db_path)}, source_system="persistence")
 
+    def connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
     def _init_schema(self) -> None:
         """Initialize SQLite schema for MUD persistence."""
         with sqlite3.connect(self.db_path) as conn:
@@ -1194,7 +1199,7 @@ class MudRuntime:
             "enter": "You cannot enter that.", "leave": "You cannot leave that.", "drink": "You cannot drink from that.", "eat": "You cannot eat that.",
             "open": f"You cannot open {lname}.", "close": f"You cannot close {lname}.", "lock": "You cannot lock that.", "unlock": "You cannot unlock that.", "pick": "You cannot pick that.",
             "search": "You see nothing unusual.", "listen": "You do not hear anything unusual.", "smell": "You smell nothing unusual.", "put": "You cannot put that there.",
-            "taste": "You taste nothing unusual.", "fill": "Liquid containers are not implemented yet.", "pour": "Liquid containers are not implemented yet.",
+            "taste": "You taste nothing unusual.", "fill": "You have no liquid container ready for that.", "pour": "You have no liquid container ready for that.",
             "sit": "You sit down.", "stand": "You stand up.", "rest": "You rest for a moment.", "sleep": "You cannot sleep here.", "wake": "You are awake.",
         }
         if cmd in {"look", "examine"}:
@@ -1536,7 +1541,13 @@ class MudRuntime:
 
     def pickup_item(self, character_id: str, room_id: str, query: str) -> str:
         res = self.resolve_item_keywords(query, self.get_visible_room_items(room_id))
-        if res["status"] != "ok": return self._resolve_message(res, "You don't see that here.")
+        if res["status"] != "ok":
+            q = str(query or "").strip().lower().replace("_", " ")
+            for feat in self._resolved_room_features(room_id, self.state_store.load_character(character_id)):
+                keys = [feat.get("id"), feat.get("name"), *(feat.get("keywords") or [])]
+                if q and q in {str(k or "").strip().lower().replace("_", " ") for k in keys}:
+                    return "You cannot take that."
+            return self._resolve_message(res, "You don't see that here.")
         item = res["item"]
         if not (item.get("template") or {}).get("portable", True):
             return "You cannot take that."
@@ -2182,13 +2193,17 @@ class MudRuntime:
         if keyword:
             text = str((pkg.get("keyword_responses") or {}).get(keyword.lower(), ""))
         if not text:
-            responses = pkg.get("talk_responses") or []; text = str(responses[0] if responses else pkg.get("greeting") or "They nod silently.")
+            responses = pkg.get("talk_responses") or []
+            text = str(responses[0] if responses else pkg.get("greeting") or "They nod silently.")
+        blocked = ("speaks from their role", "personality", "invented world facts", "instruction", "prompt", "metadata")
+        if any(b in text.lower() for b in blocked):
+            text = "They acknowledge you with a measured nod."
         self._publish_entity_event("entity_dialogue", ent, character_id=character_id, dialogue_keyword=keyword, dialogue_text=text)
         char_for_event = self.state_store.load_character(character_id)
         if char_for_event:
             self._publish_interaction_event("entity_interaction", char_for_event, "talk", f"talk {query}", {"target_kind": ent.get("entity_type"), "target_name": ent.get("name"), "result_summary": text})
             self._publish_interaction_event("interaction_succeeded", char_for_event, "talk", f"talk {query}", {"target_kind": ent.get("entity_type"), "target_name": ent.get("name"), "result_summary": text})
-        return f'{ent.get("name")} says, "{text}"'
+        return semantic("dialogue", f'{ent.get("name")} says, "{text}"')
 
     def _handle_dialogue_command(self, char: MudCharacter, cmd: str, args: list[str]):
         from engine.mud_commands import CommandResult
@@ -2259,7 +2274,7 @@ class MudRuntime:
             "score_value": "#ffffff",
             "equipment_slot": "#00ffff",
             "equipment_item": "#ffffff",
-            "dialogue": "#ffff00",
+            "dialogue": "#ffffff",
             "prompt_marker": "#00ff00",
             "prompt_hp": "#ff0000",
             "prompt_mana": "#0088ff",
