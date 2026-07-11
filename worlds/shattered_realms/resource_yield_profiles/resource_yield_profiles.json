@@ -1,1 +1,228 @@
-{"resource_yield_profiles":[{"id":"emberleaf_yield","name":"Emberleaf Yield","description":"Deterministic herb yield.","base_yields":[{"id":"leaf","item_template_id":"emberleaf","minimum_quantity":1,"maximum_quantity":2,"weight":1,"conditions":{},"quality_profile_id":"standard_quality","metadata":{}}],"bonus_yields":[],"rare_yields":[{"id":"bright_seed","item_template_id":"emberleaf","minimum_quantity":1,"maximum_quantity":1,"weight":0.01,"conditions":{},"quality_profile_id":"standard_quality","metadata":{"rare":true}}],"quantity_formula_id":"gathering_quantity_v1","quality_formula_id":"gathering_quality_v1","yield_seed_policy":"node_session_attempt","failure_yields":[],"critical_yields_placeholder":[],"maximum_total_items":2,"inventory_overflow_policy":"claimable_reward","tags":["phase11c1"],"plugin_data":{},"version":"1.0.0"}]}
+{
+  "resource_yield_profiles": [
+    {
+      "base_yields": [
+        {
+          "conditions": {},
+          "id": "leaf",
+          "item_template_id": "emberleaf",
+          "maximum_quantity": 2,
+          "metadata": {},
+          "minimum_quantity": 1,
+          "quality_profile_id": "standard_quality",
+          "weight": 1
+        }
+      ],
+      "bonus_yields": [],
+      "critical_yields_placeholder": [],
+      "description": "Deterministic herb yield.",
+      "failure_yields": [],
+      "id": "emberleaf_yield",
+      "inventory_overflow_policy": "claimable_reward",
+      "maximum_total_items": 2,
+      "name": "Emberleaf Yield",
+      "plugin_data": {},
+      "quality_formula_id": "gathering_quality_v1",
+      "quantity_formula_id": "gathering_quantity_v1",
+      "rare_yields": [
+        {
+          "conditions": {},
+          "id": "bright_seed",
+          "item_template_id": "emberleaf",
+          "maximum_quantity": 1,
+          "metadata": {
+            "rare": true
+          },
+          "minimum_quantity": 1,
+          "quality_profile_id": "standard_quality",
+          "weight": 0.01
+        }
+      ],
+      "tags": [
+        "phase11c1"
+      ],
+      "version": "1.0.0",
+      "yield_seed_policy": "node_session_attempt"
+    },
+    {
+      "base_yields": [
+        {
+          "id": "base",
+          "item_template_id": "common_healing_herb",
+          "maximum_quantity": 2,
+          "minimum_quantity": 1,
+          "quality_profile_id": "standard_quality",
+          "weight": 1
+        }
+      ],
+      "id": "common_herb_yield",
+      "inventory_overflow_policy": "claimable_reward",
+      "maximum_total_items": 1,
+      "name": "Common Herb Yield",
+      "rare_yields": [],
+      "tags": [
+        "phase11c2"
+      ]
+    },
+    {
+      "base_yields": [
+        {
+          "id": "base",
+          "item_template_id": "oak_wood",
+          "maximum_quantity": 2,
+          "minimum_quantity": 1,
+          "quality_profile_id": "standard_quality",
+          "weight": 1
+        }
+      ],
+      "id": "common_wood_yield",
+      "inventory_overflow_policy": "claimable_reward",
+      "maximum_total_items": 1,
+      "name": "Common Wood Yield",
+      "rare_yields": [],
+      "tags": [
+        "phase11c2"
+      ]
+    },
+    {
+      "base_yields": [
+        {
+          "id": "base",
+          "item_template_id": "iron_ore",
+          "maximum_quantity": 2,
+          "minimum_quantity": 1,
+          "quality_profile_id": "standard_quality",
+          "weight": 1
+        }
+      ],
+      "id": "common_ore_yield",
+      "inventory_overflow_policy": "claimable_reward",
+      "maximum_total_items": 1,
+      "name": "Common Ore Yield",
+      "rare_yields": [],
+      "tags": [
+        "phase11c2"
+      ]
+    },
+    {
+      "base_yields": [
+        {
+          "id": "base",
+          "item_template_id": "river_fish",
+          "maximum_quantity": 2,
+          "minimum_quantity": 1,
+          "quality_profile_id": "standard_quality",
+          "weight": 1
+        }
+      ],
+      "id": "common_fish_yield",
+      "inventory_overflow_policy": "claimable_reward",
+      "maximum_total_items": 1,
+      "name": "Common Fish Yield",
+      "rare_yields": [],
+      "tags": [
+        "phase11c2"
+      ]
+    },
+    {
+      "base_yields": [
+        {
+          "id": "base",
+          "item_template_id": "small_beast_hide",
+          "maximum_quantity": 2,
+          "minimum_quantity": 1,
+          "quality_profile_id": "standard_quality",
+          "weight": 1
+        }
+      ],
+      "id": "common_hide_yield",
+      "inventory_overflow_policy": "claimable_reward",
+      "maximum_total_items": 1,
+      "name": "Common Hide Yield",
+      "rare_yields": [],
+      "tags": [
+        "phase11c2"
+      ]
+    },
+    {
+      "base_yields": [
+        {
+          "id": "base",
+          "item_template_id": "scrap_metal",
+          "maximum_quantity": 2,
+          "minimum_quantity": 1,
+          "quality_profile_id": "standard_quality",
+          "weight": 1
+        }
+      ],
+      "id": "common_scrap_yield",
+      "inventory_overflow_policy": "claimable_reward",
+      "maximum_total_items": 1,
+      "name": "Common Scrap Yield",
+      "rare_yields": [],
+      "tags": [
+        "phase11c2"
+      ]
+    },
+    {
+      "base_yields": [
+        {
+          "id": "base",
+          "item_template_id": "common_stone",
+          "maximum_quantity": 2,
+          "minimum_quantity": 1,
+          "quality_profile_id": "standard_quality",
+          "weight": 1
+        }
+      ],
+      "id": "common_stone_yield",
+      "inventory_overflow_policy": "claimable_reward",
+      "maximum_total_items": 1,
+      "name": "Common Stone Yield",
+      "rare_yields": [],
+      "tags": [
+        "phase11c2"
+      ]
+    },
+    {
+      "base_yields": [
+        {
+          "id": "base",
+          "item_template_id": "wild_mushroom",
+          "maximum_quantity": 2,
+          "minimum_quantity": 1,
+          "quality_profile_id": "standard_quality",
+          "weight": 1
+        }
+      ],
+      "id": "common_mushroom_yield",
+      "inventory_overflow_policy": "claimable_reward",
+      "maximum_total_items": 1,
+      "name": "Common Mushroom Yield",
+      "rare_yields": [],
+      "tags": [
+        "phase11c2"
+      ]
+    },
+    {
+      "base_yields": [
+        {
+          "id": "base",
+          "item_template_id": "clay_placeholder",
+          "maximum_quantity": 2,
+          "minimum_quantity": 1,
+          "quality_profile_id": "standard_quality",
+          "weight": 1
+        }
+      ],
+      "id": "common_clay_yield",
+      "inventory_overflow_policy": "claimable_reward",
+      "maximum_total_items": 1,
+      "name": "Common Clay Yield",
+      "rare_yields": [],
+      "tags": [
+        "phase11c2"
+      ]
+    }
+  ]
+}

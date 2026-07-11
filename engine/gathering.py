@@ -20,7 +20,7 @@ GATHERING_COLLECTIONS = (
     "gathering_resource_cost_profiles", "gathering_interruption_profiles", "gathering_cooldown_profiles",
     "gathering_profession_xp_profiles", "gathering_message_profiles", "gathering_render_profiles", "gathering_access_profiles",
 )
-RESOURCE_TYPES = {"herb","plant","wood","timber","ore","stone","gem","fish","hide","meat","bone","fiber","mushroom","mineral","water_placeholder","salvage","excavation","forage","custom"}
+RESOURCE_TYPES = {"herb","plant","wood","timber","ore","stone","gem","fish","hide","meat","bone","fiber","mushroom","mineral","clay","salt","water_placeholder","salvage","excavation","forage","custom"}
 NODE_STATUSES = {"available","partially_depleted","depleted","regenerating","dormant","seasonally_unavailable","weather_blocked","disabled","destroyed_placeholder","archived"}
 SESSION_STATUSES = {"started","in_progress","paused_placeholder","interrupted","completed","failed","cancelled","expired"}
 
@@ -60,8 +60,8 @@ def init_gathering_schema(db_path: str|Path) -> None:
         c.execute("""CREATE TABLE IF NOT EXISTS gathering_session_results (result_id TEXT PRIMARY KEY,gathering_session_id TEXT,result_type TEXT,definition_id TEXT,quantity INTEGER,quality_id TEXT,reward_packet_id TEXT,status TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,metadata_json TEXT DEFAULT '{}')""")
         c.execute("""CREATE TABLE IF NOT EXISTS resource_node_history (history_id TEXT PRIMARY KEY,node_instance_id TEXT,operation TEXT,actor_id TEXT,session_id TEXT,capacity_before INTEGER,capacity_after INTEGER,world_time INTEGER,created_at TEXT DEFAULT CURRENT_TIMESTAMP,metadata_json TEXT DEFAULT '{}')""")
         c.execute("""CREATE TABLE IF NOT EXISTS resource_node_regeneration_events (regeneration_event_id TEXT PRIMARY KEY,node_instance_id TEXT,cycle_number INTEGER,amount INTEGER,capacity_before INTEGER,capacity_after INTEGER,world_time INTEGER,idempotency_key TEXT UNIQUE,created_at TEXT DEFAULT CURRENT_TIMESTAMP,metadata_json TEXT DEFAULT '{}')""")
-        c.execute("""CREATE TABLE IF NOT EXISTS actor_resource_node_state (state_id TEXT PRIMARY KEY,world_id TEXT,actor_id TEXT,node_instance_id TEXT,status TEXT,discovered_world_time INTEGER,metadata_json TEXT DEFAULT '{}',UNIQUE(world_id,actor_id,node_instance_id))""")
-        c.execute("""CREATE TABLE IF NOT EXISTS corpse_resource_extractions (extraction_id TEXT PRIMARY KEY,world_id TEXT,corpse_id TEXT,session_id TEXT,status TEXT,metadata_json TEXT DEFAULT '{}')""")
+        c.execute("""CREATE TABLE IF NOT EXISTS actor_resource_node_state (actor_node_state_id TEXT PRIMARY KEY,world_id TEXT,actor_id TEXT,node_instance_id TEXT,capacity_current INTEGER,status TEXT,last_gathered_world_time INTEGER,next_regeneration_world_time INTEGER,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,metadata_json TEXT DEFAULT '{}',UNIQUE(world_id,actor_id,node_instance_id))""")
+        c.execute("""CREATE TABLE IF NOT EXISTS corpse_resource_extractions (extraction_id TEXT PRIMARY KEY,corpse_instance_id TEXT,resource_definition_id TEXT,actor_id TEXT,status TEXT,gathering_session_id TEXT,extracted_world_time INTEGER,created_at TEXT DEFAULT CURRENT_TIMESTAMP,metadata_json TEXT DEFAULT '{}',UNIQUE(corpse_instance_id,resource_definition_id))""")
         c.execute("""CREATE TABLE IF NOT EXISTS gathering_event_consumption (consumption_id TEXT PRIMARY KEY,world_id TEXT,consumer_type TEXT,consumer_id TEXT,event_id TEXT,event_type TEXT,operation TEXT,consumed_world_time INTEGER,metadata_json TEXT DEFAULT '{}')""")
         c.execute("""CREATE TABLE IF NOT EXISTS gathering_audit_events (audit_event_id TEXT PRIMARY KEY,world_id TEXT,actor_id TEXT,node_instance_id TEXT,session_id TEXT,operation TEXT,result TEXT,reason TEXT,world_time INTEGER,created_at TEXT DEFAULT CURRENT_TIMESTAMP,metadata_json TEXT DEFAULT '{}')""")
 
@@ -114,6 +114,30 @@ class GatheringService:
         with sqlite3.connect(self.db_path) as c: c.row_factory=sqlite3.Row; return [dict(r) for r in c.execute("SELECT * FROM resource_node_instances WHERE room_id=? AND status NOT IN ('archived','disabled')",(room_id,))]
     def list_room_nodes(self, actor_id, room_id=None): return self.get_nodes_in_room(room_id or "")
     def get_available_nodes(self, actor_id, room_id): return [n for n in self.get_nodes_in_room(room_id) if self.evaluate_node_availability(actor_id,n["node_instance_id"])["available"]]
+    def resolve_room_node(self, actor_id, room_id, query=None, gathering_type=None):
+        nodes=self.get_available_nodes(actor_id, room_id)
+        hits=[]
+        for n in nodes:
+            nd=self.get_node_definition(n["node_definition_id"]) or {}
+            rids=nd.get("resource_definition_ids") or []
+            resources=[self.get_resource_definition(r) or {} for r in rids]
+            text=" ".join([nd.get("id",""),nd.get("name",""),nd.get("node_type","")]+[r.get("id","")+" "+r.get("name","") for r in resources]).lower()
+            if gathering_type and not any((self.records["gathering_profiles"].get(str(r.get("gathering_profile_id") or ""),{}).get("gathering_type")==gathering_type) for r in resources): continue
+            if query and str(query).isdigit():
+                if len(hits)+1 == int(query): return {"ok":True,"node":n,"resource_id":(rids[0] if rids else None),"ambiguous":False}
+            elif query and str(query).lower() not in text: continue
+            hits.append((n,rids[0] if rids else None))
+        if not hits: return {"ok":False,"reason":"no_matching_resource_node"}
+        if len(hits)>1 and query: return {"ok":False,"reason":"ambiguous_resource_node","choices":[{"number":i+1,"name":self.get_node_definition(h[0]["node_definition_id"]).get("name")} for i,h in enumerate(hits)]}
+        return {"ok":True,"node":hits[0][0],"resource_id":hits[0][1],"ambiguous":len(hits)>1}
+    def survey_resources(self, actor_id, room_id, include_builder=False):
+        out=[]
+        for i,n in enumerate(self.get_available_nodes(actor_id, room_id),1):
+            nd=self.get_node_definition(n["node_definition_id"]) or {}
+            row={"number":i,"name":nd.get("name"),"status":n["status"],"capacity":f"{n['capacity_current']}/{n['capacity_maximum']}"}
+            if include_builder: row.update({"node_instance_id":n["node_instance_id"],"node_definition_id":n["node_definition_id"],"yield_seed":n["yield_seed"]})
+            out.append(row)
+        return out
     def despawn_node(self,node_instance_id,reason=None):
         with sqlite3.connect(self.db_path) as c: c.execute("UPDATE resource_node_instances SET status='archived',updated_at=CURRENT_TIMESTAMP,metadata_json=? WHERE node_instance_id=?",(_json({"reason":reason}),node_instance_id)); self._audit(c,"",node_instance_id,"","despawn","ok",reason,0,{})
     def evaluate_node_availability(self, actor_id, node_instance_id, world_time=0, environment=None):
@@ -175,7 +199,12 @@ class GatheringService:
             for y in result["yields"]:
                 rid="gr_"+stable_id(session_id,y); c.execute("INSERT OR IGNORE INTO gathering_session_results VALUES(?,?,?,?,?,?,?,?,?,?)",(rid,session_id,"item",y["item_template_id"],y["quantity"],y.get("quality_id"),result.get("reward_packet_id"),"resolved",None,_json(y)))
             c.execute("UPDATE gathering_sessions SET status='completed',result_json=?,last_updated_world_time=?,updated_at=CURRENT_TIMESTAMP WHERE gathering_session_id=?",(_json(result),world_time,session_id))
+            if result.get("profession_xp"):
+                self.publish("gathering_profession_xp_awarded", {"gathering_session_id":session_id, **result["profession_xp"]})
             self._audit(c,s["actor_id"],s["node_instance_id"],session_id,"complete","ok","",world_time,result)
+        self.publish("resource_node_capacity_changed", {"node_instance_id":s["node_instance_id"],"capacity_after":after})
+        if after <= 0: self.publish("resource_node_depleted", {"node_instance_id":s["node_instance_id"]})
+        self.publish("resource_quality_resolved", {"gathering_session_id":session_id,"quality_id":result.get("quality_id")})
         self.publish("resource_node_gathering_completed", {"gathering_session_id":session_id}); self.publish("resource_gathered", result)
         return {"ok":True, **result}
     def _resolve_result(self,s,n):
@@ -187,7 +216,36 @@ class GatheringService:
         rare=[]
         for e in yp.get("rare_yields") or []:
             if rng.random() <= min(0.25, max(0.0,float(e.get("weight",0) or 0))): rare.append(e)
-        return {"success":True,"deterministic_seed":stable_id(s["gathering_session_id"],n["yield_seed"]),"yields":yields,"rare_yields":rare,"quality_id":(yields[0].get("quality_id") if yields else None),"reward_source":{"source_type":"gathering","source_id":s["resource_definition_id"],"source_instance_id":s["gathering_session_id"]}}
+        xp=self.records["gathering_profession_xp_profiles"].get(str(rd.get("profession_xp_profile_id") or rd.get("profession_id") or ""), {}) if rd else {}
+        profession_xp={"profession_id":rd.get("profession_id"),"base_xp":int(xp.get("base_xp",1) or 1),"advancement_api":"ProgressionService/profession hook"} if rd and rd.get("profession_id") else {}
+        return {"success":True,"deterministic_seed":stable_id(s["gathering_session_id"],n["yield_seed"]),"yields":yields,"rare_yields":rare,"quality_id":(yields[0].get("quality_id") if yields else None),"profession_xp":profession_xp,"reward_source":{"source_type":"gathering","source_id":s["resource_definition_id"],"source_instance_id":s["gathering_session_id"]}}
+    def gather_mode(self, mode, actor_id, room_id, query=None, tool_id=None, world_time=0):
+        resolved=self.resolve_room_node(actor_id, room_id, query, mode)
+        if not resolved["ok"]: return resolved
+        start=self.start_gathering(actor_id,resolved["node"]["node_instance_id"],resolved["resource_id"],tool_id,world_time)
+        if not start.get("ok"): return start
+        return self.complete_gathering(start["gathering_session_id"],world_time)
+    harvest=lambda self,*a,**k: self.gather_mode("harvesting",*a,**k)
+    forage=lambda self,*a,**k: self.gather_mode("harvesting",*a,**k)
+    mine=lambda self,*a,**k: self.gather_mode("mining",*a,**k)
+    chop=lambda self,*a,**k: self.gather_mode("lumberjacking",*a,**k)
+    fish=lambda self,*a,**k: self.gather_mode("fishing",*a,**k)
+    salvage=lambda self,*a,**k: self.gather_mode("scavenging",*a,**k)
+    dig=lambda self,*a,**k: self.gather_mode("excavation",*a,**k)
+    excavate=dig
+    def skin_corpse(self, actor_id, corpse_instance_id, node_instance_id, resource_id="small_beast_hide", tool_id=None, world_time=0):
+        with sqlite3.connect(self.db_path) as c:
+            if c.execute("SELECT 1 FROM corpse_resource_extractions WHERE corpse_instance_id=? AND resource_definition_id=? AND status='extracted'",(corpse_instance_id,resource_id)).fetchone():
+                return {"ok":False,"reason":"corpse_resource_already_extracted"}
+        s=self.start_gathering(actor_id,node_instance_id,resource_id,tool_id,world_time,idempotency_key=stable_id("corpse",corpse_instance_id,resource_id))
+        if not s.get("ok"): return s
+        r=self.complete_gathering(s["gathering_session_id"],world_time)
+        if r.get("ok"):
+            with sqlite3.connect(self.db_path) as c:
+                c.execute("INSERT OR IGNORE INTO corpse_resource_extractions VALUES(?,?,?,?,?,?,?,?,?)",("cre_"+stable_id(corpse_instance_id,resource_id),corpse_instance_id,resource_id,actor_id,"extracted",s["gathering_session_id"],world_time,None,_json({"decay_policy":"may_reduce_yield_placeholder"})))
+            self.publish("corpse_skinned", {"corpse_instance_id":corpse_instance_id,"resource_definition_id":resource_id,"gathering_session_id":s["gathering_session_id"]})
+        return r
+    butcher_corpse=skin_corpse
     def interrupt_gathering(self, session_id, reason):
         with sqlite3.connect(self.db_path) as c: c.execute("UPDATE gathering_sessions SET status='interrupted',failure_reason=?,updated_at=CURRENT_TIMESTAMP WHERE gathering_session_id=? AND status IN ('started','in_progress')",(reason,session_id)); self._audit(c,"","",session_id,"interrupt","ok",reason,0,{})
         self.publish("resource_node_gathering_interrupted", {"gathering_session_id":session_id,"reason":reason}); return {"ok":True}
@@ -210,7 +268,7 @@ class GatheringService:
         return {"ok":True,"regenerated":changed}
     def discover_node(self, actor_id, node_instance_id, source_type, source_id=None, world_time=0):
         sid="arns_"+stable_id(self.world_id,actor_id,node_instance_id)
-        with sqlite3.connect(self.db_path) as c: c.execute("INSERT OR REPLACE INTO actor_resource_node_state VALUES(?,?,?,?,?,?,?)",(sid,self.world_id,actor_id,node_instance_id,"discovered",world_time,_json({"source_type":source_type,"source_id":source_id})))
+        with sqlite3.connect(self.db_path) as c: c.execute("INSERT OR REPLACE INTO actor_resource_node_state(actor_node_state_id,world_id,actor_id,node_instance_id,capacity_current,status,last_gathered_world_time,next_regeneration_world_time,metadata_json) VALUES(?,?,?,?,?,?,?,?,?)",(sid,self.world_id,actor_id,node_instance_id,None,"discovered",None,None,_json({"source_type":source_type,"source_id":source_id})))
         self.publish("resource_node_discovered", {"actor_id":actor_id,"node_instance_id":node_instance_id}); return {"ok":True}
     def get_actor_gathering_sessions(self,actor_id):
         with sqlite3.connect(self.db_path) as c: c.row_factory=sqlite3.Row; return [dict(r) for r in c.execute("SELECT * FROM gathering_sessions WHERE actor_id=?",(actor_id,))]
@@ -220,6 +278,20 @@ class GatheringService:
     def trace_node(self,node_instance_id): return {"node":self.get_node_instance(node_instance_id),"history":self.get_node_history(node_instance_id),"restart_state":"SQLite authoritative"}
     def trace_yield(self,session_id): return {"session_id":session_id,"deterministic":True,"reward_handoff":"RewardService source_type=gathering"}
     def trace_regeneration(self,node_instance_id): return {"node":self.get_node_instance(node_instance_id),"bounded_catchup":True}
+    def trace_requirement(self,actor_id,node_instance_id): return self.evaluate_gathering_requirements(actor_id,node_instance_id)
+    def trace_tool(self,actor_id,node_instance_id,tool_id=None): return self.validate_tool(actor_id,node_instance_id,tool_id)
+    def trace_capacity(self,node_instance_id): return {"node":self.get_node_instance(node_instance_id),"atomic_decrement":"UPDATE ... WHERE capacity_current>=cost"}
+    def trace_availability(self,actor_id,node_instance_id): return self.evaluate_node_availability(actor_id,node_instance_id)
+    def trace_profession(self,actor_id,resource_id): return {"actor_id":actor_id,"resource_definition":self.get_resource_definition(resource_id),"profession_source":"canonical profession/progression APIs"}
+    def trace_corpse_extraction(self,corpse_instance_id):
+        with sqlite3.connect(self.db_path) as c:
+            c.row_factory=sqlite3.Row; rows=[dict(r) for r in c.execute("SELECT * FROM corpse_resource_extractions WHERE corpse_instance_id=?",(corpse_instance_id,))]
+        return {"corpse_instance_id":corpse_instance_id,"extractions":rows}
+    def score_section(self,actor_id,section="gathering",include_builder=False):
+        active=[s for s in self.get_actor_gathering_sessions(actor_id) if s["status"] in ("started","in_progress")]
+        data={"section":section,"active_gathering_session":active[0]["gathering_session_id"] if active else None,"recent_resources":[json.loads(s["result_json"] or "{}").get("yields",[]) for s in self.get_actor_gathering_sessions(actor_id)[-5:]],"tool_warning":None,"inventory_full_warning":"inventory overflow is delegated to reward/inventory policy","discovered_nodes_count":0}
+        if include_builder: data["builder_detail"]="node/session ids, capacity, seeds, result ids, reward packet ids, and event-consumption ids are visible to staff traces"
+        return data
     trace_node_materialization=lambda self,nid: {"node_definition":self.get_node_definition(nid),"placements":self._placements(self.get_node_definition(nid) or {})}
     def _history(self,c,nid,op,actor,sid,before,after,wt,meta): c.execute("INSERT OR IGNORE INTO resource_node_history VALUES(?,?,?,?,?,?,?,?,?,?)",("rnh_"+stable_id(nid,op,sid,wt,before,after),nid,op,actor,sid,before,after,wt,None,_json(meta)))
     def _audit(self,c,actor,nid,sid,op,result,reason,wt,meta): c.execute("INSERT OR IGNORE INTO gathering_audit_events VALUES(?,?,?,?,?,?,?,?,?,?,?)",("gae_"+stable_id(actor,nid,sid,op,wt),self.world_id,actor,nid,sid,op,result,reason,wt,None,_json(meta)))

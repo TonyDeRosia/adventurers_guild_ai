@@ -1,1 +1,287 @@
-{"resource_node_definitions":[{"id":"emberleaf_patch_crossing","name":"Emberleaf Patch","description":"A deterministic starter herb patch.","node_type":"herb_patch","resource_definition_ids":["emberleaf"],"placement_type":"room","room_ids":["guildhall_crossing_square"],"feature_ids":[],"zone_ids":[],"area_ids":[],"spawn_profile_id":"static_once","capacity_profile_id":"small_shared_patch","regeneration_profile_id":"slow_renewal","availability_profile_id":"spring_summer_day","visibility_profile_id":"visible_default","access_profile_id":"open_access","interaction_profile_id":"default_interaction","shared_state_policy":"shared","personal_state_policy":"none","enabled":true,"tags":["phase11c1"],"plugin_data":{},"version":"1.0.0"}]}
+{
+  "resource_node_definitions": [
+    {
+      "access_profile_id": "open_access",
+      "area_ids": [],
+      "availability_profile_id": "spring_summer_day",
+      "capacity_profile_id": "small_shared_patch",
+      "description": "A deterministic starter herb patch.",
+      "enabled": true,
+      "feature_ids": [],
+      "id": "emberleaf_patch_crossing",
+      "interaction_profile_id": "default_interaction",
+      "name": "Emberleaf Patch",
+      "node_type": "herb_patch",
+      "personal_state_policy": "none",
+      "placement_type": "room",
+      "plugin_data": {},
+      "regeneration_profile_id": "slow_renewal",
+      "resource_definition_ids": [
+        "emberleaf"
+      ],
+      "room_ids": [
+        "guildhall_crossing_square"
+      ],
+      "shared_state_policy": "shared",
+      "spawn_profile_id": "static_once",
+      "tags": [
+        "phase11c1"
+      ],
+      "version": "1.0.0",
+      "visibility_profile_id": "visible_default",
+      "zone_ids": []
+    },
+    {
+      "access_profile_id": "open_access",
+      "area_ids": [],
+      "availability_profile_id": "spring_summer_day",
+      "capacity_profile_id": "small_renewable_patch",
+      "description": "Phase 11C2 conservative pilot node.",
+      "enabled": true,
+      "feature_ids": [],
+      "id": "guildlands_herb_patch",
+      "name": "Guildlands Herb Patch",
+      "node_type": "guildlands_herb_patch",
+      "personal_state_policy": "none",
+      "placement_type": "room",
+      "plugin_data": {},
+      "regeneration_profile_id": "slow_resource_regeneration",
+      "resource_definition_ids": [
+        "common_healing_herb"
+      ],
+      "room_ids": [
+        "guildhall_crossing_square"
+      ],
+      "shared_state_policy": "shared",
+      "tags": [
+        "phase11c2"
+      ],
+      "version": "1.0.0",
+      "zone_ids": []
+    },
+    {
+      "access_profile_id": "open_access",
+      "area_ids": [],
+      "availability_profile_id": "spring_summer_day",
+      "capacity_profile_id": "small_renewable_patch",
+      "description": "Phase 11C2 conservative pilot node.",
+      "enabled": true,
+      "feature_ids": [],
+      "id": "guildlands_mushroom_cluster",
+      "name": "Guildlands Mushroom Cluster",
+      "node_type": "guildlands_mushroom_cluster",
+      "personal_state_policy": "none",
+      "placement_type": "room",
+      "plugin_data": {},
+      "regeneration_profile_id": "slow_resource_regeneration",
+      "resource_definition_ids": [
+        "wild_mushroom"
+      ],
+      "room_ids": [
+        "guildhall_crossing_square"
+      ],
+      "shared_state_policy": "shared",
+      "tags": [
+        "phase11c2"
+      ],
+      "version": "1.0.0",
+      "zone_ids": []
+    },
+    {
+      "access_profile_id": "open_access",
+      "area_ids": [],
+      "availability_profile_id": "spring_summer_day",
+      "capacity_profile_id": "standard_tree_capacity",
+      "description": "Phase 11C2 conservative pilot node.",
+      "enabled": true,
+      "feature_ids": [],
+      "id": "guildlands_oak_tree",
+      "name": "Guildlands Oak Tree",
+      "node_type": "guildlands_oak_tree",
+      "personal_state_policy": "none",
+      "placement_type": "room",
+      "plugin_data": {},
+      "regeneration_profile_id": "slow_resource_regeneration",
+      "resource_definition_ids": [
+        "oak_wood"
+      ],
+      "room_ids": [
+        "guildhall_crossing_square"
+      ],
+      "shared_state_policy": "shared",
+      "tags": [
+        "phase11c2"
+      ],
+      "version": "1.0.0",
+      "zone_ids": []
+    },
+    {
+      "access_profile_id": "open_access",
+      "area_ids": [],
+      "availability_profile_id": "spring_summer_day",
+      "capacity_profile_id": "standard_ore_vein",
+      "description": "Phase 11C2 conservative pilot node.",
+      "enabled": true,
+      "feature_ids": [],
+      "id": "guildlands_iron_vein",
+      "name": "Guildlands Iron Vein",
+      "node_type": "guildlands_iron_vein",
+      "personal_state_policy": "none",
+      "placement_type": "room",
+      "plugin_data": {},
+      "regeneration_profile_id": "slow_resource_regeneration",
+      "resource_definition_ids": [
+        "iron_ore"
+      ],
+      "room_ids": [
+        "guildhall_crossing_square"
+      ],
+      "shared_state_policy": "shared",
+      "tags": [
+        "phase11c2"
+      ],
+      "version": "1.0.0",
+      "zone_ids": []
+    },
+    {
+      "access_profile_id": "open_access",
+      "area_ids": [],
+      "availability_profile_id": "spring_summer_day",
+      "capacity_profile_id": "standard_ore_vein",
+      "description": "Phase 11C2 conservative pilot node.",
+      "enabled": true,
+      "feature_ids": [],
+      "id": "guildlands_stone_outcrop",
+      "name": "Guildlands Stone Outcrop",
+      "node_type": "guildlands_stone_outcrop",
+      "personal_state_policy": "none",
+      "placement_type": "room",
+      "plugin_data": {},
+      "regeneration_profile_id": "slow_resource_regeneration",
+      "resource_definition_ids": [
+        "common_stone"
+      ],
+      "room_ids": [
+        "guildhall_crossing_square"
+      ],
+      "shared_state_policy": "shared",
+      "tags": [
+        "phase11c2"
+      ],
+      "version": "1.0.0",
+      "zone_ids": []
+    },
+    {
+      "access_profile_id": "open_access",
+      "area_ids": [],
+      "availability_profile_id": "spring_summer_day",
+      "capacity_profile_id": "standard_fishing_pool",
+      "description": "Phase 11C2 conservative pilot node.",
+      "enabled": true,
+      "feature_ids": [],
+      "id": "guildlands_fishing_spot",
+      "name": "Guildlands Fishing Spot",
+      "node_type": "guildlands_fishing_spot",
+      "personal_state_policy": "none",
+      "placement_type": "room",
+      "plugin_data": {},
+      "regeneration_profile_id": "slow_resource_regeneration",
+      "resource_definition_ids": [
+        "river_fish"
+      ],
+      "room_ids": [
+        "guildhall_crossing_square"
+      ],
+      "shared_state_policy": "shared",
+      "tags": [
+        "phase11c2"
+      ],
+      "version": "1.0.0",
+      "zone_ids": []
+    },
+    {
+      "access_profile_id": "open_access",
+      "area_ids": [],
+      "availability_profile_id": "spring_summer_day",
+      "capacity_profile_id": "small_renewable_patch",
+      "description": "Phase 11C2 conservative pilot node.",
+      "enabled": true,
+      "feature_ids": [],
+      "id": "guildlands_scrap_pile",
+      "name": "Guildlands Scrap Pile",
+      "node_type": "guildlands_scrap_pile",
+      "personal_state_policy": "none",
+      "placement_type": "room",
+      "plugin_data": {},
+      "regeneration_profile_id": "slow_resource_regeneration",
+      "resource_definition_ids": [
+        "scrap_metal"
+      ],
+      "room_ids": [
+        "guildhall_crossing_square"
+      ],
+      "shared_state_policy": "shared",
+      "tags": [
+        "phase11c2"
+      ],
+      "version": "1.0.0",
+      "zone_ids": []
+    },
+    {
+      "access_profile_id": "open_access",
+      "area_ids": [],
+      "availability_profile_id": "spring_summer_day",
+      "capacity_profile_id": "corpse_single_extraction",
+      "description": "Phase 11C2 conservative pilot node.",
+      "enabled": true,
+      "feature_ids": [],
+      "id": "rat_corpse_skinning_node",
+      "name": "Rat Corpse Skinning Node",
+      "node_type": "rat_corpse_skinning_node",
+      "personal_state_policy": "none",
+      "placement_type": "room",
+      "plugin_data": {},
+      "regeneration_profile_id": "corpse_no_regeneration",
+      "resource_definition_ids": [
+        "small_beast_hide"
+      ],
+      "room_ids": [
+        "guildhall_crossing_square"
+      ],
+      "shared_state_policy": "shared",
+      "tags": [
+        "phase11c2"
+      ],
+      "version": "1.0.0",
+      "zone_ids": []
+    },
+    {
+      "access_profile_id": "open_access",
+      "area_ids": [],
+      "availability_profile_id": "spring_summer_day",
+      "capacity_profile_id": "small_renewable_patch",
+      "description": "Phase 11C2 conservative pilot node.",
+      "enabled": true,
+      "feature_ids": [],
+      "id": "guildlands_clay_site",
+      "name": "Guildlands Clay Site",
+      "node_type": "guildlands_clay_site",
+      "personal_state_policy": "none",
+      "placement_type": "room",
+      "plugin_data": {},
+      "regeneration_profile_id": "slow_resource_regeneration",
+      "resource_definition_ids": [
+        "clay_placeholder"
+      ],
+      "room_ids": [
+        "guildhall_crossing_square"
+      ],
+      "shared_state_policy": "shared",
+      "tags": [
+        "phase11c2"
+      ],
+      "version": "1.0.0",
+      "zone_ids": []
+    }
+  ]
+}

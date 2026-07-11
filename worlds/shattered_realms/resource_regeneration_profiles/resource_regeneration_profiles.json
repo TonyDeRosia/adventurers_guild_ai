@@ -1,1 +1,50 @@
-{"resource_regeneration_profiles":[{"id":"slow_renewal","name":"Slow Renewal","description":"One capacity per hour, bounded.","regeneration_mode":"fixed_amount","interval_minutes":60,"amount_per_interval":1,"full_regeneration_minutes":180,"minimum_delay_minutes":60,"maximum_delay_minutes":180,"season_modifiers":{},"weather_modifiers":{},"world_state_conditions":[],"bounded_catchup":true,"maximum_cycles_per_tick":2,"regenerate_while_unused":false,"regenerate_while_depleted":true,"requires_empty_area_placeholder":false,"tags":["phase11c1"],"plugin_data":{},"version":"1.0.0"}]}
+{
+  "resource_regeneration_profiles": [
+    {
+      "amount_per_interval": 1,
+      "bounded_catchup": true,
+      "description": "One capacity per hour, bounded.",
+      "full_regeneration_minutes": 180,
+      "id": "slow_renewal",
+      "interval_minutes": 60,
+      "maximum_cycles_per_tick": 2,
+      "maximum_delay_minutes": 180,
+      "minimum_delay_minutes": 60,
+      "name": "Slow Renewal",
+      "plugin_data": {},
+      "regenerate_while_depleted": true,
+      "regenerate_while_unused": false,
+      "regeneration_mode": "fixed_amount",
+      "requires_empty_area_placeholder": false,
+      "season_modifiers": {},
+      "tags": [
+        "phase11c1"
+      ],
+      "version": "1.0.0",
+      "weather_modifiers": {},
+      "world_state_conditions": []
+    },
+    {
+      "amount_per_interval": 1,
+      "id": "slow_resource_regeneration",
+      "interval_minutes": 120,
+      "maximum_cycles_per_tick": 2,
+      "name": "Slow Resource Regeneration",
+      "regeneration_mode": "interval",
+      "tags": [
+        "phase11c2"
+      ]
+    },
+    {
+      "amount_per_interval": 0,
+      "id": "corpse_no_regeneration",
+      "interval_minutes": 1,
+      "maximum_cycles_per_tick": 0,
+      "name": "Corpse No Regeneration",
+      "regeneration_mode": "none",
+      "tags": [
+        "phase11c2"
+      ]
+    }
+  ]
+}

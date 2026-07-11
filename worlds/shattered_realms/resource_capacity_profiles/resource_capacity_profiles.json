@@ -1,1 +1,81 @@
-{"resource_capacity_profiles":[{"id":"small_shared_patch","name":"Small Shared Patch","description":"Three shared attempts.","capacity_minimum":0,"capacity_maximum":3,"starting_capacity":3,"capacity_unit":"attempts","per_attempt_cost":0,"per_success_cost":1,"partial_yield_policy":"allow_partial","depletion_threshold":0,"shared_capacity":true,"personal_capacity":false,"maximum_concurrent_gatherers":1,"tags":["phase11c1"],"plugin_data":{},"version":"1.0.0"}]}
+{
+  "resource_capacity_profiles": [
+    {
+      "capacity_maximum": 3,
+      "capacity_minimum": 0,
+      "capacity_unit": "attempts",
+      "depletion_threshold": 0,
+      "description": "Three shared attempts.",
+      "id": "small_shared_patch",
+      "maximum_concurrent_gatherers": 1,
+      "name": "Small Shared Patch",
+      "partial_yield_policy": "allow_partial",
+      "per_attempt_cost": 0,
+      "per_success_cost": 1,
+      "personal_capacity": false,
+      "plugin_data": {},
+      "shared_capacity": true,
+      "starting_capacity": 3,
+      "tags": [
+        "phase11c1"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "capacity_maximum": 3,
+      "id": "small_renewable_patch",
+      "maximum_concurrent_gatherers": 2,
+      "name": "Small Renewable Patch",
+      "personal_capacity": false,
+      "shared_capacity": true,
+      "starting_capacity": 3,
+      "tags": [
+        "phase11c2"
+      ]
+    },
+    {
+      "capacity_maximum": 4,
+      "id": "standard_tree_capacity",
+      "name": "Standard Tree Capacity",
+      "personal_capacity": false,
+      "shared_capacity": true,
+      "starting_capacity": 4,
+      "tags": [
+        "phase11c2"
+      ]
+    },
+    {
+      "capacity_maximum": 5,
+      "id": "standard_ore_vein",
+      "name": "Standard Ore Vein",
+      "personal_capacity": false,
+      "shared_capacity": true,
+      "starting_capacity": 5,
+      "tags": [
+        "phase11c2"
+      ]
+    },
+    {
+      "capacity_maximum": 6,
+      "id": "standard_fishing_pool",
+      "name": "Standard Fishing Pool",
+      "personal_capacity": false,
+      "shared_capacity": true,
+      "starting_capacity": 6,
+      "tags": [
+        "phase11c2"
+      ]
+    },
+    {
+      "capacity_maximum": 1,
+      "id": "corpse_single_extraction",
+      "name": "Corpse Single Extraction",
+      "personal_capacity": false,
+      "shared_capacity": true,
+      "starting_capacity": 1,
+      "tags": [
+        "phase11c2"
+      ]
+    }
+  ]
+}

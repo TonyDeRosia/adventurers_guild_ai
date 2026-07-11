@@ -1,1 +1,155 @@
-{"gathering_profiles":[{"id":"simple_harvest","name":"Simple Harvest","description":"Immediate deterministic harvest foundation.","gathering_type":"harvest","formula_id":"gathering_success_v1","success_formula_id":"gathering_success_v1","yield_formula_id":"gathering_quantity_v1","quality_formula_id":"gathering_quality_v1","duration_formula_id":"instant_duration","resource_cost_profile_id":"light_stamina_cost","tool_profile_id":"sickle_tool","required_profession_id":"herbalism","minimum_profession_rank":0,"required_ability_ids":[],"cooldown_profile_id":"actor_short_gathering","interruption_profile_id":"movement_interrupts","failure_policy":"no_yield","messages_profile_id":"default_gathering_messages","tags":["phase11c1"],"plugin_data":{},"version":"1.0.0"}]}
+{
+  "gathering_profiles": [
+    {
+      "cooldown_profile_id": "actor_short_gathering",
+      "description": "Immediate deterministic harvest foundation.",
+      "duration_formula_id": "instant_duration",
+      "failure_policy": "no_yield",
+      "formula_id": "gathering_success_v1",
+      "gathering_type": "harvest",
+      "id": "simple_harvest",
+      "interruption_profile_id": "movement_interrupts",
+      "messages_profile_id": "default_gathering_messages",
+      "minimum_profession_rank": 0,
+      "name": "Simple Harvest",
+      "plugin_data": {},
+      "quality_formula_id": "gathering_quality_v1",
+      "required_ability_ids": [],
+      "required_profession_id": "herbalism",
+      "resource_cost_profile_id": "light_stamina_cost",
+      "success_formula_id": "gathering_success_v1",
+      "tags": [
+        "phase11c1"
+      ],
+      "tool_profile_id": "sickle_tool",
+      "version": "1.0.0",
+      "yield_formula_id": "gathering_quantity_v1"
+    },
+    {
+      "cooldown_profile_id": "actor_short_gathering",
+      "description": "Phase 11C2 gameplay adapter over GatheringService.",
+      "duration_minutes": 0,
+      "failure_policy": "no_yield",
+      "gathering_type": "harvesting",
+      "id": "basic_harvesting",
+      "interruption_profile_id": "movement_interrupts",
+      "minimum_profession_rank": 0,
+      "name": "Basic Harvesting",
+      "plugin_data": {},
+      "required_profession_id": "herbalism",
+      "tags": [
+        "phase11c2"
+      ],
+      "tool_profile_id": "",
+      "version": "1.0.0"
+    },
+    {
+      "cooldown_profile_id": "actor_short_gathering",
+      "description": "Phase 11C2 gameplay adapter over GatheringService.",
+      "duration_minutes": 0,
+      "failure_policy": "no_yield",
+      "gathering_type": "mining",
+      "id": "basic_mining",
+      "interruption_profile_id": "movement_interrupts",
+      "minimum_profession_rank": 0,
+      "name": "Basic Mining",
+      "plugin_data": {},
+      "required_profession_id": "mining",
+      "tags": [
+        "phase11c2"
+      ],
+      "tool_profile_id": "",
+      "version": "1.0.0"
+    },
+    {
+      "cooldown_profile_id": "actor_short_gathering",
+      "description": "Phase 11C2 gameplay adapter over GatheringService.",
+      "duration_minutes": 0,
+      "failure_policy": "no_yield",
+      "gathering_type": "lumberjacking",
+      "id": "basic_lumberjacking",
+      "interruption_profile_id": "movement_interrupts",
+      "minimum_profession_rank": 0,
+      "name": "Basic Lumberjacking",
+      "plugin_data": {},
+      "required_profession_id": "lumberjacking",
+      "tags": [
+        "phase11c2"
+      ],
+      "tool_profile_id": "",
+      "version": "1.0.0"
+    },
+    {
+      "cooldown_profile_id": "actor_short_gathering",
+      "description": "Phase 11C2 gameplay adapter over GatheringService.",
+      "duration_minutes": 0,
+      "failure_policy": "no_yield",
+      "gathering_type": "fishing",
+      "id": "basic_fishing",
+      "interruption_profile_id": "movement_interrupts",
+      "minimum_profession_rank": 0,
+      "name": "Basic Fishing",
+      "plugin_data": {},
+      "required_profession_id": "fishing",
+      "tags": [
+        "phase11c2"
+      ],
+      "tool_profile_id": "",
+      "version": "1.0.0"
+    },
+    {
+      "cooldown_profile_id": "actor_short_gathering",
+      "description": "Phase 11C2 gameplay adapter over GatheringService.",
+      "duration_minutes": 0,
+      "failure_policy": "no_yield",
+      "gathering_type": "skinning",
+      "id": "basic_skinning",
+      "interruption_profile_id": "movement_interrupts",
+      "minimum_profession_rank": 0,
+      "name": "Basic Skinning",
+      "plugin_data": {},
+      "required_profession_id": "skinning",
+      "tags": [
+        "phase11c2"
+      ],
+      "tool_profile_id": "",
+      "version": "1.0.0"
+    },
+    {
+      "cooldown_profile_id": "actor_short_gathering",
+      "description": "Phase 11C2 gameplay adapter over GatheringService.",
+      "duration_minutes": 0,
+      "failure_policy": "no_yield",
+      "gathering_type": "scavenging",
+      "id": "basic_scavenging",
+      "interruption_profile_id": "movement_interrupts",
+      "minimum_profession_rank": 0,
+      "name": "Basic Scavenging",
+      "plugin_data": {},
+      "required_profession_id": "scavenging",
+      "tags": [
+        "phase11c2"
+      ],
+      "tool_profile_id": "",
+      "version": "1.0.0"
+    },
+    {
+      "cooldown_profile_id": "actor_short_gathering",
+      "description": "Phase 11C2 gameplay adapter over GatheringService.",
+      "duration_minutes": 0,
+      "failure_policy": "no_yield",
+      "gathering_type": "excavation",
+      "id": "basic_excavation",
+      "interruption_profile_id": "movement_interrupts",
+      "minimum_profession_rank": 0,
+      "name": "Basic Excavation",
+      "plugin_data": {},
+      "required_profession_id": "excavation",
+      "tags": [
+        "phase11c2"
+      ],
+      "tool_profile_id": "",
+      "version": "1.0.0"
+    }
+  ]
+}

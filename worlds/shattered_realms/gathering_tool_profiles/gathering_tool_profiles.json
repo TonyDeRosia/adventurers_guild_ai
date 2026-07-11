@@ -1,1 +1,185 @@
-{"gathering_tool_profiles":[{"id":"sickle_tool","name":"Sickle","description":"Starter harvesting blade.","allowed_item_template_ids":["training_sword","emberleaf_sickle"],"required_item_tags":["harvesting_tool"],"minimum_quality":"standard","tool_slot_requirement":"carried_or_equipped","durability_cost":1,"success_modifier":0,"yield_modifier":0,"quality_modifier":0,"speed_modifier":0,"resource_type_ids":["herb","plant"],"break_policy":"durability_hook_only","consumable":false,"messages":{},"tags":["phase11c1"],"plugin_data":{},"version":"1.0.0"}]}
+{
+  "gathering_tool_profiles": [
+    {
+      "allowed_item_template_ids": [
+        "training_sword",
+        "emberleaf_sickle"
+      ],
+      "break_policy": "durability_hook_only",
+      "consumable": false,
+      "description": "Starter harvesting blade.",
+      "durability_cost": 1,
+      "id": "sickle_tool",
+      "messages": {},
+      "minimum_quality": "standard",
+      "name": "Sickle",
+      "plugin_data": {},
+      "quality_modifier": 0,
+      "required_item_tags": [
+        "harvesting_tool"
+      ],
+      "resource_type_ids": [
+        "herb",
+        "plant"
+      ],
+      "speed_modifier": 0,
+      "success_modifier": 0,
+      "tags": [
+        "phase11c1"
+      ],
+      "tool_slot_requirement": "carried_or_equipped",
+      "version": "1.0.0",
+      "yield_modifier": 0
+    },
+    {
+      "allowed_item_template_ids": [
+        "basic_pickaxe"
+      ],
+      "break_policy": "durability_hook_only",
+      "consumable": false,
+      "description": "Phase 11C2 pilot tool profile.",
+      "durability_cost": 1,
+      "id": "basic_pickaxe",
+      "name": "Basic Pickaxe",
+      "plugin_data": {},
+      "required_item_tags": [],
+      "resource_type_ids": [
+        "ore",
+        "stone",
+        "mineral"
+      ],
+      "tags": [
+        "phase11c2"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "allowed_item_template_ids": [
+        "basic_hatchet"
+      ],
+      "break_policy": "durability_hook_only",
+      "consumable": false,
+      "description": "Phase 11C2 pilot tool profile.",
+      "durability_cost": 1,
+      "id": "basic_hatchet",
+      "name": "Basic Hatchet",
+      "plugin_data": {},
+      "required_item_tags": [],
+      "resource_type_ids": [
+        "wood",
+        "timber"
+      ],
+      "tags": [
+        "phase11c2"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "allowed_item_template_ids": [
+        "basic_sickle",
+        "training_sword"
+      ],
+      "break_policy": "durability_hook_only",
+      "consumable": false,
+      "description": "Phase 11C2 pilot tool profile.",
+      "durability_cost": 1,
+      "id": "basic_sickle",
+      "name": "Basic Sickle",
+      "plugin_data": {},
+      "required_item_tags": [],
+      "resource_type_ids": [
+        "herb",
+        "plant",
+        "mushroom",
+        "fiber",
+        "forage"
+      ],
+      "tags": [
+        "phase11c2"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "allowed_item_template_ids": [
+        "basic_fishing_rod"
+      ],
+      "break_policy": "durability_hook_only",
+      "consumable": false,
+      "description": "Phase 11C2 pilot tool profile.",
+      "durability_cost": 1,
+      "id": "basic_fishing_rod",
+      "name": "Basic Fishing Rod",
+      "plugin_data": {},
+      "required_item_tags": [],
+      "resource_type_ids": [
+        "fish"
+      ],
+      "tags": [
+        "phase11c2"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "allowed_item_template_ids": [
+        "basic_skinning_knife"
+      ],
+      "break_policy": "durability_hook_only",
+      "consumable": false,
+      "description": "Phase 11C2 pilot tool profile.",
+      "durability_cost": 1,
+      "id": "basic_skinning_knife",
+      "name": "Basic Skinning Knife",
+      "plugin_data": {},
+      "required_item_tags": [],
+      "resource_type_ids": [
+        "hide",
+        "meat",
+        "bone"
+      ],
+      "tags": [
+        "phase11c2"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "allowed_item_template_ids": [
+        "basic_shovel"
+      ],
+      "break_policy": "durability_hook_only",
+      "consumable": false,
+      "description": "Phase 11C2 pilot tool profile.",
+      "durability_cost": 1,
+      "id": "basic_shovel",
+      "name": "Basic Shovel",
+      "plugin_data": {},
+      "required_item_tags": [],
+      "resource_type_ids": [
+        "excavation"
+      ],
+      "tags": [
+        "phase11c2"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "allowed_item_template_ids": [
+        "basic_salvage_tools"
+      ],
+      "break_policy": "durability_hook_only",
+      "consumable": false,
+      "description": "Phase 11C2 pilot tool profile.",
+      "durability_cost": 1,
+      "id": "basic_salvage_tools",
+      "name": "Basic Salvage Tools",
+      "plugin_data": {},
+      "required_item_tags": [],
+      "resource_type_ids": [
+        "salvage"
+      ],
+      "tags": [
+        "phase11c2"
+      ],
+      "version": "1.0.0"
+    }
+  ]
+}

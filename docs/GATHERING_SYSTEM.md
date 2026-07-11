@@ -1,15 +1,15 @@
-# GATHERING SYSTEM
+# Phase 11C2 Gathering Gameplay
 
-Phase 11C1 adds the reusable canonical gathering foundation. All harvesting, mining, lumberjacking, fishing, skinning, scavenging, excavation, depletion, regeneration, and yield behavior routes through one `engine.gathering.GatheringService` pipeline.
+Phase 11C2 keeps one canonical `engine.gathering.GatheringService` for harvesting, foraging, mining, lumberjacking, fishing, skinning/butchering, world-node scavenging, and excavation. Gameplay verbs are adapters over the same runtime node, capacity, session, deterministic yield, quality, regeneration, profession-XP, EventBus, and diagnostics pipeline; no separate gathering engines are introduced.
 
-Implemented foundation:
+Builder/world collections define `resource_definitions`, `resource_node_definitions`, `resource_capacity_profiles`, `resource_regeneration_profiles`, `resource_availability_profiles`, `resource_environment_profiles`, `gathering_profiles`, `gathering_tool_profiles`, `resource_yield_profiles`, `gathering_resource_cost_profiles`, `gathering_interruption_profiles`, `gathering_cooldown_profiles`, `gathering_profession_xp_profiles`, `gathering_message_profiles`, `gathering_render_profiles`, and `gathering_access_profiles`.
 
-- data-driven resource, node, capacity, regeneration, availability, environment, gathering, tool, yield, cost, interruption, cooldown, profession XP, message, render, and access profile collections;
-- SQLite-authoritative runtime node instances and gathering sessions;
-- deterministic materialization, success/yield/quality/rare-yield foundations;
-- world-time capacity depletion and bounded regeneration catch-up;
-- exact tool-instance validation hooks and durability hooks;
-- audit/history/regeneration/result tables and diagnostics traces;
-- Builder/world-package import, preview, apply, export, and validation registration.
+Runtime node instances, sessions, session results, node history, regeneration events, personal node state, corpse extraction state, event consumption, and audit rows are SQLite-authoritative. Capacity is decremented atomically during completion and repeated completion returns the persisted result rather than granting duplicate yield.
 
-Phase 11C2 remains responsible for full gameplay commands, balance, profession XP awards, quest/achievement score presentation, fishing minigames, and pilot content rollout.
+Player commands route through room context: `gather`, `harvest`, `forage`, `mine`, `chop`, `fish`, `skin`, `butcher`, `salvage`, `dig`, `excavate`, `resources here`, `survey resources`, `resource <name or number>`, `gathering status`, `gathering cancel`, `inspect node`, `tools`, and `gathering history`. Normal player listings show names, status, and capacity presentation only; Builder/Admin traces may show node-instance IDs, seeds, result IDs, reward packet IDs, and event-consumption IDs.
+
+Builder/Admin commands use canonical Builder collections: resource/resource-node/gather-profile/tool/yield/regen list/stat/create/clone/set/delete/validate/preview commands plus runtime `gatheringnodes`, `gatheringnode`, `gatheringmaterialize`, `gatheringstart`, `gatheringcomplete`, `gatheringinterrupt`, `gatheringregenerate`, `gatheringdeplete`, `gatheringreset`, `gatheringtick`, and trace/audit commands. Runtime mutations require staff authority unless reached through normal gameplay.
+
+Pilot content is intentionally conservative and placed at existing `guildhall_crossing_square`: common herbs, mushrooms, oak wood, iron ore, common stone, river fish, small beast hide, scrap metal, and clay placeholder; nodes include herb patch, mushroom cluster, oak tree, iron vein, stone outcrop, fishing spot, scrap pile, rat corpse skinning, and clay site. Tool profiles include basic pickaxe, hatchet, sickle, fishing rod, skinning knife, shovel, and salvage tools.
+
+Manual acceptance: run `resources here` and `survey resources`; `harvest herb patch` with `basic_sickle`; `mine iron vein` first with a wrong tool then `basic_pickaxe`; `chop oak tree` with `basic_hatchet`; `fish` or `fish fishing spot` with `basic_fishing_rod`; create/kill a compatible rat corpse and `skin corpse`; start a session then move/enter combat to interrupt; deplete a node then `gatheringtick 240`; restart and verify capacity, regeneration schedule, session result, corpse extraction, rewards, and profession XP are not duplicated.

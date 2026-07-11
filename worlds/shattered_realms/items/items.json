@@ -1158,5 +1158,254 @@
       "herb"
     ],
     "type": "resource"
+  },
+  {
+    "description": "Phase 11C2 pilot common healing herb.",
+    "effects": {},
+    "id": "common_healing_herb",
+    "name": "common healing herb",
+    "rarity": "common",
+    "requirements": {},
+    "stats": {},
+    "tags": [
+      "gathering",
+      "herb"
+    ],
+    "type": "material",
+    "value": 1,
+    "weight": 1
+  },
+  {
+    "description": "Phase 11C2 pilot wild mushroom.",
+    "effects": {},
+    "id": "wild_mushroom",
+    "name": "wild mushroom",
+    "rarity": "common",
+    "requirements": {},
+    "stats": {},
+    "tags": [
+      "gathering",
+      "mushroom"
+    ],
+    "type": "food",
+    "value": 1,
+    "weight": 1
+  },
+  {
+    "description": "Phase 11C2 pilot oak wood.",
+    "effects": {},
+    "id": "oak_wood",
+    "name": "oak wood",
+    "rarity": "common",
+    "requirements": {},
+    "stats": {},
+    "tags": [
+      "gathering",
+      "wood"
+    ],
+    "type": "material",
+    "value": 1,
+    "weight": 1
+  },
+  {
+    "description": "Phase 11C2 pilot iron ore.",
+    "effects": {},
+    "id": "iron_ore",
+    "name": "iron ore",
+    "rarity": "common",
+    "requirements": {},
+    "stats": {},
+    "tags": [
+      "gathering",
+      "ore"
+    ],
+    "type": "material",
+    "value": 1,
+    "weight": 1
+  },
+  {
+    "description": "Phase 11C2 pilot common stone.",
+    "effects": {},
+    "id": "common_stone",
+    "name": "common stone",
+    "rarity": "common",
+    "requirements": {},
+    "stats": {},
+    "tags": [
+      "gathering",
+      "stone"
+    ],
+    "type": "material",
+    "value": 1,
+    "weight": 1
+  },
+  {
+    "description": "Phase 11C2 pilot river fish.",
+    "effects": {},
+    "id": "river_fish",
+    "name": "river fish",
+    "rarity": "common",
+    "requirements": {},
+    "stats": {},
+    "tags": [
+      "gathering",
+      "fish"
+    ],
+    "type": "food",
+    "value": 1,
+    "weight": 1
+  },
+  {
+    "description": "Phase 11C2 pilot small beast hide.",
+    "effects": {},
+    "id": "small_beast_hide",
+    "name": "small beast hide",
+    "rarity": "common",
+    "requirements": {},
+    "stats": {},
+    "tags": [
+      "gathering",
+      "hide"
+    ],
+    "type": "material",
+    "value": 1,
+    "weight": 1
+  },
+  {
+    "description": "Phase 11C2 pilot scrap metal.",
+    "effects": {},
+    "id": "scrap_metal",
+    "name": "scrap metal",
+    "rarity": "common",
+    "requirements": {},
+    "stats": {},
+    "tags": [
+      "gathering",
+      "scrap_metal"
+    ],
+    "type": "material",
+    "value": 1,
+    "weight": 1
+  },
+  {
+    "description": "Phase 11C2 pilot clay placeholder.",
+    "effects": {},
+    "id": "clay_placeholder",
+    "name": "clay placeholder",
+    "rarity": "common",
+    "requirements": {},
+    "stats": {},
+    "tags": [
+      "gathering",
+      "clay"
+    ],
+    "type": "material",
+    "value": 1,
+    "weight": 1
+  },
+  {
+    "description": "Phase 11C2 pilot basic pickaxe.",
+    "effects": {},
+    "id": "basic_pickaxe",
+    "name": "basic pickaxe",
+    "rarity": "common",
+    "requirements": {},
+    "stats": {},
+    "tags": [
+      "mining_tool"
+    ],
+    "type": "tool",
+    "value": 1,
+    "weight": 1
+  },
+  {
+    "description": "Phase 11C2 pilot basic hatchet.",
+    "effects": {},
+    "id": "basic_hatchet",
+    "name": "basic hatchet",
+    "rarity": "common",
+    "requirements": {},
+    "stats": {},
+    "tags": [
+      "lumberjacking_tool"
+    ],
+    "type": "tool",
+    "value": 1,
+    "weight": 1
+  },
+  {
+    "description": "Phase 11C2 pilot basic sickle.",
+    "effects": {},
+    "id": "basic_sickle",
+    "name": "basic sickle",
+    "rarity": "common",
+    "requirements": {},
+    "stats": {},
+    "tags": [
+      "harvesting_tool"
+    ],
+    "type": "tool",
+    "value": 1,
+    "weight": 1
+  },
+  {
+    "description": "Phase 11C2 pilot basic fishing rod.",
+    "effects": {},
+    "id": "basic_fishing_rod",
+    "name": "basic fishing rod",
+    "rarity": "common",
+    "requirements": {},
+    "stats": {},
+    "tags": [
+      "fishing_tool"
+    ],
+    "type": "tool",
+    "value": 1,
+    "weight": 1
+  },
+  {
+    "description": "Phase 11C2 pilot basic skinning knife.",
+    "effects": {},
+    "id": "basic_skinning_knife",
+    "name": "basic skinning knife",
+    "rarity": "common",
+    "requirements": {},
+    "stats": {},
+    "tags": [
+      "skinning_tool"
+    ],
+    "type": "tool",
+    "value": 1,
+    "weight": 1
+  },
+  {
+    "description": "Phase 11C2 pilot basic shovel.",
+    "effects": {},
+    "id": "basic_shovel",
+    "name": "basic shovel",
+    "rarity": "common",
+    "requirements": {},
+    "stats": {},
+    "tags": [
+      "excavation_tool"
+    ],
+    "type": "tool",
+    "value": 1,
+    "weight": 1
+  },
+  {
+    "description": "Phase 11C2 pilot basic salvage tools.",
+    "effects": {},
+    "id": "basic_salvage_tools",
+    "name": "basic salvage tools",
+    "rarity": "common",
+    "requirements": {},
+    "stats": {},
+    "tags": [
+      "scavenging_tool"
+    ],
+    "type": "tool",
+    "value": 1,
+    "weight": 1
   }
 ]
