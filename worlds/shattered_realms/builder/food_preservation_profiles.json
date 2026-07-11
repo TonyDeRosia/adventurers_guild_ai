@@ -1,0 +1,35 @@
+{
+  "food_preservation_profiles": [
+    {
+      "allowed_item_tags": [
+        "fish"
+      ],
+      "allowed_item_template_ids": [
+        "cooked_river_fish",
+        "river_fish"
+      ],
+      "duration_formula_id": "",
+      "freshness_extension_minutes": 1440,
+      "id": "basic_smoking_or_drying",
+      "messages": {},
+      "name": "Basic smoking or drying",
+      "nutrition_modifier": -1,
+      "output_freshness_profile_id": "preserved_food",
+      "output_item_template_id": "dried_fish",
+      "plugin_data": {},
+      "preservation_type": "dry",
+      "quality_modifier": -1,
+      "required_item_tags": [
+        "fuel"
+      ],
+      "required_recipe_ids": [
+        "dried_fish"
+      ],
+      "required_workstation_profile_id": "lit_campfire_cooking",
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    }
+  ]
+}

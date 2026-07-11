@@ -1,44 +1,11 @@
 {
-  "consumable_profiles": [
-    {
+  "consumable_profiles": {
+    "clean_water_drink": {
       "allowed_item_template_ids": [
-        "trail_ration",
-        "rations"
-      ],
-      "consumable_type": "ration",
-      "consumption_duration_formula_id": "instant",
-      "consumption_requirements": [],
-      "container_policy": "none",
-      "description": "Conservative starter ration.",
-      "effect_ids": [],
-      "enabled": true,
-      "freshness_profile_id": "shelf_stable",
-      "id": "trail_ration_food",
-      "interruption_profile_id": "none",
-      "messages": {},
-      "name": "Trail Ration",
-      "need_changes": {
-        "hunger": 18,
-        "nutrition": 8,
-        "satiation": 20
-      },
-      "plugin_data": {},
-      "portion_profile_id": "single_serving",
-      "quality_modifiers": {},
-      "required_item_tags": [
-        "food"
-      ],
-      "resource_changes": {},
-      "tags": [
-        "phase11d1",
-        "food"
-      ],
-      "version": 1
-    },
-    {
-      "allowed_item_template_ids": [
-        "waterskin",
-        "clean_water"
+        "clean_water",
+        "clean_water_flask",
+        "herbal_tea_item",
+        "waterskin"
       ],
       "consumable_type": "water",
       "consumption_duration_formula_id": "instant",
@@ -69,6 +36,45 @@
         "drink"
       ],
       "version": 1
+    },
+    "trail_ration_food": {
+      "allowed_item_template_ids": [
+        "cooked_river_fish",
+        "cooked_small_meat",
+        "dried_fish",
+        "rations",
+        "trail_ration",
+        "wild_mushroom_stew_item"
+      ],
+      "consumable_type": "ration",
+      "consumption_duration_formula_id": "instant",
+      "consumption_requirements": [],
+      "container_policy": "none",
+      "description": "Conservative starter ration.",
+      "effect_ids": [],
+      "enabled": true,
+      "freshness_profile_id": "shelf_stable",
+      "id": "trail_ration_food",
+      "interruption_profile_id": "none",
+      "messages": {},
+      "name": "Trail Ration",
+      "need_changes": {
+        "hunger": 18,
+        "nutrition": 8,
+        "satiation": 20
+      },
+      "plugin_data": {},
+      "portion_profile_id": "single_serving",
+      "quality_modifiers": {},
+      "required_item_tags": [
+        "food"
+      ],
+      "resource_changes": {},
+      "tags": [
+        "phase11d1",
+        "food"
+      ],
+      "version": 1
     }
-  ]
+  }
 }

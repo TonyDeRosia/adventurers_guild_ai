@@ -9,7 +9,7 @@ from engine.rewards import RewardService, RewardSource, RewardRecipient
 from engine.economy import EconomyService
 
 SAFE_ID_RE=re.compile(r"^[A-Za-z0-9_.:-]+$")
-RECIPE_TYPES={"craft","assemble","refine","process","cook","brew","forge","smelt","tailor","leatherwork","woodwork","alchemy","salvage","disassemble","repair_material","enchant_placeholder","custom"}
+RECIPE_TYPES={"craft","assemble","refine","process","cook","cooking","baking","roasting","boiling","grilling","smoking","drying","preserving","food_preparation","drink_preparation","brew","forge","smelt","tailor","leatherwork","woodwork","alchemy","salvage","disassemble","repair_material","enchant_placeholder","custom"}
 SELECTION_MODES={"all_required","one_of","any_quantity","exact_quantity","tag_match","material_match","custom"}
 TOOL_LOCATIONS={"equipped","carried","workstation","either","custom"}
 JOB_STATUSES={"previewed","pending","reserved","in_progress","paused","completed","failed","cancelled","refunded"}
@@ -35,6 +35,10 @@ CREATE INDEX IF NOT EXISTS idx_crafting_reserved_item ON crafting_input_reservat
 CREATE TABLE IF NOT EXISTS actor_profession_state(profession_state_id TEXT PRIMARY KEY,world_id TEXT,actor_id TEXT,profession_id TEXT,rank INTEGER,experience INTEGER,experience_to_next INTEGER,total_experience INTEGER,specialization_ids_json TEXT,active INTEGER,created_at TEXT,updated_at TEXT,metadata_json TEXT,UNIQUE(world_id,actor_id,profession_id));
 CREATE TABLE IF NOT EXISTS actor_recipe_knowledge(knowledge_id TEXT PRIMARY KEY,world_id TEXT,actor_id TEXT,recipe_id TEXT,source_type TEXT,source_id TEXT,learned_world_time INTEGER,active INTEGER,created_at TEXT,updated_at TEXT,metadata_json TEXT,UNIQUE(world_id,actor_id,recipe_id,source_type,source_id));
 CREATE TABLE IF NOT EXISTS craft_previews(preview_id TEXT PRIMARY KEY,world_id TEXT,actor_id TEXT,recipe_id TEXT,quantity INTEGER,workstation_state_id TEXT,eligible INTEGER,created_world_time INTEGER,created_at TEXT,preview_json TEXT,metadata_json TEXT);
+CREATE TABLE IF NOT EXISTS cooking_job_context(cooking_context_id TEXT PRIMARY KEY,crafting_job_id TEXT UNIQUE,recipe_id TEXT,cooking_method TEXT,workstation_instance_id TEXT,campfire_instance_id TEXT,heat_profile_id TEXT,fuel_reserved INTEGER,environment_snapshot_json TEXT,created_at TEXT,metadata_json TEXT);
+CREATE TABLE IF NOT EXISTS cooking_job_ingredients(ingredient_record_id TEXT PRIMARY KEY,crafting_job_id TEXT,item_instance_id TEXT,item_template_id TEXT,ingredient_profile_id TEXT,quantity INTEGER,quality_id TEXT,freshness_state TEXT,substitution_group_id TEXT,reserved_at TEXT,consumed_at TEXT,metadata_json TEXT);
+CREATE TABLE IF NOT EXISTS cooking_job_outputs(output_record_id TEXT PRIMARY KEY,crafting_job_id TEXT,item_instance_id TEXT,item_template_id TEXT,servings INTEGER,quality_id TEXT,freshness_profile_id TEXT,freshness_state TEXT,consumable_profile_id TEXT,created_at TEXT,metadata_json TEXT);
+CREATE TABLE IF NOT EXISTS cooking_fuel_reservations(fuel_reservation_id TEXT PRIMARY KEY,crafting_job_id TEXT UNIQUE,campfire_instance_id TEXT,fuel_amount INTEGER,status TEXT,created_at TEXT,metadata_json TEXT);
 """
 
 def init_crafting_schema(db_path):
@@ -43,11 +47,11 @@ def init_crafting_schema(db_path):
         tables={r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         if "item_instances" in tables:
             cols={r[1] for r in con.execute("PRAGMA table_info(item_instances)")}
-            for name,ddl in {"quality_profile_id":"TEXT","quality_score":"INTEGER","crafted_by_actor_id":"TEXT","crafted_from_recipe_id":"TEXT","crafting_job_id":"TEXT","craft_world_time":"INTEGER","batch_id":"TEXT","provenance_json":"TEXT"}.items():
+            for name,ddl in {"quality_profile_id":"TEXT","quality_score":"INTEGER","crafted_by_actor_id":"TEXT","crafted_from_recipe_id":"TEXT","crafting_job_id":"TEXT","craft_world_time":"INTEGER","batch_id":"TEXT","provenance_json":"TEXT","consumable_profile_id":"TEXT","portion_profile_id":"TEXT","freshness_created_world_time":"INTEGER","freshness_profile_id":"TEXT","servings_remaining":"INTEGER"}.items():
                 if name not in cols: con.execute(f"ALTER TABLE item_instances ADD COLUMN {name} {ddl}")
 
 class CraftingContent:
-    collections=["recipe_definitions","workstation_profiles","production_profiles","item_quality_profiles","crafting_quality_profiles","ingredient_substitution_profiles","crafting_message_profiles","profession_experience_curves","profession_growth_profiles"]
+    collections=["recipe_definitions","workstation_profiles","production_profiles","item_quality_profiles","crafting_quality_profiles","ingredient_substitution_profiles","crafting_message_profiles","profession_experience_curves","profession_growth_profiles","cooking_ingredient_profiles","cooking_substitution_profiles","ingredient_preparation_profiles","cooking_serving_yield_profiles","cooking_consumable_output_profiles","food_nutrition_profiles","food_preservation_profiles","cooking_heat_profiles","cooking_failure_profiles","cooking_message_profiles","cooking_render_profiles","consumable_profiles","consumable_portion_profiles","food_freshness_profiles"]
     def __init__(self, world_root="worlds/shattered_realms"):
         self.world_root=Path(world_root); self.data={c:self._load(c) for c in self.collections}
     def _load(self,c):
@@ -118,6 +122,72 @@ class CraftingService:
     def get_recipe(self, recipe_id): return self.content.get("recipe_definitions", recipe_id)
     def list_available_recipes(self, actor_id, context=None):
         return [r for r in self.content.list("recipe_definitions") if r.get("enabled",True) and self.actor_knows_recipe(actor_id,r["id"])]
+
+    # Phase 11E cooking adapter APIs: these route through canonical crafting jobs.
+    def list_cooking_recipes(self, actor_id, filters=None):
+        filters=filters or {}
+        out=[]
+        for r in self.get_actor_recipes(actor_id):
+            if self._is_cooking_recipe(r) and all(r.get(k)==v for k,v in filters.items() if v): out.append(r)
+        return out
+    def _is_cooking_recipe(self, r):
+        return r.get("recipe_category") in {"cooking","baking","roasting","boiling","grilling","smoking","drying","preserving","food_preparation","drink_preparation"} or r.get("recipe_type") in {"cook","cooking","baking","roasting","boiling","smoking","drying","preserving"}
+    def get_cooking_recipe(self, recipe_id):
+        r=self.get_recipe(recipe_id); return r if r and self._is_cooking_recipe(r) else None
+    def resolve_cooking_ingredients(self, actor_id, recipe_id, ingredient_item_ids=None):
+        r=self.get_cooking_recipe(recipe_id);
+        if not r: raise KeyError(recipe_id)
+        return self.select_inputs(actor_id,r,1,ingredient_item_ids)
+    def resolve_ingredient_substitutions(self, recipe_id, ingredient_item_ids=None):
+        r=self.get_recipe(recipe_id) or {}; prof=self.content.get('cooking_substitution_profiles', r.get('ingredient_substitution_profile_id')) or {}
+        return {'recipe_id':recipe_id,'profile_id':prof.get('id',''),'maximum_substitutions':prof.get('maximum_substitutions',0),'substitutions':[]}
+    def resolve_campfire_workstation(self, actor_id, campfire_instance_id):
+        surv=getattr(self.runtime,'survival_needs',None) if self.runtime else None
+        row=surv.trace_campfire(campfire_instance_id) if surv and hasattr(surv,'trace_campfire') else {}
+        if not row: return {'ok':False,'reason':'campfire_not_found'}
+        room=getattr(surv,'_room_for_actor',lambda a: row.get('room_id'))(actor_id)
+        if row.get('room_id')!=room: return {'ok':False,'reason':'campfire_wrong_room','campfire':row}
+        if row.get('status')!='lit': return {'ok':False,'reason':'campfire_not_lit','campfire':row}
+        return {'ok':True,'workstation_type':'campfire','campfire_instance_id':campfire_instance_id,'room_id':row.get('room_id'),'heat_available':True,'heat_level':50,'fuel_available':int(row.get('fuel_current') or 0),'quality_modifier':0,'tags':['campfire','cooking']}
+    def resolve_cooking_workstation(self, actor_id, recipe_id, workstation_id=None):
+        if workstation_id and str(workstation_id).startswith('campfire_'): return self.resolve_campfire_workstation(actor_id,workstation_id)
+        return {'ok':True,'workstation_profile_id':workstation_id or (self.get_recipe(recipe_id) or {}).get('workstation_profile_id'),'workstation_type':workstation_id or 'generic'}
+    def validate_cooking_requirements(self, actor_id, recipe_id, ingredient_item_ids=None, workstation_id=None):
+        p=self.preview_cooking(actor_id,recipe_id,ingredient_item_ids,workstation_id); return {'ok':p.eligible,'details':p.details}
+    def preview_cooking(self, actor_id, recipe_id, ingredient_item_ids=None, workstation_id=None):
+        p=self.preview_recipe(actor_id,recipe_id,1,workstation_id,ingredient_item_ids)
+        if not self.get_cooking_recipe(recipe_id): p.details.setdefault('warnings',[]).append('not a cooking recipe')
+        p.details['cooking']= {'serving_yield_profile_id':p.details['recipe'].get('serving_yield_profile_id'),'consumable_output_profile_id':p.details['recipe'].get('consumable_output_profile_id'),'substitutions':self.resolve_ingredient_substitutions(recipe_id,ingredient_item_ids)}
+        return p
+    def start_cooking(self, actor_id, recipe_id, ingredient_item_ids=None, workstation_id=None):
+        if not self.get_cooking_recipe(recipe_id): raise ValueError('not a cooking recipe')
+        if workstation_id=='campfire':
+            surv=getattr(self.runtime,'survival_needs',None) if self.runtime else None
+            if surv:
+                with sqlite3.connect(self.db_path) as con: con.row_factory=sqlite3.Row; row=con.execute("SELECT campfire_instance_id FROM campfire_instances WHERE status='lit' ORDER BY created_at DESC LIMIT 1").fetchone(); workstation_id=row['campfire_instance_id'] if row else workstation_id
+        ctx=self.resolve_cooking_workstation(actor_id,recipe_id,workstation_id)
+        if not ctx.get('ok',True): raise ValueError(ctx.get('reason','invalid workstation'))
+        job=self.start_crafting(actor_id,recipe_id,1,workstation=workstation_id,explicit_instances=ingredient_item_ids)
+        meta={'workstation_context':ctx}
+        with sqlite3.connect(self.db_path) as con:
+            con.execute("INSERT OR IGNORE INTO cooking_job_context VALUES(?,?,?,?,?,?,?,?,?,?,?)",(stable_id('cookctx',job['crafting_job_id']),job['crafting_job_id'],recipe_id,(self.get_recipe(recipe_id) or {}).get('cooking_method',''),workstation_id or '',ctx.get('campfire_instance_id',''),(self.get_recipe(recipe_id) or {}).get('required_heat_profile_id',''),0,_json({}),utc_now(),_json(meta)))
+        self.publish('cooking_started', {'crafting_job_id':job['crafting_job_id'],'actor_id':actor_id,'recipe_id':recipe_id})
+        return job
+    def complete_cooking(self, crafting_job_id):
+        return self.complete_crafting_job(crafting_job_id)
+    def interrupt_cooking(self, crafting_job_id, reason):
+        with sqlite3.connect(self.db_path) as con: con.execute("UPDATE crafting_jobs SET status='failed',failure_reason=?,updated_at=? WHERE crafting_job_id=? AND status!='completed'",(reason,utc_now(),crafting_job_id))
+        self.publish('cooking_interrupted', {'crafting_job_id':crafting_job_id,'reason':reason}); return self.get_crafting_job(crafting_job_id)
+    def preserve_food(self, actor_id, item_instance_id, preservation_profile_id='basic_smoking_or_drying'):
+        prof=self.content.get('food_preservation_profiles',preservation_profile_id) or {};
+        with sqlite3.connect(self.db_path) as con: con.execute("UPDATE item_instances SET freshness_profile_id=?,updated_at=? WHERE instance_id=? AND owner_id=?",(prof.get('output_freshness_profile_id') or 'preserved_food',utc_now(),item_instance_id,actor_id))
+        self.publish('food_preserved', {'actor_id':actor_id,'item_instance_id':item_instance_id,'preservation_profile_id':preservation_profile_id}); return {'ok':True,'item_instance_id':item_instance_id,'preservation_profile_id':preservation_profile_id}
+    def trace_cooking_job(self, crafting_job_id):
+        tr=self.trace_crafting_job(crafting_job_id)
+        with sqlite3.connect(self.db_path) as con: con.row_factory=sqlite3.Row; tr['cooking_context']=dict(con.execute("SELECT * FROM cooking_job_context WHERE crafting_job_id=?",(crafting_job_id,)).fetchone() or {}); tr['outputs']=[dict(r) for r in con.execute("SELECT * FROM cooking_job_outputs WHERE crafting_job_id=?",(crafting_job_id,))]
+        return tr
+    trace_cooking_quality=trace_cooking_job; trace_cooking_freshness=trace_cooking_job; trace_cooking_servings=trace_cooking_job
+
     def grant_recipe(self, actor_id, recipe_id, source_type="admin", source_id=None, world_time=0):
         kid=stable_id("rk",self.world_id,actor_id,recipe_id,source_type,source_id or ""); now=utc_now()
         with sqlite3.connect(self.db_path) as con: con.execute("INSERT OR IGNORE INTO actor_recipe_knowledge VALUES(?,?,?,?,?,?,?,?,?,?,?)",(kid,self.world_id,actor_id,recipe_id,source_type,source_id or "",world_time,1,now,now,_json({})))
@@ -202,8 +272,8 @@ class CraftingService:
             for s in selected:
                 con.execute("INSERT OR IGNORE INTO crafting_input_reservation_entries VALUES(?,?,?,?,?,?,?,?,?,?,?)",(stable_id("rese",rid,s["item_instance_id"]),rid,s["item_instance_id"],s.get("quantity",1),s.get("quantity",1),1 if s.get("consume") else 0,1 if s.get("catalyst") else 0,"actor",actor_id,now,_json(s)))
         self.publish("craft_inputs_reserved", {"reservation_id":rid,"crafting_job_id":job_id}); return rid
-    def start_crafting(self, actor_id, recipe_id=None, quantity=1, preview_id=None, workstation=None, world_time=0):
-        prev=self.preview_recipe(actor_id,recipe_id,quantity,workstation,world_time=world_time) if not preview_id else self._load_preview(preview_id)
+    def start_crafting(self, actor_id, recipe_id=None, quantity=1, preview_id=None, workstation=None, world_time=0, explicit_instances=None):
+        prev=self.preview_recipe(actor_id,recipe_id,quantity,workstation,explicit_instances,world_time=world_time) if not preview_id else self._load_preview(preview_id)
         if not prev.eligible: raise ValueError("crafting preview is not eligible")
         r=prev.details["recipe"]; seed=stable_id("qseed",self.world_id,actor_id,r["id"],quantity,world_time); jid=stable_id("cj",self.world_id,actor_id,r["id"],quantity,seed); dur=int(prev.details["duration"]); now=utc_now(); costs=r.get("currency_costs") or {}; txn=""
         if costs:
@@ -243,13 +313,36 @@ class CraftingService:
         packet=self.rewards.resolve_reward_definition(rd["id"], RewardSource("profession",r["id"],jid,self.world_id,world_time,{"crafting_job_id":jid}), RewardRecipient("actor",job["actor_id"]), seed=job["quality_seed"])
         self.rewards.deliver_reward_packet(packet["reward_packet_id"])
         with sqlite3.connect(self.db_path) as con:
+            existing=con.execute("SELECT COUNT(*) FROM item_instances WHERE json_extract(custom_flags,'$.reward_packet_id')=? OR json_extract(custom_flags,'$.source_reward_packet_id')=?",(packet["reward_packet_id"],packet["reward_packet_id"])).fetchone()[0]
+            if existing==0:
+                for en in entries:
+                    if en.get('reward_type')=='item':
+                        for i in range(int(en.get('quantity',1) or 1)):
+                            iid=stable_id('item', packet['reward_packet_id'], en.get('item_template_id'), i)
+                            con.execute("INSERT OR IGNORE INTO item_instances(instance_id,world_id,template_id,owner_type,owner_id,room_id,stack_count,created_at,updated_at,custom_flags,plugin_data) VALUES(?,?,?,?,?,?,?,?,?,?,?)",(iid,self.world_id,en.get('item_template_id') or en.get('definition_id'),'actor',job['actor_id'],'',1,utc_now(),utc_now(),_json({'reward_packet_id':packet['reward_packet_id']}),_json({})))
             con.execute("UPDATE item_instances SET quality_profile_id=?,quality_score=?,crafted_by_actor_id=?,crafted_from_recipe_id=?,crafting_job_id=?,craft_world_time=?,batch_id=?,provenance_json=? WHERE json_extract(custom_flags,'$.reward_packet_id')=? OR json_extract(custom_flags,'$.source_reward_packet_id')=?",(q["quality_profile_id"],q["quality_score"],job["actor_id"],r["id"],jid,world_time,jid,_json({"recipe_id":r["id"],"job_id":jid,"selected_inputs":meta.get("selected_inputs",[])}),packet["reward_packet_id"],packet["reward_packet_id"]))
             con.execute("UPDATE crafting_jobs SET status='completed',result_reward_packet_id=?,updated_at=? WHERE crafting_job_id=? AND status!='completed'",(packet["reward_packet_id"],utc_now(),jid))
         if r.get("profession_id") and r.get("profession_experience"): self.award_profession_experience(job["actor_id"],r["profession_id"],int(r.get("profession_experience") or 0)*int(job["quantity"]),{"crafting_job_id":jid})
         self.publish("craft_quality_resolved", {"crafting_job_id":jid,**q}); self.publish("craft_inputs_consumed", {"crafting_job_id":jid}); self.publish("craft_job_completed", {"crafting_job_id":jid,"reward_packet_id":packet["reward_packet_id"]});
+        if self._is_cooking_recipe(r):
+            self._finalize_cooking_outputs(jid, job, r, q, world_time)
         if r.get("recipe_type")=="salvage": self.publish("salvage_completed", {"crafting_job_id":jid})
         if r.get("recipe_type") in {"refine","process","smelt"}: self.publish("refining_completed", {"crafting_job_id":jid})
         return self.get_crafting_job(jid)
+
+    def _finalize_cooking_outputs(self, jid, job, recipe, quality, world_time):
+        sy=self.content.get('cooking_serving_yield_profiles', recipe.get('serving_yield_profile_id')) or {'base_servings':1,'minimum_servings':1,'maximum_servings':1}
+        servings=max(0,min(int(sy.get('maximum_servings',sy.get('base_servings',1)) or 1), int(sy.get('base_servings',1) or 1)))
+        co=self.content.get('cooking_consumable_output_profiles', recipe.get('consumable_output_profile_id')) or {}
+        fresh=recipe.get('freshness_output_profile_id') or co.get('freshness_profile_id') or 'fresh_cooked_food'
+        with sqlite3.connect(self.db_path) as con:
+            con.row_factory=sqlite3.Row
+            rows=con.execute("SELECT instance_id,template_id FROM item_instances WHERE crafting_job_id=? AND destroyed_at IS NULL",(jid,)).fetchall()
+            for row in rows:
+                con.execute("UPDATE item_instances SET servings_remaining=?,freshness_created_world_time=?,freshness_profile_id=?,consumable_profile_id=?,portion_profile_id=?,updated_at=? WHERE instance_id=?",(servings,world_time,fresh,co.get('consumable_profile_id',''),co.get('portion_profile_id',''),utc_now(),row['instance_id']))
+                con.execute("INSERT OR IGNORE INTO cooking_job_outputs VALUES(?,?,?,?,?,?,?,?,?,?,?)",(stable_id('cookout',jid,row['instance_id']),jid,row['instance_id'],row['template_id'],servings,quality.get('quality_profile_id'),fresh,'fresh',co.get('consumable_profile_id',''),utc_now(),_json({'serving_yield_profile_id':recipe.get('serving_yield_profile_id')})))
+        self.publish('cooking_quality_resolved', {'crafting_job_id':jid, **quality}); self.publish('cooking_servings_resolved', {'crafting_job_id':jid,'servings':servings}); self.publish('cooking_freshness_resolved', {'crafting_job_id':jid,'freshness_profile_id':fresh}); self.publish('cooked_food_created', {'crafting_job_id':jid}); self.publish('cooking_completed', {'crafting_job_id':jid})
+
     def cancel_crafting(self, actor_id, crafting_job_id):
         job=self.get_crafting_job(crafting_job_id)
         if not job or job["actor_id"]!=actor_id: raise KeyError(crafting_job_id)

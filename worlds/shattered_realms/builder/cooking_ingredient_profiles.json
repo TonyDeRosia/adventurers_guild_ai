@@ -1,0 +1,149 @@
+{
+  "cooking_ingredient_profiles": [
+    {
+      "accepted_item_tags": [
+        "fish"
+      ],
+      "accepted_item_template_ids": [
+        "river_fish"
+      ],
+      "consumption_policy": "consume",
+      "freshness_contribution": 1,
+      "id": "common_fish_ingredient",
+      "ingredient_categories": [
+        "fish"
+      ],
+      "maximum_freshness_state": "stale",
+      "minimum_quality": "poor",
+      "name": "Common fish ingredient",
+      "plugin_data": {},
+      "preparation_requirement_ids": [],
+      "quality_contribution": 1,
+      "quantity_unit": "item",
+      "required": true,
+      "substitution_group_ids": [
+        "common_fish"
+      ],
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "accepted_item_tags": [
+        "meat"
+      ],
+      "accepted_item_template_ids": [
+        "small_meat"
+      ],
+      "id": "common_meat_ingredient",
+      "ingredient_categories": [
+        "meat"
+      ],
+      "name": "Common meat ingredient",
+      "plugin_data": {},
+      "required": true,
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "accepted_item_tags": [
+        "mushroom"
+      ],
+      "accepted_item_template_ids": [
+        "wild_mushroom"
+      ],
+      "id": "edible_mushroom_ingredient",
+      "ingredient_categories": [
+        "mushroom"
+      ],
+      "name": "Edible mushroom ingredient",
+      "plugin_data": {},
+      "required": true,
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "accepted_item_tags": [
+        "herb"
+      ],
+      "accepted_item_template_ids": [
+        "starter_herb"
+      ],
+      "id": "common_herb_ingredient",
+      "ingredient_categories": [
+        "herb"
+      ],
+      "name": "Common herb ingredient",
+      "plugin_data": {},
+      "required": true,
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "accepted_item_tags": [
+        "water"
+      ],
+      "accepted_item_template_ids": [
+        "clean_water_flask"
+      ],
+      "id": "clean_water_ingredient",
+      "ingredient_categories": [
+        "water"
+      ],
+      "name": "Clean water ingredient",
+      "plugin_data": {},
+      "required": true,
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "accepted_item_tags": [
+        "wood",
+        "fuel"
+      ],
+      "accepted_item_template_ids": [
+        "firewood"
+      ],
+      "id": "firewood_fuel_ingredient",
+      "ingredient_categories": [
+        "fuel"
+      ],
+      "name": "Firewood fuel ingredient",
+      "plugin_data": {},
+      "required": false,
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "accepted_item_tags": [
+        "container"
+      ],
+      "accepted_item_template_ids": [
+        "clean_water_flask"
+      ],
+      "consumption_policy": "catalyst",
+      "id": "basic_container_ingredient",
+      "ingredient_categories": [
+        "container"
+      ],
+      "name": "Basic container ingredient",
+      "plugin_data": {},
+      "required": false,
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    }
+  ]
+}

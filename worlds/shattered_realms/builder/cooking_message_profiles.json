@@ -1,0 +1,14 @@
+{
+  "cooking_message_profiles": [
+    {
+      "id": "default_cooking_messages",
+      "messages": {},
+      "name": "Default cooking messages",
+      "plugin_data": {},
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    }
+  ]
+}

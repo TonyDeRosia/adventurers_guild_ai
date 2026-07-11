@@ -154,6 +154,62 @@
       ],
       "version": 1,
       "workstation_type": "salvage_bench"
+    },
+    {
+      "allowed_recipe_types": [
+        "cook",
+        "cooking",
+        "roasting",
+        "boiling",
+        "smoking",
+        "drying"
+      ],
+      "capacity": 1,
+      "id": "lit_campfire_cooking",
+      "name": "Lit campfire cooking",
+      "plugin_data": {
+        "heat_available": true,
+        "workstation_type": "campfire"
+      },
+      "tags": [
+        "campfire",
+        "cooking"
+      ],
+      "version": 1
+    },
+    {
+      "allowed_recipe_types": [
+        "cook",
+        "cooking",
+        "roasting",
+        "boiling"
+      ],
+      "capacity": 2,
+      "id": "basic_hearth",
+      "name": "Basic hearth",
+      "plugin_data": {
+        "heat_available": true,
+        "workstation_type": "hearth"
+      },
+      "tags": [
+        "hearth",
+        "cooking"
+      ],
+      "version": 1
+    },
+    {
+      "allowed_recipe_types": [
+        "food_preparation"
+      ],
+      "capacity": 1,
+      "id": "basic_preparation_surface",
+      "name": "Basic preparation surface",
+      "plugin_data": {},
+      "tags": [
+        "preparation",
+        "cooking"
+      ],
+      "version": 1
     }
   ]
 }

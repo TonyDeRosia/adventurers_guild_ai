@@ -1,8 +1,10 @@
 {
   "clean_water_drink": {
     "allowed_item_template_ids": [
-      "waterskin",
-      "clean_water"
+      "clean_water",
+      "clean_water_flask",
+      "herbal_tea_item",
+      "waterskin"
     ],
     "consumable_type": "water",
     "consumption_duration_formula_id": "instant",
@@ -36,8 +38,12 @@
   },
   "trail_ration_food": {
     "allowed_item_template_ids": [
+      "cooked_river_fish",
+      "cooked_small_meat",
+      "dried_fish",
+      "rations",
       "trail_ration",
-      "rations"
+      "wild_mushroom_stew_item"
     ],
     "consumable_type": "ration",
     "consumption_duration_formula_id": "instant",

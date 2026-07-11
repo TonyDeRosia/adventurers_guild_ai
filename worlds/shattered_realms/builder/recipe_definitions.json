@@ -563,6 +563,341 @@
       "version": 1,
       "visibility": "public",
       "workstation_profile_id": "starter_salvage_bench"
+    },
+    {
+      "consumable_output_profile_id": "cooked_fish_consumable",
+      "cooking_failure_profile_id": "basic_cooking_failure",
+      "cooking_method": "basic_roasting",
+      "description": "Roasted River Fish",
+      "enabled": true,
+      "freshness_output_profile_id": "fresh_cooked_food",
+      "id": "roasted_river_fish",
+      "ingredient_substitution_profile_id": "basic_wild_substitutions",
+      "input_groups": [
+        {
+          "consume": true,
+          "entries": [
+            {
+              "allow_bound": false,
+              "allow_equipped": false,
+              "catalyst": false,
+              "id": "primary_entry",
+              "item_template_id": "river_fish",
+              "maximum_quantity": 1,
+              "minimum_quantity": 1
+            }
+          ],
+          "id": "primary",
+          "maximum_entries": 1,
+          "minimum_entries": 1,
+          "quantity": 1,
+          "selection_mode": "all_required"
+        }
+      ],
+      "minimum_profession_rank": 0,
+      "name": "Roasted River Fish",
+      "nutrition_profile_id": "modest_cooked_food",
+      "output_groups": [
+        {
+          "destination_policy": "actor_inventory",
+          "entries": [
+            {
+              "definition_id": "cooked_river_fish",
+              "id": "main_output_entry",
+              "item_template_id": "cooked_river_fish",
+              "quantity": 1,
+              "reward_type": "item"
+            }
+          ],
+          "id": "main_output",
+          "selection_mode": "all"
+        }
+      ],
+      "plugin_data": {},
+      "production_profile_id": "instant_crafting",
+      "profession_experience": 5,
+      "profession_id": "cooking",
+      "quality_profile_id": "standard_crafting_quality",
+      "recipe_category": "cooking",
+      "recipe_type": "cook",
+      "required_heat_profile_id": "basic_campfire_heat",
+      "serving_yield_profile_id": "single_serving_food",
+      "short_name": "roasted_river_fish",
+      "tags": [
+        "phase11e",
+        "starter"
+      ],
+      "version": 1,
+      "visibility": "public",
+      "workstation_profile_id": "lit_campfire_cooking"
+    },
+    {
+      "consumable_output_profile_id": "cooked_meat_consumable",
+      "cooking_failure_profile_id": "basic_cooking_failure",
+      "cooking_method": "basic_roasting",
+      "description": "Cooked Small Meat",
+      "enabled": true,
+      "freshness_output_profile_id": "fresh_cooked_food",
+      "id": "cooked_small_meat",
+      "ingredient_substitution_profile_id": "basic_wild_substitutions",
+      "input_groups": [
+        {
+          "consume": true,
+          "entries": [
+            {
+              "allow_bound": false,
+              "allow_equipped": false,
+              "catalyst": false,
+              "id": "primary_entry",
+              "item_template_id": "small_meat",
+              "maximum_quantity": 1,
+              "minimum_quantity": 1
+            }
+          ],
+          "id": "primary",
+          "maximum_entries": 1,
+          "minimum_entries": 1,
+          "quantity": 1,
+          "selection_mode": "all_required"
+        }
+      ],
+      "minimum_profession_rank": 0,
+      "name": "Cooked Small Meat",
+      "nutrition_profile_id": "modest_cooked_food",
+      "output_groups": [
+        {
+          "destination_policy": "actor_inventory",
+          "entries": [
+            {
+              "definition_id": "cooked_small_meat",
+              "id": "main_output_entry",
+              "item_template_id": "cooked_small_meat",
+              "quantity": 1,
+              "reward_type": "item"
+            }
+          ],
+          "id": "main_output",
+          "selection_mode": "all"
+        }
+      ],
+      "plugin_data": {},
+      "production_profile_id": "instant_crafting",
+      "profession_experience": 5,
+      "profession_id": "cooking",
+      "quality_profile_id": "standard_crafting_quality",
+      "recipe_category": "cooking",
+      "recipe_type": "cook",
+      "required_heat_profile_id": "basic_campfire_heat",
+      "serving_yield_profile_id": "single_serving_food",
+      "short_name": "cooked_small_meat",
+      "tags": [
+        "phase11e",
+        "starter"
+      ],
+      "version": 1,
+      "visibility": "public",
+      "workstation_profile_id": "lit_campfire_cooking"
+    },
+    {
+      "consumable_output_profile_id": "mushroom_stew_consumable",
+      "cooking_failure_profile_id": "basic_cooking_failure",
+      "cooking_method": "basic_stewing",
+      "description": "Wild Mushroom Stew",
+      "enabled": true,
+      "freshness_output_profile_id": "fresh_cooked_food",
+      "id": "wild_mushroom_stew",
+      "ingredient_substitution_profile_id": "basic_wild_substitutions",
+      "input_groups": [
+        {
+          "consume": true,
+          "entries": [
+            {
+              "allow_bound": false,
+              "allow_equipped": false,
+              "catalyst": false,
+              "id": "primary_entry",
+              "item_template_id": "wild_mushroom",
+              "maximum_quantity": 1,
+              "minimum_quantity": 1
+            }
+          ],
+          "id": "primary",
+          "maximum_entries": 1,
+          "minimum_entries": 1,
+          "quantity": 1,
+          "selection_mode": "all_required"
+        }
+      ],
+      "minimum_profession_rank": 0,
+      "name": "Wild Mushroom Stew",
+      "nutrition_profile_id": "modest_cooked_food",
+      "output_groups": [
+        {
+          "destination_policy": "actor_inventory",
+          "entries": [
+            {
+              "definition_id": "wild_mushroom_stew_item",
+              "id": "main_output_entry",
+              "item_template_id": "wild_mushroom_stew_item",
+              "quantity": 1,
+              "reward_type": "item"
+            }
+          ],
+          "id": "main_output",
+          "selection_mode": "all"
+        }
+      ],
+      "plugin_data": {},
+      "production_profile_id": "instant_crafting",
+      "profession_experience": 5,
+      "profession_id": "cooking",
+      "quality_profile_id": "standard_crafting_quality",
+      "recipe_category": "cooking",
+      "recipe_type": "cook",
+      "required_heat_profile_id": "basic_campfire_heat",
+      "serving_yield_profile_id": "multi_serving_meal",
+      "short_name": "wild_mushroom_stew",
+      "tags": [
+        "phase11e",
+        "starter"
+      ],
+      "version": 1,
+      "visibility": "public",
+      "workstation_profile_id": "lit_campfire_cooking"
+    },
+    {
+      "consumable_output_profile_id": "herbal_drink_consumable",
+      "cooking_failure_profile_id": "basic_cooking_failure",
+      "cooking_method": "basic_boiling",
+      "description": "Simple Herbal Tea",
+      "enabled": true,
+      "freshness_output_profile_id": "fresh_cooked_food",
+      "id": "simple_herbal_tea",
+      "ingredient_substitution_profile_id": "basic_wild_substitutions",
+      "input_groups": [
+        {
+          "consume": true,
+          "entries": [
+            {
+              "allow_bound": false,
+              "allow_equipped": false,
+              "catalyst": false,
+              "id": "primary_entry",
+              "item_template_id": "starter_herb",
+              "maximum_quantity": 1,
+              "minimum_quantity": 1
+            }
+          ],
+          "id": "primary",
+          "maximum_entries": 1,
+          "minimum_entries": 1,
+          "quantity": 1,
+          "selection_mode": "all_required"
+        }
+      ],
+      "minimum_profession_rank": 0,
+      "name": "Simple Herbal Tea",
+      "nutrition_profile_id": "modest_cooked_food",
+      "output_groups": [
+        {
+          "destination_policy": "actor_inventory",
+          "entries": [
+            {
+              "definition_id": "herbal_tea_item",
+              "id": "main_output_entry",
+              "item_template_id": "herbal_tea_item",
+              "quantity": 1,
+              "reward_type": "item"
+            }
+          ],
+          "id": "main_output",
+          "selection_mode": "all"
+        }
+      ],
+      "plugin_data": {},
+      "production_profile_id": "instant_crafting",
+      "profession_experience": 5,
+      "profession_id": "cooking",
+      "quality_profile_id": "standard_crafting_quality",
+      "recipe_category": "cooking",
+      "recipe_type": "cook",
+      "required_heat_profile_id": "basic_campfire_heat",
+      "serving_yield_profile_id": "drink_container_servings",
+      "short_name": "simple_herbal_tea",
+      "tags": [
+        "phase11e",
+        "starter"
+      ],
+      "version": 1,
+      "visibility": "public",
+      "workstation_profile_id": "lit_campfire_cooking"
+    },
+    {
+      "consumable_output_profile_id": "cooked_fish_consumable",
+      "cooking_failure_profile_id": "basic_cooking_failure",
+      "cooking_method": "basic_drying_or_smoking",
+      "description": "Dried Fish",
+      "enabled": true,
+      "freshness_output_profile_id": "fresh_cooked_food",
+      "id": "dried_fish",
+      "ingredient_substitution_profile_id": "basic_wild_substitutions",
+      "input_groups": [
+        {
+          "consume": true,
+          "entries": [
+            {
+              "allow_bound": false,
+              "allow_equipped": false,
+              "catalyst": false,
+              "id": "primary_entry",
+              "item_template_id": "river_fish",
+              "maximum_quantity": 1,
+              "minimum_quantity": 1
+            }
+          ],
+          "id": "primary",
+          "maximum_entries": 1,
+          "minimum_entries": 1,
+          "quantity": 1,
+          "selection_mode": "all_required"
+        }
+      ],
+      "minimum_profession_rank": 0,
+      "name": "Dried Fish",
+      "nutrition_profile_id": "modest_cooked_food",
+      "output_groups": [
+        {
+          "destination_policy": "actor_inventory",
+          "entries": [
+            {
+              "definition_id": "dried_fish",
+              "id": "main_output_entry",
+              "item_template_id": "dried_fish",
+              "quantity": 1,
+              "reward_type": "item"
+            }
+          ],
+          "id": "main_output",
+          "selection_mode": "all"
+        }
+      ],
+      "plugin_data": {},
+      "production_profile_id": "instant_crafting",
+      "profession_experience": 5,
+      "profession_id": "cooking",
+      "quality_profile_id": "standard_crafting_quality",
+      "recipe_category": "cooking",
+      "recipe_type": "cook",
+      "required_heat_profile_id": "basic_campfire_heat",
+      "serving_yield_profile_id": "preserved_food_servings",
+      "short_name": "dried_fish",
+      "tags": [
+        "phase11e",
+        "starter"
+      ],
+      "version": 1,
+      "visibility": "public",
+      "workstation_profile_id": "lit_campfire_cooking"
     }
   ]
 }

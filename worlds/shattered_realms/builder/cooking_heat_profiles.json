@@ -1,0 +1,25 @@
+{
+  "cooking_heat_profiles": [
+    {
+      "allowed_workstation_types": [
+        "campfire",
+        "hearth"
+      ],
+      "failure_above_maximum": "burnt_placeholder",
+      "failure_below_minimum": "undercooked_placeholder",
+      "fuel_cost_formula_id": "",
+      "id": "basic_campfire_heat",
+      "maximum_heat": 90,
+      "messages": {},
+      "minimum_heat": 20,
+      "name": "Basic campfire heat",
+      "plugin_data": {},
+      "quality_modifiers": {},
+      "required_duration_minutes": 5,
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    }
+  ]
+}

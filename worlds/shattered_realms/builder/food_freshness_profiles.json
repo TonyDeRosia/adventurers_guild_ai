@@ -1,48 +1,44 @@
 {
-  "none": {
-    "bounded_catchup": true,
-    "container_modifiers": {},
-    "description": "Non-perishable foundation.",
-    "environment_modifiers": {},
-    "fresh_for_minutes": 0,
-    "freshness_mode": "none",
-    "id": "none",
-    "messages": {},
-    "name": "No Freshness Tracking",
-    "plugin_data": {},
-    "preservation_tags": [],
-    "quality_modifiers": {},
-    "spoilage_effect_ids": [],
-    "spoilage_item_template_id": "",
-    "spoiled_after_minutes": 0,
-    "stale_after_minutes": 0,
-    "tags": [
-      "phase11d1"
-    ],
-    "version": 1
-  },
-  "shelf_stable": {
-    "bounded_catchup": true,
-    "container_modifiers": {},
-    "description": "Long-lived ration; no severe default spoilage.",
-    "environment_modifiers": {},
-    "fresh_for_minutes": 10080,
-    "freshness_mode": "fixed",
-    "id": "shelf_stable",
-    "messages": {},
-    "name": "Shelf Stable",
-    "plugin_data": {},
-    "preservation_tags": [
-      "preserved"
-    ],
-    "quality_modifiers": {},
-    "spoilage_effect_ids": [],
-    "spoilage_item_template_id": "",
-    "spoiled_after_minutes": 40320,
-    "stale_after_minutes": 20160,
-    "tags": [
-      "phase11d1"
-    ],
-    "version": 1
-  }
+  "food_freshness_profiles": [
+    {
+      "aging_minutes": 480,
+      "fresh_minutes": 240,
+      "id": "fresh_cooked_food",
+      "name": "Fresh cooked food",
+      "plugin_data": {},
+      "spoiled_minutes": 1440,
+      "stale_minutes": 720,
+      "states": [
+        "fresh",
+        "aging",
+        "stale",
+        "spoiled"
+      ],
+      "tags": [
+        "cooking"
+      ],
+      "version": 1
+    },
+    {
+      "aging_minutes": 2880,
+      "fresh_minutes": 1440,
+      "id": "preserved_food",
+      "name": "Preserved food",
+      "plugin_data": {},
+      "spoiled_minutes": 7200,
+      "stale_minutes": 4320,
+      "states": [
+        "preserved",
+        "dried",
+        "smoked",
+        "stale",
+        "spoiled"
+      ],
+      "tags": [
+        "cooking",
+        "preserved"
+      ],
+      "version": 1
+    }
+  ]
 }

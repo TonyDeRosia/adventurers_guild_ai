@@ -1,0 +1,24 @@
+{
+  "cooking_failure_profiles": [
+    {
+      "failed_output_item_template_id": "",
+      "failure_modes": [
+        "reduced_servings",
+        "low_quality_meal"
+      ],
+      "freshness_penalty": "stale",
+      "id": "basic_cooking_failure",
+      "input_consumption_policy": "consume_reserved",
+      "messages": {},
+      "name": "Basic cooking failure",
+      "plugin_data": {},
+      "profession_xp_policy": "partial",
+      "quality_penalty": 10,
+      "serving_penalty": 1,
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    }
+  ]
+}

@@ -104,7 +104,7 @@ class ActorScoreRenderer:
         "achievements", "milestones", "titles", "accolades", "collections",
         "property", "housing", "leases", "storage", "home",
         "perception", "senses", "stealth", "tracking", "investigation",
-        "survival", "needs", "hunger", "thirst", "fatigue", "simulation", "party", "organizations", "guild", "clan", "memberships", "social", "behavior", "threat", "tactics", "diagnostics", "formulas", "raw",
+        "survival", "needs", "hunger", "thirst", "fatigue", "cooking", "nutrition", "preservation", "simulation", "party", "organizations", "guild", "clan", "memberships", "social", "behavior", "threat", "tactics", "diagnostics", "formulas", "raw",
     ]
     aliases = {
         "score": "all", "preview": "all", "actor": "all", "attrs": "primary_attributes", "attributes": "primary_attributes",
@@ -138,6 +138,16 @@ class ActorScoreRenderer:
 
     def _survival_summary(self, actor: Actor) -> dict[str, Any]:
         return getattr(actor, "survival_summary", None) or (actor.plugin_data or {}).get("survival_needs", {}) or {}
+
+
+    def render_cooking(self, actor: Actor, admin: bool = False) -> str:
+        rows=[_line("Known cooking recipes are managed by CraftingService."), _line("Active cooking jobs use canonical crafting_jobs and exact reservations.")]
+        if admin: rows.append(_line("Admin detail: cooking_job_context, cooking_job_outputs, serving/freshness provenance."))
+        return self._section("COOKING", rows)
+    def render_nutrition(self, actor: Actor, admin: bool = False) -> str:
+        return self._section("NUTRITION", [_line("Nutrition and hydration changes are supplied by SurvivalNeedsService consumable profiles.")])
+    def render_preservation(self, actor: Actor, admin: bool = False) -> str:
+        return self._section("PRESERVATION", [_line("Preservation uses bounded food_preservation_profiles and freshness profiles.")])
 
     def render_survival(self, actor: Actor, admin: bool = False) -> str:
         data = self._survival_summary(actor)

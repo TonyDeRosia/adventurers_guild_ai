@@ -1,0 +1,24 @@
+{
+  "ingredient_preparation_profiles": [
+    {
+      "id": "clean_fish",
+      "input_item_tags": [
+        "fish"
+      ],
+      "input_item_template_ids": [
+        "river_fish"
+      ],
+      "messages": {},
+      "minimum_profession_rank": 0,
+      "name": "Clean fish",
+      "output_item_template_id": "river_fish",
+      "plugin_data": {},
+      "preparation_type": "clean",
+      "profession_id": "cooking",
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    }
+  ]
+}

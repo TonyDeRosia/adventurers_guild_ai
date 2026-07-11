@@ -1,0 +1,56 @@
+{
+  "cooking_serving_yield_profiles": [
+    {
+      "base_servings": 1,
+      "failure_servings": 0,
+      "id": "single_serving_food",
+      "maximum_servings": 1,
+      "minimum_servings": 1,
+      "name": "Single serving food",
+      "plugin_data": {},
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "base_servings": 3,
+      "failure_servings": 1,
+      "id": "multi_serving_meal",
+      "maximum_servings": 4,
+      "minimum_servings": 1,
+      "name": "Multi serving meal",
+      "plugin_data": {},
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "base_servings": 2,
+      "failure_servings": 0,
+      "id": "drink_container_servings",
+      "maximum_servings": 3,
+      "minimum_servings": 1,
+      "name": "Drink container servings",
+      "plugin_data": {},
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "base_servings": 1,
+      "failure_servings": 0,
+      "id": "preserved_food_servings",
+      "maximum_servings": 2,
+      "minimum_servings": 1,
+      "name": "Preserved food servings",
+      "plugin_data": {},
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    }
+  ]
+}

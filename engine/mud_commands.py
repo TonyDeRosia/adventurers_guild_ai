@@ -38,6 +38,11 @@ DETERMINISTIC_COMMANDS = {
     "recipes": {"category": "crafting", "admin": False},
     "recipe": {"category": "crafting", "admin": False},
     "craft": {"category": "crafting", "admin": False},
+"cook": {"category": "crafting", "admin": False},
+    "prepare": {"category": "crafting", "admin": False},
+    "ingredients": {"category": "crafting", "admin": False},
+    "preserve": {"category": "crafting", "admin": False},
+    "meal": {"category": "crafting", "admin": False},
     "crafting": {"category": "crafting", "admin": False},
     "professions": {"category": "crafting", "admin": False},
     "profession": {"category": "crafting", "admin": False},
@@ -195,6 +200,11 @@ class MudCommandEngine:
             "recipes": self._cmd_crafting_player,
             "recipe": self._cmd_crafting_player,
             "craft": self._cmd_crafting_player,
+            "cook": self._cmd_crafting_player,
+            "prepare": self._cmd_crafting_player,
+            "ingredients": self._cmd_crafting_player,
+            "preserve": self._cmd_crafting_player,
+            "meal": self._cmd_crafting_player,
             "crafting": self._cmd_crafting_player,
             "professions": self._cmd_crafting_player,
             "profession": self._cmd_crafting_player,
@@ -425,7 +435,7 @@ class MudCommandEngine:
                 self.command_handlers[_name] = self._cmd_builder_edit
         for _name in ("rassign", "rmove", "rrenameid"):
             self.command_handlers[_name] = self._cmd_room_assign
-        for _name in "recipelist recipestat recipecreate recipeclone recipeset recipedelete recipevalidate recipepreview recipeinput recipeinputentry recipeoutput recipeoutputentry recipetool workstationlist workstationstat workstationcreate workstationclone workstationset workstationdelete workstationvalidate workstationpreview productionlist productionstat productioncreate productionset productionclone productiondelete productionvalidate qualitylist qualitystat qualitycreate qualityset qualityclone qualitydelete qualityvalidate craftpreview craftstart craftjob crafttrace craftcancel crafttick recipegrant reciperevoke actorrecipes professionstat professionxp workstationaudit craftingaudit recipeaudit recipetrace ingredienttrace workstationtrace qualitytrace professiontrace reservationtrace productiontrace".split():
+        for _name in "cookingrecipelist cookingrecipestat cookingrecipecreate cookingrecipeclone cookingrecipeset cookingrecipedelete cookingrecipevalidate cookingrecipepreview ingredientprofilelist ingredientprofilestat ingredientprofilecreate ingredientprofileset ingredientprofiledelete ingredientprofilevalidate servingprofilelist servingprofilestat servingprofilecreate servingprofileset servingprofiledelete servingprofilevalidate nutritionprofilelist nutritionprofilestat nutritionprofilecreate nutritionprofileset nutritionprofiledelete nutritionprofilevalidate preservationprofilelist preservationprofilestat preservationprofilecreate preservationprofileset preservationprofiledelete preservationprofilevalidate cookingstart cookingcomplete cookinginterrupt cookingtrace cookingqualitytrace cookingservingtrace cookingfreshnesstrace cookingaudit foodfreshnessset foodservingset recipelist recipestat recipecreate recipeclone recipeset recipedelete recipevalidate recipepreview recipeinput recipeinputentry recipeoutput recipeoutputentry recipetool workstationlist workstationstat workstationcreate workstationclone workstationset workstationdelete workstationvalidate workstationpreview productionlist productionstat productioncreate productionset productionclone productiondelete productionvalidate qualitylist qualitystat qualitycreate qualityset qualityclone qualitydelete qualityvalidate craftpreview craftstart craftjob crafttrace craftcancel crafttick recipegrant reciperevoke actorrecipes professionstat professionxp workstationaudit craftingaudit recipeaudit recipetrace ingredienttrace workstationtrace qualitytrace professiontrace reservationtrace productiontrace".split():
             self.command_handlers[_name] = self._cmd_crafting_builder
         for _name in "achievementlist achievementstat achievementcreate achievementclone achievementset achievementdelete achievementvalidate achievementpreview criteriagrouplist criteriagroupstat criteriagroupcreate criteriagroupset criteriagroupdelete criteriagroupvalidate criterialist criteriastat criteriacreate criteriaclone criteriaset criteriadelete criteriavalidate criteriapreview titlelist titlestat titlecreate titleclone titleset titledelete titlevalidate accoladelist accoladestat accoladecreate accoladeset accoladedelete accoladevalidate collectionlist collectionstat collectioncreate collectionset collectiondelete collectionvalidate actorachievements achievementgrant achievementrevoke achievementprogress achievementreset achievementcomplete achievementtrace achievementevent achievementaudit titlegrant titlerevoke titleselect accoladegrant collectiongrant achievementeventtrace criteriatrace milestonetrace achievementrewardtrace titletrace accoladetrace collectiontrace".split():
             self.command_handlers[_name]=self._cmd_builder_achievement
@@ -629,10 +639,30 @@ class MudCommandEngine:
         cmd = raw.split()[0].lower() if raw.split() else "recipes"
         actor_id = getattr(character, "id", "") or getattr(character, "character_id", "")
         if cmd in {"recipes", "learned"} or raw.lower().startswith("learned recipes"):
+            if args and args[0].lower()=="cooking":
+                recs=svc.list_cooking_recipes(actor_id)
+                return CommandResult(narrative="Cooking recipes:\n" + "\n".join(f"{i+1}. {r.get('name')}" for i,r in enumerate(recs)))
             prof = args[0] if args else ""
             recs = [r for r in svc.get_actor_recipes(actor_id) if not prof or r.get("profession_id") == prof]
             lines = ["Known recipes:"] + [f"{i+1}. {r.get('name')} ({r.get('profession_id') or 'general'})" for i, r in enumerate(recs)]
             return CommandResult(narrative="\n".join(lines or ["No known recipes."]))
+        if cmd == "cook":
+            if not args or args[0].lower() in {"list","recipes"}:
+                recs=svc.list_cooking_recipes(actor_id); return CommandResult(narrative="Cooking recipes:\n"+"\n".join(f"{i+1}. {r.get('name')}" for i,r in enumerate(recs)))
+            query=" ".join(args); workstation=None
+            if " at campfire" in query: query=query.replace(" at campfire",""); workstation="campfire"
+            r=self._recipe_match(svc, query)
+            if not r: return CommandResult(narrative="Usage: cook <recipe> [at campfire]", ok=False)
+            try: job=svc.start_cooking(actor_id,r["id"],workstation_id=workstation)
+            except Exception as exc: return CommandResult(narrative=f"Cannot cook: {exc}", ok=False)
+            return CommandResult(narrative=f"Cooking job started: {r.get('name')} status={job['status']}.")
+        if cmd == "ingredients":
+            r=self._recipe_match(svc," ".join(args[1:] if args[:1]==["for"] else args)) if args else None
+            if not r: return CommandResult(narrative="Usage: ingredients for <recipe>", ok=False)
+            return CommandResult(narrative="Ingredients for "+r.get("name",r["id"])+":\n"+"\n".join(g.get("id","") for g in r.get("input_groups",[])))
+        if cmd == "preserve":
+            return CommandResult(narrative=json.dumps(svc.preserve_food(actor_id,args[0] if args else ""), indent=2))
+        if cmd in {"prepare","meal"}: return CommandResult(narrative="Ingredient preparation is routed through cooking recipes and CraftingService jobs.")
         if cmd == "recipe":
             r = self._recipe_match(svc, " ".join(args)) if args else None
             if not r: return CommandResult(narrative="Usage: recipe <name>", ok=False)
@@ -676,6 +706,18 @@ class MudCommandEngine:
         if not svc:
             return CommandResult(narrative="Crafting is unavailable in this runtime.", ok=False)
         cmd = raw.split()[0].lower() if raw.split() else ""
+        if cmd.startswith("cooking") or cmd.startswith("ingredientprofile") or cmd.startswith("servingprofile") or cmd.startswith("nutritionprofile") or cmd.startswith("preservationprofile") or cmd in {"foodfreshnessset","foodservingset"}:
+            cmap={"ingredientprofile":"cooking_ingredient_profiles","servingprofile":"cooking_serving_yield_profiles","nutritionprofile":"food_nutrition_profiles","preservationprofile":"food_preservation_profiles"}
+            pref=next((k for k in cmap if cmd.startswith(k)), None)
+            coll=cmap.get(pref,"recipe_definitions")
+            if cmd.endswith("list"): return CommandResult(narrative="\n".join([f"- {x.get('id')}: {x.get('name','')}" for x in svc.content.list(coll)]))
+            if "trace" in cmd and args: return CommandResult(narrative=json.dumps(svc.trace_cooking_job(args[0]), indent=2, default=str))
+            if cmd=="cookingstart" and len(args)>=2: return CommandResult(narrative=json.dumps(svc.start_cooking(args[0],args[1],workstation_id=args[2] if len(args)>2 else None), indent=2, default=str))
+            if cmd=="cookingcomplete" and args: return CommandResult(narrative=json.dumps(svc.complete_cooking(args[0]), indent=2, default=str))
+            if cmd=="cookinginterrupt" and len(args)>=2: return CommandResult(narrative=json.dumps(svc.interrupt_cooking(args[0]," ".join(args[1:])), indent=2, default=str))
+            if "validate" in cmd or cmd=="cookingaudit": v=svc.content.validate(); return CommandResult(narrative=json.dumps(v, indent=2))
+            if "stat" in cmd and args: return CommandResult(narrative=json.dumps(svc.content.get(coll,args[0]) or {}, indent=2, default=str))
+            return CommandResult(narrative="Cooking Builder/Admin command foundation is available.")
         if cmd.endswith("list") or cmd in {"recipelist", "workstationlist", "productionlist", "qualitylist"}:
             coll = {"recipelist":"recipe_definitions","workstationlist":"workstation_profiles","productionlist":"production_profiles","qualitylist":"item_quality_profiles"}.get(cmd,"recipe_definitions")
             return CommandResult(narrative="\n".join([f"- {x.get('id')}: {x.get('name', x.get('display_name',''))}" for x in svc.content.list(coll)] or [f"No {coll}."]))

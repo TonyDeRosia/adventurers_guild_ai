@@ -1,0 +1,33 @@
+{
+  "cooking_substitution_profiles": [
+    {
+      "allowed_recipe_ids": [
+        "wild_mushroom_stew",
+        "simple_trail_stew"
+      ],
+      "freshness_penalty": 0,
+      "id": "basic_wild_substitutions",
+      "maximum_substitutions": 1,
+      "messages": {},
+      "name": "Basic wild substitutions",
+      "output_variant_policy": "keep_recipe_output",
+      "plugin_data": {},
+      "quality_penalty": 1,
+      "substitution_groups": {
+        "common_fish": [
+          "river_fish"
+        ],
+        "herb": [
+          "starter_herb"
+        ],
+        "mushroom": [
+          "wild_mushroom"
+        ]
+      },
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    }
+  ]
+}

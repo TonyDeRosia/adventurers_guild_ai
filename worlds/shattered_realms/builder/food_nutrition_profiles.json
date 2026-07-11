@@ -1,0 +1,24 @@
+{
+  "food_nutrition_profiles": [
+    {
+      "effect_ids": [],
+      "fatigue_change": 0,
+      "freshness_scaling": 0.2,
+      "hunger_change": -10,
+      "hydration_change": 0,
+      "id": "modest_cooked_food",
+      "maximum_effect": 20,
+      "minimum_effect": 0,
+      "name": "Modest cooked food",
+      "nutrition_change": 6,
+      "plugin_data": {},
+      "quality_scaling": 0.1,
+      "satiation_change": 5,
+      "tags": [
+        "starter"
+      ],
+      "thirst_change": 0,
+      "version": 1
+    }
+  ]
+}

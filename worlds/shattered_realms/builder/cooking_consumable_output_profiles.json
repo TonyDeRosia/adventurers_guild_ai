@@ -1,0 +1,90 @@
+{
+  "cooking_consumable_output_profiles": [
+    {
+      "consumable_profile_id": "trail_ration_food",
+      "freshness_profile_id": "fresh_cooked_food",
+      "id": "cooked_fish_consumable",
+      "meal_category": "meal",
+      "name": "Cooked fish consumable",
+      "need_changes": {
+        "hunger": -10,
+        "nutrition": 6
+      },
+      "plugin_data": {},
+      "portion_profile_id": "single_serving",
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "consumable_profile_id": "trail_ration_food",
+      "freshness_profile_id": "fresh_cooked_food",
+      "id": "cooked_meat_consumable",
+      "meal_category": "meal",
+      "name": "Cooked meat consumable",
+      "need_changes": {
+        "hunger": -12,
+        "nutrition": 6
+      },
+      "plugin_data": {},
+      "portion_profile_id": "single_serving",
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "consumable_profile_id": "trail_ration_food",
+      "freshness_profile_id": "fresh_cooked_food",
+      "id": "mushroom_stew_consumable",
+      "meal_category": "stew",
+      "name": "Mushroom stew consumable",
+      "need_changes": {
+        "hunger": -8,
+        "hydration": 3,
+        "nutrition": 5
+      },
+      "plugin_data": {},
+      "portion_profile_id": "single_serving",
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "consumable_profile_id": "trail_ration_food",
+      "freshness_profile_id": "fresh_cooked_food",
+      "id": "trail_stew_consumable",
+      "meal_category": "stew",
+      "name": "Trail stew consumable",
+      "need_changes": {
+        "hunger": -10,
+        "nutrition": 6
+      },
+      "plugin_data": {},
+      "portion_profile_id": "single_serving",
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    },
+    {
+      "consumable_profile_id": "clean_water_drink",
+      "freshness_profile_id": "fresh_cooked_food",
+      "id": "herbal_drink_consumable",
+      "meal_category": "drink",
+      "name": "Herbal drink consumable",
+      "need_changes": {
+        "hydration": 8,
+        "thirst": -8
+      },
+      "plugin_data": {},
+      "portion_profile_id": "water_skin",
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    }
+  ]
+}

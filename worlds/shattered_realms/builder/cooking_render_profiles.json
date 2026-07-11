@@ -1,0 +1,13 @@
+{
+  "cooking_render_profiles": [
+    {
+      "id": "default_cooking_render",
+      "name": "Default cooking render",
+      "plugin_data": {},
+      "tags": [
+        "starter"
+      ],
+      "version": 1
+    }
+  ]
+}
