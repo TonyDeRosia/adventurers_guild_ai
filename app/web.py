@@ -6,6 +6,7 @@ import or initialize campaign, story, scene, image, workflow, or ComfyUI systems
 from __future__ import annotations
 
 from pathlib import Path
+import asyncio
 from datetime import datetime, timezone
 import re
 from typing import Any
@@ -95,14 +96,43 @@ class WebRuntime:
         )
         self.active_world_id = ""
         self.active_character_id = ""
+        self._pulse_task = None
+        self._pulse_running = False
         self.event_bus.publish("runtime_ready", {"transport": "web"}, source_system="startup")
         print("[startup] Ready.")
         print("SQLite Ready")
         print("World Registry Ready")
         print("Listening...")
 
+    async def start_runtime_pulse(self) -> None:
+        if self._pulse_task and not self._pulse_task.done():
+            return
+        self._pulse_running = True
+        self._pulse_task = asyncio.create_task(self._runtime_pulse_loop())
+
+    async def _runtime_pulse_loop(self) -> None:
+        while self._pulse_running:
+            await asyncio.sleep(1.0)
+            try:
+                if self.active_world_id:
+                    self.mud_runtime.runtime_pulse(1)
+            except Exception as exc:
+                self.event_bus.publish("runtime_pulse_failed", {"reason": str(exc)[:160]}, source_system="runtime_pulse", world_id=self.active_world_id)
+
+    async def stop_runtime_pulse(self) -> None:
+        self._pulse_running = False
+        task = self._pulse_task
+        self._pulse_task = None
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
     def shutdown_managed_services(self) -> None:
         """No external image or campaign services are owned by Smart MUD."""
+        self._pulse_running = False
         return None
 
     def health(self) -> dict[str, Any]:
@@ -478,8 +508,13 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     app = FastAPI(title="Smart MUD")
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
+    @app.on_event("startup")
+    async def _startup() -> None:
+        await runtime.start_runtime_pulse()
+
     @app.on_event("shutdown")
-    def _shutdown() -> None:
+    async def _shutdown() -> None:
+        await runtime.stop_runtime_pulse()
         runtime.shutdown_managed_services()
 
     @app.get("/health")

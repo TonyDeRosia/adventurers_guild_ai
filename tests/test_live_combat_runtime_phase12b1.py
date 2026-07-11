@@ -32,7 +32,7 @@ def test_attack_creates_persistent_encounter_and_wolf_retaliates(tmp_path):
 def test_combat_status_diagnose_consider_and_flee_use_runtime_path(tmp_path):
     rt, ch = runtime_with_wolf(tmp_path)
     assert 'look' in rt.command_engine.handle_command(ch, 'consider forest wolf').narrative.lower()
-    assert 'unwounded' in rt.command_engine.handle_command(ch, 'diagnose forest wolf').narrative.lower()
+    assert 'unharmed' in rt.command_engine.handle_command(ch, 'diagnose forest wolf').narrative.lower()
     rt.command_engine.handle_command(ch, 'kill forest wolf')
     status = rt.command_engine.handle_command(ch, 'combat').narrative
     assert 'Combat Status' in status and 'Opponent: Forest Wolf' in status

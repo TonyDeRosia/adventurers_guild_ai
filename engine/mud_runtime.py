@@ -616,6 +616,19 @@ class MudRuntime:
             self.survival_needs.process_due_runtime_objects(wt)
         if getattr(self, "combat_runtime", None): self.combat_runtime.process_due_rounds()
         return wt
+    def runtime_pulse(self, minutes: int = 1) -> dict[str, Any]:
+        world_id=self.active_world_id or ''
+        wt=self.advance_world_time(world_id, max(1, int(minutes))) if world_id else {'total_minutes':0}
+        if getattr(self, 'abilities', None):
+            try: self.abilities.process_ability_casts(world_id, int(wt.get('total_minutes') or 0))
+            except Exception: pass
+        return wt
+
+    def drain_session_output(self, character_id: str) -> list[str]:
+        if getattr(self, 'combat_runtime', None):
+            return self.combat_runtime.drain_output(character_id)
+        return []
+
     def pause_world_time(self, world_id: str) -> dict[str, Any]: return self.living_world.pause_world_time(world_id)
     def resume_world_time(self, world_id: str) -> dict[str, Any]: return self.living_world.resume_world_time(world_id)
     def get_entity_profile(self, instance_id: str) -> dict[str, Any]: return self.living_world.get_entity_profile(instance_id)
@@ -853,7 +866,13 @@ class MudRuntime:
         self.event_bus.publish("room_rendered", {"world_id": self.active_world_id or "", "character_id": char.id, "room_id": char.room_id, "output_format": "web_html", "render_kind": "room"}, source_system="render", world_id=self.active_world_id or "", character_id=char.id)
         prompt = render_prompt(char, colors)
         self.event_bus.publish("prompt_rendered", {"world_id": self.active_world_id or "", "character_id": char.id, "room_id": char.room_id, "output_format": "web_html", "render_kind": "prompt"}, source_system="render", world_id=self.active_world_id or "", character_id=char.id)
-        return {"html": html, "text": self._room_text(room), "prompt": prompt, "room_id": char.room_id}
+        async_messages = self.drain_session_output(character_id)
+        text = self._room_text(room)
+        if async_messages:
+            from engine.mud_displays import semantic_html
+            html = semantic_html('\n'.join(f'{{combat}}{m}{{/combat}}' for m in async_messages)) + '\n' + html
+            text = '\n'.join(async_messages) + '\n' + text
+        return {"html": html, "text": text, "prompt": prompt, "room_id": char.room_id, "async_messages": async_messages}
 
 
     def _builder_visible(self, char: MudCharacter) -> bool:
@@ -1083,6 +1102,10 @@ class MudRuntime:
         if session:
             session.command_count = turn
             session.last_activity = datetime.now(timezone.utc).isoformat()
+        async_messages = self.drain_session_output(character_id)
+        if async_messages:
+            result.narrative = (result.narrative + '\n' if result.narrative else '') + '\n'.join(async_messages)
+            self.state_store.save_scrollback(character_id, self.active_world_id or '', turn, '\n'.join(async_messages))
         updates = result.state_updates or {}
         view = self.play_view(character_id)
         if updates.get("session_transition") == "character_select":
@@ -1358,9 +1381,11 @@ class MudRuntime:
             result.narrative = f"{result.narrative}\n\n{room_text}" if result.narrative else room_text
         return result
 
-    def _move_character(self, char: MudCharacter, direction: str):
+    def _move_character(self, char: MudCharacter, direction: str, bypass_combat: bool = False):
         from engine.mud_commands import CommandResult
         room_id = char.room_id
+        if not bypass_combat and getattr(self, 'combat_runtime', None) and self.combat_runtime.is_actor_in_active_combat(self.combat_runtime.actor_id_for_character(char)):
+            return CommandResult(narrative='You are fighting! Use FLEE to escape.', ok=False)
         self.event_bus.publish("movement_attempted", {"canonical_command": direction, "character_id": char.id, "character_name": char.name, "current_room_id": room_id}, source_system="movement", world_id=self.active_world_id or "", character_id=char.id, command=direction)
         exit_data, reason = self.resolve_exit(char, room_id, direction)
         if exit_data and reason == "ok":
