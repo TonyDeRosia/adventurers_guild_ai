@@ -26,6 +26,7 @@ from engine.crafting import init_crafting_schema
 from engine.environment import EnvironmentService, init_environment_schema
 from engine.survival_needs import SurvivalNeedsService, init_survival_schema
 from engine.schedules import ScheduleService
+from engine.combat_runtime import CombatRuntimeService, init_combat_runtime_schema
 
 VALID_ROLES = {"player", "helper", "builder", "admin", "owner"}
 BUILDER_ROLES = {"builder", "admin", "owner"}
@@ -458,6 +459,7 @@ class MudStateStore:
             init_living_schema(self.db_path)
             init_ability_schema(self.db_path)
             init_crafting_schema(self.db_path)
+            init_combat_runtime_schema(self.db_path)
             conn.commit()
 
     def save_character(self, char: MudCharacter, world_id: str) -> None:
@@ -591,6 +593,8 @@ class MudRuntime:
         self.abilities = None
         self.builder = BuilderWorkspace(event_bus=self.event_bus)
         self.command_engine.runtime = self
+        self.combat_runtime = CombatRuntimeService(self)
+        self.command_engine.combat_runtime = self.combat_runtime
         self.living_world = LivingWorldService(self)
         self.schedule_service = ScheduleService(self)
         init_survival_schema(self.state_store.db_path)
@@ -608,6 +612,7 @@ class MudRuntime:
     def advance_world_time(self, world_id: str, minutes: int) -> dict[str, Any]:
         wt = self.living_world.advance_world_time(world_id, minutes)
         if getattr(self, "survival_needs", None): self.survival_needs.process_world_needs(world_id, wt)
+        if getattr(self, "combat_runtime", None): self.combat_runtime.process_due_rounds()
         return wt
     def pause_world_time(self, world_id: str) -> dict[str, Any]: return self.living_world.pause_world_time(world_id)
     def resume_world_time(self, world_id: str) -> dict[str, Any]: return self.living_world.resume_world_time(world_id)
@@ -709,6 +714,7 @@ class MudRuntime:
         self.command_engine.world_id = world_id
         self.environment = EnvironmentService(self.state_store.db_path, self.active_world.root, world_id, self.event_bus)
         self.command_engine.environment_service = self.environment
+        self.combat_runtime.refresh_content()
         self.hooks.emit("world_loaded", world_id=world_id, world=self.active_world)
         self.event_bus.publish("world_loaded", {"world_id": world_id}, source_system="runtime", world_id=world_id)
         return self.active_world
@@ -1930,11 +1936,14 @@ class MudRuntime:
                 "wander_rules": raw.get("wander_rules") or {"allowed_exits": raw.get("allowed_exits") or [], "wander_probability": float(raw.get("wander_probability") or 0), "wander_delay": int(raw.get("wander_delay") or 0), "restricted_rooms": raw.get("restricted_rooms") or [], "sentinel": bool(raw.get("sentinel") or "sentinel" in (raw.get("flags") or []))},
                 "dialogue_package": raw.get("dialogue_package") or {"greeting": raw.get("greeting") or f"{str(raw.get('name') or tid).title()} greets you.", "farewell": raw.get("farewell") or "Farewell.", "idle_speech": raw.get("idle_speech") or [], "talk_responses": raw.get("talk_responses") or [raw.get("dialogue_seed") or raw.get("description") or "They have nothing more to say."], "keyword_responses": raw.get("keyword_responses") or {}},
                 "behavior_flags": raw.get("behavior_flags") or raw.get("flags") or raw.get("tags") or [],
+                "tags": raw.get("tags") or [], "combat_policy": raw.get("combat_policy") or {}, "stats": raw.get("stats") or {},
+                "combat_behavior_profile_id": raw.get("combat_behavior_profile_id") or raw.get("behavior_profile_id") or "", "behavior_profile_id": raw.get("behavior_profile_id") or "",
+                "ability_loadout_id": raw.get("ability_loadout_id") or "", "natural_weapon_profile_id": raw.get("natural_weapon_profile_id") or "", "body_profile_id": raw.get("body_profile_id") or ("wolf" if "wolf" in tid else "humanoid"),
                 "visibility_flags": raw.get("visibility_flags") or [],
                 "loot_table": raw.get("loot_table") or raw.get("loot_table_id") or "", "merchant_profile": raw.get("merchant_profile") or {},
                 "trainer_profile": raw.get("trainer_profile") or {}, "banker_profile": raw.get("banker_profile") or {}, "healer_profile": raw.get("healer_profile") or {},
                 "quest_profile": raw.get("quest_profile") or {}, "script_hooks": raw.get("script_hooks") or {},
-                "state": raw.get("state") or {"current_state": "idle"}, "flags": raw.get("flags") or raw.get("behavior_flags") or [], "plugin_data": raw.get("plugin_data") or {},
+                "state": raw.get("state") or {"current_state": "idle", "current_health": (raw.get("stats") or {}).get("max_health", 100), "maximum_health": (raw.get("stats") or {}).get("max_health", 100)}, "flags": raw.get("flags") or raw.get("behavior_flags") or raw.get("tags") or [], "plugin_data": raw.get("plugin_data") or {},
             })
         self.entity_templates = templates
 

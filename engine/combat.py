@@ -1,5 +1,9 @@
 """Deterministic data-driven combat foundation for Smart MUD.
 
+This is the canonical Smart MUD single-attack resolver. Encounter lifecycle,
+rounds, persistence, command routing, and runtime state synchronization belong
+to engine.combat_runtime.CombatRuntimeService.
+
 Combat is Actor + equipment/effects + Formula Engine + lifecycle handoff.  This
 module intentionally contains no AI, spellcasting, skills, PvP policy, loot, or
 Builder mutation logic.

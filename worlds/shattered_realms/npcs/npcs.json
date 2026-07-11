@@ -119,7 +119,9 @@
     "memory_policy": "remember direct help, insults, threats, and quest progress",
     "dialogue_seed": "Training Master Borik speaks from their role and personality, never from invented world facts.",
     "tags": [
-      "starter"
+      "protected",
+      "starter",
+      "trainer_protected"
     ],
     "spawn_id": "spawn_training_master_borik",
     "npc_id": "training_master_borik",
@@ -212,7 +214,11 @@
     "home_room_id": "tavern_common_room",
     "work_room_id": "training_yard",
     "simulation_enabled": true,
-    "ability_loadout_id": "town_guard_basic"
+    "ability_loadout_id": "town_guard_basic",
+    "combat_policy": {
+      "protected": true,
+      "no_kill": true
+    }
   },
   {
     "id": "apprentice_mage_lina",
@@ -585,7 +591,7 @@
     "personality": [
       "warm",
       "gossipy",
-      "remembers everyone’s drink"
+      "remembers everyone\u2019s drink"
     ],
     "speech_style": "character-specific, concise, MUD-friendly",
     "goals": [
@@ -1387,11 +1393,12 @@
     "memory_policy": "wildlife does not hold dialogue memories",
     "dialogue_seed": "The Forest Wolf communicates through posture and growls, not speech.",
     "tags": [
-      "starter",
-      "wolf",
+      "attackable",
       "hostile",
+      "phase11f",
+      "starter",
       "wildlife",
-      "phase11f"
+      "wolf"
     ],
     "spawn_id": "spawn_emberwood_forest_wolf",
     "npc_id": "forest_wolf",
@@ -1432,6 +1439,9 @@
         "death_loot_profiles",
         "corpse_decay_profiles"
       ]
+    },
+    "combat_policy": {
+      "attackable": true
     }
   }
 ]
