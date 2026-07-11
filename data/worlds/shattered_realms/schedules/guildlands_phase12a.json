@@ -1,0 +1,17 @@
+[
+  {"id":"guildlands_guild_registrar_maren_daily","name":"Guild Registrar Maren Daily Routine","location_refs":{"home":"guildlands_maren_home","workplace":"guildlands_guild_desk","preferred_tavern":"guildlands_inn_common"},"entries":[
+    {"id":"maren_morning_walk_to_desk","start_time":"06:00","end_time":"09:00","activity":"travel","target_ref":"workplace","priority":10},
+    {"id":"maren_day_work_desk","start_time":"09:00","end_time":"18:00","activity":"work","target_ref":"workplace","priority":10},
+    {"id":"maren_evening_visit_inn","start_time":"18:00","end_time":"22:00","activity":"visit_location","target_ref":"preferred_tavern","priority":10},
+    {"id":"maren_night_sleep","start_time":"22:00","end_time":"06:00","activity":"sleep","target_ref":"home","priority":10}],"fallback":{"id":"maren_fallback_idle","activity":"idle"}},
+  {"id":"guildlands_innkeeper_daily","name":"Guildlands Innkeeper Daily Routine","location_refs":{"home":"guildlands_inn_private_room","workplace":"guildlands_inn_common"},"entries":[
+    {"id":"innkeeper_morning_prepare","start_time":"06:00","end_time":"10:00","activity":"work","target_ref":"workplace","priority":10},
+    {"id":"innkeeper_day_operate","start_time":"10:00","end_time":"18:00","activity":"shop","target_ref":"workplace","priority":10},
+    {"id":"innkeeper_evening_serve","start_time":"18:00","end_time":"23:00","activity":"work","target_ref":"workplace","priority":10},
+    {"id":"innkeeper_night_sleep","start_time":"23:00","end_time":"06:00","activity":"sleep","target_ref":"home","priority":10}],"fallback":{"id":"innkeeper_fallback_idle","activity":"idle"}},
+  {"id":"guildlands_town_guard_daily","name":"Guildlands Town Guard Daily Routine","location_refs":{"home":"guildlands_guard_barracks","workplace":"guildlands_town_gate","preferred_patrol_route":"guildlands_market_square"},"entries":[
+    {"id":"guard_morning_patrol","start_time":"06:00","end_time":"12:00","activity":"patrol","target_ref":"preferred_patrol_route","priority":10},
+    {"id":"guard_day_patrol","start_time":"12:00","end_time":"18:00","activity":"patrol","target_ref":"preferred_patrol_route","priority":10},
+    {"id":"guard_evening_gate","start_time":"18:00","end_time":"23:00","activity":"stand_guard","target_ref":"workplace","priority":10},
+    {"id":"guard_night_rest","start_time":"23:00","end_time":"06:00","activity":"rest","target_ref":"home","priority":10}],"fallback":{"id":"guard_fallback_idle","activity":"idle"}}
+]
