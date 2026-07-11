@@ -94,6 +94,7 @@ DETERMINISTIC_COMMANDS = {
     "attack": {"category": "combat", "aliases": ["hit"], "admin": False},
     "assist": {"category": "combat", "admin": False},
     "flee": {"category": "combat", "admin": False},
+    "defend": {"category": "combat", "admin": False},
     "combat": {"category": "combat", "admin": False},
     "history": {"category": "info", "admin": False},
     
@@ -339,6 +340,7 @@ class MudCommandEngine:
             "attack": self._cmd_combat_foundation,
             "assist": self._cmd_combat_foundation,
             "flee": self._cmd_combat_foundation,
+            "defend": self._cmd_combat_foundation,
             "combat": self._cmd_combat_foundation,
             "levels": self._cmd_generic,
             "time": self._cmd_worldtime,
@@ -1649,6 +1651,26 @@ class MudCommandEngine:
         if not args: return CommandResult("Use which ability?", ok=False)
         svc = self._ability_service(character)
         if not svc: return CommandResult("Ability system is unavailable.", ok=False)
+        rt = getattr(self, 'runtime', None)
+        cr = getattr(rt, 'combat_runtime', None) if rt else getattr(self, 'combat_runtime', None)
+        if cr and cr.is_actor_in_active_combat(cr.actor_id_for_character(character)):
+            phrase_parts=list(args)
+            target=''
+            # Prefer longest learned ability name prefix; remaining words become target text.
+            learned=svc.get_actor_abilities(character.id)
+            best=None
+            joined=' '.join(phrase_parts).lower()
+            for row in learned:
+                names=[str(row.get('id','')).replace('_',' '), str(row.get('name',''))]
+                for nm in names:
+                    nm=nm.lower().strip()
+                    if nm and (joined == nm or joined.startswith(nm+' ')) and (best is None or len(nm)>len(best[0])):
+                        best=(nm,row)
+            if best:
+                target=joined[len(best[0]):].strip()
+                res=cr.queue_ability(character, str(best[1].get('id')), target)
+                return CommandResult('\n'.join(res.messages), ok=res.ok)
+
         phrase = " ".join(args).lower().strip()
         aid = phrase.replace(" ", "_")
         target = "self"
@@ -2618,6 +2640,9 @@ Builder commands:
         if cmd == "flee":
             res = svc.flee(character, query)
             return CommandResult("\n".join(res.messages), ok=res.ok, state_updates={"render_room": res.ok})
+        if cmd == "defend":
+            res = svc.defend(character)
+            return CommandResult("\n".join(res.messages), ok=res.ok)
         if cmd == "assist":
             return CommandResult("Assist is not available yet; join your ally's fight with attack <opponent>.", ok=False)
         res = svc.start_player_attack(character, query)
