@@ -1,0 +1,70 @@
+{
+  "actor_needs_profiles": [
+    {
+      "activity_modifiers": {},
+      "actor_type_ids": [
+        "player"
+      ],
+      "class_ids": [],
+      "consumption_profile_id": "default_consumption",
+      "default_values": {
+        "fatigue": 90,
+        "hunger": 85,
+        "hydration": 80,
+        "nutrition": 80,
+        "satiation": 35,
+        "thirst": 85
+      },
+      "description": "Default player profile for conservative hunger, thirst, fatigue, nutrition, hydration, and satiation.",
+      "enabled": true,
+      "environment_modifiers": {},
+      "id": "humanoid_player_survival",
+      "name": "Humanoid Player Survival",
+      "need_definition_ids": [
+        "hunger",
+        "thirst",
+        "fatigue",
+        "nutrition",
+        "hydration",
+        "satiation"
+      ],
+      "offline_policy_id": "conservative_player_offline",
+      "plugin_data": {},
+      "progression_modifiers": {},
+      "race_ids": [],
+      "sleep_profile_id": "phase11d2_placeholder",
+      "species_ids": [],
+      "tags": [
+        "phase11d1"
+      ],
+      "version": 1
+    },
+    {
+      "activity_modifiers": {},
+      "actor_type_ids": [
+        "construct"
+      ],
+      "class_ids": [],
+      "consumption_profile_id": "none",
+      "default_values": {},
+      "description": "Construct placeholder that disables biological needs.",
+      "enabled": true,
+      "environment_modifiers": {},
+      "id": "construct_no_survival",
+      "name": "Construct No Survival",
+      "need_definition_ids": [],
+      "offline_policy_id": "suspended_offline",
+      "plugin_data": {},
+      "progression_modifiers": {},
+      "race_ids": [],
+      "sleep_profile_id": "none",
+      "species_ids": [
+        "construct"
+      ],
+      "tags": [
+        "phase11d1"
+      ],
+      "version": 1
+    }
+  ]
+}

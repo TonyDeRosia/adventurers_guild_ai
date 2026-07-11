@@ -24,6 +24,7 @@ from engine.living_world import LivingWorldService, init_living_schema
 from engine.abilities import AbilityExecutionService, init_ability_schema
 from engine.crafting import init_crafting_schema
 from engine.environment import EnvironmentService, init_environment_schema
+from engine.survival_needs import SurvivalNeedsService, init_survival_schema
 
 VALID_ROLES = {"player", "helper", "builder", "admin", "owner"}
 BUILDER_ROLES = {"builder", "admin", "owner"}
@@ -585,6 +586,8 @@ class MudRuntime:
         self.builder = BuilderWorkspace(event_bus=self.event_bus)
         self.command_engine.runtime = self
         self.living_world = LivingWorldService(self)
+        init_survival_schema(self.state_store.db_path)
+        self.survival_needs = SurvivalNeedsService(self.state_store.db_path, root / "worlds" / "shattered_realms", "shattered_realms", self.event_bus, self)
         init_environment_schema(self.state_store.db_path)
         self.environment = EnvironmentService(self.state_store.db_path, root / "worlds" / "shattered_realms", "shattered_realms", self.event_bus)
         self.sqlite_ready = (user_data_dir / "mud_state.db").exists()
@@ -595,7 +598,10 @@ class MudRuntime:
     # Phase 5B living-world facade APIs.
     def get_world_time(self, world_id: str | None = None) -> dict[str, Any]: return self.living_world.ensure_world_time(world_id or self.active_world_id or "")
     def set_world_time(self, world_id: str, day: int, hhmm: str | None = None, hour: int | None = None, minute: int | None = None) -> dict[str, Any]: return self.living_world.set_world_time(world_id, day, hhmm, hour, minute)
-    def advance_world_time(self, world_id: str, minutes: int) -> dict[str, Any]: return self.living_world.advance_world_time(world_id, minutes)
+    def advance_world_time(self, world_id: str, minutes: int) -> dict[str, Any]:
+        wt = self.living_world.advance_world_time(world_id, minutes)
+        if getattr(self, "survival_needs", None): self.survival_needs.process_world_needs(world_id, wt)
+        return wt
     def pause_world_time(self, world_id: str) -> dict[str, Any]: return self.living_world.pause_world_time(world_id)
     def resume_world_time(self, world_id: str) -> dict[str, Any]: return self.living_world.resume_world_time(world_id)
     def get_entity_profile(self, instance_id: str) -> dict[str, Any]: return self.living_world.get_entity_profile(instance_id)

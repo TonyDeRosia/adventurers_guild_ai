@@ -1,0 +1,182 @@
+{
+  "fatigue": {
+    "critical_thresholds": [
+      10
+    ],
+    "description": "Conservative fatigue need foundation.",
+    "enabled": true,
+    "id": "fatigue",
+    "maximum_value": 100,
+    "message_profile_id": "default_survival_messages",
+    "minimum_value": 0,
+    "name": "Fatigue",
+    "need_type": "fatigue",
+    "offline_policy_id": "conservative_player_offline",
+    "optimal_maximum": 100,
+    "optimal_minimum": 70,
+    "plugin_data": {
+      "progression_per_minute": -0.01
+    },
+    "progression_formula_id": "phase11d1_linear_world_time",
+    "recovery_formula_id": "phase11d1_consumption_recovery",
+    "starting_value": 90,
+    "tags": [
+      "phase11d1"
+    ],
+    "threshold_effect_profile_id": "mild_nonlethal_thresholds",
+    "version": 1,
+    "warning_thresholds": [
+      30
+    ]
+  },
+  "hunger": {
+    "critical_thresholds": [
+      10
+    ],
+    "description": "Conservative hunger need foundation.",
+    "enabled": true,
+    "id": "hunger",
+    "maximum_value": 100,
+    "message_profile_id": "default_survival_messages",
+    "minimum_value": 0,
+    "name": "Hunger",
+    "need_type": "hunger",
+    "offline_policy_id": "conservative_player_offline",
+    "optimal_maximum": 100,
+    "optimal_minimum": 70,
+    "plugin_data": {
+      "progression_per_minute": -0.02
+    },
+    "progression_formula_id": "phase11d1_linear_world_time",
+    "recovery_formula_id": "phase11d1_consumption_recovery",
+    "starting_value": 85,
+    "tags": [
+      "phase11d1"
+    ],
+    "threshold_effect_profile_id": "mild_nonlethal_thresholds",
+    "version": 1,
+    "warning_thresholds": [
+      30
+    ]
+  },
+  "hydration": {
+    "critical_thresholds": [
+      10
+    ],
+    "description": "Conservative hydration need foundation.",
+    "enabled": true,
+    "id": "hydration",
+    "maximum_value": 100,
+    "message_profile_id": "default_survival_messages",
+    "minimum_value": 0,
+    "name": "Hydration",
+    "need_type": "hydration",
+    "offline_policy_id": "conservative_player_offline",
+    "optimal_maximum": 100,
+    "optimal_minimum": 70,
+    "plugin_data": {
+      "progression_per_minute": -0.006
+    },
+    "progression_formula_id": "phase11d1_linear_world_time",
+    "recovery_formula_id": "phase11d1_consumption_recovery",
+    "starting_value": 80,
+    "tags": [
+      "phase11d1"
+    ],
+    "threshold_effect_profile_id": "mild_nonlethal_thresholds",
+    "version": 1,
+    "warning_thresholds": [
+      30
+    ]
+  },
+  "nutrition": {
+    "critical_thresholds": [
+      10
+    ],
+    "description": "Conservative nutrition need foundation.",
+    "enabled": true,
+    "id": "nutrition",
+    "maximum_value": 100,
+    "message_profile_id": "default_survival_messages",
+    "minimum_value": 0,
+    "name": "Nutrition",
+    "need_type": "nutrition",
+    "offline_policy_id": "conservative_player_offline",
+    "optimal_maximum": 100,
+    "optimal_minimum": 70,
+    "plugin_data": {
+      "progression_per_minute": -0.005
+    },
+    "progression_formula_id": "phase11d1_linear_world_time",
+    "recovery_formula_id": "phase11d1_consumption_recovery",
+    "starting_value": 80,
+    "tags": [
+      "phase11d1"
+    ],
+    "threshold_effect_profile_id": "mild_nonlethal_thresholds",
+    "version": 1,
+    "warning_thresholds": [
+      30
+    ]
+  },
+  "satiation": {
+    "critical_thresholds": [
+      10
+    ],
+    "description": "Conservative satiation need foundation.",
+    "enabled": true,
+    "id": "satiation",
+    "maximum_value": 100,
+    "message_profile_id": "default_survival_messages",
+    "minimum_value": 0,
+    "name": "Satiation",
+    "need_type": "satiation",
+    "offline_policy_id": "conservative_player_offline",
+    "optimal_maximum": 100,
+    "optimal_minimum": 70,
+    "plugin_data": {
+      "progression_per_minute": -0.02
+    },
+    "progression_formula_id": "phase11d1_linear_world_time",
+    "recovery_formula_id": "phase11d1_consumption_recovery",
+    "starting_value": 35,
+    "tags": [
+      "phase11d1"
+    ],
+    "threshold_effect_profile_id": "mild_nonlethal_thresholds",
+    "version": 1,
+    "warning_thresholds": [
+      30
+    ]
+  },
+  "thirst": {
+    "critical_thresholds": [
+      10
+    ],
+    "description": "Conservative thirst need foundation.",
+    "enabled": true,
+    "id": "thirst",
+    "maximum_value": 100,
+    "message_profile_id": "default_survival_messages",
+    "minimum_value": 0,
+    "name": "Thirst",
+    "need_type": "thirst",
+    "offline_policy_id": "conservative_player_offline",
+    "optimal_maximum": 100,
+    "optimal_minimum": 70,
+    "plugin_data": {
+      "progression_per_minute": -0.03
+    },
+    "progression_formula_id": "phase11d1_linear_world_time",
+    "recovery_formula_id": "phase11d1_consumption_recovery",
+    "starting_value": 85,
+    "tags": [
+      "phase11d1"
+    ],
+    "threshold_effect_profile_id": "mild_nonlethal_thresholds",
+    "version": 1,
+    "warning_thresholds": [
+      30
+    ]
+  }
+}

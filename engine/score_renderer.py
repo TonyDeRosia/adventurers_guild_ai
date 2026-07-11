@@ -104,13 +104,13 @@ class ActorScoreRenderer:
         "achievements", "milestones", "titles", "accolades", "collections",
         "property", "housing", "leases", "storage", "home",
         "perception", "senses", "stealth", "tracking", "investigation",
-        "simulation", "party", "organizations", "guild", "clan", "memberships", "social", "behavior", "threat", "tactics", "diagnostics", "formulas", "raw",
+        "survival", "needs", "hunger", "thirst", "fatigue", "simulation", "party", "organizations", "guild", "clan", "memberships", "social", "behavior", "threat", "tactics", "diagnostics", "formulas", "raw",
     ]
     aliases = {
         "score": "all", "preview": "all", "actor": "all", "attrs": "primary_attributes", "attributes": "primary_attributes",
         "derived": "derived_attributes", "resists": "resistances", "saff": "affects", "spellups": "spellup",
         "worth": "currencies", "profession": "professions", "recipe": "recipes", "cast": "current_cast", "currency": "currencies", "money": "currencies", "bank": "banking", "banking": "banking", "transactions": "transactions", "builder": "diagnostics",
-        "questlog": "journal", "quest_history": "questhistory", "builder_diagnostics": "diagnostics", "ai": "simulation", "ai_diagnostics": "simulation", "behaviour": "behavior", "membership": "memberships", "faction_standing": "standing", "relations": "diplomacy", "achievement": "achievements", "title": "titles", "collection": "collections", "awareness": "perception",
+        "questlog": "journal", "food": "survival", "quest_history": "questhistory", "builder_diagnostics": "diagnostics", "ai": "simulation", "ai_diagnostics": "simulation", "behaviour": "behavior", "membership": "memberships", "faction_standing": "standing", "relations": "diplomacy", "achievement": "achievements", "title": "titles", "collection": "collections", "awareness": "perception",
     }
 
     def __init__(self, formula_registry: FormulaRegistry | None = None, *, ansi: bool = False):
@@ -134,6 +134,31 @@ class ActorScoreRenderer:
             return "That score section is restricted to administrators and Builders."
         return self._renderers[section](actor, admin)
 
+
+
+    def _survival_summary(self, actor: Actor) -> dict[str, Any]:
+        return getattr(actor, "survival_summary", None) or (actor.plugin_data or {}).get("survival_needs", {}) or {}
+
+    def render_survival(self, actor: Actor, admin: bool = False) -> str:
+        data = self._survival_summary(actor)
+        needs = data.get("needs", data) if isinstance(data, dict) else {}
+        pairs = []
+        for key in ("hunger", "thirst", "fatigue", "nutrition", "hydration", "satiation"):
+            val = needs.get(key, "SQLite actor_need_state") if isinstance(needs, dict) else "SQLite actor_need_state"
+            pairs.append((_human(key), val, "score_value"))
+        return self._section("SURVIVAL", self._two_col(pairs))
+
+    def render_needs(self, actor: Actor, admin: bool = False) -> str:
+        return self.render_survival(actor, admin)
+
+    def render_hunger(self, actor: Actor, admin: bool = False) -> str:
+        return self._section("HUNGER", [_line(f"Hunger: {_value(self._survival_summary(actor).get('hunger', 'SQLite actor_need_state'))}")])
+
+    def render_thirst(self, actor: Actor, admin: bool = False) -> str:
+        return self._section("THIRST", [_line(f"Thirst: {_value(self._survival_summary(actor).get('thirst', 'SQLite actor_need_state'))}")])
+
+    def render_fatigue(self, actor: Actor, admin: bool = False) -> str:
+        return self._section("FATIGUE", [_line(f"Fatigue: {_value(self._survival_summary(actor).get('fatigue', 'SQLite actor_need_state'))}")])
 
     def render_quests(self, actor: Actor, admin: bool = False) -> str:
         data = getattr(actor, "quest_summary", {}) or {}

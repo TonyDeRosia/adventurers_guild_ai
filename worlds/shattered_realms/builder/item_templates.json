@@ -891,5 +891,38 @@
       "value": 5,
       "weight": 1
     }
+  },
+  "trail_ration": {
+    "description": "A preserved starter ration suitable for one conservative meal.",
+    "id": "trail_ration",
+    "item_type": "consumable",
+    "name": "Trail Ration",
+    "plugin_data": {
+      "consumable_profile_id": "trail_ration_food"
+    },
+    "portable": true,
+    "tags": [
+      "food",
+      "ration",
+      "phase11d1"
+    ],
+    "version": 1
+  },
+  "waterskin": {
+    "description": "A small skin of clean water with several careful sips.",
+    "id": "waterskin",
+    "item_type": "consumable",
+    "name": "Waterskin",
+    "plugin_data": {
+      "consumable_profile_id": "clean_water_drink"
+    },
+    "portable": true,
+    "tags": [
+      "drink",
+      "water",
+      "container",
+      "phase11d1"
+    ],
+    "version": 1
   }
 }

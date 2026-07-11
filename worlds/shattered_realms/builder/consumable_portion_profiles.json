@@ -1,0 +1,38 @@
+{
+  "single_serving": {
+    "allow_partial_serving": false,
+    "consume_per_use": 1,
+    "container_item_policy": "none",
+    "description": "One serving disappears when consumed.",
+    "empty_item_policy": "destroy_item",
+    "id": "single_serving",
+    "maximum_servings": 1,
+    "name": "Single Serving",
+    "plugin_data": {},
+    "remaining_item_template_id": "",
+    "serving_size": "serving",
+    "starting_servings": 1,
+    "tags": [
+      "phase11d1"
+    ],
+    "version": 1
+  },
+  "water_skin": {
+    "allow_partial_serving": false,
+    "consume_per_use": 1,
+    "container_item_policy": "keep_container",
+    "description": "Four safe sips remain on the item instance.",
+    "empty_item_policy": "keep_empty_container",
+    "id": "water_skin",
+    "maximum_servings": 4,
+    "name": "Water Skin",
+    "plugin_data": {},
+    "remaining_item_template_id": "empty_waterskin",
+    "serving_size": "sip",
+    "starting_servings": 4,
+    "tags": [
+      "phase11d1"
+    ],
+    "version": 1
+  }
+}

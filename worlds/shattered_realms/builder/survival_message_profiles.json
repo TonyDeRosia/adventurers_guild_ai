@@ -1,0 +1,12 @@
+{
+  "default_survival_message_profile": {
+    "description": "Phase 11D1 forward-compatible placeholder.",
+    "id": "default_survival_message_profile",
+    "name": "Default Survival Message Profiles",
+    "plugin_data": {},
+    "tags": [
+      "phase11d1"
+    ],
+    "version": 1
+  }
+}

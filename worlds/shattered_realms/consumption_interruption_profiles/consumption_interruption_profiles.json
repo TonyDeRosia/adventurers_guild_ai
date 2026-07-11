@@ -1,0 +1,14 @@
+{
+  "consumption_interruption_profiles": [
+    {
+      "description": "Phase 11D1 forward-compatible placeholder.",
+      "id": "default_consumption_interruption_profile",
+      "name": "Default Consumption Interruption Profiles",
+      "plugin_data": {},
+      "tags": [
+        "phase11d1"
+      ],
+      "version": 1
+    }
+  ]
+}

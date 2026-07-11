@@ -17,6 +17,7 @@ from engine.abilities import AbilityExecutionService
 from engine.combat_behavior import CombatBehaviorService
 from engine.crafting import CraftingService, CraftingContent
 from engine.perception import PerceptionService
+from engine.survival_needs import SURVIVAL_COLLECTIONS
 
 
 @dataclass
@@ -434,6 +435,51 @@ class MudCommandEngine:
         for _name in "behaviorlist behaviorstat behaviorvalidate behaviorpreview actorbehavior behaviortrace combatdecision combattrace combatcandidates threatlist threatstat threatadd threatclear hostilitytrace combattick protect protectset unprotect protectclear surrender callforhelp assisttrace fleetrace pursuittrace protecttrace combatgrouptrace petmode order".split():
             self.command_handlers[_name] = self._cmd_combat_behavior
 
+        for _name in "needs hunger thirst fatigue food drink eat consume sip taste needlist needstat needcreate needclone needset needdelete needvalidate needpreview needsprofilelist needsprofilestat needsprofilecreate needsprofileset needsprofiledelete needsprofilevalidate consumablelist consumablestat consumablecreate consumableclone consumableset consumabledelete consumablevalidate consumablepreview needsinspect needsset needsmodify needstick needstrace consumptiontrace survivalaudit".split():
+            self.command_handlers[_name] = self._cmd_survival_needs
+
+
+
+    def _survival_service(self, character: Any):
+        rt=getattr(self,'runtime',None)
+        if rt and getattr(rt,'survival_needs',None): return rt.survival_needs
+        from engine.survival_needs import SurvivalNeedsService
+        store=getattr(rt,'state_store',None) or self.state_store
+        world_id=getattr(rt,'active_world_id',None) or getattr(character,'world_id','shattered_realms') or 'shattered_realms'
+        return SurvivalNeedsService(getattr(store,'db_path',Path('.smartmud_survival.sqlite3')), Path('worlds')/world_id, world_id, self.event_bus, rt)
+
+    def _cmd_survival_needs(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        svc=self._survival_service(character); cmd=raw.split()[0].lower(); actor_id=str(getattr(character,'id',getattr(character,'character_id','self')))
+        if cmd in {'needs','hunger','thirst','fatigue','food'} or (cmd=='drink' and args[:1]==['status']):
+            rows=svc.get_actor_needs(actor_id)
+            if cmd in {'hunger','thirst','fatigue'}: rows=[r for r in rows if r['need_definition_id']==cmd or cmd in r['need_definition_id']]
+            lines=['Survival needs:']+[f"{r['need_definition_id']}: {float(r['current_value']):.1f} ({r['status']})" for r in rows]
+            return CommandResult('\n'.join(lines))
+        if cmd in {'eat','drink','consume','sip','taste'}:
+            if not args: return CommandResult(f"What do you want to {cmd}?", ok=False)
+            if cmd=='taste': return CommandResult('You inspect it cautiously. Taste effects are read-only placeholders in Phase 11D1.')
+            target=' '.join(args); item_id=target
+            if not target.startswith('item_'):
+                for it in getattr(character,'inventory',[]) or []:
+                    if target.lower() in str(it.get('name') or it.get('template_id') or it.get('id','')).lower(): item_id=it.get('instance_id') or it.get('id') or item_id; break
+            res=svc.consume_item(actor_id,item_id,1)
+            return CommandResult(('Consumed one serving.' if res.get('ok') else f"Cannot consume: {res.get('reason')}"), ok=bool(res.get('ok')))
+        if cmd in {'needstick'}:
+            if not args: return CommandResult('Usage: needstick <duration>', ok=False)
+            return CommandResult(json.dumps(svc.process_actor_needs(actor_id, svc._world_minutes()+int(args[0])), indent=2, sort_keys=True))
+        if cmd in {'needsinspect','needstrace'}: return CommandResult(json.dumps(svc.trace_actor_needs(args[0] if args else actor_id), indent=2, sort_keys=True))
+        if cmd in {'needsset','needsmodify'}:
+            if len(args)<3: return CommandResult(f'Usage: {cmd} <actor> <need> <value>', ok=False)
+            fn=svc.set_actor_need if cmd=='needsset' else svc.modify_actor_need
+            return CommandResult(json.dumps(fn(args[0],args[1],float(args[2]),'admin_command'), indent=2, sort_keys=True))
+        if cmd=='consumptiontrace': return CommandResult(json.dumps(svc.trace_consumption(args[0] if args else ''), indent=2, sort_keys=True))
+        if cmd=='survivalaudit': return CommandResult('Survival audit events are stored in SQLite survival_audit_events.')
+        coll = 'actor_need_definitions' if cmd.startswith('need') else 'actor_needs_profiles' if cmd.startswith('needsprofile') else 'consumable_profiles'
+        if cmd.endswith('list') or cmd in {'needlist'}: return CommandResult('\n'.join(f"{x.get('id')} - {x.get('name','')}" for x in svc.content.list(coll)) or f'No {coll}.')
+        if cmd.endswith('stat') and args: return CommandResult(json.dumps(svc.content.get(coll,args[0]), indent=2, sort_keys=True))
+        if cmd.endswith('validate') or cmd in {'needvalidate','consumablevalidate','needsprofilevalidate'}: return CommandResult(json.dumps(svc.content.validate(), indent=2, sort_keys=True))
+        if cmd.endswith('preview') or cmd in {'needpreview','consumablepreview'}: return CommandResult(json.dumps({'collection':coll,'id':args[0] if args else None,'preview':'draft-safe'}, indent=2, sort_keys=True))
+        return CommandResult('Survival Builder command is draft-safe in Phase 11D1; edit JSON collections through Builder import/apply.')
 
     def _quest_service(self, character: Any):
         from engine.quests import QuestService

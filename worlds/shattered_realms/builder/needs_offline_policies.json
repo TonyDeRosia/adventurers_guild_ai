@@ -1,0 +1,40 @@
+{
+  "conservative_player_offline": {
+    "apply_environment_while_offline": false,
+    "bounded_catchup": true,
+    "description": "Bounded nonlethal offline progression.",
+    "id": "conservative_player_offline",
+    "maximum_offline_minutes": 120,
+    "maximum_return_penalty": 10,
+    "messages": {},
+    "minimum_return_state": "warning",
+    "name": "Conservative Player Offline",
+    "plugin_data": {},
+    "progress_while_offline": false,
+    "suspend_npc_needs": true,
+    "suspend_player_needs": true,
+    "tags": [
+      "phase11d1"
+    ],
+    "version": 1
+  },
+  "suspended_offline": {
+    "apply_environment_while_offline": false,
+    "bounded_catchup": true,
+    "description": "No offline progression.",
+    "id": "suspended_offline",
+    "maximum_offline_minutes": 0,
+    "maximum_return_penalty": 0,
+    "messages": {},
+    "minimum_return_state": "normal",
+    "name": "Suspended Offline",
+    "plugin_data": {},
+    "progress_while_offline": false,
+    "suspend_npc_needs": true,
+    "suspend_player_needs": true,
+    "tags": [
+      "phase11d1"
+    ],
+    "version": 1
+  }
+}

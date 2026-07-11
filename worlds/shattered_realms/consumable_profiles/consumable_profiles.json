@@ -1,0 +1,74 @@
+{
+  "consumable_profiles": [
+    {
+      "allowed_item_template_ids": [
+        "trail_ration",
+        "rations"
+      ],
+      "consumable_type": "ration",
+      "consumption_duration_formula_id": "instant",
+      "consumption_requirements": [],
+      "container_policy": "none",
+      "description": "Conservative starter ration.",
+      "effect_ids": [],
+      "enabled": true,
+      "freshness_profile_id": "shelf_stable",
+      "id": "trail_ration_food",
+      "interruption_profile_id": "none",
+      "messages": {},
+      "name": "Trail Ration",
+      "need_changes": {
+        "hunger": 18,
+        "nutrition": 8,
+        "satiation": 20
+      },
+      "plugin_data": {},
+      "portion_profile_id": "single_serving",
+      "quality_modifiers": {},
+      "required_item_tags": [
+        "food"
+      ],
+      "resource_changes": {},
+      "tags": [
+        "phase11d1",
+        "food"
+      ],
+      "version": 1
+    },
+    {
+      "allowed_item_template_ids": [
+        "waterskin",
+        "clean_water"
+      ],
+      "consumable_type": "water",
+      "consumption_duration_formula_id": "instant",
+      "consumption_requirements": [],
+      "container_policy": "keep_container",
+      "description": "Safe drink serving.",
+      "effect_ids": [],
+      "enabled": true,
+      "freshness_profile_id": "none",
+      "id": "clean_water_drink",
+      "interruption_profile_id": "none",
+      "messages": {},
+      "name": "Clean Water",
+      "need_changes": {
+        "hydration": 12,
+        "satiation": 4,
+        "thirst": 22
+      },
+      "plugin_data": {},
+      "portion_profile_id": "water_skin",
+      "quality_modifiers": {},
+      "required_item_tags": [
+        "drink"
+      ],
+      "resource_changes": {},
+      "tags": [
+        "phase11d1",
+        "drink"
+      ],
+      "version": 1
+    }
+  ]
+}

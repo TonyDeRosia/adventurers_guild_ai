@@ -1,0 +1,38 @@
+{
+  "need_threshold_profiles": [
+    {
+      "clear_policy": "clear_when_recovered",
+      "description": "Warning-only default thresholds.",
+      "effect_ids": [],
+      "id": "mild_nonlethal_thresholds",
+      "messages": {},
+      "modifier_entries": [],
+      "name": "Mild Nonlethal Thresholds",
+      "need_id": "*",
+      "plugin_data": {},
+      "repeat_message_policy": "once_per_status",
+      "tags": [
+        "phase11d1"
+      ],
+      "thresholds": {
+        "critical_placeholder": [
+          0,
+          10
+        ],
+        "normal": [
+          31,
+          69
+        ],
+        "satisfied": [
+          70,
+          100
+        ],
+        "warning": [
+          11,
+          30
+        ]
+      },
+      "version": 1
+    }
+  ]
+}
