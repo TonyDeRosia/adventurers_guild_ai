@@ -1,0 +1,5 @@
+{
+  "resource_definitions": [
+    {"id":"emberleaf","name":"Emberleaf","short_name":"emberleaf","description":"A starter herb used by tests.","resource_type":"herb","yield_item_template_id":"emberleaf","yield_profile_id":"emberleaf_yield","quality_profile_id":"standard_quality","gathering_profile_id":"simple_harvest","profession_id":"herbalism","minimum_profession_rank":0,"required_ability_ids":[],"tool_profile_id":"sickle_tool","environment_requirements_id":"temperate_gathering","availability_profile_id":"spring_summer_day","rarity":1,"renewable":true,"discoverable":true,"visible":true,"enabled":true,"tags":["phase11c1"],"plugin_data":{},"version":"1.0.0"}
+  ]
+}
