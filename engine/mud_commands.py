@@ -91,7 +91,7 @@ DETERMINISTIC_COMMANDS = {
     "consider": {"category": "combat", "aliases": ["con"], "admin": False},
     "diagnose": {"category": "combat", "admin": False},
     "kill": {"category": "combat", "admin": False},
-    "attack": {"category": "combat", "admin": False},
+    "attack": {"category": "combat", "aliases": ["hit"], "admin": False},
     "assist": {"category": "combat", "admin": False},
     "flee": {"category": "combat", "admin": False},
     "combat": {"category": "combat", "admin": False},
@@ -695,7 +695,7 @@ class MudCommandEngine:
                 return CommandResult("\n".join(lines))
             if not trainers:
                 return CommandResult("No trainer here is ready to teach you. Seek a trainer and try TRAIN again.", ok=False)
-            lines = []
+            lines = ["Training options"]
             idx = 1
             for trainer in trainers:
                 lines.append(f"{trainer.get('name') or trainer.get('id')} can teach:")
@@ -2569,25 +2569,30 @@ Builder commands:
 
 
     def _cmd_combat_foundation(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        """Deterministic Phase 6A combat command surface; runtime target lookup plugs in here."""
-        from engine.combat import CombatEngine, CombatState
-        actor = actor_from_runtime_character(character, getattr(self, "world_id", ""))
-        engine = CombatEngine(FormulaEngine())
-        cmd = self.resolve_alias((raw.split() or [""])[0].lower())
+        """Route live combat commands to the canonical CombatRuntimeService."""
+        rt = getattr(self, "runtime", None)
+        svc = getattr(rt, "combat_runtime", None) if rt else getattr(self, "combat_runtime", None)
+        cmd = self.resolve_alias((raw.split() or [""])[0].lower()) or (raw.split() or [""])[0].lower()
+        if not svc:
+            if cmd == "consider":
+                return CommandResult("Consider whom?" if not args else f"You consider {' '.join(args)}. They look comparable to you.")
+            if cmd == "diagnose":
+                return CommandResult("Diagnose whom?" if not args else f"{' '.join(args)} appears alive and alert.")
+            return CommandResult("Combat runtime is unavailable.", ok=False)
+        query = " ".join(args).strip()
         if cmd == "combat":
-            sub = args[0].lower() if args else "status"
-            if sub in {"status", "trace", "debug", "validate", "tick", "simulate"}:
-                return CommandResult(f"Combat {sub}: state={actor.combat_profile.get('combat_state', CombatState.IDLE.value)} tick={engine.tick}.")
+            return CommandResult(svc.status(character))
         if cmd == "consider":
-            return CommandResult("Consider whom?" if not args else f"You consider {' '.join(args)}. They look comparable to you.")
+            return CommandResult("Consider whom?" if not query else svc.consider(character, query))
         if cmd == "diagnose":
-            return CommandResult("Diagnose whom?" if not args else f"{' '.join(args)} appears alive and alert.")
+            return CommandResult("Diagnose whom?" if not query else svc.diagnose(character, query))
         if cmd == "flee":
-            actor.combat_profile["combat_state"] = CombatState.FLEEING.value
-            return CommandResult("You prepare to flee. Movement resolution remains deterministic and runtime-owned.")
+            res = svc.flee(character, query)
+            return CommandResult("\n".join(res.messages), ok=res.ok, state_updates={"render_room": res.ok})
         if cmd == "assist":
-            return CommandResult("Assist whom?" if not args else f"You move to assist {' '.join(args)}.")
-        return CommandResult("Attack whom?" if not args else f"You attack {' '.join(args)}. The clash begins as combatants trade blows through the combat engine.")
+            return CommandResult("Assist is not available yet; join your ally's fight with attack <opponent>.", ok=False)
+        res = svc.start_player_attack(character, query)
+        return CommandResult("\n".join(res.messages), ok=res.ok)
 
     def _cmd_stat(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """View character stats (admin)."""
