@@ -479,19 +479,19 @@ class MudCommandEngine:
 
     def _format_campsite_status(self, row: Any) -> str:
         if not row:
-            return "No campsite is active here. Use CAMP or CAMPFIRE to establish one."
+            return "There is no campsite here."
         status = row.get("status", "active") if isinstance(row, dict) else "active"
-        return "Campsite status:\n- Site: " + ("active" if status == "active" else str(status)) + "\n- Shelter: basic\n- Campfire: available"
+        return "A small campsite has been established here." if status in {"active","occupied","abandoned"} else "There is no campsite here."
 
     def _format_campfire_status(self, row: Any) -> str:
         if not row:
-            return "No campfire is ready here. Use CAMPFIRE to establish a small campsite."
+            return "There is no campfire here."
         status = str(row.get("status") or "unlit") if isinstance(row, dict) else "unlit"
         fuel = int((row.get("fuel_current") or row.get("fuel_amount") or 0) if isinstance(row, dict) else 0)
-        fire = "lit" if status == "lit" else "unlit"
-        cooking = "available" if fire == "lit" else "unavailable until lit"
-        fuel_text = f"{fuel} fuel" if fuel else "none"
-        return f"Campfire status:\n- Fire: {fire}\n- Fuel: {fuel_text}\n- Cooking: {cooking}"
+        
+        if status == "lit": return "A small campfire burns steadily here."
+        if status == "extinguished": return "Only a bed of cold ashes remains."
+        return "A small unlit campfire rests within the campsite."
 
     def _cmd_session(self, character: Any, args: list[str], raw: str) -> CommandResult:
         cmd = (raw.split() or [""])[0].lower()
@@ -582,20 +582,26 @@ class MudCommandEngine:
                 res=svc.start_rest(actor_id, args[0] if args and args[0] not in {'here','status'} else None); return CommandResult("You settle down to rest." if res.get('ok', True) else "You cannot rest here right now.", ok=bool(res.get('ok', True)))
             if cmd=='sleep':
                 res=svc.start_sleep(actor_id, args[-1] if args and args[0]=='on' else None); return CommandResult("You settle in to sleep." if res.get('ok', True) else "You cannot sleep here right now.", ok=bool(res.get('ok', True)))
-            if phrase in {'camp status','campsite status'} or phrase=='inspect campsite':
-                return CommandResult(self._format_campsite_status(svc.trace_campsite(args[-1] if args and args[-1].startswith('campsite_') else '')))
-            if cmd in {'camp'} and (not args or args[0] in {'create','here'}):
-                res=svc.create_campsite(actor_id,'basic_campsite')
-                if not res.get('ok', True) and 'already' in str(res.get('reason','')).lower(): return CommandResult('A campsite is already active here.')
-                return CommandResult('You establish a small campsite here.' if res.get('ok', True) else 'You cannot establish a campsite here right now.', ok=bool(res.get('ok', True)))
-            if phrase in {'campfire status','fire status','inspect campfire'}:
-                return CommandResult(self._format_campfire_status(svc.trace_campfire(args[-1] if args and args[-1].startswith('campfire_') else '')))
-            if phrase in {'set camp','camp here','make camp'}:
-                res=svc.create_campsite(actor_id,'basic_campsite'); return CommandResult('You establish a small campsite here.' if res.get('ok', True) else 'A campsite is already active here.', ok=True)
+            if phrase in {'camp','campsite','camp status','campsite status'} or phrase in {'inspect campsite','look campsite','examine campsite'}:
+                rid=getattr(character,'room_id','')
+                with sqlite3.connect(svc.db_path) as c:
+                    row=c.execute("SELECT campsite_instance_id FROM campsite_instances WHERE room_id=? AND status IN ('active','occupied','abandoned') ORDER BY created_at DESC LIMIT 1",(rid,)).fetchone()
+                return CommandResult(self._format_campsite_status(svc.trace_campsite(row[0] if row else '')))
+            if phrase in {'campfire','fire','campfire status','fire status','inspect campfire','look campfire','examine campfire'}:
+                rid=getattr(character,'room_id','')
+                with sqlite3.connect(svc.db_path) as c:
+                    row=c.execute("SELECT campfire_instance_id FROM campfire_instances WHERE room_id=? AND status IN ('unlit','lit','extinguished','low_fuel') ORDER BY created_at DESC LIMIT 1",(rid,)).fetchone()
+                return CommandResult(self._format_campfire_status(svc.trace_campfire(row[0] if row else '')))
+            if phrase in {'set camp','make camp','establish camp'}:
+                res=svc.create_campsite(actor_id,'basic_campsite'); msg='You abandon your previous campsite and establish a new one here.' if res.get('replaced_previous') else 'You establish a small campsite here.'; return CommandResult(msg if res.get('ok', True) else 'You cannot establish a campsite here right now.', ok=bool(res.get('ok', True)), state_updates={'render_room': bool(res.get('ok', True))})
             if phrase in {'break camp','campsite dismantle','dismantle campsite'}:
-                res=svc.dismantle_campsite(actor_id,args[-1] if args and args[-1].startswith('campsite_') else ''); return CommandResult('You dismantle the campsite.' if res.get('ok', True) else 'There is no campsite here to dismantle.', ok=bool(res.get('ok', True)))
-            if phrase in {'build campfire','campfire create','create campfire'}:
-                cf=svc.create_campfire(actor_id,'basic_campfire'); return CommandResult('You build a small campfire.' if cf.get('ok', True) else 'You cannot build a campfire here right now.', ok=bool(cf.get('ok', True)))
+                res=svc.dismantle_campsite(actor_id,args[-1] if args and args[-1].startswith('campsite_') else ''); return CommandResult('You dismantle the campsite.' if res.get('ok', True) else 'There is no campsite here to dismantle.', ok=bool(res.get('ok', True)), state_updates={'render_room': bool(res.get('ok', True))})
+            if phrase in {'build campfire','make campfire','create campfire'}:
+                rid=getattr(character,'room_id','')
+                with sqlite3.connect(svc.db_path) as c:
+                    has_camp=c.execute("SELECT 1 FROM campsite_instances WHERE room_id=? AND created_by_actor_id=? AND status IN ('active','occupied','abandoned')",(rid,actor_id)).fetchone()
+                if not has_camp: return CommandResult('You need an active campsite here before building a campfire.', ok=False)
+                cf=svc.create_campfire(actor_id,'basic_campfire'); msg='Your previous campfire fades as you build a new one here.' if cf.get('replaced_previous') else 'You build a small campfire.'; return CommandResult(msg if cf.get('ok', True) else ('You need an active campsite here before building a campfire.' if cf.get('reason')=='requires_campsite' else 'You cannot build a campfire here right now.'), ok=bool(cf.get('ok', True)), state_updates={'render_room': bool(cf.get('ok', True))})
             if cmd=='light' and (not args or phrase in {'light campfire','light fire'}):
                 cfid = ''
                 try:
@@ -605,7 +611,7 @@ class MudCommandEngine:
                 res=svc.light_campfire(actor_id,cfid)
                 reason=str(res.get('reason','')).lower()
                 if not res.get('ok', True) and 'already' in reason: return CommandResult('The campfire is already lit.')
-                return CommandResult('You light the campfire. Flames begin to crackle across the fuel.' if res.get('ok', True) else 'The campfire needs suitable fuel before it can be lit.', ok=bool(res.get('ok', True)))
+                return CommandResult('You light the campfire. Flames begin to crackle across the fuel.' if res.get('ok', True) else 'There is no unlit campfire here.', ok=bool(res.get('ok', True)), state_updates={'render_room': bool(res.get('ok', True))})
             if phrase=='extinguish campfire':
                 cfid = args[-1] if args and args[-1].startswith('campfire_') else ''
                 if not cfid:
@@ -613,7 +619,7 @@ class MudCommandEngine:
                         with sqlite3.connect(svc.db_path) as c:
                             row=c.execute("SELECT campfire_instance_id FROM campfire_instances WHERE room_id=(SELECT room_id FROM characters WHERE id=?) AND status='lit' ORDER BY created_at DESC LIMIT 1",(actor_id,)).fetchone(); cfid = row[0] if row else ''
                     except Exception: cfid=''
-                res=svc.extinguish_campfire(actor_id,cfid); return CommandResult('You extinguish the campfire.' if res.get('ok', True) else 'There is no lit campfire here.', ok=bool(res.get('ok', True)))
+                res=svc.extinguish_campfire(actor_id,cfid); return CommandResult('You extinguish the campfire.' if res.get('ok', True) else 'There is no lit campfire here.', ok=bool(res.get('ok', True)), state_updates={'render_room': bool(res.get('ok', True))})
             if phrase=='add fuel':
                 res=svc.add_campfire_fuel(actor_id,args[0] if args and args[0].startswith('campfire_') else '', args[1] if len(args)>1 else None); return CommandResult('You add fuel to the campfire.' if res.get('ok', True) else 'You need suitable fuel before you can feed the campfire.', ok=bool(res.get('ok', True)))
         if cmd in {'needs','hunger','thirst','fatigue','food'} or (cmd=='drink' and args[:1]==['status']):
@@ -648,7 +654,7 @@ class MudCommandEngine:
         if cmd.endswith('stat') and args: return CommandResult(json.dumps(svc.content.get(coll,args[0]), indent=2, sort_keys=True))
         if cmd.endswith('validate') or cmd in {'needvalidate','consumablevalidate','needsprofilevalidate'}: return CommandResult(json.dumps(svc.content.validate(), indent=2, sort_keys=True))
         if cmd.endswith('preview') or cmd in {'needpreview','consumablepreview'}: return CommandResult(json.dumps({'collection':coll,'id':args[0] if args else None,'preview':'draft-safe'}, indent=2, sort_keys=True))
-        return CommandResult('Survival Builder command is draft-safe in Phase 11D1; edit JSON collections through Builder import/apply.')
+        return CommandResult('That survival command is not available here.', ok=False)
 
 
     def _training_service(self, character: Any):

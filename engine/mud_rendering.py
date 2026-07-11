@@ -15,6 +15,44 @@ PRESETS = {
 TAG_RE = re.compile(r"\{(/?)([a-z_]+)\}")
 PROMPT_TAG_RE = re.compile(r"\{/?prompt_[a-z_]+\}")
 
+MUD_COLOR_CODES = {"w":"white","W":"white","r":"red","R":"red","g":"green","G":"green","y":"yellow","Y":"yellow","b":"blue","B":"blue","m":"magenta","M":"magenta","c":"cyan","C":"cyan"}
+MUD_COLOR_TO_ANSI = {"white":"37","red":"31","green":"32","yellow":"33","blue":"34","magenta":"35","cyan":"36"}
+MUD_COLOR_RE = re.compile(r"&([wWrRgGyYbBmMcCnN])")
+UNSAFE_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+def validate_mud_color_markup(text: str) -> list[str]:
+    raw=str(text or ""); errors=[]
+    if UNSAFE_ANSI_RE.search(raw): errors.append("unsafe raw ANSI escape sequence")
+    if re.search(r"<\s*/?\s*(script|style|span|div|br|html|body)\b", raw, re.I): errors.append("embedded HTML is not allowed")
+    for bad in re.findall(r"&([^wWrRgGyYbBmMcCnN\s])", raw): errors.append(f"unsupported color token &{bad}")
+    if any((ord(ch)<32 and ch not in "\n\r\t") for ch in raw): errors.append("invalid control character")
+    return errors
+
+def strip_mud_color_markup(text: str) -> str:
+    return MUD_COLOR_RE.sub("", str(text or ""))
+
+def render_mud_color_html(text: str) -> str:
+    raw=UNSAFE_ANSI_RE.sub("", str(text or ""))
+    parts=[]; pos=0; open_span=False
+    for m in MUD_COLOR_RE.finditer(raw):
+        parts.append(html.escape(raw[pos:m.start()]))
+        code=m.group(1)
+        if open_span:
+            parts.append("</span>"); open_span=False
+        if code not in {"n","N"}:
+            color=MUD_COLOR_CODES[code]; parts.append(f'<span class="mud-color-{color}" data-mud-color="{color}">'); open_span=True
+        pos=m.end()
+    parts.append(html.escape(raw[pos:]))
+    if open_span: parts.append("</span>")
+    return "".join(parts).replace("\n","<br>")
+
+def render_mud_color_ansi(text: str) -> str:
+    raw=UNSAFE_ANSI_RE.sub("", str(text or ""))
+    def repl(m):
+        code=m.group(1)
+        return "\033[0m" if code in {"n","N"} else f"\033[{MUD_COLOR_TO_ANSI[MUD_COLOR_CODES[code]]}m"
+    return MUD_COLOR_RE.sub(repl, raw) + "\033[0m"
+
 def semantic(role: str, text: Any) -> str:
     role = role if role in SEMANTIC_COLOR_ROLES else "system"
     return f"{{{role}}}{text}{{/{role}}}"
@@ -34,7 +72,7 @@ def render_semantic_html(text: str, colors: dict[str, str] | None = None) -> str
     return TAG_RE.sub(repl, escaped).replace("\n", "<br>")
 
 def render_semantic_plain(text: str) -> str:
-    return TAG_RE.sub("", strip_prompt_block(text))
+    return strip_mud_color_markup(TAG_RE.sub("", strip_prompt_block(text)))
 
 def render_legacy_mud_room(room: dict[str, Any], world: dict[str, Any], player: dict[str, Any], *, npcs: list[dict[str, Any]] | None = None, objects: list[dict[str, Any]] | None = None, narrative: list[str] | None = None, corpses: list[dict[str, Any]] | None = None) -> str:
     npcs = [n for n in (npcs or []) if str(n.get("status", "alive")) == "alive"]; objects = objects or []; narrative = narrative or []; corpses = corpses or []

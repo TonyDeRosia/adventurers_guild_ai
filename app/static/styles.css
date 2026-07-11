@@ -1582,3 +1582,12 @@ body.smart-mud-mode { height: 100vh; overflow: hidden; }
 .mud-output-turn {
   white-space: pre-wrap;
 }
+/* Builder-authored MUD color markup (&r, &c, &w, &n) renders as safe spans. */
+.mud-color-white { color: #ffffff; }
+.mud-color-red { color: #ff5555; }
+.mud-color-green { color: #55ff55; }
+.mud-color-yellow { color: #ffff55; }
+.mud-color-blue { color: #5555ff; }
+.mud-color-magenta { color: #ff55ff; }
+.mud-color-cyan { color: #55ffff; }
+#mud-world-output span[role="room_description"], #mud-world-output span[role="npc"], #mud-world-output span[role="mob"], #mud-world-output span[role="object"], #mud-world-output span[role="object_title"], #mud-world-output span[role="object_description"], #mud-world-output span[role="entity_title"], #mud-world-output span[role="entity_description"], .mud-role-room_description, .mud-role-npc, .mud-role-mob, .mud-role-object { color: #ffffff; }

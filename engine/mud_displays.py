@@ -6,7 +6,7 @@ from typing import Any, Optional
 import html
 import re
 
-from engine.mud_rendering import SEMANTIC_COLOR_ROLES
+from engine.mud_rendering import SEMANTIC_COLOR_ROLES, render_mud_color_html
 
 _SEMANTIC_TAG_RE = re.compile(r"\{(/?)([a-z_]+)\}")
 
@@ -54,7 +54,7 @@ def render_room(room: Any, colors: dict[str, str] | None = None, character: Any 
     """
     lines: list[str] = []
     title = _display_name(getattr(room, "title", "Unknown Room"))
-    lines.append(f'<span role="room_name">{html.escape(title)}</span>')
+    lines.append(f'<span role="room_name">{render_mud_color_html(title)}</span>')
     lines.append("")
 
     desc = str(getattr(room, "description", "") or "").strip()
@@ -67,26 +67,26 @@ def render_room(room: Any, colors: dict[str, str] | None = None, character: Any 
         for idx, paragraph in enumerate(paragraphs):
             if idx:
                 lines.append("")
-            lines.append(f'<span role="room_description">{html.escape(paragraph)}</span>')
+            lines.append(f'<span role="room_description">{render_mud_color_html(paragraph)}</span>')
     lines.append("")
 
     visible_lines: list[str] = []
     for player in getattr(room, "players", []) or []:
         text, _desc = _entity_text(player)
         if text and (character is None or text != getattr(character, "name", "")):
-            visible_lines.append(f'<span role="player">{html.escape(text)}</span>')
+            visible_lines.append(f'<span role="player">{render_mud_color_html(text)}</span>')
     for npc in getattr(room, "npcs", []) or []:
         text, _desc = _entity_text(npc)
         if text:
-            visible_lines.append(f'<span role="npc">{html.escape(text)}</span>')
+            visible_lines.append(f'<span role="npc">{render_mud_color_html(text)}</span>')
     for mob in getattr(room, "mobs", []) or []:
         text, _desc = _entity_text(mob)
         if text:
-            visible_lines.append(f'<span role="mob">{html.escape(text)}</span>')
+            visible_lines.append(f'<span role="mob">{render_mud_color_html(text)}</span>')
     for obj in getattr(room, "objects", []) or []:
         text, _desc = _entity_text(obj)
         if text:
-            visible_lines.append(f'<span role="object">{html.escape(text)}</span>')
+            visible_lines.append(f'<span role="object">{render_mud_color_html(text)}</span>')
 
     if visible_lines:
         lines.append("You see:")
@@ -111,7 +111,7 @@ def render_object(obj: Any) -> str:
     if isinstance(obj, dict):
         name = str(obj.get("name") or obj.get("title") or name).strip()
     desc = desc or name
-    return f'<span role="object">{html.escape(name)}</span>\n\n<span role="room_description">{html.escape(desc)}</span>'
+    return f'<span role="object">{render_mud_color_html(name)}</span>\n\n<span role="room_description">{render_mud_color_html(desc)}</span>'
 
 def render_prompt(character: Any, colors: dict[str, str]) -> str:
     """Render MUD prompt with semantic color roles."""
@@ -196,7 +196,7 @@ def render_dialogue(speaker: str, text: str, speaker_role: str = "npc") -> str:
     
     return (
         f'<span role="{role}">{html.escape(speaker)}</span> '
-        f'<span role="dialogue">says: "{html.escape(text)}"</span>'
+        f'<span role="dialogue">says: "{render_mud_color_html(text)}"</span>'
     )
 
 

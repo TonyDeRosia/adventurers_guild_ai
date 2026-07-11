@@ -82,7 +82,7 @@ class ConsumptionCheck:
 
 class SurvivalNeedsService:
     def __init__(self, db_path: Path, world_root: Path, world_id: str, event_bus: Any = None, runtime: Any = None):
-        self.db_path=Path(db_path); self.world_root=Path(world_root); self.world_id=world_id; self.event_bus=event_bus; self.runtime=runtime; self.content=SurvivalContent(self.world_root); init_survival_schema(self.db_path)
+        self.db_path=Path(db_path); self.world_root=Path(world_root); self.world_id=world_id; self.event_bus=event_bus; self.runtime=runtime; self.content=SurvivalContent(self.world_root); init_survival_schema(self.db_path); self.process_due_runtime_objects(self._world_minutes())
     def _world_minutes(self) -> int:
         if self.runtime and getattr(self.runtime,'living_world',None):
             wt=self.runtime.living_world.ensure_world_time(self.world_id); return int(wt.get('total_minutes') or (int(wt.get('day',1))-1)*1440+int(wt.get('hour',0))*60+int(wt.get('minute',0)))
@@ -154,7 +154,7 @@ class SurvivalNeedsService:
         for n in self.content.list('actor_need_definitions'): self.set_actor_need(actor_id,n['id'],n.get('starting_value',100),reason or 'reset')
         return self.get_actor_needs(actor_id)
     def process_actor_needs(self, actor_id: str, world_time: int|dict[str,Any]) -> list[dict[str, Any]]:
-        target=int(world_time.get('total_minutes',0) if isinstance(world_time,dict) else world_time); self.initialize_actor_needs(actor_id); changed=[]
+        target=int((world_time.get('total_minutes') if world_time.get('total_minutes') is not None else (int(world_time.get('day',1))-1)*1440+int(world_time.get('hour',0))*60+int(world_time.get('minute',0))) if isinstance(world_time,dict) else world_time); self.initialize_actor_needs(actor_id); changed=[]
         with sqlite3.connect(self.db_path) as c:
             c.row_factory=sqlite3.Row; rows=c.execute("SELECT * FROM actor_need_state WHERE actor_id=? AND status NOT IN ('inactive','suspended','immune','archived')",(actor_id,)).fetchall()
             for r in rows:
@@ -290,38 +290,108 @@ class SurvivalNeedsService:
     def get_rest_context(self, actor_id: str): return {'actor_id':actor_id,'active_session':self._active_rest_session(actor_id),'shelter':self.get_shelter_context(actor_id)}
     def trace_rest(self, session_id):
         with sqlite3.connect(self.db_path) as c: c.row_factory=sqlite3.Row; r=c.execute("SELECT * FROM actor_rest_sessions WHERE rest_session_id=?",(session_id,)).fetchone(); return dict(r) if r else {}
+    def _runtime_event_payload(self, row: dict[str, Any], object_id_key: str, reason: str = "") -> dict[str, Any]:
+        meta=_loads(row.get('metadata_json'),{})
+        return {'world_id':row.get('world_id',self.world_id),'room_id':row.get('room_id',''),'object_id':row.get(object_id_key,''),'template_profile_id':row.get('profile_id',''),'owner_actor_id':row.get('owner_actor_id') or row.get('created_by_actor_id',''),'creator_actor_id':row.get('created_by_actor_id',''),'source_ability_id':meta.get('source_ability_id',''),'lifecycle_reason':reason,'world_time':self._world_minutes()}
+
+    def _active_campsite_for_owner(self, c, actor_id: str, room_id: str | None = None):
+        sql="SELECT * FROM campsite_instances WHERE world_id=? AND created_by_actor_id=? AND status IN ('active','occupied','abandoned')"
+        params=[self.world_id,actor_id]
+        if room_id is not None: sql += " AND room_id=?"; params.append(room_id)
+        sql += " ORDER BY created_world_time DESC, created_at DESC LIMIT 1"
+        return c.execute(sql,params).fetchone()
+
+    def _active_campfire_for_owner(self, c, actor_id: str, room_id: str | None = None):
+        sql="SELECT * FROM campfire_instances WHERE world_id=? AND created_by_actor_id=? AND status IN ('unlit','lit','extinguished','low_fuel')"
+        params=[self.world_id,actor_id]
+        if room_id is not None: sql += " AND room_id=?"; params.append(room_id)
+        sql += " ORDER BY last_updated_world_time DESC, created_at DESC LIMIT 1"
+        return c.execute(sql,params).fetchone()
+
+    def _retire_child_campfires(self, c, campsite_id: str, status: str, reason: str, wt: int, now: str):
+        rows=c.execute("SELECT * FROM campfire_instances WHERE json_extract(metadata_json,'$.parent_object_id')=? AND status IN ('unlit','lit','extinguished','low_fuel')",(campsite_id,)).fetchall()
+        for r in rows:
+            c.execute("UPDATE campfire_instances SET status=?,last_updated_world_time=?,updated_at=? WHERE campfire_instance_id=?",(status,wt,now,r['campfire_instance_id']))
+
+
     def create_campfire(self, actor_id, profile_id='basic_campfire', room_id=None):
-        prof=self.content.get('campfire_profiles',profile_id); room_id=room_id or self._room_for_actor(actor_id); wt=self._world_minutes(); iid=f"campfire_{_stable(self.world_id,profile_id,room_id,actor_id,wt)}"; now=utc_now()
-        with sqlite3.connect(self.db_path) as c: c.execute("INSERT OR IGNORE INTO campfire_instances VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",(iid,self.world_id,profile_id,room_id,actor_id,'unlit',0,None,None,wt,now,now,_json({'profile':prof.get('id')})))
-        self._publish('campfire_created', {'actor_id':actor_id,'campfire_instance_id':iid,'room_id':room_id}); return {'ok':True,'campfire_instance_id':iid,'status':'unlit'}
+        prof=self.content.get('campfire_profiles',profile_id); room_id=room_id or self._room_for_actor(actor_id); wt=self._world_minutes(); now=utc_now(); exp=wt+int(prof.get('duration_minutes',120) or 120)
+        iid=f"campfire_{_stable(self.world_id,profile_id,room_id,actor_id,wt)}"
+        replaced=False
+        with sqlite3.connect(self.db_path) as c:
+            c.row_factory=sqlite3.Row; c.execute('BEGIN IMMEDIATE')
+            cs=self._active_campsite_for_owner(c,actor_id,room_id)
+            if not cs:
+                if self._active_campsite_for_owner(c,actor_id): return {'ok':False,'reason':'requires_campsite'}
+                csid=f"campsite_{_stable(self.world_id,'basic_campsite',room_id,actor_id,wt,'implicit')}"
+                c.execute("INSERT OR IGNORE INTO campsite_instances VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",(csid,self.world_id,'basic_campsite',room_id,actor_id,'active',_json([actor_id]),wt,wt+480,now,now,_json({'object_type':'campsite','owner_actor_id':actor_id,'implicit_for':'campfire'}),f"{self.world_id}:{actor_id}:implicit:{wt}"))
+                cs=c.execute("SELECT * FROM campsite_instances WHERE campsite_instance_id=?",(csid,)).fetchone()
+            prev=self._active_campfire_for_owner(c,actor_id)
+            if prev:
+                replaced=True; c.execute("UPDATE campfire_instances SET status='replaced',last_updated_world_time=?,updated_at=? WHERE campfire_instance_id=?",(wt,now,prev['campfire_instance_id']))
+
+            meta={'profile':prof.get('id'),'object_type':'campfire','owner_actor_id':actor_id,'creator_actor_id':actor_id,'source_ability_id':'build_campfire','source_service':'SurvivalNeedsService','created_world_time':wt,'expires_world_time':exp,'lifecycle_status':'active','uniqueness_scope':'owner','uniqueness_group':'campfire','replacement_policy':'replace_previous','parent_object_id':cs['campsite_instance_id'],'description_source':'campfire_profile','keywords':['campfire','fire','ashes']}
+            c.execute("INSERT OR REPLACE INTO campfire_instances VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",(iid,self.world_id,profile_id,room_id,actor_id,'unlit',0,None,exp,wt,now,now,_json(meta)))
+        self._publish('runtime_object_created', {'world_id':self.world_id,'room_id':room_id,'object_id':iid,'template_profile_id':profile_id,'owner_actor_id':actor_id,'creator_actor_id':actor_id,'source_ability_id':'build_campfire','lifecycle_reason':'created','world_time':wt})
+        self._publish('campfire_built', {'actor_id':actor_id,'campfire_instance_id':iid,'room_id':room_id,'world_time':wt})
+        return {'ok':True,'campfire_instance_id':iid,'status':'unlit','expires_world_time':exp,'replaced_previous':replaced}
     def light_campfire(self, actor_id, campfire_instance_id):
         wt=self._world_minutes(); now=utc_now()
         with sqlite3.connect(self.db_path) as c:
-            c.row_factory=sqlite3.Row; r=c.execute("SELECT * FROM campfire_instances WHERE campfire_instance_id=?",(campfire_instance_id,)).fetchone();
-            if not r: return {'ok':False,'reason':'not_found'}
-            prof=self.content.get('campfire_profiles',r['profile_id']); exp=wt+int(prof.get('duration_minutes',120) or 120); c.execute("UPDATE campfire_instances SET status='lit',lit_world_time=?,expires_world_time=?,last_updated_world_time=?,updated_at=? WHERE campfire_instance_id=? AND status IN ('unlit','low_fuel','extinguished')",(wt,exp,wt,now,campfire_instance_id))
-        self._publish('campfire_lit', {'actor_id':actor_id,'campfire_instance_id':campfire_instance_id}); return {'ok':True,'status':'lit','expires_world_time':exp}
+            c.row_factory=sqlite3.Row; r=c.execute("SELECT * FROM campfire_instances WHERE campfire_instance_id=? AND status IN ('unlit','low_fuel','extinguished')",(campfire_instance_id,)).fetchone()
+            if not r: return {'ok':False,'reason':'not_found_or_inactive'}
+            c.execute("UPDATE campfire_instances SET status='lit',lit_world_time=?,last_updated_world_time=?,updated_at=? WHERE campfire_instance_id=?",(wt,wt,now,campfire_instance_id))
+        self._publish('runtime_object_state_changed', self._runtime_event_payload(dict(r),'campfire_instance_id','lit'))
+        self._publish('campfire_lit', {'actor_id':actor_id,'campfire_instance_id':campfire_instance_id}); return {'ok':True,'status':'lit','expires_world_time':r['expires_world_time']}
     def add_campfire_fuel(self, actor_id, campfire_instance_id, item_instance_id=None):
         eid=f"fuel_{_stable(campfire_instance_id,item_instance_id or 'generic',actor_id)}"; now=utc_now()
         with sqlite3.connect(self.db_path) as c:
-            c.execute('BEGIN IMMEDIATE');
+            c.execute('BEGIN IMMEDIATE')
             if c.execute("SELECT 1 FROM campfire_fuel_events WHERE fuel_event_id=?",(eid,)).fetchone(): return {'ok':True,'duplicate':True}
-            c.execute("UPDATE campfire_instances SET fuel_current=MAX(0,COALESCE(fuel_current,0))+1,status=CASE WHEN status='extinguished' THEN 'unlit' ELSE status END,updated_at=? WHERE campfire_instance_id=?",(now,campfire_instance_id)); c.execute("INSERT INTO campfire_fuel_events VALUES(?,?,?,?,?,?,?,?,?)",(eid,campfire_instance_id,self.world_id,actor_id,item_instance_id,1,self._world_minutes(),now,_json({})))
+            c.execute("UPDATE campfire_instances SET fuel_current=MAX(0,COALESCE(fuel_current,0))+1,status=CASE WHEN status='extinguished' THEN 'unlit' ELSE status END,updated_at=? WHERE campfire_instance_id=? AND status IN ('unlit','lit','extinguished','low_fuel')",(now,campfire_instance_id)); c.execute("INSERT INTO campfire_fuel_events VALUES(?,?,?,?,?,?,?,?,?)",(eid,campfire_instance_id,self.world_id,actor_id,item_instance_id,1,self._world_minutes(),now,_json({})))
         self._publish('campfire_fueled', {'actor_id':actor_id,'campfire_instance_id':campfire_instance_id}); return {'ok':True,'fuel_added':1}
     def extinguish_campfire(self, actor_id, campfire_instance_id):
-        with sqlite3.connect(self.db_path) as c: c.execute("UPDATE campfire_instances SET status='extinguished',updated_at=? WHERE campfire_instance_id=?",(utc_now(),campfire_instance_id))
+        with sqlite3.connect(self.db_path) as c: c.execute("UPDATE campfire_instances SET status='extinguished',updated_at=? WHERE campfire_instance_id=? AND status='lit'",(utc_now(),campfire_instance_id))
         self._publish('campfire_extinguished', {'actor_id':actor_id,'campfire_instance_id':campfire_instance_id}); return {'ok':True,'status':'extinguished'}
     def trace_campfire(self, iid):
         with sqlite3.connect(self.db_path) as c: c.row_factory=sqlite3.Row; r=c.execute("SELECT * FROM campfire_instances WHERE campfire_instance_id=?",(iid,)).fetchone(); return dict(r) if r else {}
     def create_campsite(self, actor_id, profile_id='basic_campsite', room_id=None):
-        room_id=room_id or self._room_for_actor(actor_id); wt=self._world_minutes(); iid=f"campsite_{_stable(self.world_id,profile_id,room_id,actor_id,wt)}"; prof=self.content.get('campsite_profiles',profile_id); now=utc_now(); exp=wt+int(prof.get('duration_minutes',480) or 480)
-        with sqlite3.connect(self.db_path) as c: c.execute("INSERT OR IGNORE INTO campsite_instances VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",(iid,self.world_id,profile_id,room_id,actor_id,'active',_json([actor_id]),wt,exp,now,now,_json({}),f"{self.world_id}:{room_id}:{actor_id}:{profile_id}:{wt}"))
-        self._publish('campsite_created', {'actor_id':actor_id,'campsite_instance_id':iid,'room_id':room_id}); return {'ok':True,'campsite_instance_id':iid,'status':'active'}
-    def dismantle_campsite(self, actor_id, campsite_instance_id):
-        with sqlite3.connect(self.db_path) as c: c.execute("UPDATE campsite_instances SET status='dismantled',updated_at=? WHERE campsite_instance_id=? AND status IN ('active','occupied','abandoned')",(utc_now(),campsite_instance_id))
-        self._publish('campsite_dismantled', {'actor_id':actor_id,'campsite_instance_id':campsite_instance_id}); return {'ok':True,'status':'dismantled'}
+        room_id=room_id or self._room_for_actor(actor_id); wt=self._world_minutes(); iid=f"campsite_{_stable(self.world_id,profile_id,room_id,actor_id,wt)}"; prof=self.content.get('campsite_profiles',profile_id); now=utc_now(); exp=wt+int(prof.get('duration_minutes',480) or 480); replaced=False
+        with sqlite3.connect(self.db_path) as c:
+            c.row_factory=sqlite3.Row; c.execute('BEGIN IMMEDIATE')
+            prev=self._active_campsite_for_owner(c,actor_id)
+            if prev:
+                replaced=True; c.execute("UPDATE campsite_instances SET status='replaced',updated_at=? WHERE campsite_instance_id=?",(now,prev['campsite_instance_id']))
+                self._retire_child_campfires(c,prev['campsite_instance_id'],'replaced','parent_replaced',wt,now)
+
+            meta={'object_type':'campsite','owner_actor_id':actor_id,'creator_actor_id':actor_id,'source_ability_id':'set_camp','source_service':'SurvivalNeedsService','created_world_time':wt,'expires_world_time':exp,'lifecycle_status':'active','uniqueness_scope':'owner','uniqueness_group':'campsite','replacement_policy':'replace_previous','description_source':'campsite_profile','keywords':['campsite','camp','site']}
+            c.execute("INSERT OR REPLACE INTO campsite_instances VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",(iid,self.world_id,profile_id,room_id,actor_id,'active',_json([actor_id]),wt,exp,now,now,_json(meta),f"{self.world_id}:{actor_id}:campsite:{room_id}:{wt}"))
+        self._publish('runtime_object_created', {'world_id':self.world_id,'room_id':room_id,'object_id':iid,'template_profile_id':profile_id,'owner_actor_id':actor_id,'creator_actor_id':actor_id,'source_ability_id':'set_camp','lifecycle_reason':'created','world_time':wt})
+        self._publish('campsite_established', {'actor_id':actor_id,'campsite_instance_id':iid,'room_id':room_id,'world_time':wt}); return {'ok':True,'campsite_instance_id':iid,'status':'active','expires_world_time':exp,'replaced_previous':replaced}
+    def dismantle_campsite(self, actor_id, campsite_instance_id=''):
+        wt=self._world_minutes(); now=utc_now()
+        with sqlite3.connect(self.db_path) as c:
+            c.row_factory=sqlite3.Row
+            r=c.execute("SELECT * FROM campsite_instances WHERE campsite_instance_id=?",(campsite_instance_id,)).fetchone() if campsite_instance_id else self._active_campsite_for_owner(c,actor_id,self._room_for_actor(actor_id))
+            if not r: return {'ok':False,'reason':'not_found'}
+            c.execute("UPDATE campsite_instances SET status='dismantled',updated_at=? WHERE campsite_instance_id=? AND status IN ('active','occupied','abandoned')",(now,r['campsite_instance_id']))
+            self._retire_child_campfires(c,r['campsite_instance_id'],'dismantled','parent_dismantled',wt,now)
+        self._publish('campsite_dismantled', {'actor_id':actor_id,'campsite_instance_id':r['campsite_instance_id']}); return {'ok':True,'status':'dismantled'}
     def trace_campsite(self, iid):
         with sqlite3.connect(self.db_path) as c: c.row_factory=sqlite3.Row; r=c.execute("SELECT * FROM campsite_instances WHERE campsite_instance_id=?",(iid,)).fetchone(); return dict(r) if r else {}
+
+    def process_due_runtime_objects(self, world_time: int|dict[str,Any]):
+        target=int((world_time.get('total_minutes') if world_time.get('total_minutes') is not None else (int(world_time.get('day',1))-1)*1440+int(world_time.get('hour',0))*60+int(world_time.get('minute',0))) if isinstance(world_time,dict) else world_time); now=utc_now(); expired=[]
+        with sqlite3.connect(self.db_path) as c:
+            c.row_factory=sqlite3.Row; c.execute('BEGIN IMMEDIATE')
+            for r in c.execute("SELECT * FROM campsite_instances WHERE world_id=? AND status IN ('active','occupied','abandoned') AND expires_world_time IS NOT NULL AND expires_world_time<=?",(self.world_id,target)).fetchall():
+                c.execute("UPDATE campsite_instances SET status='expired',updated_at=? WHERE campsite_instance_id=?",(now,r['campsite_instance_id'])); self._retire_child_campfires(c,r['campsite_instance_id'],'expired','parent_expired',target,now); expired.append(('runtime_object_expired', self._runtime_event_payload(dict(r),'campsite_instance_id','expired')))
+            for r in c.execute("SELECT * FROM campfire_instances WHERE world_id=? AND status IN ('unlit','lit','extinguished','low_fuel') AND expires_world_time IS NOT NULL AND expires_world_time<=?",(self.world_id,target)).fetchall():
+                c.execute("UPDATE campfire_instances SET status='expired',last_updated_world_time=?,updated_at=? WHERE campfire_instance_id=?",(target,now,r['campfire_instance_id'])); expired.append(('runtime_object_expired', self._runtime_event_payload(dict(r),'campfire_instance_id','expired')))
+            for r in c.execute("SELECT cf.* FROM campfire_instances cf LEFT JOIN campsite_instances cs ON json_extract(cf.metadata_json,'$.parent_object_id')=cs.campsite_instance_id WHERE cf.world_id=? AND cf.status IN ('unlit','lit','extinguished','low_fuel') AND json_extract(cf.metadata_json,'$.parent_object_id') IS NOT NULL AND (cs.campsite_instance_id IS NULL OR cs.status NOT IN ('active','occupied','abandoned'))",(self.world_id,)).fetchall():
+                c.execute("UPDATE campfire_instances SET status='expired',last_updated_world_time=?,updated_at=? WHERE campfire_instance_id=?",(target,now,r['campfire_instance_id'])); expired.append(('runtime_object_parent_removed', self._runtime_event_payload(dict(r),'campfire_instance_id','orphan_cleanup')))
+        for event,payload in expired: self._publish(event,payload)
+        return {'expired_count':len(expired),'events':[p for _,p in expired]}
 
     def interrupt_consumption(self, session_id, reason):
         with sqlite3.connect(self.db_path) as c: c.execute("UPDATE consumption_sessions SET status='interrupted',failure_reason=?,updated_at=? WHERE consumption_session_id=? AND status IN ('started','in_progress')",(reason,utc_now(),session_id))

@@ -611,7 +611,9 @@ class MudRuntime:
     def set_world_time(self, world_id: str, day: int, hhmm: str | None = None, hour: int | None = None, minute: int | None = None) -> dict[str, Any]: return self.living_world.set_world_time(world_id, day, hhmm, hour, minute)
     def advance_world_time(self, world_id: str, minutes: int) -> dict[str, Any]:
         wt = self.living_world.advance_world_time(world_id, minutes)
-        if getattr(self, "survival_needs", None): self.survival_needs.process_world_needs(world_id, wt)
+        if getattr(self, "survival_needs", None):
+            self.survival_needs.process_world_needs(world_id, wt)
+            self.survival_needs.process_due_runtime_objects(wt)
         if getattr(self, "combat_runtime", None): self.combat_runtime.process_due_rounds()
         return wt
     def pause_world_time(self, world_id: str) -> dict[str, Any]: return self.living_world.pause_world_time(world_id)
@@ -1770,11 +1772,11 @@ class MudRuntime:
         try:
             with sqlite3.connect(db) as conn:
                 conn.row_factory = sqlite3.Row
-                for r in conn.execute("SELECT * FROM campsite_instances WHERE room_id=? AND status IN ('active','occupied','abandoned')", (room_id,)):
+                for r in conn.execute("SELECT * FROM campsite_instances WHERE room_id=? AND status IN ('active','occupied','abandoned') AND (expires_world_time IS NULL OR expires_world_time>(SELECT ((current_day-1)*1440+current_hour*60+current_minute) FROM world_time WHERE world_id=campsite_instances.world_id))", (room_id,)):
                     out.append({"id": r["campsite_instance_id"], "name": "a small campsite", "keywords": ["campsite", "camp", "small campsite"], "entity_type": "campsite", "short_description": "A small campsite has been established here.", "long_description": "Bedroll space and a cleared patch of ground mark this as a simple campsite."})
-                for r in conn.execute("SELECT * FROM campfire_instances WHERE room_id=?", (room_id,)):
+                for r in conn.execute("SELECT * FROM campfire_instances WHERE room_id=? AND status IN ('unlit','lit','extinguished','low_fuel') AND (expires_world_time IS NULL OR expires_world_time>(SELECT ((current_day-1)*1440+current_hour*60+current_minute) FROM world_time WHERE world_id=campfire_instances.world_id))", (room_id,)):
                     status = str(r["status"] or "unlit")
-                    label = "a lit campfire" if status == "lit" else "an extinguished campfire" if status == "extinguished" else "a small campfire"
+                    label = "a crackling campfire" if status == "lit" else "a bed of cold ashes" if status == "extinguished" else "an unlit campfire"
                     desc = "Warm flames crackle from a small ring of stones." if status == "lit" else "Cold ash and charred wood sit within a small ring of stones." if status == "extinguished" else "Kindling and stacked wood wait within a small ring of stones."
                     out.append({"id": r["campfire_instance_id"], "name": label, "keywords": ["campfire", "fire", label], "entity_type": "campfire", "status": status, "short_description": label, "long_description": desc})
         except sqlite3.Error:
