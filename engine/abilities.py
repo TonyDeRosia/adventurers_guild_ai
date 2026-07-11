@@ -138,8 +138,24 @@ class AbilityExecutionService:
     def register_actor(self, actor: Actor) -> None: self.actors[actor.actor_id]=actor
     def actor_from_character(self, c: Any) -> Actor: a=actor_from_runtime_character(c,self.world_id); self.register_actor(a); return a
     def get_actor_abilities(self, actor_id: str) -> list[dict[str, Any]]:
-        grants = self._grants(actor_id); ids={g["ability_id"] for g in grants} | set(getattr(self.actors.get(actor_id), "plugin_data", {}).get("ability_ids", []) or [])
-        return [dict(self.registry.abilities[i].to_dict(), grants=[g for g in grants if g["ability_id"]==i]) for i in sorted(ids) if i in self.registry.abilities and self.registry.abilities[i].enabled]
+        grants = self._grants(actor_id)
+        progression=[]
+        if self.db_path:
+            try:
+                with sqlite3.connect(self.db_path) as c:
+                    c.row_factory=sqlite3.Row
+                    progression=[dict(r) for r in c.execute("SELECT ability_id,rank,maximum_rank,metadata_json FROM actor_ability_progression WHERE actor_id=? AND active=1", (actor_id,))]
+            except Exception:
+                progression=[]
+        ids={g["ability_id"] for g in grants} | {p["ability_id"] for p in progression} | set(getattr(self.actors.get(actor_id), "plugin_data", {}).get("ability_ids", []) or [])
+        out=[]
+        for i in sorted(ids):
+            if i in self.registry.abilities and self.registry.abilities[i].enabled:
+                row=dict(self.registry.abilities[i].to_dict(), grants=[g for g in grants if g["ability_id"]==i])
+                prog=next((p for p in progression if p["ability_id"]==i), None)
+                if prog: row.update(rank=int(prog.get("rank") or 0), maximum_rank=int(prog.get("maximum_rank") or 1), progression_metadata=jload(prog.get("metadata_json"), {}))
+                out.append(row)
+        return out
     def grant_ability(self, actor_id: str, ability_id: str, source_type: str="admin", source_id: str="", source_instance_id: str="", temporary: bool=False) -> str:
         if ability_id not in self.registry.abilities: raise ValueError(f"Unknown ability: {ability_id}")
         gid=f"grant_{actor_id}_{ability_id}_{source_type}_{source_instance_id or source_id or 'manual'}"; ts=now()
@@ -160,8 +176,16 @@ class AbilityExecutionService:
         if not a: return {"ok":False,"errors":["actor not found"],"trace":[{"step":"resolve_actor","ok":False}]}
         if not ab: return {"ok":False,"errors":["ability not found"],"trace":[{"step":"resolve_ability","ok":False}]}
         steps.append({"step":"resolve_actor","actor_id":actor_id,"ok":True}); steps.append({"step":"resolve_ability","ability_id":ability_id,"ok":True})
-        grants=self._grants(actor_id); available=bool([g for g in grants if g["ability_id"]==ability_id]) or ability_id in getattr(a,"plugin_data",{}).get("ability_ids",[]) or ab.ability_type in {"natural","monster","administrative"}
-        steps.append({"step":"confirm_grant","ok":available,"sources":grants}); ok &= available
+        grants=self._grants(actor_id)
+        progression_known=False
+        if self.db_path:
+            try:
+                with sqlite3.connect(self.db_path) as c:
+                    progression_known=bool(c.execute("SELECT 1 FROM actor_ability_progression WHERE actor_id=? AND ability_id=? AND active=1", (actor_id, ability_id)).fetchone())
+            except Exception:
+                progression_known=False
+        available=bool([g for g in grants if g["ability_id"]==ability_id]) or progression_known or ability_id in getattr(a,"plugin_data",{}).get("ability_ids",[]) or ab.ability_type in {"natural","monster","administrative"}
+        steps.append({"step":"confirm_grant","ok":available,"sources":grants,"progression_known":progression_known}); ok &= available
         targets=self.resolve_target(a, ab, target); steps.append({"step":"resolve_target", **targets}); ok &= targets.get("ok",False)
         costs=self._validate_costs(a, ab); steps.append({"step":"validate_resources", **costs}); ok &= costs.get("ok",False)
         cd=self._cooldown_status(actor_id, ab); steps.append({"step":"validate_cooldowns", **cd}); ok &= cd.get("ready",True)

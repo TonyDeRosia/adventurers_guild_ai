@@ -632,6 +632,37 @@ class MudRuntime:
     def get_recent_memories(self, instance_id: str, limit: int = 10) -> list[dict[str, Any]]: return self.living_world.query_memories(instance_id, limit=limit)
     def get_memories_about(self, instance_id: str, subject_type: str, subject_id: str) -> list[dict[str, Any]]: return self.living_world.query_memories(instance_id, subject_type, subject_id)
 
+
+    def _progression_service(self):
+        from engine.progression import ProgressionService
+        store = self.state_store
+        if not hasattr(store, "world_id"): store.world_id = self.active_world_id or "shattered_realms"  # type: ignore[attr-defined]
+        if not hasattr(store, "campaign_id"): store.campaign_id = self.active_world_id or "shattered_realms"  # type: ignore[attr-defined]
+        if not hasattr(store, "initialize"):
+            def _init_progression_tables():
+                with store.connect() as con:
+                    con.execute("""CREATE TABLE IF NOT EXISTS actor_progression_state(progression_state_id TEXT PRIMARY KEY,world_id TEXT,actor_type TEXT,actor_id TEXT,species_id TEXT,race_id TEXT,primary_class_id TEXT,primary_class_track_id TEXT,profession_ids_json TEXT,level INTEGER,experience INTEGER,experience_to_next INTEGER,total_experience INTEGER,practice_sessions INTEGER,training_sessions INTEGER,skill_points INTEGER,attribute_points INTEGER,talent_points_placeholder INTEGER,remort_count INTEGER,prestige_rank INTEGER,advancement_flags_json TEXT,last_level_at TEXT,created_at TEXT,updated_at TEXT,metadata_json TEXT,UNIQUE(actor_type,actor_id))""")
+                    con.execute("""CREATE TABLE IF NOT EXISTS actor_advancement_currency_events(event_id TEXT PRIMARY KEY,actor_id TEXT,currency_id TEXT,event_type TEXT,amount INTEGER,source_type TEXT,source_id TEXT,reason TEXT,balance_after INTEGER,created_at TEXT,metadata_json TEXT)""")
+                    con.execute("""CREATE TABLE IF NOT EXISTS actor_ability_progression(actor_id TEXT,ability_id TEXT,rank INTEGER,maximum_rank INTEGER,proficiency INTEGER,learned_at_level INTEGER,source_class_id TEXT,source_race_id TEXT,source_profession_id TEXT,source_track_id TEXT,practice_cost INTEGER,training_cost INTEGER,skill_point_cost INTEGER,requirements_json TEXT,active INTEGER,learned_at TEXT,metadata_json TEXT,PRIMARY KEY(actor_id,ability_id))""")
+                    con.execute("""CREATE TABLE IF NOT EXISTS actor_progression_modifiers(modifier_id TEXT PRIMARY KEY,actor_id TEXT,source_type TEXT,source_id TEXT,modifier_domain TEXT,modifier_key TEXT,operation TEXT,value INTEGER,level INTEGER,active INTEGER,metadata_json TEXT)""")
+                    con.execute("""CREATE TABLE IF NOT EXISTS actor_experience_events(event_id TEXT PRIMARY KEY,world_id TEXT,actor_type TEXT,actor_id TEXT,source_type TEXT,source_id TEXT,base_amount INTEGER,final_amount INTEGER,level_delta INTEGER,total_after INTEGER,reason TEXT,applied_formula_id TEXT,created_at TEXT,metadata_json TEXT)""")
+            store.initialize = _init_progression_tables  # type: ignore[attr-defined]
+        return ProgressionService(store)
+
+    def _ensure_starter_progression(self, char: MudCharacter) -> None:
+        ps = self._progression_service()
+        state = ps.initialize_actor_progression(char, defaults={"attribute_points": 30})
+        if int(state.get("attribute_points", 0) or 0) < 30:
+            flags = state.get("advancement_flags") or {}
+            if not flags.get("starter_attribute_points_30"):
+                ps.grant_currency(char.id, "attribute_points", 30 - int(state.get("attribute_points", 0) or 0), "starter_character", "starter_demonstration", "starter attribute points")
+                flags["starter_attribute_points_30"] = True
+                ps.update_actor_progression(char.id, {"advancement_flags_json": flags})
+        for aid in ("set_camp", "build_campfire", "recall"):
+            ps.learn_ability(char.id, aid, {"source_type":"starter_character","source_id":"starter_demonstration","maximum_rank":100 if aid != "recall" else 100})
+        if self.abilities:
+            self.abilities.actor_from_character(char)
+
     def create_runtime_session(self, transport_type: str, remote_address: str = "") -> MudSession:
         now = datetime.now(timezone.utc).isoformat()
         session = MudSession(session_id=str(uuid.uuid4()), character_id="", world_id="", connected_at=now, last_activity=now, transport_type=transport_type, state="account_login")
@@ -769,6 +800,7 @@ class MudRuntime:
             with sqlite3.connect(self.state_store.db_path) as conn:
                 conn.execute("UPDATE characters SET account_id=? WHERE id=?", (account_id, char.id))
         self._spawn_starter_items(char.id)
+        self._ensure_starter_progression(char)
         self.hooks.emit("character_creation", world_id=world_id, character=char)
         self.event_bus.publish("character_created", {"account_id": account_id, "character_id": char.id, "character_name": char.name}, source_system="runtime", account_id=account_id, world_id=world_id, character_id=char.id)
         return self._character_payload(char, world_id)
@@ -790,6 +822,7 @@ class MudRuntime:
                 row = conn.execute("SELECT world_id FROM characters WHERE id = ?", (character_id,)).fetchone()
             if row and row[0]:
                 self.load_world(str(row[0]))
+        self._ensure_starter_progression(char)
         self.hooks.emit("player_login", world_id=self.active_world_id or "", character=char)
         self.event_bus.publish("character_loaded", {"character_id": char.id, "character_name": char.name}, source_system="runtime", world_id=self.active_world_id or "", character_id=char.id)
         self.sessions[character_id] = MudSession(
@@ -1242,9 +1275,9 @@ class MudRuntime:
     def _handle_runtime_command(self, char: MudCharacter, command: str):
         normalized_command = re.sub(r"\s+", " ", str(command or "").strip()).lower()
         if normalized_command == "set camp":
-            return self.command_engine.handle_command(char, "camp here")
+            return self.command_engine.handle_command(char, "cast set camp")
         if normalized_command == "build campfire":
-            return self.command_engine.handle_command(char, "campfire create")
+            return self.command_engine.handle_command(char, "cast build campfire")
         if normalized_command in getattr(self.command_engine, "SOCIAL_DEFINITIONS", {}):
             return self.command_engine.handle_command(char, command)
         parsed = self._parse_interaction_command(command)
@@ -1257,9 +1290,9 @@ class MudRuntime:
         if raw_cmd == "inspect":
             cmd_name = "examine"
         if raw_cmd == "set" and " ".join(args).lower() == "camp":
-            cmd_name = "camp"; args = ["here"]
+            cmd_name = "cast"; args = ["set", "camp"]
         if raw_cmd == "build" and " ".join(args).lower() == "campfire":
-            cmd_name = "campfire"; args = ["create"]
+            cmd_name = "cast"; args = ["build", "campfire"]
         if not cmd_name and str(parsed.get("alias_note", "")).startswith("ambiguous"):
             from engine.mud_commands import CommandResult
             choices = parsed["alias_note"].split(":", 1)[1].strip()

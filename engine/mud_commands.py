@@ -695,7 +695,7 @@ class MudCommandEngine:
                 return CommandResult("\n".join(lines))
             if not trainers:
                 return CommandResult("No trainer here is ready to teach you. Seek a trainer and try TRAIN again.", ok=False)
-            lines = ["Training options"]
+            lines = ["Training options", f"Attribute points available: {state.get('attribute_points', 0)}", f"Current stats: strength {getattr(character, 'strength', getattr(character, 'level', 1))}, level {getattr(character, 'level', 1)}"]
             idx = 1
             for trainer in trainers:
                 lines.append(f"{trainer.get('name') or trainer.get('id')} can teach:")
@@ -707,7 +707,7 @@ class MudCommandEngine:
                     lines.append(f"   Cost: {_cost_text(prev.get('costs') or {})}")
                     if not prev.get('eligible'): lines.append("   Requirements are not met yet.")
                     idx += 1
-            lines.extend(["", f"Practice sessions: {state.get('practice_sessions', 0)}", "", "Use TRAIN 1 to begin that lesson."])
+            lines.extend(["", f"Practice sessions: {state.get('practice_sessions', 0)}", f"Training sessions: {state.get('training_sessions', 0)}", f"Skill points: {state.get('skill_points', 0)}", f"Attribute points: {state.get('attribute_points', 0)}", "", "Use TRAIN 1 to begin that lesson."])
             return CommandResult("\n".join(lines))
         if not trainers: return CommandResult("No trainer here is ready to teach you.", ok=False)
         query_raw = " ".join(args).strip()
@@ -728,7 +728,8 @@ class MudCommandEngine:
                     if "unique" in msg or "known" in msg or "already" in msg:
                         return CommandResult("You have already completed that lesson.", ok=False)
                     raise
-                return CommandResult(f"Training complete: {offer.get('name') or offer.get('id')}.")
+                state = svc.progression.get_actor_progression(actor_id) or {}
+                return CommandResult(f"Training complete: {offer.get('name') or offer.get('id')}. Remaining points: {state.get('attribute_points', 0)}. New value recorded.")
         return CommandResult("That lesson is not available here. Use TRAIN to see options.", ok=False)
 
     def _gathering_service(self, character: Any):
@@ -1604,10 +1605,10 @@ class MudCommandEngine:
         lines = ["Your abilities:"]
         for r in rows:
             costs = ", ".join(f"{c.get('amount', c.get('percentage', 0))} {c.get('resource_id')}" for c in r.get("costs", [])) or "no cost"
-            cd = (r.get("cooldowns") or {}).get("cooldown_duration", (r.get("cooldowns") or {}).get("duration", 0))
-            cast = (r.get("timing") or {}).get("cast_time", 0)
-            lines.append(f"- {r.get('name') or r.get('id')} ({r.get('ability_type')}): {costs}; cooldown {cd}; cast {cast}. {r.get('description','')}")
-        return "\n".join(lines)
+            rank = int(r.get("rank") or 1); mx = int(r.get("maximum_rank") or 100)
+            source = ((r.get("progression_metadata") or {}).get("source_type") or (r.get("plugin_data") or {}).get("source") or "learned")
+            lines.append(f"{r.get('name') or r.get('id')}\nRank {rank}/{mx}\nCategory: {r.get('category') or r.get('ability_type')}\nCost: {costs}\nSource: {source}\n{r.get('description','')}")
+        return "\n\n".join(lines)
 
     def _cmd_spellup(self, character: Any, args: list[str], raw: str) -> CommandResult:
         if args and args[0].lower() == "cast":
@@ -1642,16 +1643,38 @@ class MudCommandEngine:
         if not args: return CommandResult("Use which ability?", ok=False)
         svc = self._ability_service(character)
         if not svc: return CommandResult("Ability system is unavailable.", ok=False)
-        aid = args[0].lower().replace(" ", "_"); target = " ".join(args[1:]) or "self"
+        phrase = " ".join(args).lower().strip()
+        aid = phrase.replace(" ", "_")
+        target = "self"
         by_name = {}
         for r in svc.registry.abilities.values():
             rid = getattr(r, "id", None) or (r.get("id") if isinstance(r, dict) else "")
             rname = getattr(r, "name", None) or (r.get("name") if isinstance(r, dict) else "")
             if rname:
                 by_name[str(rname).lower().replace(" ", "_")] = rid
+        if aid not in svc.registry.abilities and aid not in by_name:
+            first = args[0].lower().replace(" ", "_"); aid = first; target = " ".join(args[1:]) or "self"
         aid = aid if aid in svc.registry.abilities else by_name.get(aid, aid)
         res = svc.start_ability(character.id, aid, target) if aid in svc.registry.abilities else {"ok": False, "message": "Unknown ability."}
-        return CommandResult(res.get("message") or ("Ability activated." if res.get("ok") else "You cannot use that ability."), ok=bool(res.get("ok")))
+        if not res.get("ok"):
+            return CommandResult(res.get("message") or "You cannot use that ability.", ok=False)
+        ability = svc.registry.abilities.get(aid)
+        pdata = getattr(ability, "plugin_data", {}) or {}
+        rt = getattr(self, "runtime", None)
+        if aid == "recall" and rt is not None:
+            dest = str(pdata.get("recall_destination_room_id") or getattr(getattr(rt, "active_world", None), "default_starting_room_id", "") or "")
+            if not dest: return CommandResult("No recall point is available right now.", ok=False)
+            old_room = getattr(character, "room_id", "")
+            setattr(character, "room_id", dest); rt.state_store.save_character(character, getattr(rt, "active_world_id", "") or getattr(character, "world_id", ""))
+            if self.event_bus:
+                self.event_bus.publish("recall_spell_completed", {"actor_id": character.id, "from_room_id": old_room, "to_room_id": dest}, source_system="ability", character_id=character.id, room_id=dest)
+                self.event_bus.publish("movement_succeeded", {"canonical_command":"recall", "character_id": character.id, "current_room_id": old_room, "target_room_id": dest}, source_system="movement", character_id=character.id, room_id=dest)
+            return CommandResult(f"{pdata.get('casting_text') or 'You cast Recall.'}\n{pdata.get('arrival_text') or 'You arrive at the recall point.'}", state_updates={"render_room": True})
+        if aid == "set_camp":
+            return self._cmd_survival_needs(character, ["here"], "camp here")
+        if aid == "build_campfire":
+            return self._cmd_survival_needs(character, ["create"], "campfire create")
+        return CommandResult(res.get("message") or "Ability activated.", ok=True)
 
     def _cmd_cancel_ability(self, character: Any, args: list[str], raw: str) -> CommandResult:
         svc = self._ability_service(character)

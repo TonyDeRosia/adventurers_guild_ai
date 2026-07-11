@@ -1,11 +1,819 @@
 [
-  {"id":"basic_attack","name":"Basic Attack","short_name":"Attack","description":"A canonical ability bridge to ordinary weapon or natural attack behavior.","ability_type":"technique","school":"martial","category":"attack","tags":["starter","basic"],"enabled":true,"visibility":"normal","source_types":["profile","loadout"],"requirements":{},"targeting":{"mode":"single_enemy","minimum_targets":1,"maximum_targets":1,"allow_self":false,"allow_dead":false,"require_same_room":true},"costs":[],"cooldowns":{"cooldown_duration":1,"cooldown_group":"basic_attack","global_cooldown":0,"starts_on":"start"},"timing":{"activation_type":"instant","cast_time":0,"interruptible":false,"completes_immediately":true},"range":{"maximum_room_distance":0},"formulas":{},"damage_components":[{"id":"weapon_damage","damage_profile_id":"training_sword","damage_type":"physical","base_amount":1,"uses_attack_roll":true,"can_critical":true}],"healing_components":[],"effects_applied":[],"effects_removed":[],"movement_components":[],"state_requirements":{},"state_changes":[],"interrupt_rules":{},"messages":{"hit_self":"You attack {target} with {ability}.","fail_self":"You cannot attack that."},"ai_hints":{},"plugin_data":{"uses_equipped_weapon":true},"version":"1.0.0"},
-  {"id":"power_strike","name":"Power Strike","short_name":"PStrike","description":"A stamina-consuming physical technique that strikes a same-room enemy harder than a basic attack.","ability_type":"technique","school":"martial","category":"attack","tags":["starter","skill"],"enabled":true,"visibility":"normal","source_types":["builder_grant","loadout"],"requirements":{},"targeting":{"mode":"single_enemy","minimum_targets":1,"maximum_targets":1,"allow_self":false,"allow_dead":false,"require_same_room":true},"costs":[{"resource_id":"stamina","cost_type":"flat","amount":10,"consume_on":"start","refund_policy":"full_on_interrupt"}],"cooldowns":{"cooldown_duration":3,"cooldown_group":"martial_strikes","global_cooldown":1,"starts_on":"start"},"timing":{"activation_type":"instant","cast_time":0,"interruptible":false,"completes_immediately":true},"range":{"maximum_room_distance":0},"formulas":{"damage":"power_strike_damage"},"damage_components":[{"id":"power_weapon","damage_profile_id":"training_sword","damage_type":"physical","base_amount":5,"formula_id":"power_strike_damage","uses_attack_roll":true,"can_critical":true}],"healing_components":[],"effects_applied":[],"effects_removed":[],"movement_components":[],"state_requirements":{},"state_changes":[],"interrupt_rules":{},"messages":{"hit_self":"You drive a power strike into {target} for {damage} damage.","fail_self":"You lack the stamina or target for Power Strike."},"ai_hints":{},"plugin_data":{"uses_equipped_weapon":true},"version":"1.0.0"},
-  {"id":"defensive_stance","name":"Defensive Stance","short_name":"DStance","description":"Assume a guarded stance and gain a temporary fortification effect.","ability_type":"defensive","school":"martial","category":"buff","tags":["starter","beneficial"],"enabled":true,"visibility":"normal","source_types":["loadout","builder_grant"],"requirements":{},"targeting":{"mode":"self","minimum_targets":1,"maximum_targets":1,"allow_self":true,"allow_dead":false},"costs":[],"cooldowns":{"cooldown_duration":10,"cooldown_group":"defensive_stance","global_cooldown":1,"starts_on":"start"},"timing":{"activation_type":"instant","cast_time":0,"interruptible":false,"completes_immediately":true},"range":{},"formulas":{},"damage_components":[],"healing_components":[],"effects_applied":[{"id":"fortify_self","effect_template_id":"fortified_example","chance":100,"duration":600,"stacks":1,"target_selector":"self","apply_on":"success","category":"positive"}],"effects_removed":[],"movement_components":[],"state_requirements":{},"state_changes":[],"interrupt_rules":{},"messages":{"effect_self":"You settle into a defensive stance."},"ai_hints":{},"plugin_data":{},"version":"1.0.0"},
-  {"id":"minor_heal","name":"Minor Heal","short_name":"MHeal","description":"Restore a small amount of health to yourself or an ally. It cannot revive the dead.","ability_type":"heal","school":"restoration","category":"healing","tags":["starter","spell","beneficial"],"enabled":true,"visibility":"normal","source_types":["loadout","builder_grant"],"requirements":{},"targeting":{"mode":"single_ally","minimum_targets":1,"maximum_targets":1,"allow_self":true,"allow_dead":false,"require_same_room":true},"costs":[{"resource_id":"mana","cost_type":"flat","amount":8,"consume_on":"start","refund_policy":"full_on_interrupt"}],"cooldowns":{"cooldown_duration":4,"cooldown_group":"minor_heals","global_cooldown":1,"starts_on":"start"},"timing":{"activation_type":"instant","cast_time":0,"interruptible":false,"completes_immediately":true},"range":{"maximum_room_distance":0},"formulas":{"healing":"minor_heal_formula"},"damage_components":[],"healing_components":[{"id":"minor_heal_packet","base_amount":18,"formula_id":"minor_heal_formula","can_critical":false}],"effects_applied":[],"effects_removed":[],"movement_components":[],"state_requirements":{},"state_changes":[],"interrupt_rules":{},"messages":{"heal_self":"You call gentle light and restore {healing} health."},"ai_hints":{},"plugin_data":{},"version":"1.0.0"},
-  {"id":"bless","name":"Bless","short_name":"Bless","description":"Apply the Blessed Example effect to yourself or an ally. Tagged for safe spellup casting when self-targeted.","ability_type":"buff","school":"restoration","category":"blessing","tags":["starter","spell","beneficial","spellup_eligible"],"enabled":true,"visibility":"normal","source_types":["loadout","builder_grant"],"requirements":{},"targeting":{"mode":"self","minimum_targets":1,"maximum_targets":1,"allow_self":true,"allow_dead":false,"require_same_room":true},"costs":[{"resource_id":"mana","cost_type":"flat","amount":6,"consume_on":"start","refund_policy":"full_on_interrupt"}],"cooldowns":{"cooldown_duration":8,"cooldown_group":"blessings","global_cooldown":1,"starts_on":"start"},"timing":{"activation_type":"instant","cast_time":0,"interruptible":false,"completes_immediately":true},"range":{"maximum_room_distance":0},"formulas":{},"damage_components":[],"healing_components":[],"effects_applied":[{"id":"blessed_self","effect_template_id":"blessed_example","chance":100,"duration":600,"stacks":1,"target_selector":"self","apply_on":"success","category":"positive"}],"effects_removed":[],"movement_components":[],"state_requirements":{},"state_changes":[],"interrupt_rules":{},"messages":{"effect_self":"A quiet blessing settles over you."},"ai_hints":{},"plugin_data":{"spellup_priority":10},"version":"1.0.0"},
-  {"id":"poison_bite","name":"Poison Bite","short_name":"PBite","description":"A natural monster bite that deals piercing damage and applies poison.","ability_type":"natural","school":"natural","category":"attack","tags":["starter","monster","natural","harmful"],"enabled":true,"visibility":"normal","source_types":["natural_weapon_profile","combat_profile","loadout"],"requirements":{},"targeting":{"mode":"single_enemy","minimum_targets":1,"maximum_targets":1,"allow_self":false,"allow_dead":false,"require_same_room":true},"costs":[],"cooldowns":{"cooldown_duration":5,"cooldown_group":"natural_bites","global_cooldown":1,"starts_on":"start"},"timing":{"activation_type":"instant","cast_time":0,"interruptible":false,"completes_immediately":true},"range":{"maximum_room_distance":0},"formulas":{},"damage_components":[{"id":"poison_fangs","damage_profile_id":"rat_bite","damage_type":"pierce","base_amount":2,"uses_attack_roll":true,"can_critical":true}],"healing_components":[],"effects_applied":[{"id":"poison_application","effect_template_id":"poisoned_example","chance":100,"duration":300,"stacks":1,"target_selector":"target","apply_on":"hit","category":"negative"}],"effects_removed":[],"movement_components":[],"state_requirements":{},"state_changes":[],"interrupt_rules":{},"messages":{"hit_self":"You sink poisoned fangs into {target}."},"ai_hints":{"preferred_range":"melee"},"plugin_data":{},"version":"1.0.0"},
-  {"id":"wolf_howl","name":"Wolf Howl","short_name":"Howl","description":"A room-ally buff foundation for wolves; no AI execution is introduced.","ability_type":"natural","school":"natural","category":"buff","tags":["starter","monster","beneficial"],"enabled":true,"visibility":"normal","source_types":["combat_profile","loadout"],"requirements":{},"targeting":{"mode":"room_ally","minimum_targets":1,"maximum_targets":6,"allow_self":true,"allow_dead":false,"require_same_room":true},"costs":[],"cooldowns":{"cooldown_duration":30,"cooldown_group":"wolf_howls","global_cooldown":0,"starts_on":"start"},"timing":{"activation_type":"instant","cast_time":0,"interruptible":false,"completes_immediately":true},"range":{},"formulas":{},"damage_components":[],"healing_components":[],"effects_applied":[{"id":"howl_blessing","effect_template_id":"blessed_example","chance":100,"duration":180,"stacks":1,"target_selector":"targets","apply_on":"success","category":"positive"}],"effects_removed":[],"movement_components":[],"state_requirements":{},"state_changes":[],"interrupt_rules":{},"messages":{"effect_room":"{actor} lets out a rallying howl."},"ai_hints":{"future_ai":"ally buff"},"plugin_data":{},"version":"1.0.0"},
-  {"id":"fleeing_step","name":"Fleeing Step","short_name":"Flee","description":"A utility placeholder for future flee integration.","ability_type":"utility","school":"movement","category":"escape","tags":["starter","placeholder"],"enabled":true,"visibility":"normal","source_types":["loadout"],"requirements":{},"targeting":{"mode":"none","minimum_targets":0,"maximum_targets":0},"costs":[{"resource_id":"stamina","cost_type":"flat","amount":5,"consume_on":"start","refund_policy":"none"}],"cooldowns":{"cooldown_duration":6,"cooldown_group":"escape","global_cooldown":1,"starts_on":"start"},"timing":{"activation_type":"instant","cast_time":0,"interruptible":false,"completes_immediately":true},"range":{},"formulas":{},"damage_components":[],"healing_components":[],"effects_applied":[],"effects_removed":[],"movement_components":[{"mode":"placeholder","description":"Future flee integration."}],"state_requirements":{},"state_changes":[{"state":"fleeing","duration":1,"chance":100}],"interrupt_rules":{},"messages":{"complete_self":"You prepare to flee."},"ai_hints":{},"plugin_data":{"placeholder":true},"version":"1.0.0"},
-  {"id":"toughness","name":"Toughness","description":"Starter passive toughness foundation.","ability_type":"passive","tags":["starter","passive"],"enabled":true,"visibility":"normal","targeting":{"mode":"self"},"costs":[],"cooldowns":{},"timing":{"activation_type":"passive"},"damage_components":[],"healing_components":[],"effects_applied":[],"effects_removed":[],"state_changes":[],"messages":{},"plugin_data":{"legacy_passive":true},"version":"1.0.0"}
+  {
+    "id": "basic_attack",
+    "name": "Basic Attack",
+    "short_name": "Attack",
+    "description": "A canonical ability bridge to ordinary weapon or natural attack behavior.",
+    "ability_type": "technique",
+    "school": "martial",
+    "category": "attack",
+    "tags": [
+      "starter",
+      "basic"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "profile",
+      "loadout"
+    ],
+    "requirements": {},
+    "targeting": {
+      "mode": "single_enemy",
+      "minimum_targets": 1,
+      "maximum_targets": 1,
+      "allow_self": false,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "basic_attack",
+      "global_cooldown": 0,
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [
+      {
+        "id": "weapon_damage",
+        "damage_profile_id": "training_sword",
+        "damage_type": "physical",
+        "base_amount": 1,
+        "uses_attack_roll": true,
+        "can_critical": true
+      }
+    ],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {},
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "hit_self": "You attack {target} with {ability}.",
+      "fail_self": "You cannot attack that."
+    },
+    "ai_hints": {},
+    "plugin_data": {
+      "uses_equipped_weapon": true
+    },
+    "version": "1.0.0"
+  },
+  {
+    "id": "power_strike",
+    "name": "Power Strike",
+    "short_name": "PStrike",
+    "description": "A stamina-consuming physical technique that strikes a same-room enemy harder than a basic attack.",
+    "ability_type": "technique",
+    "school": "martial",
+    "category": "attack",
+    "tags": [
+      "starter",
+      "skill"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "builder_grant",
+      "loadout"
+    ],
+    "requirements": {},
+    "targeting": {
+      "mode": "single_enemy",
+      "minimum_targets": 1,
+      "maximum_targets": 1,
+      "allow_self": false,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "stamina",
+        "cost_type": "flat",
+        "amount": 10,
+        "consume_on": "start",
+        "refund_policy": "full_on_interrupt"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 3,
+      "cooldown_group": "martial_strikes",
+      "global_cooldown": 1,
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {
+      "damage": "power_strike_damage"
+    },
+    "damage_components": [
+      {
+        "id": "power_weapon",
+        "damage_profile_id": "training_sword",
+        "damage_type": "physical",
+        "base_amount": 5,
+        "formula_id": "power_strike_damage",
+        "uses_attack_roll": true,
+        "can_critical": true
+      }
+    ],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {},
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "hit_self": "You drive a power strike into {target} for {damage} damage.",
+      "fail_self": "You lack the stamina or target for Power Strike."
+    },
+    "ai_hints": {},
+    "plugin_data": {
+      "uses_equipped_weapon": true
+    },
+    "version": "1.0.0"
+  },
+  {
+    "id": "defensive_stance",
+    "name": "Defensive Stance",
+    "short_name": "DStance",
+    "description": "Assume a guarded stance and gain a temporary fortification effect.",
+    "ability_type": "defensive",
+    "school": "martial",
+    "category": "buff",
+    "tags": [
+      "starter",
+      "beneficial"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "loadout",
+      "builder_grant"
+    ],
+    "requirements": {},
+    "targeting": {
+      "mode": "self",
+      "minimum_targets": 1,
+      "maximum_targets": 1,
+      "allow_self": true,
+      "allow_dead": false
+    },
+    "costs": [],
+    "cooldowns": {
+      "cooldown_duration": 10,
+      "cooldown_group": "defensive_stance",
+      "global_cooldown": 1,
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {},
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [
+      {
+        "id": "fortify_self",
+        "effect_template_id": "fortified_example",
+        "chance": 100,
+        "duration": 600,
+        "stacks": 1,
+        "target_selector": "self",
+        "apply_on": "success",
+        "category": "positive"
+      }
+    ],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {},
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "effect_self": "You settle into a defensive stance."
+    },
+    "ai_hints": {},
+    "plugin_data": {},
+    "version": "1.0.0"
+  },
+  {
+    "id": "minor_heal",
+    "name": "Minor Heal",
+    "short_name": "MHeal",
+    "description": "Restore a small amount of health to yourself or an ally. It cannot revive the dead.",
+    "ability_type": "heal",
+    "school": "restoration",
+    "category": "healing",
+    "tags": [
+      "starter",
+      "spell",
+      "beneficial"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "loadout",
+      "builder_grant"
+    ],
+    "requirements": {},
+    "targeting": {
+      "mode": "single_ally",
+      "minimum_targets": 1,
+      "maximum_targets": 1,
+      "allow_self": true,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "mana",
+        "cost_type": "flat",
+        "amount": 8,
+        "consume_on": "start",
+        "refund_policy": "full_on_interrupt"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 4,
+      "cooldown_group": "minor_heals",
+      "global_cooldown": 1,
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {
+      "healing": "minor_heal_formula"
+    },
+    "damage_components": [],
+    "healing_components": [
+      {
+        "id": "minor_heal_packet",
+        "base_amount": 18,
+        "formula_id": "minor_heal_formula",
+        "can_critical": false
+      }
+    ],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {},
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "heal_self": "You call gentle light and restore {healing} health."
+    },
+    "ai_hints": {},
+    "plugin_data": {},
+    "version": "1.0.0"
+  },
+  {
+    "id": "bless",
+    "name": "Bless",
+    "short_name": "Bless",
+    "description": "Apply the Blessed Example effect to yourself or an ally. Tagged for safe spellup casting when self-targeted.",
+    "ability_type": "buff",
+    "school": "restoration",
+    "category": "blessing",
+    "tags": [
+      "starter",
+      "spell",
+      "beneficial",
+      "spellup_eligible"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "loadout",
+      "builder_grant"
+    ],
+    "requirements": {},
+    "targeting": {
+      "mode": "self",
+      "minimum_targets": 1,
+      "maximum_targets": 1,
+      "allow_self": true,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "mana",
+        "cost_type": "flat",
+        "amount": 6,
+        "consume_on": "start",
+        "refund_policy": "full_on_interrupt"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 8,
+      "cooldown_group": "blessings",
+      "global_cooldown": 1,
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [
+      {
+        "id": "blessed_self",
+        "effect_template_id": "blessed_example",
+        "chance": 100,
+        "duration": 600,
+        "stacks": 1,
+        "target_selector": "self",
+        "apply_on": "success",
+        "category": "positive"
+      }
+    ],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {},
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "effect_self": "A quiet blessing settles over you."
+    },
+    "ai_hints": {},
+    "plugin_data": {
+      "spellup_priority": 10
+    },
+    "version": "1.0.0"
+  },
+  {
+    "id": "poison_bite",
+    "name": "Poison Bite",
+    "short_name": "PBite",
+    "description": "A natural monster bite that deals piercing damage and applies poison.",
+    "ability_type": "natural",
+    "school": "natural",
+    "category": "attack",
+    "tags": [
+      "starter",
+      "monster",
+      "natural",
+      "harmful"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "natural_weapon_profile",
+      "combat_profile",
+      "loadout"
+    ],
+    "requirements": {},
+    "targeting": {
+      "mode": "single_enemy",
+      "minimum_targets": 1,
+      "maximum_targets": 1,
+      "allow_self": false,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [],
+    "cooldowns": {
+      "cooldown_duration": 5,
+      "cooldown_group": "natural_bites",
+      "global_cooldown": 1,
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [
+      {
+        "id": "poison_fangs",
+        "damage_profile_id": "rat_bite",
+        "damage_type": "pierce",
+        "base_amount": 2,
+        "uses_attack_roll": true,
+        "can_critical": true
+      }
+    ],
+    "healing_components": [],
+    "effects_applied": [
+      {
+        "id": "poison_application",
+        "effect_template_id": "poisoned_example",
+        "chance": 100,
+        "duration": 300,
+        "stacks": 1,
+        "target_selector": "target",
+        "apply_on": "hit",
+        "category": "negative"
+      }
+    ],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {},
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "hit_self": "You sink poisoned fangs into {target}."
+    },
+    "ai_hints": {
+      "preferred_range": "melee"
+    },
+    "plugin_data": {},
+    "version": "1.0.0"
+  },
+  {
+    "id": "wolf_howl",
+    "name": "Wolf Howl",
+    "short_name": "Howl",
+    "description": "A room-ally buff foundation for wolves; no AI execution is introduced.",
+    "ability_type": "natural",
+    "school": "natural",
+    "category": "buff",
+    "tags": [
+      "starter",
+      "monster",
+      "beneficial"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "combat_profile",
+      "loadout"
+    ],
+    "requirements": {},
+    "targeting": {
+      "mode": "room_ally",
+      "minimum_targets": 1,
+      "maximum_targets": 6,
+      "allow_self": true,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [],
+    "cooldowns": {
+      "cooldown_duration": 30,
+      "cooldown_group": "wolf_howls",
+      "global_cooldown": 0,
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {},
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [
+      {
+        "id": "howl_blessing",
+        "effect_template_id": "blessed_example",
+        "chance": 100,
+        "duration": 180,
+        "stacks": 1,
+        "target_selector": "targets",
+        "apply_on": "success",
+        "category": "positive"
+      }
+    ],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {},
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "effect_room": "{actor} lets out a rallying howl."
+    },
+    "ai_hints": {
+      "future_ai": "ally buff"
+    },
+    "plugin_data": {},
+    "version": "1.0.0"
+  },
+  {
+    "id": "fleeing_step",
+    "name": "Fleeing Step",
+    "short_name": "Flee",
+    "description": "A utility placeholder for future flee integration.",
+    "ability_type": "utility",
+    "school": "movement",
+    "category": "escape",
+    "tags": [
+      "starter",
+      "placeholder"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "loadout"
+    ],
+    "requirements": {},
+    "targeting": {
+      "mode": "none",
+      "minimum_targets": 0,
+      "maximum_targets": 0
+    },
+    "costs": [
+      {
+        "resource_id": "stamina",
+        "cost_type": "flat",
+        "amount": 5,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 6,
+      "cooldown_group": "escape",
+      "global_cooldown": 1,
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {},
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [
+      {
+        "mode": "placeholder",
+        "description": "Future flee integration."
+      }
+    ],
+    "state_requirements": {},
+    "state_changes": [
+      {
+        "state": "fleeing",
+        "duration": 1,
+        "chance": 100
+      }
+    ],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "You prepare to flee."
+    },
+    "ai_hints": {},
+    "plugin_data": {
+      "placeholder": true
+    },
+    "version": "1.0.0"
+  },
+  {
+    "id": "toughness",
+    "name": "Toughness",
+    "description": "Starter passive toughness foundation.",
+    "ability_type": "passive",
+    "tags": [
+      "starter",
+      "passive"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "targeting": {
+      "mode": "self"
+    },
+    "costs": [],
+    "cooldowns": {},
+    "timing": {
+      "activation_type": "passive"
+    },
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "state_changes": [],
+    "messages": {},
+    "plugin_data": {
+      "legacy_passive": true
+    },
+    "version": "1.0.0"
+  },
+  {
+    "id": "set_camp",
+    "name": "Set Camp",
+    "short_name": "Set Camp",
+    "description": "Establish a modest campsite in your current room.",
+    "ability_type": "skill",
+    "school": "survival",
+    "category": "starter",
+    "tags": [
+      "starter",
+      "demonstration"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "training"
+    ],
+    "requirements": {},
+    "targeting": {
+      "mode": "self"
+    },
+    "costs": [],
+    "cooldowns": {},
+    "timing": {
+      "activation_type": "instant",
+      "completes_immediately": true
+    },
+    "range": {},
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {},
+    "state_changes": [
+      {
+        "id": "set_camp",
+        "state": "standing",
+        "operation": "require"
+      }
+    ],
+    "interrupt_rules": {},
+    "messages": {
+      "start_self": "You begin set camp.",
+      "complete_self": ""
+    },
+    "ai_hints": {},
+    "plugin_data": {
+      "help": "SET CAMP establishes a persistent campsite here.",
+      "source": "starter demonstration"
+    },
+    "version": "1.0.0"
+  },
+  {
+    "id": "build_campfire",
+    "name": "Build Campfire",
+    "short_name": "Build Campfire",
+    "description": "Build a simple campfire at an established campsite.",
+    "ability_type": "skill",
+    "school": "survival",
+    "category": "starter",
+    "tags": [
+      "starter",
+      "demonstration"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "training"
+    ],
+    "requirements": {},
+    "targeting": {
+      "mode": "self"
+    },
+    "costs": [],
+    "cooldowns": {},
+    "timing": {
+      "activation_type": "instant",
+      "completes_immediately": true
+    },
+    "range": {},
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {},
+    "state_changes": [
+      {
+        "id": "build_campfire",
+        "state": "standing",
+        "operation": "require"
+      }
+    ],
+    "interrupt_rules": {},
+    "messages": {
+      "start_self": "You begin build campfire.",
+      "complete_self": ""
+    },
+    "ai_hints": {},
+    "plugin_data": {
+      "help": "BUILD CAMPFIRE creates a persistent campfire object after you set camp.",
+      "requires_campsite": true,
+      "source": "starter demonstration"
+    },
+    "version": "1.0.0"
+  },
+  {
+    "id": "recall",
+    "name": "Recall",
+    "short_name": "Recall",
+    "description": "Return safely to the configured recall point.",
+    "ability_type": "spell",
+    "school": "utility",
+    "category": "starter",
+    "tags": [
+      "starter",
+      "demonstration"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "training"
+    ],
+    "requirements": {},
+    "targeting": {
+      "mode": "self"
+    },
+    "costs": [
+      {
+        "resource_id": "mana",
+        "cost_type": "flat",
+        "amount": 5,
+        "consume_on": "start"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 5,
+      "cooldown_group": "recall"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "completes_immediately": true
+    },
+    "range": {},
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {},
+    "state_changes": [
+      {
+        "id": "recall",
+        "state": "standing",
+        "operation": "require"
+      }
+    ],
+    "interrupt_rules": {},
+    "messages": {
+      "start_self": "You begin recall.",
+      "complete_self": ""
+    },
+    "ai_hints": {},
+    "plugin_data": {
+      "help": "CAST RECALL returns you to the world recall point.",
+      "recall_destination_room_id": "guildhall_crossing_square",
+      "casting_text": "You speak the old wayhome word and silver light gathers around you.",
+      "arrival_text": "The silver light fades as you arrive at the recall point.",
+      "source": "starter demonstration"
+    },
+    "version": "1.0.0"
+  }
 ]
