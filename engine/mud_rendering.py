@@ -6,9 +6,9 @@ from typing import Any
 SEMANTIC_COLOR_ROLES = ["object_title","object_description","object_interaction","usage","placeholder","feature","entity_title","entity_description","direction","room_name","area_name","room_description","exit","npc","mob","npc_friendly","npc_neutral","npc_hostile","monster","player","object","item_common","item_uncommon","item_rare","item_epic","item_legendary","command_echo","system","error","warning","success","combat","damage","healing","spell","skill","magic","quest","score_label","score_value","equipment_slot","equipment_item","gold","hp","mp","stamina","dialogue","prompt","input","prompt_marker","prompt_hp","prompt_mana","prompt_stamina","prompt_xp","prompt_gold"]
 PRESETS = {
  "Classic MUD": {r: "#d8dee9" for r in SEMANTIC_COLOR_ROLES},
- "Green Terminal": {r: "#33ff66" for r in SEMANTIC_COLOR_ROLES},
+ "Green Terminal": {**{r: "#33ff66" for r in SEMANTIC_COLOR_ROLES}, "dialogue":"#ffffff"},
  "Amber Terminal": {r: "#ffbf00" for r in SEMANTIC_COLOR_ROLES},
- "Dark Fantasy": {**{r: "#c9b79c" for r in SEMANTIC_COLOR_ROLES}, "room_name":"#f2d27c", "exit":"#87ceeb", "npc_friendly":"#9be28f", "npc_hostile":"#ff6b6b", "magic":"#b48cff", "prompt_hp":"#ff7777", "prompt_mana":"#7aa2ff", "prompt_stamina":"#ffd166", "prompt_gold":"#ffd700"},
+ "Dark Fantasy": {**{r: "#c9b79c" for r in SEMANTIC_COLOR_ROLES}, "room_name":"#f2d27c", "exit":"#87ceeb", "npc_friendly":"#9be28f", "npc_hostile":"#ff6b6b", "magic":"#b48cff", "dialogue":"#ffffff", "prompt_hp":"#ff7777", "prompt_mana":"#7aa2ff", "prompt_stamina":"#ffd166", "prompt_gold":"#ffd700"},
  "High Contrast": {r: "#ffffff" for r in SEMANTIC_COLOR_ROLES},
  "Colorblind Friendly": {**{r: "#e6e6e6" for r in SEMANTIC_COLOR_ROLES}, "exit":"#56b4e9", "magic":"#cc79a7", "prompt_gold":"#f0e442", "damage":"#d55e00", "healing":"#009e73"},
 }
