@@ -313,9 +313,25 @@ class BuilderWorkspace:
                 path.write_text(json.dumps(starters.get(key, {}), indent=2, sort_keys=True) + "\n", encoding="utf-8")
         return root
 
+    def _coerce_draft_collection(self, key: str, filename: str, raw: Any) -> dict[str, Any]:
+        if not isinstance(raw, dict):
+            return {}
+        wrapper_keys = {key, filename[:-5] if filename.endswith(".json") else filename}
+        if key == "items":
+            wrapper_keys.add("item_templates")
+        for wrapper in wrapper_keys:
+            nested = raw.get(wrapper)
+            if isinstance(nested, dict):
+                return nested
+            if isinstance(nested, list):
+                return {str(x.get("id")): x for x in nested if isinstance(x, dict) and x.get("id")}
+        if raw.get("id"):
+            return {str(raw["id"]): raw}
+        return raw
+
     def load(self, world_id: str) -> dict[str, Any]:
         root = self.ensure(world_id)
-        drafts = {key: self._read(root / filename, {}) for key, filename in DRAFT_FILES.items()}
+        drafts = {key: self._coerce_draft_collection(key, filename, self._read(root / filename, {})) for key, filename in DRAFT_FILES.items()}
         changed = self.normalize_drafts(world_id, drafts)
         if changed:
             self.save_drafts(world_id, drafts)

@@ -56,8 +56,13 @@ def _records(root: Path, dirname: str) -> list[dict[str, Any]]:
             values = data.get(dirname) or data.get("records")
             if isinstance(values, list):
                 out.extend(x for x in values if isinstance(x, dict))
-            else:
+            elif isinstance(values, dict):
+                out.extend(x for x in values.values() if isinstance(x, dict))
+            elif data.get("id"):
                 out.append(data)
+            else:
+                nested_records = [x for x in data.values() if isinstance(x, dict) and x.get("id")]
+                out.extend(nested_records)
     return out
 
 def by_id(records: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:

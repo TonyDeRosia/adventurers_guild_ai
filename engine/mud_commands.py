@@ -1398,6 +1398,9 @@ class MudCommandEngine:
 
     def _cmd_affects(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display active affects/buffs through the single score renderer."""
+        affects = getattr(character, "affects", {}) or {}
+        if not affects:
+            return CommandResult(narrative="You have no active affects.\n" + self._render_score_section(character, "affects"))
         return CommandResult(narrative=self._render_score_section(character, "affects"))
 
     def _cmd_worth(self, character: Any, args: list[str], raw: str) -> CommandResult:
