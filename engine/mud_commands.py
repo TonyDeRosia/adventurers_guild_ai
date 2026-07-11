@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, is_dataclass, asdict
 from typing import Any, Optional, Callable
 import json
 import re
+import logging
+import sqlite3
+
+logger = logging.getLogger(__name__)
 from pathlib import Path
 from engine.mud_displays import semantic
 from engine.actors import actor_from_runtime_character
@@ -463,22 +467,51 @@ class MudCommandEngine:
         world_id=getattr(rt,'active_world_id',None) or getattr(character,'world_id','shattered_realms') or 'shattered_realms'
         return SurvivalNeedsService(getattr(store,'db_path',Path('.smartmud_survival.sqlite3')), Path('worlds')/world_id, world_id, self.event_bus, rt)
 
+    def _format_campsite_status(self, row: Any) -> str:
+        if not row:
+            return "No campsite is active here. Use CAMP or CAMPFIRE to establish one."
+        status = row.get("status", "active") if isinstance(row, dict) else "active"
+        return "Campsite status:\n- Site: " + ("active" if status == "active" else str(status)) + "\n- Shelter: basic\n- Campfire: available"
+
+    def _format_campfire_status(self, row: Any) -> str:
+        if not row:
+            return "No campfire is ready here. Use CAMPFIRE to establish a small campsite."
+        status = str(row.get("status") or "unlit") if isinstance(row, dict) else "unlit"
+        fuel = int((row.get("fuel_current") or row.get("fuel_amount") or 0) if isinstance(row, dict) else 0)
+        fire = "lit" if status == "lit" else "unlit"
+        cooking = "available" if fire == "lit" else "unavailable until lit"
+        fuel_text = f"{fuel} fuel" if fuel else "none"
+        return f"Campfire status:\n- Fire: {fire}\n- Fuel: {fuel_text}\n- Cooking: {cooking}"
+
     def _cmd_survival_needs(self, character: Any, args: list[str], raw: str) -> CommandResult:
         svc=self._survival_service(character); cmd=raw.split()[0].lower(); actor_id=str(getattr(character,'id',getattr(character,'character_id','self')))
         if cmd in {'rest','sleep','wake','camp','campfire','campsite','fire','make','break','light','extinguish','add','inspect','stop'}:
-            phrase=' '.join([cmd]+args)
-            if phrase in {'rest status','sleep status'}: return CommandResult(json.dumps(svc.get_rest_context(actor_id), indent=2, sort_keys=True))
-            if phrase in {'stop resting','wake'} or cmd=='wake': return CommandResult(json.dumps(svc.wake_actor(actor_id,'command'), indent=2, sort_keys=True))
-            if cmd=='rest': return CommandResult(json.dumps(svc.start_rest(actor_id, args[0] if args and args[0] not in {'here','status'} else None), indent=2, sort_keys=True))
-            if cmd=='sleep': return CommandResult(json.dumps(svc.start_sleep(actor_id, args[-1] if args and args[0]=='on' else None), indent=2, sort_keys=True))
-            if phrase in {'camp status','campsite status'} or phrase=='inspect campsite': return CommandResult(json.dumps(svc.trace_campsite(args[-1] if args and args[-1].startswith('campsite_') else ''), indent=2, sort_keys=True))
-            if phrase in {'camp here','make camp','campfire create','create campfire'} or cmd in {'camp','campfire','fire'}: return CommandResult(json.dumps(svc.create_campsite(actor_id,'basic_campsite'), indent=2, sort_keys=True))
-            if phrase in {'break camp','campsite dismantle','dismantle campsite'}: return CommandResult(json.dumps(svc.dismantle_campsite(actor_id,args[-1] if args and args[-1].startswith('campsite_') else ''), indent=2, sort_keys=True))
+            phrase=' '.join([cmd]+args).lower().strip()
+            if phrase in {'rest status','sleep status'}: return CommandResult("Rest status is available. You can REST or SLEEP when the area is safe.")
+            if phrase in {'stop resting','wake'} or cmd=='wake':
+                res=svc.wake_actor(actor_id,'command'); return CommandResult("You wake and gather yourself." if res.get('ok', True) else "You are already awake.", ok=bool(res.get('ok', True)))
+            if cmd=='rest':
+                res=svc.start_rest(actor_id, args[0] if args and args[0] not in {'here','status'} else None); return CommandResult("You settle down to rest." if res.get('ok', True) else "You cannot rest here right now.", ok=bool(res.get('ok', True)))
+            if cmd=='sleep':
+                res=svc.start_sleep(actor_id, args[-1] if args and args[0]=='on' else None); return CommandResult("You settle in to sleep." if res.get('ok', True) else "You cannot sleep here right now.", ok=bool(res.get('ok', True)))
+            if phrase in {'camp status','campsite status'} or phrase=='inspect campsite':
+                return CommandResult(self._format_campsite_status(svc.trace_campsite(args[-1] if args and args[-1].startswith('campsite_') else '')))
+            if cmd in {'camp','campfire','fire'} and (not args or args[0] in {'create','here'}):
+                res=svc.create_campsite(actor_id,'basic_campsite')
+                if not res.get('ok', True) and 'already' in str(res.get('reason','')).lower(): return CommandResult('A campsite is already active here.')
+                return CommandResult('You establish a small campsite here.' if res.get('ok', True) else 'You cannot establish a campsite here right now.', ok=bool(res.get('ok', True)))
+            if phrase in {'campfire status','fire status','inspect campfire'}:
+                return CommandResult(self._format_campfire_status(svc.trace_campfire(args[-1] if args and args[-1].startswith('campfire_') else '')))
+            if phrase in {'camp here','make camp','campfire create','create campfire'}:
+                res=svc.create_campsite(actor_id,'basic_campsite'); return CommandResult('You establish a small campsite here.' if res.get('ok', True) else 'A campsite is already active here.', ok=True)
+            if phrase in {'break camp','campsite dismantle','dismantle campsite'}:
+                res=svc.dismantle_campsite(actor_id,args[-1] if args and args[-1].startswith('campsite_') else ''); return CommandResult('You dismantle the campsite.' if res.get('ok', True) else 'There is no campsite here to dismantle.', ok=bool(res.get('ok', True)))
             if phrase=='light campfire':
-                cf=svc.create_campfire(actor_id,'basic_campfire'); return CommandResult(json.dumps(svc.light_campfire(actor_id,cf['campfire_instance_id']), indent=2, sort_keys=True))
-            if phrase=='extinguish campfire': return CommandResult(json.dumps(svc.extinguish_campfire(actor_id,args[-1] if args and args[-1].startswith('campfire_') else ''), indent=2, sort_keys=True))
-            if phrase=='add fuel': return CommandResult(json.dumps(svc.add_campfire_fuel(actor_id,args[0] if args and args[0].startswith('campfire_') else '', args[1] if len(args)>1 else None), indent=2, sort_keys=True))
-            if phrase=='inspect campfire': return CommandResult(json.dumps(svc.trace_campfire(args[-1] if args and args[-1].startswith('campfire_') else ''), indent=2, sort_keys=True))
+                cf=svc.create_campfire(actor_id,'basic_campfire'); res=svc.light_campfire(actor_id,cf.get('campfire_instance_id','')); return CommandResult('You light the campfire. It crackles to life.' if res.get('ok', True) else 'The campfire cannot be lit yet.', ok=bool(res.get('ok', True)))
+            if phrase=='extinguish campfire':
+                res=svc.extinguish_campfire(actor_id,args[-1] if args and args[-1].startswith('campfire_') else ''); return CommandResult('You extinguish the campfire.' if res.get('ok', True) else 'There is no lit campfire here.', ok=bool(res.get('ok', True)))
+            if phrase=='add fuel':
+                res=svc.add_campfire_fuel(actor_id,args[0] if args and args[0].startswith('campfire_') else '', args[1] if len(args)>1 else None); return CommandResult('You add fuel to the campfire.' if res.get('ok', True) else 'You need suitable fuel before you can feed the campfire.', ok=bool(res.get('ok', True)))
         if cmd in {'needs','hunger','thirst','fatigue','food'} or (cmd=='drink' and args[:1]==['status']):
             rows=svc.get_actor_needs(actor_id)
             if cmd in {'hunger','thirst','fatigue'}: rows=[r for r in rows if r['need_definition_id']==cmd or cmd in r['need_definition_id']]
@@ -534,11 +567,14 @@ class MudCommandEngine:
         return TrainingService(store, economy=getattr(self, "economy_service", None), event_bus=self.event_bus, world_id=world_id, world_root=Path("worlds")/world_id)
 
     def _cmd_training_player(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        svc = self._training_service(character); cmd = (raw.split() or ["train"])[0].lower(); actor_id = str(getattr(character, "id", "self")); room_id = str(getattr(character, "room_id", ""))
+        svc = self._training_service(character); cmd = self.resolve_alias((raw.split() or ["train"])[0].lower()); actor_id = str(getattr(character, "id", "self")); room_id = str(getattr(character, "room_id", ""))
         trainers = svc.list_trainers(actor_id, room_id) or svc.list_trainers(actor_id, None)
         if cmd in {"train", "practice"} and not args:
             state = svc.progression.initialize_actor_progression(actor_id)
-            title = "Practice options" if cmd == "practice" else "Training options"
+            if cmd == "practice":
+                lines = [f"Practice sessions: {state.get('practice_sessions', 0)}", "", "Use TRAIN to see available lessons.", "Use PRACTICE <lesson> to spend a session."]
+                return CommandResult("\n".join(lines))
+            title = "Training options"
             lines = [f"{title}:", f"Practice sessions: {state.get('practice_sessions', 0)}; training sessions: {state.get('training_sessions', 0)}"]
             if not trainers:
                 lines.append("No trainer here is ready to teach you. Seek a trainer and try TRAIN again.")
@@ -549,7 +585,7 @@ class MudCommandEngine:
                 if not offers: lines.append("- No lessons are currently available.")
                 for o in offers:
                     prev = svc.preview_training(actor_id, trainer.get('id'), o.get('id'))
-                    costs = prev.get('costs') or {}; cost_bits = [f"{v} {k}" for k,v in costs.items() if isinstance(v,int) and v]
+                    costs = prev.get('costs') or {}; cost_bits = [f"{v} {k.replace('_', ' ')}" for k,v in costs.items() if isinstance(v,int) and not isinstance(v,bool) and v]
                     lines.append(f"- {o.get('name') or o.get('id')}: {'available' if prev.get('eligible') else 'requirements unmet'}" + (f"; cost {', '.join(cost_bits)}" if cost_bits else "; no cost"))
             lines.append("Use TRAIN <offer> to learn an available lesson.")
             return CommandResult("\n".join(lines))
@@ -1120,7 +1156,12 @@ class MudCommandEngine:
         # Route to deterministic handler if exists
         if cmd_name in self.command_handlers:
             print(f"[mud-command] Deterministic: {cmd_name}")
-            result = self.command_handlers[cmd_name](character, args, command_text)
+            try:
+                raw_result = self.command_handlers[cmd_name](character, args, command_text)
+                result = self._normalize_command_result(raw_result, cmd_name)
+            except Exception:
+                logger.exception("Command handler failed", extra={"command": cmd_name, "raw_input": command_text, "character_id": getattr(character, "id", "")})
+                result = CommandResult("Something went wrong while handling that command. Please try again or use HELP for syntax.", ok=False)
             self._publish("command_executed", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary=(result.narrative or "render_room")[:120])
             return result
         
@@ -1157,6 +1198,32 @@ class MudCommandEngine:
         self._publish("command_executed", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary=result.narrative[:120])
         return result
 
+
+    def _normalize_command_result(self, value: Any, command_name: str = "") -> CommandResult:
+        """Normalize player command adapter output to a safe CommandResult."""
+        if isinstance(value, CommandResult):
+            value.narrative = str(value.narrative or "")
+            return value
+        if value is None:
+            return CommandResult("Nothing happens.", ok=False)
+        if isinstance(value, bool):
+            return CommandResult("Done." if value else "That did not work.", ok=bool(value))
+        if isinstance(value, tuple):
+            text = " ".join(str(part) for part in value if part is not None)
+            return CommandResult(text or "Done.")
+        if is_dataclass(value):
+            value = asdict(value)
+        if isinstance(value, sqlite3.Row):
+            value = dict(value)
+        if isinstance(value, dict):
+            ok = bool(value.get("ok", True))
+            text = value.get("message") or value.get("narrative") or value.get("output")
+            if not text:
+                text = "Done." if ok else "That did not work."
+            return CommandResult(str(text), ok=ok)
+        if isinstance(value, list):
+            return CommandResult("\n".join(str(v) for v in value) if value else "Nothing to show.")
+        return CommandResult(str(value))
 
     def _publish(self, event_name: str, character: Any, command: str, **payload: Any) -> None:
         if not self.event_bus:
@@ -2369,7 +2436,7 @@ Builder commands:
         from engine.combat import CombatEngine, CombatState
         actor = actor_from_runtime_character(character, getattr(self, "world_id", ""))
         engine = CombatEngine(FormulaEngine())
-        cmd = (raw.split() or [""])[0].lower()
+        cmd = self.resolve_alias((raw.split() or [""])[0].lower())
         if cmd == "combat":
             sub = args[0].lower() if args else "status"
             if sub in {"status", "trace", "debug", "validate", "tick", "simulate"}:

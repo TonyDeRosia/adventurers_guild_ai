@@ -2192,18 +2192,33 @@ class MudRuntime:
         ent = res["entity"]; pkg = self.get_dialogue(ent.get("template_id", "")); text = ""
         if keyword:
             text = str((pkg.get("keyword_responses") or {}).get(keyword.lower(), ""))
+        semantic_kind = "dialogue"
         if not text:
             responses = pkg.get("talk_responses") or []
-            text = str(responses[0] if responses else pkg.get("greeting") or "They nod silently.")
+            text = str(responses[0] if responses else pkg.get("greeting") or "What can I help you with?")
         blocked = ("speaks from their role", "personality", "invented world facts", "instruction", "prompt", "metadata")
-        if any(b in text.lower() for b in blocked):
-            text = "They acknowledge you with a measured nod."
-        self._publish_entity_event("entity_dialogue", ent, character_id=character_id, dialogue_keyword=keyword, dialogue_text=text)
+        lower_text = text.lower().strip()
+        if any(b in lower_text for b in blocked):
+            text = "What can I help you with?"
+            semantic_kind = "dialogue"
+        elif lower_text.startswith(("they ", "he ", "she ", "it ")) or " acknowledge" in lower_text or " nod" in lower_text:
+            semantic_kind = "action"
+            if lower_text.startswith("they acknowledge"):
+                text = "acknowledges your greeting"
+        self._publish_entity_event("entity_dialogue", ent, character_id=character_id, dialogue_keyword=keyword, dialogue_text=text, semantic_kind=semantic_kind)
         char_for_event = self.state_store.load_character(character_id)
         if char_for_event:
             self._publish_interaction_event("entity_interaction", char_for_event, "talk", f"talk {query}", {"target_kind": ent.get("entity_type"), "target_name": ent.get("name"), "result_summary": text})
             self._publish_interaction_event("interaction_succeeded", char_for_event, "talk", f"talk {query}", {"target_kind": ent.get("entity_type"), "target_name": ent.get("name"), "result_summary": text})
-        return semantic("dialogue", f'{ent.get("name")} says, "{text}"')
+        name = ent.get("name")
+        if semantic_kind == "action":
+            action_text = text
+            if action_text[:1].isupper() and str(action_text).split()[0] in {"They", "He", "She", "It"}:
+                action_text = "acknowledges your greeting"
+            if not str(action_text).lower().startswith(str(name).lower()):
+                action_text = f"{name} {action_text}"
+            return semantic("emote", action_text.rstrip("." ) + ".")
+        return semantic("dialogue", f'{name} says, "{text}"')
 
     def _handle_dialogue_command(self, char: MudCharacter, cmd: str, args: list[str]):
         from engine.mud_commands import CommandResult
