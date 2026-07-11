@@ -25,6 +25,7 @@ from engine.abilities import AbilityExecutionService, init_ability_schema
 from engine.crafting import init_crafting_schema
 from engine.environment import EnvironmentService, init_environment_schema
 from engine.survival_needs import SurvivalNeedsService, init_survival_schema
+from engine.schedules import ScheduleService
 
 VALID_ROLES = {"player", "helper", "builder", "admin", "owner"}
 BUILDER_ROLES = {"builder", "admin", "owner"}
@@ -586,6 +587,7 @@ class MudRuntime:
         self.builder = BuilderWorkspace(event_bus=self.event_bus)
         self.command_engine.runtime = self
         self.living_world = LivingWorldService(self)
+        self.schedule_service = ScheduleService(self)
         init_survival_schema(self.state_store.db_path)
         self.survival_needs = SurvivalNeedsService(self.state_store.db_path, root / "worlds" / "shattered_realms", "shattered_realms", self.event_bus, self)
         init_environment_schema(self.state_store.db_path)
@@ -607,7 +609,7 @@ class MudRuntime:
     def get_entity_profile(self, instance_id: str) -> dict[str, Any]: return self.living_world.get_entity_profile(instance_id)
     def get_entity_context(self, instance_id: str) -> dict[str, Any]: return self.living_world.get_context(instance_id)
     def evaluate_entity_schedule(self, instance_id: str, world_time: dict[str, Any] | None = None) -> dict[str, Any]: return self.living_world.evaluate_schedule(instance_id, world_time)
-    def apply_entity_schedule(self, instance_id: str, world_time: dict[str, Any] | None = None) -> dict[str, Any]: return self.living_world.apply_schedule(instance_id, world_time)
+    def apply_entity_schedule(self, instance_id: str, world_time: dict[str, Any] | None = None) -> dict[str, Any]: return self.schedule_service.apply(instance_id, world_time)
     def find_room_path(self, start_room_id: str, target_room_id: str, max_depth: int = 20) -> dict[str, Any]: return self.living_world.find_room_path(start_room_id, target_room_id, max_depth)
     def move_entity_along_path(self, instance_id: str, path: list[str], steps: int = 1) -> dict[str, Any]: return self.move_entity(instance_id, path[min(steps, len(path)-1)]) if path else {}
     def simulate_world(self, world_id: str, minutes: int) -> dict[str, Any]: return self.living_world.simulate_world(world_id, minutes)

@@ -551,6 +551,17 @@ class BuilderWorkspace:
                     elif str(rtarget) != str(rid): errors.append(f"room {rid} exit {d} reverse {rev} points to wrong room {rtarget}")
             for fid, feat in (room.get("features") or {}).items():
                 if not feat.get("name"): errors.append(f"feature {fid} missing name")
+        try:
+            from engine.schedules import ScheduleService
+            validator = ScheduleService(db_path=":memory:", world_id=world_id)
+            for sid, schedule in drafts.get("schedules", {}).items():
+                schedule_data = dict(schedule or {})
+                schedule_data.setdefault("id", str(sid))
+                for err in validator.validate_schedule(schedule_data):
+                    errors.append(f"schedule {sid}: {err}")
+        except Exception as exc:
+            warnings.append(f"schedule validation unavailable: {exc}")
+
         for iid, item in drafts["items"].items():
             if not item.get("name"): errors.append(f"item {iid} missing name")
             for slot in item.get("wear_slots", []) if isinstance(item.get("wear_slots", []), list) else []:
