@@ -169,6 +169,11 @@ DETERMINISTIC_COMMANDS = {
     "put": {"category": "interaction", "admin": False},
     "say": {"category": "communication", "admin": False},
     "emote": {"category": "communication", "admin": False},
+    "restart": {"category": "system", "admin": False},
+    "reconnect": {"category": "system", "admin": False},
+    "disconnect": {"category": "system", "admin": False},
+    "logout": {"category": "system", "admin": False},
+    "quit": {"category": "system", "admin": False},
     
     # Admin/builder
     "wizhelp": {"category": "admin", "admin": True},
@@ -457,6 +462,11 @@ class MudCommandEngine:
         for _name in "needs hunger thirst fatigue food drink eat consume sip taste rest sleep wake camp campfire campsite fire make break light extinguish add inspect stop needlist needstat needcreate needclone needset needdelete needvalidate needpreview needsprofilelist needsprofilestat needsprofilecreate needsprofileset needsprofiledelete needsprofilevalidate consumablelist consumablestat consumablecreate consumableclone consumableset consumabledelete consumablevalidate consumablepreview needsinspect needsset needsmodify needstick needstrace consumptiontrace survivalaudit".split():
             self.command_handlers[_name] = self._cmd_survival_needs
 
+        for _name in "quit logout disconnect reconnect restart".split():
+            self.command_handlers[_name] = self._cmd_session
+        for _name in "social socials hug highfive wave smile laugh bow nod shake dance cheer clap salute spit glare thank".split():
+            self.command_handlers[_name] = self._cmd_social
+
 
 
     def _survival_service(self, character: Any):
@@ -483,6 +493,76 @@ class MudCommandEngine:
         fuel_text = f"{fuel} fuel" if fuel else "none"
         return f"Campfire status:\n- Fire: {fire}\n- Fuel: {fuel_text}\n- Cooking: {cooking}"
 
+    def _cmd_session(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        cmd = (raw.split() or [""])[0].lower()
+        rt = getattr(self, "runtime", None)
+        actor_id = str(getattr(character, "id", ""))
+        if cmd in {"quit", "logout", "disconnect"}:
+            if rt and getattr(rt, "state_store", None):
+                try:
+                    rt.state_store.save_character(character, getattr(rt, "active_world_id", "") or "")
+                except Exception:
+                    logger.exception("Character save failed during logout", extra={"character_id": actor_id, "command": cmd, "room_id": getattr(character, "room_id", "")})
+            if self.event_bus:
+                self.event_bus.publish("character_session_left", {"character_id": actor_id, "room_id": getattr(character, "room_id", ""), "command": cmd}, source_system="session", character_id=actor_id, room_id=getattr(character, "room_id", ""))
+            if rt:
+                try:
+                    rt.active_character_id = ""
+                except Exception:
+                    pass
+            return CommandResult("You save your progress and leave the game. Choose a character to continue.", state_updates={"session_transition": "character_select"})
+        if cmd == "reconnect":
+            return CommandResult("You are already connected.")
+        if cmd == "restart":
+            return CommandResult("You cannot restart the game server. Use LOGOUT to leave your current character.", ok=False)
+        return CommandResult("Use LOGOUT to leave your current character.", ok=False)
+
+    SOCIAL_DEFINITIONS = {
+        "hug": ("hugs themself awkwardly.", "hugs {target}."),
+        "highfive": ("looks for someone to high-five.", "high-fives {target}."),
+        "wave": ("waves.", "waves to {target}."),
+        "smile": ("smiles.", "smiles at {target}."),
+        "laugh": ("laughs.", "laughs with {target}."),
+        "bow": ("bows.", "bows to {target}."),
+        "nod": ("nods.", "nods to {target}."),
+        "shake": ("shakes their head.", "shakes {target}'s hand."),
+        "dance": ("dances.", "dances with {target}."),
+        "cheer": ("cheers.", "cheers for {target}."),
+        "clap": ("claps.", "claps for {target}."),
+        "salute": ("salutes.", "salutes {target}."),
+        "spit": ("spits on the ground.", "spits toward {target}."),
+        "glare": ("glares.", "glares at {target}."),
+        "thank": ("offers thanks.", "thanks {target}."),
+    }
+
+    def _cmd_social(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        social_id = self.resolve_alias((raw.split() or ["social"])[0].lower())
+        if social_id == "socials" or social_id == "social":
+            if not args:
+                return CommandResult("Social commands:\n" + ", ".join(sorted(self.SOCIAL_DEFINITIONS)))
+            social_id = args[0].lower()
+            args = args[1:]
+        if social_id not in self.SOCIAL_DEFINITIONS:
+            return CommandResult("That social is not available. Use SOCIALS to list social commands.", ok=False)
+        actor_name = str(getattr(character, "name", "Someone"))
+        target_name = ""
+        query = " ".join(args).strip()
+        rt = getattr(self, "runtime", None)
+        if query and rt and hasattr(rt, "_resolve_interaction_target"):
+            resolved = rt._resolve_interaction_target(character, query)
+            if resolved.get("status") == "ok":
+                target = resolved.get("target") or {}
+                target_name = str(target.get("name") or target.get("short_label") or query)
+            elif resolved.get("status") == "ambiguous":
+                return CommandResult("Which one do you mean?", ok=False)
+            else:
+                return CommandResult("You do not see that person here.", ok=False)
+        no_target, with_target = self.SOCIAL_DEFINITIONS[social_id]
+        text = f"{actor_name} {with_target.format(target=target_name)}" if target_name else f"{actor_name} {no_target}"
+        if self.event_bus:
+            self.event_bus.publish("social_emote_performed", {"actor_id": getattr(character, "id", ""), "actor_name": actor_name, "target_name": target_name, "social_id": social_id, "room_id": getattr(character, "room_id", "")}, source_system="social", character_id=getattr(character, "id", ""), room_id=getattr(character, "room_id", ""))
+        return CommandResult(text)
+
     def _cmd_survival_needs(self, character: Any, args: list[str], raw: str) -> CommandResult:
         svc=self._survival_service(character); cmd=raw.split()[0].lower(); actor_id=str(getattr(character,'id',getattr(character,'character_id','self')))
         if cmd in {'rest','sleep','wake','camp','campfire','campsite','fire','make','break','light','extinguish','add','inspect','stop'}:
@@ -506,8 +586,11 @@ class MudCommandEngine:
                 res=svc.create_campsite(actor_id,'basic_campsite'); return CommandResult('You establish a small campsite here.' if res.get('ok', True) else 'A campsite is already active here.', ok=True)
             if phrase in {'break camp','campsite dismantle','dismantle campsite'}:
                 res=svc.dismantle_campsite(actor_id,args[-1] if args and args[-1].startswith('campsite_') else ''); return CommandResult('You dismantle the campsite.' if res.get('ok', True) else 'There is no campsite here to dismantle.', ok=bool(res.get('ok', True)))
-            if phrase=='light campfire':
-                cf=svc.create_campfire(actor_id,'basic_campfire'); res=svc.light_campfire(actor_id,cf.get('campfire_instance_id','')); return CommandResult('You light the campfire. It crackles to life.' if res.get('ok', True) else 'The campfire cannot be lit yet.', ok=bool(res.get('ok', True)))
+            if cmd=='light' and (not args or phrase in {'light campfire','light fire'}):
+                cf=svc.create_campfire(actor_id,'basic_campfire'); res=svc.light_campfire(actor_id,cf.get('campfire_instance_id',''))
+                reason=str(res.get('reason','')).lower()
+                if not res.get('ok', True) and 'already' in reason: return CommandResult('The campfire is already lit.')
+                return CommandResult('You light the campfire. Flames begin to crackle across the fuel.' if res.get('ok', True) else 'The campfire needs suitable fuel before it can be lit.', ok=bool(res.get('ok', True)))
             if phrase=='extinguish campfire':
                 res=svc.extinguish_campfire(actor_id,args[-1] if args and args[-1].startswith('campfire_') else ''); return CommandResult('You extinguish the campfire.' if res.get('ok', True) else 'There is no lit campfire here.', ok=bool(res.get('ok', True)))
             if phrase=='add fuel':
@@ -519,7 +602,7 @@ class MudCommandEngine:
             return CommandResult('\n'.join(lines))
         if cmd in {'eat','drink','consume','sip','taste'}:
             if not args: return CommandResult(f"What do you want to {cmd}?", ok=False)
-            if cmd=='taste': return CommandResult('You inspect it cautiously. Taste effects are read-only placeholders in Phase 11D1.')
+            if cmd=='taste': return CommandResult('You inspect it cautiously and notice nothing safe to taste.')
             target=' '.join(args); item_id=target
             if not target.startswith('item_'):
                 for it in getattr(character,'inventory',[]) or []:
@@ -569,35 +652,62 @@ class MudCommandEngine:
     def _cmd_training_player(self, character: Any, args: list[str], raw: str) -> CommandResult:
         svc = self._training_service(character); cmd = self.resolve_alias((raw.split() or ["train"])[0].lower()); actor_id = str(getattr(character, "id", "self")); room_id = str(getattr(character, "room_id", ""))
         trainers = svc.list_trainers(actor_id, room_id) or svc.list_trainers(actor_id, None)
+        def _eligible_offers():
+            numbered=[]
+            for tr in trainers:
+                for offer in svc.list_training_offers(actor_id, tr.get('id')):
+                    numbered.append((tr, offer, svc.preview_training(actor_id, tr.get('id'), offer.get('id'))))
+            return numbered
+        def _cost_text(costs: dict[str, Any]) -> str:
+            bits=[]
+            for key in ("practice_sessions","training_sessions","skill_points","attribute_points"):
+                val=int(costs.get(key,0) or 0)
+                if val:
+                    label=key.replace("_", " ")
+                    if val == 1 and label.endswith("s"): label=label[:-1]
+                    bits.append(f"{val} {label}")
+            return ", ".join(bits) or "no cost"
         if cmd in {"train", "practice"} and not args:
-            state = svc.progression.initialize_actor_progression(actor_id)
+            state = svc.progression.initialize_actor_progression(character)
             if cmd == "practice":
-                lines = [f"Practice sessions: {state.get('practice_sessions', 0)}", "", "Use TRAIN to see available lessons.", "Use PRACTICE <lesson> to spend a session."]
+                lines = [f"Practice sessions: {state.get('practice_sessions', 0)}", "", "Use TRAIN to view available lessons.", "Use PRACTICE <lesson> or TRAIN <number> to select one."]
                 return CommandResult("\n".join(lines))
-            title = "Training options"
-            lines = [f"{title}:", f"Practice sessions: {state.get('practice_sessions', 0)}; training sessions: {state.get('training_sessions', 0)}"]
             if not trainers:
-                lines.append("No trainer here is ready to teach you. Seek a trainer and try TRAIN again.")
-                return CommandResult("\n".join(lines))
+                return CommandResult("No trainer here is ready to teach you. Seek a trainer and try TRAIN again.", ok=False)
+            lines = []
+            idx = 1
             for trainer in trainers:
                 lines.append(f"{trainer.get('name') or trainer.get('id')} can teach:")
                 offers = svc.list_training_offers(actor_id, trainer.get('id'))
-                if not offers: lines.append("- No lessons are currently available.")
+                if not offers: lines.append(f"{trainer.get('name') or trainer.get('id')} has no lessons available to you right now.")
                 for o in offers:
                     prev = svc.preview_training(actor_id, trainer.get('id'), o.get('id'))
-                    costs = prev.get('costs') or {}; cost_bits = [f"{v} {k.replace('_', ' ')}" for k,v in costs.items() if isinstance(v,int) and not isinstance(v,bool) and v]
-                    lines.append(f"- {o.get('name') or o.get('id')}: {'available' if prev.get('eligible') else 'requirements unmet'}" + (f"; cost {', '.join(cost_bits)}" if cost_bits else "; no cost"))
-            lines.append("Use TRAIN <offer> to learn an available lesson.")
+                    lines.append(f"{idx}. {o.get('name') or o.get('id')}")
+                    lines.append(f"   Cost: {_cost_text(prev.get('costs') or {})}")
+                    if not prev.get('eligible'): lines.append("   Requirements are not met yet.")
+                    idx += 1
+            lines.extend(["", f"Practice sessions: {state.get('practice_sessions', 0)}", "", "Use TRAIN 1 to begin that lesson."])
             return CommandResult("\n".join(lines))
         if not trainers: return CommandResult("No trainer here is ready to teach you.", ok=False)
-        query = " ".join(args).lower().replace(" ", "_")
-        for tr in trainers:
-            for offer in svc.list_training_offers(actor_id, tr.get('id')):
-                vals = {str(offer.get('id','')).lower(), str(offer.get('name','')).lower().replace(' ','_')}
-                if query in vals or any(query and query in v for v in vals):
+        query_raw = " ".join(args).strip()
+        query = query_raw.lower().replace(" ", "_")
+        offers = _eligible_offers()
+        for idx, (tr, offer, prev) in enumerate(offers, start=1):
+            vals = {str(offer.get('id','')).lower(), str(offer.get('name','')).lower().replace(' ','_')}
+            if query == str(idx) or query in vals or any(query and query in v for v in vals):
+                if not prev.get("eligible"):
+                    return CommandResult(f"{offer.get('name') or offer.get('id')} is not available to you right now.", ok=False)
+                try:
                     q = svc.create_training_quote(actor_id, tr.get('id'), offer.get('id'))
-                    tx = svc.confirm_training(actor_id, q['quote_id'])
-                    return CommandResult(f"Training complete: {offer.get('name') or offer.get('id')}.")
+                    svc.confirm_training(actor_id, q['quote_id'])
+                except Exception as exc:
+                    msg = str(exc).lower()
+                    if "practice_sessions" in msg or "insufficient" in msg:
+                        return CommandResult("You do not have enough practice sessions for that lesson.", ok=False)
+                    if "unique" in msg or "known" in msg or "already" in msg:
+                        return CommandResult("You have already completed that lesson.", ok=False)
+                    raise
+                return CommandResult(f"Training complete: {offer.get('name') or offer.get('id')}.")
         return CommandResult("That lesson is not available here. Use TRAIN to see options.", ok=False)
 
     def _gathering_service(self, character: Any):
@@ -1470,7 +1580,7 @@ class MudCommandEngine:
 
     def _format_ability_list(self, rows: list[dict[str, Any]], empty: str) -> str:
         if not rows: return empty
-        lines = ["Available abilities:"]
+        lines = ["Your abilities:"]
         for r in rows:
             costs = ", ".join(f"{c.get('amount', c.get('percentage', 0))} {c.get('resource_id')}" for c in r.get("costs", [])) or "no cost"
             cd = (r.get("cooldowns") or {}).get("cooldown_duration", (r.get("cooldowns") or {}).get("duration", 0))
@@ -1580,7 +1690,8 @@ class MudCommandEngine:
 
     def _cmd_worth(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display net worth through the single score renderer."""
-        return CommandResult(narrative=self._render_score_section(character, "currencies"))
+        gold = int(getattr(character, "gold", 0) or 0)
+        return CommandResult(narrative=f"You have {gold} gold coins.\n" + self._render_score_section(character, "currencies"))
 
     def _cmd_who(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """List connected players."""

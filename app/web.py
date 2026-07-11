@@ -376,6 +376,13 @@ class WebRuntime:
         if clean_command in {"u", "up", "d", "down"} and "You cannot go that way." not in command_output:
             command_output = "You cannot go that way."
         if "view" in result:
+            if (result.get("state_updates") or {}).get("session_transition") == "character_select":
+                self.web_session.character_id = None
+                self.web_session.state = "character_select"
+                self.active_character_id = ""
+                view = self._normalize_mud_view(result["view"], command_output, command, command_echo)
+                view["session_transition"] = "character_select"
+                return view
             return self._normalize_mud_view(result["view"], command_output, command, command_echo)
         return result
 

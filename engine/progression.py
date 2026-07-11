@@ -11,7 +11,7 @@ import json, math, re, sqlite3, uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 CURRENCIES = {"practice_sessions", "training_sessions", "skill_points", "attribute_points", "talent_points_placeholder"}
@@ -29,6 +29,27 @@ def _loads(v: Any, default: Any) -> Any:
     except Exception: return default
 
 def safe_id(value: str) -> bool: return bool(value and SAFE_ID_RE.match(str(value)))
+
+
+def character_field(record: Any, *names: str, default: Any = None) -> Any:
+    """Safely read character/actor fields from mappings, rows, and runtime objects."""
+    if record is None:
+        return default
+    for name in names:
+        if isinstance(record, Mapping):
+            if name in record and record[name] is not None:
+                return record[name]
+        elif hasattr(record, name):
+            value = getattr(record, name)
+            if value is not None:
+                return value
+    data = getattr(record, "actor_data", None)
+    if isinstance(data, Mapping):
+        for name in names:
+            if name in data and data[name] is not None:
+                return data[name]
+    return default
+
 
 def default_collection_item(collection: str, item_id: str, name: str = "") -> dict[str, Any]:
     base = {"id": item_id, "name": name or item_id.replace("_", " ").title(), "description": "", "tags": [], "plugin_data": {}, "version": 1}
@@ -109,17 +130,21 @@ class ProgressionService:
             d[k[:-5] if k.endswith("_json") else k]=_loads(d.get(k), [] if k=="profession_ids_json" else {})
         return d
     def initialize_actor_progression(self, actor_id: str, profile_id: str|None=None, actor_type: str="player", defaults: dict[str,Any]|None=None) -> dict[str,Any]:
+        character_record = actor_id if not isinstance(actor_id, str) else None
+        actor_id = str(character_field(character_record, "id", "character_id", default=actor_id))
         existing=self.get_actor_progression(actor_id, actor_type)
         if existing: return existing
-        defaults=defaults or {}; char={}
-        if actor_type=="player":
+        defaults=defaults or {}; char=character_record or {}
+        if actor_type=="player" and not char:
             try: char=self.store.load_character(actor_id) or {}
             except Exception: char={}
         prof=self.content.get("progression_profiles", profile_id) if profile_id else None
-        now=utc_now(); level=max(1,int(defaults.get("level", char.get("level", (prof or {}).get("level",1))) or 1)); xp=max(0,int(defaults.get("experience", char.get("xp", (prof or {}).get("experience",0))) or 0))
-        species=defaults.get("species_id") or (prof or {}).get("species_id") or "humanoid"
-        race=defaults.get("race_id") or char.get("race_id") or (prof or {}).get("race_id") or "human"
-        cls=defaults.get("primary_class_id") or char.get("class_id") or (prof or {}).get("primary_class_id") or "adventurer"
+        now=utc_now()
+        level=max(1,int(defaults.get("level", character_field(char,"level", default=(prof or {}).get("level",1))) or 1))
+        xp=max(0,int(defaults.get("experience", character_field(char,"experience","xp", default=(prof or {}).get("experience",0))) or 0))
+        species=defaults.get("species_id") or character_field(char,"species_id", default=None) or (prof or {}).get("species_id") or "humanoid"
+        race=defaults.get("race_id") or character_field(char,"race_id", default=None) or (prof or {}).get("race_id") or "human"
+        cls=defaults.get("primary_class_id") or character_field(char,"primary_class_id","class_id","profession", default=None) or (prof or {}).get("primary_class_id") or "adventurer"
         sid=self._state_id(actor_id, actor_type)
         with self.store.connect() as con:
             con.execute("""INSERT OR IGNORE INTO actor_progression_state(progression_state_id,world_id,actor_type,actor_id,species_id,race_id,primary_class_id,primary_class_track_id,profession_ids_json,level,experience,experience_to_next,total_experience,practice_sessions,training_sessions,skill_points,attribute_points,talent_points_placeholder,remort_count,prestige_rank,advancement_flags_json,last_level_at,created_at,updated_at,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(sid,self.store.world_id,actor_type,actor_id,species,race,cls,defaults.get("primary_class_track_id",(prof or {}).get("primary_class_track_id","")),_json(defaults.get("profession_ids",(prof or {}).get("profession_ids",[]))),level,xp,self.get_experience_to_next_value(cls, level, xp),xp,int(defaults.get("practice_sessions",0)),int(defaults.get("training_sessions",0)),int(defaults.get("skill_points",0)),int(defaults.get("attribute_points",0)),int(defaults.get("talent_points_placeholder",0)),0,0,_json({"migration":"initialized_or_conserved"}),None,now,now,_json({"profile_id":profile_id or "","secondary_class_ids":[],"class_levels":{cls:level},"class_experience":{cls:xp},"shared_character_level":True,"class_level_mode":"single_level"})))

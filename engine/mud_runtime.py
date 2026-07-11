@@ -1042,7 +1042,11 @@ class MudRuntime:
         if session:
             session.command_count = turn
             session.last_activity = datetime.now(timezone.utc).isoformat()
-        return {"ok": result.ok, "output": render_semantic_plain(result.narrative), "semantic_output": result.narrative, "view": self.play_view(character_id)}
+        updates = result.state_updates or {}
+        view = self.play_view(character_id)
+        if updates.get("session_transition") == "character_select":
+            view = {"html": "", "text": result.narrative, "prompt": ">"}
+        return {"ok": result.ok, "output": render_semantic_plain(result.narrative), "semantic_output": result.narrative, "state_updates": updates, "view": view}
 
 
     ROOM_FEATURE_NAMES = {"gate", "door", "fountain", "altar", "statue", "portal", "stairs", "bridge", "campfire", "lever", "button", "switch", "sign", "window", "windows", "tree", "water", "chest", "lock"}
