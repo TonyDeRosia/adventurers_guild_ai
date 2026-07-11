@@ -1,0 +1,42 @@
+[
+  {
+    "id": "guildlands_moonlight",
+    "name": "Guildlands Moonlight",
+    "description": "Lighting-only moon cycle.",
+    "cycle_length_days": 28,
+    "phases": [
+      {
+        "id": "new",
+        "day": 1,
+        "light_modifier": 0
+      },
+      {
+        "id": "crescent",
+        "day": 4,
+        "light_modifier": 0.03
+      },
+      {
+        "id": "quarter",
+        "day": 8,
+        "light_modifier": 0.06
+      },
+      {
+        "id": "gibbous",
+        "day": 12,
+        "light_modifier": 0.09
+      },
+      {
+        "id": "full",
+        "day": 15,
+        "light_modifier": 0.14
+      }
+    ],
+    "base_light_modifier": 0.04,
+    "visibility_modifier": 0.1,
+    "tags": [
+      "starter"
+    ],
+    "plugin_data": {},
+    "version": 1
+  }
+]

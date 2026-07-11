@@ -1,0 +1,212 @@
+[
+  {
+    "id": "clear",
+    "name": "Clear",
+    "description": "Clear skies.",
+    "weather_class": "clear",
+    "temperature_modifier": 0,
+    "humidity_modifier": 0,
+    "wind_modifier": 1,
+    "visibility_modifier": 1,
+    "light_modifier": 1,
+    "precipitation_type": "none",
+    "precipitation_intensity": 0,
+    "fog_density": 0,
+    "storm_intensity": 0,
+    "movement_modifier": 1,
+    "combat_modifier_profile_id": "",
+    "exposure_modifier": 0,
+    "room_description_tags": [
+      "clear"
+    ],
+    "ambient_message_profile_id": "guildlands_weather_messages",
+    "transition_tags": [
+      "mild"
+    ],
+    "tags": [
+      "starter"
+    ],
+    "plugin_data": {},
+    "version": 1
+  },
+  {
+    "id": "cloudy",
+    "name": "Cloudy",
+    "description": "Cloud cover.",
+    "weather_class": "cloudy",
+    "temperature_modifier": -1,
+    "humidity_modifier": 5,
+    "wind_modifier": 1,
+    "visibility_modifier": 0.95,
+    "light_modifier": 0.8,
+    "precipitation_type": "none",
+    "precipitation_intensity": 0,
+    "fog_density": 0,
+    "storm_intensity": 0,
+    "movement_modifier": 1,
+    "combat_modifier_profile_id": "",
+    "exposure_modifier": 0,
+    "room_description_tags": [
+      "cloudy"
+    ],
+    "ambient_message_profile_id": "guildlands_weather_messages",
+    "transition_tags": [
+      "mild"
+    ],
+    "tags": [
+      "starter"
+    ],
+    "plugin_data": {},
+    "version": 1
+  },
+  {
+    "id": "rain",
+    "name": "Rain",
+    "description": "Steady rain.",
+    "weather_class": "rain",
+    "temperature_modifier": -2,
+    "humidity_modifier": 20,
+    "wind_modifier": 2,
+    "visibility_modifier": 0.82,
+    "light_modifier": 0.65,
+    "precipitation_type": "rain",
+    "precipitation_intensity": 0.35,
+    "fog_density": 0,
+    "storm_intensity": 0,
+    "movement_modifier": 1.05,
+    "combat_modifier_profile_id": "weather_rain_placeholder",
+    "exposure_modifier": 0.2,
+    "room_description_tags": [
+      "rain"
+    ],
+    "ambient_message_profile_id": "guildlands_weather_messages",
+    "transition_tags": [
+      "wet"
+    ],
+    "tags": [
+      "starter"
+    ],
+    "plugin_data": {},
+    "version": 1
+  },
+  {
+    "id": "heavy_rain",
+    "name": "Heavy Rain",
+    "description": "Heavy rain.",
+    "weather_class": "heavy_rain",
+    "temperature_modifier": -3,
+    "humidity_modifier": 30,
+    "wind_modifier": 4,
+    "visibility_modifier": 0.65,
+    "light_modifier": 0.5,
+    "precipitation_type": "rain",
+    "precipitation_intensity": 0.65,
+    "fog_density": 0,
+    "storm_intensity": 0.1,
+    "movement_modifier": 1.15,
+    "combat_modifier_profile_id": "weather_heavy_rain_placeholder",
+    "exposure_modifier": 0.35,
+    "room_description_tags": [
+      "heavy_rain"
+    ],
+    "ambient_message_profile_id": "guildlands_weather_messages",
+    "transition_tags": [
+      "wet"
+    ],
+    "tags": [
+      "starter"
+    ],
+    "plugin_data": {},
+    "version": 1
+  },
+  {
+    "id": "fog",
+    "name": "Fog",
+    "description": "Low fog.",
+    "weather_class": "fog",
+    "temperature_modifier": -1,
+    "humidity_modifier": 25,
+    "wind_modifier": 0,
+    "visibility_modifier": 0.45,
+    "light_modifier": 0.75,
+    "precipitation_type": "none",
+    "precipitation_intensity": 0,
+    "fog_density": 0.65,
+    "storm_intensity": 0,
+    "movement_modifier": 1.05,
+    "combat_modifier_profile_id": "weather_fog_placeholder",
+    "exposure_modifier": 0,
+    "room_description_tags": [
+      "fog"
+    ],
+    "ambient_message_profile_id": "guildlands_weather_messages",
+    "transition_tags": [
+      "mist"
+    ],
+    "tags": [
+      "starter"
+    ],
+    "plugin_data": {},
+    "version": 1
+  },
+  {
+    "id": "light_snow",
+    "name": "Light Snow",
+    "description": "Light seasonal snow.",
+    "weather_class": "snow",
+    "temperature_modifier": -6,
+    "humidity_modifier": 15,
+    "wind_modifier": 1,
+    "visibility_modifier": 0.75,
+    "light_modifier": 0.85,
+    "precipitation_type": "snow",
+    "precipitation_intensity": 0.25,
+    "fog_density": 0,
+    "storm_intensity": 0,
+    "movement_modifier": 1.1,
+    "combat_modifier_profile_id": "weather_snow_placeholder",
+    "exposure_modifier": 0.25,
+    "room_description_tags": [
+      "snow"
+    ],
+    "ambient_message_profile_id": "guildlands_weather_messages",
+    "transition_tags": [
+      "cold"
+    ],
+    "tags": [
+      "starter"
+    ],
+    "plugin_data": {},
+    "version": 1
+  },
+  {
+    "id": "storm",
+    "name": "Storm",
+    "description": "Uncommon starter storm.",
+    "weather_class": "storm",
+    "temperature_modifier": -4,
+    "humidity_modifier": 35,
+    "wind_modifier": 9,
+    "visibility_modifier": 0.5,
+    "light_modifier": 0.4,
+    "precipitation_type": "rain",
+    "precipitation_intensity": 0.8,
+    "fog_density": 0,
+    "storm_intensity": 0.75,
+    "movement_modifier": 1.25,
+    "combat_modifier_profile_id": "weather_storm_placeholder",
+    "exposure_modifier": 0.45,
+    "room_description_tags": [
+      "storm"
+    ],
+    "ambient_message_profile_id": "guildlands_weather_messages",
+    "transition_tags": [
+      "storm"
+    ],
+    "tags": [
+      "starter"
+    ],
+    "plugin_data": {},
+    "version": 1
+  }
+]

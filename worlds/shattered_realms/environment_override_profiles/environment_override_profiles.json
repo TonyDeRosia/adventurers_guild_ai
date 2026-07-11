@@ -1,0 +1,22 @@
+[
+  {
+    "id": "clear_weather_test_override",
+    "name": "Clear Weather Test Override",
+    "description": "Controlled admin clear-weather override.",
+    "scope_type": "world",
+    "scope_id": "default",
+    "weather_override": "clear",
+    "temperature_override": null,
+    "humidity_override": null,
+    "light_override": null,
+    "visibility_override": null,
+    "duration": 120,
+    "priority": 10,
+    "source_type": "Admin",
+    "tags": [
+      "starter"
+    ],
+    "plugin_data": {},
+    "version": 1
+  }
+]

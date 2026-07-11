@@ -384,3 +384,7 @@ Builder/world packages may include written document, content, access, retention,
 ## Phase 10B Property Integration
 
 Smart MUD now includes the canonical `PropertyService` (`engine.property`) for Builder-authored property definitions, SQLite property instances, leases, access grants, property storage containers, actor home locations, and immutable property audit events. Related systems should integrate by service boundary: EconomyService for money, OrganizationService/FactionService for membership and reputation checks, WrittenContentService for notices, Quest/Achievement systems via property events, and canonical item instances for storage.
+
+## Phase 11A Environment Foundation
+
+Phase 11A adds the canonical `engine.environment.EnvironmentService` for deterministic climate, season, daylight, weather, lighting, visibility, exposure, and environmental context hooks. Runtime weather, light-source, exposure, and override state is SQLite-authoritative; Builder/world-package profile collections provide conservative Shattered Realms pilot content.

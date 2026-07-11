@@ -23,6 +23,7 @@ from engine.plugin_system import HookRegistry, PluginRegistry
 from engine.living_world import LivingWorldService, init_living_schema
 from engine.abilities import AbilityExecutionService, init_ability_schema
 from engine.crafting import init_crafting_schema
+from engine.environment import EnvironmentService, init_environment_schema
 
 VALID_ROLES = {"player", "helper", "builder", "admin", "owner"}
 BUILDER_ROLES = {"builder", "admin", "owner"}
@@ -584,6 +585,8 @@ class MudRuntime:
         self.builder = BuilderWorkspace(event_bus=self.event_bus)
         self.command_engine.runtime = self
         self.living_world = LivingWorldService(self)
+        init_environment_schema(self.state_store.db_path)
+        self.environment = EnvironmentService(self.state_store.db_path, root / "worlds" / "shattered_realms", "shattered_realms", self.event_bus)
         self.sqlite_ready = (user_data_dir / "mud_state.db").exists()
         self.event_bus.publish("runtime_ready", {"sqlite_ready": self.sqlite_ready}, source_system="runtime")
         print("[mud-runtime] Smart MUD runtime initialized")
@@ -691,6 +694,8 @@ class MudRuntime:
         self.abilities = AbilityExecutionService(self.state_store.db_path, self.active_world, self.event_bus, world_id)
         self.command_engine.ability_service = self.abilities
         self.command_engine.world_id = world_id
+        self.environment = EnvironmentService(self.state_store.db_path, self.active_world.root, world_id, self.event_bus)
+        self.command_engine.environment_service = self.environment
         self.hooks.emit("world_loaded", world_id=world_id, world=self.active_world)
         self.event_bus.publish("world_loaded", {"world_id": world_id}, source_system="runtime", world_id=world_id)
         return self.active_world

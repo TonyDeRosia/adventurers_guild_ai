@@ -296,7 +296,23 @@ class MudCommandEngine:
             "time": self._cmd_worldtime,
             "worldtime": self._cmd_worldtime,
             "simulation": self._cmd_simulation,
-            "weather": self._cmd_generic,
+            "weather": self._cmd_environment,
+            "forecast": self._cmd_environment,
+            "season": self._cmd_environment,
+            "dayperiod": self._cmd_environment,
+            "environment": self._cmd_environment,
+            "temperature": self._cmd_environment,
+            "shelter": self._cmd_environment,
+            "visibility": self._cmd_environment,
+            "roomlight": self._cmd_environment,
+            "light": self._cmd_environment,
+            "extinguish": self._cmd_environment,
+            "environmenttick": self._cmd_environment,
+            "environmenttrace": self._cmd_environment,
+            "weathertrace": self._cmd_environment,
+            "visibilitytrace": self._cmd_environment,
+            "exposuretrace": self._cmd_environment,
+            "environmentaudit": self._cmd_environment,
             "where": self._cmd_generic,
             "home": self._cmd_goto,
             "rooms": self._cmd_builder_nav,
@@ -701,6 +717,65 @@ class MudCommandEngine:
         if args[0].lower() == "formulas":
             return CommandResult("Actor formulas\n" + "\n".join(f"{k}: {v.formula_name}" for k, v in sorted(actor.derived_statistics_cache.items())))
         return self._cmd_modifier_diag(character, ["list"], raw)
+
+    def _environment_service(self):
+        rt = getattr(self, "runtime", None)
+        svc = getattr(rt, "environment", None) if rt else getattr(self, "environment_service", None)
+        if svc:
+            return svc
+        from engine.environment import EnvironmentService
+        world_id = getattr(rt, "active_world_id", "shattered_realms") if rt else "shattered_realms"
+        db_path = getattr(getattr(rt, "state_store", None), "db_path", getattr(self.state_store, "db_path", "mud_state.db"))
+        return EnvironmentService(db_path, Path("worlds") / world_id, world_id, self.event_bus)
+
+    def _cmd_environment(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        svc = self._environment_service(); cmd = raw.split()[0].lower()
+        rt = getattr(self, "runtime", None); wid = getattr(rt, "active_world_id", svc.world_id) if rt else svc.world_id
+        wt = rt.get_world_time(wid) if rt else {"day": 1, "hour": 12, "minute": 0}
+        room = {}
+        if rt and getattr(rt, "active_world", None) and getattr(character, "room_id", ""):
+            try: room = rt.active_world.room(character.room_id)
+            except Exception: room = {"id": getattr(character, "room_id", "")}
+        if cmd == "environmenttick":
+            minutes = int(args[0]) if args and str(args[0]).isdigit() else 60
+            new_time = rt.advance_world_time(wid, minutes) if rt else minutes
+            changes = svc.process_environment_time(wid, new_time)
+            return CommandResult(f"Environment tick completed.\nMinutes: {minutes}\nWeather transitions: {len(changes)}")
+        if cmd == "forecast":
+            f = svc.get_forecast()
+            return CommandResult(f"Forecast\nCurrent: {f['current_conditions']}\nLikely next: {f['likely_next_weather']}\nTransition window: {f['transition_window']}\nPrecipitation risk: {f['precipitation_risk']}\nUncertainty: {f['uncertainty_label']}")
+        if cmd == "season":
+            s = svc.resolve_season(wt)
+            return CommandResult(f"Season: {s.get('name') or s.get('id')} (cycle day {s.get('cycle_day')})")
+        if cmd == "dayperiod":
+            d = svc.resolve_day_period(wt)
+            return CommandResult(f"Day period: {d['period']}")
+        if cmd in {"roomlight", "light"} and (not args or cmd == "roomlight"):
+            e = svc.resolve_room_environment(room, world_time=wt)
+            return CommandResult(f"Room light: {e['light']['light_class']} (effective {e['light']['effective_light']:.2f})")
+        if cmd == "light":
+            item = args[0] if args else "light"
+            res = svc.activate_light_source("item", f"{getattr(character,'id','actor')}:{item}", "torch_light", "actor", getattr(character,"id",""), getattr(character,"room_id",""), svc._world_minutes(wt))
+            return CommandResult(f"You light {item}. Light source {res['status']}.")
+        if cmd == "extinguish":
+            item = args[0] if args else "light"
+            ok = svc.extinguish_light_source("item", f"{getattr(character,'id','actor')}:{item}")
+            return CommandResult(f"You extinguish {item}." if ok else "That is not lit.", ok=ok)
+        if cmd in {"environmenttrace", "environmentaudit"}:
+            return CommandResult(json.dumps(svc.trace_room_environment(room), indent=2, sort_keys=True))
+        if cmd == "weathertrace":
+            return CommandResult(json.dumps(svc.trace_weather(args[0] if args else "world", args[1] if len(args)>1 else "default"), indent=2, sort_keys=True))
+        if cmd == "visibilitytrace":
+            target = args[-1] if args else "self"
+            return CommandResult(json.dumps(svc.evaluate_visibility(getattr(character,"id","self"), "target", target, room), indent=2, sort_keys=True))
+        if cmd == "exposuretrace":
+            return CommandResult(json.dumps(svc.accumulate_exposure(getattr(character,"id","self"), room, svc._world_minutes(wt)), indent=2, sort_keys=True))
+        e = svc.resolve_room_environment(room, world_time=wt); w=e["weather"]
+        if cmd == "weather": return CommandResult(f"Weather: {w['current_weather_type']}\nTemperature: {e['temperature']:.1f} C")
+        if cmd == "temperature": return CommandResult(f"Temperature: {e['temperature']:.1f} C")
+        if cmd == "shelter": return CommandResult("Sheltered: yes" if e["sheltered"] else "Sheltered: no")
+        if cmd == "visibility": return CommandResult(f"Visibility: {svc.evaluate_visibility(getattr(character,'id','self'), 'room', room.get('id',''), room)['result']}")
+        return CommandResult(f"Environment\nWeather: {w['current_weather_type']}\nSeason: {svc.resolve_season(wt).get('id')}\nDay period: {e['day_period']['period']}\nLight: {e['light']['light_class']}\nSheltered: {e['sheltered']}")
 
     def _cmd_worldtime(self, character: Any, args: list[str], raw: str) -> CommandResult:
         rt=getattr(self,'runtime',None); wid=getattr(rt,'active_world_id','') if rt else self.builder.world_id(character)

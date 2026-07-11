@@ -1,0 +1,12 @@
+[
+  {
+    "id": "default_environment_render",
+    "name": "Default Environment Render",
+    "description": "Subtle additive overlays only.",
+    "tags": [
+      "starter"
+    ],
+    "plugin_data": {},
+    "version": 1
+  }
+]

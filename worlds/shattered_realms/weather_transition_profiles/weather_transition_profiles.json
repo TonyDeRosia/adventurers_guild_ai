@@ -1,0 +1,211 @@
+[
+  {
+    "id": "guildlands_temperate_weather",
+    "name": "Guildlands Temperate Weather",
+    "description": "Deterministic mild starter transitions.",
+    "interval_minutes": 120,
+    "minimum_duration": 60,
+    "maximum_duration": 360,
+    "seed_policy": "scope_state_time_hash",
+    "bounded_catchup": true,
+    "maximum_transitions_per_tick": 4,
+    "tags": [
+      "starter"
+    ],
+    "plugin_data": {},
+    "version": 1,
+    "transition_rules": [
+      {
+        "id": "clear_clear",
+        "from_weather_id": "clear",
+        "to_weather_id": "clear",
+        "weight": 35,
+        "conditions": {},
+        "season_ids": [],
+        "temperature_range": [
+          -20,
+          40
+        ],
+        "humidity_range": [
+          0,
+          100
+        ],
+        "time_of_day": [],
+        "minimum_duration": 60,
+        "maximum_duration": 360,
+        "metadata": {}
+      },
+      {
+        "id": "clear_cloudy",
+        "from_weather_id": "clear",
+        "to_weather_id": "cloudy",
+        "weight": 20,
+        "conditions": {},
+        "season_ids": [],
+        "temperature_range": [
+          -20,
+          40
+        ],
+        "humidity_range": [
+          0,
+          100
+        ],
+        "time_of_day": [],
+        "minimum_duration": 60,
+        "maximum_duration": 240,
+        "metadata": {}
+      },
+      {
+        "id": "cloudy_rain",
+        "from_weather_id": "cloudy",
+        "to_weather_id": "rain",
+        "weight": 12,
+        "conditions": {},
+        "season_ids": [
+          "spring",
+          "autumn"
+        ],
+        "temperature_range": [
+          2,
+          30
+        ],
+        "humidity_range": [
+          40,
+          100
+        ],
+        "time_of_day": [],
+        "minimum_duration": 60,
+        "maximum_duration": 180,
+        "metadata": {}
+      },
+      {
+        "id": "rain_cloudy",
+        "from_weather_id": "rain",
+        "to_weather_id": "cloudy",
+        "weight": 25,
+        "conditions": {},
+        "season_ids": [],
+        "temperature_range": [
+          -10,
+          35
+        ],
+        "humidity_range": [
+          0,
+          100
+        ],
+        "time_of_day": [],
+        "minimum_duration": 60,
+        "maximum_duration": 180,
+        "metadata": {}
+      },
+      {
+        "id": "cloudy_fog",
+        "from_weather_id": "cloudy",
+        "to_weather_id": "fog",
+        "weight": 5,
+        "conditions": {},
+        "season_ids": [
+          "spring",
+          "autumn"
+        ],
+        "temperature_range": [
+          -5,
+          25
+        ],
+        "humidity_range": [
+          50,
+          100
+        ],
+        "time_of_day": [
+          "dawn",
+          "night"
+        ],
+        "minimum_duration": 60,
+        "maximum_duration": 120,
+        "metadata": {}
+      },
+      {
+        "id": "cloudy_snow",
+        "from_weather_id": "cloudy",
+        "to_weather_id": "light_snow",
+        "weight": 5,
+        "conditions": {},
+        "season_ids": [
+          "winter"
+        ],
+        "temperature_range": [
+          -20,
+          2
+        ],
+        "humidity_range": [
+          20,
+          100
+        ],
+        "time_of_day": [],
+        "minimum_duration": 60,
+        "maximum_duration": 180,
+        "metadata": {}
+      },
+      {
+        "id": "rain_storm",
+        "from_weather_id": "rain",
+        "to_weather_id": "storm",
+        "weight": 2,
+        "conditions": {},
+        "season_ids": [],
+        "temperature_range": [
+          5,
+          35
+        ],
+        "humidity_range": [
+          50,
+          100
+        ],
+        "time_of_day": [],
+        "minimum_duration": 60,
+        "maximum_duration": 120,
+        "metadata": {}
+      },
+      {
+        "id": "storm_rain",
+        "from_weather_id": "storm",
+        "to_weather_id": "rain",
+        "weight": 30,
+        "conditions": {},
+        "season_ids": [],
+        "temperature_range": [
+          -10,
+          35
+        ],
+        "humidity_range": [
+          0,
+          100
+        ],
+        "time_of_day": [],
+        "minimum_duration": 60,
+        "maximum_duration": 120,
+        "metadata": {}
+      },
+      {
+        "id": "any_clear",
+        "from_weather_id": "*",
+        "to_weather_id": "clear",
+        "weight": 8,
+        "conditions": {},
+        "season_ids": [],
+        "temperature_range": [
+          -20,
+          40
+        ],
+        "humidity_range": [
+          0,
+          100
+        ],
+        "time_of_day": [],
+        "minimum_duration": 60,
+        "maximum_duration": 240,
+        "metadata": {}
+      }
+    ]
+  }
+]

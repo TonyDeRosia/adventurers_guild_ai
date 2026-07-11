@@ -1,0 +1,51 @@
+[
+  {
+    "id": "guildlands_weather_messages",
+    "name": "Guildlands Weather Messages",
+    "description": "Deterministic weather ambience.",
+    "weather_start_messages": {
+      "rain": [
+        "Rain begins to patter across the stones."
+      ],
+      "storm": [
+        "Thunder rolls in the distance."
+      ]
+    },
+    "weather_continue_messages": {
+      "rain": [
+        "Rain falls steadily."
+      ],
+      "fog": [
+        "Mist softens the edges of the room."
+      ]
+    },
+    "weather_end_messages": {
+      "rain": [
+        "The rain tapers away."
+      ]
+    },
+    "day_period_messages": {
+      "dawn": [
+        "A pale dawn gathers."
+      ],
+      "dusk": [
+        "Dusk settles over the road."
+      ]
+    },
+    "temperature_messages": {},
+    "wind_messages": {},
+    "shelter_messages": {
+      "sheltered": [
+        "Shelter cuts off the worst of the weather."
+      ]
+    },
+    "semantic_roles": {
+      "weather": "system"
+    },
+    "tags": [
+      "starter"
+    ],
+    "plugin_data": {},
+    "version": 1
+  }
+]

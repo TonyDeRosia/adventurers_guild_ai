@@ -1,0 +1,112 @@
+[
+  {
+    "id": "torch_light",
+    "name": "Torch Light",
+    "description": "Handheld torch light.",
+    "source_type": "item",
+    "base_light_level": 0.75,
+    "radius_rooms_placeholder": 0,
+    "duration_minutes": 180,
+    "fuel_resource_id": "torch_fuel",
+    "fuel_per_tick": 1,
+    "extinguishable": true,
+    "water_sensitive": true,
+    "wind_sensitive": true,
+    "underwater_allowed": false,
+    "requires_item_tag": "torch",
+    "effect_profile_id": "",
+    "tags": [
+      "starter"
+    ],
+    "plugin_data": {},
+    "version": 1
+  },
+  {
+    "id": "lantern_light",
+    "name": "Lantern Light",
+    "description": "Protected lantern light.",
+    "source_type": "item",
+    "base_light_level": 0.65,
+    "radius_rooms_placeholder": 0,
+    "duration_minutes": 360,
+    "fuel_resource_id": "lamp_oil",
+    "fuel_per_tick": 1,
+    "extinguishable": true,
+    "water_sensitive": false,
+    "wind_sensitive": false,
+    "underwater_allowed": false,
+    "requires_item_tag": "lantern",
+    "effect_profile_id": "",
+    "tags": [
+      "starter"
+    ],
+    "plugin_data": {},
+    "version": 1
+  },
+  {
+    "id": "fireplace_light",
+    "name": "Fireplace Light",
+    "description": "Feature fireplace light.",
+    "source_type": "room_feature",
+    "base_light_level": 0.9,
+    "radius_rooms_placeholder": 0,
+    "duration_minutes": 0,
+    "fuel_resource_id": "",
+    "fuel_per_tick": 0,
+    "extinguishable": false,
+    "water_sensitive": false,
+    "wind_sensitive": false,
+    "underwater_allowed": false,
+    "requires_item_tag": "",
+    "effect_profile_id": "",
+    "tags": [
+      "starter"
+    ],
+    "plugin_data": {},
+    "version": 1
+  },
+  {
+    "id": "street_lamp_light",
+    "name": "Street Lamp Light",
+    "description": "Feature street lamp.",
+    "source_type": "room_feature",
+    "base_light_level": 0.5,
+    "radius_rooms_placeholder": 0,
+    "duration_minutes": 0,
+    "fuel_resource_id": "",
+    "fuel_per_tick": 0,
+    "extinguishable": false,
+    "water_sensitive": true,
+    "wind_sensitive": false,
+    "underwater_allowed": false,
+    "requires_item_tag": "",
+    "effect_profile_id": "",
+    "tags": [
+      "starter"
+    ],
+    "plugin_data": {},
+    "version": 1
+  },
+  {
+    "id": "minor_magical_light",
+    "name": "Minor Magical Light",
+    "description": "Small magical light.",
+    "source_type": "magical",
+    "base_light_level": 0.4,
+    "radius_rooms_placeholder": 0,
+    "duration_minutes": 60,
+    "fuel_resource_id": "",
+    "fuel_per_tick": 0,
+    "extinguishable": true,
+    "water_sensitive": false,
+    "wind_sensitive": false,
+    "underwater_allowed": true,
+    "requires_item_tag": "",
+    "effect_profile_id": "",
+    "tags": [
+      "starter"
+    ],
+    "plugin_data": {},
+    "version": 1
+  }
+]

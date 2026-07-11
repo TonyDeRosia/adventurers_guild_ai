@@ -1,0 +1,98 @@
+[
+  {
+    "id": "guildlands_standard_seasons",
+    "name": "Guildlands Standard Seasons",
+    "description": "Four deterministic authored seasons.",
+    "cycle_length_days": 360,
+    "starting_season_id": "spring",
+    "hemisphere_placeholder": "north",
+    "transition_policy": "hard_day_boundary",
+    "tags": [
+      "starter"
+    ],
+    "plugin_data": {},
+    "version": 1,
+    "seasons": [
+      {
+        "id": "spring",
+        "name": "Spring",
+        "description": "Mild rains.",
+        "start_day": 1,
+        "end_day": 90,
+        "temperature_modifier": 1,
+        "humidity_modifier": 8,
+        "precipitation_modifier": 0.1,
+        "wind_modifier": 1,
+        "daylight_modifier": 0,
+        "weather_weight_modifiers": {
+          "rain": 1.2
+        },
+        "room_description_tags": [
+          "fresh"
+        ],
+        "effect_tags": [],
+        "metadata": {}
+      },
+      {
+        "id": "summer",
+        "name": "Summer",
+        "description": "Warmer clear days.",
+        "start_day": 91,
+        "end_day": 180,
+        "temperature_modifier": 6,
+        "humidity_modifier": -4,
+        "precipitation_modifier": -0.05,
+        "wind_modifier": 0,
+        "daylight_modifier": 30,
+        "weather_weight_modifiers": {
+          "clear": 1.2
+        },
+        "room_description_tags": [
+          "warm"
+        ],
+        "effect_tags": [],
+        "metadata": {}
+      },
+      {
+        "id": "autumn",
+        "name": "Autumn",
+        "description": "Cool winds.",
+        "start_day": 181,
+        "end_day": 270,
+        "temperature_modifier": -2,
+        "humidity_modifier": 4,
+        "precipitation_modifier": 0.05,
+        "wind_modifier": 2,
+        "daylight_modifier": -10,
+        "weather_weight_modifiers": {
+          "fog": 1.2
+        },
+        "room_description_tags": [
+          "cool"
+        ],
+        "effect_tags": [],
+        "metadata": {}
+      },
+      {
+        "id": "winter",
+        "name": "Winter",
+        "description": "Cold with rare snow.",
+        "start_day": 271,
+        "end_day": 360,
+        "temperature_modifier": -8,
+        "humidity_modifier": 0,
+        "precipitation_modifier": 0.05,
+        "wind_modifier": 1,
+        "daylight_modifier": -30,
+        "weather_weight_modifiers": {
+          "light_snow": 1.4
+        },
+        "room_description_tags": [
+          "cold"
+        ],
+        "effect_tags": [],
+        "metadata": {}
+      }
+    ]
+  }
+]

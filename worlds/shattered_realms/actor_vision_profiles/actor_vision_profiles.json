@@ -1,0 +1,72 @@
+[
+  {
+    "id": "normal_vision",
+    "name": "Normal Vision",
+    "description": "Safe default sight.",
+    "minimum_light_threshold": 0.2,
+    "darkvision_threshold": 0,
+    "low_light_multiplier": 1,
+    "bright_light_tolerance": 1.3,
+    "fog_penetration": 0,
+    "weather_penetration": 0,
+    "underground_modifier": 0,
+    "ability_tags": [],
+    "effect_tags": [],
+    "equipment_tags": [],
+    "species_ids": [],
+    "race_ids": [],
+    "tags": [
+      "starter"
+    ],
+    "plugin_data": {},
+    "version": 1
+  },
+  {
+    "id": "low_light_vision",
+    "name": "Low Light Vision",
+    "description": "Improves dim light.",
+    "minimum_light_threshold": 0.1,
+    "darkvision_threshold": 0,
+    "low_light_multiplier": 1.8,
+    "bright_light_tolerance": 1.2,
+    "fog_penetration": 0.1,
+    "weather_penetration": 0.1,
+    "underground_modifier": 0,
+    "ability_tags": [],
+    "effect_tags": [],
+    "equipment_tags": [
+      "low_light_vision"
+    ],
+    "species_ids": [],
+    "race_ids": [],
+    "tags": [
+      "starter"
+    ],
+    "plugin_data": {},
+    "version": 1
+  },
+  {
+    "id": "darkvision",
+    "name": "Darkvision",
+    "description": "Sees underground darkness foundation.",
+    "minimum_light_threshold": 0.02,
+    "darkvision_threshold": 0.02,
+    "low_light_multiplier": 2,
+    "bright_light_tolerance": 1,
+    "fog_penetration": 0.15,
+    "weather_penetration": 0.1,
+    "underground_modifier": 0.5,
+    "ability_tags": [
+      "darkvision"
+    ],
+    "effect_tags": [],
+    "equipment_tags": [],
+    "species_ids": [],
+    "race_ids": [],
+    "tags": [
+      "starter"
+    ],
+    "plugin_data": {},
+    "version": 1
+  }
+]

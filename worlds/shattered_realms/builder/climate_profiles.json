@@ -1,0 +1,98 @@
+[
+  {
+    "id": "guildlands_temperate",
+    "name": "Guildlands Temperate",
+    "description": "Mild starter climate.",
+    "climate_type": "temperate",
+    "base_temperature": 18,
+    "temperature_range": [
+      -5,
+      30
+    ],
+    "humidity_range": [
+      35,
+      85
+    ],
+    "wind_range": [
+      0,
+      25
+    ],
+    "precipitation_chance": 0.35,
+    "storm_chance": 0.04,
+    "fog_chance": 0.08,
+    "snow_temperature_threshold": 1,
+    "season_profile_id": "guildlands_standard_seasons",
+    "weather_transition_profile_id": "guildlands_temperate_weather",
+    "daylight_profile_id": "guildlands_daylight",
+    "exposure_profile_id": "guildlands_mild_exposure",
+    "tags": [
+      "starter"
+    ],
+    "plugin_data": {},
+    "version": 1
+  },
+  {
+    "id": "guildlands_underground",
+    "name": "Guildlands Underground",
+    "description": "Cool dark subterranean climate.",
+    "climate_type": "subterranean",
+    "base_temperature": 11,
+    "temperature_range": [
+      7,
+      14
+    ],
+    "humidity_range": [
+      45,
+      90
+    ],
+    "wind_range": [
+      0,
+      5
+    ],
+    "precipitation_chance": 0,
+    "storm_chance": 0,
+    "fog_chance": 0.05,
+    "snow_temperature_threshold": 0,
+    "season_profile_id": "guildlands_standard_seasons",
+    "weather_transition_profile_id": "guildlands_temperate_weather",
+    "daylight_profile_id": "guildlands_daylight",
+    "exposure_profile_id": "guildlands_mild_exposure",
+    "tags": [
+      "starter"
+    ],
+    "plugin_data": {},
+    "version": 1
+  },
+  {
+    "id": "guildlands_indoor",
+    "name": "Guildlands Indoor",
+    "description": "Sheltered interior climate.",
+    "climate_type": "temperate",
+    "base_temperature": 19,
+    "temperature_range": [
+      15,
+      23
+    ],
+    "humidity_range": [
+      30,
+      60
+    ],
+    "wind_range": [
+      0,
+      2
+    ],
+    "precipitation_chance": 0,
+    "storm_chance": 0,
+    "fog_chance": 0,
+    "snow_temperature_threshold": 0,
+    "season_profile_id": "guildlands_standard_seasons",
+    "weather_transition_profile_id": "guildlands_temperate_weather",
+    "daylight_profile_id": "guildlands_daylight",
+    "exposure_profile_id": "guildlands_mild_exposure",
+    "tags": [
+      "starter"
+    ],
+    "plugin_data": {},
+    "version": 1
+  }
+]

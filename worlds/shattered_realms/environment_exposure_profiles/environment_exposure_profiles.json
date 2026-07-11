@@ -1,0 +1,33 @@
+[
+  {
+    "id": "guildlands_mild_exposure",
+    "name": "Guildlands Mild Exposure",
+    "description": "Conservative non-lethal starter exposure.",
+    "cold_threshold": -8,
+    "heat_threshold": 38,
+    "wetness_threshold": 60,
+    "wind_threshold": 40,
+    "exposure_interval": 30,
+    "shelter_reduction": 0.75,
+    "equipment_protection_tags": [
+      "rain_protection",
+      "cold_resistance",
+      "wind_protection"
+    ],
+    "effect_protection_tags": [
+      "environment_protection"
+    ],
+    "resource_costs": {},
+    "effect_applications": {
+      "wetness": "soaked"
+    },
+    "maximum_stacks": 1,
+    "recovery_policy": "shelter_recover_slowly",
+    "tags": [
+      "starter",
+      "nonlethal"
+    ],
+    "plugin_data": {},
+    "version": 1
+  }
+]

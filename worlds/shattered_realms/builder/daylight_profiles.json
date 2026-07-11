@@ -1,0 +1,21 @@
+[
+  {
+    "id": "guildlands_daylight",
+    "name": "Guildlands Daylight",
+    "description": "Simple deterministic dawn/day/dusk/night boundaries.",
+    "day_length_minutes": 1440,
+    "sunrise_world_minute": 360,
+    "sunset_world_minute": 1080,
+    "dawn_duration": 60,
+    "dusk_duration": 60,
+    "night_light_level": 0.04,
+    "moonlight_profile_id": "guildlands_moonlight",
+    "seasonal_shift_enabled": true,
+    "maximum_shift_minutes": 30,
+    "tags": [
+      "starter"
+    ],
+    "plugin_data": {},
+    "version": 1
+  }
+]

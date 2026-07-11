@@ -1,0 +1,12 @@
+[
+  {
+    "id": "slippery_placeholder",
+    "name": "Slippery Placeholder",
+    "description": "Non-denying movement hook for rain and snow.",
+    "tags": [
+      "placeholder"
+    ],
+    "plugin_data": {},
+    "version": 1
+  }
+]
