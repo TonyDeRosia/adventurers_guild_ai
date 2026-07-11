@@ -27,7 +27,8 @@ def test_classic_room_layout_and_hidden_ids(tmp_path: Path, monkeypatch) -> None
     assert text.count("Guildhall Crossing Square") == 1
     assert "guildhall_crossing" not in text
     assert "starter_square" not in text
-    assert lines[2].startswith("Is a playable MUD room")
+    assert "playable MUD room" not in lines[2]
+    assert "GM to narrate" not in lines[2]
     assert lines[-1] == "[ Exits: north east west in ]"
     assert text.index("Fountain") < text.index("[ Exits:")
 
