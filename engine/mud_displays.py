@@ -35,6 +35,37 @@ class DisplayLine:
     segments: list[DisplaySegment] = field(default_factory=list)
 
 @dataclass
+class DisplayCell:
+    text: str
+    role: str = "character_value"
+    width: int | None = None
+    align: str = "left"
+    trusted_markup: bool = False
+
+@dataclass
+class DisplayRow:
+    cells: list[DisplayCell] = field(default_factory=list)
+    role: str = "character_value"
+
+@dataclass
+class DisplayDivider:
+    role: str = "character_frame"
+    kind: str = "section"
+
+@dataclass
+class DisplayTable:
+    rows: list[DisplayRow] = field(default_factory=list)
+    role: str = "character_value"
+
+@dataclass
+class DisplayFrame:
+    title: str = ""
+    rows: list[Any] = field(default_factory=list)
+    width: int = 79
+    frame_role: str = "character_frame"
+    title_role: str = "character_title"
+
+@dataclass
 class DisplayField:
     label: str
     value: Any
@@ -68,6 +99,7 @@ class DisplayDocument:
     spacing: str = "major"
     renderer_hints: dict[str, Any] = field(default_factory=dict)
     debug_metadata: dict[str, Any] = field(default_factory=dict)
+    frames: list[DisplayFrame] = field(default_factory=list)
 
 def normalize_sentence(text: Any) -> str:
     raw = re.sub(r"\s+", " ", str(text or "").strip())
@@ -94,6 +126,110 @@ def _render_entry_plain(entry: DisplayEntry) -> str:
         return f"({entry.quantity}) {entry.text}"
     qty = f"{entry.quantity}x " if entry.quantity and entry.quantity > 1 else ""
     return qty + str(entry.text)
+
+
+def _visible_width(text: Any) -> int:
+    return len(strip_mud_color_markup(re.sub(r"\{/?[a-z_]+\}", "", str(text or ""))))
+
+def _pad_visible(text: str, width: int, align: str = "left") -> str:
+    missing = max(0, width - _visible_width(text))
+    if align == "right":
+        return " " * missing + text
+    if align == "center":
+        left = missing // 2
+        return " " * left + text + " " * (missing - left)
+    return text + " " * missing
+
+def _frame_line_plain(frame: DisplayFrame, content: str = "", *, kind: str = "row") -> str:
+    width=max(32,int(frame.width or 79)); inner=width-2
+    chars={"top":("╔","═","╗"),"bottom":("╚","═","╝"),"section":("╠","═","╣"),"item":("╟","─","╢")}
+    if kind in chars:
+        l,ch,r=chars[kind]; return l + ch*inner + r
+    return "║" + _pad_visible(content[:inner], inner) + "║"
+
+def _frame_segments(frame: DisplayFrame, content: str = "", *, kind: str = "row", role: str = "character_value") -> DisplayLine:
+    if kind != "row":
+        return DisplayLine(_frame_line_plain(frame, kind=kind), role=frame.frame_role)
+    inner=max(30,int(frame.width or 79)-2)
+    return DisplayLine(segments=[DisplaySegment("║", frame.frame_role), DisplaySegment(_pad_visible(content, inner), role), DisplaySegment("║", frame.frame_role)])
+
+def _field_text(label: str, value: Any) -> str:
+    return f"{label}: {value}"
+
+def build_character_frame_document(intent: DisplayIntent | str, title: str, rows: list[Any], *, width: int = 79) -> DisplayDocument:
+    frame=DisplayFrame(title=title, width=width)
+    doc=DisplayDocument(intent, semantic_role="character_value", title_role="character_title", frames=[frame])
+    lines=[_frame_segments(frame, kind="top"), _frame_segments(frame, _pad_visible(title, width-2, "center"), role="character_title"), _frame_segments(frame, kind="section")]
+    for idx,row in enumerate(rows):
+        if isinstance(row, DisplayDivider):
+            lines.append(_frame_segments(frame, kind=row.kind))
+        elif isinstance(row, DisplayLine):
+            lines.append(_frame_segments(frame, _line_text(row), role=_line_role(row,"character_value")))
+        elif isinstance(row, DisplayRow):
+            parts=[]
+            for cell in row.cells:
+                txt=str(cell.text)
+                if cell.width: txt=_pad_visible(txt, cell.width, cell.align)
+                parts.append(txt)
+            lines.append(_frame_segments(frame, "   ".join(parts), role=row.role))
+        else:
+            lines.append(_frame_segments(frame, str(row), role="character_value"))
+    lines.append(_frame_segments(frame, kind="bottom"))
+    doc.lines=lines
+    return doc
+
+def _char(character: Any, *names: str, default: Any = "") -> Any:
+    for n in names:
+        if hasattr(character,n):
+            v=getattr(character,n)
+            if v not in (None,""): return v
+    return default
+
+def build_score_document(character: Any) -> DisplayDocument:
+    xp=int(_char(character,"xp",default=0) or 0); lvl=int(_char(character,"level",default=1) or 1); tnl=max(0,lvl*100-xp)
+    rows=[
+        DisplayRow([DisplayCell(_field_text("Name",_char(character,"name",default="Adventurer")),width=34),DisplayCell(_field_text("Title",_char(character,"title",default="Adventurer")),width=34)]),
+        DisplayRow([DisplayCell(_field_text("Race",_char(character,"race",default="Adventurer")),width=34),DisplayCell(_field_text("Class",_char(character,"character_class","char_class",default="Adventurer")),width=34)]),
+        DisplayRow([DisplayCell(_field_text("Level",lvl),width=34),DisplayCell(_field_text("Alignment",_char(character,"alignment",default="neutral")),width=34)]), DisplayDivider(),
+        DisplayLine(f"HP: {_char(character,'hp',default=0)}/{_char(character,'max_hp',default=0)}   Mana: {_char(character,'mana',default=0)}/{_char(character,'max_mana',default=0)}   Stamina: {_char(character,'stamina',default=0)}/{_char(character,'max_stamina',default=0)}", role="character_value"),
+        DisplayRow([DisplayCell(_field_text("Experience",xp),width=34),DisplayCell(_field_text("TNL",tnl),width=34)]),
+        DisplayLine(f"Carry Capacity: {_char(character,'carry_weight',default=len(_char(character,'inventory',default=[]) or []))} / {_char(character,'carry_capacity',default=50)} — {_char(character,'encumbrance',default='lightly encumbered')}", role="character_value"), DisplayDivider(),
+        DisplayLine("Base Stats: " + "   ".join(f"{lab} {_char(character, attr, default=10)}" for lab,attr in [('Str','strength'),('Dex','dexterity'),('Con','constitution')])),
+        DisplayLine("            " + "   ".join(f"{lab} {_char(character, attr, default=10)}" for lab,attr in [('Int','intelligence'),('Wis','wisdom'),('Cha','charisma')])),
+        DisplayLine(f"Armor: {_char(character,'armor',default=0)}   Evasion: {_char(character,'evasion',default=0)}   Spell Saves: {_char(character,'spell_saves',default='--')}"),
+        DisplayLine(f"Offense: Hit {_char(character,'hit_bonus','attack',default=0)}   Damage {_char(character,'damage_bonus',default=0)}   Accuracy {_char(character,'accuracy',default=0)}"), DisplayDivider(),
+        DisplayLine(f"Gold: {int(_char(character,'gold',default=0) or 0)}"),
+        DisplayLine(f"Posture: {_char(character,'posture',default='standing')}   Hunger: {_char(character,'hunger',default='--')}   Thirst: {_char(character,'thirst',default='--')}"),
+        DisplayLine(f"Played: {_char(character,'played_time',default='--')}   Last login: {_char(character,'last_login',default='--')}")]
+    return build_character_frame_document(DisplayIntent.SCORE,"CHARACTER STATUS",rows,width=79)
+
+def build_worth_document(character: Any) -> DisplayDocument:
+    cells=[DisplayCell(f"Gold: {int(_char(character,'gold',default=0) or 0)}",width=18)]
+    for cur in ('silver','copper'):
+        if hasattr(character,cur): cells.append(DisplayCell(f"{cur.title()}: {int(getattr(character,cur) or 0)}",width=18))
+    return build_character_frame_document(DisplayIntent.SCORE,"CURRENCIES",[DisplayRow(cells)],width=48)
+
+def _ability_cost(row: dict[str, Any]) -> str:
+    costs=row.get('costs') or []
+    return ", ".join(f"{c.get('amount', c.get('percentage',0))} {str(c.get('resource_id','')).title()}" for c in costs) or "No cost"
+
+def build_abilities_document(rows: list[dict[str, Any]], *, title: str="ABILITIES", empty: str="You have no abilities.") -> DisplayDocument:
+    out=[]
+    for i,r in enumerate(rows):
+        if i: out.append(DisplayDivider(kind="item"))
+        rank=f"Rank: {int(r.get('rank') or 1)}/{int(r.get('maximum_rank') or 100)}"
+        out.append(DisplayRow([DisplayCell(str(r.get('name') or r.get('id') or 'Ability').replace('_',' ').title(),width=48),DisplayCell(rank,width=17,align='right')], role="character_title"))
+        status=str(r.get('status_text') or 'Ready')
+        out.append(DisplayLine(f"Status: {status}", role="character_positive" if status=='Ready' else "warning"))
+        meta=[]
+        if title == 'SPELLS':
+            meta=[DisplayCell(f"Mana: {next((c.get('amount') for c in (r.get('costs') or []) if c.get('resource_id') in {'mana','mp'}), 0)}",width=18),DisplayCell("Cooldown: Ready",width=22),DisplayCell(f"Target: {((r.get('targeting') or {}).get('mode') or 'Self').title()}",width=20)]
+        else:
+            cat=str(r.get('category') or r.get('ability_type') or 'General').replace('_',' ').title(); meta=[DisplayCell(f"Category: {cat}",width=34),DisplayCell(f"Cost: {_ability_cost(r)}",width=28)]
+        out.append(DisplayRow(meta));
+        if r.get('description'): out.append(DisplayLine(str(r.get('description')), role="character_value"))
+    if not out: out=[DisplayLine(empty, role="character_muted")]
+    return build_character_frame_document(DisplayIntent.SKILLS if title=='SKILLS' else DisplayIntent.SPELLS if title=='SPELLS' else DisplayIntent.SYSTEM,title,out,width=70)
 
 def render_display_plain(doc: DisplayDocument) -> str:
     blocks: list[str] = []
@@ -249,13 +385,54 @@ def build_equipment_document(items: list[dict[str, Any]], slots: list[str]) -> D
         ))
     return DisplayDocument(DisplayIntent.EQUIPMENT, title="Equipment", semantic_role="system", title_role="system", paragraphs=[] if items else [DisplayLine("You are not wearing anything.", role="equipment_empty")], sections=[DisplaySection(fields=fields)])
 
+PROMPT_PRESETS = {
+    "compact": "[%h/%H HP %m/%M MP %s/%S ST]",
+    "classic": "[%h/%H HP %m/%M MP %s/%S ST %X TNL %g Gold]",
+    "combat": "[%h/%H HP %m/%M MP | %t: %c]",
+    "explorer": "[%h/%H HP %s/%S ST | %r | %T]",
+    "minimal": ">",
+}
+PROMPT_MAX_LENGTH = 160
+
+def _prompt_template(character: Any) -> str:
+    prefs = getattr(character, "preferences", {}) or {}
+    custom = getattr(character, "prompt_template", None) or prefs.get("prompt_template")
+    preset = str(getattr(character, "prompt_preset", None) or prefs.get("prompt_preset") or "compact").lower()
+    return str(custom or PROMPT_PRESETS.get(preset, PROMPT_PRESETS["compact"]))[:PROMPT_MAX_LENGTH]
+
 def build_prompt_document(character: Any) -> DisplayDocument:
-    segments = [DisplaySegment("[", "prompt_marker"), DisplaySegment(f"{character.hp}/{character.max_hp} HP", "prompt_hp")]
-    if getattr(character, "max_mana", 0): segments += [DisplaySegment(" ", "prompt"), DisplaySegment(f"{character.mana}/{character.max_mana} MP", "prompt_mana")]
-    if getattr(character, "max_stamina", 0): segments += [DisplaySegment(" ", "prompt"), DisplaySegment(f"{character.stamina}/{character.max_stamina} ST", "prompt_stamina")]
-    if getattr(character, "xp", None) is not None and getattr(character, "show_xp_in_prompt", False): segments += [DisplaySegment(" ", "prompt"), DisplaySegment(f"{character.xp} XP", "prompt_xp")]
-    if getattr(character, "gold", None) is not None and getattr(character, "show_gold_in_prompt", False): segments += [DisplaySegment(" ", "prompt"), DisplaySegment(f"{character.gold} Gold", "prompt_gold")]
-    segments.append(DisplaySegment("]", "prompt_marker"))
+    prefs = getattr(character, "preferences", {}) or {}
+    if not getattr(character, "prompt_template", None) and not getattr(character, "prompt_preset", None) and not prefs.get("prompt_template") and not prefs.get("prompt_preset"):
+        segments = [DisplaySegment("[", "prompt_marker"), DisplaySegment(f"{character.hp}/{character.max_hp} HP", "prompt_hp")]
+        if getattr(character, "max_mana", 0): segments += [DisplaySegment(" ", "prompt"), DisplaySegment(f"{character.mana}/{character.max_mana} MP", "prompt_mana")]
+        if getattr(character, "max_stamina", 0): segments += [DisplaySegment(" ", "prompt"), DisplaySegment(f"{character.stamina}/{character.max_stamina} ST", "prompt_stamina")]
+        segments.append(DisplaySegment("]", "prompt_marker"))
+        return DisplayDocument(DisplayIntent.PROMPT, semantic_role="prompt", lines=[DisplayLine(segments=segments)])
+    xp=int(getattr(character,"xp",0) or 0); lvl=int(getattr(character,"level",1) or 1)
+    tokens={
+        "%h": (str(getattr(character,"hp",0)), "prompt_hp"), "%H": (str(getattr(character,"max_hp",0)), "prompt_hp"),
+        "%m": (str(getattr(character,"mana",0)), "prompt_mana"), "%M": (str(getattr(character,"max_mana",0)), "prompt_mana"),
+        "%s": (str(getattr(character,"stamina",0)), "prompt_stamina"), "%S": (str(getattr(character,"max_stamina",0)), "prompt_stamina"),
+        "%x": (str(xp), "prompt_xp"), "%X": (str(max(0,lvl*100-xp)), "prompt_xp"), "%g": (str(int(getattr(character,"gold",0) or 0)), "prompt_gold"),
+        "%l": (str(lvl), "prompt"), "%a": (str(getattr(character,"alignment","neutral")), "prompt_alignment"), "%p": (str(getattr(character,"posture","standing")), "prompt_position"),
+        "%t": (str(getattr(character,"combat_target","none") or "none"), "prompt_target"), "%c": (str(getattr(character,"target_condition","unknown") or "unknown"), "prompt_target"),
+        "%r": (str(getattr(character,"room_name", getattr(character,"room_id", "unknown")) or "unknown"), "prompt_area"), "%z": (str(getattr(character,"area_name", getattr(character,"zone_name", "")) or ""), "prompt_area"),
+        "%q": (str(getattr(character,"quest_timer", "--") or "--"), "prompt_time"), "%T": (str(getattr(character,"world_time", "--") or "--"), "prompt_time"),
+    }
+    template=_prompt_template(character)
+    segments=[]; i=0
+    while i < len(template):
+        if template[i] == "%" and i+1 < len(template):
+            token=template[i:i+2]
+            if token == "%%": segments.append(DisplaySegment("%", "prompt")); i+=2; continue
+            if token in tokens:
+                text, role=tokens[token]; segments.append(DisplaySegment(text, role)); i+=2; continue
+            segments.append(DisplaySegment(token, "warning")); i+=2; continue
+        j=template.find("%", i)
+        if j < 0: j=len(template)
+        txt=template[i:j]
+        role="prompt_marker" if set(txt) <= set("[]<>|: /-") else "prompt"
+        segments.append(DisplaySegment(txt, role)); i=j
     return DisplayDocument(DisplayIntent.PROMPT, semantic_role="prompt", lines=[DisplayLine(segments=segments)])
 
 import html

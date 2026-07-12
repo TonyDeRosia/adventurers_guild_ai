@@ -1594,3 +1594,12 @@ body.smart-mud-mode { height: 100vh; overflow: hidden; }
 .mud-color-magenta { color: #ff55ff; }
 .mud-color-cyan { color: #55ffff; }
 #mud-world-output span[role="room_description"], #mud-world-output span[role="npc"], #mud-world-output span[role="mob"], #mud-world-output span[role="object"], #mud-world-output span[role="object_title"], #mud-world-output span[role="object_description"], #mud-world-output span[role="entity_title"], #mud-world-output span[role="entity_description"], .mud-role-room_description, .mud-role-npc, .mud-role-mob, .mud-role-object { color: #ffffff; }
+
+#mud-world-output span[role="character_frame"], #mud-player-prompt span[role="character_frame"], .mud-role-character_frame { color: var(--mud-color-character-frame, #3366ff); }
+#mud-world-output span[role="character_title"], #mud-player-prompt span[role="character_title"], .mud-role-character_title { color: var(--mud-color-character-title, #ffd700); }
+#mud-world-output span[role="character_section"], #mud-player-prompt span[role="character_section"], .mud-role-character_section { color: var(--mud-color-character-section, #3366ff); }
+#mud-world-output span[role="character_label"], #mud-player-prompt span[role="character_label"], .mud-role-character_label { color: var(--mud-color-character-label, #00ffff); }
+#mud-world-output span[role="character_value"], #mud-player-prompt span[role="character_value"], .mud-role-character_value { color: var(--mud-color-character-value, #ffffff); }
+#mud-world-output span[role="character_positive"], #mud-player-prompt span[role="character_positive"], .mud-role-character_positive { color: var(--mud-color-character-positive, #33ff66); }
+#mud-world-output span[role="character_negative"], #mud-player-prompt span[role="character_negative"], .mud-role-character_negative { color: var(--mud-color-character-negative, #ff5555); }
+#mud-world-output span[role="character_muted"], #mud-player-prompt span[role="character_muted"], .mud-role-character_muted { color: var(--mud-color-character-muted, #888888); }

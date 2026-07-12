@@ -11,7 +11,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 from pathlib import Path
-from engine.mud_displays import semantic, DisplayDocument, DisplayIntent, DisplayLine, DisplaySection, DisplayField, render_display_mud
+from engine.mud_displays import semantic, DisplayDocument, DisplayIntent, DisplayLine, DisplaySection, DisplayField, render_display_mud, build_score_document, build_worth_document, build_abilities_document
 from engine.actors import actor_from_runtime_character
 from engine.formulas import FormulaEngine
 from engine.score_renderer import ActorScoreRenderer
@@ -1510,22 +1510,7 @@ class MudCommandEngine:
             if self._is_score_admin(character):
                 return CommandResult(self._render_score_section(character, section))
             return CommandResult("That score section is not available.", ok=False, display_intent="WARNING", semantic_role="warning")
-        doc = DisplayDocument(DisplayIntent.SCORE, title="Score", semantic_role="system", title_role="system")
-        def add(title: str, fields: list[tuple[str, Any]]):
-            if fields and section in {"all", title.lower()}:
-                doc.sections.append(DisplaySection(title=title, fields=[DisplayField(k, v) for k, v in fields]))
-        add("Character", [("Name", character.name), ("Level", getattr(character, "level", 1)), ("Race", getattr(character, "race", "Adventurer")), ("Class", getattr(character, "character_class", getattr(character, "char_class", "Adventurer")))])
-        add("Resources", [("Health", f"{getattr(character,'hp',0)} / {getattr(character,'max_hp',0)}"), ("Mana", f"{getattr(character,'mana',0)} / {getattr(character,'max_mana',0)}"), ("Stamina", f"{getattr(character,'stamina',0)} / {getattr(character,'max_stamina',0)}")])
-        xp=int(getattr(character, "xp", 0) or 0); level=int(getattr(character, "level", 1) or 1); next_xp=max(0, level*100 - xp)
-        add("Progression", [("Experience", xp), ("Experience to next level", next_xp)])
-        attrs=[]
-        for label, attr in [("Strength","strength"),("Dexterity","dexterity"),("Constitution","constitution"),("Intelligence","intelligence"),("Wisdom","wisdom"),("Charisma","charisma")]:
-            if hasattr(character, attr): attrs.append((label, getattr(character, attr)))
-        add("Attributes", attrs)
-        add("Combat", [("Armor", getattr(character, "armor", 0)), ("Evasion", getattr(character, "evasion", 0)), ("Attack", getattr(character, "attack", 0))])
-        add("Currency", [("Gold", int(getattr(character, "gold", 0) or 0))])
-        add("Survival", [("Posture", getattr(character, "posture", "standing"))])
-        add("Quests", [])
+        doc = build_score_document(character)
         return CommandResult(narrative=render_display_mud(doc), display_document=doc, display_intent="SCORE")
 
 
@@ -1633,15 +1618,22 @@ class MudCommandEngine:
             rows = [r for r in rows if str(r.get("ability_type")) in kinds]
         return rows
 
-    def _format_ability_list(self, rows: list[dict[str, Any]], empty: str) -> str:
-        if not rows: return empty
-        lines = ["Your abilities:"]
-        for r in rows:
-            costs = ", ".join(f"{c.get('amount', c.get('percentage', 0))} {c.get('resource_id')}" for c in r.get("costs", [])) or "no cost"
-            rank = int(r.get("rank") or 1); mx = int(r.get("maximum_rank") or 100)
-            source = ((r.get("progression_metadata") or {}).get("source_type") or (r.get("plugin_data") or {}).get("source") or "learned")
-            lines.append(f"{r.get('name') or r.get('id')}\nRank {rank}/{mx}\nStatus: Ready\nCategory: {r.get('category') or r.get('ability_type')}\nCost: {costs}\nSource: {source}\n{r.get('description','')}")
-        return "\n\n".join(lines)
+    def _ability_status_text(self, character: Any, row: dict[str, Any]) -> str:
+        aid = str(row.get("id") or "")
+        if aid == "build_campfire" and not (getattr(character, "current_campsite_id", None) or getattr(character, "campsite_id", None)):
+            return "Requires an established campsite."
+        for cost in row.get("costs", []) or []:
+            resource = str(cost.get("resource_id") or "").lower()
+            amount = int(cost.get("amount") or 0)
+            if resource in {"mana", "mp"} and int(getattr(character, "mana", 0) or 0) < amount:
+                return f"Requires {amount} mana."
+        return "Ready"
+
+    def _format_ability_list(self, rows: list[dict[str, Any]], empty: str, title: str = "ABILITIES") -> CommandResult:
+        for row in rows:
+            row["status_text"] = self._ability_status_text(getattr(self, "_format_character", None), row) if getattr(self, "_format_character", None) else row.get("status_text", "Ready")
+        doc = build_abilities_document(rows, title=title, empty=empty)
+        return CommandResult(narrative=render_display_mud(doc), display_document=doc, display_intent=title)
 
     def _cmd_spellup(self, character: Any, args: list[str], raw: str) -> CommandResult:
         if args and args[0].lower() == "cast":
@@ -1657,19 +1649,19 @@ class MudCommandEngine:
         return CommandResult(narrative=self._render_score_section(character, "spellup"))
 
     def _cmd_spells(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        return CommandResult(self._format_ability_list(self._ability_rows(character, {"spell","heal","buff","debuff"}), "You know no spells."))
+        self._format_character = character; return self._format_ability_list(self._ability_rows(character, {"spell","heal","buff","debuff"}), "You know no spells.", "SPELLS")
 
     def _cmd_skills(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        return CommandResult(self._format_ability_list(self._ability_rows(character, {"skill","technique"}), "You know no skills."))
+        self._format_character = character; return self._format_ability_list(self._ability_rows(character, {"skill","technique"}), "You know no skills.", "SKILLS")
 
     def _cmd_abilities(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        return CommandResult(self._format_ability_list(self._ability_rows(character), "You have no abilities."))
+        self._format_character = character; return self._format_ability_list(self._ability_rows(character), "You have no abilities.", "ABILITIES")
 
     def _cmd_ability_detail(self, character: Any, args: list[str], raw: str) -> CommandResult:
         q = " ".join(args).lower().replace(" ", "_")
         for r in self._ability_rows(character):
             if q in {str(r.get("id")).lower(), str(r.get("name")).lower().replace(" ", "_")}:
-                return CommandResult(self._format_ability_list([r], "Ability not found."))
+                return self._format_ability_list([r], "Ability not found.", "ABILITY")
         return CommandResult("Ability not found.", ok=False)
 
     def _cmd_use_ability(self, character: Any, args: list[str], raw: str) -> CommandResult:
@@ -1773,7 +1765,9 @@ class MudCommandEngine:
         import sqlite3
         actor_id=character.id if not args or args[0]=="self" else args[0]
         with sqlite3.connect(svc.db_path) as c: rows=c.execute("SELECT ability_id,cooldown_group,ready_world_time,charges_current,charges_maximum FROM actor_ability_cooldowns WHERE actor_id=? AND active=1 ORDER BY ready_world_time,ability_id", (actor_id,)).fetchall()
-        return CommandResult("Cooldowns:\n" + ("\n".join(f"- {r[0]} group={r[1]} ready={r[2]} charges={r[3]}/{r[4]}" for r in rows) if rows else "- none"))
+        docs = [{"name": str(r[0]).replace("_", " ").title(), "rank": 1, "maximum_rank": 1, "status_text": "Ready", "category": "Cooldown", "costs": [], "description": f"Charges: {r[3]}/{r[4]}"} for r in rows]
+        doc = build_abilities_document(docs, title="COOLDOWNS", empty="No active cooldowns.")
+        return CommandResult(render_display_mud(doc), display_document=doc, display_intent="COOLDOWNS")
 
     def _cmd_abilitycasts(self, character: Any, args: list[str], raw: str) -> CommandResult:
         svc=self._ability_service(character)
@@ -1804,9 +1798,9 @@ class MudCommandEngine:
         return CommandResult(narrative=render_display_mud(doc), display_document=doc, display_intent="AFFECTS")
 
     def _cmd_worth(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        """Display net worth through the single score renderer."""
-        gold = int(getattr(character, "gold", 0) or 0)
-        return CommandResult(narrative=f"You have {gold} gold coins.\n" + self._render_score_section(character, "currencies"))
+        """Display net worth through the unified character display suite."""
+        doc = build_worth_document(character)
+        return CommandResult(narrative=render_display_mud(doc), display_document=doc, display_intent="SCORE")
 
     def _cmd_who(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """List connected players."""
