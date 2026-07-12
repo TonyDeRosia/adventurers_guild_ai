@@ -221,8 +221,12 @@ class CombatRuntimeService:
         if hasattr(attacker_source, "id"):
             return self.start_player_attack(attacker_source, target_ent.get("name") or "")
         self.refresh_content()
-        attacker = self.actor_from_entity(attacker_source); defender = self.actor_from_entity(target_ent)
-        err = self.validate_attack(attacker, defender, target_ent)
+        attacker = self.actor_from_entity(attacker_source); defender = self._actor_from_source(target_ent)
+        err = ""
+        if defender.actor_id.startswith("entity:"):
+            err = self.validate_attack(attacker, defender, target_ent)
+        elif attacker.actor_id == defender.actor_id or attacker.identity.current_location != defender.identity.current_location or defender.resources.health <= 0:
+            err = "That is not a valid combat target."
         if err: return CombatRuntimeResult(False, [err])
         enc = self.find_actor_encounter(attacker.actor_id) or self.start_encounter(attacker.identity.current_location)
         already = bool(self.find_actor_encounter(attacker.actor_id))
@@ -235,6 +239,73 @@ class CombatRuntimeService:
         for cid in self.active_character_ids_in_room(attacker.identity.current_location):
             self.enqueue_output(cid, f"{attacker.identity.name} attacks {defender.identity.name}.", encounter_id=enc, room_id=attacker.identity.current_location, category="combat_start")
         return rr
+
+    def _actor_from_source(self, source: Any) -> Actor:
+        if hasattr(source, "id"):
+            a = actor_from_runtime_character(source, self.runtime.active_world_id or ""); a.actor_id = self.actor_id_for_character(source); return a
+        return self.actor_from_entity(source)
+
+    def _actor_id_from_source(self, source: Any) -> str:
+        return self.actor_id_for_character(source) if hasattr(source, "id") else self.actor_id_for_entity(source)
+
+    def actor_target(self, actor_source: Any, target_source: Any) -> CombatRuntimeResult:
+        aid = self._actor_id_from_source(actor_source); eid = self.find_actor_encounter(aid)
+        if not eid: return CombatRuntimeResult(False, ["You are not currently fighting anyone."])
+        target = self._actor_from_source(target_source)
+        target_eid = self.find_actor_encounter(target.actor_id)
+        if target_eid != eid: return CombatRuntimeResult(False, ["That target is not in this fight."])
+        actor = self._actor_from_source(actor_source)
+        if actor.identity.current_location != target.identity.current_location: return CombatRuntimeResult(False, ["They are not here."])
+        if target.resources.health <= 0 or target.lifecycle_state == "dead": return CombatRuntimeResult(False, [f"There is no living {target.identity.name.lower()} here."])
+        self.set_target(eid, aid, target.actor_id)
+        self.queue_action(eid, aid, "basic_attack", target.actor_id, source="agent" if not hasattr(actor_source, "id") else "player_target")
+        return CombatRuntimeResult(True, [f"{actor.identity.name} turns attention to {target.identity.name}."], eid)
+
+    def actor_defend(self, actor_source: Any) -> CombatRuntimeResult:
+        aid = self._actor_id_from_source(actor_source); eid = self.find_actor_encounter(aid)
+        if not eid: return CombatRuntimeResult(False, ["You are not currently fighting anyone."])
+        self.queue_action(eid, aid, "defend", source="agent" if not hasattr(actor_source, "id") else "player")
+        return CombatRuntimeResult(True, ["You prepare to defend yourself." if hasattr(actor_source, "id") else f"{self._actor_from_source(actor_source).identity.name} prepares to defend."], eid)
+
+    def actor_flee(self, actor_source: Any, direction: str = "") -> CombatRuntimeResult:
+        aid = self._actor_id_from_source(actor_source); eid = self.find_actor_encounter(aid)
+        if not eid: return CombatRuntimeResult(False, ["You are not currently fighting anyone."])
+        actor = self._actor_from_source(actor_source)
+        if not direction:
+            exits = self.runtime.canonical_exits(actor_source, actor.identity.current_location) if hasattr(self.runtime, "canonical_exits") else {}
+            direction = next((d for d, e in exits.items() if not e.get("hidden") and not e.get("closed") and not e.get("locked")), "")
+        if not direction: return CombatRuntimeResult(False, ["There is nowhere to flee."])
+        self._publish("combat_flee_attempted", {"encounter_id": eid, "actor_id": aid, "direction": direction, "world_time": self.world_time()})
+        move = self.runtime._move_character(actor_source, direction, bypass_combat=True) if hasattr(actor_source, "id") else self.runtime.move_entity_actor(actor_source, direction, bypass_combat=True)
+        if not move.ok:
+            self._publish("combat_flee_failed", {"encounter_id": eid, "actor_id": aid, "direction": direction, "world_time": self.world_time()})
+            return CombatRuntimeResult(False, [f"You try to flee {direction}, but cannot escape that way."])
+        with sqlite3.connect(self.db_path) as con:
+            con.execute("UPDATE combat_participants SET participation_status='fled',fled=1 WHERE encounter_id=? AND actor_id=?", (eid, aid))
+            con.execute("UPDATE combat_action_queue SET status='cancelled',resolved_at=? WHERE encounter_id=? AND actor_id=? AND status='queued'", (datetime.now(timezone.utc).isoformat(), eid, aid))
+        self._publish("combat_participant_fled", {"encounter_id": eid, "actor_id": aid, "direction": direction, "world_time": self.world_time()}); self.end_if_finished(eid)
+        return CombatRuntimeResult(True, [f"You break away and flee {direction}!" if hasattr(actor_source, "id") else f"{actor.identity.name} flees {direction}."], eid)
+
+    def actor_assist(self, actor_source: Any, ally_source: Any | None = None) -> CombatRuntimeResult:
+        actor = self._actor_from_source(actor_source); room_id = actor.identity.current_location
+        visible = self.runtime.find_visible_entities(room_id, actor_source)
+        candidates = ["entity:" + str(e.get("instance_id") or e.get("entity_id")) for e in visible.get("npcs", []) + visible.get("mobs", [])]
+        candidates += ["character:" + c.get("character_id", "") for c in self.runtime.list_characters(self.runtime.active_world_id or "") if c.get("room_id") == room_id]
+        for ally_id in sorted(set(candidates)):
+            if ally_id == actor.actor_id: continue
+            aeid = self.find_actor_encounter(ally_id)
+            if not aeid: continue
+            with sqlite3.connect(self.db_path) as con:
+                row = con.execute("SELECT current_target_actor_id FROM combat_participants WHERE encounter_id=? AND actor_id=?", (aeid, ally_id)).fetchone()
+            target_id = row[0] if row else ""
+            target = self._load_actor(target_id)
+            if target and target.actor_id != actor.actor_id and target.identity.current_location == room_id:
+                self.join_encounter(aeid, actor, "side_1")
+                self.set_target(aeid, actor.actor_id, target.actor_id)
+                self.queue_action(aeid, actor.actor_id, "basic_attack", target.actor_id, source="agent")
+                self._broadcast_room(aeid, room_id, f"{actor.identity.name} joins the fight.", category="combat_assist")
+                return CombatRuntimeResult(True, [f"{actor.identity.name} assists in combat."], aeid)
+        return CombatRuntimeResult(False, ["You do not see an ally here who needs assistance."])
 
     def start_encounter(self, room_id: str) -> str:
         eid='enc_'+uuid.uuid4().hex; now=datetime.now(timezone.utc).isoformat(); wt=self.world_time()
@@ -388,10 +459,7 @@ class CombatRuntimeService:
             self.enqueue_output(actor.actor_id.split(':',1)[1], 'You raise your guard and prepare for the next attack.', encounter_id=eid, room_id=actor.identity.current_location, category='defended_hit')
 
     def defend(self, character: Any) -> CombatRuntimeResult:
-        aid=self.actor_id_for_character(character); eid=self.find_actor_encounter(aid)
-        if not eid: return CombatRuntimeResult(False, ['You are not currently fighting anyone.'])
-        self.queue_action(eid, aid, 'defend', source='player')
-        return CombatRuntimeResult(True, ['You prepare to defend yourself.'], eid)
+        return self.actor_defend(character)
 
     def _execute_ability(self, eid: str, attacker: Actor, defender: Actor, action: dict[str, Any] | None) -> CombatRuntimeResult:
         ability_id=str((action or {}).get('ability_id') or '')
@@ -458,19 +526,7 @@ class CombatRuntimeService:
         return self.start_player_attack(character, ent.get('name','') if ent else target.identity.name)
 
     def flee(self, character:Any, direction:str='')->CombatRuntimeResult:
-        aid=self.actor_id_for_character(character); eid=self.find_actor_encounter(aid)
-        if not eid: return CombatRuntimeResult(False,['You are not currently fighting anyone.'])
-        exits=self.runtime._current_room(character).exits; dirs=[e.get('direction') for e in exits]
-        direction=direction or (dirs[0] if dirs else '')
-        if not direction: return CombatRuntimeResult(False,['There is nowhere to flee.'])
-        self._publish('combat_flee_attempted',{'encounter_id':eid,'actor_id':aid,'direction':direction,'world_time':self.world_time()})
-        move=self.runtime._move_character(character,direction, bypass_combat=True)
-        if not move.ok:
-            self._publish('combat_flee_failed',{'encounter_id':eid,'actor_id':aid,'direction':direction,'world_time':self.world_time()})
-            return CombatRuntimeResult(False,[f'You try to flee {direction}, but cannot escape that way.'])
-        with sqlite3.connect(self.db_path) as con: con.execute("UPDATE combat_participants SET participation_status='fled',fled=1 WHERE encounter_id=? AND actor_id=?",(eid,aid))
-        self._publish('combat_participant_fled',{'encounter_id':eid,'actor_id':aid,'direction':direction,'world_time':self.world_time()}); self.end_if_finished(eid)
-        return CombatRuntimeResult(True,[f'You break away and flee {direction}!'],eid)
+        return self.actor_flee(character, direction)
 
     def status(self, character:Any)->str:
         aid=self.actor_id_for_character(character); eid=self.find_actor_encounter(aid)
