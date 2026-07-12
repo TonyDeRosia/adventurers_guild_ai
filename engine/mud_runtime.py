@@ -28,6 +28,7 @@ from engine.environment import EnvironmentService, init_environment_schema
 from engine.survival_needs import SurvivalNeedsService, init_survival_schema
 from engine.schedules import ScheduleService
 from engine.combat_runtime import CombatRuntimeService, init_combat_runtime_schema
+from engine.agent_runtime import AgentRuntimeGateway, init_agent_runtime_schema
 
 VALID_ROLES = {"player", "helper", "builder", "admin", "owner"}
 BUILDER_ROLES = {"builder", "admin", "owner"}
@@ -594,7 +595,9 @@ class MudRuntime:
         self.abilities = None
         self.builder = BuilderWorkspace(event_bus=self.event_bus)
         self.command_engine.runtime = self
+        init_agent_runtime_schema(self.state_store.db_path)
         self.combat_runtime = CombatRuntimeService(self)
+        self.agent_gateway = AgentRuntimeGateway(self)
         self.command_engine.combat_runtime = self.combat_runtime
         self.living_world = LivingWorldService(self)
         self.schedule_service = ScheduleService(self)
