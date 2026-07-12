@@ -11,7 +11,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 from pathlib import Path
-from engine.mud_displays import semantic, DisplayDocument, DisplayIntent, DisplayLine, DisplaySection, DisplayField, render_display_mud, build_score_document, build_worth_document, build_abilities_document
+from engine.mud_displays import semantic, DisplayDocument, DisplayIntent, DisplayLine, DisplaySection, DisplayField, render_display_mud, render_display_plain, build_score_document, build_worth_document, build_abilities_document, build_prompt_document, PROMPT_PRESETS, PROMPT_MAX_LENGTH
 from engine.actors import actor_from_runtime_character
 from engine.formulas import FormulaEngine
 from engine.score_renderer import ActorScoreRenderer
@@ -312,7 +312,7 @@ class MudCommandEngine:
             "ask": self._cmd_generic,
             "reply": self._cmd_generic,
             "tell": self._cmd_generic,
-            "prompt": self._cmd_generic,
+            "prompt": self._cmd_prompt,
             "afk": self._cmd_generic,
             "automap": self._cmd_generic,
             "autosplit": self._cmd_generic,
@@ -1908,6 +1908,74 @@ Available commands:
             return CommandResult(narrative="Your character is saved automatically.")
         return CommandResult(narrative="Your character is saved automatically.")
 
+
+    def _cmd_prompt(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        """Manage persistent player prompt presets and safe custom templates."""
+        prefs = getattr(character, "preferences", None)
+        if prefs is None:
+            prefs = {}; setattr(character, "preferences", prefs)
+        sub = (args[0].lower() if args else "show")
+        def save() -> None:
+            rt = getattr(self, "runtime", None)
+            world_id = getattr(rt, "active_world_id", "") if rt else self.builder.world_id(character)
+            if rt and hasattr(rt, "state_store"):
+                rt.state_store.save_character(character, world_id)
+            elif self.state_store and hasattr(self.state_store, "save_character"):
+                self.state_store.save_character(character)
+        if sub in {"show", ""}:
+            preset = getattr(character, "prompt_preset", None) or prefs.get("prompt_preset") or "compact"
+            template = getattr(character, "prompt_template", None) or prefs.get("prompt_template") or ""
+            preview = render_display_plain(build_prompt_document(character))
+            return CommandResult(f"Prompt preset: {preset}\nCustom template: {template or 'none'}\nPreview: {preview}")
+        if sub == "list":
+            return CommandResult("Prompt presets:\n" + "\n".join(f"- {name}: {tmpl}" for name, tmpl in PROMPT_PRESETS.items()))
+        if sub == "tokens":
+            return CommandResult("Prompt tokens:\n%h current HP, %H maximum HP, %m current mana, %M maximum mana, %s current stamina, %S maximum stamina, %x current XP, %X XP to next level, %g gold, %l level, %a alignment, %p posture, %t combat target, %c target condition, %r room, %z area/zone, %q quest timer, %T world time, %n player name, %A age, %P play time, %% literal percent.")
+        if sub == "preview":
+            old_preset, old_template = prefs.get("prompt_preset"), prefs.get("prompt_template")
+            old_ap, old_at = getattr(character, "prompt_preset", None), getattr(character, "prompt_template", None)
+            value = " ".join(args[1:]).strip()
+            if value in PROMPT_PRESETS:
+                prefs["prompt_preset"] = value; prefs.pop("prompt_template", None); setattr(character, "prompt_preset", value); setattr(character, "prompt_template", None)
+            elif value:
+                if not self._valid_prompt_template(value): return CommandResult("That prompt template contains unsupported markup or tokens.", ok=False)
+                prefs["prompt_template"] = value; setattr(character, "prompt_template", value)
+            preview = render_display_plain(build_prompt_document(character))
+            if old_preset is None: prefs.pop("prompt_preset", None)
+            else: prefs["prompt_preset"] = old_preset
+            if old_template is None: prefs.pop("prompt_template", None)
+            else: prefs["prompt_template"] = old_template
+            setattr(character, "prompt_preset", old_ap); setattr(character, "prompt_template", old_at)
+            return CommandResult(f"Prompt preview: {preview}")
+        if sub == "reset":
+            prefs.pop("prompt_preset", None); prefs.pop("prompt_template", None); setattr(character, "prompt_preset", None); setattr(character, "prompt_template", None); save()
+            return CommandResult("Prompt reset to the world default.")
+        if sub == "custom":
+            template = raw.split(None, 2)[2] if len(raw.split(None, 2)) >= 3 else ""
+            if not template: return CommandResult("Usage: prompt custom <template>", ok=False)
+            if not self._valid_prompt_template(template): return CommandResult("That prompt template contains unsupported markup or tokens.", ok=False)
+            prefs["prompt_template"] = template[:PROMPT_MAX_LENGTH]; prefs.pop("prompt_preset", None); setattr(character, "prompt_template", prefs["prompt_template"]); setattr(character, "prompt_preset", None); save()
+            return CommandResult("Custom prompt saved.")
+        if sub in PROMPT_PRESETS:
+            prefs["prompt_preset"] = sub; prefs.pop("prompt_template", None); setattr(character, "prompt_preset", sub); setattr(character, "prompt_template", None); save()
+            return CommandResult(f"Prompt preset set to {sub}.")
+        return CommandResult("Usage: prompt [show|list|compact|classic|combat|explorer|minimal|custom <template>|tokens|reset|preview [preset-or-template]]", ok=False)
+
+    def _valid_prompt_template(self, template: str) -> bool:
+        if len(template) > PROMPT_MAX_LENGTH or re.search(r"<|>|javascript:|\x1b|[.][.]|__|\(|\)|select\s|from\s", template, re.I):
+            return False
+        allowed = set("hHmMsSxXglaptcrzqTnAP%")
+        i=0
+        while i < len(template):
+            if template[i] == "%":
+                if i+1 >= len(template) or template[i+1] not in allowed: return False
+                i += 2; continue
+            if template[i] == "&":
+                if i+1 >= len(template) or not re.match(r"[A-Za-z0-9]", template[i+1]): return False
+                i += 2; continue
+            i += 1
+        return True
+
     def _cmd_generic(self, character: Any, args: list[str], raw: str) -> CommandResult:
         cmd = self.resolve_alias(raw.strip().split()[0].lower()) or raw.strip().split()[0].lower()
         toggles = {"brief", "compact", "autoexits", "autoloot", "autogold", "autosplit", "automap", "afk", "norepeat", "notell", "nosummon"}
@@ -1919,8 +1987,6 @@ Available commands:
             future = {"autoloot", "autogold", "autosplit", "automap"}
             suffix = " (preference stored; future systems will use it)." if cmd in future else "."
             return CommandResult(narrative=f"{cmd} is now {'ON' if prefs[cmd] else 'OFF'}{suffix}")
-        if cmd == "prompt":
-            return CommandResult(narrative="Smart MUD uses a pinned web prompt separate from scrollback. Configure the web prompt through Smart MUD settings; future telnet prompt customization is planned.")
         self._publish("command_placeholder_used", character, raw, canonical_command=cmd)
         return CommandResult(narrative=self._placeholder_for(cmd))
 

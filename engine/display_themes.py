@@ -59,9 +59,34 @@ def validate_display_theme(raw: dict[str, Any]) -> list[str]:
     return errors
 
 
-def preview_display_theme(raw: dict[str, Any]) -> dict[str, str]:
+def preview_display_theme(raw: dict[str, Any], family: str = "score") -> dict[str, str]:
+    """Render a realistic theme preview through the runtime display builders."""
     errors = validate_display_theme(raw)
     if errors:
         return {"ok": "false", "errors": "\n".join(errors)}
-    title = ((raw.get("labels") or {}).get("score.title") or "CHARACTER STATUS")
-    return {"ok": "true", "plain": title.replace("&Y", "").replace("&n", ""), "ansi": title, "html": title}
+    from types import SimpleNamespace
+    from engine.mud_displays import (
+        build_score_document, build_worth_document, build_abilities_document,
+        build_inventory_document, build_equipment_document, build_prompt_document,
+        render_display_plain, render_display_mud, render_display_html,
+    )
+    sample = SimpleNamespace(
+        id="preview", name="Kraevok", title="Adventurer", race="Human", character_class="Ranger",
+        level=12, age=31, alignment="Neutral Good", hp=84, max_hp=100, mana=32, max_mana=45,
+        stamina=51, max_stamina=60, xp=4242, xp_to_next_level=758, gold=25, silver=3,
+        posture="standing", hunger="sated", thirst="quenched", played_time="2 days", last_login="today",
+        attributes={"strength":{"base":10,"modifier":2,"final":12},"dexterity":{"base":14,"modifier":1,"final":15},"constitution":{"final":11}},
+        calculated_stats={"armor":18,"evasion":12,"accuracy":7,"hit_bonus":4,"damage_bonus":3,"critical_melee":"5%"},
+        carry_weight=22, carry_capacity=80, encumbrance="light", prompt_preset="classic",
+    )
+    abilities=[{"name":"Build Campfire","rank":1,"maximum_rank":1,"status_text":"Requires an established campsite.","category":"Survival","description":"Builds a safe campfire when camp conditions permit."}]
+    if family == "worth": doc = build_worth_document(sample)
+    elif family in {"skills","spells","abilities","cooldowns"}: doc = build_abilities_document(abilities, title=family.upper())
+    elif family == "inventory": doc = build_inventory_document([{"name":"a polished lantern"}])
+    elif family == "equipment": doc = build_equipment_document([{"equipped_slot":"main_hand","name":"iron sword"}], ["main_hand","off_hand"])
+    elif family == "prompt": doc = build_prompt_document(sample)
+    else: doc = build_score_document(sample)
+    width = int(raw.get("width") or 0)
+    if width and getattr(doc, "frames", None):
+        for frame in doc.frames: frame.width = width
+    return {"ok": "true", "plain": render_display_plain(doc), "mud": render_display_mud(doc), "html": render_display_html(doc)}
