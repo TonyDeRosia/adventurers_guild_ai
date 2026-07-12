@@ -22,10 +22,17 @@ class DisplayEntry:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 @dataclass
-class DisplayLine:
+class DisplaySegment:
     text: str
+    role: str = "content"
+    trusted_markup: bool = False
+
+@dataclass
+class DisplayLine:
+    text: str = ""
     role: str = "system"
     trusted_markup: bool = False
+    segments: list[DisplaySegment] = field(default_factory=list)
 
 @dataclass
 class DisplayField:
@@ -33,6 +40,9 @@ class DisplayField:
     value: Any
     label_role: str = "score_label"
     value_role: str = "score_value"
+    trusted_markup: bool = False
+    occupied: bool = False
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class DisplaySection:
@@ -69,6 +79,8 @@ def normalize_sentence(text: Any) -> str:
     return raw
 
 def _line_text(line: Any) -> str:
+    if isinstance(line, DisplayLine) and line.segments:
+        return "".join(str(seg.text) for seg in line.segments)
     return str(getattr(line, "text", line))
 
 def _line_role(line: Any, default: str = "system") -> str:
@@ -93,12 +105,12 @@ def render_display_plain(doc: DisplayDocument) -> str:
     if para:
         blocks.append("\n".join(para))
     if doc.lines:
-        blocks.append("\n".join(str(x).rstrip() for x in doc.lines if str(x).strip()))
+        blocks.append("\n".join(_line_text(x).rstrip() for x in doc.lines if _line_text(x).strip()))
     for section in doc.sections:
         lines: list[str] = []
         if section.title:
             lines.append(str(section.title).strip())
-        lines.extend(str(x).rstrip() for x in section.lines if str(x).strip())
+        lines.extend(_line_text(x).rstrip() for x in section.lines if _line_text(x).strip())
         lines.extend(_render_entry_plain(e) for e in section.entries if str(e.text).strip())
         lines.extend(_render_field_plain(f) for f in section.fields)
         if lines:
@@ -122,10 +134,28 @@ def _render_field_plain(field: Any) -> str:
 
 def _render_field_mud(field: Any, section: DisplaySection) -> str:
     if isinstance(field, DisplayField):
-        return f"{_mud(field.label_role, field.label + ':')} {_mud(field.value_role, field.value)}"
+        value = strip_mud_color_markup(str(field.value)) if field.trusted_markup else str(field.value)
+        return f"{_mud(field.label_role, field.label + ':')} {_mud(field.value_role, value)}"
     if isinstance(field, (tuple, list)) and len(field) >= 2:
         return f"{_mud('score_label', str(field[0]) + ':')} {_mud(section.role, field[1])}"
     return _mud(section.role, field)
+
+
+def _render_line_mud(line: Any, default_role: str) -> str:
+    if isinstance(line, DisplayLine) and line.segments:
+        return "".join(_mud(seg.role, strip_mud_color_markup(seg.text) if seg.trusted_markup else seg.text) for seg in line.segments)
+    text = strip_mud_color_markup(_line_text(line)) if _line_trusted(line) else _line_text(line)
+    return _mud(_line_role(line, default_role), text)
+
+def _render_line_html(line: Any, default_role: str) -> str:
+    if isinstance(line, DisplayLine) and line.segments:
+        return "".join(_render_role_html(seg.role, seg.text, trusted_markup=seg.trusted_markup) for seg in line.segments)
+    return _render_role_html(_line_role(line, default_role), _line_text(line).rstrip(), trusted_markup=_line_trusted(line))
+
+def _render_field_html(field: Any, section: DisplaySection) -> str:
+    if isinstance(field, DisplayField):
+        return f"{_render_role_html(field.label_role, field.label + ':')} {_render_role_html(field.value_role, field.value, trusted_markup=field.trusted_markup)}"
+    return semantic_html(_render_field_mud(field, section))
 
 def render_display_mud(doc: DisplayDocument) -> str:
     parts: list[str] = []
@@ -133,12 +163,12 @@ def render_display_mud(doc: DisplayDocument) -> str:
     if doc.subtitle: parts.append(_mud(getattr(doc, 'subtitle_role', '') or doc.semantic_role, str(doc.subtitle).strip()))
     paras=[_mud(_line_role(p, doc.semantic_role), _line_text(p).strip()) for p in doc.paragraphs if _line_text(p).strip()]
     if paras: parts.append("\n".join(paras))
-    line_block=[_mud(_line_role(x, doc.semantic_role), _line_text(x).rstrip()) for x in doc.lines if _line_text(x).strip()]
+    line_block=[_render_line_mud(x, doc.semantic_role).rstrip() for x in doc.lines if _line_text(x).strip()]
     if line_block: parts.append("\n".join(line_block))
     for section in doc.sections:
         lines=[]
         if section.title: lines.append(_mud(section.title_role or section.role, str(section.title).strip()))
-        lines.extend(_mud(_line_role(x, section.role), _line_text(x).rstrip()) for x in section.lines if _line_text(x).strip())
+        lines.extend(_render_line_mud(x, section.role).rstrip() for x in section.lines if _line_text(x).strip())
         lines.extend(_mud(e.role or section.role, _render_entry_plain(e)) for e in section.entries if str(e.text).strip())
         lines.extend(_render_field_mud(f, section) for f in section.fields)
         if lines: parts.append("\n".join(lines))
@@ -162,14 +192,14 @@ def render_display_html(doc: DisplayDocument) -> str:
         parts.append(_render_role_html(getattr(doc, 'subtitle_role', '') or doc.semantic_role, str(doc.subtitle).strip()))
     paras=[_render_role_html(_line_role(p, doc.semantic_role), _line_text(p).strip(), trusted_markup=_line_trusted(p)) for p in doc.paragraphs if _line_text(p).strip()]
     if paras: parts.append("<br>".join(paras))
-    line_block=[_render_role_html(_line_role(x, doc.semantic_role), _line_text(x).rstrip(), trusted_markup=_line_trusted(x)) for x in doc.lines if _line_text(x).strip()]
+    line_block=[_render_line_html(x, doc.semantic_role) for x in doc.lines if _line_text(x).strip()]
     if line_block: parts.append("<br>".join(line_block))
     for section in doc.sections:
         lines=[]
         if section.title: lines.append(_render_role_html(section.title_role or section.role, str(section.title).strip()))
-        lines.extend(_render_role_html(_line_role(x, section.role), _line_text(x).rstrip(), trusted_markup=_line_trusted(x)) for x in section.lines if _line_text(x).strip())
+        lines.extend(_render_line_html(x, section.role) for x in section.lines if _line_text(x).strip())
         lines.extend(_render_role_html(e.role or section.role, _render_entry_plain(e)) for e in section.entries if str(e.text).strip())
-        lines.extend(semantic_html(_render_field_mud(f, section)) for f in section.fields)
+        lines.extend(_render_field_html(f, section) for f in section.fields)
         if lines: parts.append("<br>".join(lines))
     if doc.footer: parts.append(_render_role_html(doc.semantic_role, str(doc.footer).strip()))
     return re.sub(r"(?:\n\n){2,}", "\n\n", "\n\n".join(p for p in parts if p.strip())).strip() or _render_role_html(doc.semantic_role, "Nothing to show.")
@@ -180,7 +210,7 @@ def group_display_entries(items: list[dict[str, Any]], *, key_fields: tuple[str,
         name = str(item.get("short_description") or item.get("name") or "something").strip()
         key = tuple(item.get(k) for k in key_fields) + (name,)
         if key not in grouped:
-            grouped[key] = DisplayEntry(name, role=str(item.get("role") or "system"), quantity=0, metadata={"instance_ids": []})
+            grouped[key] = DisplayEntry(name, role=str(item.get("role") or "content"), quantity=0, metadata={"instance_ids": []})
         grouped[key].quantity += int(item.get("stack_count") or 1)
         if item.get("instance_id"):
             grouped[key].metadata.setdefault("instance_ids", []).append(item.get("instance_id"))
@@ -200,23 +230,38 @@ def build_equipment_document(items: list[dict[str, Any]], slots: list[str]) -> D
     by: dict[str, dict[str, Any]] = {}
     for item in items:
         for slot in str(item.get("equipped_slot") or "").split(","):
+            slot = slot.strip()
             if slot == "both_hands":
                 by["main_hand"] = item; by["off_hand"] = item
             elif slot:
                 by[slot] = item
-    fields = [(slot.replace("_", " ").capitalize(), by[slot].get("name", "something") if slot in by else "nothing") for slot in slots]
-    return DisplayDocument(DisplayIntent.EQUIPMENT, title="Equipment", semantic_role="system", paragraphs=[] if items else ["You are not wearing anything."], sections=[DisplaySection(fields=fields)])
+    fields: list[DisplayField] = []
+    for slot in slots:
+        item = by.get(slot)
+        fields.append(DisplayField(
+            slot.replace("_", " ").capitalize(),
+            item.get("short_description") or item.get("name", "something") if item else "nothing",
+            label_role="equipment_slot",
+            value_role="equipment_item" if item else "equipment_empty",
+            trusted_markup=bool(item and (item.get("trusted_markup") or item.get("safe_authored_markup", True))),
+            occupied=bool(item),
+            metadata={"instance_id": item.get("instance_id"), "template_id": item.get("template_id")} if item else {},
+        ))
+    return DisplayDocument(DisplayIntent.EQUIPMENT, title="Equipment", semantic_role="system", title_role="system", paragraphs=[] if items else [DisplayLine("You are not wearing anything.", role="equipment_empty")], sections=[DisplaySection(fields=fields)])
 
 def build_prompt_document(character: Any) -> DisplayDocument:
-    parts = [f"{character.hp}/{character.max_hp} HP"]
-    if getattr(character, "max_mana", 0): parts.append(f"{character.mana}/{character.max_mana} MP")
-    if getattr(character, "max_stamina", 0): parts.append(f"{character.stamina}/{character.max_stamina} ST")
-    return DisplayDocument(DisplayIntent.PROMPT, semantic_role="prompt", lines=[DisplayLine("[" + " ".join(parts) + "]", role="prompt")])
+    segments = [DisplaySegment("[", "prompt_marker"), DisplaySegment(f"{character.hp}/{character.max_hp} HP", "prompt_hp")]
+    if getattr(character, "max_mana", 0): segments += [DisplaySegment(" ", "prompt"), DisplaySegment(f"{character.mana}/{character.max_mana} MP", "prompt_mana")]
+    if getattr(character, "max_stamina", 0): segments += [DisplaySegment(" ", "prompt"), DisplaySegment(f"{character.stamina}/{character.max_stamina} ST", "prompt_stamina")]
+    if getattr(character, "xp", None) is not None and getattr(character, "show_xp_in_prompt", False): segments += [DisplaySegment(" ", "prompt"), DisplaySegment(f"{character.xp} XP", "prompt_xp")]
+    if getattr(character, "gold", None) is not None and getattr(character, "show_gold_in_prompt", False): segments += [DisplaySegment(" ", "prompt"), DisplaySegment(f"{character.gold} Gold", "prompt_gold")]
+    segments.append(DisplaySegment("]", "prompt_marker"))
+    return DisplayDocument(DisplayIntent.PROMPT, semantic_role="prompt", lines=[DisplayLine(segments=segments)])
 
 import html
 import re
 
-from engine.mud_rendering import SEMANTIC_COLOR_ROLES, render_mud_color_html
+from engine.mud_rendering import SEMANTIC_COLOR_ROLES, render_mud_color_html, strip_mud_color_markup
 from engine.conditions import condition_label
 from collections import OrderedDict
 
@@ -323,7 +368,7 @@ def build_room_document(room: Any, viewer: Any = None) -> DisplayDocument:
     for player in getattr(room, "players", []) or []:
         text, _ = _entity_text(player)
         if text and (viewer is None or text != getattr(viewer, "name", "")):
-            visible_entries.append(DisplayEntry(text, role="system"))
+            visible_entries.append(DisplayEntry(text, role="content"))
     grouped: "OrderedDict[tuple[Any, ...], list[str]]" = OrderedDict()
     unique: list[str] = []
     for _role_name, seq in (("npc", getattr(room, "npcs", []) or []), ("mob", getattr(room, "mobs", []) or []), ("object", getattr(room, "objects", []) or [])):
@@ -335,10 +380,10 @@ def build_room_document(room: Any, viewer: Any = None) -> DisplayDocument:
             else: grouped.setdefault(key, []).append(text)
     for entries in grouped.values():
         text=entries[0]
-        visible_entries.append(DisplayEntry(text, role="system", quantity=len(entries), metadata={"grouped_count": len(entries), "room_group": True}))
-    for text in unique: visible_entries.append(DisplayEntry(text, role="system"))
+        visible_entries.append(DisplayEntry(text, role="content", quantity=len(entries), metadata={"grouped_count": len(entries), "room_group": True}))
+    for text in unique: visible_entries.append(DisplayEntry(text, role="content"))
     if visible_entries:
-        doc.sections.append(DisplaySection(title="You see:", entries=visible_entries, role="system", title_role="system"))
+        doc.sections.append(DisplaySection(title="You see:", entries=visible_entries, role="content", title_role="contents_heading"))
     exits = _exit_names(getattr(room, "exits", []) or [])
     doc.sections.append(DisplaySection(lines=[DisplayLine(f"[ Exits: {' '.join(exits) if exits else 'none'} ]", role="exit")], role="exit"))
     return doc

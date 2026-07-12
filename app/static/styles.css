@@ -1561,6 +1561,9 @@ body.smart-mud-mode { height: 100vh; overflow: hidden; }
 #mud-world-output span[role="quest"], #mud-player-prompt span[role="quest"], .mud-role-quest, .mud-quest { color: var(--mud-color-quest, var(--mud-quest-color, #d8dee9)); }
 #mud-world-output span[role="score_label"], #mud-player-prompt span[role="score_label"], .mud-role-score_label, .mud-score-label { color: var(--mud-color-score-label, var(--mud-score-label-color, #d8dee9)); }
 #mud-world-output span[role="score_value"], #mud-player-prompt span[role="score_value"], .mud-role-score_value, .mud-score-value { color: var(--mud-color-score-value, var(--mud-score-value-color, #d8dee9)); }
+#mud-world-output span[role="content"], #mud-player-prompt span[role="content"], .mud-role-content, .mud-content { color: var(--mud-color-content, var(--mud-content-color, #ffffff)); }
+#mud-world-output span[role="contents_heading"], #mud-player-prompt span[role="contents_heading"], .mud-role-contents_heading, .mud-contents-heading { color: var(--mud-color-contents-heading, var(--mud-contents-heading-color, #00ff00)); }
+#mud-world-output span[role="equipment_empty"], #mud-player-prompt span[role="equipment_empty"], .mud-role-equipment_empty, .mud-equipment-empty { color: var(--mud-color-equipment-empty, var(--mud-equipment-empty-color, #777777)); }
 #mud-world-output span[role="equipment_slot"], #mud-player-prompt span[role="equipment_slot"], .mud-role-equipment_slot, .mud-equipment-slot { color: var(--mud-color-equipment-slot, var(--mud-equipment-slot-color, #d8dee9)); }
 #mud-world-output span[role="equipment_item"], #mud-player-prompt span[role="equipment_item"], .mud-role-equipment_item, .mud-equipment-item { color: var(--mud-color-equipment-item, var(--mud-equipment-item-color, #d8dee9)); }
 #mud-world-output span[role="gold"], #mud-player-prompt span[role="gold"], .mud-role-gold, .mud-gold { color: var(--mud-color-gold, var(--mud-gold-color, #d8dee9)); }

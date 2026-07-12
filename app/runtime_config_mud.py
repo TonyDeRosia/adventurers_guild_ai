@@ -13,6 +13,8 @@ class MudColorConfig:
     room_name: str = "#ffff00"
     area_name: str = "#00ffff"
     room_description: str = "#ffffff"
+    content: str = "#ffffff"
+    contents_heading: str = "#00ff00"
     
     # Entities
     exit: str = "#00ff00"
@@ -46,6 +48,7 @@ class MudColorConfig:
     score_value: str = "#ffffff"
     equipment_slot: str = "#00ffff"
     equipment_item: str = "#ffffff"
+    equipment_empty: str = "#777777"
     gold: str = "#ffd700"
     hp: str = "#ff5555"
     mp: str = "#5599ff"
@@ -117,10 +120,10 @@ def get_mud_color_presets() -> dict[str, dict[str, str]]:
     return {
         "Dark Fantasy": dark_fantasy,
         "Classic MUD": {**dark_fantasy, **{role: "#d8dee9" for role in SUPPORTED_MUD_COLOR_ROLES}, "exit": "#33ff66", "command_echo": "#b9c8dd", "error": "#ff6b6b", "warning": "#ffd166", "success": "#7ee787", "gold": "#ffd700", "hp": "#ff7777", "mp": "#7aa2ff", "stamina": "#ffd166"},
-        "Green Terminal": {role: "#33ff66" for role in SUPPORTED_MUD_COLOR_ROLES},
-        "Amber Terminal": {role: "#ffbf00" for role in SUPPORTED_MUD_COLOR_ROLES},
-        "High Contrast": {**dark_fantasy, "room_description": "#ffffff", "exit": "#7cff7c", "error": "#ff5555", "warning": "#ffff55", "score_label": "#00ffff", "score_value": "#ffffff"},
-        "Colorblind Friendly": {**dark_fantasy, "exit": "#56b4e9", "spell": "#cc79a7", "gold": "#f0e442", "damage": "#d55e00", "healing": "#009e73", "hp": "#d55e00", "mp": "#56b4e9"},
+        "Green Terminal": {**{role: "#33ff66" for role in SUPPORTED_MUD_COLOR_ROLES}, "content":"#ffffff", "room_description":"#ffffff", "dialogue":"#ffffff", "equipment_slot":"#00ffff", "equipment_item":"#ffffff", "equipment_empty":"#777777", "prompt_hp":"#ff5555", "prompt_mana":"#5599ff", "prompt_stamina":"#ffd166", "prompt_gold":"#ffd700"},
+        "Amber Terminal": {**{role: "#ffbf00" for role in SUPPORTED_MUD_COLOR_ROLES}, "content":"#ffffff", "room_description":"#ffffff", "equipment_slot":"#00ffff", "equipment_item":"#ffffff", "equipment_empty":"#777777", "prompt_hp":"#ff5555", "prompt_mana":"#5599ff", "prompt_stamina":"#ffd166", "prompt_gold":"#ffd700"},
+        "High Contrast": {**dark_fantasy, "content":"#ffffff", "equipment_empty":"#aaaaaa", "room_description": "#ffffff", "exit": "#7cff7c", "error": "#ff5555", "warning": "#ffff55", "score_label": "#00ffff", "score_value": "#ffffff"},
+        "Colorblind Friendly": {**dark_fantasy, "content":"#ffffff", "equipment_empty":"#999999", "prompt_stamina":"#f0e442", "exit": "#56b4e9", "spell": "#cc79a7", "gold": "#f0e442", "damage": "#d55e00", "healing": "#009e73", "hp": "#d55e00", "mp": "#56b4e9"},
     }
 
 

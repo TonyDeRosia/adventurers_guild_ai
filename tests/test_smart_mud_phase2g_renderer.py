@@ -40,7 +40,7 @@ def test_canonical_room_layout_empty_and_populated_visibility_order() -> None:
     assert "You see:\nAlice\nShopkeeper\nRat\nOld Gate\n\n[ Exits: east ]" in text
     assert text.index("Alice") < text.index("Shopkeeper") < text.index("Rat") < text.index("Old Gate")
     assert "old gate" not in text
-    assert 'role="system"' in render_room(populated, {})
+    assert 'role="content"' in render_room(populated, {})
     assert 'role="exit"' in render_room(populated, {})
 
 
@@ -103,6 +103,6 @@ def test_room_renderer_roles_do_not_bleed_from_exits_to_contents() -> None:
     html = render_room(room, {})
     assert html.count('role="room_name"') == 1
     assert html.count('role="room_description"') == 1
-    assert 'role="system">You see:</span><br><span role="system">Training Master Borik watches' in html
+    assert 'role="contents_heading">You see:</span><br><span role="content">Training Master Borik watches' in html
     assert '<span role="exit">[ Exits: north east ]</span>' in html
     assert html.count('<span') == html.count('</span>')

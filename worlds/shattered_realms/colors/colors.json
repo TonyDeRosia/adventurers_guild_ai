@@ -14,6 +14,8 @@
     "item_rare",
     "item_epic",
     "item_legendary",
+    "content",
+    "contents_heading",
     "exit",
     "quest",
     "magic",
@@ -29,7 +31,8 @@
     "prompt_stamina",
     "prompt_xp",
     "prompt_gold",
-    "dialogue"
+    "dialogue",
+    "equipment_empty"
   ],
   "presets": {
     "Classic MUD": {
@@ -61,12 +64,17 @@
       "prompt_stamina": "#d8dee9",
       "prompt_xp": "#d8dee9",
       "prompt_gold": "#d8dee9",
-      "dialogue": "#d8dee9"
+      "dialogue": "#d8dee9",
+      "content": "#ffffff",
+      "contents_heading": "#d8dee9",
+      "equipment_empty": "#777777",
+      "equipment_item": "#ffffff",
+      "equipment_slot": "#00ffff"
     },
     "Green Terminal": {
       "room_name": "#33ff66",
       "area_name": "#33ff66",
-      "room_description": "#33ff66",
+      "room_description": "#ffffff",
       "npc_friendly": "#33ff66",
       "npc_neutral": "#33ff66",
       "npc_hostile": "#33ff66",
@@ -87,17 +95,22 @@
       "warning": "#33ff66",
       "error": "#33ff66",
       "prompt_marker": "#33ff66",
-      "prompt_hp": "#33ff66",
-      "prompt_mana": "#33ff66",
-      "prompt_stamina": "#33ff66",
+      "prompt_hp": "#ff5555",
+      "prompt_mana": "#5599ff",
+      "prompt_stamina": "#ffd166",
       "prompt_xp": "#33ff66",
-      "prompt_gold": "#33ff66",
-      "dialogue": "#33ff66"
+      "prompt_gold": "#ffd700",
+      "dialogue": "#33ff66",
+      "content": "#ffffff",
+      "contents_heading": "#33ff66",
+      "equipment_empty": "#777777",
+      "equipment_item": "#ffffff",
+      "equipment_slot": "#00ffff"
     },
     "Amber Terminal": {
       "room_name": "#ffbf00",
       "area_name": "#ffbf00",
-      "room_description": "#ffbf00",
+      "room_description": "#ffffff",
       "npc_friendly": "#ffbf00",
       "npc_neutral": "#ffbf00",
       "npc_hostile": "#ffbf00",
@@ -118,12 +131,17 @@
       "warning": "#ffbf00",
       "error": "#ffbf00",
       "prompt_marker": "#ffbf00",
-      "prompt_hp": "#ffbf00",
-      "prompt_mana": "#ffbf00",
-      "prompt_stamina": "#ffbf00",
+      "prompt_hp": "#ff5555",
+      "prompt_mana": "#5599ff",
+      "prompt_stamina": "#ffd166",
       "prompt_xp": "#ffbf00",
-      "prompt_gold": "#ffbf00",
-      "dialogue": "#ffbf00"
+      "prompt_gold": "#ffd700",
+      "dialogue": "#ffbf00",
+      "content": "#ffffff",
+      "contents_heading": "#ffbf00",
+      "equipment_empty": "#777777",
+      "equipment_item": "#ffffff",
+      "equipment_slot": "#00ffff"
     },
     "Dark Fantasy": {
       "room_name": "#c9b79c",
@@ -154,7 +172,12 @@
       "prompt_stamina": "#c9b79c",
       "prompt_xp": "#c9b79c",
       "prompt_gold": "#c9b79c",
-      "dialogue": "#c9b79c"
+      "dialogue": "#c9b79c",
+      "content": "#ffffff",
+      "contents_heading": "#c9b79c",
+      "equipment_empty": "#777777",
+      "equipment_item": "#ffffff",
+      "equipment_slot": "#00ffff"
     },
     "High Contrast": {
       "room_name": "#ffffff",
@@ -185,7 +208,12 @@
       "prompt_stamina": "#ffffff",
       "prompt_xp": "#ffffff",
       "prompt_gold": "#ffffff",
-      "dialogue": "#ffffff"
+      "dialogue": "#ffffff",
+      "content": "#ffffff",
+      "contents_heading": "#ffffff",
+      "equipment_empty": "#aaaaaa",
+      "equipment_item": "#ffffff",
+      "equipment_slot": "#00ffff"
     },
     "Colorblind Friendly": {
       "room_name": "#e6e6e6",
@@ -216,7 +244,12 @@
       "prompt_stamina": "#e6e6e6",
       "prompt_xp": "#e6e6e6",
       "prompt_gold": "#e6e6e6",
-      "dialogue": "#e6e6e6"
+      "dialogue": "#e6e6e6",
+      "content": "#ffffff",
+      "contents_heading": "#e6e6e6",
+      "equipment_empty": "#777777",
+      "equipment_item": "#ffffff",
+      "equipment_slot": "#00ffff"
     }
   }
 }

@@ -2369,6 +2369,43 @@ class MudRuntime:
             })
         self.entity_templates = templates
 
+
+    PRESENTATION_TEMPLATE_FIELDS = ("name", "keywords", "room_description", "look_description", "examine_description", "readable_text", "interaction_hints", "respawn_message")
+
+    def _template_presentation_hash(self, tmpl: dict[str, Any]) -> str:
+        payload = {k: tmpl.get(k) for k in self.PRESENTATION_TEMPLATE_FIELDS if k in tmpl}
+        return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+    def _reconcile_entity_presentation(self, row: Any) -> tuple[Any, ...]:
+        data = list(row)
+        tmpl = dict(self.entity_templates.get(str(data[3] or ""), {}))
+        if not tmpl or str(data[2] or "") == "corpse":
+            return tuple(row)
+        try:
+            plugin = json.loads(data[17] or "{}")
+        except Exception:
+            plugin = {}
+        new_hash = self._template_presentation_hash(tmpl)
+        if plugin.get("template_presentation_hash") == new_hash:
+            return tuple(row)
+        plugin.update({
+            "template_presentation_hash": new_hash,
+            "look_description": tmpl.get("look_description", data[7]),
+            "examine_description": tmpl.get("examine_description", tmpl.get("look_description", data[7])),
+            "readable_text": tmpl.get("readable_text", ""),
+            "interaction_hints": tmpl.get("interaction_hints", []),
+            "respawn_message": tmpl.get("respawn_message", ""),
+        })
+        data[4] = tmpl.get("name", data[4])
+        data[5] = json.dumps(tmpl.get("keywords", []))
+        data[6] = tmpl.get("room_description", tmpl.get("short_description", data[6]))
+        data[7] = tmpl.get("look_description", tmpl.get("long_description", data[7]))
+        now = datetime.now(timezone.utc).isoformat(); data[16] = now; data[17] = json.dumps(plugin)
+        with sqlite3.connect(self.state_store.db_path) as conn:
+            conn.execute("UPDATE entity_instances SET name=?,keywords=?,short_description=?,long_description=?,updated_at=?,plugin_data=? WHERE entity_id=?", (data[4], data[5], data[6], data[7], data[16], data[17], data[0]))
+        logger.info("entity presentation reconciled template=%s entity=%s", data[3], data[0])
+        return tuple(data)
+
     def _entity_payload(self, row: Any) -> dict[str, Any]:
         keys = ["entity_id","world_id","entity_type","template_id","name","keywords","short_description","long_description","current_room_id","owner_type","owner_id","faction_id","level","state","flags","created_at","updated_at","plugin_data"]
         data = dict(zip(keys, row))
@@ -2396,13 +2433,17 @@ class MudRuntime:
         data["custom_state"] = state.get("custom_state", {})
         data["behavior_flags"] = list(tmpl.get("behavior_flags") or data.get("flags") or [])
         data["visibility_flags"] = list(tmpl.get("visibility_flags") or []) + list(state.get("visibility_flags") or [])
-        data["description"] = data.get("long_description") or data.get("short_description") or data.get("name")
+        pdata = data.get("plugin_data") if isinstance(data.get("plugin_data"), dict) else {}
+        data["room_description"] = data.get("short_description") or tmpl.get("room_description") or data.get("name")
+        data["look_description"] = pdata.get("look_description") or data.get("long_description") or tmpl.get("look_description") or data.get("room_description")
+        data["examine_description"] = pdata.get("examine_description") or tmpl.get("examine_description") or data.get("look_description")
+        data["description"] = data.get("look_description") or data.get("long_description") or data.get("short_description") or data.get("name")
         return data
 
     def _fetch_entities(self, where: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
         with sqlite3.connect(self.state_store.db_path) as conn:
             rows = conn.execute(f"SELECT entity_id,world_id,entity_type,template_id,name,keywords,short_description,long_description,current_room_id,owner_type,owner_id,faction_id,level,state,flags,created_at,updated_at,plugin_data FROM entity_instances WHERE destroyed_at IS NULL AND {where} ORDER BY entity_type, created_at, entity_id", params).fetchall()
-        return [self._entity_payload(r) for r in rows]
+        return [self._entity_payload(self._reconcile_entity_presentation(r)) for r in rows]
 
     def spawn_entity(self, template_id: str, entity_type: str | None = None, room_id: str | None = None, owner_type: str = "room", owner_id: str = "", state: dict[str, Any] | None = None, flags: list[str] | None = None, source_system: str = "runtime", **ctx: Any) -> dict[str, Any]:
         tmpl = dict(self.entity_templates.get(template_id, {}))
@@ -2412,7 +2453,8 @@ class MudRuntime:
         if etype in {"npc", "mob"} and (state is None or not dict(state).get("lifecycle_id")):
             state = dict(state or tmpl.get("state", {}) or {})
             state["lifecycle_id"] = f"life_{uuid.uuid4().hex}"
-        payload = (eid, self.active_world_id or tmpl.get("world_id", ""), etype, template_id, tmpl.get("name", template_id), json.dumps(tmpl.get("keywords", [template_id])), tmpl.get("short_description", tmpl.get("name", template_id)), tmpl.get("long_description", tmpl.get("short_description", tmpl.get("name", template_id))), room_id or tmpl.get("default_room_id", ""), owner_type, owner_id, tmpl.get("faction_id", ""), int(tmpl.get("level", 1) or 1), json.dumps(state if state is not None else tmpl.get("state", {})), json.dumps(flags if flags is not None else tmpl.get("flags", [])), now, now, json.dumps(tmpl.get("plugin_data", {})))
+        plugin_data = dict(tmpl.get("plugin_data", {})); plugin_data.update({"template_presentation_hash": self._template_presentation_hash(tmpl), "look_description": tmpl.get("look_description", tmpl.get("long_description", "")), "examine_description": tmpl.get("examine_description", tmpl.get("look_description", "")), "readable_text": tmpl.get("readable_text", ""), "interaction_hints": tmpl.get("interaction_hints", []), "respawn_message": tmpl.get("respawn_message", "")})
+        payload = (eid, self.active_world_id or tmpl.get("world_id", ""), etype, template_id, tmpl.get("name", template_id), json.dumps(tmpl.get("keywords", [template_id])), tmpl.get("room_description", tmpl.get("short_description", tmpl.get("name", template_id))), tmpl.get("look_description", tmpl.get("long_description", tmpl.get("short_description", tmpl.get("name", template_id)))), room_id or tmpl.get("default_room_id", ""), owner_type, owner_id, tmpl.get("faction_id", ""), int(tmpl.get("level", 1) or 1), json.dumps(state if state is not None else tmpl.get("state", {})), json.dumps(flags if flags is not None else tmpl.get("flags", [])), now, now, json.dumps(plugin_data))
         with sqlite3.connect(self.state_store.db_path) as conn:
             conn.execute("INSERT INTO entity_instances(entity_id,world_id,entity_type,template_id,name,keywords,short_description,long_description,current_room_id,owner_type,owner_id,faction_id,level,state,flags,created_at,updated_at,plugin_data) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", payload)
         ent = self.find_entity(eid) or {}

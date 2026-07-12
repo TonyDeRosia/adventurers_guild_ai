@@ -3,7 +3,7 @@
     "id": "guild_registrar_maren",
     "name": "Guild Registrar Maren",
     "kind": "npc",
-    "description": "Guild Registrar Maren is a memorable resident of the starter zone.",
+    "description": "Guild Registrar Maren sorts parchment behind a tidy desk.",
     "faction_id": "adventurers_guild",
     "default_room_id": "guildhall_registrar_office",
     "occupation": "Guild",
@@ -66,7 +66,10 @@
       1,
       5
     ],
-    "ability_loadout_id": "civilian_basic"
+    "ability_loadout_id": "civilian_basic",
+    "room_description": "Guild Registrar Maren sorts parchment behind a tidy desk.",
+    "look_description": "Maren watches over the guild register, quill poised above a stack of fresh forms.",
+    "examine_description": "Her ink-stained fingers move with practiced care, and the guild seal hangs on a chain at her throat."
   },
   {
     "id": "training_master_borik",
@@ -225,14 +228,14 @@
       "master"
     ],
     "look_description": "Borik is a broad-shouldered veteran with a watchful expression and the posture of someone who has spent years correcting careless recruits.",
-    "examine_description": "Old scars cross Borik\u2019s forearms, and every movement carries the precision of a lifelong soldier.",
+    "examine_description": "Old scars cross Borik’s forearms, and every movement carries the precision of a lifelong soldier.",
     "room_description": "Training Master Borik watches the yard with his arms folded."
   },
   {
     "id": "apprentice_mage_lina",
     "name": "Apprentice Mage Lina",
     "kind": "npc",
-    "description": "Apprentice Mage Lina is a memorable resident of the starter zone.",
+    "description": "Apprentice Mage Lina studies a flickering practice charm.",
     "faction_id": "gatebound_scholars",
     "default_room_id": "spell_practice_circle",
     "occupation": "Apprentice",
@@ -372,13 +375,16 @@
     "home_room_id": "tavern_common_room",
     "work_room_id": "spell_practice_circle",
     "simulation_enabled": true,
-    "ability_loadout_id": "apprentice_mage_basic"
+    "ability_loadout_id": "apprentice_mage_basic",
+    "room_description": "Apprentice Mage Lina studies a flickering practice charm.",
+    "look_description": "Lina murmurs careful syllables over a small charm that sparks with blue light.",
+    "examine_description": "Scorch marks on her sleeves suggest more enthusiasm than caution, but her notes are meticulous."
   },
   {
     "id": "healer_sella",
     "name": "Healer Sella",
     "kind": "npc",
-    "description": "Healer Sella is a memorable resident of the starter zone.",
+    "description": "Healer Sella arranges clean bandages beside a satchel of herbs.",
     "faction_id": "common_folk",
     "default_room_id": "healer_corner",
     "occupation": "Healer",
@@ -517,13 +523,16 @@
     "home_room_id": "tavern_common_room",
     "work_room_id": "healer_corner",
     "simulation_enabled": true,
-    "ability_loadout_id": "healer_basic"
+    "ability_loadout_id": "healer_basic",
+    "room_description": "Healer Sella arranges clean bandages beside a satchel of herbs.",
+    "look_description": "Sella keeps a calm eye on the room while sorting bandages and stoppered vials.",
+    "examine_description": "The scent of lavender and bitterroot clings to her healer’s satchel."
   },
   {
     "id": "suspicious_merchant_varrik",
     "name": "Suspicious Merchant Varrik",
     "kind": "npc",
-    "description": "Suspicious Merchant Varrik is a memorable resident of the starter zone.",
+    "description": "Suspicious Merchant Varrik lingers near his covered pack.",
     "faction_id": "riverwatch_merchants",
     "default_room_id": "market_lane",
     "occupation": "Suspicious",
@@ -586,20 +595,23 @@
       1,
       5
     ],
-    "ability_loadout_id": "civilian_basic"
+    "ability_loadout_id": "civilian_basic",
+    "room_description": "Suspicious Merchant Varrik lingers near his covered pack.",
+    "look_description": "Varrik offers a thin smile while keeping one hand close to his pack straps.",
+    "examine_description": "His cloak is travel-worn, but the hidden pockets are stitched with surprisingly fine thread."
   },
   {
     "id": "tavern_keeper_jory",
     "name": "Tavern Keeper Jory",
     "kind": "npc",
-    "description": "Tavern Keeper Jory is a memorable resident of the starter zone.",
+    "description": "Tavern Keeper Jory wipes down the bar with a practiced hand.",
     "faction_id": "common_folk",
     "default_room_id": "tavern_common_room",
     "occupation": "Tavern",
     "personality": [
       "warm",
       "gossipy",
-      "remembers everyone\u2019s drink"
+      "remembers everyone’s drink"
     ],
     "speech_style": "character-specific, concise, MUD-friendly",
     "goals": [
@@ -731,13 +743,16 @@
     "home_room_id": "tavern_back_room",
     "work_room_id": "tavern_common_room",
     "simulation_enabled": true,
-    "ability_loadout_id": "civilian_basic"
+    "ability_loadout_id": "civilian_basic",
+    "room_description": "Tavern Keeper Jory wipes down the bar with a practiced hand.",
+    "look_description": "Jory keeps the common room running with quick glances and quicker hands.",
+    "examine_description": "A ring of keys hangs from his belt, each tagged with a neat scrap of leather."
   },
   {
     "id": "road_messenger_pell",
     "name": "Road Messenger Pell",
     "kind": "npc",
-    "description": "Road Messenger Pell is a memorable resident of the starter zone.",
+    "description": "Road Messenger Pell checks the straps on a battered courier bag.",
     "faction_id": "common_folk",
     "default_room_id": "milestone_bend",
     "occupation": "Road",
@@ -799,13 +814,16 @@
       1,
       5
     ],
-    "ability_loadout_id": "civilian_basic"
+    "ability_loadout_id": "civilian_basic",
+    "room_description": "Road Messenger Pell checks the straps on a battered courier bag.",
+    "look_description": "Pell shifts from foot to foot, eager to be back on the road.",
+    "examine_description": "Dust cakes his boots, and sealed letters peek from the inner flap of his courier bag."
   },
   {
     "id": "crown_warden_ilyra",
     "name": "Crown Warden Ilyra",
     "kind": "npc",
-    "description": "Crown Warden Ilyra is a memorable resident of the starter zone.",
+    "description": "Crown Warden Ilyra stands watch with measured patience.",
     "faction_id": "crown_wardens",
     "default_room_id": "old_gate_checkpoint",
     "occupation": "Crown",
@@ -868,13 +886,16 @@
       1,
       5
     ],
-    "ability_loadout_id": "civilian_basic"
+    "ability_loadout_id": "civilian_basic",
+    "room_description": "Crown Warden Ilyra stands watch with measured patience.",
+    "look_description": "Ilyra studies the street from beneath a polished helm, missing very little.",
+    "examine_description": "Her armor is well kept, and her hand rests near her sword without seeming tense."
   },
   {
     "id": "farmer_tomas",
     "name": "Farmer Tomas",
     "kind": "npc",
-    "description": "Farmer Tomas is a memorable resident of the starter zone.",
+    "description": "Farmer Tomas leans on a hoe, worry creasing his brow.",
     "faction_id": "common_folk",
     "default_room_id": "farmer_field",
     "occupation": "Farmer",
@@ -936,13 +957,16 @@
       1,
       5
     ],
-    "ability_loadout_id": "civilian_basic"
+    "ability_loadout_id": "civilian_basic",
+    "room_description": "Farmer Tomas leans on a hoe, worry creasing his brow.",
+    "look_description": "Tomas smells faintly of hay and damp earth as he watches the road.",
+    "examine_description": "Mud stains his cuffs, and his rough hands tighten whenever cellar rats are mentioned."
   },
   {
     "id": "blacksmith_harl",
     "name": "Blacksmith Harl",
     "kind": "npc",
-    "description": "Blacksmith Harl is a memorable resident of the starter zone.",
+    "description": "Blacksmith Harl stands near the forge, arms dusted with soot.",
     "faction_id": "common_folk",
     "default_room_id": "blacksmith_stall",
     "occupation": "Blacksmith",
@@ -1081,13 +1105,16 @@
     "home_room_id": "tavern_common_room",
     "work_room_id": "blacksmith_stall",
     "simulation_enabled": true,
-    "ability_loadout_id": "civilian_basic"
+    "ability_loadout_id": "civilian_basic",
+    "room_description": "Blacksmith Harl stands near the forge, arms dusted with soot.",
+    "look_description": "Harl rolls one shoulder as the forge heat shimmers behind him.",
+    "examine_description": "Hammer calluses cover his palms, and tiny sparks have burned pinholes in his apron."
   },
   {
     "id": "rat_catcher_nemm",
     "name": "Rat-Catcher Nemm",
     "kind": "creature",
-    "description": "Rat-Catcher Nemm is a memorable resident of the starter zone.",
+    "description": "Rat-Catcher Nemm checks the latch on a wire cage.",
     "faction_id": "rat_catchers_compact",
     "default_room_id": "tavern_common_room",
     "occupation": "cellar threat",
@@ -1150,14 +1177,15 @@
       5
     ],
     "ability_loadout_id": "rat_basic",
-    "look_description": "A nervous rat darts and sniffs for scraps.",
-    "examine_description": "Its whiskers twitch constantly, and its yellow teeth look sharp enough to matter."
+    "look_description": "Nemm carries traps, bait hooks, and the wary look of someone used to things biting back.",
+    "examine_description": "Old bite scars mark his gloves, and his cage rattles whenever he shifts his grip.",
+    "room_description": "Rat-Catcher Nemm checks the latch on a wire cage."
   },
   {
     "id": "old_gate_watcher",
     "name": "Old Gate Watcher",
     "kind": "npc",
-    "description": "Old Gate Watcher is a memorable resident of the starter zone.",
+    "description": "The Old Gate Watcher keeps a silent vigil by the road.",
     "faction_id": "gatebound_scholars",
     "default_room_id": "old_gate_checkpoint",
     "occupation": "Old",
@@ -1219,13 +1247,16 @@
       1,
       5
     ],
-    "ability_loadout_id": "civilian_basic"
+    "ability_loadout_id": "civilian_basic",
+    "room_description": "The Old Gate Watcher keeps a silent vigil by the road.",
+    "look_description": "The watcher studies the gate and every traveler passing beneath it.",
+    "examine_description": "Weather has lined the watcher’s face as deeply as the stones beside the gate."
   },
   {
     "id": "cellar_rats",
     "name": "Cellar Rats",
     "kind": "creature",
-    "description": "Cellar Rats is a memorable resident of the starter zone.",
+    "description": "A pack of cellar rats skitters along the wall.",
     "faction_id": "rat_catchers_compact",
     "default_room_id": "rat_cellar_storage",
     "occupation": "cellar threat",
@@ -1288,14 +1319,15 @@
       2
     ],
     "ability_loadout_id": "rat_basic",
-    "look_description": "A nervous rat darts and sniffs for scraps.",
-    "examine_description": "Its whiskers twitch constantly, and its yellow teeth look sharp enough to matter."
+    "look_description": "The cellar rats nose through cracks and shadows, searching for scraps.",
+    "examine_description": "Their yellow teeth and matted fur make them look bolder than ordinary vermin.",
+    "room_description": "A pack of cellar rats skitters along the wall."
   },
   {
     "id": "giant_cellar_rat",
     "name": "Giant Cellar Rat",
     "kind": "creature",
-    "description": "Giant Cellar Rat is a memorable resident of the starter zone.",
+    "description": "A giant cellar rat crouches low, whiskers twitching.",
     "faction_id": "rat_catchers_compact",
     "default_room_id": "rat_cellar_nest",
     "occupation": "cellar threat",
@@ -1358,8 +1390,9 @@
       2
     ],
     "ability_loadout_id": "rat_basic",
-    "look_description": "A nervous rat darts and sniffs for scraps.",
-    "examine_description": "Its whiskers twitch constantly, and its yellow teeth look sharp enough to matter."
+    "look_description": "The giant rat watches with beady eyes, its claws scraping the floor.",
+    "examine_description": "It is swollen from cellar scraps and old magic, with scars crossing its coarse hide.",
+    "room_description": "A giant cellar rat crouches low, whiskers twitching."
   },
   {
     "id": "forest_wolf",

@@ -75,3 +75,11 @@ The pinned Smart MUD prompt remains independent from room rendering and is rende
 Smart MUD now includes a canonical runtime entity foundation documented in `docs/ENTITY_SYSTEM.md`. World package templates remain immutable, while SQLite `entity_instances` hold mutable room location, ownership, state, flags, timestamps, and plugin data. `MudRuntime` is the sole authority for spawning, moving, despawning, destroying, state updates, keyword resolution, and visibility queries.
 
 Room rendering uses the entity visibility API so players, NPCs, mobs, and objects/items are displayed in the canonical order without exposing internal entity IDs to normal players. NPCs and mobs can be seeded idempotently from world package data and persist across restart. Corpse and container concepts are reserved for later combat and inventory/container work without replacing the Phase 2E item system. Combat, AI behavior, Builder Mode, shops, doors, pets, summons, and world expansion remain out of scope for Phase 3A.
+
+## Phase 13C1C content, equipment, and prompt roles
+
+Ordinary player-visible content uses `content`, which defaults to white and is separate from `system`, `success`, `dialogue`, and `room_description`. The room visible-contents heading uses `contents_heading`, while each visible entry remains independently tagged as `content` to prevent heading color bleed.
+
+Equipment fields use structured field roles: `equipment_slot` for slot labels, `equipment_item` for occupied item values, and `equipment_empty` for empty `nothing` values. Builder-authored MUD color markup is trusted only on the item value segment/field that explicitly opts in, so item color markup cannot leak into following slots.
+
+Prompts are structured inline segments. Prompt markers use `prompt_marker` and resource values use `prompt_hp`, `prompt_mana`, `prompt_stamina`, `prompt_xp`, and `prompt_gold` as applicable; plain output concatenates the same text without extra line breaks.
