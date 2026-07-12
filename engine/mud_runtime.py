@@ -16,6 +16,8 @@ from datetime import datetime, timezone, timedelta
 
 from engine.mud_commands import MudCommandEngine
 from engine.mud_displays import render_object, render_prompt, render_room, semantic, build_inventory_document, build_equipment_document, render_display_mud, render_display_plain
+from engine.player_preferences import PlayerPresentationPreferenceService
+from engine.display_services import CharacterDisplaySnapshotService
 from engine.conditions import condition_label
 from engine.mud_rendering import render_semantic_plain
 from smart_mud.world_registry import WorldRegistry
@@ -508,7 +510,10 @@ class MudStateStore:
                             if role_rank(data["account_role"]) > role_rank(data["role"]):
                                 data["role"] = data["account_role"]
                 print(f"[mud-persistence] Loaded character {data.get('name')} ({char_id})")
-                return MudCharacter(**{k: v for k, v in data.items() if k in MudCharacter.__dataclass_fields__})
+                ch = MudCharacter(**{k: v for k, v in data.items() if k in MudCharacter.__dataclass_fields__})
+                if hasattr(self, "presentation_preferences"):
+                    self.presentation_preferences.apply_to_character(ch)
+                return ch
         return None
 
     def save_command(self, char_id: str, world_id: str, turn: int, command: str, account_id: str = "", session_id: str = "") -> None:
@@ -598,6 +603,10 @@ class MudRuntime:
         self.abilities = None
         self.builder = BuilderWorkspace(event_bus=self.event_bus)
         self.command_engine.runtime = self
+        self.presentation_preferences = PlayerPresentationPreferenceService(self.state_store.db_path)
+        self.character_display_snapshots = CharacterDisplaySnapshotService(self)
+        self.command_engine.presentation_preferences = self.presentation_preferences
+        self.command_engine.character_display_snapshots = self.character_display_snapshots
         init_agent_runtime_schema(self.state_store.db_path)
         self.combat_runtime = CombatRuntimeService(self)
         self.agent_gateway = AgentRuntimeGateway(self)
@@ -824,6 +833,7 @@ class MudRuntime:
         self.materialize_world_content(world_id)
         self.living_world.ensure_world_time(world_id)
         self.abilities = AbilityExecutionService(self.state_store.db_path, self.active_world, self.event_bus, world_id)
+        self.abilities.runtime = self
         self.command_engine.ability_service = self.abilities
         self.command_engine.world_id = world_id
         self.environment = EnvironmentService(self.state_store.db_path, self.active_world.root, world_id, self.event_bus)

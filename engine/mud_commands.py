@@ -19,6 +19,7 @@ from engine.command_registry import CommandRegistry
 from smart_mud.builder import BuilderWorkspace
 from engine.abilities import AbilityExecutionService
 from engine.display_services import CharacterDisplaySnapshotService, AbilityDisplaySnapshotService, ability_snapshots_as_rows
+from engine.player_preferences import PlayerPresentationPreferenceService
 from engine.display_themes import preview_display_theme
 from engine.combat_behavior import CombatBehaviorService
 from engine.crafting import CraftingService, CraftingContent
@@ -1517,7 +1518,8 @@ class MudCommandEngine:
             if self._is_score_admin(character):
                 return CommandResult(self._render_score_section(character, section))
             return CommandResult("That score section is not available.", ok=False, display_intent="WARNING", semantic_role="warning")
-        snap = CharacterDisplaySnapshotService(getattr(self, "runtime", None)).build_snapshot(character)
+        svc = getattr(self, "character_display_snapshots", None) or getattr(getattr(self, "runtime", None), "character_display_snapshots", None) or CharacterDisplaySnapshotService(getattr(self, "runtime", None))
+        snap = svc.build_snapshot(character)
         doc = build_score_document(character, snapshot=snap)
         return CommandResult(narrative=render_display_mud(doc), display_document=doc, display_intent="SCORE")
 
@@ -1816,7 +1818,8 @@ class MudCommandEngine:
 
     def _cmd_worth(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display net worth through the unified character display suite."""
-        snap = CharacterDisplaySnapshotService(getattr(self, "runtime", None)).build_snapshot(character)
+        svc = getattr(self, "character_display_snapshots", None) or getattr(getattr(self, "runtime", None), "character_display_snapshots", None) or CharacterDisplaySnapshotService(getattr(self, "runtime", None))
+        snap = svc.build_snapshot(character)
         doc = build_worth_document(character, snapshot=snap)
         return CommandResult(narrative=render_display_mud(doc), display_document=doc, display_intent="SCORE")
 
@@ -1997,11 +2000,15 @@ Available commands:
         sub = (args[0].lower() if args else "show")
         def save() -> None:
             rt = getattr(self, "runtime", None)
-            world_id = getattr(rt, "active_world_id", "") if rt else self.builder.world_id(character)
-            if rt and hasattr(rt, "state_store"):
-                rt.state_store.save_character(character, world_id)
-            elif self.state_store and hasattr(self.state_store, "save_character"):
-                self.state_store.save_character(character)
+            pref = getattr(self, "presentation_preferences", None) or (getattr(rt, "presentation_preferences", None) if rt else None)
+            if pref:
+                pref.save(character.id, prompt_preset=prefs.get("prompt_preset"), prompt_template=prefs.get("prompt_template"), display_theme=prefs.get("display_theme"), display_width=prefs.get("display_width"))
+            else:
+                world_id = getattr(rt, "active_world_id", "") if rt else self.builder.world_id(character)
+                if rt and hasattr(rt, "state_store"):
+                    rt.state_store.save_character(character, world_id)
+                elif self.state_store and hasattr(self.state_store, "save_character"):
+                    self.state_store.save_character(character)
         if sub in {"show", ""}:
             preset = getattr(character, "prompt_preset", None) or prefs.get("prompt_preset") or "compact"
             template = getattr(character, "prompt_template", None) or prefs.get("prompt_template") or ""
@@ -2010,7 +2017,7 @@ Available commands:
         if sub == "list":
             return CommandResult("Prompt presets:\n" + "\n".join(f"- {name}: {tmpl}" for name, tmpl in PROMPT_PRESETS.items()))
         if sub == "tokens":
-            return CommandResult("Prompt tokens:\n%h current HP, %H maximum HP, %m current mana, %M maximum mana, %s current stamina, %S maximum stamina, %x current XP, %X XP to next level, %g gold, %l level, %a alignment, %p posture, %t combat target, %c target condition, %r room, %z area/zone, %q quest timer, %T world time, %n player name, %A age, %P play time, %% literal percent.")
+            return CommandResult("Prompt tokens:\n%h current HP, %H maximum HP, %m current mana, %M maximum mana, %s current stamina, %S maximum stamina, %x current XP, %X XP to next level, %g gold, %l level, %a alignment, %p posture, %t combat target, %c target condition, %r room, %z area/zone, %q quest timer, %T world time, %n player name, %A age, %P play time, %e encumbrance, %w equipped weapon, %b combat state, %% literal percent.")
         if sub == "preview":
             old_preset, old_template = prefs.get("prompt_preset"), prefs.get("prompt_template")
             old_ap, old_at = getattr(character, "prompt_preset", None), getattr(character, "prompt_template", None)

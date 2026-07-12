@@ -170,32 +170,84 @@ class AbilityExecutionService:
         with sqlite3.connect(self.db_path) as c: cur=c.execute(f"DELETE FROM actor_ability_grants WHERE {wh}", p); n=cur.rowcount
         self._pub("ability_revoked", {"actor_id":actor_id,"ability_id":ability_id,"count":n}); return n
     def can_use_ability(self, actor_id: str, ability_id: str, target: Any=None) -> dict[str, Any]: return self.validate_ability_use(actor_id, ability_id, target)
+    def _validation_result(self, base: dict[str, Any], availability: str, message: str, **extra: Any) -> dict[str, Any]:
+        ok = availability in {"READY", "PASSIVE"}
+        result = {
+            **base, "ok": ok, "availability": availability, "reason_code": availability.lower(), "message": message,
+            "ability_id": base.get("ability_id") or extra.get("ability_id"), "actor_id": base.get("actor_id") or extra.get("actor_id"),
+            "target_requirement": extra.get("target_requirement"), "resolved_targets": base.get("targets", []),
+            "resource_costs": base.get("costs", []), "resource_affordability": extra.get("resource_affordability", {}),
+            "cooldown_remaining": extra.get("cooldown_remaining"), "posture_allowed": extra.get("posture_allowed", True),
+            "combat_allowed": extra.get("combat_allowed", True), "room_allowed": extra.get("room_allowed", True),
+            "environment_allowed": extra.get("environment_allowed", True), "equipment_allowed": extra.get("equipment_allowed", True),
+            "item_allowed": extra.get("item_allowed", True), "effect_allowed": extra.get("effect_allowed", True), "prerequisites": extra.get("prerequisites", []),
+        }
+        return result
+
     def validate_ability_use(self, actor_id: str, ability_id: str, target: Any=None, context: Any=None, preview: bool=True) -> dict[str, Any]:
         """Non-mutating canonical legality validator shared by display and execution."""
         tr = self.trace_ability(actor_id, ability_id, target, _from_validator=True)
+        tr.setdefault("actor_id", actor_id); tr.setdefault("ability_id", ability_id)
         ab = self.registry.abilities.get(ability_id)
-        if ab and ab.ability_type == "passive":
-            tr.update(ok=True, availability="PASSIVE", reason_code="passive", message="Passive")
-            return tr
-        reason = "READY" if tr.get("ok") else "UNKNOWN"; message = "Ready" if tr.get("ok") else "Unavailable"
+        if not ab:
+            return self._validation_result(tr, "UNKNOWN", "Unknown ability.", actor_id=actor_id, ability_id=ability_id)
+        if not ab.enabled:
+            return self._validation_result(tr, "BLOCKED_DISABLED", "This ability is disabled.")
+        if ab.ability_type == "passive" or ab.activation_type == "passive":
+            return self._validation_result(tr, "PASSIVE", "Passive")
+
+        from engine.display_services import _natural_seconds
+        cd=tr.get("cooldowns") or {}
+        if cd.get("remaining") is not None:
+            tr["cooldown_remaining_text"] = _natural_seconds(cd.get("remaining"))
         for step in tr.get("trace", []):
             name=str(step.get("step") or "")
             if step.get("ready") is False:
-                reason="BLOCKED_COOLDOWN"; message=step.get("remaining_text") or "On cooldown"; break
+                remaining = tr.get("cooldown_remaining_text") or _natural_seconds(cd.get("remaining"))
+                return self._validation_result(tr, "BLOCKED_COOLDOWN", f"Ready in {remaining}" if remaining != "Ready" else "Ready", cooldown_remaining=cd.get("remaining"))
             if step.get("ok") is False:
-                if name == "validate_resources": reason="BLOCKED_RESOURCE"; message="Insufficient resources"
-                elif name == "resolve_target" and target is None: reason="READY_NEEDS_TARGET"; message="Ready — requires a visible target"
-                elif name == "resolve_target": reason="BLOCKED_PREREQUISITE"; message="Invalid target"
-                elif name == "confirm_grant": reason="BLOCKED_PREREQUISITE"; message="Not learned"
-                else: reason="UNKNOWN"; message="Unavailable"
-                break
-        cd=tr.get("cooldowns") or {}
-        if cd.get("remaining") is not None:
-            from engine.display_services import _natural_seconds
-            tr["cooldown_remaining_text"] = _natural_seconds(cd.get("remaining"))
-            if reason == "BLOCKED_COOLDOWN": message = tr["cooldown_remaining_text"]
-        tr.update(availability=reason, reason_code=reason.lower(), message=message)
-        return tr
+                if name == "confirm_grant": return self._validation_result(tr, "BLOCKED_NOT_LEARNED", "Not learned.")
+                if name == "validate_resources":
+                    costs=step.get("costs") or []
+                    need=next((c for c in costs if not c.get("affordable", True)), None)
+                    msg=f"Requires {int(num(need.get('amount'),0))} {need.get('resource_id')}." if need else "Insufficient resources."
+                    return self._validation_result(tr, "BLOCKED_RESOURCE", msg, resource_affordability={str(c.get("resource_id")): bool(c.get("affordable", True)) for c in costs})
+                if name == "resolve_target" and target is None:
+                    mode=str((ab.targeting or {}).get("mode") or "self")
+                    if mode not in {"self","none","room"}: return self._validation_result(tr, "READY_NEEDS_TARGET", "Ready — requires a visible hostile target.", target_requirement=mode)
+                if name == "resolve_target": return self._validation_result(tr, "BLOCKED_TARGET", "Invalid target.")
+
+        rt=getattr(self, "runtime", None); character=None; room_id=""
+        if rt and hasattr(rt, "state_store"):
+            try: character=rt.state_store.load_character(actor_id); room_id=getattr(character,"room_id","")
+            except Exception: character=None
+        ctx=context or {}
+        posture=str(ctx.get("posture") or getattr(character,"posture", getattr(self.actors.get(actor_id), "state", "standing")) or "standing").lower()
+        if posture != "standing" and any(x.get("operation") == "require" and x.get("state") == "standing" for x in (ab.state_changes or [])):
+            return self._validation_result(tr, "BLOCKED_POSTURE", "You must be standing to do that.", posture_allowed=False)
+        cr=getattr(rt, "combat_runtime", None) if rt else None
+        in_combat=bool(ctx.get("in_combat"))
+        if cr:
+            try: in_combat = in_combat or cr.is_actor_in_active_combat(cr.actor_id_for_character(character) if character else actor_id)
+            except Exception: pass
+        if in_combat and ability_id in {"set_camp","build_campfire","recall"}:
+            return self._validation_result(tr, "BLOCKED_COMBAT", "You cannot do that while fighting." if ability_id != "recall" else "You cannot recall while fighting.", combat_allowed=False)
+        room_tags=set(ctx.get("room_tags") or [])
+        if str(ctx.get("room_no_recall") or "").lower() in {"1","true","yes"} or "no_recall" in room_tags:
+            if ability_id == "recall": return self._validation_result(tr, "BLOCKED_ROOM", "You cannot recall from this place.", room_allowed=False)
+        if ability_id == "recall":
+            dest=str((ab.plugin_data or {}).get("recall_destination_room_id") or "")
+            if not dest: return self._validation_result(tr, "BLOCKED_PREREQUISITE", "No recall destination is configured.", prerequisites=["recall_destination"])
+        if ability_id in {"set_camp","build_campfire"} and ("no_camp" in room_tags or str(ctx.get("camping_allowed", "true")).lower() in {"0","false","no"}):
+            return self._validation_result(tr, "BLOCKED_ROOM", "You cannot establish a camp here.", room_allowed=False)
+        if ability_id == "build_campfire" and rt and getattr(rt, "survival_needs", None) and getattr(rt.survival_needs, "db_path", None):
+            with sqlite3.connect(rt.survival_needs.db_path) as c:
+                c.row_factory=sqlite3.Row
+                cs=c.execute("SELECT 1 FROM campsite_instances WHERE world_id=? AND created_by_actor_id=? AND room_id=? AND status IN ('active','occupied','abandoned')", (self.world_id, actor_id, room_id)).fetchone()
+                if not cs: return self._validation_result(tr, "BLOCKED_PREREQUISITE", "Requires an established campsite.", prerequisites=["campsite"])
+                cf=c.execute("SELECT 1 FROM campfire_instances WHERE world_id=? AND created_by_actor_id=? AND room_id=? AND status IN ('unlit','lit','low_fuel')", (self.world_id, actor_id, room_id)).fetchone()
+                if cf: return self._validation_result(tr, "BLOCKED_PREREQUISITE", "A campfire is already burning here.", prerequisites=["no_existing_campfire"])
+        return self._validation_result(tr, "READY", "Ready")
     def trace_ability(self, actor_id: str, ability_id: str, target: Any=None, _from_validator: bool=False) -> dict[str, Any]:
         steps=[]; ok=True
         a=self.actors.get(actor_id); ab=self.registry.abilities.get(ability_id)
@@ -220,16 +272,16 @@ class AbilityExecutionService:
         ab=self.registry.abilities[ability_id]
         if ab.ability_type == "passive": return {"ok":False,"message":"Passive abilities do not create active casts."}
         if ab.activation_type == "instant" or bool((ab.timing or {}).get("completes_immediately", True)): return self.execute_instant_ability(actor_id, ability_id, target)
-        tr=self.trace_ability(actor_id,ability_id,target)
-        if not tr["ok"]: self._pub("ability_failed", {"actor_id":actor_id,"ability_id":ability_id,"trace":tr}); return {"ok":False,"trace":tr,"message":"You cannot use that ability."}
+        tr=self.validate_ability_use(actor_id,ability_id,target,preview=False)
+        if not tr["ok"]: self._pub("ability_failed", {"actor_id":actor_id,"ability_id":ability_id,"trace":tr}); return {"ok":False,"trace":tr,"message":tr.get("message") or "You cannot use that ability.", "reason_code":tr.get("reason_code")}
         cast_id="cast_"+uuid.uuid4().hex; wt=self.world_time(); dur=int(num((ab.timing or {}).get("cast_time"),0)); costs=self._pay_costs(self.actors[actor_id],ab,"start")
         if self.db_path:
             with sqlite3.connect(self.db_path) as c: c.execute("INSERT OR REPLACE INTO actor_ability_casts VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (cast_id,self.world_id,"actor",actor_id,ability_id,jdump(tr.get("targets")),"casting",wt,wt+dur,wt+dur,jdump(costs),"{}","",now(),now(),"{}"))
         self._start_cooldown(actor_id, ab); self._pub("ability_started", {"actor_id":actor_id,"ability_id":ability_id,"cast_id":cast_id}); self._pub("cast_started", {"cast_id":cast_id})
         return {"ok":True,"cast_id":cast_id,"state":"casting","completes_world_time":wt+dur}
     def execute_instant_ability(self, actor_id: str, ability_id: str, target: Any=None) -> dict[str, Any]:
-        tr=self.trace_ability(actor_id,ability_id,target)
-        if not tr["ok"]: self._pub("ability_failed", {"actor_id":actor_id,"ability_id":ability_id,"trace":tr}); return {"ok":False,"trace":tr,"message":"You cannot use that ability."}
+        tr=self.validate_ability_use(actor_id,ability_id,target,preview=False)
+        if not tr["ok"]: self._pub("ability_failed", {"actor_id":actor_id,"ability_id":ability_id,"trace":tr}); return {"ok":False,"trace":tr,"message":tr.get("message") or "You cannot use that ability.", "reason_code":tr.get("reason_code")}
         cast_id="instant_"+uuid.uuid4().hex; actor=self.actors[actor_id]; ab=self.registry.abilities[ability_id]; costs=self._pay_costs(actor,ab,"start"); self._start_cooldown(actor_id,ab)
         result={"ok":True,"cast_id":cast_id,"trace":tr["trace"],"damage_events":[],"healing_events":[],"effect_events":[]}; self._pub("ability_started", {"actor_id":actor_id,"ability_id":ability_id,"cast_id":cast_id})
         for t in tr["targets"]:
