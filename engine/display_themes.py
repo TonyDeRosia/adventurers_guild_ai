@@ -7,7 +7,12 @@ from typing import Any
 
 from engine.mud_rendering import SEMANTIC_COLOR_ROLES, validate_mud_color_markup
 
-SUPPORTED_FAMILIES = {"score","worth","inventory","equipment","affects","skills","spells","abilities","cooldowns","quest_log","shop","board","trainer","help"}
+SUPPORTED_FAMILIES = {"score","worth","inventory","equipment","affects","skills","spells","abilities","cooldowns","prompt","quest_log","shop","board","trainer","help"}
+SUPPORTED_FRAME_STYLES = {"classic_double", "classic_single", "minimal", "none"}
+SUPPORTED_TITLE_ALIGNMENTS = {"left", "center", "right"}
+SUPPORTED_EMPTY_POLICIES = {"hide", "show_muted", "show_empty_message"}
+SCORE_SECTIONS = {"identity","resources","progression","carrying","attributes","combat","currency","survival","effects","time"}
+BORDER_PARTS = {"top_left","top","top_right","side","bottom_left","bottom","bottom_right","section_left","section","section_right","item_left","item","item_right"}
 ALLOWED_TEMPLATE_FIELDS = {"name","title","race","class_name","level","age","alignment","hp","max_hp","mana","max_mana","stamina","max_stamina","xp","tnl","gold","silver","copper","posture","hunger","thirst","played","last_login","rows","label","value","description","rank","status","category","cost","target","cooldown"}
 _EXPR_RE = re.compile(r"[{][^{}]*([.()]|__|import|open|eval|exec|select\s|from\s|<\s*/?\w+)[^{}]*[}]", re.I)
 
@@ -27,16 +32,42 @@ class DisplayTheme:
     border_characters: dict[str, str] = field(default_factory=dict)
     divider_characters: dict[str, str] = field(default_factory=dict)
     prompt_presets: dict[str, str] = field(default_factory=dict)
+    player_selectable: bool = False
+    accessibility: tuple[str, ...] = ()
     templates: dict[str, dict[str, Any]] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
 def validate_display_theme(raw: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    families = set((raw.get("templates") or {}).keys()) | set((raw.get("section_order") or {}).keys())
+    if str(raw.get("frame_style") or "classic_double").lower() not in SUPPORTED_FRAME_STYLES:
+        errors.append("unsupported frame_style")
+    if str(raw.get("title_alignment") or "center").lower() not in SUPPORTED_TITLE_ALIGNMENTS:
+        errors.append("unsupported title_alignment")
+    if str(raw.get("empty_section_policy") or "hide").lower() not in SUPPORTED_EMPTY_POLICIES:
+        errors.append("unsupported empty_section_policy")
+    try:
+        w=int(raw.get("width") or 79)
+        if w < 36 or w > 160: errors.append("width must be 36-160")
+    except Exception: errors.append("width must be an integer")
+    families = set((raw.get("templates") or {}).keys()) | set((raw.get("section_order") or {}).keys()) | set((raw.get("visible_sections") or {}).keys())
     for fam in families:
         if fam not in SUPPORTED_FAMILIES:
             errors.append(f"unsupported display family: {fam}")
+    for fam, sections in dict(raw.get("section_order") or {}, **(raw.get("visible_sections") or {})).items():
+        allowed = SCORE_SECTIONS if fam == "score" else set()
+        if allowed:
+            for sec in sections or []:
+                if sec not in allowed: errors.append(f"unsupported section for {fam}: {sec}")
+    def _safe_one_char(path: str, value: Any) -> None:
+        text=str(value or "")
+        if _EXPR_RE.search("{"+text+"}") or "\x1b" in text or any(ord(c)<32 for c in text) or "<" in text or ">" in text or text.startswith("&") or len(text) != 1:
+            errors.append(f"{path}: must be one safe visible character")
+    for part, ch in (raw.get("border_characters") or {}).items():
+        if part not in BORDER_PARTS: errors.append(f"unsupported border part: {part}")
+        _safe_one_char(f"border_characters.{part}", ch)
+    for part, ch in (raw.get("divider_characters") or {}).items():
+        _safe_one_char(f"divider_characters.{part}", ch)
     for role in (raw.get("semantic_roles") or {}).values():
         if role not in SEMANTIC_COLOR_ROLES:
             errors.append(f"unsupported semantic role: {role}")
@@ -80,16 +111,20 @@ def preview_display_theme(raw: dict[str, Any], family: str = "score") -> dict[st
         carry_weight=22, carry_capacity=80, encumbrance="light", prompt_preset="classic",
     )
     abilities=[{"name":"Build Campfire","rank":1,"maximum_rank":1,"status_text":"Requires an established campsite.","category":"Survival","description":"Builds a safe campfire when camp conditions permit."}]
-    if family == "worth": doc = build_worth_document(sample)
-    elif family in {"skills","spells","abilities","cooldowns"}: doc = build_abilities_document(abilities, title=family.upper())
-    elif family == "inventory": doc = build_inventory_document([{"name":"a polished lantern"}])
-    elif family == "equipment": doc = build_equipment_document([{"equipped_slot":"main_hand","name":"iron sword"}], ["main_hand","off_hand"])
+    theme = _theme_from_raw(raw, family)
+    if family == "worth": doc = build_worth_document(sample, theme=theme)
+    elif family in {"skills","spells","abilities","cooldowns"}: doc = build_abilities_document(abilities, title=family.upper(), theme=theme)
+    elif family == "inventory": doc = build_inventory_document([{"name":"a polished lantern"}], theme=theme)
+    elif family == "equipment": doc = build_equipment_document([{"equipped_slot":"main_hand","name":"iron sword"}], ["main_hand","off_hand"], theme=theme)
     elif family == "prompt": doc = build_prompt_document(sample)
-    else: doc = build_score_document(sample)
+    else: doc = build_score_document(sample, theme=theme)
     width = int(raw.get("width") or 0)
     if width and getattr(doc, "frames", None):
         for frame in doc.frames: frame.width = width
     return {"ok": "true", "plain": render_display_plain(doc), "mud": render_display_mud(doc), "html": render_display_html(doc)}
+
+def _theme_from_raw(raw: dict[str, Any], family: str) -> "ResolvedDisplayTheme":
+    return ResolvedDisplayTheme(theme_id=str(raw.get("theme_id") or raw.get("id") or "draft"), family=family, width=max(36,min(160,int(raw.get("width") or 79))), frame_style=str(raw.get("frame_style") or "classic_double").lower(), title_alignment=str(raw.get("title_alignment") or "center").lower(), section_order=tuple((raw.get("section_order") or {}).get(family, ())), visible_sections=tuple((raw.get("visible_sections") or {}).get(family, ())), empty_section_policy=str(raw.get("empty_section_policy") or "hide").lower(), labels=dict(raw.get("labels") or {}), semantic_roles=dict(raw.get("semantic_roles") or {}), border_characters=dict(raw.get("border_characters") or {}), divider_characters=dict(raw.get("divider_characters") or {}), templates=dict((raw.get("templates") or {}).get(family, {})), prompt_presets=dict(raw.get("prompt_presets") or {}), player_selectable=bool((raw.get("metadata") or {}).get("player_selectable", False)))
 
 @dataclass(frozen=True)
 class ResolvedDisplayTheme:
@@ -107,6 +142,8 @@ class ResolvedDisplayTheme:
     divider_characters: dict[str, str] = field(default_factory=dict)
     templates: dict[str, Any] = field(default_factory=dict)
     prompt_presets: dict[str, str] = field(default_factory=dict)
+    player_selectable: bool = False
+    accessibility: tuple[str, ...] = ()
 
 
 def load_display_themes(world_root: str | Any = "worlds/shattered_realms") -> dict[str, DisplayTheme]:
@@ -130,7 +167,8 @@ def resolve_effective_display_theme(character: Any = None, world_id: str = "shat
     from pathlib import Path
     themes = themes or load_display_themes(Path("worlds") / (world_id or "shattered_realms"))
     prefs = getattr(character, "preferences", {}) or {} if character is not None else {}
-    selected = prefs.get("display_theme") or "classic_adventurer"
+    world_default = getattr(character, "default_display_theme_id", None) or "classic_adventurer"
+    selected = prefs.get("display_theme") or world_default
     theme = themes.get(str(selected)) or themes.get("classic_adventurer") or DisplayTheme("engine_default", "Engine Default")
     width_pref = str(prefs.get("display_width") or theme.width or "79")
     width = {"wide":79,"medium":60,"narrow":44,"auto":int(theme.width or 79)}.get(width_pref, None)
@@ -138,6 +176,9 @@ def resolve_effective_display_theme(character: Any = None, world_id: str = "shat
         try: width=max(36, min(160, int(width_pref)))
         except Exception: width=int(theme.width or 79)
     roles=dict(theme.semantic_roles)
+    access=[]
     if prefs.get("no_color"):
-        roles = {k:"content" for k in roles}
-    return ResolvedDisplayTheme(theme_id=theme.theme_id, family=family, width=width, frame_style=theme.frame_style, title_alignment=theme.title_alignment, section_order=tuple((theme.section_order or {}).get(family, ())), visible_sections=tuple((theme.visible_sections or {}).get(family, ())), empty_section_policy=theme.empty_section_policy, labels=dict(theme.labels), semantic_roles=roles, border_characters=dict(theme.border_characters), divider_characters=dict(theme.divider_characters), templates=dict((theme.templates or {}).get(family, {})), prompt_presets=dict(theme.prompt_presets))
+        roles = {k:"content" for k in roles}; access.append("no_color")
+    if prefs.get("reduced_decoration") and theme.frame_style in {"classic_double", "classic_single"}:
+        theme = DisplayTheme(**{**theme.__dict__, "frame_style":"minimal"}); access.append("reduced_decoration")
+    return ResolvedDisplayTheme(theme_id=theme.theme_id, family=family, width=width, frame_style=theme.frame_style, title_alignment=theme.title_alignment, section_order=tuple((theme.section_order or {}).get(family, ())), visible_sections=tuple((theme.visible_sections or {}).get(family, ())), empty_section_policy=theme.empty_section_policy, labels=dict(theme.labels), semantic_roles=roles, border_characters=dict(theme.border_characters), divider_characters=dict(theme.divider_characters), templates=dict((theme.templates or {}).get(family, {})), prompt_presets=dict(theme.prompt_presets), player_selectable=bool(theme.metadata.get("player_selectable", False)), accessibility=tuple(access))

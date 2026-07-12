@@ -7,30 +7,111 @@
       "frame_style": "classic_double",
       "width": 79,
       "title_alignment": "center",
-      "section_order": {"score": ["identity", "resources", "progression", "carrying", "attributes", "combat", "currency", "survival", "time"]},
-      "visible_sections": {"score": ["identity", "resources", "progression", "carrying", "attributes", "combat", "currency", "survival", "time"]},
+      "section_order": {
+        "score": [
+          "identity",
+          "resources",
+          "progression",
+          "carrying",
+          "attributes",
+          "combat",
+          "currency",
+          "survival",
+          "time"
+        ]
+      },
+      "visible_sections": {
+        "score": [
+          "identity",
+          "resources",
+          "progression",
+          "carrying",
+          "attributes",
+          "combat",
+          "currency",
+          "survival",
+          "time"
+        ]
+      },
       "empty_section_policy": "hide",
-      "labels": {"character_title": "CHARACTER STATUS", "health": "Health", "mana": "Mana", "stamina": "Stamina", "tnl": "TNL"},
-      "semantic_roles": {"label": "character_label", "value": "character_value", "positive": "character_positive", "warning": "warning"},
-      "border_characters": {"top_left": "╔", "top": "═", "top_right": "╗", "side": "║", "bottom_left": "╚", "bottom": "═", "bottom_right": "╝"},
-      "divider_characters": {"section": "═", "item": "─"},
-      "prompt_presets": {"classic": "[%h/%H HP %m/%M MP %s/%S ST %X TNL %g Gold]"},
-      "metadata": {"player_selectable": true}
+      "labels": {
+        "character_title": "CHARACTER STATUS",
+        "health": "Health",
+        "mana": "Mana",
+        "stamina": "Stamina",
+        "tnl": "TNL",
+        "score.title": "CHARACTER STATUS",
+        "worth.title": "TREASURY"
+      },
+      "semantic_roles": {
+        "label": "character_label",
+        "value": "character_value",
+        "positive": "character_positive",
+        "warning": "warning"
+      },
+      "border_characters": {
+        "top_left": "╔",
+        "top": "═",
+        "top_right": "╗",
+        "side": "║",
+        "bottom_left": "╚",
+        "bottom": "═",
+        "bottom_right": "╝"
+      },
+      "divider_characters": {
+        "section": "═",
+        "item": "─"
+      },
+      "prompt_presets": {
+        "classic": "[%h/%H HP %m/%M MP %s/%S ST %X TNL %g Gold]"
+      },
+      "metadata": {
+        "player_selectable": true
+      }
     },
     {
       "theme_id": "minimal_modern",
       "name": "Minimal Modern",
       "description": "Compact single-column displays for narrow or accessibility-first clients.",
-      "frame_style": "simple",
+      "frame_style": "minimal",
       "width": 60,
       "title_alignment": "left",
-      "section_order": {"score": ["identity", "resources", "progression", "currency"]},
-      "visible_sections": {"score": ["identity", "resources", "progression", "currency"]},
+      "section_order": {
+        "score": [
+          "identity",
+          "resources",
+          "progression",
+          "currency"
+        ]
+      },
+      "visible_sections": {
+        "score": [
+          "identity",
+          "resources",
+          "progression",
+          "currency"
+        ]
+      },
       "empty_section_policy": "hide",
-      "labels": {"character_title": "STATUS", "health": "HP", "mana": "MP", "stamina": "ST"},
-      "semantic_roles": {"label": "character_label", "value": "character_value"},
-      "prompt_presets": {"minimal": ">"},
-      "metadata": {"player_selectable": true}
+      "labels": {
+        "character_title": "STATUS",
+        "health": "HP",
+        "mana": "MP",
+        "stamina": "ST",
+        "score.title": "STATUS",
+        "skills.title": "TALENTS",
+        "spells.title": "INCANTATIONS"
+      },
+      "semantic_roles": {
+        "label": "character_label",
+        "value": "character_value"
+      },
+      "prompt_presets": {
+        "minimal": ">"
+      },
+      "metadata": {
+        "player_selectable": true
+      }
     }
   ]
 }

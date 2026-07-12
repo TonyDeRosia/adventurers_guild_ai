@@ -69,6 +69,10 @@ class DisplayFrame:
     width: int = 79
     frame_role: str = "character_frame"
     title_role: str = "character_title"
+    frame_style: str = "classic_double"
+    title_alignment: str = "center"
+    border_characters: dict[str, str] = field(default_factory=dict)
+    divider_characters: dict[str, str] = field(default_factory=dict)
 
 @dataclass
 class DisplayField:
@@ -265,11 +269,27 @@ def _wrap_visible(text: str, width: int) -> list[str]:
 
 def _frame_chars(frame: DisplayFrame, kind: str) -> tuple[str,str,str]:
     chars=getattr(frame, "border_characters", None) or {}
-    defaults={"top":("╔","═","╗"),"bottom":("╚","═","╝"),"section":("╠","═","╣"),"item":("╟","─","╢")}
-    return defaults.get(kind, ("║"," ","║"))
+    divs=getattr(frame, "divider_characters", None) or {}
+    style=str(getattr(frame, "frame_style", "classic_double") or "classic_double").lower()
+    if style in {"classic_single", "single"}:
+        defaults={"top":("┌","─","┐"),"bottom":("└","─","┘"),"section":("├","─","┤"),"item":("├","─","┤"),"row":("│"," ","│")}
+    else:
+        defaults={"top":("╔","═","╗"),"bottom":("╚","═","╝"),"section":("╠",divs.get("section","═"),"╣"),"item":("╟",divs.get("item","─"),"╢"),"row":("║"," ","║")}
+    if kind == "row":
+        return (chars.get("side", defaults["row"][0]), " ", chars.get("side", defaults["row"][2]))
+    names={"top":("top_left","top","top_right"),"bottom":("bottom_left","bottom","bottom_right"),"section":("section_left","section","section_right"),"item":("item_left","item","item_right")}.get(kind,())
+    base=defaults.get(kind, defaults["row"])
+    return (chars.get(names[0], base[0]) if names else base[0], chars.get(names[1], divs.get(kind, base[1])) if names else base[1], chars.get(names[2], base[2]) if names else base[2])
 
 def _frame_line_plain(frame: DisplayFrame, content: str = "", *, kind: str = "row") -> str:
     width=max(32,int(frame.width or 79)); inner=width-2
+    style=str(getattr(frame, "frame_style", "classic_double") or "classic_double").lower()
+    if style == "none": return content
+    if style == "minimal":
+        if kind == "top": return _pad_visible(str(getattr(frame, "title", "") or ""), width, getattr(frame, "title_alignment", "left"))
+        if kind in {"section", "bottom"}: return "─" * min(width, max(1, inner))
+        if kind == "item": return "-" * min(width, max(1, inner))
+        return _pad_visible(content, width)
     if kind != "row":
         l,ch,r=_frame_chars(frame, kind); return l + ch*inner + r
     l,_,r=_frame_chars(frame, "row"); return l + _pad_visible(content, inner) + r
@@ -279,9 +299,13 @@ def _cell_segments(cell: DisplayCell) -> list[DisplaySegment]:
 
 def _frame_segments(frame: DisplayFrame, content: str = "", *, kind: str = "row", role: str = "character_value", segments: list[DisplaySegment] | None = None) -> DisplayLine:
     if kind != "row": return DisplayLine(_frame_line_plain(frame, kind=kind), role=frame.frame_role)
-    inner=max(30,int(frame.width or 79)-2)
+    style=str(getattr(frame, "frame_style", "classic_double") or "classic_double").lower()
+    inner=max(30,int(frame.width or 79)-(0 if style in {"minimal","none"} else 2))
     if segments is None: segments=[DisplaySegment(_pad_visible(content, inner), role)]
-    return DisplayLine(segments=[DisplaySegment("║", frame.frame_role), *segments, DisplaySegment("║", frame.frame_role)])
+    if style in {"minimal", "none"}:
+        return DisplayLine(segments=segments)
+    side=_frame_chars(frame, "row")[0]
+    return DisplayLine(segments=[DisplaySegment(side, frame.frame_role), *segments, DisplaySegment(side, frame.frame_role)])
 
 def _field_segments(label: str, value: Any, *, value_role: str = "character_value") -> list[DisplaySegment]:
     return [DisplaySegment(f"{label}: ", "character_label"), DisplaySegment(str(value), value_role)]
@@ -289,10 +313,12 @@ def _field_segments(label: str, value: Any, *, value_role: str = "character_valu
 def _field_text(label: str, value: Any) -> str:
     return f"{label}: {value}"
 
-def build_character_frame_document(intent: DisplayIntent | str, title: str, rows: list[Any], *, width: int = 79) -> DisplayDocument:
-    frame=DisplayFrame(title=title, width=width)
+def build_character_frame_document(intent: DisplayIntent | str, title: str, rows: list[Any], *, width: int = 79, theme: Any = None) -> DisplayDocument:
+    width = int(getattr(theme, "width", width) if theme is not None else width)
+    label = (getattr(theme, "labels", {}) or {}).get(f"{str(intent).split('.')[-1].lower()}.title") or title
+    frame=DisplayFrame(title=label, width=width, frame_style=getattr(theme, "frame_style", "classic_double") if theme else "classic_double", title_alignment=getattr(theme, "title_alignment", "center") if theme else "center", border_characters=dict(getattr(theme, "border_characters", {}) or {}), divider_characters=dict(getattr(theme, "divider_characters", {}) or {}))
     doc=DisplayDocument(intent, semantic_role="character_value", title_role="character_title", frames=[frame])
-    lines=[_frame_segments(frame, kind="top"), _frame_segments(frame, segments=[DisplaySegment(_pad_visible(title, width-2, "center"), "character_title")]), _frame_segments(frame, kind="section")]
+    lines=[_frame_segments(frame, kind="top"), _frame_segments(frame, segments=[DisplaySegment(_pad_visible(label, width-2, frame.title_alignment), "character_title")]), _frame_segments(frame, kind="section")]
     for row in rows:
         if isinstance(row, DisplayDivider): lines.append(_frame_segments(frame, kind=row.kind)); continue
         if isinstance(row, DisplayLine):
@@ -364,7 +390,7 @@ def _fmt_attr(data: Any) -> str:
         if base is not None: return str(base)
     return str(data)
 
-def build_score_document(character: Any, *, snapshot: CharacterDisplaySnapshot | None = None) -> DisplayDocument:
+def build_score_document(character: Any, *, snapshot: CharacterDisplaySnapshot | None = None, theme: Any = None) -> DisplayDocument:
     snap=snapshot or build_character_display_snapshot(character)
     ident,res,prog,attrs,combat,carry,currency,surv,time=snap.identity,snap.resources,snap.progression,snap.attributes,snap.combat,snap.carrying,snap.currency,snap.survival,snap.time
     rows=[]
@@ -399,19 +425,19 @@ def build_score_document(character: Any, *, snapshot: CharacterDisplaySnapshot |
     if st: rows.append(DisplayDivider()); rows.append(_row_fields(*st[:2]))
     tt=[(k.replace('_',' ').title(),v) for k,v in time.items() if v not in (None,"")]
     if tt: rows.append(DisplayDivider()); rows.append(_row_fields(*tt[:2]))
-    return build_character_frame_document(DisplayIntent.SCORE,"CHARACTER STATUS",rows,width=79)
+    return build_character_frame_document(DisplayIntent.SCORE,"CHARACTER STATUS",rows,width=79, theme=theme)
 
-def build_worth_document(character: Any, *, snapshot: CharacterDisplaySnapshot | None = None) -> DisplayDocument:
+def build_worth_document(character: Any, *, snapshot: CharacterDisplaySnapshot | None = None, theme: Any = None) -> DisplayDocument:
     currency=(snapshot or build_character_display_snapshot(character)).currency
     cells=[DisplayCell(width=18, segments=_field_segments(k.title(), v, value_role="gold" if k=="gold" else "character_value")) for k,v in currency.items() if v is not None]
     if not cells: cells=[DisplayCell("You are broke.", role="character_muted", width=30)]
-    return build_character_frame_document(DisplayIntent.SCORE,"CURRENCIES",[DisplayRow(cells)],width=48)
+    return build_character_frame_document(DisplayIntent.SCORE,"CURRENCIES",[DisplayRow(cells)],width=48, theme=theme)
 
 def _ability_cost(row: dict[str, Any]) -> str:
     costs=row.get('costs') or []
     return ", ".join(f"{c.get('amount', c.get('percentage',0))} {str(c.get('resource_id','')).title()}" for c in costs) or "No cost"
 
-def build_abilities_document(rows: list[dict[str, Any]], *, title: str="ABILITIES", empty: str="You have no abilities.") -> DisplayDocument:
+def build_abilities_document(rows: list[dict[str, Any]], *, title: str="ABILITIES", empty: str="You have no abilities.", theme: Any = None) -> DisplayDocument:
     out=[]
     for i,r in enumerate(rows):
         if i: out.append(DisplayDivider(kind="item"))
@@ -427,7 +453,7 @@ def build_abilities_document(rows: list[dict[str, Any]], *, title: str="ABILITIE
         out.append(DisplayRow(meta));
         if r.get('description'): out.append(DisplayLine(str(r.get('description')), role="character_value"))
     if not out: out=[DisplayLine(empty, role="character_muted")]
-    return build_character_frame_document(DisplayIntent.SKILLS if title=='SKILLS' else DisplayIntent.SPELLS if title=='SPELLS' else DisplayIntent.SYSTEM,title,out,width=70)
+    return build_character_frame_document(DisplayIntent.SKILLS if title=='SKILLS' else DisplayIntent.SPELLS if title=='SPELLS' else DisplayIntent.SYSTEM,title,out,width=70, theme=theme)
 
 def render_display_plain(doc: DisplayDocument) -> str:
     blocks: list[str] = []
@@ -550,17 +576,20 @@ def group_display_entries(items: list[dict[str, Any]], *, key_fields: tuple[str,
             grouped[key].metadata.setdefault("instance_ids", []).append(item.get("instance_id"))
     return list(grouped.values())
 
-def build_inventory_document(items: list[dict[str, Any]], *, carrying: str = "") -> DisplayDocument:
-    doc = DisplayDocument(DisplayIntent.INVENTORY, title="Inventory", semantic_role="system")
+def build_inventory_document(items: list[dict[str, Any]], *, carrying: str = "", theme: Any = None) -> DisplayDocument:
+    label=(getattr(theme, "labels", {}) or {}).get("inventory.empty", "You are not carrying anything.")
+    rows=[]
     if items:
-        doc.sections.append(DisplaySection(lines=[DisplayLine("You are carrying:")], entries=group_display_entries(items)))
+        rows.append(DisplayLine((getattr(theme, "labels", {}) or {}).get("inventory.heading", "You are carrying:"), role="character_label"))
+        for entry in group_display_entries(items):
+            rows.append(DisplayLine(_render_entry_plain(entry), role=entry.role, trusted_markup=True))
     else:
-        doc.paragraphs.append("You are not carrying anything.")
+        rows.append(DisplayLine(label, role="character_muted", trusted_markup=True))
     if carrying:
-        doc.sections.append(DisplaySection(title="Carrying", lines=[carrying]))
-    return doc
+        rows.append(DisplayDivider()); rows.append(DisplayLine(carrying, role="character_value"))
+    return build_character_frame_document(DisplayIntent.INVENTORY, (getattr(theme, "labels", {}) or {}).get("inventory.title", "INVENTORY"), rows, width=60, theme=theme)
 
-def build_equipment_document(items: list[dict[str, Any]], slots: list[str]) -> DisplayDocument:
+def build_equipment_document(items: list[dict[str, Any]], slots: list[str], *, theme: Any = None) -> DisplayDocument:
     by: dict[str, dict[str, Any]] = {}
     for item in items:
         for slot in str(item.get("equipped_slot") or "").split(","):
@@ -581,7 +610,9 @@ def build_equipment_document(items: list[dict[str, Any]], slots: list[str]) -> D
             occupied=bool(item),
             metadata={"instance_id": item.get("instance_id"), "template_id": item.get("template_id")} if item else {},
         ))
-    return DisplayDocument(DisplayIntent.EQUIPMENT, title="Equipment", semantic_role="system", title_role="system", paragraphs=[] if items else [DisplayLine("You are not wearing anything.", role="equipment_empty")], sections=[DisplaySection(fields=fields)])
+    rows=[DisplayRow([DisplayCell(f.label, width=22, role="equipment_slot"), DisplayCell(str(f.value), width=34, role=f.value_role, trusted_markup=f.trusted_markup)]) for f in fields]
+    if not items: rows.insert(0, DisplayLine((getattr(theme, "labels", {}) or {}).get("equipment.empty", "You are not wearing anything."), role="equipment_empty"))
+    return build_character_frame_document(DisplayIntent.EQUIPMENT, (getattr(theme, "labels", {}) or {}).get("equipment.title", "EQUIPMENT"), rows, width=60, theme=theme)
 
 PROMPT_PRESETS = {
     "compact": "[%h/%H HP %m/%M MP %s/%S ST]",

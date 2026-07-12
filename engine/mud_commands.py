@@ -11,7 +11,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 from pathlib import Path
-from engine.mud_displays import semantic, DisplayDocument, DisplayIntent, DisplayLine, DisplaySection, DisplayField, render_display_mud, render_display_plain, build_score_document, build_worth_document, build_abilities_document, build_prompt_document, PROMPT_PRESETS, PROMPT_MAX_LENGTH
+from engine.mud_displays import semantic, DisplayDocument, DisplayIntent, DisplayLine, DisplaySection, DisplayField, render_display_mud, render_display_plain, build_score_document, build_worth_document, build_abilities_document, build_inventory_document, build_equipment_document, build_prompt_document, PROMPT_PRESETS, PROMPT_MAX_LENGTH
 from engine.actors import actor_from_runtime_character
 from engine.formulas import FormulaEngine
 from engine.score_renderer import ActorScoreRenderer
@@ -20,7 +20,7 @@ from smart_mud.builder import BuilderWorkspace
 from engine.abilities import AbilityExecutionService
 from engine.display_services import CharacterDisplaySnapshotService, AbilityDisplaySnapshotService, ability_snapshots_as_rows
 from engine.player_preferences import PlayerPresentationPreferenceService
-from engine.display_themes import preview_display_theme
+from engine.display_themes import preview_display_theme, resolve_effective_display_theme, load_display_themes
 from engine.combat_behavior import CombatBehaviorService
 from engine.crafting import CraftingService, CraftingContent
 from engine.perception import PerceptionService
@@ -1520,7 +1520,7 @@ class MudCommandEngine:
             return CommandResult("That score section is not available.", ok=False, display_intent="WARNING", semantic_role="warning")
         svc = getattr(self, "character_display_snapshots", None) or getattr(getattr(self, "runtime", None), "character_display_snapshots", None) or CharacterDisplaySnapshotService(getattr(self, "runtime", None))
         snap = svc.build_snapshot(character)
-        doc = build_score_document(character, snapshot=snap)
+        doc = build_score_document(character, snapshot=snap, theme=resolve_effective_display_theme(character, family="score"))
         return CommandResult(narrative=render_display_mud(doc), display_document=doc, display_intent="SCORE")
 
 
@@ -1603,11 +1603,14 @@ class MudCommandEngine:
             narrative = f"{semantic('system', 'You are carrying:')}\n{items}"
         
         print(f"[mud-command] Inventory for {character.name}")
-        return CommandResult(narrative=narrative)
+        doc = build_inventory_document(list(getattr(character, "inventory", []) or []), theme=resolve_effective_display_theme(character, family="inventory"))
+        return CommandResult(narrative=render_display_mud(doc), display_document=doc, display_intent="INVENTORY")
 
     def _cmd_equipment(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display equipped items through the single score renderer."""
-        return CommandResult(narrative=self._render_score_section(character, "equipment"))
+        items=list((getattr(character, "equipment", {}) or {}).values()) if isinstance(getattr(character, "equipment", None), dict) else list(getattr(character, "equipment", []) or [])
+        doc=build_equipment_document(items, ["head","body","main_hand","off_hand","legs","feet"], theme=resolve_effective_display_theme(character, family="equipment"))
+        return CommandResult(narrative=render_display_mud(doc), display_document=doc, display_intent="EQUIPMENT")
 
     def _cmd_resists(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display resistances through the single score renderer."""
@@ -1642,7 +1645,7 @@ class MudCommandEngine:
     def _format_ability_list(self, rows: list[dict[str, Any]], empty: str, title: str = "ABILITIES") -> CommandResult:
         for row in rows:
             row["status_text"] = self._ability_status_text(getattr(self, "_format_character", None), row) if getattr(self, "_format_character", None) else row.get("status_text", "Ready")
-        doc = build_abilities_document(rows, title=title, empty=empty)
+        doc = build_abilities_document(rows, title=title, empty=empty, theme=resolve_effective_display_theme(getattr(self, "_format_character", None), family=title.lower()))
         return CommandResult(narrative=render_display_mud(doc), display_document=doc, display_intent=title)
 
     def _cmd_spellup(self, character: Any, args: list[str], raw: str) -> CommandResult:
@@ -1661,19 +1664,19 @@ class MudCommandEngine:
     def _cmd_spells(self, character: Any, args: list[str], raw: str) -> CommandResult:
         svc = self._ability_service(character)
         rows = ability_snapshots_as_rows(AbilityDisplaySnapshotService(svc).list_snapshots(character, "spells")) if svc else []
-        doc = build_abilities_document(rows, title="SPELLS", empty="You know no spells.")
+        doc = build_abilities_document(rows, title="SPELLS", empty="You know no spells.", theme=resolve_effective_display_theme(character, family="spells"))
         return CommandResult(render_display_mud(doc), display_document=doc, display_intent="SPELLS")
 
     def _cmd_skills(self, character: Any, args: list[str], raw: str) -> CommandResult:
         svc = self._ability_service(character)
         rows = ability_snapshots_as_rows(AbilityDisplaySnapshotService(svc).list_snapshots(character, "skills")) if svc else []
-        doc = build_abilities_document(rows, title="SKILLS", empty="You know no skills.")
+        doc = build_abilities_document(rows, title="SKILLS", empty="You know no skills.", theme=resolve_effective_display_theme(character, family="skills"))
         return CommandResult(render_display_mud(doc), display_document=doc, display_intent="SKILLS")
 
     def _cmd_abilities(self, character: Any, args: list[str], raw: str) -> CommandResult:
         svc = self._ability_service(character)
         rows = ability_snapshots_as_rows(AbilityDisplaySnapshotService(svc).list_snapshots(character, "abilities")) if svc else []
-        doc = build_abilities_document(rows, title="ABILITIES", empty="You have no abilities.")
+        doc = build_abilities_document(rows, title="ABILITIES", empty="You have no abilities.", theme=resolve_effective_display_theme(character, family="abilities"))
         return CommandResult(render_display_mud(doc), display_document=doc, display_intent="ABILITIES")
 
     def _cmd_ability_detail(self, character: Any, args: list[str], raw: str) -> CommandResult:
@@ -1785,7 +1788,7 @@ class MudCommandEngine:
         actor_id=character.id if not args or args[0]=="self" else args[0]
         with sqlite3.connect(svc.db_path) as c: rows=c.execute("SELECT ability_id,cooldown_group,ready_world_time,charges_current,charges_maximum FROM actor_ability_cooldowns WHERE actor_id=? AND active=1 ORDER BY ready_world_time,ability_id", (actor_id,)).fetchall()
         docs = [{"name": str(r[0]).replace("_", " ").title(), "rank": 1, "maximum_rank": 1, "status_text": "Ready", "category": "Cooldown", "costs": [], "description": f"Charges: {r[3]}/{r[4]}"} for r in rows]
-        doc = build_abilities_document(docs, title="COOLDOWNS", empty="No active cooldowns.")
+        doc = build_abilities_document(docs, title="COOLDOWNS", empty="No active cooldowns.", theme=resolve_effective_display_theme(character, family="cooldowns"))
         return CommandResult(render_display_mud(doc), display_document=doc, display_intent="COOLDOWNS")
 
     def _cmd_abilitycasts(self, character: Any, args: list[str], raw: str) -> CommandResult:
@@ -1820,7 +1823,7 @@ class MudCommandEngine:
         """Display net worth through the unified character display suite."""
         svc = getattr(self, "character_display_snapshots", None) or getattr(getattr(self, "runtime", None), "character_display_snapshots", None) or CharacterDisplaySnapshotService(getattr(self, "runtime", None))
         snap = svc.build_snapshot(character)
-        doc = build_worth_document(character, snapshot=snap)
+        doc = build_worth_document(character, snapshot=snap, theme=resolve_effective_display_theme(character, family="worth"))
         return CommandResult(narrative=render_display_mud(doc), display_document=doc, display_intent="SCORE")
 
     def _cmd_who(self, character: Any, args: list[str], raw: str) -> CommandResult:
@@ -1957,7 +1960,8 @@ Available commands:
             prefs["display_theme"] = args[1]; save(); return CommandResult(f"Display theme set to {args[1]}.")
         if sub == "preview":
             fam=args[1].lower() if len(args)>1 else "score"
-            raw_theme={"theme_id":prefs.get("display_theme","classic_adventurer"),"name":"Preview","width":79}
+            themes=load_display_themes(); selected=prefs.get("display_theme") or "classic_adventurer"
+            raw_theme=themes.get(selected).__dict__ if themes.get(selected) else {"theme_id":selected,"name":"Preview","width":79}
             prev=preview_display_theme(raw_theme, fam)
             return CommandResult(prev.get("plain") or prev.get("errors") or "Preview unavailable.", ok=prev.get("ok") == "true")
         return CommandResult("Usage: display width [auto|wide|medium|narrow|36-160] | display theme [list|<id>|reset] | display preview <family>")
