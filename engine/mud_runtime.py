@@ -28,7 +28,7 @@ from engine.environment import EnvironmentService, init_environment_schema
 from engine.survival_needs import SurvivalNeedsService, init_survival_schema
 from engine.schedules import ScheduleService
 from engine.combat_runtime import CombatRuntimeService, init_combat_runtime_schema
-from engine.agent_runtime import AgentRuntimeGateway, init_agent_runtime_schema
+from engine.agent_runtime import AgentRuntimeGateway, DeterministicControllerEvaluator, init_agent_runtime_schema
 
 VALID_ROLES = {"player", "helper", "builder", "admin", "owner"}
 BUILDER_ROLES = {"builder", "admin", "owner"}
@@ -598,6 +598,7 @@ class MudRuntime:
         init_agent_runtime_schema(self.state_store.db_path)
         self.combat_runtime = CombatRuntimeService(self)
         self.agent_gateway = AgentRuntimeGateway(self)
+        self.deterministic_controller_evaluator = DeterministicControllerEvaluator(self.agent_gateway)
         self.command_engine.combat_runtime = self.combat_runtime
         self.living_world = LivingWorldService(self)
         self.schedule_service = ScheduleService(self)
@@ -626,7 +627,26 @@ class MudRuntime:
         if getattr(self, 'abilities', None):
             try: self.abilities.process_ability_casts(world_id, int(wt.get('total_minutes') or 0))
             except Exception: pass
+        self.process_due_agent_controllers(int(wt.get('total_minutes') or 0))
         return wt
+
+    def process_due_agent_controllers(self, world_time: int, limit: int = 10) -> int:
+        token = "agentclaim_" + uuid.uuid4().hex; now = datetime.now(timezone.utc).isoformat(); claimed: list[tuple[str, str]] = []
+        with sqlite3.connect(self.state_store.db_path, timeout=30) as con:
+            con.execute("BEGIN IMMEDIATE")
+            rows = con.execute("SELECT controller_id,actor_id FROM agent_controllers WHERE controller_type='deterministic' AND enabled=1 AND COALESCE(next_decision_world_time,0)<=? ORDER BY priority DESC,controller_id LIMIT ?", (world_time, int(limit))).fetchall()
+            for cid, aid in rows:
+                if con.execute("UPDATE agent_controllers SET claim_token=?,claim_expires_at=? WHERE controller_id=? AND (claim_token='' OR claim_token IS NULL OR claim_expires_at<?)", (token, now, cid, now)).rowcount:
+                    claimed.append((cid, aid))
+            con.commit()
+        for cid, aid in claimed:
+            try: self.deterministic_controller_evaluator.step(aid, cid)
+            except Exception: pass
+            with sqlite3.connect(self.state_store.db_path) as con:
+                prof = con.execute("SELECT p.decision_interval_world_minutes FROM agent_controller_profiles p JOIN agent_controllers c ON c.controller_profile_id=p.profile_id WHERE c.controller_id=?", (cid,)).fetchone()
+                interval = int((prof[0] if prof else 5) or 5)
+                con.execute("UPDATE agent_controllers SET claim_token='',claim_expires_at='',last_decision_world_time=?,next_decision_world_time=? WHERE controller_id=? AND claim_token=?", (world_time, world_time + max(1, interval), cid, token))
+        return len(claimed)
 
     def drain_session_output(self, character_id: str) -> list[str]:
         if getattr(self, 'combat_runtime', None):
@@ -928,6 +948,15 @@ class MudRuntime:
         if live is not None:
             return live, "live"
         return None, "missing"
+
+    def room_from_id(self, room_id: str, viewer: Any = None) -> MudRoom:
+        data, _source = self.runtime_room_data(viewer if isinstance(viewer, MudCharacter) else MudCharacter(id="_entity_viewer", name="Entity", role="player", room_id=str(room_id or "")), room_id)
+        if data is None:
+            return MudRoom(id=str(room_id or "void"), area_id="", title="Missing Room", description=f"Current room '{room_id}' is invalid.", exits=[])
+        rid = str(data.get("id", room_id))
+        visible = self.find_visible_entities(rid, viewer)
+        self._annotate_combat_presence(rid, visible)
+        return MudRoom(id=rid, area_id=str(data.get("area_id", "")), title=str(data.get("title") or data.get("name") or rid), description=str(data.get("description") or ""), exits=list(self.canonical_exits(viewer, rid).values()), npcs=visible.get("npcs", []), mobs=visible.get("mobs", []), objects=visible.get("objects", []))
 
     def canonical_exits(self, char: MudCharacter, room_id: str) -> dict[str, dict[str, Any]]:
         data, _source = self.runtime_room_data(char, room_id)
@@ -1433,6 +1462,37 @@ class MudRuntime:
             self.event_bus.publish("builder_exit_graph_mismatch_detected", {"character_id": char.id, "room_id": room_id, "direction": direction, "reason": summary}, source_system="builder", world_id=self.active_world_id or "", character_id=char.id, room_id=room_id)
         self.event_bus.publish("movement_failed", {"canonical_command": direction, "character_id": char.id, "character_name": char.name, "current_room_id": room_id, "result_summary": summary}, source_system="movement", world_id=self.active_world_id or "", character_id=char.id, command=direction)
         return CommandResult(narrative="You cannot go that way." if summary == "no_exit" else f"You cannot go that way: {summary}.", ok=False)
+
+    def update_entity_state(self, entity_id: str, updates: dict[str, Any], **_ctx: Any) -> dict[str, Any] | None:
+        ent = self.find_entity(entity_id)
+        if not ent: return None
+        state = dict(ent.get("state") or {}); state.update(updates or {})
+        with sqlite3.connect(self.state_store.db_path) as conn:
+            conn.execute("UPDATE entity_instances SET state=?,updated_at=? WHERE entity_id=? AND destroyed_at IS NULL", (json.dumps(state), datetime.now(timezone.utc).isoformat(), entity_id))
+        return self.find_entity(entity_id)
+
+    def move_entity_actor(self, ent: dict[str, Any], direction: str, bypass_combat: bool = False):
+        from engine.mud_commands import CommandResult
+        eid = str(ent.get("instance_id") or ent.get("entity_id") or "")
+        actor_id = "entity:" + eid
+        room_id = str(ent.get("room_id") or ent.get("current_room_id") or "")
+        if not bypass_combat and getattr(self, "combat_runtime", None) and self.combat_runtime.is_actor_in_active_combat(actor_id):
+            return CommandResult(narrative="The actor is fighting and cannot move normally.", ok=False)
+        self.event_bus.publish("movement_attempted", {"canonical_command": direction, "actor_id": actor_id, "entity_id": eid, "current_room_id": room_id}, source_system="movement", world_id=self.active_world_id or "", command=direction)
+        exit_data, reason = self.resolve_exit(ent, room_id, direction)
+        if exit_data and reason == "ok":
+            new_room = str(exit_data["target_room_id"])
+            with sqlite3.connect(self.state_store.db_path) as conn:
+                conn.execute("UPDATE entity_instances SET current_room_id=?,owner_type='room',owner_id='',updated_at=? WHERE entity_id=? AND destroyed_at IS NULL", (new_room, datetime.now(timezone.utc).isoformat(), eid))
+            reverse = {"north":"south","south":"north","east":"west","west":"east","up":"down","down":"up","in":"out","out":"in","northeast":"southwest","southwest":"northeast","northwest":"southeast","southeast":"northwest"}.get(direction, direction)
+            name = str(ent.get("name") or "Someone")
+            self.deliver_room_action(room_id, f"{name} leaves {direction}.", actor_id=actor_id, category="actor_departed")
+            self.deliver_room_action(new_room, f"{name} arrives from the {reverse}.", actor_id=actor_id, category="actor_arrived")
+            self.event_bus.publish("movement_succeeded", {"canonical_command": direction, "actor_id": actor_id, "entity_id": eid, "current_room_id": room_id, "target_room_id": new_room, "result_summary": "moved"}, source_system="movement", world_id=self.active_world_id or "", command=direction)
+            return CommandResult(narrative=f"{name} heads {direction}.", state_updates={"render_room": True})
+        summary = reason if exit_data else "no_exit"
+        self.event_bus.publish("movement_failed", {"canonical_command": direction, "actor_id": actor_id, "entity_id": eid, "current_room_id": room_id, "result_summary": summary}, source_system="movement", world_id=self.active_world_id or "", command=direction)
+        return CommandResult(narrative="Cannot go that way." if summary == "no_exit" else f"Cannot go that way: {summary}.", ok=False)
 
     def _room_text(self, room: MudRoom) -> str:
         from smart_mud.transport import html_to_plain_text

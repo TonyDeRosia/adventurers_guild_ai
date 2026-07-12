@@ -1,0 +1,25 @@
+[
+  {
+    "profile_id": "demo_forest_wolf_deterministic",
+    "enabled": true,
+    "controller_type": "deterministic",
+    "allowed_action_types": ["wait", "look", "move", "attack", "target", "defend", "flee"],
+    "decision_interval_world_minutes": 5,
+    "idle_action": "wait",
+    "priority_rules": [
+      {"rule_id": "combat_low_condition_flee", "condition": "low_health", "threshold": 0.25, "action_type": "flee"},
+      {"rule_id": "combat_continue_attack", "condition": "in_combat", "action_type": "attack"}
+    ],
+    "metadata": {"phase": "13B", "demo_only": true, "notes": "Conservative validation profile; not final game design."}
+  },
+  {
+    "profile_id": "demo_non_hostile_waiter",
+    "enabled": true,
+    "controller_type": "deterministic",
+    "allowed_action_types": ["wait", "look", "speak"],
+    "decision_interval_world_minutes": 10,
+    "idle_action": "wait",
+    "priority_rules": [],
+    "metadata": {"phase": "13B", "demo_only": true, "fixed_speech_only": true}
+  }
+]

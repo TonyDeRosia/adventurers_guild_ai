@@ -6,10 +6,12 @@ change authoritative state.
 """
 from __future__ import annotations
 
-import hashlib, json, sqlite3, uuid
+import hashlib, html, json, sqlite3, uuid
 from dataclasses import dataclass, asdict, field
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
+
+from engine.conditions import condition_key
 
 AGENT_OBSERVATION_VERSION = 1
 AGENT_ACTION_CONTRACT_VERSION = 1
@@ -59,6 +61,15 @@ ALL_RESULT_CODES = [RESULT_SUCCESS, RESULT_QUEUED, RESULT_NO_OP, RESULT_REJECTED
 def init_agent_runtime_schema(db_path: str) -> None:
     with sqlite3.connect(db_path) as con:
         con.execute("""CREATE TABLE IF NOT EXISTS agent_controllers(controller_id TEXT PRIMARY KEY,controller_type TEXT,actor_id TEXT,enabled INTEGER DEFAULT 1,priority INTEGER DEFAULT 0,created_at TEXT,updated_at TEXT,metadata_json TEXT)""")
+        for stmt in (
+            "ALTER TABLE agent_controllers ADD COLUMN controller_profile_id TEXT DEFAULT ''",
+            "ALTER TABLE agent_controllers ADD COLUMN next_decision_world_time INTEGER DEFAULT 0",
+            "ALTER TABLE agent_controllers ADD COLUMN last_decision_world_time INTEGER DEFAULT 0",
+            "ALTER TABLE agent_controllers ADD COLUMN claim_token TEXT DEFAULT ''",
+            "ALTER TABLE agent_controllers ADD COLUMN claim_expires_at TEXT DEFAULT ''",
+        ):
+            try: con.execute(stmt)
+            except sqlite3.OperationalError: pass
         con.execute("""CREATE TABLE IF NOT EXISTS agent_control_leases(lease_id TEXT PRIMARY KEY,world_id TEXT,actor_id TEXT,lifecycle_id TEXT,controller_id TEXT,controller_type TEXT,active INTEGER DEFAULT 1,override_reason TEXT,acquired_at TEXT,released_at TEXT,metadata_json TEXT)""")
         con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_one_active_lease ON agent_control_leases(world_id,actor_id,lifecycle_id) WHERE active=1")
         con.execute("""CREATE TABLE IF NOT EXISTS agent_observations(observation_id TEXT PRIMARY KEY,world_id TEXT,actor_id TEXT,lifecycle_id TEXT,room_id TEXT,combat_encounter_id TEXT,world_time INTEGER,observation_version INTEGER,observation_hash TEXT,created_at TEXT,metadata_json TEXT)""")
@@ -67,7 +78,63 @@ def init_agent_runtime_schema(db_path: str) -> None:
         con.execute("CREATE INDEX IF NOT EXISTS idx_agent_action_audit_actor ON agent_action_audit(world_id,actor_id,lifecycle_id,created_at)")
         con.execute("""CREATE TABLE IF NOT EXISTS agent_recent_events(event_id TEXT PRIMARY KEY,world_id TEXT,room_id TEXT,actor_id TEXT,event_type TEXT,source_ref TEXT,target_ref TEXT,summary TEXT,world_time INTEGER,created_at TEXT,expires_world_time INTEGER,payload_json TEXT)""")
         con.execute("CREATE INDEX IF NOT EXISTS idx_agent_recent_events_scope ON agent_recent_events(world_id,room_id,actor_id,world_time)")
+        con.execute("""CREATE TABLE IF NOT EXISTS agent_controller_profiles(profile_id TEXT PRIMARY KEY,world_id TEXT,enabled INTEGER,controller_type TEXT,allowed_action_types_json TEXT,decision_interval_world_minutes INTEGER,idle_action TEXT,priority_rules_json TEXT,metadata_json TEXT,created_at TEXT,updated_at TEXT)""")
+        con.execute("""CREATE TABLE IF NOT EXISTS agent_decision_audit(decision_id TEXT PRIMARY KEY,world_id TEXT,actor_id TEXT,lifecycle_id TEXT,controller_id TEXT,profile_id TEXT,observation_id TEXT,selected_rule_id TEXT,selected_action_type TEXT,request_id TEXT,result_code TEXT,reason_code TEXT,world_time INTEGER,created_at TEXT)""")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_agent_decision_audit_actor ON agent_decision_audit(world_id,actor_id,lifecycle_id,created_at)")
         con.commit()
+
+
+@dataclass(frozen=True)
+class ControlledActorContext:
+    world_id: str
+    actor_id: str
+    actor_type: str
+    lifecycle_id: str
+    character_id: str = ""
+    entity_instance_id: str = ""
+    template_id: str = ""
+    display_name: str = ""
+    room_id: str = ""
+    lifecycle_state: str = "alive"
+    posture: str = "standing"
+    health: int = 0
+    maximum_health: int = 1
+    mana: int = 0
+    maximum_mana: int = 0
+    stamina: int = 0
+    maximum_stamina: int = 0
+
+
+class ControlledActorAdapter(Protocol):
+    context: ControlledActorContext
+    source: Any
+
+
+class CharacterActorAdapter:
+    def __init__(self, gateway: "AgentRuntimeGateway", char: Any):
+        self.gateway = gateway; self.source = char
+        data = getattr(char, "actor_data", {}) or {}
+        life = data.get("lifecycle_id") or data.get("lifecycle", {}).get("lifecycle_id")
+        if not life:
+            life = f"character:{char.id}:life"; data["lifecycle_id"] = life; char.actor_data = data
+            gateway.runtime.state_store.save_character(char, gateway.runtime.active_world_id or "")
+        self.context = ControlledActorContext(gateway.runtime.active_world_id or "", f"character:{char.id}", "player", str(life), character_id=char.id, display_name=char.name, room_id=char.room_id, lifecycle_state="dead" if char.hp <= 0 else "alive", posture=data.get("posture", "standing"), health=int(char.hp), maximum_health=int(char.max_hp), mana=int(char.mana), maximum_mana=int(char.max_mana), stamina=int(char.stamina), maximum_stamina=int(char.max_stamina))
+
+
+class EntityActorAdapter:
+    def __init__(self, gateway: "AgentRuntimeGateway", ent: dict[str, Any]):
+        self.gateway = gateway; self.source = ent
+        st = ent.get("state") or {}
+        eid = str(ent.get("instance_id") or ent.get("entity_id") or "")
+        life = str(st.get("lifecycle_id") or "")
+        if not life:
+            repaired = gateway.runtime.find_entity(eid)
+            st = repaired.get("state") if repaired else st
+            life = str((st or {}).get("lifecycle_id") or "")
+        max_hp = int(st.get("maximum_health") or st.get("max_health") or ent.get("maximum_health") or 100)
+        hp = int(st.get("current_health") or st.get("health") or ent.get("current_health") or max_hp)
+        state = str(st.get("current_state") or ("alive" if ent.get("is_alive", True) else "dead"))
+        self.context = ControlledActorContext(gateway.runtime.active_world_id or "", f"entity:{eid}", str(ent.get("entity_type") or "entity"), life, entity_instance_id=eid, template_id=str(ent.get("template_id") or ""), display_name=str(ent.get("name") or eid), room_id=str(ent.get("room_id") or ent.get("current_room_id") or ""), lifecycle_state=state, posture=str(st.get("posture") or state or "standing"), health=hp, maximum_health=max_hp, mana=int(st.get("mana") or 0), maximum_mana=int(st.get("maximum_mana") or 0), stamina=int(st.get("stamina") or 0), maximum_stamina=int(st.get("maximum_stamina") or 0))
 
 
 @dataclass(frozen=True)
@@ -183,6 +250,29 @@ class AgentRuntimeGateway:
             self.runtime.state_store.save_character(char, self.runtime.active_world_id or "")
         return str(life)
 
+    def resolve_controlled_actor(self, actor_id: str) -> ControlledActorContext:
+        return self._adapter_for_actor_id(actor_id).context
+
+    def _adapter_for_actor_id(self, actor_id: str) -> ControlledActorAdapter:
+        aid = str(actor_id or "")
+        if aid.startswith("character:"):
+            ch = self.runtime.state_store.load_character(aid.split(":", 1)[1])
+            if not ch: raise ValueError("actor not found")
+            return CharacterActorAdapter(self, ch)
+        if aid.startswith("entity:"):
+            ent = self.runtime.find_entity(aid.split(":", 1)[1]) if hasattr(self.runtime, "find_entity") else None
+            if not ent: raise ValueError("actor not found")
+            if ent.get("world_id") and ent.get("world_id") != (self.runtime.active_world_id or ""): raise ValueError("cross-world actor")
+            etype = str(ent.get("entity_type") or "")
+            st = ent.get("state") or {}
+            if etype == "corpse" or st.get("corpse") or st.get("current_state") in {"dead", "corpse", "despawned", "retired"} or ent.get("is_alive") is False:
+                raise ValueError("actor is not controllable")
+            if etype not in {"npc", "mob"}: raise ValueError("entity type is not controllable")
+            adapter = EntityActorAdapter(self, ent)
+            if not adapter.context.lifecycle_id: raise ValueError("actor lifecycle missing")
+            return adapter
+        raise ValueError("agent actor ids must be prefixed with character: or entity:")
+
     def actor_id_for_character(self, char: Any) -> str:
         return self.runtime.combat_runtime.actor_id_for_character(char) if getattr(self.runtime, "combat_runtime", None) else f"character:{char.id}"
 
@@ -200,29 +290,24 @@ class AgentRuntimeGateway:
         if parts[2] != (self.runtime.active_world_id or ""): return None
         return {"world_id": parts[2], "category": parts[3], "parts": [p.replace("%3A", ":") for p in parts[4:]]}
 
-    def _condition_band(self, hp: int, max_hp: int) -> str:
-        if hp <= 0: return "dead"
-        pct = hp / max(1, max_hp)
-        if pct >= .8: return "healthy"
-        if pct >= .5: return "wounded"
-        if pct >= .25: return "badly_wounded"
-        return "near_death"
-
     def create_observation(self, actor_id: str, controller_id: str = "", *, require_lease: bool = True) -> AgentObservation:
-        char = self._load_controlled_character(actor_id, controller_id, require_lease=require_lease)
-        lifecycle_id = self.actor_lifecycle_id(char)
+        adapter = self._load_controlled_actor(actor_id, controller_id, require_lease=require_lease)
+        ctx = adapter.context; char = adapter.source
+        lifecycle_id = ctx.lifecycle_id
         world_id = self.runtime.active_world_id or ""
-        room = self.runtime._current_room(char)
+        room = self.runtime._current_room(char) if ctx.actor_type == "player" else self.runtime.room_from_id(ctx.room_id, viewer=char)
         wt = self.world_time()
-        combat_id = self.runtime.combat_runtime.find_actor_encounter(self.actor_id_for_character(char)) if getattr(self.runtime, "combat_runtime", None) else ""
-        visible = self.runtime.find_visible_entities(char.room_id, char)
+        combat_id = self.runtime.combat_runtime.find_actor_encounter(ctx.actor_id) if getattr(self.runtime, "combat_runtime", None) else ""
+        visible = self.runtime.find_visible_entities(ctx.room_id, char)
         actors = []
         for ent in visible.get("npcs", []) + visible.get("mobs", []):
             st = ent.get("state") or {}
             if st.get("current_state") == "dead" or ent.get("is_alive") is False: continue
             life = str(st.get("lifecycle_id") or ent.get("entity_id") or ent.get("instance_id") or "")
             max_hp = int(st.get("maximum_health") or st.get("max_health") or 100); hp = int(st.get("current_health") or st.get("health") or max_hp)
-            actors.append({"target_ref": self._target_ref("actor", "entity", ent.get("instance_id") or ent.get("entity_id"), life), "actor_id": "entity:" + str(ent.get("instance_id") or ent.get("entity_id")), "lifecycle_id": life, "display_name": ent.get("name") or "Someone", "actor_type": ent.get("entity_type") or "npc", "room_line": ent.get("name") or "Someone is here.", "condition_band": self._condition_band(hp, max_hp), "posture": st.get("posture") or st.get("current_state") or "standing", "combat_status": "in_combat" if (getattr(self.runtime, "combat_runtime", None) and self.runtime.combat_runtime.find_actor_encounter("entity:" + str(ent.get("instance_id") or ent.get("entity_id")))) else "none", "current_target_ref": "", "visible_effects": [], "visible_equipment_summary": [], "relationship": "unknown", "interaction_capabilities": ["inspect", "attack", "target"], "distance": "same_room"})
+            eid = str(ent.get("instance_id") or ent.get("entity_id"))
+            if "entity:" + eid == ctx.actor_id: continue
+            actors.append({"target_ref": self._target_ref("actor", "entity", eid, life), "actor_id": "entity:" + eid, "lifecycle_id": life, "display_name": ent.get("name") or "Someone", "actor_type": ent.get("entity_type") or "npc", "room_line": ent.get("name") or "Someone is here.", "condition_band": condition_key(ent), "posture": st.get("posture") or st.get("current_state") or "standing", "combat_status": "in_combat" if (getattr(self.runtime, "combat_runtime", None) and self.runtime.combat_runtime.find_actor_encounter("entity:" + eid)) else "none", "current_target_ref": "", "visible_effects": [], "visible_equipment_summary": [], "relationship": "unknown", "interaction_capabilities": ["inspect", "attack", "target"], "distance": "same_room"})
         objects = []
         for obj in visible.get("objects", []) + visible.get("corpses", []):
             oid = obj.get("instance_id") or obj.get("entity_id") or obj.get("id") or obj.get("template_id")
@@ -230,24 +315,33 @@ class AgentRuntimeGateway:
             st = obj.get("state") or {}
             objects.append({"target_ref": self._target_ref(category, oid), "object_type": category if category == "corpse" else obj.get("entity_type") or "item", "display_name": obj.get("name") or (obj.get("template") or {}).get("name") or str(oid), "room_line": obj.get("short_description") or obj.get("name") or "", "description_summary": obj.get("description") or obj.get("short_description") or "", "keywords": list(obj.get("keywords") or (obj.get("template") or {}).get("keywords") or [])[:6], "container_state": "open" if st.get("container_open") else ("closed" if st.get("container_open") is False else "not_container"), "lit_state": "lit" if st.get("lit") else "unlit", "corpse_freshness_state": st.get("decay_state") or "", "extraction_state": {"skinned": bool(st.get("skinned")), "butchered": bool(st.get("butchered"))}, "quantity": int(obj.get("stack_count") or obj.get("quantity") or 1), "interaction_capabilities": ["inspect", "get_item"] + (["loot_container"] if category == "corpse" or st.get("container_open") is not None else []), "ownership_summary": "visible"})
         exits = []
-        for direction, ex in self.runtime.canonical_exits(char, char.room_id).items():
+        for direction, ex in self.runtime.canonical_exits(char, ctx.room_id).items():
             if ex.get("hidden"): continue
-            _edata, reason = self.runtime.resolve_exit(char, char.room_id, direction)
-            exits.append({"target_ref": self._target_ref("exit", char.room_id, direction), "direction": direction, "display_name": ex.get("name") or direction, "open_state": "closed" if ex.get("closed") else "open", "locked_state": "locked" if ex.get("locked") else "unlocked", "destination_display_name": "", "movement_allowed": reason == "ok", "blocking_reason_code": "" if reason == "ok" else self._map_block_reason(reason), "interaction_capabilities": ["move", "look"]})
+            _edata, reason = self.runtime.resolve_exit(char, ctx.room_id, direction)
+            exits.append({"target_ref": self._target_ref("exit", ctx.room_id, direction), "direction": direction, "display_name": ex.get("name") or direction, "open_state": "closed" if ex.get("closed") else "open", "locked_state": "locked" if ex.get("locked") else "unlocked", "destination_display_name": "", "movement_allowed": reason == "ok", "blocking_reason_code": "" if reason == "ok" else self._map_block_reason(reason), "interaction_capabilities": ["move", "look"]})
         features = []
-        for feat in self.runtime._resolved_room_features(char.room_id, char):
+        for feat in self.runtime._resolved_room_features(ctx.room_id, char):
             fid = feat.get("id") or feat.get("feature_id") or feat.get("name")
-            features.append({"target_ref": self._target_ref("feature", char.room_id, fid), "feature_id": fid, "display_name": feat.get("name") or fid, "room_line": feat.get("short_description") or feat.get("name") or "", "description_summary": feat.get("long_description") or feat.get("short_description") or "", "interaction_capabilities": ["inspect", "interact"]})
-        obs = AgentObservation("obs_" + uuid.uuid4().hex, world_id, actor_id, lifecycle_id, wt, {"room_id": room.id, "display_name": room.title, "description": room.description, "environment": {}, "light_level": "unknown", "weather": self.runtime.environment.get_weather("world", world_id) if getattr(self.runtime, "environment", None) else {}, "terrain_tags": [], "visible_exit_count": len(exits), "visible_actor_count": len(actors), "visible_object_count": len(objects)}, {"actor_id": actor_id, "lifecycle_id": lifecycle_id, "display_name": char.name, "actor_type": "player", "current_room_id": char.room_id, "room_display_name": room.title, "posture": (char.actor_data or {}).get("posture", "standing"), "lifecycle_state": "dead" if char.hp <= 0 else "alive", "health": char.hp, "maximum_health": char.max_hp, "mana": char.mana, "maximum_mana": char.max_mana, "stamina": char.stamina, "maximum_stamina": char.max_stamina, "active_visible_effects": list((char.affects or {}).keys()), "current_combat_encounter_id": combat_id or "", "current_target_id": "", "current_target_display_name": "", "queued_action_summary": self._queued_action_summary(actor_id), "known_cooldown_summaries": self._cooldowns(char), "inventory_capacity_summary": {"item_count": len(self.runtime.find_inventory_items(char.id)) if hasattr(self.runtime, "find_inventory_items") else len(char.inventory)}, "encumbrance_summary": {"supported": False}}, actors, objects, features, exits, {"encounter_id": combat_id or "", "in_combat": bool(combat_id)}, self._recent_events(char), [asdict(c) for c in self.available_actions(actor_id)], AGENT_OBSERVATION_VERSION)
+            features.append({"target_ref": self._target_ref("feature", ctx.room_id, fid), "feature_id": fid, "display_name": feat.get("name") or fid, "room_line": feat.get("short_description") or feat.get("name") or "", "description_summary": feat.get("long_description") or feat.get("short_description") or "", "interaction_capabilities": ["inspect", "interact"]})
+        item_count = len(self.runtime.find_inventory_items(ctx.character_id)) if ctx.character_id and hasattr(self.runtime, "find_inventory_items") else 0
+        obs = AgentObservation("obs_" + uuid.uuid4().hex, world_id, actor_id, lifecycle_id, wt, {"room_id": room.id, "display_name": room.title, "description": room.description, "environment": {}, "light_level": "unknown", "weather": self.runtime.environment.get_weather("world", world_id) if getattr(self.runtime, "environment", None) else {}, "terrain_tags": [], "visible_exit_count": len(exits), "visible_actor_count": len(actors), "visible_object_count": len(objects)}, {"actor_id": actor_id, "lifecycle_id": lifecycle_id, "display_name": ctx.display_name, "actor_type": ctx.actor_type, "current_room_id": ctx.room_id, "room_display_name": room.title, "posture": ctx.posture, "lifecycle_state": ctx.lifecycle_state, "health": ctx.health, "maximum_health": ctx.maximum_health, "mana": ctx.mana, "maximum_mana": ctx.maximum_mana, "stamina": ctx.stamina, "maximum_stamina": ctx.maximum_stamina, "active_visible_effects": [], "current_combat_encounter_id": combat_id or "", "current_target_id": "", "current_target_display_name": "", "queued_action_summary": self._queued_action_summary(actor_id), "known_cooldown_summaries": self._cooldowns(char) if ctx.character_id else [], "inventory_capacity_summary": {"item_count": item_count}, "encumbrance_summary": {"supported": False}}, actors, objects, features, exits, {"encounter_id": combat_id or "", "in_combat": bool(combat_id)}, self._recent_events(ctx), [asdict(c) for c in self.available_actions(actor_id)], AGENT_OBSERVATION_VERSION)
         h = hashlib.sha256(json.dumps(obs.to_dict(), sort_keys=True, default=str).encode()).hexdigest()
         with sqlite3.connect(self.db_path) as con:
-            con.execute("INSERT INTO agent_observations VALUES(?,?,?,?,?,?,?,?,?,?,?)", (obs.observation_id, world_id, actor_id, lifecycle_id, char.room_id, combat_id or "", wt, AGENT_OBSERVATION_VERSION, h, datetime.now(timezone.utc).isoformat(), json.dumps({"summary_counts": {"actors": len(actors), "objects": len(objects), "exits": len(exits)}})))
+            con.execute("INSERT INTO agent_observations VALUES(?,?,?,?,?,?,?,?,?,?,?)", (obs.observation_id, world_id, actor_id, lifecycle_id, ctx.room_id, combat_id or "", wt, AGENT_OBSERVATION_VERSION, h, datetime.now(timezone.utc).isoformat(), json.dumps({"summary_counts": {"actors": len(actors), "objects": len(objects), "exits": len(exits)}})))
         self._publish("agent_observation_created", {"world_id": world_id, "actor_id": actor_id, "lifecycle_id": lifecycle_id, "controller_id": controller_id, "request_id": "", "action_type": "", "result_code": RESULT_SUCCESS, "reason_code": REASON_SUCCESS, "world_time": wt})
         return obs
 
     def available_actions(self, actor_id: str) -> list[AgentActionCapability]:
-        char = self._character_from_actor_id(actor_id)
-        return [reg.availability(char) for reg in self._registry.values()]
+        ctx = self.resolve_controlled_actor(actor_id)
+        actions = []
+        for reg in self._registry.values():
+            cap = reg.availability(ctx)
+            if ctx.actor_type != "player" and cap.action_type in {"get_item", "drop_item", "loot_container"}:
+                cap = AgentActionCapability(cap.action_type, cap.display_label, cap.target_requirements, cap.allowed_target_refs, cap.allowed_target_categories, cap.required_parameters, cap.optional_parameters, cap.resource_cost_summary, cap.cooldown_summary, cap.range_requirement, False, REASON_ACTION_NOT_AVAILABLE)
+            if ctx.actor_type in {"mob"} and cap.action_type == "speak":
+                cap = AgentActionCapability(cap.action_type, cap.display_label, cap.target_requirements, cap.allowed_target_refs, cap.allowed_target_categories, cap.required_parameters, cap.optional_parameters, cap.resource_cost_summary, cap.cooldown_summary, cap.range_requirement, False, REASON_ACTION_NOT_AVAILABLE)
+            actions.append(cap)
+        return actions
 
     def submit_action(self, request: AgentActionRequest | dict[str, Any]) -> AgentActionResult:
         if isinstance(request, dict): request = AgentActionRequest(**{k: v for k, v in request.items() if k in AgentActionRequest.__dataclass_fields__})
@@ -266,13 +360,17 @@ class AgentRuntimeGateway:
     def register_controller(self, controller_id: str, controller_type: str, actor_id: str, *, enabled: bool = True, priority: int = 0, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
         if controller_type not in SUPPORTED_CONTROLLER_TYPES: raise ValueError("unsupported controller_type")
         now = datetime.now(timezone.utc).isoformat()
+        profile_id = str((metadata or {}).get("controller_profile_id") or "")
         with sqlite3.connect(self.db_path) as con:
-            con.execute("INSERT OR REPLACE INTO agent_controllers VALUES(?,?,?,?,?,?,?,?)", (controller_id, controller_type, actor_id, 1 if enabled else 0, int(priority), now, now, json.dumps(metadata or {})))
+            con.execute("""INSERT OR REPLACE INTO agent_controllers(controller_id,controller_type,actor_id,enabled,priority,created_at,updated_at,metadata_json,controller_profile_id,next_decision_world_time,last_decision_world_time,claim_token,claim_expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""", (controller_id, controller_type, actor_id, 1 if enabled else 0, int(priority), now, now, json.dumps(metadata or {}), profile_id, int((metadata or {}).get("next_decision_world_time") or 0), 0, "", ""))
         return {"controller_id": controller_id, "controller_type": controller_type, "actor_id": actor_id, "enabled": enabled}
 
     def acquire_control(self, actor_id: str, controller_id: str, *, controller_type: str = "manual_test", override_reason: str = "", metadata: dict[str, Any] | None = None) -> dict[str, Any]:
-        char = self._character_from_actor_id(actor_id); lifecycle_id = self.actor_lifecycle_id(char)
-        self.register_controller(controller_id, controller_type, actor_id, metadata=metadata)
+        lifecycle_id = self.resolve_controlled_actor(actor_id).lifecycle_id
+        with sqlite3.connect(self.db_path) as con:
+            exists = con.execute("SELECT 1 FROM agent_controllers WHERE controller_id=?", (controller_id,)).fetchone()
+        if not exists:
+            self.register_controller(controller_id, controller_type, actor_id, metadata=metadata)
         with sqlite3.connect(self.db_path) as con:
             row = con.execute("SELECT lease_id,controller_id FROM agent_control_leases WHERE world_id=? AND actor_id=? AND lifecycle_id=? AND active=1", (self.runtime.active_world_id or "", actor_id, lifecycle_id)).fetchone()
             if row and row[1] != controller_id and not override_reason:
@@ -285,23 +383,24 @@ class AgentRuntimeGateway:
         return {"ok": True, "lease_id": lease_id, "actor_id": actor_id, "lifecycle_id": lifecycle_id, "controller_id": controller_id}
 
     def release_control(self, actor_id: str, controller_id: str) -> dict[str, Any]:
-        char = self._character_from_actor_id(actor_id); life = self.actor_lifecycle_id(char)
+        life = self.resolve_controlled_actor(actor_id).lifecycle_id
         with sqlite3.connect(self.db_path) as con:
             changed = con.execute("UPDATE agent_control_leases SET active=0,released_at=? WHERE world_id=? AND actor_id=? AND lifecycle_id=? AND controller_id=? AND active=1", (datetime.now(timezone.utc).isoformat(), self.runtime.active_world_id or "", actor_id, life, controller_id)).rowcount
         self._publish("agent_control_released", {"world_id": self.runtime.active_world_id or "", "actor_id": actor_id, "lifecycle_id": life, "controller_id": controller_id, "world_time": self.world_time()})
         return {"ok": bool(changed), "released": int(changed)}
 
     def _character_from_actor_id(self, actor_id: str):
+        if not str(actor_id).startswith("character:"): raise ValueError("actor is not a character")
         cid = str(actor_id).split(":", 1)[1] if str(actor_id).startswith("character:") else str(actor_id)
         ch = self.runtime.state_store.load_character(cid)
         if not ch: raise ValueError("actor not found")
         return ch
 
-    def _load_controlled_character(self, actor_id: str, controller_id: str, *, require_lease: bool):
-        ch = self._character_from_actor_id(actor_id)
-        if require_lease and not self._has_lease(actor_id, self.actor_lifecycle_id(ch), controller_id):
+    def _load_controlled_actor(self, actor_id: str, controller_id: str, *, require_lease: bool):
+        adapter = self._adapter_for_actor_id(actor_id)
+        if require_lease and not self._has_lease(actor_id, adapter.context.lifecycle_id, controller_id):
             raise PermissionError(REASON_CONTROLLER_LEASE_REQUIRED)
-        return ch
+        return adapter
 
     def _has_lease(self, actor_id: str, lifecycle_id: str, controller_id: str) -> bool:
         if not controller_id: return False
@@ -312,22 +411,22 @@ class AgentRuntimeGateway:
     def _prevalidate_request(self, r: AgentActionRequest) -> AgentActionResult | None:
         if r.contract_version != AGENT_ACTION_CONTRACT_VERSION: return self._reject(r, REASON_CONTRACT_VERSION_UNSUPPORTED, "Unsupported action contract version.")
         if not r.request_id or not r.actor_id or not r.lifecycle_id: return self._reject(r, REASON_INVALID_PARAMETERS, "request_id, actor_id, and lifecycle_id are required.")
-        try: char = self._character_from_actor_id(r.actor_id)
+        try: ctx = self.resolve_controlled_actor(r.actor_id)
         except Exception: return self._reject(r, REASON_TARGET_NOT_FOUND, "Controlled actor was not found.")
-        if self.actor_lifecycle_id(char) != r.lifecycle_id: return self._reject(r, REASON_STALE_LIFECYCLE, "Controlled actor lifecycle is stale.")
-        if char.hp <= 0 and r.action_type.lower() not in {"look", "inspect"}: return self._reject(r, REASON_ACTOR_DEAD, "Controlled actor is dead.")
+        if ctx.lifecycle_id != r.lifecycle_id: return self._reject(r, REASON_STALE_LIFECYCLE, "Controlled actor lifecycle is stale.")
+        if ctx.health <= 0 and r.action_type.lower() not in {"look", "inspect"}: return self._reject(r, REASON_ACTOR_DEAD, "Controlled actor is dead.")
         if not self._has_lease(r.actor_id, r.lifecycle_id, r.controller_id): return self._reject(r, REASON_CONTROLLER_LEASE_REQUIRED, "Controller does not hold an active lifecycle lease.")
         if r.observation_id:
-            stale = self._staleness_reason(r, char)
+            stale = self._staleness_reason(r, ctx)
             if stale: return self._reject(r, REASON_STALE_OBSERVATION, stale)
         return None
 
-    def _staleness_reason(self, r: AgentActionRequest, char: Any) -> str:
+    def _staleness_reason(self, r: AgentActionRequest, ctx: ControlledActorContext) -> str:
         with sqlite3.connect(self.db_path) as con:
             row = con.execute("SELECT room_id,combat_encounter_id FROM agent_observations WHERE observation_id=? AND actor_id=? AND lifecycle_id=?", (r.observation_id, r.actor_id, r.lifecycle_id)).fetchone()
         if not row: return "Observation is unknown for this actor lifecycle."
         action = r.action_type.lower()
-        if action in {"move", "attack", "target", "assist", "get_item", "loot_container", "interact", "inspect"} and row[0] != char.room_id:
+        if action in {"move", "attack", "target", "assist", "get_item", "loot_container", "interact", "inspect"} and row[0] != ctx.room_id:
             return "Actor room changed since observation."
         return ""
 
@@ -340,14 +439,14 @@ class AgentRuntimeGateway:
         if unknown: return f"Unknown parameters are not accepted: {', '.join(sorted(unknown))}."
         return ""
 
-    def _resolve_target(self, char: Any, ref: str, allowed: set[str]) -> tuple[dict[str, Any] | None, str]:
+    def _resolve_target(self, ctx: ControlledActorContext, source: Any, ref: str, allowed: set[str]) -> tuple[dict[str, Any] | None, str]:
         parsed = self._parse_target_ref(ref)
         if not parsed: return None, REASON_TARGET_NOT_FOUND
         cat = parsed["category"]; parts = parsed["parts"]
         if cat not in allowed: return None, REASON_INVALID_TARGET_TYPE
         if cat == "exit":
-            if len(parts) < 2 or parts[0] != char.room_id: return None, REASON_STALE_OBSERVATION
-            ex, reason = self.runtime.resolve_exit(char, char.room_id, parts[1])
+            if len(parts) < 2 or parts[0] != ctx.room_id: return None, REASON_STALE_OBSERVATION
+            ex, reason = self.runtime.resolve_exit(source, ctx.room_id, parts[1])
             if reason == "ok": return {"category": cat, "direction": parts[1], "exit": ex}, REASON_SUCCESS
             return None, self._map_block_reason(reason)
         if cat == "actor":
@@ -355,21 +454,21 @@ class AgentRuntimeGateway:
             ent = self.runtime.find_entity(parts[1])
             if not ent: return None, REASON_TARGET_NOT_FOUND
             if str((ent.get("state") or {}).get("lifecycle_id") or ent.get("entity_id") or ent.get("instance_id")) != parts[2]: return None, REASON_STALE_LIFECYCLE
-            if ent.get("room_id") != char.room_id: return None, REASON_TARGET_NOT_VISIBLE
+            if ent.get("room_id") != ctx.room_id: return None, REASON_TARGET_NOT_VISIBLE
             if ent.get("is_alive") is False or (ent.get("state") or {}).get("current_state") in {"dead", "corpse", "despawned"}: return None, REASON_TARGET_DEAD
-            visible = self.runtime.find_visible_entities(char.room_id, char)
+            visible = self.runtime.find_visible_entities(ctx.room_id, source)
             ids = {str(e.get("instance_id") or e.get("entity_id")) for e in visible.get("npcs", []) + visible.get("mobs", [])}
             if parts[1] not in ids: return None, REASON_TARGET_NOT_VISIBLE
             return {"category": cat, "entity": ent}, REASON_SUCCESS
         if cat in {"item", "corpse"}:
             item = None
-            if cat == "item": item = next((i for i in self.runtime.get_visible_room_items(char.room_id) if str(i.get("instance_id")) == (parts[0] if parts else "")), None)
+            if cat == "item": item = next((i for i in self.runtime.get_visible_room_items(ctx.room_id) if str(i.get("instance_id")) == (parts[0] if parts else "")), None)
             else: item = self.runtime.find_entity(parts[0] if parts else "")
             if not item: return None, REASON_ITEM_NOT_FOUND
             return {"category": cat, "object": item}, REASON_SUCCESS
         if cat == "feature":
-            if len(parts) < 2 or parts[0] != char.room_id: return None, REASON_STALE_OBSERVATION
-            feats = self.runtime._resolved_room_features(char.room_id, char)
+            if len(parts) < 2 or parts[0] != ctx.room_id: return None, REASON_STALE_OBSERVATION
+            feats = self.runtime._resolved_room_features(ctx.room_id, source)
             feat = next((f for f in feats if str(f.get("id") or f.get("feature_id") or f.get("name")) == parts[1]), None)
             return ({"category": cat, "feature": feat}, REASON_SUCCESS) if feat else (None, REASON_TARGET_NOT_FOUND)
         return None, REASON_INVALID_TARGET_TYPE
@@ -402,8 +501,8 @@ class AgentRuntimeGateway:
         return AgentActionResult(r.request_id, r.actor_id, r.lifecycle_id, r.action_type.lower(), True, not queued, RESULT_QUEUED if queued else RESULT_SUCCESS, REASON_SUCCESS, summary, self.world_time(), resulting_observation_required=True, resulting_state_changes=changes or {}, target_ref=target_ref or r.target_ref, encounter_id=encounter_id, ability_id=ability_id, item_refs=item_refs or [])
 
     def _register(self, action_type: str, required: list[str], optional: list[str], targets: list[str], executor: Callable[[AgentActionRequest], AgentActionResult]) -> None:
-        def avail(char: Any, at=action_type, targets=targets):
-            reason = "" if char and char.hp > 0 else REASON_ACTOR_DEAD
+        def avail(ctx: ControlledActorContext, at=action_type, targets=targets):
+            reason = "" if ctx and ctx.health > 0 and ctx.lifecycle_state not in {"dead", "corpse", "despawned", "retired"} else REASON_ACTOR_DEAD
             return AgentActionCapability(at, at.replace("_", " ").title(), "target_ref" if targets else "none", [], targets, required, optional, current_availability=not reason, unavailability_reason_code=reason)
         self._registry[action_type] = ActionRegistration(action_type, {"required": required, "optional": optional}, targets, executor, avail)
 
@@ -415,69 +514,94 @@ class AgentRuntimeGateway:
         for a in ("rest", "stand", "sleep", "wake"): self._register(a, [], [], [], self._exec_posture)
         self._register("interact", ["verb"], [], ["feature", "item", "corpse", "exit"], self._exec_interact)
 
+    def _actor(self, r): return self._adapter_for_actor_id(r.actor_id)
     def _char(self, r): return self._character_from_actor_id(r.actor_id)
     def _exec_wait(self, r):
-        mins = int((r.parameters or {}).get("minutes") or 1); self.runtime.runtime_pulse(max(1, mins)); return self._ok(r, f"Waited {max(1, mins)} minute(s).", changes={"world_time_advanced": max(1, mins)})
-    def _exec_look(self, r): return self._ok(r, self.runtime._room_text(self.runtime._current_room(self._char(r))))
+        mins = max(1, int((r.parameters or {}).get("minutes") or 1))
+        if self.runtime.active_world_id:
+            self.runtime.advance_world_time(self.runtime.active_world_id, mins)
+        return self._ok(r, f"Waited {mins} minute(s).", changes={"world_time_advanced": mins})
+    def _exec_look(self, r):
+        a = self._actor(r); room = self.runtime._current_room(a.source) if a.context.character_id else self.runtime.room_from_id(a.context.room_id, viewer=a.source)
+        return self._ok(r, self.runtime._room_text(room))
     def _exec_inspect(self, r):
-        ch = self._char(r); tgt, reason = self._resolve_target(ch, r.target_ref, {"actor","item","corpse","feature","exit"}) if r.target_ref else (None, REASON_INVALID_PARAMETERS)
+        a = self._actor(r); tgt, reason = self._resolve_target(a.context, a.source, r.target_ref, {"actor","item","corpse","feature","exit"}) if r.target_ref else (None, REASON_INVALID_PARAMETERS)
         if not tgt: return self._reject(r, reason, "Inspection target is not available.")
         if tgt["category"] == "actor": return self._ok(r, str(tgt["entity"].get("description") or tgt["entity"].get("name") or "You see nothing special."))
         if tgt["category"] == "exit": return self._ok(r, f"Exit {tgt['direction']} is visible.")
         obj = tgt.get("object") or tgt.get("feature") or {}; return self._ok(r, str(obj.get("description") or obj.get("long_description") or obj.get("short_description") or obj.get("name") or "You see nothing special."))
     def _exec_move(self, r):
-        ch = self._char(r); tgt, reason = self._resolve_target(ch, r.target_ref, {"exit"})
+        a = self._actor(r); tgt, reason = self._resolve_target(a.context, a.source, r.target_ref, {"exit"})
         if not tgt: return self._reject(r, reason, "Move target is not available.")
-        before = ch.room_id; res = self.runtime._move_character(ch, tgt["direction"])
-        return self._ok(r, res.narrative, changes={"from_room_id": before, "to_room_id": ch.room_id}) if res.ok else self._reject(r, REASON_MOVEMENT_BLOCKED, res.narrative)
+        before = a.context.room_id
+        res = self.runtime._move_character(a.source, tgt["direction"]) if a.context.character_id else self.runtime.move_entity_actor(a.source, tgt["direction"])
+        after = getattr(a.source, "room_id", None) or (self.runtime.find_entity(a.context.entity_instance_id) or {}).get("room_id")
+        return self._ok(r, res.narrative, changes={"from_room_id": before, "to_room_id": after}) if res.ok else self._reject(r, REASON_MOVEMENT_BLOCKED, res.narrative)
     def _exec_speak(self, r):
         text = str((r.parameters or {}).get("text") or "").strip()
         if not text: return self._reject(r, REASON_INVALID_PARAMETERS, "Speech text is required.")
-        res = self.runtime.command_engine.handle_command(self._char(r), "say " + text)
-        return self._ok(r, res.narrative)
+        a = self._actor(r)
+        if not a.context.character_id and "speak" not in ((a.source.get("plugin_data") or {}).get("agent_capabilities") or []):
+            return self._reject(r, REASON_ACTION_NOT_AVAILABLE, "Actor does not have authored speech capability.")
+        safe = html.escape(text)
+        if a.context.character_id:
+            res = self.runtime.command_engine.handle_command(a.source, "say " + safe); return self._ok(r, res.narrative)
+        self.runtime.deliver_room_action(a.context.room_id, f'{a.context.display_name} says, "{safe}"', actor_id=a.context.actor_id, category="speech")
+        self._publish("agent_speech_delivered", {"world_id": self.runtime.active_world_id or "", "actor_id": a.context.actor_id, "room_id": a.context.room_id, "world_time": self.world_time()})
+        return self._ok(r, f'You say, "{safe}"')
     def _exec_attack(self, r):
-        ch = self._char(r); tgt, reason = self._resolve_target(ch, r.target_ref, {"actor"})
+        a = self._actor(r); tgt, reason = self._resolve_target(a.context, a.source, r.target_ref, {"actor"})
         if not tgt: return self._reject(r, reason, "Attack target is not available.")
-        res = self.runtime.combat_runtime.start_player_attack(ch, tgt["entity"].get("name") or "")
+        res = self.runtime.combat_runtime.start_actor_attack(a.source, tgt["entity"]) if hasattr(self.runtime.combat_runtime, "start_actor_attack") else self.runtime.combat_runtime.start_player_attack(a.source, tgt["entity"].get("name") or "")
         return self._ok(r, " ".join(res.messages), queued=True, encounter_id=res.encounter_id) if res.ok else self._reject(r, REASON_ACTION_NOT_ALLOWED, " ".join(res.messages))
     def _exec_target(self, r):
-        ch = self._char(r); tgt, reason = self._resolve_target(ch, r.target_ref, {"actor"})
+        a = self._actor(r); tgt, reason = self._resolve_target(a.context, a.source, r.target_ref, {"actor"})
         if not tgt: return self._reject(r, reason, "Target is not available.")
-        res = self.runtime.combat_runtime.target(ch, tgt["entity"].get("name") or "")
+        if not a.context.character_id: return self._reject(r, REASON_ACTION_NOT_AVAILABLE, "Entity target changes are not yet exposed by canonical combat service.")
+        res = self.runtime.combat_runtime.target(a.source, tgt["entity"].get("name") or "")
         return self._ok(r, " ".join(res.messages), queued=True, encounter_id=res.encounter_id) if res.ok else self._reject(r, REASON_ACTOR_NOT_IN_COMBAT, " ".join(res.messages))
     def _exec_defend(self, r):
-        res = self.runtime.combat_runtime.defend(self._char(r)); return self._ok(r, " ".join(res.messages), queued=True, encounter_id=res.encounter_id) if res.ok else self._reject(r, REASON_ACTOR_NOT_IN_COMBAT, " ".join(res.messages))
+        a = self._actor(r)
+        if not a.context.character_id: return self._reject(r, REASON_ACTION_NOT_AVAILABLE, "Entity defend is not yet exposed by canonical combat service.")
+        res = self.runtime.combat_runtime.defend(a.source); return self._ok(r, " ".join(res.messages), queued=True, encounter_id=res.encounter_id) if res.ok else self._reject(r, REASON_ACTOR_NOT_IN_COMBAT, " ".join(res.messages))
     def _exec_flee(self, r):
-        direction = (r.parameters or {}).get("direction") or ""; ch = self._char(r)
+        direction = (r.parameters or {}).get("direction") or ""; a = self._actor(r)
         if r.target_ref:
-            tgt, reason = self._resolve_target(ch, r.target_ref, {"exit"})
+            tgt, reason = self._resolve_target(a.context, a.source, r.target_ref, {"exit"})
             if not tgt: return self._reject(r, reason, "Flee exit is not available.")
             direction = tgt["direction"]
-        res = self.runtime.combat_runtime.flee(ch, direction); return self._ok(r, " ".join(res.messages), encounter_id=res.encounter_id) if res.ok else self._reject(r, REASON_ACTOR_NOT_IN_COMBAT, " ".join(res.messages))
+        if not a.context.character_id: return self._reject(r, REASON_ACTION_NOT_AVAILABLE, "Entity flee is not yet exposed by canonical combat service.")
+        res = self.runtime.combat_runtime.flee(a.source, direction); return self._ok(r, " ".join(res.messages), encounter_id=res.encounter_id) if res.ok else self._reject(r, REASON_ACTOR_NOT_IN_COMBAT, " ".join(res.messages))
     def _exec_assist(self, r):
         res = self.runtime.combat_runtime.assist(self._char(r), ""); return self._ok(r, " ".join(res.messages), queued=True, encounter_id=res.encounter_id) if res.ok else self._reject(r, REASON_ACTION_NOT_AVAILABLE, " ".join(res.messages))
     def _exec_use_ability(self, r):
         res = self.runtime.combat_runtime.queue_ability(self._char(r), str((r.parameters or {}).get("ability_id") or "")); return self._ok(r, " ".join(res.messages), queued=True, encounter_id=res.encounter_id, ability_id=str((r.parameters or {}).get("ability_id") or "")) if res.ok else self._reject(r, REASON_ACTION_NOT_ALLOWED, " ".join(res.messages))
     def _exec_get_item(self, r):
-        ch = self._char(r); tgt, reason = self._resolve_target(ch, r.target_ref, {"item"})
+        ch = self._char(r); tgt, reason = self._resolve_target(self.resolve_controlled_actor(r.actor_id), ch, r.target_ref, {"item"})
         if not tgt: return self._reject(r, reason, "Item is not available.")
         msg = self.runtime.pickup_item(ch.id, ch.room_id, tgt["object"].get("name") or tgt["object"].get("instance_id") or "")
         ok = not any(s in msg.lower() for s in ["don't see", "cannot", "can't"]); return self._ok(r, msg) if ok else self._reject(r, REASON_ITEM_NOT_FOUND, msg)
     def _exec_drop_item(self, r):
         ch = self._char(r); msg = self.runtime.drop_item(ch.id, str((r.parameters or {}).get("item_query") or "")); ok = "you drop" in msg.lower(); return self._ok(r, msg) if ok else self._reject(r, REASON_ITEM_NOT_FOUND, msg)
     def _exec_loot_container(self, r):
-        ch = self._char(r); tgt, reason = self._resolve_target(ch, r.target_ref, {"corpse", "item"})
+        ch = self._char(r); tgt, reason = self._resolve_target(self.resolve_controlled_actor(r.actor_id), ch, r.target_ref, {"corpse", "item"})
         if not tgt: return self._reject(r, reason, "Container is not available.")
         obj = tgt["object"]; msg = self.runtime.loot_container(ch, obj.get("name") or obj.get("entity_id") or obj.get("instance_id") or "corpse"); ok = msg.startswith("You take") or "empty" in msg.lower(); return self._ok(r, msg) if ok else self._reject(r, REASON_CONTAINER_CLOSED if "closed" in msg.lower() else REASON_ITEM_NOT_FOUND, msg)
     def _exec_posture(self, r):
-        ch = self._char(r); action = r.action_type.lower(); data = ch.actor_data or {}; data["posture"] = {"rest":"resting", "stand":"standing", "sleep":"sleeping", "wake":"standing"}[action]; ch.actor_data = data; self.runtime.state_store.save_character(ch, self.runtime.active_world_id or ""); return self._ok(r, f"Posture is now {data['posture']}.")
+        a = self._actor(r); action = r.action_type.lower(); posture = {"rest":"resting", "stand":"standing", "sleep":"sleeping", "wake":"standing"}[action]
+        if a.context.character_id:
+            data = a.source.actor_data or {}; data["posture"] = posture; a.source.actor_data = data; self.runtime.state_store.save_character(a.source, self.runtime.active_world_id or "")
+        else:
+            self.runtime.update_entity_state(a.context.entity_instance_id, {"posture": posture})
+        return self._ok(r, f"Posture is now {posture}.")
     def _exec_interact(self, r):
-        ch = self._char(r); tgt, reason = self._resolve_target(ch, r.target_ref, {"feature", "item", "corpse", "exit"})
+        a = self._actor(r); tgt, reason = self._resolve_target(a.context, a.source, r.target_ref, {"feature", "item", "corpse", "exit"})
         if not tgt: return self._reject(r, reason, "Interaction target is not available.")
         verb = str((r.parameters or {}).get("verb") or "").strip().lower()
         if verb not in {"look", "use", "touch", "push", "pull", "open", "close", "read", "pray", "climb"}: return self._reject(r, REASON_INVALID_PARAMETERS, "Unsupported interaction verb.")
         name = (tgt.get("feature") or tgt.get("object") or {}).get("name") or tgt.get("direction") or "target"
-        res = self.runtime._handle_interaction_command(ch, verb, [name], f"{verb} {name}") if hasattr(self.runtime, "_handle_interaction_command") else None
+        if not a.context.character_id: return self._reject(r, REASON_ACTION_NOT_AVAILABLE, "Entity interactions are not yet exposed by canonical interaction service.")
+        res = self.runtime._handle_interaction_command(a.source, verb, [name], f"{verb} {name}") if hasattr(self.runtime, "_handle_interaction_command") else None
         return self._ok(r, getattr(res, "narrative", "Interaction completed.")) if res is not None else self._reject(r, REASON_ACTION_NOT_AVAILABLE, "No canonical interaction is available for that target.")
 
     def _queued_action_summary(self, actor_id: str) -> dict[str, Any]:
@@ -488,8 +612,12 @@ class AgentRuntimeGateway:
         svc = getattr(self.runtime, "abilities", None)
         return [svc.get_ability_status(char.id, a.get("id")) for a in (svc.get_actor_abilities(char.id) if svc else []) if a.get("id")][:10] if svc else []
     def _recent_events(self, char: Any) -> list[dict[str, Any]]:
+        if isinstance(char, ControlledActorContext):
+            room_id, actor_id = char.room_id, char.actor_id
+        else:
+            room_id, actor_id = char.room_id, self.actor_id_for_character(char)
         with sqlite3.connect(self.db_path) as con:
-            rows = con.execute("SELECT event_id,event_type,world_time,source_ref,target_ref,summary,expires_world_time FROM agent_recent_events WHERE world_id=? AND (room_id=? OR actor_id=?) ORDER BY world_time DESC LIMIT 20", (self.runtime.active_world_id or "", char.room_id, self.actor_id_for_character(char))).fetchall()
+            rows = con.execute("SELECT event_id,event_type,world_time,source_ref,target_ref,summary,expires_world_time FROM agent_recent_events WHERE world_id=? AND (room_id=? OR actor_id=?) ORDER BY world_time DESC LIMIT 20", (self.runtime.active_world_id or "", room_id, actor_id)).fetchall()
         return [{"event_ref": r[0], "event_type": r[1], "world_time": r[2], "source_target_ref": r[3], "target_target_ref": r[4], "structured_summary": {"text": r[5]}, "perception_channel": "visible_or_audible", "importance": "normal", "expiration_world_time": r[6]} for r in rows]
 
 
@@ -502,3 +630,51 @@ class AgentTestControllerAdapter:
     def submit(self, **kwargs: Any) -> AgentActionResult:
         kwargs.setdefault("controller_id", self.controller_id); kwargs.setdefault("controller_type", self.controller_type)
         return self.gateway.submit_action(AgentActionRequest(**kwargs))
+
+
+class DeterministicControllerEvaluator:
+    """Small authored-policy evaluator; selects at most one legal gateway action."""
+    def __init__(self, gateway: AgentRuntimeGateway):
+        self.gateway = gateway
+
+    def upsert_profile(self, profile_id: str, *, allowed_action_types: list[str], priority_rules: list[dict[str, Any]] | None = None, enabled: bool = True, interval: int = 5, idle_action: str = "wait", metadata: dict[str, Any] | None = None) -> None:
+        registered = set(self.gateway._registry)
+        bad = sorted(set(a.lower() for a in allowed_action_types) - registered)
+        if bad: raise ValueError(f"unregistered action types: {', '.join(bad)}")
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.gateway.db_path) as con:
+            con.execute("INSERT OR REPLACE INTO agent_controller_profiles VALUES(?,?,?,?,?,?,?,?,?,?,?)", (profile_id, self.gateway.runtime.active_world_id or "", 1 if enabled else 0, "deterministic", json.dumps([a.lower() for a in allowed_action_types]), max(1, int(interval)), idle_action.lower(), json.dumps(priority_rules or []), json.dumps(metadata or {}), now, now))
+
+    def step(self, actor_id: str, controller_id: str) -> AgentActionResult | None:
+        prof = self._profile_for(controller_id)
+        if not prof or not int(prof["enabled"] or 0): return None
+        obs = self.gateway.create_observation(actor_id, controller_id)
+        legal = {a["action_type"]: a for a in obs.available_actions if a.get("current_availability")}
+        allowed = set(json.loads(prof["allowed_action_types_json"] or "[]"))
+        selected_rule = "idle"; action = prof["idle_action"] or "wait"; target = ""; params = {}
+        rules = json.loads(prof["priority_rules_json"] or "[]")
+        hp_pct = obs.self_state["health"] / max(1, obs.self_state["maximum_health"])
+        for rule in rules:
+            candidate = str(rule.get("action_type") or "").lower()
+            cond = str(rule.get("condition") or "").lower()
+            if candidate not in allowed or candidate not in legal: continue
+            if cond == "in_combat" and not obs.current_combat.get("in_combat"): continue
+            if cond == "low_health" and hp_pct > float(rule.get("threshold", 0.25)): continue
+            if candidate in {"attack", "target"} and obs.visible_actors:
+                target = obs.visible_actors[0]["target_ref"]
+            selected_rule = str(rule.get("rule_id") or candidate); action = candidate; break
+        if action not in allowed or action not in legal: action = "wait" if "wait" in allowed and "wait" in legal else ""
+        if not action: return None
+        req = AgentActionRequest("decision_" + uuid.uuid4().hex, actor_id, obs.lifecycle_id, obs.observation_id, action, target_ref=target, parameters=params, requested_world_time=self.gateway.world_time(), controller_id=controller_id, controller_type="deterministic")
+        result = self.gateway.submit_action(req)
+        with sqlite3.connect(self.gateway.db_path) as con:
+            con.execute("INSERT INTO agent_decision_audit VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", ("dec_" + uuid.uuid4().hex, self.gateway.runtime.active_world_id or "", actor_id, obs.lifecycle_id, controller_id, prof["profile_id"], obs.observation_id, selected_rule, action, req.request_id, result.result_code, result.reason_code, self.gateway.world_time(), datetime.now(timezone.utc).isoformat()))
+            con.execute("DELETE FROM agent_decision_audit WHERE decision_id NOT IN (SELECT decision_id FROM agent_decision_audit ORDER BY created_at DESC LIMIT 1000)")
+        return result
+
+    def _profile_for(self, controller_id: str) -> sqlite3.Row | None:
+        with sqlite3.connect(self.gateway.db_path) as con:
+            con.row_factory = sqlite3.Row
+            ctrl = con.execute("SELECT controller_profile_id,metadata_json FROM agent_controllers WHERE controller_id=?", (controller_id,)).fetchone()
+            pid = (ctrl["controller_profile_id"] if ctrl else "") or ((json.loads(ctrl["metadata_json"] or "{}").get("controller_profile_id")) if ctrl else "")
+            return con.execute("SELECT * FROM agent_controller_profiles WHERE profile_id=?", (pid,)).fetchone() if pid else None

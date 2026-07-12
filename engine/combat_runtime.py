@@ -217,6 +217,25 @@ class CombatRuntimeService:
             if cid != character.id: self.enqueue_output(cid, f'{character.name} attacks {defender.identity.name}.', encounter_id=enc, room_id=character.room_id, category='combat_start')
         return rr
 
+    def start_actor_attack(self, attacker_source: Any, target_ent: dict[str, Any]) -> CombatRuntimeResult:
+        if hasattr(attacker_source, "id"):
+            return self.start_player_attack(attacker_source, target_ent.get("name") or "")
+        self.refresh_content()
+        attacker = self.actor_from_entity(attacker_source); defender = self.actor_from_entity(target_ent)
+        err = self.validate_attack(attacker, defender, target_ent)
+        if err: return CombatRuntimeResult(False, [err])
+        enc = self.find_actor_encounter(attacker.actor_id) or self.start_encounter(attacker.identity.current_location)
+        already = bool(self.find_actor_encounter(attacker.actor_id))
+        self.join_encounter(enc, attacker, "side_1"); self.join_encounter(enc, defender, "side_2")
+        self.set_target(enc, attacker.actor_id, defender.actor_id); self.set_target(enc, defender.actor_id, attacker.actor_id)
+        self.queue_action(enc, attacker.actor_id, "basic_attack", defender.actor_id, source="agent")
+        if already:
+            return CombatRuntimeResult(True, [f"{attacker.identity.name} keeps fighting {defender.identity.name}."], enc)
+        rr = self._execute_attack(enc, attacker, defender, opening=True)
+        for cid in self.active_character_ids_in_room(attacker.identity.current_location):
+            self.enqueue_output(cid, f"{attacker.identity.name} attacks {defender.identity.name}.", encounter_id=enc, room_id=attacker.identity.current_location, category="combat_start")
+        return rr
+
     def start_encounter(self, room_id: str) -> str:
         eid='enc_'+uuid.uuid4().hex; now=datetime.now(timezone.utc).isoformat(); wt=self.world_time()
         with sqlite3.connect(self.db_path) as con: con.execute("INSERT INTO combat_encounters VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(eid,self.runtime.active_world_id or '',room_id,'active',wt,0,wt+self.ROUND_DELAY,now,now,None,None,'{}'))
