@@ -8,6 +8,7 @@ import re
 
 from engine.mud_rendering import SEMANTIC_COLOR_ROLES, render_mud_color_html
 from engine.conditions import condition_label
+from collections import OrderedDict
 
 _SEMANTIC_TAG_RE = re.compile(r"\{(/?)([a-z_]+)\}")
 
@@ -62,6 +63,23 @@ def _entity_text(entity: Any, *, compact: bool = True) -> tuple[str, str]:
     return str(entity).strip(), ""
 
 
+def presence_group_key(entity: Any) -> tuple[Any, ...] | None:
+    """Return a conservative room-presence grouping key, or None for unique lines."""
+    if not isinstance(entity, dict) or entity.get("entity_type") == "player":
+        return None
+    state = entity.get("state") if isinstance(entity.get("state"), dict) else {}
+    etype = entity.get("entity_type") or ("item" if entity.get("instance_id") else "")
+    health = condition_label(entity)
+    combat = state.get("combat_target_id") or state.get("combat_target_name")
+    position = entity.get("current_state") or state.get("current_state") or entity.get("movement_state")
+    owner = entity.get("owner_id") or entity.get("owner_type")
+    lit = entity.get("status") or state.get("status") or state.get("lit")
+    corpse_source = state.get("source_template_id") or state.get("source_entity_id") if etype == "corpse" else ""
+    if combat or etype in {"corpse", "campfire", "campsite"}:
+        return None
+    return (etype, entity.get("template_id") or entity.get("id"), entity.get("name"), health, position, owner, lit, corpse_source)
+
+
 def render_room(room: Any, colors: dict[str, str] | None = None, character: Any = None) -> str:
     """Render the canonical Smart MUD room block.
 
@@ -92,18 +110,25 @@ def render_room(room: Any, colors: dict[str, str] | None = None, character: Any 
         text, _desc = _entity_text(player)
         if text and (character is None or text != getattr(character, "name", "")):
             visible_lines.append(f'<span role="player">{render_mud_color_html(text)}</span>')
-    for npc in getattr(room, "npcs", []) or []:
-        text, _desc = _entity_text(npc)
-        if text:
-            visible_lines.append(f'<span role="npc">{render_mud_color_html(text)}</span>')
-    for mob in getattr(room, "mobs", []) or []:
-        text, _desc = _entity_text(mob)
-        if text:
-            visible_lines.append(f'<span role="mob">{render_mud_color_html(text)}</span>')
-    for obj in getattr(room, "objects", []) or []:
-        text, _desc = _entity_text(obj)
-        if text:
-            visible_lines.append(f'<span role="object">{render_mud_color_html(text)}</span>')
+    grouped: "OrderedDict[tuple[Any, ...], list[tuple[str, str]]]" = OrderedDict()
+    unique: list[tuple[str, str]] = []
+    for role, seq in (("npc", getattr(room, "npcs", []) or []), ("mob", getattr(room, "mobs", []) or []), ("object", getattr(room, "objects", []) or [])):
+        for ent in seq:
+            text, _desc = _entity_text(ent)
+            if not text:
+                continue
+            key = presence_group_key(ent)
+            if key is None:
+                unique.append((role, text))
+            else:
+                grouped.setdefault(key, []).append((role, text))
+    for entries in grouped.values():
+        role, text = entries[0]
+        if len(entries) > 1:
+            text = f"({len(entries)}) {text}"
+        visible_lines.append(f'<span role="{role}">{render_mud_color_html(text)}</span>')
+    for role, text in unique:
+        visible_lines.append(f'<span role="{role}">{render_mud_color_html(text)}</span>')
 
     if visible_lines:
         lines.append("You see:")
@@ -112,11 +137,14 @@ def render_room(room: Any, colors: dict[str, str] | None = None, character: Any 
 
     exits = getattr(room, "exits", []) or []
     exit_names: list[str] = []
+    order = ["north", "west", "south", "east", "up", "down", "northeast", "northwest", "southeast", "southwest", "in", "out"]
     if isinstance(exits, list):
-        for exit_def in exits:
+        sorted_exits = sorted(exits, key=lambda ex: order.index(str((ex.get("direction") or ex.get("dir")) if isinstance(ex, dict) else ex).lower()) if str((ex.get("direction") or ex.get("dir")) if isinstance(ex, dict) else ex).lower() in order else 999)
+        for exit_def in sorted_exits:
             direction = exit_def.get("direction") or exit_def.get("dir") if isinstance(exit_def, dict) else str(exit_def)
             if direction:
-                exit_names.append(str(direction))
+                closed = isinstance(exit_def, dict) and (exit_def.get("closed") or exit_def.get("locked"))
+                exit_names.append(f"({direction})" if closed else str(direction))
     exit_body = " ".join(f'<span role="exit">{html.escape(e)}</span>' for e in exit_names) if exit_names else '<span role="exit">none</span>'
     lines.append(f'[ Exits: {exit_body} ]')
     return "\n".join(lines)

@@ -630,6 +630,29 @@ class MudRuntime:
             return self.combat_runtime.drain_output(character_id)
         return []
 
+    def _active_character_ids_in_room(self, room_id: str, *, exclude: set[str] | None = None) -> list[str]:
+        exclude = exclude or set()
+        ids: list[str] = []
+        for session in getattr(self, "sessions", {}).values():
+            if getattr(session, "state", "playing") == "disconnected":
+                continue
+            cid = getattr(session, "character_id", "")
+            if not cid or cid in exclude or cid in ids:
+                continue
+            ch = self.state_store.load_character(cid)
+            if ch and ch.room_id == room_id:
+                ids.append(cid)
+        return ids
+
+    def _enqueue_room_output(self, character_id: str, message: str, *, room_id: str = "", category: str = "room_action") -> None:
+        if getattr(self, "combat_runtime", None):
+            self.combat_runtime.enqueue_output(character_id, message, room_id=room_id, category=category)
+
+    def deliver_room_action(self, room_id: str, message: str, *, actor_id: str = "", category: str = "room_action") -> None:
+        for cid in self._active_character_ids_in_room(room_id, exclude={actor_id} if actor_id else set()):
+            self._enqueue_room_output(cid, message, room_id=room_id, category=category)
+        self.event_bus.publish("room_action_observed", {"room_id": room_id, "actor_id": actor_id, "message_kind": category}, source_system="runtime", world_id=self.active_world_id or "", room_id=room_id)
+
     def pause_world_time(self, world_id: str) -> dict[str, Any]: return self.living_world.pause_world_time(world_id)
     def resume_world_time(self, world_id: str) -> dict[str, Any]: return self.living_world.resume_world_time(world_id)
     def get_entity_profile(self, instance_id: str) -> dict[str, Any]: return self.living_world.get_entity_profile(instance_id)
@@ -1392,8 +1415,12 @@ class MudRuntime:
         self.event_bus.publish("movement_attempted", {"canonical_command": direction, "character_id": char.id, "character_name": char.name, "current_room_id": room_id}, source_system="movement", world_id=self.active_world_id or "", character_id=char.id, command=direction)
         exit_data, reason = self.resolve_exit(char, room_id, direction)
         if exit_data and reason == "ok":
+            old_room = room_id
             char.room_id = str(exit_data["target_room_id"])
             self.state_store.save_character(char, self.active_world_id or "")
+            reverse = {"north":"south","south":"north","east":"west","west":"east","up":"down","down":"up","in":"out","out":"in","northeast":"southwest","southwest":"northeast","northwest":"southeast","southeast":"northwest"}.get(direction, direction)
+            self.deliver_room_action(old_room, f"{char.name} leaves {direction}.", actor_id=char.id, category="actor_departed")
+            self.deliver_room_action(char.room_id, f"{char.name} arrives from the {reverse}.", actor_id=char.id, category="actor_arrived")
             self.event_bus.publish("movement_succeeded", {"canonical_command": direction, "character_id": char.id, "character_name": char.name, "current_room_id": room_id, "target_room_id": char.room_id, "result_summary": "moved"}, source_system="movement", world_id=self.active_world_id or "", character_id=char.id, command=direction)
             return CommandResult(narrative=f"You head {direction}.", state_updates={"render_room": True})
         summary = reason if exit_data else "no_exit"
@@ -1597,18 +1624,27 @@ class MudRuntime:
     def get_visible_room_items(self, room_id: str) -> list[dict[str, Any]]: return self.find_room_items(room_id)
 
     def resolve_item_keywords(self, query: str, candidate_items: list[dict[str, Any]]) -> dict[str, Any]:
+        numbered = re.match(r"^\s*(\d+)\.([^\s].*)$", str(query or ""), re.I)
+        ordinal = int(numbered.group(1)) if numbered else 0
+        query = numbered.group(2) if numbered else query
         words = [w for w in re.findall(r"[a-z0-9_']+", query.lower()) if w not in self.ARTICLES]
         q = " ".join(words)
         if not q: return {"status":"missing", "matches": []}
         def name(i): return str(i.get("name") or i.get("template",{}).get("name") or "").lower()
+        def choose(matches):
+            if ordinal:
+                return {"status":"ok","item":matches[ordinal-1],"matches":matches} if len(matches) >= ordinal else {"status":"missing_ordinal","matches":matches,"ordinal":ordinal,"query":q}
+            return {"status":"ok","item":matches[0],"matches":matches} if matches else None
         exact = [i for i in candidate_items if name(i) == q]
-        if exact: return {"status":"ok", "item": exact[0], "matches": exact}
+        if exact: return choose(exact)
         kw = [i for i in candidate_items if q in [str(k).lower() for k in i.get("keywords", [])]]
-        if kw: return {"status":"ok", "item": kw[0], "matches": kw}
+        if kw: return choose(kw)
+        multi = [i for i in candidate_items if q in [" ".join(re.findall(r"[a-z0-9_']+", str(k).lower())) for k in i.get("keywords", [])]]
+        if multi: return choose(multi)
         allwords = [i for i in candidate_items if all(w in set(re.findall(r"[a-z0-9_']+", name(i)) + [str(k).lower() for k in i.get("keywords", [])]) for w in words)]
-        if allwords: return {"status":"ok", "item": allwords[0], "matches": allwords}
-        partial = [i for i in candidate_items if all(any(w in token for token in re.findall(r"[a-z0-9_']+", name(i)) + [str(k).lower() for k in i.get("keywords", [])]) for w in words)]
-        if len(partial) == 1: return {"status":"ok", "item": partial[0], "matches": partial}
+        if allwords: return choose(allwords)
+        partial = [i for i in candidate_items if all(any(token.startswith(w) for token in re.findall(r"[a-z0-9_']+", name(i)) + [str(k).lower() for k in i.get("keywords", [])]) for w in words)]
+        if partial and (len(partial) == 1 or ordinal): return choose(partial)
         return {"status":"ambiguous" if partial else "missing", "matches": partial}
 
     def _normalize_equipment_slot(self, slot: str | None) -> str:
@@ -1927,7 +1963,15 @@ class MudRuntime:
         ])
 
     def _resolve_message(self, res: dict[str, Any], missing: str) -> str:
-        if res.get("status") == "ambiguous": return "Which do you mean: " + ", ".join(i["name"] for i in res.get("matches", [])) + "?"
+        if res.get("status") == "missing_ordinal":
+            return f"There is no {int(res.get('ordinal') or 0)}.{res.get('query') or 'target'} here."
+        if res.get("status") == "ambiguous":
+            choices = []
+            for idx, item in enumerate(res.get("matches", []), start=1):
+                name = str(item.get("name") or item.get("template", {}).get("name") or "target").lower()
+                word = next((w for w in re.findall(r"[a-z0-9_']+", name) if w not in self.ARTICLES), name)
+                choices.append(f"{idx}.{word}")
+            return "Which do you mean: " + " or ".join(choices) + "?"
         return missing
 
     def _publish_item_event(self, name: str, item: dict[str, Any] | None, **extra: Any) -> None:
@@ -2133,11 +2177,27 @@ class MudRuntime:
         return groups
 
     def resolve_entity_keywords(self, query: str, candidate_entities: list[dict[str, Any]]) -> dict[str, Any]:
+        numbered = re.match(r"^\s*(\d+)\.([^\s].*)$", str(query or ""), re.I)
+        ordinal = int(numbered.group(1)) if numbered else 0
+        query = numbered.group(2) if numbered else query
         words = [w for w in re.findall(r"[a-z0-9_']+", query.lower()) if w not in self.ARTICLES]; q = " ".join(words)
         if not q: return {"status":"missing", "matches": []}
-        def tokens(e): return set(re.findall(r"[a-z0-9_']+", str(e.get("name","")).lower()) + [str(k).lower() for k in e.get("keywords", [])])
-        matches = [e for e in candidate_entities if str(e.get("name","")).lower() == q] or [e for e in candidate_entities if q in [str(k).lower() for k in e.get("keywords", [])]] or [e for e in candidate_entities if all(w in tokens(e) for w in words)]
-        return {"status": "ok" if len(matches)==1 else "ambiguous" if matches else "missing", "entity": matches[0] if len(matches)==1 else None, "matches": matches}
+        def toks(e): return re.findall(r"[a-z0-9_']+", str(e.get("name","")).lower()) + [str(k).lower() for k in e.get("keywords", []) if str(k).strip()]
+        def choose(matches):
+            if ordinal:
+                return {"status":"ok","entity":matches[ordinal-1],"matches":matches} if len(matches) >= ordinal else {"status":"missing_ordinal","matches":matches,"ordinal":ordinal,"query":q}
+            return {"status":"ok","entity":matches[0],"matches":matches} if matches else None
+        matches = [e for e in candidate_entities if str(e.get("name","")).lower() == q]
+        if matches: return choose(matches)
+        matches = [e for e in candidate_entities if q in [str(k).lower() for k in e.get("keywords", [])]]
+        if matches: return choose(matches)
+        matches = [e for e in candidate_entities if q in [" ".join(re.findall(r"[a-z0-9_']+", str(k).lower())) for k in e.get("keywords", [])]]
+        if matches: return choose(matches)
+        matches = [e for e in candidate_entities if all(w in set(toks(e)) for w in words)]
+        if matches: return choose(matches)
+        partial = [e for e in candidate_entities if all(any(token.startswith(w) for token in toks(e)) for w in words)]
+        if partial and (len(partial) == 1 or ordinal): return choose(partial)
+        return {"status": "ambiguous" if partial else "missing", "entity": None, "matches": partial}
 
     def move_entity(self, entity_id: str, room_id: str, source_system: str = "runtime", **ctx: Any) -> dict[str, Any]:
         old = self.find_entity(entity_id); now = datetime.now(timezone.utc).isoformat()
