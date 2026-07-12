@@ -17,6 +17,7 @@ from engine.actors import Actor, ActorIdentity, ActorResources, actor_from_runti
 from engine.combat import CombatEngine, CombatState
 from engine.combat_equipment import CombatContentRegistry
 from engine.formulas import FormulaEngine
+from engine.conditions import condition_label, condition_key, transition_text
 
 
 def init_combat_runtime_schema(db_path: str | Path) -> None:
@@ -29,6 +30,8 @@ def init_combat_runtime_schema(db_path: str | Path) -> None:
         con.execute("CREATE INDEX IF NOT EXISTS idx_combat_outbound_character ON combat_outbound_messages(character_id,delivered,message_id)")
         con.execute("CREATE INDEX IF NOT EXISTS idx_combat_encounters_active ON combat_encounters(world_id,room_id,status)")
         con.execute("CREATE INDEX IF NOT EXISTS idx_combat_participants_actor ON combat_participants(actor_id,participation_status)")
+        con.execute("""CREATE TABLE IF NOT EXISTS combat_death_transactions(death_id TEXT PRIMARY KEY,encounter_id TEXT,actor_id TEXT,killer_actor_id TEXT,corpse_entity_id TEXT,world_id TEXT,room_id TEXT,created_world_time INTEGER,created_at TEXT,metadata_json TEXT)""")
+        con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_combat_death_actor_once ON combat_death_transactions(world_id,actor_id)")
         con.commit()
 
 @dataclass
@@ -89,13 +92,13 @@ class CombatRuntimeService:
                 self.runtime.update_entity_state(eid, st, source_system='combat_runtime')
 
     def resolve_target(self, character: Any, query: str) -> dict[str, Any] | None:
-        visible = self.runtime.find_visible_entities(character.room_id, character); cands = visible.get('npcs',[])+visible.get('mobs',[])
+        visible = self.runtime.find_visible_entities(character.room_id, character); cands = [e for e in visible.get('npcs',[])+visible.get('mobs',[]) if e.get('is_alive') and e.get('current_state') not in {'dead','corpse','despawned'}]
         return self.runtime.resolve_entity_keywords(query, cands).get('entity')
 
     def validate_attack(self, attacker: Actor, defender: Actor, ent: dict[str,Any]|None=None) -> str:
         if attacker.actor_id == defender.actor_id: return 'You cannot attack yourself.'
         if attacker.resources.health <= 0 or attacker.combat_profile.get('combat_state') in {'dead','sleeping','unconscious','incapacitated'}: return 'You cannot attack right now.'
-        if defender.resources.health <= 0 or defender.lifecycle_state == 'dead': return 'They are already dead.'
+        if defender.resources.health <= 0 or defender.lifecycle_state == 'dead': return f'There is no living {defender.identity.name.lower()} here.'
         if attacker.identity.current_location != defender.identity.current_location: return 'They are not here.'
         if ent:
             tmpl = dict(self.runtime.entity_templates.get(str(ent.get('template_id') or ''), {})); flags=set(tmpl.get('flags') or [])|set(ent.get('flags') or [])|set(tmpl.get('tags') or [])
@@ -236,7 +239,15 @@ class CombatRuntimeService:
         self._publish('combat_action_completed',{'encounter_id':eid,'actor_id':attacker.actor_id,'target_actor_id':defender.actor_id,'result':outcome,'world_time':wt})
         self._deliver_combat_messages(eid, attacker, defender, res, 'critical_hit' if (res.damage_event and res.damage_event.critical) else ('attack_hit' if res.hit else 'attack_miss'), skip_attacker=opening)
         msgs=[res.messages.get('attacker','')]
-        if defender.resources.health<=0: msgs.append(f"{defender.identity.name} falls."); self._defeat(eid, defender.actor_id); self.end_if_finished(eid)
+        prev_key = condition_key({"current_health": max(0, defender.resources.health + dmg), "maximum_health": defender.resources.maximum_health})
+        now_key = condition_key(defender)
+        if dmg and defender.resources.health > 0 and prev_key != now_key:
+            msg = transition_text(defender.identity.name, defender)
+            msgs.append(msg)
+            self._broadcast_room(eid, attacker.identity.current_location, msg, category='condition_changed')
+        if defender.resources.health<=0:
+            death = self._handle_lethal_damage(eid, attacker, defender)
+            msgs.extend(death.get('messages', []))
         return CombatRuntimeResult(True,msgs,eid)
 
     def _round(self,eid):
@@ -278,9 +289,46 @@ class CombatRuntimeService:
                 rr=self._execute_attack(eid,a,d); msgs += rr.messages
         self.end_if_finished(eid); return msgs
 
+    def _broadcast_room(self, eid: str, room_id: str, message: str, *, category: str = 'combat') -> None:
+        for cid in self.active_character_ids_in_room(room_id):
+            self.enqueue_output(cid, message, encounter_id=eid, room_id=room_id, category=category)
+
     def _defeat(self,eid,actor_id):
-        with sqlite3.connect(self.db_path) as con: con.execute("UPDATE combat_participants SET participation_status='defeated',defeated=1 WHERE encounter_id=? AND actor_id=?",(eid,actor_id))
+        with sqlite3.connect(self.db_path) as con:
+            con.execute("UPDATE combat_participants SET participation_status='defeated',defeated=1,current_target_actor_id='' WHERE encounter_id=? AND actor_id=?",(eid,actor_id))
+            con.execute("UPDATE combat_action_queue SET status='cancelled',resolved_at=? WHERE encounter_id=? AND actor_id=? AND status='queued'", (datetime.now(timezone.utc).isoformat(), eid, actor_id))
+            con.execute("UPDATE combat_participants SET current_target_actor_id='' WHERE encounter_id=? AND current_target_actor_id=?", (eid, actor_id))
         self._publish('combat_participant_defeated',{'encounter_id':eid,'actor_id':actor_id,'world_time':self.world_time()})
+
+    def _handle_lethal_damage(self, eid: str, attacker: Actor, defender: Actor) -> dict[str, Any]:
+        self._publish('combat_lethal_damage_detected', {'encounter_id':eid,'actor_id':attacker.actor_id,'target_actor_id':defender.actor_id,'world_time':self.world_time()})
+        if not defender.actor_id.startswith('entity:'):
+            self._defeat(eid, defender.actor_id); self.end_if_finished(eid); return {'messages':['You collapse and die.']}
+        entity_id = defender.actor_id.split(':',1)[1]; ent = self.runtime.find_entity(entity_id) or {}; room_id = defender.identity.current_location
+        death_id = 'death_' + uuid.uuid5(uuid.NAMESPACE_URL, f"{self.runtime.active_world_id}:{entity_id}").hex
+        with sqlite3.connect(self.db_path) as con:
+            inserted = con.execute("INSERT OR IGNORE INTO combat_death_transactions(death_id,encounter_id,actor_id,killer_actor_id,world_id,room_id,created_world_time,created_at,metadata_json) VALUES(?,?,?,?,?,?,?,?,?)", (death_id,eid,defender.actor_id,attacker.actor_id,self.runtime.active_world_id or '',room_id,self.world_time(),datetime.now(timezone.utc).isoformat(),json.dumps({'source_entity_id':entity_id}))).rowcount
+        if not inserted:
+            self._defeat(eid, defender.actor_id); self.end_if_finished(eid); return {'messages': []}
+        self._publish('actor_death_started', {'death_id':death_id,'actor_id':defender.actor_id,'killer_actor_id':attacker.actor_id,'world_id':self.runtime.active_world_id or '', 'room_id':room_id,'world_time':self.world_time()})
+        defender.lifecycle_state='dead'; defender.resources.health=0; self.persist_actor(defender)
+        self._defeat(eid, defender.actor_id)
+        corpse = self.runtime.create_corpse(entity_id, source_system='combat_runtime', death_id=death_id, killer_actor_id=attacker.actor_id)
+        with sqlite3.connect(self.db_path) as con:
+            con.execute("UPDATE combat_death_transactions SET corpse_entity_id=? WHERE death_id=?", (corpse.get('entity_id',''), death_id))
+        self._publish('actor_died', {'death_id':death_id,'actor_id':defender.actor_id,'killer_actor_id':attacker.actor_id,'world_id':self.runtime.active_world_id or '', 'room_id':room_id,'world_time':self.world_time()})
+        self._publish('living_entity_retired', {'death_id':death_id,'entity_id':entity_id,'room_id':room_id,'world_time':self.world_time()})
+        self.end_if_finished(eid)
+        msg = f"{defender.identity.name} collapses and dies."
+        self._broadcast_room(eid, room_id, msg, category='actor_died')
+        attacker_msg = f"You strike {defender.identity.name} with a killing blow!"
+        if attacker.actor_id.startswith('character:'):
+            self.enqueue_output(attacker.actor_id.split(':',1)[1], "Your opponent is dead. Combat ends.", encounter_id=eid, room_id=room_id, category='combat_end')
+        room_text = self.runtime._room_text(self.runtime._current_room(self.runtime.state_store.load_character(attacker.actor_id.split(':',1)[1]))) if attacker.actor_id.startswith('character:') else ''
+        if room_text and attacker.actor_id.startswith('character:'):
+            self.enqueue_output(attacker.actor_id.split(':',1)[1], room_text, encounter_id=eid, room_id=room_id, category='room_refresh')
+        self._publish('room_refresh_requested', {'room_id':room_id,'world_id':self.runtime.active_world_id or '', 'reason':'actor_died','corpse_entity_id':corpse.get('entity_id','')})
+        return {'death_id': death_id, 'corpse': corpse, 'messages': [attacker_msg, msg]}
 
     def end_if_finished(self,eid):
         with sqlite3.connect(self.db_path) as con: rows=con.execute("SELECT side_id FROM combat_participants WHERE encounter_id=? AND participation_status='active' AND defeated=0 AND fled=0",(eid,)).fetchall()
@@ -323,7 +371,7 @@ class CombatRuntimeService:
         with sqlite3.connect(self.db_path) as con:
             con.execute("INSERT INTO combat_round_history VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",('hist_'+uuid.uuid4().hex,eid,self._round(eid),attacker.actor_id,defender.actor_id,'ability',ability_id,'used',dmg,0,json.dumps(res),self.world_time(),datetime.now(timezone.utc).isoformat()))
             con.execute("UPDATE combat_participants SET last_action_round=?,next_action_world_time=? WHERE encounter_id=? AND actor_id=?",(self._round(eid),self.world_time()+1,eid,attacker.actor_id))
-        if defender.resources.health<=0: self._defeat(eid, defender.actor_id); self.end_if_finished(eid)
+        if defender.resources.health<=0: self._handle_lethal_damage(eid, attacker, defender)
         return CombatRuntimeResult(True, [msg], eid)
 
     def queue_ability(self, character: Any, ability_query: str, target_query: str = "") -> CombatRuntimeResult:
@@ -364,7 +412,7 @@ class CombatRuntimeService:
         if not actor: return 'unknown'
         if actor.resources.health<=0: return 'dead'
         pct=actor.resources.health/max(1,actor.resources.maximum_health)
-        return 'unharmed' if pct>=.95 else 'barely scratched' if pct>=.85 else 'lightly wounded' if pct>=.65 else 'wounded' if pct>=.4 else 'badly wounded' if pct>=.15 else 'near collapse'
+        return condition_label(actor)
 
     def diagnose(self, character:Any, query:str)->str:
         ent=self.resolve_target(character, query); return "You don't see that target here." if not ent else f"{ent.get('name')} is {self.condition(self.actor_from_entity(ent))}."

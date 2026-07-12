@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 
 from engine.mud_commands import MudCommandEngine
 from engine.mud_displays import render_object, render_prompt, render_room, semantic
+from engine.conditions import condition_label
 from engine.mud_rendering import render_semantic_plain
 from smart_mud.world_registry import WorldRegistry
 from smart_mud.builder import BuilderWorkspace
@@ -1205,12 +1206,13 @@ class MudRuntime:
             ("player", player_candidates),
             ("npc", self.find_visible_entities(char.room_id, char).get("npcs", [])),
             ("mob", self.find_visible_entities(char.room_id, char).get("mobs", [])),
+            ("corpse", self.find_visible_entities(char.room_id, char).get("corpses", [])),
             ("exit", [{"name": str(e.get("direction") or e.get("dir")), "keywords": [str(e.get("direction") or e.get("dir"))], "entity_type": "exit", "exit": e, "long_description": e.get("description", "")} for e in self._current_room(char).exits if isinstance(e, dict)]),
             ("world_object", self._runtime_world_objects(char.room_id)),
             ("feature", features),
         ]
         for kind, candidates in groups:
-            res = self.resolve_entity_keywords(query, candidates) if kind in {"player", "npc", "mob", "exit", "feature", "world_object"} else self.resolve_item_keywords(query, candidates)
+            res = self.resolve_entity_keywords(query, candidates) if kind in {"player", "npc", "mob", "corpse", "exit", "feature", "world_object"} else self.resolve_item_keywords(query, candidates)
             if res.get("status") == "ok": return {"status": "ok", "kind": kind, "target": res.get("entity") or res.get("item")}
             if res.get("status") == "ambiguous": return {"status": "ambiguous", "matches": res.get("matches", [])}
         return {"status": "missing", "matches": []}
@@ -1236,9 +1238,10 @@ class MudRuntime:
             self._publish_interaction_event("self_examined", char, cmd, raw, {"result_summary": msg[:120]})
             return CommandResult(msg)
         if cmd in {"look", "examine"} and re.match(r"^\s*(look|l|examine|exa)\s+(in|inside)\b", raw, re.I):
-            msg = semantic("placeholder", "You see nothing unusual.")
-            self._publish_interaction_event("command_placeholder", char, cmd, raw, {"target_query": q, "result_summary": "You see nothing unusual."})
-            return CommandResult(msg)
+            resolved_container = self._resolve_interaction_target(char, q)
+            if resolved_container.get("status") != "ok":
+                return CommandResult(self._resolve_message(resolved_container, "You don't see that."), ok=False)
+            return CommandResult(self._look_in_container(char, resolved_container.get("target", {})))
         if cmd in {"search", "listen", "smell"} and not q:
             messages = {"search": "You see nothing unusual.", "listen": "You do not hear anything unusual.", "smell": "You smell nothing unusual."}
             self._publish_interaction_event("environment_inspected", char, cmd, raw, {"result_summary": messages[cmd]})
@@ -1671,9 +1674,15 @@ class MudRuntime:
     def _handle_item_command(self, char: MudCharacter, command: str, cmd: str, args: list[str]):
         from engine.mud_commands import CommandResult
         q=" ".join(args).strip()
+        if cmd == "loot":
+            return CommandResult(self.loot_container(char, q or "corpse"))
         if cmd in {"inventory"}: return CommandResult(self._render_inventory(char.id))
         if cmd in {"equipment"}: return CommandResult(self._render_equipment(char.id))
         if cmd in {"get","take"}:
+            if len(args) >= 2 and args[-1].lower() in {"corpse", "body"}:
+                return CommandResult(self.get_from_container(char, " ".join(args[:-1]) or "all", args[-1]))
+            if len(args) >= 3 and args[-2].lower() in {"from", "in"}:
+                return CommandResult(self.get_from_container(char, " ".join(args[:-2]), args[-1]))
             if q in {"all", "everything"}: return CommandResult(self.bulk_get(char, q))
             return CommandResult(self.pickup_item(char.id, char.room_id, q) if q else "Get what?")
         if cmd=="drop":
@@ -1701,6 +1710,44 @@ class MudRuntime:
         if mode == "wield": return "main_hand"
         if mode == "hold": return "light"
         return None
+
+
+    def _look_in_container(self, char: MudCharacter, container: dict[str, Any]) -> str:
+        if container.get("entity_type") not in {"corpse", "container"}:
+            return "That is not a container."
+        st = container.get("state") or {}
+        if st.get("container_open") is False:
+            return "It is closed."
+        items = self.find_container_items(container.get("entity_id") or container.get("instance_id") or "")
+        if not items:
+            return "The corpse is empty." if container.get("entity_type") == "corpse" else "It is empty."
+        head = "Inside the corpse you find:" if container.get("entity_type") == "corpse" else "Inside you find:"
+        return head + "\n" + "\n".join(i["name"] + (f" x{i.get('stack_count')}" if int(i.get('stack_count') or 1) > 1 else "") for i in items)
+
+    def get_from_container(self, char: MudCharacter, item_query: str, container_query: str) -> str:
+        res = self._resolve_interaction_target(char, container_query)
+        if res.get("status") != "ok":
+            return self._resolve_message(res, "You don't see that.")
+        container = res.get("target", {})
+        items = self.find_container_items(container.get("entity_id") or container.get("instance_id") or "")
+        if not items:
+            return "The corpse is empty." if container.get("entity_type") == "corpse" else "It is empty."
+        if item_query.lower() in {"all", "everything"}:
+            selected = items
+        else:
+            found = self.resolve_item_keywords(item_query, items)
+            if found.get("status") != "ok":
+                return self._resolve_message(found, "You don't see that in the corpse.")
+            selected = [found["item"]]
+        names=[]
+        for item in selected:
+            moved = self.transfer_item(item["instance_id"], to_owner=("character", char.id))
+            names.append(moved["name"])
+        self.event_bus.publish("corpse_looted", {"corpse_entity_id":container.get("entity_id"),"character_id":char.id,"item_count":len(names)}, source_system="runtime", world_id=self.active_world_id or "", character_id=char.id, room_id=char.room_id)
+        return "You take:\n  " + "\n  ".join(names)
+
+    def loot_container(self, char: MudCharacter, container_query: str) -> str:
+        return self.get_from_container(char, "all", container_query)
 
     def bulk_get(self, char: MudCharacter, selector: str = "all") -> str:
         items = [i for i in self.get_visible_room_items(char.room_id) if (i.get("template") or {}).get("portable", True)]
@@ -1827,6 +1874,15 @@ class MudRuntime:
             lines.append(semantic(desc_role, long_desc))
         if extended:
             lines.append(semantic(desc_role, extended))
+        if kind in {"npc", "mob", "player"}:
+            lines += ["", "Condition:", condition_label(target).capitalize() + "."]
+            st = str(target.get("current_state") or (target.get("state") or {}).get("current_state") or "standing")
+            target_name = (target.get("state") or {}).get("combat_target_name")
+            lines += ["", "Status:", (f"Fighting {target_name}." if target_name else st.replace('_',' ').capitalize() + ".")]
+            lines += ["", "Equipment:", "None visible."]
+        if kind == "corpse":
+            st = target.get("state") or {}
+            lines += ["", f"It is {st.get('decay_state', 'fresh')}.", "It has been skinned." if st.get("skinned") else "It has not been skinned.", "It has been butchered." if st.get("butchered") else "It has not been butchered.", "It is open." if st.get("container_open", True) else "It is closed."]
         if interactions:
             lines.append(semantic("object_interaction", "You may:"))
             for verb in sorted(interactions.keys() if isinstance(interactions, dict) else interactions):
@@ -2239,6 +2295,8 @@ class MudRuntime:
             for tid, tmpl in self.entity_templates.items():
                 rid = str(tmpl.get("default_room_id") or "")
                 if not rid: continue
+                if conn.execute("SELECT 1 FROM entity_instances WHERE world_id=? AND current_room_id=? AND template_id=? AND destroyed_at IS NULL LIMIT 1", (self.active_world_id, rid, tid)).fetchone():
+                    continue
                 seed = f"{tid}:{rid}:0"
                 try: conn.execute("INSERT INTO room_entity_seeds(world_id,room_id,template_id,seed_key,created_at) VALUES(?,?,?,?,?)", (self.active_world_id, rid, tid, seed, now))
                 except sqlite3.IntegrityError: continue
@@ -2266,6 +2324,8 @@ class MudRuntime:
         return bool(flags & self.HIDDEN_VISIBILITY_FLAGS) or current in {"despawned"} or state.get("is_visible") is False
 
     def is_entity_visible(self, ent: dict[str, Any], viewer: Any = None) -> bool:
+        if ent.get("entity_type") in {"npc", "mob"} and (not ent.get("is_alive") or ent.get("current_state") in {"dead", "corpse", "despawned"}):
+            return False
         return not self._entity_hidden(ent)
 
     def change_entity_state(self, entity_id: str, current_state: str, source_system: str = "runtime", **ctx: Any) -> dict[str, Any]:
@@ -2291,7 +2351,41 @@ class MudRuntime:
         return self.spawn_entity(template_id, room_id=room_id, state={"current_state":"idle", "spawn_origin": room_id or ""}, **ctx)
 
     def create_corpse(self, entity_id: str, **ctx: Any) -> dict[str, Any]:
-        ent = self.find_entity(entity_id) or {}; corpse = self.spawn_entity(ent.get("template_id", "corpse"), entity_type="corpse", room_id=ent.get("room_id"), state={"current_state":"corpse", "source_entity_id": entity_id, "is_alive": False}, flags=["corpse"], **ctx); return corpse
+        ent = self.find_entity(entity_id) or {}
+        if not ent:
+            return {}
+        existing = [c for c in self.find_entities(entity_type="corpse", room_id=ent.get("room_id")) if (c.get("state") or {}).get("source_entity_id") == entity_id]
+        if existing:
+            return existing[0]
+        name = str(ent.get("name") or "creature")
+        state = dict(ent.get("state") or {})
+        state.update({"current_state":"dead", "is_alive": False, "current_health": 0})
+        self.update_entity_state(entity_id, state, source_system=ctx.get("source_system", "runtime"))
+        corpse_state={"current_state":"corpse", "source_entity_id": entity_id, "source_template_id": ent.get("template_id"), "source_actor_name": name, "is_alive": False, "container_open": True, "decay_state": "fresh", "created_world_time": self.get_world_time(self.active_world_id or '').get('total_minutes', 0), "skinned": False, "butchered": False}
+        corpse = self.spawn_entity(ent.get("template_id", "corpse"), entity_type="corpse", room_id=ent.get("room_id"), state=corpse_state, flags=["corpse"], **ctx)
+        corpse_name = f"The corpse of {name.lower()}"
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.state_store.db_path) as conn:
+            conn.execute("UPDATE entity_instances SET name=?,keywords=?,short_description=?,long_description=?,updated_at=? WHERE entity_id=?", (corpse_name, json.dumps(["corpse", "body", *str(name).lower().split()]), f"The corpse of {name.lower()} is lying here.", f"{corpse_name}. It was recently slain. Blood darkens the fur and flesh around several wounds.", now, corpse.get("entity_id")))
+        corpse = self.find_entity(corpse.get("entity_id")) or corpse
+        self._generate_corpse_contents(corpse, ent, ctx)
+        self._publish_entity_event("corpse_created", corpse, source_system=ctx.get("source_system", "runtime"), source_entity_id=entity_id)
+        return corpse
+
+    def _generate_corpse_contents(self, corpse: dict[str, Any], source_ent: dict[str, Any], ctx: dict[str, Any] | None = None) -> None:
+        ctx = ctx or {}; corpse_id = corpse.get("entity_id", "")
+        tmpl = dict(self.entity_templates.get(str(source_ent.get("template_id") or ""), {}))
+        loot_table = tmpl.get("loot_table") or ""
+        if not loot_table:
+            return
+        from engine.rewards import RewardService
+        svc = RewardService(runtime=self, world_id=self.active_world_id or "shattered_realms", event_bus=self.event_bus)
+        pkt = svc.resolve_loot_table(loot_table, {"source_type":"combat","source_id":str(source_ent.get("template_id")),"source_instance_id":str(source_ent.get("entity_id")),"world_id":self.active_world_id or "","world_time":self.get_world_time(self.active_world_id or '').get('total_minutes',0)}, {"recipient_type":"corpse","recipient_id":corpse_id}, seed=corpse_id)
+        svc.deliver_reward_packet(pkt["reward_packet_id"])
+        self.event_bus.publish("corpse_contents_generated", {"corpse_entity_id":corpse_id,"source_entity_id":source_ent.get("entity_id"),"loot_table_id":loot_table,"reward_packet_id":pkt["reward_packet_id"]}, source_system="runtime", world_id=self.active_world_id or "", room_id=corpse.get("room_id"))
+
+    def find_container_items(self, owner_id: str) -> list[dict[str, Any]]:
+        return self._fetch_items("owner_type IN ('corpse','container') AND owner_id=?", (owner_id,))
 
     def get_dialogue(self, template_id: str) -> dict[str, Any]:
         return dict((self.entity_templates.get(template_id) or {}).get("dialogue_package") or {})

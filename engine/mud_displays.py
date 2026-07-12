@@ -7,6 +7,7 @@ import html
 import re
 
 from engine.mud_rendering import SEMANTIC_COLOR_ROLES, render_mud_color_html
+from engine.conditions import condition_label
 
 _SEMANTIC_TAG_RE = re.compile(r"\{(/?)([a-z_]+)\}")
 
@@ -39,7 +40,23 @@ def _entity_text(entity: Any, *, compact: bool = True) -> tuple[str, str]:
     if isinstance(entity, dict):
         name = entity.get("name") or entity.get("title") or entity.get("id") or ""
         room_text = entity.get("room_description") or entity.get("short_description") or ""
-        text = name if compact else (room_text or name)
+        if compact and entity.get("entity_type") in {"npc", "mob", "player"}:
+            state = str(entity.get("current_state") or (entity.get("state") or {}).get("current_state") or entity.get("movement_state") or "standing").lower()
+            target = entity.get("combat_target_name") or (entity.get("state") or {}).get("combat_target_name")
+            if target:
+                text = f"{name} is here, fighting {target}."
+            elif state in {"sleeping", "resting", "sitting"}:
+                text = f"{name} is {state} here."
+            elif state in {"stunned", "incapacitated", "unconscious"}:
+                text = f"{name} is {state}."
+            elif condition_label(entity) not in {"unharmed", "dead"}:
+                text = f"{name} is here, {condition_label(entity)}."
+            else:
+                text = str(room_text or name)
+        elif compact and entity.get("entity_type") == "corpse":
+            text = entity.get("room_description") or entity.get("short_description") or name
+        else:
+            text = name if compact else (room_text or name)
         desc = entity.get("long_description") or entity.get("description") or ""
         return str(text).strip(), str(desc).strip()
     return str(entity).strip(), ""

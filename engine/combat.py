@@ -19,6 +19,7 @@ from engine.actors import Actor
 from engine.formulas import FormulaEngine
 from engine.combat_equipment import CombatContentRegistry
 from engine.phase5f import ActorLifecycleManager, BodyProfileRegistry
+from engine.conditions import condition_key
 
 
 class CombatState(StrEnum):
@@ -152,6 +153,21 @@ class CombatEngine:
         return "impossible"
 
     def _messages(self, a: Actor, d: Actor, outcome: str, e: DamageEvent | None) -> dict[str, str]:
-        if outcome == "miss": return {"attacker":f"You miss {d.identity.name}.","victim":f"{a.identity.name} misses you.","observers":f"{a.identity.name} misses {d.identity.name}."}
-        crit = " critically" if e and e.critical else ""; dmg = e.final_damage if e else 0
-        return {"attacker":f"You{crit} hit {d.identity.name} for {dmg} damage.","victim":f"{a.identity.name}{crit} hits you for {dmg} damage.","observers":f"{a.identity.name}{crit} hits {d.identity.name}."}
+        verb = str(((e.attack_profile if e else {}) or {}).get("name") or "strike")
+        weapon = str(((e.weapon if e else {}) or {}).get("name") or verb).lower()
+        dname = d.identity.name; aname = a.identity.name
+        if outcome == "miss":
+            return {"attacker":f"You narrowly miss {dname}.","victim":f"{aname}'s attack passes wide of you.","observers":f"{aname} misses {dname}."}
+        dmg = max(0, e.final_damage if e else 0); maxhp = max(1, int(getattr(d.resources, "maximum_health", 1) or 1)); rel = dmg / maxhp
+        if dmg <= 0: sev = "glances harmlessly from"
+        elif rel < .08: sev = "grazes"
+        elif rel < .18: sev = "strikes"
+        elif rel < .35: sev = "wounds"
+        else: sev = "devastates"
+        if condition_key(d) == "dead": sev = "finishes"
+        bang = "!" if (e and e.critical) or sev in {"devastates", "finishes"} else "."
+        crit = " with a brutal critical blow" if e and e.critical else ""
+        if "bite" in verb.lower():
+            return {"attacker":f"You bite into {dname}{crit}{bang}","victim":f"{aname} bites into you{crit}{bang}","observers":f"{aname} bites into {dname}{crit}{bang}"}
+        attacker_verb = "finish" if sev == "finishes" else ("glance harmlessly off" if sev == "glances harmlessly from" else (sev[:-1] if sev.endswith("s") else sev))
+        return {"attacker":f"You {attacker_verb} {dname} with {weapon}, dealing damage{crit}{bang}","victim":f"{aname} {sev} you with {weapon}, dealing damage{crit}{bang}","observers":f"{aname} {sev} {dname} with {weapon}, dealing damage{crit}{bang}"}
