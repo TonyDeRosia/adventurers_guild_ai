@@ -390,10 +390,38 @@ def _fmt_attr(data: Any) -> str:
         if base is not None: return str(base)
     return str(data)
 
+def _empty_row(section_id: str, theme: Any) -> DisplayLine | None:
+    policy = str(getattr(theme, "empty_section_policy", "hide") if theme is not None else "hide")
+    labels = getattr(theme, "labels", {}) or {}
+    if policy == "show_muted": return DisplayLine(labels.get(f"{section_id}.empty", f"{section_id.title()}: none"), role="character_muted", trusted_markup=True)
+    if policy == "show_empty_message": return DisplayLine(labels.get(f"{section_id}.empty", f"No {section_id.replace("_", " ")} to show."), role="character_muted", trusted_markup=True)
+    return None
+
+def _ordered_sections(section_rows: dict[str, list[Any]], theme: Any, *, required: set[str] | None = None) -> list[Any]:
+    required = required or set()
+    canonical = list(section_rows.keys())
+    visible = tuple(getattr(theme, "visible_sections", ()) or ()) if theme is not None else ()
+    order = tuple(getattr(theme, "section_order", ()) or ()) if theme is not None else ()
+    allowed = set(visible) if visible else set(canonical)
+    allowed |= required
+    seq = [x for x in order if x in section_rows] + [x for x in canonical if x not in order]
+    rows=[]; first=True
+    for sid in seq:
+        if sid not in allowed: continue
+        part=list(section_rows.get(sid) or [])
+        if not part:
+            er=_empty_row(sid, theme)
+            if er is not None: part=[er]
+        if not part: continue
+        if not first: rows.append(DisplayDivider())
+        first=False; rows.extend(part)
+    return rows or [DisplayLine("Character information is unavailable.", role="character_muted")]
+
 def build_score_document(character: Any, *, snapshot: CharacterDisplaySnapshot | None = None, theme: Any = None) -> DisplayDocument:
     snap=snapshot or build_character_display_snapshot(character)
     ident,res,prog,attrs,combat,carry,currency,surv,time=snap.identity,snap.resources,snap.progression,snap.attributes,snap.combat,snap.carrying,snap.currency,snap.survival,snap.time
-    rows=[]
+    section_rows: dict[str, list[Any]] = {k: [] for k in ("identity","resources","progression","carrying","attributes","combat","currency","survival","effects","time")}
+    rows=section_rows["identity"]
     rows.append(_row_fields(("Name", ident.get("display_name","Adventurer")), ("Title", ident.get("title","—"))))
     rows.append(_row_fields(("Race", ident.get("race_name","—")), ("Class", ident.get("class_name","—"))))
     rows.append(_row_fields(("Level", ident.get("level","—")), ("Alignment", ident.get("alignment","—"))))
@@ -402,29 +430,33 @@ def build_score_document(character: Any, *, snapshot: CharacterDisplaySnapshot |
     resource_parts=[]
     for label,a,b in (("HP","hp","max_hp"),("Mana","mana","max_mana"),("Stamina","stamina","max_stamina")):
         if a in res or b in res: resource_parts.append(f"{label}: {res.get(a,'—')}/{res.get(b,'—')}")
-    if resource_parts: rows.append(DisplayLine("   ".join(resource_parts)))
+    if resource_parts: section_rows["resources"].append(DisplayLine("   ".join(resource_parts)))
+    rows=section_rows["progression"]
     if prog: rows.append(_row_fields(("Experience", prog.get("xp","—")), ("TNL", prog.get("xp_to_next_level","—"))))
     pts=[(k.replace("_"," ").title(),v) for k,v in prog.items() if k in {"practice_points","training_points","quest_points","level_progress_percent"}]
     if pts: rows.append(_row_fields(*pts[:2]))
     if carry:
-        rows.append(DisplayLine(f"Carry Capacity: {carry.get('current_weight', carry.get('carry_weight','—'))} / {carry.get('carry_capacity','—')} — {carry.get('encumbrance_text', carry.get('encumbrance','—'))}"))
-    rows.append(DisplayDivider())
+        section_rows["carrying"].append(DisplayLine(f"Carry Capacity: {carry.get('current_weight', carry.get('carry_weight','—'))} / {carry.get('carry_capacity','—')} — {carry.get('encumbrance_text', carry.get('encumbrance','—'))}"))
+    rows=section_rows["attributes"]
     labels=[("Str","strength"),("Dex","dexterity"),("Con","constitution"),("Int","intelligence"),("Wis","wisdom"),("Cha","charisma")]
     attr_cells=[DisplayCell(width=22, segments=_field_segments(lab, _fmt_attr(attrs[key]))) for lab,key in labels if key in attrs]
     for i in range(0,len(attr_cells),3): rows.append(DisplayRow(attr_cells[i:i+3]))
     if combat:
-        rows.append(DisplayDivider())
+        rows=section_rows["combat"]
         for chunk in (("Armor","armor","Evasion","evasion"),("Spell Saves","spell_saves","Accuracy","accuracy"),("Hit Bonus","hit_bonus","Damage Bonus","damage_bonus"),("Critical Melee","critical_melee","Critical Spell","critical_spell"),("Critical Heal","critical_heal","Weapon","weapon_damage_summary"),("Unarmed","unarmed_damage_summary","Resistances","resistances")):
             pairs=[]
             for lab,key in zip(chunk[::2], chunk[1::2]):
                 if key in combat: pairs.append((lab, combat[key]))
             if pairs: rows.append(_row_fields(*pairs[:2]))
     if currency:
-        rows.append(DisplayDivider()); rows.append(DisplayRow([DisplayCell(width=22, segments=_field_segments(k.title(), v, value_role="gold" if k=="gold" else "character_value")) for k,v in currency.items() if v is not None]))
+        section_rows["currency"].append(DisplayRow([DisplayCell(width=22, segments=_field_segments(k.title(), v, value_role="gold" if k=="gold" else "character_value")) for k,v in currency.items() if v is not None]))
     st=[(k.replace('_',' ').title(),v) for k,v in surv.items() if v not in (None,"")]
-    if st: rows.append(DisplayDivider()); rows.append(_row_fields(*st[:2]))
+    if st: section_rows["survival"].append(_row_fields(*st[:2]))
+    eff=list(getattr(snap, "effects", []) or [])
+    if eff: section_rows["effects"].append(DisplayLine(f"Active effects: {len(eff)}", role="character_value"))
     tt=[(k.replace('_',' ').title(),v) for k,v in time.items() if v not in (None,"")]
-    if tt: rows.append(DisplayDivider()); rows.append(_row_fields(*tt[:2]))
+    if tt: section_rows["time"].append(_row_fields(*tt[:2]))
+    rows=_ordered_sections(section_rows, theme, required={"identity","resources"})
     return build_character_frame_document(DisplayIntent.SCORE,"CHARACTER STATUS",rows,width=79, theme=theme)
 
 def build_worth_document(character: Any, *, snapshot: CharacterDisplaySnapshot | None = None, theme: Any = None) -> DisplayDocument:
@@ -576,6 +608,28 @@ def group_display_entries(items: list[dict[str, Any]], *, key_fields: tuple[str,
             grouped[key].metadata.setdefault("instance_ids", []).append(item.get("instance_id"))
     return list(grouped.values())
 
+def build_affects_document(effects: list[dict[str, Any]], *, theme: Any = None) -> DisplayDocument:
+    rows=[]
+    visible=[e for e in effects if not e.get("hidden") and not e.get("secret") and not e.get("admin_only")]
+    for i,e in enumerate(visible):
+        if i: rows.append(DisplayDivider(kind="item"))
+        kind=str(e.get("classification") or e.get("type") or e.get("kind") or "neutral").lower()
+        role="character_positive" if kind in {"beneficial","positive","buff"} else "character_negative" if kind in {"harmful","negative","debuff"} else "character_value"
+        name=str(e.get("display_name") or e.get("name") or "Effect").replace("_"," ").title()
+        rows.append(DisplayRow([DisplayCell(name, width=42, role=role), DisplayCell(kind.title(), width=18, align="right", role=role)]))
+        meta=[]
+        if e.get("remaining") or e.get("duration"): meta.append(f"Duration: {e.get('remaining') or e.get('duration')}")
+        if e.get("stacks") or e.get("stack_count"): meta.append(f"Stacks: {e.get('stacks') or e.get('stack_count')}")
+        if e.get("source") or e.get("natural_source"): meta.append(f"Source: {e.get('natural_source') or e.get('source')}")
+        if meta: rows.append(DisplayLine("   ".join(meta), role="character_muted"))
+        mods=e.get("visible_modifiers") or e.get("modifiers") or []
+        if mods: rows.append(DisplayLine("Modifiers: " + ", ".join(str(m) for m in mods), role="character_value"))
+        if e.get("description"): rows.append(DisplayLine(str(e.get("description")), role="character_value"))
+    if not rows:
+        empty=(getattr(theme, "labels", {}) or {}).get("affects.empty", "You have no active affects.")
+        rows=[DisplayLine(empty, role="character_muted", trusted_markup=True)] if str(getattr(theme, "empty_section_policy", "show_empty_message")) != "hide" else [DisplayLine(empty, role="character_muted", trusted_markup=True)]
+    return build_character_frame_document(DisplayIntent.AFFECTS, (getattr(theme, "labels", {}) or {}).get("affects.title", "AFFECTS"), rows, width=60, theme=theme)
+
 def build_inventory_document(items: list[dict[str, Any]], *, carrying: str = "", theme: Any = None) -> DisplayDocument:
     label=(getattr(theme, "labels", {}) or {}).get("inventory.empty", "You are not carrying anything.")
     rows=[]
@@ -629,9 +683,14 @@ def _prompt_template(character: Any) -> str:
     preset = str(getattr(character, "prompt_preset", None) or prefs.get("prompt_preset") or "compact").lower()
     return str(custom or PROMPT_PRESETS.get(preset, PROMPT_PRESETS["compact"]))[:PROMPT_MAX_LENGTH]
 
-def build_prompt_document(character: Any) -> DisplayDocument:
+def build_prompt_document(character: Any, theme: Any = None) -> DisplayDocument:
     prefs = getattr(character, "preferences", {}) or {}
     if not getattr(character, "prompt_template", None) and not getattr(character, "prompt_preset", None) and not prefs.get("prompt_template") and not prefs.get("prompt_preset"):
+        if theme is not None and getattr(theme, "prompt_presets", None):
+            presets=getattr(theme, "prompt_presets", {}) or {}; default=(presets.get("default") or presets.get("classic") or next(iter(presets.values()), ""))
+            if default:
+                old=getattr(character, "prompt_template", None); setattr(character, "prompt_template", default)
+                doc=build_prompt_document(character, None); setattr(character, "prompt_template", old); return doc
         segments = [DisplaySegment("[", "prompt_marker"), DisplaySegment(f"{character.hp}/{character.max_hp} HP", "prompt_hp")]
         if getattr(character, "max_mana", 0): segments += [DisplaySegment(" ", "prompt"), DisplaySegment(f"{character.mana}/{character.max_mana} MP", "prompt_mana")]
         if getattr(character, "max_stamina", 0): segments += [DisplaySegment(" ", "prompt"), DisplaySegment(f"{character.stamina}/{character.max_stamina} ST", "prompt_stamina")]

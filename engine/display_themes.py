@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from engine.mud_rendering import SEMANTIC_COLOR_ROLES, validate_mud_color_markup
 
 SUPPORTED_FAMILIES = {"score","worth","inventory","equipment","affects","skills","spells","abilities","cooldowns","prompt","quest_log","shop","board","trainer","help"}
+FRAMED_FAMILIES = {"score","worth","inventory","equipment","affects","skills","spells","abilities","cooldowns"}
 SUPPORTED_FRAME_STYLES = {"classic_double", "classic_single", "minimal", "none"}
 SUPPORTED_TITLE_ALIGNMENTS = {"left", "center", "right"}
 SUPPORTED_EMPTY_POLICIES = {"hide", "show_muted", "show_empty_message"}
@@ -34,6 +36,9 @@ class DisplayTheme:
     prompt_presets: dict[str, str] = field(default_factory=dict)
     player_selectable: bool = False
     accessibility: tuple[str, ...] = ()
+    context: DisplayThemeResolutionContext | None = None
+    color_enabled: bool = True
+    palette: str = "default"
     templates: dict[str, dict[str, Any]] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -116,18 +121,37 @@ def preview_display_theme(raw: dict[str, Any], family: str = "score") -> dict[st
     elif family in {"skills","spells","abilities","cooldowns"}: doc = build_abilities_document(abilities, title=family.upper(), theme=theme)
     elif family == "inventory": doc = build_inventory_document([{"name":"a polished lantern"}], theme=theme)
     elif family == "equipment": doc = build_equipment_document([{"equipped_slot":"main_hand","name":"iron sword"}], ["main_hand","off_hand"], theme=theme)
-    elif family == "prompt": doc = build_prompt_document(sample)
+    elif family == "prompt": doc = build_prompt_document(sample, theme=theme)
     else: doc = build_score_document(sample, theme=theme)
     width = int(raw.get("width") or 0)
-    if width and getattr(doc, "frames", None):
-        for frame in doc.frames: frame.width = width
     return {"ok": "true", "plain": render_display_plain(doc), "mud": render_display_mud(doc), "html": render_display_html(doc)}
 
 def _theme_from_raw(raw: dict[str, Any], family: str) -> "ResolvedDisplayTheme":
     return ResolvedDisplayTheme(theme_id=str(raw.get("theme_id") or raw.get("id") or "draft"), family=family, width=max(36,min(160,int(raw.get("width") or 79))), frame_style=str(raw.get("frame_style") or "classic_double").lower(), title_alignment=str(raw.get("title_alignment") or "center").lower(), section_order=tuple((raw.get("section_order") or {}).get(family, ())), visible_sections=tuple((raw.get("visible_sections") or {}).get(family, ())), empty_section_policy=str(raw.get("empty_section_policy") or "hide").lower(), labels=dict(raw.get("labels") or {}), semantic_roles=dict(raw.get("semantic_roles") or {}), border_characters=dict(raw.get("border_characters") or {}), divider_characters=dict(raw.get("divider_characters") or {}), templates=dict((raw.get("templates") or {}).get(family, {})), prompt_presets=dict(raw.get("prompt_presets") or {}), player_selectable=bool((raw.get("metadata") or {}).get("player_selectable", False)))
 
 @dataclass(frozen=True)
+class DisplayThemeResolutionContext:
+    world_id: str = "shattered_realms"
+    zone_id: str = ""
+    area_id: str = ""
+    room_id: str = ""
+    family: str = "score"
+    world_default_theme: str = ""
+    zone_theme_id: str = ""
+    zone_family_theme_id: str = ""
+    area_theme_id: str = ""
+    area_family_theme_id: str = ""
+    player_theme_id: str = ""
+    player_display_width: str = ""
+    accessibility: tuple[str, ...] = ()
+    context: DisplayThemeResolutionContext | None = None
+    color_enabled: bool = True
+    palette: str = "default"
+
+
+@dataclass(frozen=True)
 class ResolvedDisplayTheme:
+    source_scope: str = "engine"
     theme_id: str = "engine_default"
     family: str = "score"
     width: int = 79
@@ -144,6 +168,9 @@ class ResolvedDisplayTheme:
     prompt_presets: dict[str, str] = field(default_factory=dict)
     player_selectable: bool = False
     accessibility: tuple[str, ...] = ()
+    context: DisplayThemeResolutionContext | None = None
+    color_enabled: bool = True
+    palette: str = "default"
 
 
 def load_display_themes(world_root: str | Any = "worlds/shattered_realms") -> dict[str, DisplayTheme]:
@@ -163,22 +190,74 @@ def load_display_themes(world_root: str | Any = "worlds/shattered_realms") -> di
     return out
 
 
-def resolve_effective_display_theme(character: Any = None, world_id: str = "shattered_realms", zone_id: str = "", area_id: str = "", family: str = "score", themes: dict[str, DisplayTheme] | None = None) -> ResolvedDisplayTheme:
-    from pathlib import Path
-    themes = themes or load_display_themes(Path("worlds") / (world_id or "shattered_realms"))
+def _load_json(path: Path, default: Any) -> Any:
+    import json
+    try: return json.loads(path.read_text(encoding="utf-8")) if path.exists() else default
+    except Exception: return default
+
+def load_theme_assignments(world_root: str | Path = "worlds/shattered_realms") -> dict[str, Any]:
+    root = Path(world_root)
+    meta = _load_json(root / "world" / "world.json", {})
+    bmeta = _load_json(root / "builder" / "world.json", {})
+    wid = root.name
+    if isinstance(meta, dict) and wid in meta and isinstance(meta[wid], dict): meta = meta[wid]
+    if isinstance(bmeta, dict) and wid in bmeta and isinstance(bmeta[wid], dict): bmeta = bmeta[wid]
+    if isinstance(bmeta, dict): meta = {**(meta if isinstance(meta, dict) else {}), **bmeta}
+    areas_raw = _load_json(root / "areas" / "areas.json", [])
+    zones_raw = _load_json(root / "zones" / "zones.json", [])
+    bareas = _load_json(root / "builder" / "areas.json", {})
+    bzones = _load_json(root / "builder" / "zones.json", {})
+    def byid(raw):
+        if isinstance(raw, dict): return raw
+        if isinstance(raw, list): return {str(x.get("id")): x for x in raw if isinstance(x, dict) and x.get("id")}
+        return {}
+    return {"world": meta if isinstance(meta, dict) else {}, "areas": {**byid(areas_raw), **byid(bareas)}, "zones": {**byid(zones_raw), **byid(bzones)}}
+
+def _room_scope(character: Any, assignments: dict[str, Any]) -> tuple[str, str, str]:
+    room_id = str(getattr(character, "room_id", "") or "") if character is not None else ""
+    area_id = str(getattr(character, "area_id", "") or getattr(character, "current_area_id", "") or "") if character is not None else ""
+    zone_id = str(getattr(character, "zone_id", "") or getattr(character, "current_zone_id", "") or "") if character is not None else ""
+    if room_id and (not area_id or not zone_id):
+        for z_id, z in (assignments.get("zones") or {}).items():
+            if room_id in (z.get("room_ids") or []): zone_id = zone_id or str(z_id); area_id = area_id or str(z.get("area_id") or ""); break
+    if zone_id and not area_id: area_id = str(((assignments.get("zones") or {}).get(zone_id) or {}).get("area_id") or "")
+    return room_id, zone_id, area_id
+
+def _assignment_theme(scope: dict[str, Any], family: str) -> tuple[str, str]:
+    fams = scope.get("display_theme_ids") if isinstance(scope, dict) else None
+    if isinstance(fams, dict) and fams.get(family): return str(fams[family]), "family"
+    if isinstance(scope, dict) and scope.get("display_theme_id"): return str(scope["display_theme_id"]), "general"
+    return "", ""
+
+def resolve_effective_display_theme(character: Any = None, world_id: str = "shattered_realms", zone_id: str = "", area_id: str = "", family: str = "score", themes: dict[str, DisplayTheme] | None = None, world_root: str | Path | None = None) -> ResolvedDisplayTheme:
+    root = Path(world_root) if world_root else Path("worlds") / (world_id or "shattered_realms")
+    themes = themes or load_display_themes(root)
+    if not themes:
+        themes = {"classic_adventurer": DisplayTheme("classic_adventurer", "Classic Adventurer"), "minimal_modern": DisplayTheme("minimal_modern", "Minimal Modern", frame_style="minimal", width=60, title_alignment="left")}
+    assignments = load_theme_assignments(root)
+    if character is not None:
+        room_id, z2, a2 = _room_scope(character, assignments); zone_id = zone_id or z2; area_id = area_id or a2
+    else: room_id = ""
     prefs = getattr(character, "preferences", {}) or {} if character is not None else {}
-    world_default = getattr(character, "default_display_theme_id", None) or "classic_adventurer"
-    selected = prefs.get("display_theme") or world_default
-    theme = themes.get(str(selected)) or themes.get("classic_adventurer") or DisplayTheme("engine_default", "Engine Default")
+    world_meta = assignments.get("world") or {}
+    world_default = str(world_meta.get("default_display_theme_id") or "classic_adventurer")
+    zone_theme, zkind = _assignment_theme((assignments.get("zones") or {}).get(zone_id) or {}, family)
+    area_theme, akind = _assignment_theme((assignments.get("areas") or {}).get(area_id) or {}, family)
+    candidates = [("player", prefs.get("display_theme")), ("area_family" if akind=="family" else "area", area_theme), ("zone_family" if zkind=="family" else "zone", zone_theme), ("world", world_default), ("engine", "classic_adventurer")]
+    source, selected = next(((s,t) for s,t in candidates if t and str(t) in themes), ("engine", "classic_adventurer"))
+    theme = themes.get(str(selected)) or DisplayTheme("engine_default", "Engine Default")
     width_pref = str(prefs.get("display_width") or theme.width or "79")
     width = {"wide":79,"medium":60,"narrow":44,"auto":int(theme.width or 79)}.get(width_pref, None)
     if width is None:
         try: width=max(36, min(160, int(width_pref)))
         except Exception: width=int(theme.width or 79)
-    roles=dict(theme.semantic_roles)
-    access=[]
-    if prefs.get("no_color"):
-        roles = {k:"content" for k in roles}; access.append("no_color")
-    if prefs.get("reduced_decoration") and theme.frame_style in {"classic_double", "classic_single"}:
-        theme = DisplayTheme(**{**theme.__dict__, "frame_style":"minimal"}); access.append("reduced_decoration")
-    return ResolvedDisplayTheme(theme_id=theme.theme_id, family=family, width=width, frame_style=theme.frame_style, title_alignment=theme.title_alignment, section_order=tuple((theme.section_order or {}).get(family, ())), visible_sections=tuple((theme.visible_sections or {}).get(family, ())), empty_section_policy=theme.empty_section_policy, labels=dict(theme.labels), semantic_roles=roles, border_characters=dict(theme.border_characters), divider_characters=dict(theme.divider_characters), templates=dict((theme.templates or {}).get(family, {})), prompt_presets=dict(theme.prompt_presets), player_selectable=bool(theme.metadata.get("player_selectable", False)), accessibility=tuple(access))
+    roles=dict(theme.semantic_roles); access=[]; palette="default"; color_enabled=True
+    for key in ("no_color","high_contrast","colorblind","reduced_decoration"):
+        if prefs.get(key): access.append(key)
+    if prefs.get("no_color"): color_enabled=False
+    if prefs.get("high_contrast"): palette="high_contrast"; roles.update({"character_muted":"character_value","character_label":"character_title"})
+    if prefs.get("colorblind"): palette="colorblind"; roles.update({"character_positive":"success","character_negative":"warning"})
+    frame_style=theme.frame_style
+    if prefs.get("reduced_decoration") and frame_style in {"classic_double", "classic_single"}: frame_style="minimal"
+    ctx=DisplayThemeResolutionContext(world_id=world_id, zone_id=zone_id, area_id=area_id, room_id=room_id, family=family, world_default_theme=world_default, zone_theme_id=zone_theme if zkind=="general" else "", zone_family_theme_id=zone_theme if zkind=="family" else "", area_theme_id=area_theme if akind=="general" else "", area_family_theme_id=area_theme if akind=="family" else "", player_theme_id=str(prefs.get("display_theme") or ""), player_display_width=str(prefs.get("display_width") or ""), accessibility=tuple(access))
+    return ResolvedDisplayTheme(source_scope=source, theme_id=theme.theme_id, family=family, width=width, frame_style=frame_style, title_alignment=theme.title_alignment, section_order=tuple((theme.section_order or {}).get(family, ())), visible_sections=tuple((theme.visible_sections or {}).get(family, ())), empty_section_policy=theme.empty_section_policy, labels=dict(theme.labels), semantic_roles=roles, border_characters=dict(theme.border_characters), divider_characters=dict(theme.divider_characters), templates=dict((theme.templates or {}).get(family, {})), prompt_presets=dict(theme.prompt_presets), player_selectable=bool(theme.metadata.get("player_selectable", False)), accessibility=tuple(access), context=ctx, color_enabled=color_enabled, palette=palette)

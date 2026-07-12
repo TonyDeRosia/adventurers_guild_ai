@@ -11,7 +11,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 from pathlib import Path
-from engine.mud_displays import semantic, DisplayDocument, DisplayIntent, DisplayLine, DisplaySection, DisplayField, render_display_mud, render_display_plain, build_score_document, build_worth_document, build_abilities_document, build_inventory_document, build_equipment_document, build_prompt_document, PROMPT_PRESETS, PROMPT_MAX_LENGTH
+from engine.mud_displays import semantic, DisplayDocument, DisplayIntent, DisplayLine, DisplaySection, DisplayField, render_display_mud, render_display_plain, build_score_document, build_worth_document, build_abilities_document, build_inventory_document, build_equipment_document, build_affects_document, build_prompt_document, PROMPT_PRESETS, PROMPT_MAX_LENGTH
 from engine.actors import actor_from_runtime_character
 from engine.formulas import FormulaEngine
 from engine.score_renderer import ActorScoreRenderer
@@ -20,7 +20,7 @@ from smart_mud.builder import BuilderWorkspace
 from engine.abilities import AbilityExecutionService
 from engine.display_services import CharacterDisplaySnapshotService, AbilityDisplaySnapshotService, ability_snapshots_as_rows
 from engine.player_preferences import PlayerPresentationPreferenceService
-from engine.display_themes import preview_display_theme, resolve_effective_display_theme, load_display_themes
+from engine.display_themes import preview_display_theme, resolve_effective_display_theme, load_display_themes, SUPPORTED_FAMILIES
 from engine.combat_behavior import CombatBehaviorService
 from engine.crafting import CraftingService, CraftingContent
 from engine.perception import PerceptionService
@@ -1800,23 +1800,14 @@ class MudCommandEngine:
         return CommandResult("Ability casts:\n" + ("\n".join(f"- {r[0]} {r[1]} {r[2]} completes={r[3]}" for r in rows) if rows else "- none"))
 
     def _cmd_affects(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        """Display active visible affects as a structured player document."""
-        affects = getattr(character, "affects", {}) or {}
-        doc = DisplayDocument(DisplayIntent.AFFECTS, title="Affects", semantic_role="system")
-        if isinstance(affects, dict):
-            for key, data in affects.items():
-                data = data if isinstance(data, dict) else {}
-                if data.get("hidden") or data.get("secret"):
-                    continue
-                name = str(data.get("name") or key).replace("_", " ").title()
-                lines = [DisplayLine("Classification: " + str(data.get("classification") or data.get("type") or "active"))]
-                if data.get("remaining") or data.get("duration"):
-                    lines.append(DisplayLine("Remaining: " + str(data.get("remaining") or data.get("duration"))))
-                if data.get("stacks") or data.get("stack_count"):
-                    lines.append(DisplayLine("Stacks: " + str(data.get("stacks") or data.get("stack_count"))))
-                doc.sections.append(DisplaySection(title=name, lines=lines))
-        if not doc.sections:
-            doc.paragraphs.append("You are not affected by anything unusual.")
+        """Display active visible affects through the unified themed frame family."""
+        raw_affects = getattr(character, "affects", {}) or getattr(character, "effects", {}) or {}
+        if isinstance(raw_affects, dict):
+            effects = [dict(v if isinstance(v, dict) else {"name": k}, name=(v.get("name") if isinstance(v, dict) else k) or k) for k, v in raw_affects.items()]
+        else:
+            effects = [dict(x) for x in raw_affects if isinstance(x, dict)]
+        theme = resolve_effective_display_theme(character, family="affects")
+        doc = build_affects_document(effects, theme=theme)
         return CommandResult(narrative=render_display_mud(doc), display_document=doc, display_intent="AFFECTS")
 
     def _cmd_worth(self, character: Any, args: list[str], raw: str) -> CommandResult:
@@ -1958,13 +1949,27 @@ Available commands:
             if args[1].lower() == "list": return CommandResult("Player-selectable display themes:\n- classic_adventurer\n- minimal_modern")
             if args[1].lower() == "reset": prefs.pop("display_theme", None); save(); return CommandResult("Display theme reset to the world default.")
             prefs["display_theme"] = args[1]; save(); return CommandResult(f"Display theme set to {args[1]}.")
+        if sub == "color" and len(args)>1:
+            prefs["no_color"] = args[1].lower() in {"off","false","no","0"}; save(); return CommandResult("Display color disabled." if prefs["no_color"] else "Display color enabled.")
+        if sub == "contrast" and len(args)>1:
+            prefs["high_contrast"] = args[1].lower() == "high"; save(); return CommandResult("Display contrast set to high." if prefs["high_contrast"] else "Display contrast set to normal.")
+        if sub == "colorblind" and len(args)>1:
+            prefs["colorblind"] = args[1].lower() in {"on","true","yes","1"}; save(); return CommandResult("Colorblind-friendly display enabled." if prefs["colorblind"] else "Colorblind-friendly display disabled.")
+        if sub == "decoration" and len(args)>1:
+            prefs["reduced_decoration"] = args[1].lower() in {"reduced","minimal","off"}; save(); return CommandResult("Display decoration reduced." if prefs["reduced_decoration"] else "Display decoration set to normal.")
+        if sub == "accessibility" and len(args)>1 and args[1].lower()=="reset":
+            for k in ("no_color","high_contrast","colorblind","reduced_decoration"): prefs.pop(k, None)
+            save(); return CommandResult("Display accessibility settings reset.")
+        if sub == "reset":
+            for k in ("display_theme","display_width","no_color","high_contrast","colorblind","reduced_decoration"): prefs.pop(k, None)
+            save(); return CommandResult("Display settings reset.")
         if sub == "preview":
             fam=args[1].lower() if len(args)>1 else "score"
             themes=load_display_themes(); selected=prefs.get("display_theme") or "classic_adventurer"
             raw_theme=themes.get(selected).__dict__ if themes.get(selected) else {"theme_id":selected,"name":"Preview","width":79}
             prev=preview_display_theme(raw_theme, fam)
             return CommandResult(prev.get("plain") or prev.get("errors") or "Preview unavailable.", ok=prev.get("ok") == "true")
-        return CommandResult("Usage: display width [auto|wide|medium|narrow|36-160] | display theme [list|<id>|reset] | display preview <family>")
+        return CommandResult("Usage: display width [auto|wide|medium|narrow|36-160] | display theme [list|<id>|reset] | display preview <family> | display color off|on | display contrast high|normal | display colorblind on|off | display decoration reduced|normal | display reset")
 
     def _cmd_displaytheme(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Builder-facing display theme draft commands."""
@@ -1991,8 +1996,30 @@ Available commands:
             errs=validate_display_theme(store[args[1]]); return CommandResult("Valid." if not errs else "Errors:\n"+"\n".join(errs), ok=not errs)
         if sub == "preview" and len(args)>2 and args[1] in store:
             prev=preview_display_theme(store[args[1]], args[2]); return CommandResult(prev.get("plain") or prev.get("errors") or "Preview unavailable.", ok=prev.get("ok") == "true")
-        if sub == "assign" and len(args)>2: return CommandResult(f"Display theme {args[-1]} assigned to {' '.join(args[1:-1])}.")
-        if sub == "unassign" and len(args)>1: return CommandResult(f"Display theme assignment removed for {' '.join(args[1:])}.")
+        if sub == "assign" and len(args)>2:
+            world_id=self.builder.world_id(character); drafts=self.builder.load(world_id); scope=args[1].lower(); theme_id=args[-1]
+            if theme_id not in store: return CommandResult(f"Display theme not found: {theme_id}", ok=False)
+            if scope == "world":
+                meta=drafts.setdefault("world", {}).setdefault(world_id, {"id": world_id}); meta["default_display_theme_id"]=theme_id; self.builder.save_drafts(world_id,drafts); return CommandResult(f"Display theme {theme_id} assigned to world.")
+            if scope in {"zone","area"} and len(args)>=4:
+                obj_id=args[2]; bucket=drafts.setdefault(scope+"s", {})
+                if obj_id not in bucket: return CommandResult(f"{scope.title()} not found: {obj_id}", ok=False)
+                if len(args)==5:
+                    fam=args[3].lower()
+                    if fam not in SUPPORTED_FAMILIES: return CommandResult(f"Unsupported display family: {fam}", ok=False)
+                    bucket[obj_id].setdefault("display_theme_ids", {})[fam]=theme_id
+                else: bucket[obj_id]["display_theme_id"]=theme_id
+                self.builder.save_drafts(world_id,drafts); return CommandResult(f"Display theme {theme_id} assigned to {scope} {obj_id}.")
+        if sub == "unassign" and len(args)>1:
+            world_id=self.builder.world_id(character); drafts=self.builder.load(world_id); scope=args[1].lower()
+            if scope == "world":
+                drafts.setdefault("world", {}).setdefault(world_id, {"id": world_id}).pop("default_display_theme_id", None); self.builder.save_drafts(world_id,drafts); return CommandResult("Display theme assignment removed for world.")
+            if scope in {"zone","area"} and len(args)>=3:
+                obj_id=args[2]; bucket=drafts.setdefault(scope+"s", {})
+                if obj_id not in bucket: return CommandResult(f"{scope.title()} not found: {obj_id}", ok=False)
+                if len(args)>=4: (bucket[obj_id].get("display_theme_ids") or {}).pop(args[3].lower(), None)
+                else: bucket[obj_id].pop("display_theme_id", None); bucket[obj_id].pop("display_theme_ids", None)
+                self.builder.save_drafts(world_id,drafts); return CommandResult(f"Display theme assignment removed for {scope} {obj_id}.")
         if sub == "delete" and len(args)>1: store.pop(args[1], None); return CommandResult(f"Display theme {args[1]} deleted from Builder drafts.")
         return CommandResult("Usage: displaytheme list|show|create|clone|set|label|role|sectionorder|sections|border|prompt|validate|preview|assign|unassign|delete", ok=False)
 
