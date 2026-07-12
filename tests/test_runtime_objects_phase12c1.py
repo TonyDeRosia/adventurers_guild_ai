@@ -61,5 +61,5 @@ def test_unmarked_room_entities_objects_default_to_white_roles():
         exits=[]
     html = render_room(Room(), {})
     assert 'role="room_description"' in html
-    assert 'role="npc"' in html and 'role="mob"' in html and 'role="object"' in html
+    assert 'role="system"' in html
     assert html_to_plain_text(html).count('Unmarked description.') == 1

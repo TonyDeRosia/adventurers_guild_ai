@@ -31,3 +31,8 @@
 | help/commands | Topic sections and grouped commands. | Registry-based output. | Contract documented. | command registry | Internal registry objects hidden. | Partial | Existing |
 | who/where | Visible players/location limits. | Who implemented, where placeholder. | Contract documented. | runtime/registry | Placeholder remains deferred. | Partial | Existing |
 | mail/clan/auction/housing | Present in classic MUD families. | Not full systems in Smart MUD. | DEFERRED — GAMEPLAY SYSTEM NOT YET IMPLEMENTED. | N/A | Not fabricated. | Deferred | N/A |
+
+
+## Phase 13C1 update
+
+The current runtime migration checklist is maintained in `PHASE13C1_MIGRATION_CHECKLIST.md`. The canonical room path is `build_room_document` rendered through the existing `render_room` compatibility wrapper; normal categories default to white, mixed roles render per document element, and classic exit order is restored.

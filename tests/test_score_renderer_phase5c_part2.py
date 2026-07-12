@@ -50,7 +50,7 @@ def test_score_related_commands_use_score_renderer_sections():
     char = MudCharacter(id="char_cmd", name="Cmd", role="builder", gold=42)
     assert "CURRENCIES" in engine.handle_command(char, "worth").narrative
     assert "EQUIPMENT" in engine.handle_command(char, "equipment").narrative
-    assert "AFFECTS" in engine.handle_command(char, "saff").narrative
+    assert "Affects" in engine.handle_command(char, "saff").narrative
     assert "SPELLUP" in engine.handle_command(char, "spellup").narrative
     assert "FORMULA DEBUG" in engine.handle_command(char, "score formulas").narrative
     assert "RAW ACTOR JSON" in engine.handle_command(char, "score raw").narrative

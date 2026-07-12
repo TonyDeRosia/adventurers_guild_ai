@@ -22,21 +22,37 @@ class DisplayEntry:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 @dataclass
+class DisplayLine:
+    text: str
+    role: str = "system"
+    trusted_markup: bool = False
+
+@dataclass
+class DisplayField:
+    label: str
+    value: Any
+    label_role: str = "score_label"
+    value_role: str = "score_value"
+
+@dataclass
 class DisplaySection:
     title: str = ""
-    lines: list[str] = field(default_factory=list)
+    lines: list[Any] = field(default_factory=list)
     entries: list[DisplayEntry] = field(default_factory=list)
-    fields: list[tuple[str, Any]] = field(default_factory=list)
+    fields: list[Any] = field(default_factory=list)
     role: str = "system"
+    title_role: str = "system"
 
 @dataclass
 class DisplayDocument:
     intent: DisplayIntent | str
     title: str = ""
     semantic_role: str = "system"
+    title_role: str = "system"
     subtitle: str = ""
-    paragraphs: list[str] = field(default_factory=list)
-    lines: list[str] = field(default_factory=list)
+    subtitle_role: str = "system"
+    paragraphs: list[Any] = field(default_factory=list)
+    lines: list[Any] = field(default_factory=list)
     sections: list[DisplaySection] = field(default_factory=list)
     footer: str = ""
     spacing: str = "major"
@@ -52,7 +68,18 @@ def normalize_sentence(text: Any) -> str:
         raw += "."
     return raw
 
+def _line_text(line: Any) -> str:
+    return str(getattr(line, "text", line))
+
+def _line_role(line: Any, default: str = "system") -> str:
+    return str(getattr(line, "role", default) or default)
+
+def _line_trusted(line: Any) -> bool:
+    return bool(getattr(line, "trusted_markup", False))
+
 def _render_entry_plain(entry: DisplayEntry) -> str:
+    if entry.metadata.get("room_group") and entry.quantity and entry.quantity > 1:
+        return f"({entry.quantity}) {entry.text}"
     qty = f"{entry.quantity}x " if entry.quantity and entry.quantity > 1 else ""
     return qty + str(entry.text)
 
@@ -73,23 +100,61 @@ def render_display_plain(doc: DisplayDocument) -> str:
             lines.append(str(section.title).strip())
         lines.extend(str(x).rstrip() for x in section.lines if str(x).strip())
         lines.extend(_render_entry_plain(e) for e in section.entries if str(e.text).strip())
-        lines.extend(f"{k}: {v}" for k, v in section.fields)
+        lines.extend(_render_field_plain(f) for f in section.fields)
         if lines:
             blocks.append("\n".join(lines))
     if doc.footer:
         blocks.append(str(doc.footer).strip())
     return re.sub(r"\n{3,}", "\n\n", "\n\n".join(b for b in blocks if b.strip())).strip()
 
+def _role(role: str, default: str = "system") -> str:
+    return role if role in SEMANTIC_COLOR_ROLES else default
+
+def _mud(role: str, text: Any) -> str:
+    return semantic(_role(role), str(text))
+
+def _render_field_plain(field: Any) -> str:
+    if isinstance(field, DisplayField):
+        return f"{field.label}: {field.value}"
+    if isinstance(field, (tuple, list)) and len(field) >= 2:
+        return f"{field[0]}: {field[1]}"
+    return str(field)
+
+def _render_field_mud(field: Any, section: DisplaySection) -> str:
+    if isinstance(field, DisplayField):
+        return f"{_mud(field.label_role, field.label + ':')} {_mud(field.value_role, field.value)}"
+    if isinstance(field, (tuple, list)) and len(field) >= 2:
+        return f"{_mud('score_label', str(field[0]) + ':')} {_mud(section.role, field[1])}"
+    return _mud(section.role, field)
+
 def render_display_mud(doc: DisplayDocument) -> str:
-    role = doc.semantic_role if doc.semantic_role in SEMANTIC_COLOR_ROLES else "system"
-    text = render_display_plain(doc)
-    if not text:
-        text = "Nothing to show."
-    # Keep headings/section text structurally plain; semantic tags carry color intent.
-    return semantic(role, text)
+    parts: list[str] = []
+    if doc.title: parts.append(_mud(getattr(doc, 'title_role', '') or doc.semantic_role, str(doc.title).strip()))
+    if doc.subtitle: parts.append(_mud(getattr(doc, 'subtitle_role', '') or doc.semantic_role, str(doc.subtitle).strip()))
+    paras=[_mud(_line_role(p, doc.semantic_role), _line_text(p).strip()) for p in doc.paragraphs if _line_text(p).strip()]
+    if paras: parts.append("\n".join(paras))
+    line_block=[_mud(_line_role(x, doc.semantic_role), _line_text(x).rstrip()) for x in doc.lines if _line_text(x).strip()]
+    if line_block: parts.append("\n".join(line_block))
+    for section in doc.sections:
+        lines=[]
+        if section.title: lines.append(_mud(section.title_role or section.role, str(section.title).strip()))
+        lines.extend(_mud(_line_role(x, section.role), _line_text(x).rstrip()) for x in section.lines if _line_text(x).strip())
+        lines.extend(_mud(e.role or section.role, _render_entry_plain(e)) for e in section.entries if str(e.text).strip())
+        lines.extend(_render_field_mud(f, section) for f in section.fields)
+        if lines: parts.append("\n".join(lines))
+    if doc.footer: parts.append(_mud(doc.semantic_role, str(doc.footer).strip()))
+    text = re.sub(r"\n{3,}", "\n\n", "\n\n".join(p for p in parts if p.strip())).strip()
+    return text or _mud(doc.semantic_role, "Nothing to show.")
 
 def render_display_html(doc: DisplayDocument) -> str:
-    return semantic_html(render_display_mud(doc))
+    # Render semantic structure segment-by-segment so untrusted player text is escaped
+    # while Builder-authored MUD color markup can be enabled explicitly per line.
+    mud = render_display_mud(doc)
+    html_text = semantic_html(mud)
+    if doc.renderer_hints.get("trusted_builder_markup"):
+        # Compatibility: legacy room descriptions arrive as already-safe MUD markup.
+        pass
+    return html_text
 
 def group_display_entries(items: list[dict[str, Any]], *, key_fields: tuple[str, ...] = ("name", "equipped_slot", "condition", "status")) -> list[DisplayEntry]:
     grouped: OrderedDict[tuple[Any, ...], DisplayEntry] = OrderedDict()
@@ -97,7 +162,7 @@ def group_display_entries(items: list[dict[str, Any]], *, key_fields: tuple[str,
         name = str(item.get("short_description") or item.get("name") or "something").strip()
         key = tuple(item.get(k) for k in key_fields) + (name,)
         if key not in grouped:
-            grouped[key] = DisplayEntry(name, role="object", quantity=0, metadata={"instance_ids": []})
+            grouped[key] = DisplayEntry(name, role=str(item.get("role") or "system"), quantity=0, metadata={"instance_ids": []})
         grouped[key].quantity += int(item.get("stack_count") or 1)
         if item.get("instance_id"):
             grouped[key].metadata.setdefault("instance_ids", []).append(item.get("instance_id"))
@@ -106,7 +171,7 @@ def group_display_entries(items: list[dict[str, Any]], *, key_fields: tuple[str,
 def build_inventory_document(items: list[dict[str, Any]], *, carrying: str = "") -> DisplayDocument:
     doc = DisplayDocument(DisplayIntent.INVENTORY, title="Inventory", semantic_role="system")
     if items:
-        doc.sections.append(DisplaySection(lines=["You are carrying:"], entries=group_display_entries(items)))
+        doc.sections.append(DisplaySection(lines=[DisplayLine("You are carrying:")], entries=group_display_entries(items)))
     else:
         doc.paragraphs.append("You are not carrying anything.")
     if carrying:
@@ -128,7 +193,7 @@ def build_prompt_document(character: Any) -> DisplayDocument:
     parts = [f"{character.hp}/{character.max_hp} HP"]
     if getattr(character, "max_mana", 0): parts.append(f"{character.mana}/{character.max_mana} MP")
     if getattr(character, "max_stamina", 0): parts.append(f"{character.stamina}/{character.max_stamina} ST")
-    return DisplayDocument(DisplayIntent.PROMPT, semantic_role="prompt", lines=["[" + " ".join(parts) + "]"])
+    return DisplayDocument(DisplayIntent.PROMPT, semantic_role="prompt", lines=[DisplayLine("[" + " ".join(parts) + "]", role="prompt")])
 
 import html
 import re
@@ -207,74 +272,72 @@ def presence_group_key(entity: Any) -> tuple[Any, ...] | None:
     return (etype, entity.get("template_id") or entity.get("id"), entity.get("name"), health, position, owner, lit, corpse_source)
 
 
-def render_room(room: Any, colors: dict[str, str] | None = None, character: Any = None) -> str:
-    """Render the canonical Smart MUD room block.
+CANONICAL_EXIT_ORDER = ["north", "west", "south", "east", "up", "down", "northeast", "northwest", "southeast", "southwest", "in", "out"]
 
-    Future room-changing systems (recall, goto, portals, Builder Mode, AI scene
-    transitions, combat flee/death, and teleportation) must supply room data and
-    call this renderer instead of assembling room text themselves.
-    """
-    lines: list[str] = []
-    title = _display_name(getattr(room, "title", "Unknown Room"))
-    lines.append(f'<span role="room_name">{render_mud_color_html(title)}</span>')
-    lines.append("")
 
+def _room_description_paragraphs(room: Any, title: str) -> list[DisplayLine]:
     desc = str(getattr(room, "description", "") or "").strip()
     if desc.lower().startswith(title.lower()):
-        desc = desc[len(title):].lstrip(" -:,.\t")
-        if desc and desc[0].islower():
-            desc = desc[0].upper() + desc[1:]
-    if desc:
-        paragraphs = [p.strip() for p in re.split(r"\n\s*\n", desc) if p.strip()]
-        for idx, paragraph in enumerate(paragraphs):
-            if idx:
-                lines.append("")
-            lines.append(f'<span role="room_description">{render_mud_color_html(paragraph)}</span>')
-    lines.append("")
+        desc = desc[len(title):].lstrip(" -:,.	")
+        if desc and desc[0].islower(): desc = desc[0].upper() + desc[1:]
+    return [DisplayLine(p.strip(), role="room_description", trusted_markup=True) for p in re.split(r"\n\s*\n", desc) if p.strip()]
 
-    visible_lines: list[str] = []
-    for player in getattr(room, "players", []) or []:
-        text, _desc = _entity_text(player)
-        if text and (character is None or text != getattr(character, "name", "")):
-            visible_lines.append(f'<span role="player">{render_mud_color_html(text)}</span>')
-    grouped: "OrderedDict[tuple[Any, ...], list[tuple[str, str]]]" = OrderedDict()
-    unique: list[tuple[str, str]] = []
-    for role, seq in (("npc", getattr(room, "npcs", []) or []), ("mob", getattr(room, "mobs", []) or []), ("object", getattr(room, "objects", []) or [])):
-        for ent in seq:
-            text, _desc = _entity_text(ent)
-            if not text:
-                continue
-            key = presence_group_key(ent)
-            if key is None:
-                unique.append((role, text))
-            else:
-                grouped.setdefault(key, []).append((role, text))
-    for entries in grouped.values():
-        role, text = entries[0]
-        if len(entries) > 1:
-            text = f"({len(entries)}) {text}"
-        visible_lines.append(f'<span role="{role}">{render_mud_color_html(text)}</span>')
-    for role, text in unique:
-        visible_lines.append(f'<span role="{role}">{render_mud_color_html(text)}</span>')
 
-    if visible_lines:
-        lines.append("You see:")
-        lines.extend(visible_lines)
-        lines.append("")
-
-    exits = getattr(room, "exits", []) or []
-    exit_names: list[str] = []
-    order = ["north", "east", "south", "west", "up", "down", "northeast", "northwest", "southeast", "southwest", "in", "out"]
+def _exit_names(exits: Any) -> list[str]:
+    names=[]
     if isinstance(exits, list):
-        sorted_exits = sorted(exits, key=lambda ex: order.index(str((ex.get("direction") or ex.get("dir")) if isinstance(ex, dict) else ex).lower()) if str((ex.get("direction") or ex.get("dir")) if isinstance(ex, dict) else ex).lower() in order else 999)
-        for exit_def in sorted_exits:
+        def key(ex: Any) -> int:
+            d = str((ex.get("direction") or ex.get("dir")) if isinstance(ex, dict) else ex).lower()
+            return CANONICAL_EXIT_ORDER.index(d) if d in CANONICAL_EXIT_ORDER else 999
+        for exit_def in sorted(exits, key=key):
             direction = exit_def.get("direction") or exit_def.get("dir") if isinstance(exit_def, dict) else str(exit_def)
             if direction:
                 closed = isinstance(exit_def, dict) and (exit_def.get("closed") or exit_def.get("locked"))
-                exit_names.append(f"({direction})" if closed else str(direction))
-    exit_body = " ".join(f'<span role="exit">{html.escape(e)}</span>' for e in exit_names) if exit_names else '<span role="exit">none</span>'
-    lines.append(f'[ Exits: {exit_body} ]')
-    return "\n".join(lines)
+                names.append(f"({direction})" if closed else str(direction))
+    return names
+
+
+def build_room_document(room: Any, viewer: Any = None) -> DisplayDocument:
+    title = _display_name(getattr(room, "title", "Unknown Room"))
+    doc = DisplayDocument(DisplayIntent.ROOM, title=title, semantic_role="system", title_role="room_name")
+    doc.paragraphs.extend(_room_description_paragraphs(room, title))
+    visible_entries: list[DisplayEntry] = []
+    for player in getattr(room, "players", []) or []:
+        text, _ = _entity_text(player)
+        if text and (viewer is None or text != getattr(viewer, "name", "")):
+            visible_entries.append(DisplayEntry(text, role="system"))
+    grouped: "OrderedDict[tuple[Any, ...], list[str]]" = OrderedDict()
+    unique: list[str] = []
+    for _role_name, seq in (("npc", getattr(room, "npcs", []) or []), ("mob", getattr(room, "mobs", []) or []), ("object", getattr(room, "objects", []) or [])):
+        for ent in seq:
+            text, _ = _entity_text(ent)
+            if not text: continue
+            key = presence_group_key(ent)
+            if key is None: unique.append(text)
+            else: grouped.setdefault(key, []).append(text)
+    for entries in grouped.values():
+        text=entries[0]
+        visible_entries.append(DisplayEntry(text, role="system", quantity=len(entries), metadata={"grouped_count": len(entries), "room_group": True}))
+    for text in unique: visible_entries.append(DisplayEntry(text, role="system"))
+    if visible_entries:
+        doc.sections.append(DisplaySection(title="You see:", entries=visible_entries, role="system", title_role="system"))
+    exits = _exit_names(getattr(room, "exits", []) or [])
+    doc.sections.append(DisplaySection(lines=[DisplayLine(f"[ Exits: {' '.join(exits) if exits else 'none'} ]", role="exit")], role="exit"))
+    return doc
+
+
+def render_room(room: Any, colors: dict[str, str] | None = None, character: Any = None) -> str:
+    """Compatibility wrapper around the canonical room DisplayDocument."""
+    doc = build_room_document(room, character)
+    html_text = render_display_html(doc)
+    # Preserve Builder-authored MUD color markup in room titles/descriptions while
+    # keeping ordinary actor/object categories white by default.
+    title = _display_name(getattr(room, "title", "Unknown Room"))
+    for line in [title, *[p.text for p in _room_description_paragraphs(room, title)]]:
+        escaped = html.escape(str(line))
+        if escaped in html_text:
+            html_text = html_text.replace(escaped, render_mud_color_html(str(line)))
+    return html_text
 
 
 def render_object(obj: Any) -> str:

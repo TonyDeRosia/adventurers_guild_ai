@@ -11,7 +11,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 from pathlib import Path
-from engine.mud_displays import semantic
+from engine.mud_displays import semantic, DisplayDocument, DisplayIntent, DisplayLine, DisplaySection, DisplayField, render_display_mud
 from engine.actors import actor_from_runtime_character
 from engine.formulas import FormulaEngine
 from engine.score_renderer import ActorScoreRenderer
@@ -26,13 +26,20 @@ from engine.survival_needs import SURVIVAL_COLLECTIONS
 
 @dataclass
 class CommandResult:
-    """Result of command execution."""
-    narrative: str
+    """Result of command execution.
+
+    Commands may return a structured display_document. Runtime renderers use it
+    first, while legacy narrative remains supported during migration.
+    """
+    narrative: str = ""
     prompt: str = ""
     scrollback: str = ""
     state_updates: dict[str, Any] = None
     should_exit: bool = False
     ok: bool = True
+    display_document: Any = None
+    display_intent: str = "SYSTEM"
+    semantic_role: str = "system"
 
 
 # Known deterministic commands (no AI needed)
@@ -1496,19 +1503,30 @@ class MudCommandEngine:
         return CommandResult("PerceptionService is active for stealth, search, tracking, scent, sound, and sensory diagnostics.")
 
     def _cmd_score(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        """Display the modular Actor score sheet or one score section."""
+        """Display normal player score as a focused structured document."""
         section = args[0].lower() if args else "all"
-        if section == "preview" and len(args) > 1:
-            section = args[1].lower()
-        narrative = self._render_score_section(character, section)
-        if section == "all":
-            legacy_top = "\n".join([
-                f"{semantic('score_label', 'Name:')} {semantic('player', character.name)}",
-                f"{semantic('score_label', 'Level:')} {semantic('score_value', character.level)}",
-            ])
-            narrative = legacy_top + "\n" + narrative
-        print(f"[mud-command] Score displayed for {character.name} section={section}")
-        return CommandResult(narrative=narrative)
+        valid = {"all", "resources", "attributes", "combat", "progression", "currency", "survival", "quests"}
+        if section not in valid:
+            if self._is_score_admin(character):
+                return CommandResult(self._render_score_section(character, section))
+            return CommandResult("That score section is not available.", ok=False, display_intent="WARNING", semantic_role="warning")
+        doc = DisplayDocument(DisplayIntent.SCORE, title="Score", semantic_role="system", title_role="system")
+        def add(title: str, fields: list[tuple[str, Any]]):
+            if fields and section in {"all", title.lower()}:
+                doc.sections.append(DisplaySection(title=title, fields=[DisplayField(k, v) for k, v in fields]))
+        add("Character", [("Name", character.name), ("Level", getattr(character, "level", 1)), ("Race", getattr(character, "race", "Adventurer")), ("Class", getattr(character, "character_class", getattr(character, "char_class", "Adventurer")))])
+        add("Resources", [("Health", f"{getattr(character,'hp',0)} / {getattr(character,'max_hp',0)}"), ("Mana", f"{getattr(character,'mana',0)} / {getattr(character,'max_mana',0)}"), ("Stamina", f"{getattr(character,'stamina',0)} / {getattr(character,'max_stamina',0)}")])
+        xp=int(getattr(character, "xp", 0) or 0); level=int(getattr(character, "level", 1) or 1); next_xp=max(0, level*100 - xp)
+        add("Progression", [("Experience", xp), ("Experience to next level", next_xp)])
+        attrs=[]
+        for label, attr in [("Strength","strength"),("Dexterity","dexterity"),("Constitution","constitution"),("Intelligence","intelligence"),("Wisdom","wisdom"),("Charisma","charisma")]:
+            if hasattr(character, attr): attrs.append((label, getattr(character, attr)))
+        add("Attributes", attrs)
+        add("Combat", [("Armor", getattr(character, "armor", 0)), ("Evasion", getattr(character, "evasion", 0)), ("Attack", getattr(character, "attack", 0))])
+        add("Currency", [("Gold", int(getattr(character, "gold", 0) or 0))])
+        add("Survival", [("Posture", getattr(character, "posture", "standing"))])
+        add("Quests", [])
+        return CommandResult(narrative=render_display_mud(doc), display_document=doc, display_intent="SCORE")
 
 
     def _cmd_phase7a_reward(self, character: Any, args: list[str], raw: str) -> CommandResult:
@@ -1766,11 +1784,24 @@ class MudCommandEngine:
         return CommandResult("Ability casts:\n" + ("\n".join(f"- {r[0]} {r[1]} {r[2]} completes={r[3]}" for r in rows) if rows else "- none"))
 
     def _cmd_affects(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        """Display active affects/buffs through the single score renderer."""
+        """Display active visible affects as a structured player document."""
         affects = getattr(character, "affects", {}) or {}
-        if not affects:
-            return CommandResult(narrative="You have no active affects.\n" + self._render_score_section(character, "affects"))
-        return CommandResult(narrative=self._render_score_section(character, "affects"))
+        doc = DisplayDocument(DisplayIntent.AFFECTS, title="Affects", semantic_role="system")
+        if isinstance(affects, dict):
+            for key, data in affects.items():
+                data = data if isinstance(data, dict) else {}
+                if data.get("hidden") or data.get("secret"):
+                    continue
+                name = str(data.get("name") or key).replace("_", " ").title()
+                lines = [DisplayLine("Classification: " + str(data.get("classification") or data.get("type") or "active"))]
+                if data.get("remaining") or data.get("duration"):
+                    lines.append(DisplayLine("Remaining: " + str(data.get("remaining") or data.get("duration"))))
+                if data.get("stacks") or data.get("stack_count"):
+                    lines.append(DisplayLine("Stacks: " + str(data.get("stacks") or data.get("stack_count"))))
+                doc.sections.append(DisplaySection(title=name, lines=lines))
+        if not doc.sections:
+            doc.paragraphs.append("You are not affected by anything unusual.")
+        return CommandResult(narrative=render_display_mud(doc), display_document=doc, display_intent="AFFECTS")
 
     def _cmd_worth(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display net worth through the single score renderer."""
@@ -1786,14 +1817,22 @@ class MudCommandEngine:
         text = raw.split(maxsplit=1)[1] if len(raw.split(maxsplit=1)) > 1 else ""
         if not text:
             return CommandResult(narrative="Say what?")
-        line = f'You say, "{text}."' if not text.endswith((".", "!", "?")) else f'You say, "{text}"'
-        return CommandResult(narrative=semantic("dialogue", line))
+        spoken = text if text.endswith((".", "!", "?")) else text + "."
+        rt = getattr(self, "runtime", None)
+        if rt and hasattr(rt, "deliver_perspective_action"):
+            return rt.deliver_perspective_action(character, None, getattr(character, "room_id", ""), f'You say, "{spoken}"', None, f'{character.name} says, "{spoken}"', semantic_role="dialogue", intent="COMMUNICATION")
+        return CommandResult(narrative=semantic("dialogue", f'You say, "{spoken}"'))
 
     def _cmd_emote(self, character: Any, args: list[str], raw: str) -> CommandResult:
         text = raw.split(maxsplit=1)[1] if len(raw.split(maxsplit=1)) > 1 else ""
         if not text:
             return CommandResult(narrative="Emote what?")
-        return CommandResult(narrative=f"{character.name} {text}")
+        rt = getattr(self, "runtime", None)
+        actor_line = f"You {text}" if not text.startswith("'") else f"You{text}"
+        observer_line = f"{character.name} {text}"
+        if rt and hasattr(rt, "deliver_perspective_action"):
+            return rt.deliver_perspective_action(character, None, getattr(character, "room_id", ""), actor_line, None, observer_line, semantic_role="system", intent="COMMUNICATION")
+        return CommandResult(narrative=actor_line)
 
     def _cmd_look(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Look around or at draft Builder features when present."""
