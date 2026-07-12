@@ -15,7 +15,7 @@ from typing import Any, Optional
 from datetime import datetime, timezone, timedelta
 
 from engine.mud_commands import MudCommandEngine
-from engine.mud_displays import render_object, render_prompt, render_room, semantic, build_inventory_document, build_equipment_document, render_display_mud
+from engine.mud_displays import render_object, render_prompt, render_room, semantic, build_inventory_document, build_equipment_document, render_display_mud, render_display_plain
 from engine.conditions import condition_label
 from engine.mud_rendering import render_semantic_plain
 from smart_mud.world_registry import WorldRegistry
@@ -679,6 +679,24 @@ class MudRuntime:
             self._enqueue_room_output(cid, message, room_id=room_id, category=category)
         self.event_bus.publish("room_action_observed", {"room_id": room_id, "actor_id": actor_id, "message_kind": category}, source_system="runtime", world_id=self.active_world_id or "", room_id=room_id)
 
+
+    def deliver_perspective_action(self, actor: MudCharacter, target: Any, room_id: str, actor_message: str, target_message: str | None, observer_message: str | None, *, semantic_role: str = "system", intent: str = "SYSTEM", exclusions: set[str] | None = None, visibility_policy: Any = None):
+        """Deliver actor/target/observer output through one runtime queue path."""
+        from engine.mud_commands import CommandResult
+        actor_id = getattr(actor, "id", "")
+        excluded = set(exclusions or set()) | ({actor_id} if actor_id else set())
+        target_id = ""
+        if target is not None:
+            target_id = str(target.get("character_id") or target.get("id") or target.get("actor_id") or "") if isinstance(target, dict) else str(getattr(target, "id", ""))
+            if target_message and target_id and target_id != actor_id:
+                self._enqueue_room_output(target_id, semantic(semantic_role, target_message), room_id=room_id, category=str(intent).lower())
+                excluded.add(target_id)
+        if observer_message:
+            for cid in self._active_character_ids_in_room(room_id, exclude=excluded):
+                self._enqueue_room_output(cid, semantic(semantic_role, observer_message), room_id=room_id, category=str(intent).lower())
+        self.event_bus.publish("perspective_action_delivered", {"room_id": room_id, "actor_id": actor_id, "target_id": target_id, "intent": intent}, source_system="runtime", world_id=self.active_world_id or "", character_id=actor_id, room_id=room_id)
+        return CommandResult(narrative=semantic(semantic_role, actor_message), display_intent=intent, semantic_role=semantic_role)
+
     def pause_world_time(self, world_id: str) -> dict[str, Any]: return self.living_world.pause_world_time(world_id)
     def resume_world_time(self, world_id: str) -> dict[str, Any]: return self.living_world.resume_world_time(world_id)
     def get_entity_profile(self, instance_id: str) -> dict[str, Any]: return self.living_world.get_entity_profile(instance_id)
@@ -1158,6 +1176,8 @@ class MudRuntime:
         session = self.sessions.get(character_id)
         turn = (session.command_count + 1) if session else 1
         self.state_store.save_command(character_id, self.active_world_id or "", turn, command, session.account_id if session else "", session.session_id if session else "")
+        if getattr(result, "display_document", None) is not None:
+            result.narrative = render_display_mud(result.display_document)
         self.state_store.save_scrollback(character_id, self.active_world_id or "", turn, result.narrative)
         if session:
             session.command_count = turn
@@ -1485,7 +1505,7 @@ class MudRuntime:
             self.deliver_room_action(old_room, f"{char.name} leaves {direction}.", actor_id=char.id, category="actor_departed")
             self.deliver_room_action(char.room_id, f"{char.name} arrives from the {reverse}.", actor_id=char.id, category="actor_arrived")
             self.event_bus.publish("movement_succeeded", {"canonical_command": direction, "character_id": char.id, "character_name": char.name, "current_room_id": room_id, "target_room_id": char.room_id, "result_summary": "moved"}, source_system="movement", world_id=self.active_world_id or "", character_id=char.id, command=direction)
-            return CommandResult(narrative=f"You head {direction}.", state_updates={"render_room": True})
+            return CommandResult(narrative=f"You travel {direction}.", state_updates={"render_room": True}, display_intent="MOVEMENT", semantic_role="success")
         summary = reason if exit_data else "no_exit"
         if exit_data:
             self.event_bus.publish("builder_exit_graph_mismatch_detected", {"character_id": char.id, "room_id": room_id, "direction": direction, "reason": summary}, source_system="builder", world_id=self.active_world_id or "", character_id=char.id, room_id=room_id)

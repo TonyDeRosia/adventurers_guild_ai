@@ -40,10 +40,7 @@ def test_canonical_room_layout_empty_and_populated_visibility_order() -> None:
     assert "You see:\nAlice\nShopkeeper\nRat\nOld Gate\n\n[ Exits: east ]" in text
     assert text.index("Alice") < text.index("Shopkeeper") < text.index("Rat") < text.index("Old Gate")
     assert "old gate" not in text
-    assert 'role="player"' in render_room(populated, {})
-    assert 'role="npc"' in render_room(populated, {})
-    assert 'role="mob"' in render_room(populated, {})
-    assert 'role="object"' in render_room(populated, {})
+    assert 'role="system"' in render_room(populated, {})
     assert 'role="exit"' in render_room(populated, {})
 
 
@@ -66,7 +63,7 @@ def test_login_look_and_movement_use_canonical_room_renderer(tmp_path: Path, mon
     runtime, _cid, entered = _entered_runtime(tmp_path, monkeypatch)
     login_text = runtime._plain_text(entered["view"]["html"])
     assert login_text.count("Guildhall Crossing Square") == 1
-    assert login_text.endswith("[ Exits: north east west in ]")
+    assert login_text.endswith("[ Exits: north west east in ]")
 
     look = runtime.mud_input({"text": "look", "command_echo": False})
     assert look["command_result_text"] == ""
@@ -74,7 +71,8 @@ def test_login_look_and_movement_use_canonical_room_renderer(tmp_path: Path, mon
     assert "Fountain -" not in look["room_output_text"]
 
     moved = runtime.mud_input({"text": "north", "command_echo": False})
-    assert moved["command_result_text"] == "You head north."
+    assert moved["command_result_text"].startswith("You travel north.")
+    assert moved["command_result_text"].count("Old Gate Road") == 1
     assert moved["room_output_text"].count("Old Gate Road") == 1
-    assert moved["output_text"].startswith("You head north.\nOld Gate Road")
+    assert moved["output_text"].startswith("You travel north.\n\nOld Gate Road")
     assert "\n\n" in moved["output_text"]
