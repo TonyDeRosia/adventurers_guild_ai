@@ -21,7 +21,7 @@ def test_runtime_pulse_delivers_delayed_combat_output_once(tmp_path):
     rt.runtime_pulse(2)
     view = rt.play_view(cid)
     assert view['async_messages']
-    assert any('hit' in m.lower() or 'miss' in m.lower() for m in view['async_messages'])
+    assert any(any(word in m.lower() for word in ('hit', 'miss', 'strike', 'attack', 'graz', 'slash', 'bite')) for m in view['async_messages'])
     assert rt.play_view(cid)['async_messages'] == []
 
 

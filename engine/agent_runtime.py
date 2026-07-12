@@ -300,14 +300,12 @@ class AgentRuntimeGateway:
         combat_id = self.runtime.combat_runtime.find_actor_encounter(ctx.actor_id) if getattr(self.runtime, "combat_runtime", None) else ""
         visible = self.runtime.find_visible_entities(ctx.room_id, char)
         actors = []
+        for player in self._visible_players(ctx, char):
+            observed = self._build_observed_actor(ctx, char, {"kind": "character", "character": player})
+            if observed: actors.append(observed)
         for ent in visible.get("npcs", []) + visible.get("mobs", []):
-            st = ent.get("state") or {}
-            if st.get("current_state") == "dead" or ent.get("is_alive") is False: continue
-            life = str(st.get("lifecycle_id") or ent.get("entity_id") or ent.get("instance_id") or "")
-            max_hp = int(st.get("maximum_health") or st.get("max_health") or 100); hp = int(st.get("current_health") or st.get("health") or max_hp)
-            eid = str(ent.get("instance_id") or ent.get("entity_id"))
-            if "entity:" + eid == ctx.actor_id: continue
-            actors.append({"target_ref": self._target_ref("actor", "entity", eid, life), "actor_id": "entity:" + eid, "lifecycle_id": life, "display_name": ent.get("name") or "Someone", "actor_type": ent.get("entity_type") or "npc", "room_line": ent.get("name") or "Someone is here.", "condition_band": condition_key(ent), "posture": st.get("posture") or st.get("current_state") or "standing", "combat_status": "in_combat" if (getattr(self.runtime, "combat_runtime", None) and self.runtime.combat_runtime.find_actor_encounter("entity:" + eid)) else "none", "current_target_ref": "", "visible_effects": [], "visible_equipment_summary": [], "relationship": "unknown", "interaction_capabilities": ["inspect", "attack", "target"], "distance": "same_room"})
+            observed = self._build_observed_actor(ctx, char, {"kind": "entity", "entity": ent})
+            if observed: actors.append(observed)
         objects = []
         for obj in visible.get("objects", []) + visible.get("corpses", []):
             oid = obj.get("instance_id") or obj.get("entity_id") or obj.get("id") or obj.get("template_id")
@@ -331,6 +329,35 @@ class AgentRuntimeGateway:
         self._publish("agent_observation_created", {"world_id": world_id, "actor_id": actor_id, "lifecycle_id": lifecycle_id, "controller_id": controller_id, "request_id": "", "action_type": "", "result_code": RESULT_SUCCESS, "reason_code": REASON_SUCCESS, "world_time": wt})
         return obs
 
+
+    def _visible_players(self, ctx: ControlledActorContext, viewer: Any) -> list[Any]:
+        players: list[Any] = []
+        active = set(self.runtime._active_character_ids_in_room(ctx.room_id, exclude=set())) if hasattr(self.runtime, "_active_character_ids_in_room") else set()
+        if not active:
+            active = {str(c.get("character_id")) for c in self.runtime.list_characters(self.runtime.active_world_id or "") if c.get("room_id") == ctx.room_id}
+        for cid in sorted(active):
+            if "character:" + cid == ctx.actor_id:
+                continue
+            ch = self.runtime.state_store.load_character(cid)
+            if ch and ch.room_id == ctx.room_id and ch.hp > 0:
+                players.append(ch)
+        return players
+
+    def _build_observed_actor(self, viewer_ctx: ControlledActorContext, viewer_source: Any, observed: dict[str, Any]) -> dict[str, Any] | None:
+        if observed.get("kind") == "character":
+            ch = observed["character"]
+            actor_id = self.actor_id_for_character(ch)
+            life = self.actor_lifecycle_id(ch)
+            if actor_id == viewer_ctx.actor_id or ch.hp <= 0: return None
+            return {"target_ref": self._target_ref("actor", "character", ch.id, life), "actor_id": actor_id, "lifecycle_id": life, "display_name": ch.name, "actor_type": "player", "room_line": f"{ch.name} is here.", "condition_band": condition_key({"current_health": ch.hp, "maximum_health": ch.max_hp}), "posture": (getattr(ch, "actor_data", {}) or {}).get("posture", "standing"), "combat_status": "in_combat" if (getattr(self.runtime, "combat_runtime", None) and self.runtime.combat_runtime.find_actor_encounter(actor_id)) else "none", "current_target_ref": "", "visible_effects": [], "visible_equipment_summary": [], "relationship": "unknown", "interaction_capabilities": ["inspect", "attack", "target", "assist"], "distance": "same_room"}
+        ent = observed.get("entity") or {}
+        st = ent.get("state") or {}
+        if st.get("current_state") == "dead" or ent.get("is_alive") is False: return None
+        eid = str(ent.get("instance_id") or ent.get("entity_id"))
+        if "entity:" + eid == viewer_ctx.actor_id: return None
+        life = str(st.get("lifecycle_id") or ent.get("entity_id") or ent.get("instance_id") or "")
+        return {"target_ref": self._target_ref("actor", "entity", eid, life), "actor_id": "entity:" + eid, "lifecycle_id": life, "display_name": ent.get("name") or "Someone", "actor_type": ent.get("entity_type") or "npc", "room_line": ent.get("name") or "Someone is here.", "condition_band": condition_key(ent), "posture": st.get("posture") or st.get("current_state") or "standing", "combat_status": "in_combat" if (getattr(self.runtime, "combat_runtime", None) and self.runtime.combat_runtime.find_actor_encounter("entity:" + eid)) else "none", "current_target_ref": "", "visible_effects": [], "visible_equipment_summary": [], "relationship": "unknown", "interaction_capabilities": ["inspect", "attack", "target", "assist"], "distance": "same_room"}
+
     def available_actions(self, actor_id: str) -> list[AgentActionCapability]:
         ctx = self.resolve_controlled_actor(actor_id)
         actions = []
@@ -338,10 +365,20 @@ class AgentRuntimeGateway:
             cap = reg.availability(ctx)
             if ctx.actor_type != "player" and cap.action_type in {"get_item", "drop_item", "loot_container"}:
                 cap = AgentActionCapability(cap.action_type, cap.display_label, cap.target_requirements, cap.allowed_target_refs, cap.allowed_target_categories, cap.required_parameters, cap.optional_parameters, cap.resource_cost_summary, cap.cooldown_summary, cap.range_requirement, False, REASON_ACTION_NOT_AVAILABLE)
-            if ctx.actor_type in {"mob"} and cap.action_type == "speak":
+            if ctx.actor_type != "player" and cap.action_type == "speak" and not self._actor_has_capability(ctx, "speak"):
                 cap = AgentActionCapability(cap.action_type, cap.display_label, cap.target_requirements, cap.allowed_target_refs, cap.allowed_target_categories, cap.required_parameters, cap.optional_parameters, cap.resource_cost_summary, cap.cooldown_summary, cap.range_requirement, False, REASON_ACTION_NOT_AVAILABLE)
             actions.append(cap)
         return actions
+
+
+    def _actor_has_capability(self, ctx: ControlledActorContext, capability: str) -> bool:
+        if ctx.actor_type == "player": return True
+        ent = self.runtime.find_entity(ctx.entity_instance_id) if ctx.entity_instance_id else None
+        tmpl = self.runtime.entity_templates.get(ctx.template_id, {}) if hasattr(self.runtime, "entity_templates") else {}
+        caps = set(str(c).lower() for c in (((ent or {}).get("plugin_data") or {}).get("agent_capabilities") or []))
+        caps.update(str(c).lower() for c in (((ent or {}).get("state") or {}).get("agent_capabilities") or []))
+        caps.update(str(c).lower() for c in (tmpl.get("agent_capabilities") or []))
+        return capability.lower() in caps
 
     def submit_action(self, request: AgentActionRequest | dict[str, Any]) -> AgentActionResult:
         if isinstance(request, dict): request = AgentActionRequest(**{k: v for k, v in request.items() if k in AgentActionRequest.__dataclass_fields__})
@@ -450,7 +487,15 @@ class AgentRuntimeGateway:
             if reason == "ok": return {"category": cat, "direction": parts[1], "exit": ex}, REASON_SUCCESS
             return None, self._map_block_reason(reason)
         if cat == "actor":
-            if len(parts) < 3 or parts[0] != "entity": return None, REASON_INVALID_TARGET_TYPE
+            if len(parts) < 3 or parts[0] not in {"entity", "character"}: return None, REASON_INVALID_TARGET_TYPE
+            if parts[0] == "character":
+                ch = self.runtime.state_store.load_character(parts[1])
+                if not ch: return None, REASON_TARGET_NOT_FOUND
+                if self.actor_lifecycle_id(ch) != parts[2]: return None, REASON_STALE_LIFECYCLE
+                if ch.room_id != ctx.room_id: return None, REASON_TARGET_NOT_VISIBLE
+                if ch.hp <= 0: return None, REASON_TARGET_DEAD
+                if parts[1] not in {p.id for p in self._visible_players(ctx, source)}: return None, REASON_TARGET_NOT_VISIBLE
+                return {"category": cat, "character": ch}, REASON_SUCCESS
             ent = self.runtime.find_entity(parts[1])
             if not ent: return None, REASON_TARGET_NOT_FOUND
             if str((ent.get("state") or {}).get("lifecycle_id") or ent.get("entity_id") or ent.get("instance_id")) != parts[2]: return None, REASON_STALE_LIFECYCLE
@@ -541,7 +586,7 @@ class AgentRuntimeGateway:
         text = str((r.parameters or {}).get("text") or "").strip()
         if not text: return self._reject(r, REASON_INVALID_PARAMETERS, "Speech text is required.")
         a = self._actor(r)
-        if not a.context.character_id and "speak" not in ((a.source.get("plugin_data") or {}).get("agent_capabilities") or []):
+        if not a.context.character_id and not self._actor_has_capability(a.context, "speak"):
             return self._reject(r, REASON_ACTION_NOT_AVAILABLE, "Actor does not have authored speech capability.")
         safe = html.escape(text)
         if a.context.character_id:
@@ -552,28 +597,25 @@ class AgentRuntimeGateway:
     def _exec_attack(self, r):
         a = self._actor(r); tgt, reason = self._resolve_target(a.context, a.source, r.target_ref, {"actor"})
         if not tgt: return self._reject(r, reason, "Attack target is not available.")
-        res = self.runtime.combat_runtime.start_actor_attack(a.source, tgt["entity"]) if hasattr(self.runtime.combat_runtime, "start_actor_attack") else self.runtime.combat_runtime.start_player_attack(a.source, tgt["entity"].get("name") or "")
+        res = self.runtime.combat_runtime.start_actor_attack(a.source, tgt.get("entity") or tgt.get("character")) if hasattr(self.runtime.combat_runtime, "start_actor_attack") else self.runtime.combat_runtime.start_player_attack(a.source, (tgt.get("entity") or {}).get("name") or "")
         return self._ok(r, " ".join(res.messages), queued=True, encounter_id=res.encounter_id) if res.ok else self._reject(r, REASON_ACTION_NOT_ALLOWED, " ".join(res.messages))
     def _exec_target(self, r):
         a = self._actor(r); tgt, reason = self._resolve_target(a.context, a.source, r.target_ref, {"actor"})
         if not tgt: return self._reject(r, reason, "Target is not available.")
-        if not a.context.character_id: return self._reject(r, REASON_ACTION_NOT_AVAILABLE, "Entity target changes are not yet exposed by canonical combat service.")
-        res = self.runtime.combat_runtime.target(a.source, tgt["entity"].get("name") or "")
+        res = self.runtime.combat_runtime.actor_target(a.source, tgt.get("entity") or tgt.get("character")) if hasattr(self.runtime.combat_runtime, "actor_target") else self.runtime.combat_runtime.target(a.source, (tgt.get("entity") or {}).get("name") or "")
         return self._ok(r, " ".join(res.messages), queued=True, encounter_id=res.encounter_id) if res.ok else self._reject(r, REASON_ACTOR_NOT_IN_COMBAT, " ".join(res.messages))
     def _exec_defend(self, r):
         a = self._actor(r)
-        if not a.context.character_id: return self._reject(r, REASON_ACTION_NOT_AVAILABLE, "Entity defend is not yet exposed by canonical combat service.")
-        res = self.runtime.combat_runtime.defend(a.source); return self._ok(r, " ".join(res.messages), queued=True, encounter_id=res.encounter_id) if res.ok else self._reject(r, REASON_ACTOR_NOT_IN_COMBAT, " ".join(res.messages))
+        res = self.runtime.combat_runtime.actor_defend(a.source) if hasattr(self.runtime.combat_runtime, "actor_defend") else self.runtime.combat_runtime.defend(a.source); return self._ok(r, " ".join(res.messages), queued=True, encounter_id=res.encounter_id) if res.ok else self._reject(r, REASON_ACTOR_NOT_IN_COMBAT, " ".join(res.messages))
     def _exec_flee(self, r):
         direction = (r.parameters or {}).get("direction") or ""; a = self._actor(r)
         if r.target_ref:
             tgt, reason = self._resolve_target(a.context, a.source, r.target_ref, {"exit"})
             if not tgt: return self._reject(r, reason, "Flee exit is not available.")
             direction = tgt["direction"]
-        if not a.context.character_id: return self._reject(r, REASON_ACTION_NOT_AVAILABLE, "Entity flee is not yet exposed by canonical combat service.")
-        res = self.runtime.combat_runtime.flee(a.source, direction); return self._ok(r, " ".join(res.messages), encounter_id=res.encounter_id) if res.ok else self._reject(r, REASON_ACTOR_NOT_IN_COMBAT, " ".join(res.messages))
+        res = self.runtime.combat_runtime.actor_flee(a.source, direction) if hasattr(self.runtime.combat_runtime, "actor_flee") else self.runtime.combat_runtime.flee(a.source, direction); return self._ok(r, " ".join(res.messages), encounter_id=res.encounter_id) if res.ok else self._reject(r, REASON_ACTOR_NOT_IN_COMBAT, " ".join(res.messages))
     def _exec_assist(self, r):
-        res = self.runtime.combat_runtime.assist(self._char(r), ""); return self._ok(r, " ".join(res.messages), queued=True, encounter_id=res.encounter_id) if res.ok else self._reject(r, REASON_ACTION_NOT_AVAILABLE, " ".join(res.messages))
+        a = self._actor(r); res = self.runtime.combat_runtime.actor_assist(a.source, None) if hasattr(self.runtime.combat_runtime, "actor_assist") else self.runtime.combat_runtime.assist(self._char(r), ""); return self._ok(r, " ".join(res.messages), queued=True, encounter_id=res.encounter_id) if res.ok else self._reject(r, REASON_ACTION_NOT_AVAILABLE, " ".join(res.messages))
     def _exec_use_ability(self, r):
         res = self.runtime.combat_runtime.queue_ability(self._char(r), str((r.parameters or {}).get("ability_id") or "")); return self._ok(r, " ".join(res.messages), queued=True, encounter_id=res.encounter_id, ability_id=str((r.parameters or {}).get("ability_id") or "")) if res.ok else self._reject(r, REASON_ACTION_NOT_ALLOWED, " ".join(res.messages))
     def _exec_get_item(self, r):
