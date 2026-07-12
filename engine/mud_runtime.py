@@ -1338,6 +1338,8 @@ class MudRuntime:
         raw_cmd = parsed["raw_cmd"]
         cmd_name = parsed["cmd"]
         args = parsed["args"]
+        if raw_cmd == "target" and not self._builder_visible(char):
+            cmd_name = "target"
         if raw_cmd == "inspect":
             cmd_name = "examine"
         if raw_cmd == "set" and " ".join(args).lower() == "camp":
@@ -1470,12 +1472,38 @@ class MudRuntime:
         decl = (self._live_entity_spawns().get(q) if cmd == 'sstat' else self._live_item_placements().get(q)) or {}
         return "\n".join([f"Declaration: {q}", f"Data: {json.dumps(decl, sort_keys=True)}", f"Materialization: {json.dumps(row or {}, sort_keys=True)}"])
 
+    def _annotate_combat_presence(self, room_id: str, visible: dict[str, list[dict[str, Any]]]) -> None:
+        cr = getattr(self, 'combat_runtime', None)
+        if not cr:
+            return
+        try:
+            import sqlite3
+            actor_names: dict[str, str] = {}
+            for ent in (visible.get('npcs', []) + visible.get('mobs', [])):
+                actor_names['entity:' + str(ent.get('instance_id') or ent.get('entity_id'))] = str(ent.get('name') or 'Someone')
+            for ch in self.list_characters(self.active_world_id or ''):
+                if ch.get('room_id') == room_id:
+                    actor_names['character:' + str(ch.get('character_id'))] = str(ch.get('name') or 'Someone')
+            with sqlite3.connect(self.state_store.db_path) as con:
+                rows = con.execute("""SELECT p.actor_id,p.current_target_actor_id FROM combat_participants p JOIN combat_encounters e ON e.encounter_id=p.encounter_id WHERE e.room_id=? AND e.status='active' AND p.participation_status='active' AND p.defeated=0 AND p.fled=0""", (room_id,)).fetchall()
+            targets = {aid: actor_names.get(tid) or cr.actor_display_name(tid) for aid, tid in rows if tid}
+            for ent in (visible.get('npcs', []) + visible.get('mobs', [])):
+                aid = 'entity:' + str(ent.get('instance_id') or ent.get('entity_id'))
+                if targets.get(aid):
+                    ent['combat_target_name'] = targets[aid]
+                    st = dict(ent.get('state') or {})
+                    st['combat_target_name'] = targets[aid]
+                    ent['state'] = st
+        except Exception:
+            return
+
     def _current_room(self, char: MudCharacter) -> MudRoom:
         room_data, source = self.runtime_room_data(char, char.room_id)
         if room_data is None:
             return MudRoom(id=char.room_id or "void", area_id="", title="Missing Room", description=f"Current room '{char.room_id}' is invalid. Use goto home or contact a builder.", exits=[])
         rid = str(room_data.get("id", char.room_id))
         visible = self.find_visible_entities(rid, char)
+        self._annotate_combat_presence(rid, visible)
         exits = list(self.canonical_exits(char, rid).values())
         features = {f.get("id") or f.get("feature_id"): f for f in self._resolved_room_features(rid, char)}
         feature_keys: set[tuple[str, str]] = set()

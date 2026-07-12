@@ -386,6 +386,37 @@ class CombatRuntimeService:
         self.queue_action(eid, aid, 'ability', t[0] if t else '', ability_id=str(row.get('id')), source='player')
         return CombatRuntimeResult(True, [f"You ready {row.get('name') or row.get('id')} for your next opening."], eid)
 
+    def target(self, character: Any, query: str) -> CombatRuntimeResult:
+        aid = self.actor_id_for_character(character); eid = self.find_actor_encounter(aid)
+        if not eid: return CombatRuntimeResult(False, ['You are not currently fighting anyone.'])
+        ent = self.resolve_target(character, query)
+        if not ent: return CombatRuntimeResult(False, ["You don't see that target here."])
+        defender = self.actor_from_entity(ent)
+        err = self.validate_attack(actor_from_runtime_character(character, self.runtime.active_world_id or ''), defender, ent)
+        if err and 'yourself' not in err.lower(): return CombatRuntimeResult(False, [err])
+        self.join_encounter(eid, defender, 'side_2')
+        self.set_target(eid, aid, defender.actor_id)
+        self.queue_action(eid, aid, 'basic_attack', defender.actor_id, source='player_target')
+        return CombatRuntimeResult(True, [f'You turn your attention to {defender.identity.name}.'], eid)
+
+    def assist(self, character: Any, query: str = '') -> CombatRuntimeResult:
+        allies = [c for c in self.runtime.list_characters(self.runtime.active_world_id or '') if c.get('room_id') == character.room_id and c.get('character_id') != character.id]
+        ally = None
+        if query.strip():
+            q=query.lower().strip(); ally=next((c for c in allies if q in str(c.get('name','')).lower()), None)
+        else:
+            ally=next((c for c in allies if self.find_actor_encounter('character:'+str(c.get('character_id','')))), None)
+        if not ally: return CombatRuntimeResult(False, ['You do not see an ally here who needs assistance.'])
+        aeid=self.find_actor_encounter('character:'+str(ally.get('character_id','')))
+        if not aeid: return CombatRuntimeResult(False, [f"{ally.get('name')} is not fighting anyone."])
+        with sqlite3.connect(self.db_path) as con:
+            row=con.execute("SELECT current_target_actor_id FROM combat_participants WHERE encounter_id=? AND actor_id=?",(aeid,'character:'+str(ally.get('character_id','')))).fetchone()
+        target_id=row[0] if row else ''
+        target=self._load_actor(target_id)
+        if not target or not target.actor_id.startswith('entity:'): return CombatRuntimeResult(False, ['There is no clear opponent to assist against.'])
+        ent=self.runtime.find_entity(target.actor_id.split(':',1)[1])
+        return self.start_player_attack(character, ent.get('name','') if ent else target.identity.name)
+
     def flee(self, character:Any, direction:str='')->CombatRuntimeResult:
         aid=self.actor_id_for_character(character); eid=self.find_actor_encounter(aid)
         if not eid: return CombatRuntimeResult(False,['You are not currently fighting anyone.'])

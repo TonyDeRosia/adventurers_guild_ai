@@ -96,6 +96,7 @@ DETERMINISTIC_COMMANDS = {
     "flee": {"category": "combat", "admin": False},
     "defend": {"category": "combat", "admin": False},
     "combat": {"category": "combat", "admin": False},
+    "target": {"category": "combat", "admin": False},
     "history": {"category": "info", "admin": False},
     
     # Movement
@@ -342,6 +343,7 @@ class MudCommandEngine:
             "flee": self._cmd_combat_foundation,
             "defend": self._cmd_combat_foundation,
             "combat": self._cmd_combat_foundation,
+            "target": self._cmd_combat_foundation,
             "levels": self._cmd_generic,
             "time": self._cmd_worldtime,
             "worldtime": self._cmd_worldtime,
@@ -1267,7 +1269,7 @@ class MudCommandEngine:
         raw_cmd_name = cmd_tokens[0].lower()
         if raw_cmd_name in {".end", ".cancel"}:
             return CommandResult(narrative="No active editor session.", ok=False)
-        cmd_name = self.resolve_alias(raw_cmd_name)
+        cmd_name = 'target' if raw_cmd_name == 'target' else self.resolve_alias(raw_cmd_name)
         if raw_cmd_name in self.command_handlers and not cmd_name:
             cmd_name = raw_cmd_name
         if not cmd_name:
@@ -1278,6 +1280,11 @@ class MudCommandEngine:
         
         print(f"[mud-command] Routing {raw_cmd_name} as {cmd_name} for {character.name}")
         
+        if cmd_name == "target" and str(getattr(character, "role", "player")).lower() not in {"builder", "admin", "owner"}:
+            result = self._cmd_combat_foundation(character, args, command_text)
+            self._publish("command_executed", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary=result.narrative[:120])
+            return result
+
         if cmd_name == "desc":
             result = self._cmd_builder_edit(character, args, command_text)
             self._publish("command_executed", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary=result.narrative[:120])
@@ -2623,7 +2630,7 @@ Builder commands:
         """Route live combat commands to the canonical CombatRuntimeService."""
         rt = getattr(self, "runtime", None)
         svc = getattr(rt, "combat_runtime", None) if rt else getattr(self, "combat_runtime", None)
-        cmd = self.resolve_alias((raw.split() or [""])[0].lower()) or (raw.split() or [""])[0].lower()
+        raw_name = (raw.split() or [""])[0].lower(); cmd = "target" if raw_name == "target" else (self.resolve_alias(raw_name) or raw_name)
         if not svc:
             if cmd == "consider":
                 return CommandResult("Consider whom?" if not args else f"You consider {' '.join(args)}. They look comparable to you.")
@@ -2643,8 +2650,14 @@ Builder commands:
         if cmd == "defend":
             res = svc.defend(character)
             return CommandResult("\n".join(res.messages), ok=res.ok)
+        if cmd == "target":
+            if not query:
+                return CommandResult("Target whom?", ok=False)
+            res = svc.target(character, query)
+            return CommandResult("\n".join(res.messages), ok=res.ok)
         if cmd == "assist":
-            return CommandResult("Assist is not available yet; join your ally's fight with attack <opponent>.", ok=False)
+            res = svc.assist(character, query)
+            return CommandResult("\n".join(res.messages), ok=res.ok)
         res = svc.start_player_attack(character, query)
         return CommandResult("\n".join(res.messages), ok=res.ok)
 
