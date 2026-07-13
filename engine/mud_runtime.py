@@ -1246,10 +1246,39 @@ class MudRuntime:
 
     def _match_player_ability_command(self, words: list[str]) -> dict[str, Any] | None:
         phrase = " ".join(words).lower().strip()
-        ability_phrases = {"set camp": ["set", "camp"], "build campfire": ["build", "campfire"]}
+        ability_phrases = self._player_ability_phrases()
         if phrase in ability_phrases:
-            return {"tokens": words, "raw_cmd": phrase, "cmd": "use", "args": ability_phrases[phrase], "alias_note": "multiword ability"}
+            return {"tokens": words, "raw_cmd": phrase, "cmd": "use", "args": phrase.split(), "alias_note": "ability command"}
         return None
+
+    def _player_ability_phrases(self) -> dict[str, str]:
+        phrases: dict[str, str] = {}
+        svc = getattr(self, "abilities", None)
+        registry = getattr(svc, "registry", None)
+        for ab in getattr(registry, "abilities", {}).values() if registry is not None else []:
+            pdata = getattr(ab, "plugin_data", {}) or {}
+            canonical = str(pdata.get("command") or pdata.get("usage") or getattr(ab, "short_name", "") or getattr(ab, "name", "") or getattr(ab, "id", "")).lower().strip()
+            canonical = re.sub(r"^(use|cast|perform|invoke)\s+", "", canonical)
+            candidates = [canonical, str(getattr(ab, "name", "") or "").lower(), str(getattr(ab, "short_name", "") or "").lower(), str(getattr(ab, "id", "") or "").replace("_", " ").lower()]
+            aliases = pdata.get("aliases") or []
+            if isinstance(aliases, str):
+                aliases = [aliases]
+            candidates.extend(str(a).lower() for a in aliases)
+            for item in candidates:
+                item = re.sub(r"\s+", " ", item).strip()
+                if item:
+                    phrases[item] = canonical or item
+        return phrases
+
+    def _suggest_player_ability_command(self, phrase: str) -> str:
+        import difflib
+        normalized = re.sub(r"\s+", " ", str(phrase or "").lower()).strip()
+        phrases = self._player_ability_phrases()
+        public = sorted(set(phrases.values()))
+        if normalized == "set campfire" and "build campfire" in public:
+            return "build campfire"
+        matches = difflib.get_close_matches(normalized, public, n=1, cutoff=0.62)
+        return matches[0] if matches else ""
 
     def _publish_interaction_event(self, name: str, char: MudCharacter, cmd: str, raw: str, extra: dict[str, Any] | None = None) -> None:
         payload = {"world_id": self.active_world_id or "", "character_id": char.id, "character_name": char.name, "room_id": char.room_id, "canonical_command": cmd, "raw_input": raw, **(extra or {})}
@@ -1428,6 +1457,10 @@ class MudRuntime:
         raw_cmd = parsed["raw_cmd"]
         cmd_name = parsed["cmd"]
         args = parsed["args"]
+        ability_suggestion = self._suggest_player_ability_command(normalized_command)
+        if ability_suggestion and raw_cmd in {"set", "build", "campfire"} and normalized_command not in self._player_ability_phrases():
+            from engine.mud_commands import CommandResult
+            return CommandResult(f"Unknown command “{normalized_command}.”\nDid you mean {ability_suggestion.upper()}?", ok=False)
         if raw_cmd == "target" and not self._builder_visible(char):
             cmd_name = "target"
         if raw_cmd == "inspect":
@@ -1481,7 +1514,7 @@ class MudRuntime:
                 return CommandResult(entity_result)
         if cmd_name in {"cast", "invoke", "perform", "ability", "abilities", "skills", "spells", "cancel", "cooldowns", "abilitylist", "abilitystat", "abilitycreate", "abilityclone", "abilityset", "abilitydelete", "abilityvalidate", "abilitypreview", "abilitytrace", "loadoutlist", "loadoutstat", "loadoutcreate", "loadoutclone", "loadoutset", "loadoutability", "loadoutdelete", "loadoutvalidate", "abilitygrant", "abilityrevoke", "actorabilities", "abilitycooldowns", "abilitycasts"}:
             return self.command_engine.handle_command(char, command)
-        if cmd_name == "use" and " ".join(args).lower() in {"set camp", "build campfire"}:
+        if cmd_name == "use" and " ".join(args).lower() in self._player_ability_phrases():
             return self.command_engine.handle_command(char, "use " + " ".join(args))
         item_result = self._handle_item_command(char, command, cmd_name, args)
         if item_result is not None:

@@ -341,12 +341,14 @@ def _field_segments(label: str, value: Any, *, value_role: str = "character_valu
 def _field_text(label: str, value: Any) -> str:
     return f"{label}: {value}"
 
-def build_character_frame_document(intent: DisplayIntent | str, title: str, rows: list[Any], *, width: int = 79, theme: Any = None) -> DisplayDocument:
+def build_character_frame_document(intent: DisplayIntent | str, title: str, rows: list[Any], *, width: int = 79, theme: Any = None, show_title: bool = True) -> DisplayDocument:
     width = int(getattr(theme, "width", width) if theme is not None else width)
     label = (getattr(theme, "labels", {}) or {}).get(f"{str(intent).split('.')[-1].lower()}.title") or title
     frame=DisplayFrame(title=label, width=width, frame_role=resolve_theme_role(theme, "character_frame"), title_role=resolve_theme_role(theme, "character_title"), frame_style=getattr(theme, "frame_style", "classic_double") if theme else "classic_double", title_alignment=getattr(theme, "title_alignment", "center") if theme else "center", border_characters=dict(getattr(theme, "border_characters", {}) or {}), divider_characters=dict(getattr(theme, "divider_characters", {}) or {}))
     doc=DisplayDocument(intent, semantic_role=resolve_theme_role(theme, "character_value"), title_role=frame.title_role, frames=[frame])
-    lines=[_frame_segments(frame, kind="top"), _frame_segments(frame, segments=[_seg(_pad_visible(label, width-2, frame.title_alignment), "character_title", theme, True)]), _frame_segments(frame, kind="section")]
+    lines=[_frame_segments(frame, kind="top")]
+    if show_title:
+        lines.extend([_frame_segments(frame, segments=[_seg(_pad_visible(label, width-2, frame.title_alignment), "character_title", theme, True)]), _frame_segments(frame, kind="section")])
     for row in rows:
         if isinstance(row, DisplayDivider): lines.append(_frame_segments(frame, kind=row.kind)); continue
         if isinstance(row, DisplayLine):
@@ -512,17 +514,23 @@ def _ability_cost(row: dict[str, Any]) -> str:
 def build_abilities_document(rows: list[dict[str, Any]], *, title: str="ABILITIES", empty: str="You have no abilities.", theme: Any = None) -> DisplayDocument:
     out=[]
     compact = title in {"SKILLS", "SPELLS", "ABILITIES"}
+    family = title.lower()
+    if compact:
+        out.append(DisplayRow([
+            DisplayCell(theme_label(theme, f"{family}.name_header", title), width=48, role="character_title", min_width=min(len(title), 8), shrink_priority=10, wrap=False),
+            DisplayCell(theme_label(theme, f"{family}.proficiency_header", "PROFICIENCY"), width=17, align='right', role="character_label", min_width=len("PROFICIENCY"), shrink_priority=1, wrap=False),
+        ], role="character_label"))
     for r in rows:
         name=str(r.get('name') or r.get('id') or 'Ability').replace('_',' ').title()
         proficiency=max(1, min(100, int(r.get('proficiency') or r.get('rank') or 1)))
         rank = f"{proficiency}%"
-        out.append(DisplayRow([DisplayCell(name,width=48),DisplayCell(rank,width=17,align='right')], role="character_title"))
+        out.append(DisplayRow([DisplayCell(name,width=48, role="character_value"),DisplayCell(rank,width=17,align='right', role="character_value", wrap=False)], role="character_value"))
         if not compact:
             status=str(r.get('status_text') or r.get('availability_text') or ('Passive' if r.get('passive') else 'Availability unknown.'))
             out.append(DisplayLine(f"Status: {status}", role="character_positive" if status=='Ready' else "warning"))
             out.append(DisplayLine(str(r.get('description') or ''), role="character_value"))
-    if not out: out=build_empty_display_rows(title.lower(), theme, empty) or [DisplayLine(empty, role=resolve_theme_role(theme, "character_muted"))]
-    return build_character_frame_document(DisplayIntent.SKILLS if title=='SKILLS' else DisplayIntent.SPELLS if title=='SPELLS' else DisplayIntent.SYSTEM,title,out,width=70, theme=theme)
+    if len(out) == (1 if compact else 0): out=build_empty_display_rows(title.lower(), theme, empty) or [DisplayLine(empty, role=resolve_theme_role(theme, "character_muted"))]
+    return build_character_frame_document(DisplayIntent.SKILLS if title=='SKILLS' else DisplayIntent.SPELLS if title=='SPELLS' else DisplayIntent.SYSTEM,title,out,width=70, theme=theme, show_title=not compact)
 
 def render_display_plain(doc: DisplayDocument) -> str:
     blocks: list[str] = []
