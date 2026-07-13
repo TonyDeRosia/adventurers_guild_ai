@@ -29,10 +29,11 @@ def test_skills_and_spells_are_distinct_structured_displays():
     spells=render_display_plain(build_abilities_document([spell], title='SPELLS'))
     assert 'SKILLS' in skills and 'SPELLS' in spells and 'Your abilities:' not in skills + spells
     assert 'Source:' not in skills and 'starter_character' not in skills
-    assert 'Requires an established campsite.' in skills
-    assert 'Mana: 5' in spells and 'Target: Self' in spells
+    assert 'Requires an established campsite.' not in skills
+    assert 'Mana: 5' not in spells and 'Target: Self' not in spells
+    assert 'Type HELP Build Campfire' in skills
     html=render_display_html(build_abilities_document([skill], title='SKILLS'))
-    assert 'role="character_title"' in html and 'role="warning"' in html
+    assert 'role="character_title"' in html and 'warning' not in html
 
 
 def test_prompt_presets_custom_unknown_and_parity():
@@ -62,7 +63,7 @@ def test_cell_roles_are_rendered_independently_and_unknown_ability_is_not_ready(
     assert '{character_label}Title: {/character_label}{character_value}Long Title{/character_value}' in mud
     assert 'TNL: 42' in render_display_plain(doc)
     abilities = render_display_plain(build_abilities_document([{'name': 'Mystery'}]))
-    assert 'Availability unknown.' in abilities
+    assert 'Mystery' in abilities and 'Rank 1' in abilities
     assert 'Status: Ready' not in abilities
 
 

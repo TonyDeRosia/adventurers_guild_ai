@@ -1187,7 +1187,8 @@ class MudRuntime:
         turn = (session.command_count + 1) if session else 1
         self.state_store.save_command(character_id, self.active_world_id or "", turn, command, session.account_id if session else "", session.session_id if session else "")
         if getattr(result, "display_document", None) is not None:
-            result.narrative = render_display_mud(result.display_document)
+            color_enabled = not bool(getattr(char, "preferences", {}).get("no_color"))
+            result.narrative = render_display_mud(result.display_document, color_enabled=color_enabled)
         self.state_store.save_scrollback(character_id, self.active_world_id or "", turn, result.narrative)
         if session:
             session.command_count = turn

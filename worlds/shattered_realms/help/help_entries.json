@@ -1,0 +1,745 @@
+{
+  "help_entries": [
+    {
+      "help_id": "help",
+      "keywords": [
+        "help"
+      ],
+      "aliases": [],
+      "title": "Help",
+      "summary": "How to use the help system.",
+      "body": "Use HELP <topic>, HELP SEARCH <text>, HELP CATEGORIES, HELP CATEGORY <category>, and HELP RELATED <topic>.",
+      "syntax": [
+        "help help"
+      ],
+      "examples": [],
+      "related_topics": [
+        "commands"
+      ],
+      "category": "system",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 0,
+      "metadata": {}
+    },
+    {
+      "help_id": "commands",
+      "keywords": [
+        "commands",
+        "cmds"
+      ],
+      "aliases": [],
+      "title": "Commands",
+      "summary": "Player command list guidance.",
+      "body": "Type COMMANDS to list commands. Help topics explain commands and game concepts.",
+      "syntax": [
+        "help commands"
+      ],
+      "examples": [],
+      "related_topics": [
+        "help"
+      ],
+      "category": "system",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 1,
+      "metadata": {}
+    },
+    {
+      "help_id": "movement",
+      "keywords": [
+        "movement",
+        "north",
+        "south",
+        "east",
+        "west"
+      ],
+      "aliases": [],
+      "title": "Movement",
+      "summary": "Move through the world.",
+      "body": "Use north, south, east, west, up, down, in, and out. Short aliases like n and s work.",
+      "syntax": [
+        "help movement"
+      ],
+      "examples": [],
+      "related_topics": [
+        "look"
+      ],
+      "category": "movement",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 2,
+      "metadata": {}
+    },
+    {
+      "help_id": "look",
+      "keywords": [
+        "look",
+        "l"
+      ],
+      "aliases": [],
+      "title": "Look",
+      "summary": "Look at your surroundings.",
+      "body": "LOOK shows the current room, visible people, creatures, objects, and exits. Use LOOK <target> for details when supported.",
+      "syntax": [
+        "help look"
+      ],
+      "examples": [],
+      "related_topics": [
+        "movement"
+      ],
+      "category": "movement",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 3,
+      "metadata": {}
+    },
+    {
+      "help_id": "score",
+      "keywords": [
+        "score",
+        "sc"
+      ],
+      "aliases": [],
+      "title": "Score",
+      "summary": "Character status summary.",
+      "body": "SCORE shows canonical identity, resources, progression, attributes, currency, survival, effects, and time only when those values are implemented and available.",
+      "syntax": [
+        "help score"
+      ],
+      "examples": [],
+      "related_topics": [
+        "attributes",
+        "worth"
+      ],
+      "category": "character",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 4,
+      "metadata": {}
+    },
+    {
+      "help_id": "worth",
+      "keywords": [
+        "worth",
+        "currencies",
+        "currency"
+      ],
+      "aliases": [],
+      "title": "Worth",
+      "summary": "Currency balances.",
+      "body": "WORTH shows active world currencies you hold. If you have none, it says you are broke.",
+      "syntax": [
+        "help worth"
+      ],
+      "examples": [],
+      "related_topics": [
+        "score"
+      ],
+      "category": "character",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 5,
+      "metadata": {}
+    },
+    {
+      "help_id": "inventory",
+      "keywords": [
+        "inventory",
+        "inv",
+        "i"
+      ],
+      "aliases": [],
+      "title": "Inventory",
+      "summary": "Carried items.",
+      "body": "INVENTORY lists items you are carrying.",
+      "syntax": [
+        "help inventory"
+      ],
+      "examples": [],
+      "related_topics": [
+        "equipment"
+      ],
+      "category": "items",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 6,
+      "metadata": {}
+    },
+    {
+      "help_id": "equipment",
+      "keywords": [
+        "equipment",
+        "eq"
+      ],
+      "aliases": [],
+      "title": "Equipment",
+      "summary": "Worn and wielded equipment.",
+      "body": "EQUIPMENT lists equipped items by slot.",
+      "syntax": [
+        "help equipment"
+      ],
+      "examples": [],
+      "related_topics": [
+        "inventory"
+      ],
+      "category": "items",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 7,
+      "metadata": {}
+    },
+    {
+      "help_id": "skills",
+      "keywords": [
+        "skills",
+        "skill"
+      ],
+      "aliases": [],
+      "title": "Skills",
+      "summary": "Known skills.",
+      "body": "SKILLS lists known skill names and ranks compactly. Type HELP <skill name> for details.",
+      "syntax": [
+        "help skills"
+      ],
+      "examples": [],
+      "related_topics": [
+        "abilities"
+      ],
+      "category": "abilities",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 8,
+      "metadata": {}
+    },
+    {
+      "help_id": "spells",
+      "keywords": [
+        "spells",
+        "spell"
+      ],
+      "aliases": [],
+      "title": "Spells",
+      "summary": "Known spells.",
+      "body": "SPELLS lists known spell names and ranks compactly. Type HELP <spell name> for details.",
+      "syntax": [
+        "help spells"
+      ],
+      "examples": [],
+      "related_topics": [
+        "abilities"
+      ],
+      "category": "abilities",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 9,
+      "metadata": {}
+    },
+    {
+      "help_id": "abilities",
+      "keywords": [
+        "abilities",
+        "ability"
+      ],
+      "aliases": [],
+      "title": "Abilities",
+      "summary": "Skills, spells, and techniques.",
+      "body": "Abilities are canonical mechanical definitions. Authored help can add explanation, but costs, targeting, cooldowns, and requirements come from ability definitions.",
+      "syntax": [
+        "help abilities"
+      ],
+      "examples": [],
+      "related_topics": [
+        "skills",
+        "spells",
+        "cooldowns"
+      ],
+      "category": "abilities",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 10,
+      "metadata": {}
+    },
+    {
+      "help_id": "cooldowns",
+      "keywords": [
+        "cooldowns",
+        "cooldown"
+      ],
+      "aliases": [],
+      "title": "Cooldowns",
+      "summary": "Ability readiness.",
+      "body": "COOLDOWNS lists active ability cooldown information.",
+      "syntax": [
+        "help cooldowns"
+      ],
+      "examples": [],
+      "related_topics": [
+        "abilities"
+      ],
+      "category": "abilities",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 11,
+      "metadata": {}
+    },
+    {
+      "help_id": "affects",
+      "keywords": [
+        "affects",
+        "effects",
+        "saff"
+      ],
+      "aliases": [],
+      "title": "Affects",
+      "summary": "Active effects.",
+      "body": "AFFECTS lists visible active effects on your character.",
+      "syntax": [
+        "help affects"
+      ],
+      "examples": [],
+      "related_topics": [
+        "score"
+      ],
+      "category": "character",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 12,
+      "metadata": {}
+    },
+    {
+      "help_id": "prompt",
+      "keywords": [
+        "prompt"
+      ],
+      "aliases": [],
+      "title": "Prompt",
+      "summary": "Prompt configuration.",
+      "body": "PROMPT configures your command prompt. Prompt settings are not duplicated in SCORE.",
+      "syntax": [
+        "help prompt"
+      ],
+      "examples": [],
+      "related_topics": [
+        "display"
+      ],
+      "category": "display",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 13,
+      "metadata": {}
+    },
+    {
+      "help_id": "display",
+      "keywords": [
+        "display",
+        "color"
+      ],
+      "aliases": [],
+      "title": "Display",
+      "summary": "Display preferences.",
+      "body": "DISPLAY changes width, theme, color, contrast, colorblind, and decoration preferences. DISPLAY COLOR OFF suppresses color in player-visible output.",
+      "syntax": [
+        "help display"
+      ],
+      "examples": [],
+      "related_topics": [
+        "prompt"
+      ],
+      "category": "display",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 14,
+      "metadata": {}
+    },
+    {
+      "help_id": "race",
+      "keywords": [
+        "race",
+        "races"
+      ],
+      "aliases": [],
+      "title": "Race",
+      "summary": "Character race concept.",
+      "body": "Race is a help topic and future character concept. A complete final race system is not implemented yet, so SCORE omits race when no canonical race is present.",
+      "syntax": [
+        "help race"
+      ],
+      "examples": [],
+      "related_topics": [
+        "class",
+        "attributes"
+      ],
+      "category": "character",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 15,
+      "metadata": {}
+    },
+    {
+      "help_id": "class",
+      "keywords": [
+        "class",
+        "classes"
+      ],
+      "aliases": [],
+      "title": "Class",
+      "summary": "Character class concept.",
+      "body": "Class is a help topic and future character concept. A complete final class system is not implemented yet, so SCORE omits class when no canonical class is present.",
+      "syntax": [
+        "help class"
+      ],
+      "examples": [],
+      "related_topics": [
+        "race",
+        "abilities"
+      ],
+      "category": "character",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 16,
+      "metadata": {}
+    },
+    {
+      "help_id": "alignment",
+      "keywords": [
+        "alignment",
+        "align"
+      ],
+      "aliases": [],
+      "title": "Alignment",
+      "summary": "Alignment concept.",
+      "body": "Alignment describes moral or factional leaning where implemented. Use HELP ALIGNMENT for concept details; ALIGN is an alias for this help topic, not a command.",
+      "syntax": [
+        "help alignment"
+      ],
+      "examples": [],
+      "related_topics": [
+        "score"
+      ],
+      "category": "character",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 17,
+      "metadata": {}
+    },
+    {
+      "help_id": "attributes",
+      "keywords": [
+        "attributes",
+        "stats"
+      ],
+      "aliases": [],
+      "title": "Attributes",
+      "summary": "Core character attributes.",
+      "body": "Attributes are canonical character stats such as Strength, Dexterity, Constitution, Intelligence, Wisdom, and Charisma when present on a character.",
+      "syntax": [
+        "help attributes"
+      ],
+      "examples": [],
+      "related_topics": [
+        "strength",
+        "dexterity",
+        "constitution",
+        "intelligence",
+        "wisdom",
+        "charisma"
+      ],
+      "category": "character",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 18,
+      "metadata": {}
+    },
+    {
+      "help_id": "strength",
+      "keywords": [
+        "strength",
+        "str"
+      ],
+      "aliases": [],
+      "title": "Strength",
+      "summary": "Physical power.",
+      "body": "Strength represents physical power where canonical attributes are available.",
+      "syntax": [
+        "help strength"
+      ],
+      "examples": [],
+      "related_topics": [
+        "attributes"
+      ],
+      "category": "attributes",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 19,
+      "metadata": {}
+    },
+    {
+      "help_id": "dexterity",
+      "keywords": [
+        "dexterity",
+        "dex"
+      ],
+      "aliases": [],
+      "title": "Dexterity",
+      "summary": "Agility and coordination.",
+      "body": "Dexterity represents agility and coordination where canonical attributes are available.",
+      "syntax": [
+        "help dexterity"
+      ],
+      "examples": [],
+      "related_topics": [
+        "attributes"
+      ],
+      "category": "attributes",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 20,
+      "metadata": {}
+    },
+    {
+      "help_id": "constitution",
+      "keywords": [
+        "constitution",
+        "con"
+      ],
+      "aliases": [],
+      "title": "Constitution",
+      "summary": "Toughness and endurance.",
+      "body": "Constitution represents toughness and endurance where canonical attributes are available.",
+      "syntax": [
+        "help constitution"
+      ],
+      "examples": [],
+      "related_topics": [
+        "attributes"
+      ],
+      "category": "attributes",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 21,
+      "metadata": {}
+    },
+    {
+      "help_id": "intelligence",
+      "keywords": [
+        "intelligence",
+        "int"
+      ],
+      "aliases": [],
+      "title": "Intelligence",
+      "summary": "Reasoning and learning.",
+      "body": "Intelligence represents reasoning and learning where canonical attributes are available.",
+      "syntax": [
+        "help intelligence"
+      ],
+      "examples": [],
+      "related_topics": [
+        "attributes"
+      ],
+      "category": "attributes",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 22,
+      "metadata": {}
+    },
+    {
+      "help_id": "wisdom",
+      "keywords": [
+        "wisdom",
+        "wis"
+      ],
+      "aliases": [],
+      "title": "Wisdom",
+      "summary": "Perception and judgment.",
+      "body": "Wisdom represents perception and judgment where canonical attributes are available.",
+      "syntax": [
+        "help wisdom"
+      ],
+      "examples": [],
+      "related_topics": [
+        "attributes"
+      ],
+      "category": "attributes",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 23,
+      "metadata": {}
+    },
+    {
+      "help_id": "charisma",
+      "keywords": [
+        "charisma",
+        "cha"
+      ],
+      "aliases": [],
+      "title": "Charisma",
+      "summary": "Presence and social force.",
+      "body": "Charisma represents presence and social force where canonical attributes are available.",
+      "syntax": [
+        "help charisma"
+      ],
+      "examples": [],
+      "related_topics": [
+        "attributes"
+      ],
+      "category": "attributes",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 24,
+      "metadata": {}
+    },
+    {
+      "help_id": "set_camp",
+      "keywords": [
+        "set camp",
+        "camp"
+      ],
+      "aliases": [],
+      "title": "Set Camp",
+      "summary": "Create a campsite.",
+      "body": "Set Camp is an ability-backed survival skill. Use HELP SET CAMP for mechanics from the canonical ability definition when available.",
+      "syntax": [
+        "help set camp"
+      ],
+      "examples": [],
+      "related_topics": [
+        "build campfire"
+      ],
+      "category": "survival",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 25,
+      "metadata": {}
+    },
+    {
+      "help_id": "build_campfire",
+      "keywords": [
+        "build campfire",
+        "campfire"
+      ],
+      "aliases": [],
+      "title": "Build Campfire",
+      "summary": "Build a campfire at camp.",
+      "body": "Build Campfire is an ability-backed survival skill. It may require an established campsite. Mechanics come from the canonical ability definition.",
+      "syntax": [
+        "help build campfire"
+      ],
+      "examples": [],
+      "related_topics": [
+        "set camp"
+      ],
+      "category": "survival",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 26,
+      "metadata": {}
+    },
+    {
+      "help_id": "title",
+      "keywords": [
+        "title"
+      ],
+      "aliases": [],
+      "title": "Title",
+      "summary": "Character title customization.",
+      "body": "TITLE shows or sets your custom title. It never exposes achievement diagnostic state.",
+      "syntax": [
+        "help title"
+      ],
+      "examples": [],
+      "related_topics": [
+        "score"
+      ],
+      "category": "character",
+      "minimum_access_level": "player",
+      "player_visible": true,
+      "builder_visible": true,
+      "source_type": "authored",
+      "source_id": "",
+      "sort_order": 27,
+      "metadata": {}
+    }
+  ]
+}
