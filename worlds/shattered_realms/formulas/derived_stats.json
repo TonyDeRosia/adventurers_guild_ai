@@ -1,0 +1,622 @@
+{
+  "derived_stats": [
+    {
+      "stat_id": "max_health",
+      "name": "Max Health",
+      "short_name": "MAX_HEALTH",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "max_health",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 1,
+      "display_group": "resources",
+      "semantic_role": "max_health",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "max_mana",
+      "name": "Max Mana",
+      "short_name": "MAX_MANA",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "max_mana",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 2,
+      "display_group": "resources",
+      "semantic_role": "max_mana",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "max_stamina",
+      "name": "Max Stamina",
+      "short_name": "MAX_STAMINA",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "max_stamina",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 3,
+      "display_group": "resources",
+      "semantic_role": "max_stamina",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "armor",
+      "name": "Armor",
+      "short_name": "ARMOR",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "armor",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 4,
+      "display_group": "combat",
+      "semantic_role": "armor",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "evasion",
+      "name": "Evasion",
+      "short_name": "EVASION",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "evasion",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 5,
+      "display_group": "combat",
+      "semantic_role": "evasion",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "accuracy",
+      "name": "Accuracy",
+      "short_name": "ACCURACY",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "accuracy",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 6,
+      "display_group": "combat",
+      "semantic_role": "accuracy",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "hit_bonus",
+      "name": "Hit Bonus",
+      "short_name": "HIT_BONUS",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "hit_bonus",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 7,
+      "display_group": "combat",
+      "semantic_role": "hit_bonus",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "damage_bonus",
+      "name": "Damage Bonus",
+      "short_name": "DAMAGE_BONUS",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "damage_bonus",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 8,
+      "display_group": "combat",
+      "semantic_role": "damage_bonus",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "physical_save",
+      "name": "Physical Save",
+      "short_name": "PHYSICAL_SAV",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "physical_save",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 9,
+      "display_group": "combat",
+      "semantic_role": "physical_save",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "mental_save",
+      "name": "Mental Save",
+      "short_name": "MENTAL_SAVE",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "mental_save",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 10,
+      "display_group": "combat",
+      "semantic_role": "mental_save",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "magic_save",
+      "name": "Magic Save",
+      "short_name": "MAGIC_SAVE",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "magic_save",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 11,
+      "display_group": "combat",
+      "semantic_role": "magic_save",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "critical_melee",
+      "name": "Critical Melee",
+      "short_name": "CRITICAL_MEL",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "critical_melee",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 12,
+      "display_group": "combat",
+      "semantic_role": "critical_melee",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "critical_spell",
+      "name": "Critical Spell",
+      "short_name": "CRITICAL_SPE",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "critical_spell",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 13,
+      "display_group": "combat",
+      "semantic_role": "critical_spell",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "critical_heal",
+      "name": "Critical Heal",
+      "short_name": "CRITICAL_HEA",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "critical_heal",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 14,
+      "display_group": "combat",
+      "semantic_role": "critical_heal",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "critical_avoidance",
+      "name": "Critical Avoidance",
+      "short_name": "CRITICAL_AVO",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "critical_avoidance",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 15,
+      "display_group": "combat",
+      "semantic_role": "critical_avoidance",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "attack_power",
+      "name": "Attack Power",
+      "short_name": "ATTACK_POWER",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "attack_power",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 16,
+      "display_group": "combat",
+      "semantic_role": "attack_power",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "spell_power",
+      "name": "Spell Power",
+      "short_name": "SPELL_POWER",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "spell_power",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 17,
+      "display_group": "combat",
+      "semantic_role": "spell_power",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "healing_power",
+      "name": "Healing Power",
+      "short_name": "HEALING_POWE",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "healing_power",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 18,
+      "display_group": "combat",
+      "semantic_role": "healing_power",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "weapon_damage_min",
+      "name": "Weapon Damage Min",
+      "short_name": "WEAPON_DAMAG",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "weapon_damage_min",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 19,
+      "display_group": "combat",
+      "semantic_role": "weapon_damage_min",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "weapon_damage_max",
+      "name": "Weapon Damage Max",
+      "short_name": "WEAPON_DAMAG",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "weapon_damage_max",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 20,
+      "display_group": "combat",
+      "semantic_role": "weapon_damage_max",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "unarmed_damage_min",
+      "name": "Unarmed Damage Min",
+      "short_name": "UNARMED_DAMA",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "unarmed_damage_min",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 21,
+      "display_group": "combat",
+      "semantic_role": "unarmed_damage_min",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "unarmed_damage_max",
+      "name": "Unarmed Damage Max",
+      "short_name": "UNARMED_DAMA",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "unarmed_damage_max",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 22,
+      "display_group": "combat",
+      "semantic_role": "unarmed_damage_max",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "initiative",
+      "name": "Initiative",
+      "short_name": "INITIATIVE",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "initiative",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 23,
+      "display_group": "combat",
+      "semantic_role": "initiative",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "attack_speed",
+      "name": "Attack Speed",
+      "short_name": "ATTACK_SPEED",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "attack_speed",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 24,
+      "display_group": "combat",
+      "semantic_role": "attack_speed",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "casting_speed",
+      "name": "Casting Speed",
+      "short_name": "CASTING_SPEE",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "casting_speed",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 25,
+      "display_group": "combat",
+      "semantic_role": "casting_speed",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "recovery_speed",
+      "name": "Recovery Speed",
+      "short_name": "RECOVERY_SPE",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "recovery_speed",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 26,
+      "display_group": "combat",
+      "semantic_role": "recovery_speed",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "movement_speed",
+      "name": "Movement Speed",
+      "short_name": "MOVEMENT_SPE",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "movement_speed",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 27,
+      "display_group": "combat",
+      "semantic_role": "movement_speed",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "carry_capacity",
+      "name": "Carry Capacity",
+      "short_name": "CARRY_CAPACI",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "carry_capacity",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 28,
+      "display_group": "combat",
+      "semantic_role": "carry_capacity",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "current_carry_weight",
+      "name": "Current Carry Weight",
+      "short_name": "CURRENT_CARR",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "current_carry_weight",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 29,
+      "display_group": "combat",
+      "semantic_role": "current_carry_weight",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    },
+    {
+      "stat_id": "encumbrance_percent",
+      "name": "Encumbrance Percent",
+      "short_name": "ENCUMBRANCE_",
+      "description": "Phase 13C3-A canonical derived combat stat.",
+      "formula_id": "encumbrance_percent",
+      "base_value": 0,
+      "minimum_value": 0,
+      "maximum_value": 100000,
+      "rounding": "floor",
+      "display_format": "number",
+      "display_order": 30,
+      "display_group": "combat",
+      "semantic_role": "encumbrance_percent",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3a"
+      ]
+    }
+  ],
+  "resistance_types": [
+    "physical",
+    "fire",
+    "cold",
+    "lightning",
+    "poison",
+    "disease",
+    "holy",
+    "shadow",
+    "arcane"
+  ],
+  "encumbrance_thresholds": {
+    "unburdened": 0,
+    "light": 25,
+    "moderate": 50,
+    "heavy": 75,
+    "overloaded": 100
+  }
+}

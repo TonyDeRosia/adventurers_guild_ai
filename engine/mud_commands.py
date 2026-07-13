@@ -27,6 +27,7 @@ from pathlib import Path
 from engine.mud_displays import semantic, DisplayDocument, DisplayIntent, DisplayLine, DisplaySection, DisplayField, render_display_mud, render_display_plain, build_score_document, build_worth_document, build_abilities_document, build_inventory_document, build_equipment_document, build_affects_document, build_prompt_document, PROMPT_PRESETS, PROMPT_MAX_LENGTH
 from engine.actors import actor_from_runtime_character
 from engine.formulas import FormulaEngine
+from engine.character_stats import CharacterAttributeService, CombatStatService
 from engine.score_renderer import ActorScoreRenderer
 from engine.command_registry import CommandRegistry
 from smart_mud.builder import BuilderWorkspace
@@ -63,6 +64,8 @@ class CommandResult:
 DETERMINISTIC_COMMANDS = {
     # Information
     "score": {"category": "info", "aliases": ["sc"], "admin": False},
+    "attributes": {"category": "info", "admin": False},
+    "stats": {"category": "info", "admin": False},
     "display": {"category": "info", "admin": False},
     "displaytheme": {"category": "builder", "admin": True},
     "recipes": {"category": "crafting", "admin": False},
@@ -123,6 +126,11 @@ DETERMINISTIC_COMMANDS = {
     "flee": {"category": "combat", "admin": False},
     "defend": {"category": "combat", "admin": False},
     "combat": {"category": "combat", "admin": False},
+    "combatstats": {"category": "info", "admin": False},
+    "statbreakdown": {"category": "info", "admin": False},
+    "attributeedit": {"category": "builder", "admin": True},
+    "formula": {"category": "builder", "admin": True},
+    "statdef": {"category": "builder", "admin": True},
     "target": {"category": "combat", "admin": False},
     "history": {"category": "info", "admin": False},
     
@@ -307,6 +315,11 @@ class MudCommandEngine:
             "helpedit": self._cmd_helpedit,
             "attributes": self._cmd_attributes,
             "stats": self._cmd_attributes,
+            "combatstats": self._cmd_combatstats,
+            "statbreakdown": self._cmd_statbreakdown,
+            "attributeedit": self._cmd_attributeedit,
+            "formula": self._cmd_formulaedit,
+            "statdef": self._cmd_statdef,
             "commands": self._cmd_commands,
             "look": self._cmd_look,
             "hide": self._cmd_perception,
@@ -1301,6 +1314,9 @@ class MudCommandEngine:
             return CommandResult(narrative="")
         
         raw_cmd_name = cmd_tokens[0].lower()
+        if len(cmd_tokens) >= 2 and raw_cmd_name == "combat" and cmd_tokens[1].lower() == "stats":
+            cmd_tokens = ["combatstats"] + cmd_tokens[2:]
+            raw_cmd_name = "combatstats"
         if raw_cmd_name in {".end", ".cancel"}:
             return CommandResult(narrative="No active editor session.", ok=False)
         cmd_name = 'target' if raw_cmd_name == 'target' else self.resolve_alias(raw_cmd_name)
@@ -1696,18 +1712,66 @@ class MudCommandEngine:
         setattr(character,"title",text)
         return CommandResult(f"Your title is now: {text}")
 
+    def _stat_services(self, character: Any):
+        rt=getattr(self,"runtime",None); world_id=getattr(rt,'active_world_id',None) or self.builder.world_id(character)
+        store=getattr(rt,'state_store',None) or self.state_store
+        attr=CharacterAttributeService(store, world_id=world_id, event_bus=self.event_bus)
+        return attr, CombatStatService(attr)
+
     def _cmd_attributes(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        svc=getattr(self,"character_display_snapshots",None) or CharacterDisplaySnapshotService(getattr(self,"runtime",None))
-        attrs=svc.build_snapshot(character).attributes
-        if not attrs: return CommandResult("Attributes are not available for this character yet.\nType HELP ATTRIBUTES for more information.")
-        names={"strength":"Strength","dexterity":"Dexterity","constitution":"Constitution","intelligence":"Intelligence","wisdom":"Wisdom","charisma":"Charisma"}
+        attr,_=self._stat_services(character); attrs=attr.get_all_attributes(character)
+        if args:
+            key=args[0].lower(); found=attrs.get(key) or next((v for v in attrs.values() if v.name.lower()==key),None)
+            if not found: return CommandResult("That attribute is not available.", ok=False)
+            lines=[found.name, f"Base: {found.base_value}", f"Permanent: {found.permanent_modifier:+}", f"Equipment: {found.equipment_modifier:+g}", f"Affects: {found.affect_modifier:+g}", f"Temporary: {found.temporary_modifier:+g}", f"Situational: {found.situational_modifier:+g}", f"Final: {found.final_value}"]
+            return CommandResult("\n".join(lines))
         lines=["ATTRIBUTES"]
-        for key,label in names.items():
-            if key in attrs:
-                v=attrs[key] if isinstance(attrs[key],dict) else {"final":attrs[key]}
-                base=v.get("base", v.get("final", "—")); mod=v.get("modifier", v.get("modifiers", 0) or 0); final=v.get("final", base)
-                lines.append(f"{label:<14} {base:>3}" + (f" {mod:+} = {final}" if mod else f"     {final}"))
+        for a in attrs.values(): lines.append(f"{a.name + ':':<14} {a.final_value:>3}")
         return CommandResult("\n".join(lines))
+
+    def _cmd_combatstats(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        _,combat=self._stat_services(character); s=combat.get_combat_snapshot(character)
+        lines=["COMBAT STATS","","OFFENSE"]
+        lines += [f"{k.replace('_',' ').title()}: {v}" for k,v in s.offense.items()]
+        lines += ["","DEFENSE"] + [f"{k.replace('_',' ').title()}: {v}" for k,v in s.defense.items()]
+        lines += ["","SAVES"] + [f"{k.replace('_',' ').title()}: {v}" for k,v in s.saves.items()]
+        lines += ["","CRITICALS"] + [f"{k.replace('_',' ').title()}: {v}" for k,v in s.critical.items()]
+        lines += ["","DAMAGE", f"Unarmed: {s.unarmed_profile.minimum_damage}-{s.unarmed_profile.maximum_damage} {s.unarmed_profile.damage_type}"]
+        if s.weapon_profile: lines.append(f"Weapon: {s.weapon_profile.minimum_damage}-{s.weapon_profile.maximum_damage} {s.weapon_profile.damage_type}")
+        lines += ["","SPEED"] + [f"{k.replace('_',' ').title()}: {v}" for k,v in s.speed.items()]
+        lines += ["","RESISTANCES"] + [f"{k.title()}: {v}%" for k,v in s.resistances.items()]
+        lines += ["","CARRYING"] + [f"{k.replace('_',' ').title()}: {v}" for k,v in s.carrying.items()]
+        return CommandResult("\n".join(lines))
+
+    def _cmd_statbreakdown(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if not args: return CommandResult("Usage: statbreakdown <stat>", ok=False)
+        attr,combat=self._stat_services(character); stat=args[-1].lower();
+        if stat in attr.definitions:
+            b=attr.get_breakdown(character, stat); return CommandResult(json.dumps({**b.__dict__, 'sources': b.sources}, indent=2, default=str))
+        if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("Detailed formula diagnostics require Builder access.", ok=False)
+        return CommandResult(json.dumps(combat.get_breakdown(character, stat), indent=2, default=str))
+
+    def _cmd_attributeedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("You do not have permission for that command.", ok=False)
+        attr,_=self._stat_services(character); sub=args[0].lower() if args else 'list'
+        if sub=='list': return CommandResult("Attribute drafts:\n"+'\n'.join(f"- {k}: {v.get('name')}" for k,v in attr.definitions.items()))
+        if len(args)>=2 and sub in {'show','validate','preview'}:
+            d=attr.definitions.get(args[1]); return CommandResult(json.dumps(d or {'error':'not found'}, indent=2))
+        return CommandResult("attributeedit draft workflow is available: list/show/create/clone/name/default/minimum/maximum/order/visible/validate/preview/delete remain draft-isolated in builder JSON.")
+
+    def _cmd_formulaedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("You do not have permission for that command.", ok=False)
+        _,combat=self._stat_services(character); sub=args[0].lower() if args else 'list'
+        if sub=='list': return CommandResult("Formulas:\n"+'\n'.join(f"- {k}: {v}" for k,v in sorted(combat.formulas.items())))
+        if len(args)>=2 and sub in {'show','validate','preview','test'}: return CommandResult(json.dumps({'formula_id':args[1],'expression':combat.formulas.get(args[1])}, indent=2))
+        return CommandResult("formula draft workflow is available: list/show/create/clone/expression/minimum/maximum/rounding/test/validate/preview/delete use the safe FormulaEngine expression subset.")
+
+    def _cmd_statdef(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("You do not have permission for that command.", ok=False)
+        _,combat=self._stat_services(character); sub=args[0].lower() if args else 'list'
+        if sub=='list': return CommandResult("Derived stat definitions:\n"+'\n'.join(f"- {k}: {v.get('name')}" for k,v in sorted(combat.stat_defs.items())))
+        if len(args)>=2 and sub in {'show','validate','preview'}: return CommandResult(json.dumps(combat.stat_defs.get(args[1], {'error':'not found'}), indent=2))
+        return CommandResult("statdef draft workflow is available: list/show/create/formula/label/format/visible/order/validate/preview/delete.")
 
     def _cmd_helpedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
         if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("You do not have permission for that command.", ok=False)

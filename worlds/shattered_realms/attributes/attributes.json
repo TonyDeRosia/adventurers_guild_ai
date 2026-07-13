@@ -1,0 +1,142 @@
+{
+  "attributes": [
+    {
+      "attribute_id": "strength",
+      "name": "Strength",
+      "short_name": "STR",
+      "description": "Physical power, melee force, and carrying capacity.",
+      "default_value": 10,
+      "minimum_value": 1,
+      "maximum_value": 30,
+      "creation_minimum": 3,
+      "creation_maximum": 18,
+      "display_order": 1,
+      "display_group": "primary",
+      "semantic_role": "physical_power",
+      "enabled": true,
+      "player_visible": true,
+      "npc_visible": true,
+      "formula_variable": "strength",
+      "tags": [
+        "primary",
+        "phase13c3a"
+      ],
+      "metadata": {}
+    },
+    {
+      "attribute_id": "dexterity",
+      "name": "Dexterity",
+      "short_name": "DEX",
+      "description": "Agility, coordination, accuracy, evasion, and initiative.",
+      "default_value": 10,
+      "minimum_value": 1,
+      "maximum_value": 30,
+      "creation_minimum": 3,
+      "creation_maximum": 18,
+      "display_order": 2,
+      "display_group": "primary",
+      "semantic_role": "agility",
+      "enabled": true,
+      "player_visible": true,
+      "npc_visible": true,
+      "formula_variable": "dexterity",
+      "tags": [
+        "primary",
+        "phase13c3a"
+      ],
+      "metadata": {}
+    },
+    {
+      "attribute_id": "constitution",
+      "name": "Constitution",
+      "short_name": "CON",
+      "description": "Toughness, health, stamina, and physical saves.",
+      "default_value": 10,
+      "minimum_value": 1,
+      "maximum_value": 30,
+      "creation_minimum": 3,
+      "creation_maximum": 18,
+      "display_order": 3,
+      "display_group": "primary",
+      "semantic_role": "endurance",
+      "enabled": true,
+      "player_visible": true,
+      "npc_visible": true,
+      "formula_variable": "constitution",
+      "tags": [
+        "primary",
+        "phase13c3a"
+      ],
+      "metadata": {}
+    },
+    {
+      "attribute_id": "intelligence",
+      "name": "Intelligence",
+      "short_name": "INT",
+      "description": "Reasoning, mana capacity, and spell scaling hooks.",
+      "default_value": 10,
+      "minimum_value": 1,
+      "maximum_value": 30,
+      "creation_minimum": 3,
+      "creation_maximum": 18,
+      "display_order": 4,
+      "display_group": "primary",
+      "semantic_role": "reasoning",
+      "enabled": true,
+      "player_visible": true,
+      "npc_visible": true,
+      "formula_variable": "intelligence",
+      "tags": [
+        "primary",
+        "phase13c3a"
+      ],
+      "metadata": {}
+    },
+    {
+      "attribute_id": "wisdom",
+      "name": "Wisdom",
+      "short_name": "WIS",
+      "description": "Judgment, healing, mental and magical saves.",
+      "default_value": 10,
+      "minimum_value": 1,
+      "maximum_value": 30,
+      "creation_minimum": 3,
+      "creation_maximum": 18,
+      "display_order": 5,
+      "display_group": "primary",
+      "semantic_role": "judgment",
+      "enabled": true,
+      "player_visible": true,
+      "npc_visible": true,
+      "formula_variable": "wisdom",
+      "tags": [
+        "primary",
+        "phase13c3a"
+      ],
+      "metadata": {}
+    },
+    {
+      "attribute_id": "charisma",
+      "name": "Charisma",
+      "short_name": "CHA",
+      "description": "Presence, leadership, morale, and social hooks.",
+      "default_value": 10,
+      "minimum_value": 1,
+      "maximum_value": 30,
+      "creation_minimum": 3,
+      "creation_maximum": 18,
+      "display_order": 6,
+      "display_group": "primary",
+      "semantic_role": "social",
+      "enabled": true,
+      "player_visible": true,
+      "npc_visible": true,
+      "formula_variable": "charisma",
+      "tags": [
+        "primary",
+        "phase13c3a"
+      ],
+      "metadata": {}
+    }
+  ]
+}
