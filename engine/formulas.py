@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from time import perf_counter
+import ast, math
 from typing import Any
 from uuid import uuid4
 
@@ -201,6 +202,31 @@ class FormulaEngine:
         for mod in self.modifiers.stacked_for_stat(stat):
             before = value; value = self._apply(value, mod); applied.append(asdict(mod)); trace.append({"step": "modifier", "modifier_id": mod.id, "operation": mod.operation, "value": mod.value, "before": before, "after": value})
         return FormulaResult(value, formula_id, applied, trace, perf_counter() - start, {"engine_generation": self.generation, "formula_metadata": asdict(formula) if formula else None, "variables": variables or {}})
+
+
+    def evaluate_expression(self, formula_id: str, expression: str, variables: dict[str, Any] | None = None, *, base_value: Any = 0) -> FormulaResult:
+        """Evaluate a Builder-authored arithmetic expression through FormulaEngine authority.
+
+        This is the one safe expression path used by canonical character stats;
+        it accepts numeric variables, arithmetic, comparisons, boolean operators,
+        ternary expressions, and a tiny deterministic function set. Unknown
+        variables resolve to 0 so older formula drafts remain forward compatible.
+        """
+        start = perf_counter(); vars = dict(variables or {}); vars.setdefault("base", base_value)
+        trace = [{"step":"expression_lookup","formula_id":formula_id,"expression":expression},{"step":"variables","variables":dict(vars)}]
+        value = self._safe_eval_expression(expression or "0", vars)
+        return FormulaResult(value, formula_id, [], trace + [{"step":"expression_result","value":value}], perf_counter() - start, {"engine_generation": self.generation, "variables": vars})
+
+    _EXPR_FUNCS = {"min": min, "max": max, "floor": math.floor, "ceil": math.ceil, "round": round, "abs": abs, "clamp": lambda x, a, b: max(a, min(x, b))}
+    _EXPR_NODES = (ast.Expression, ast.BinOp, ast.UnaryOp, ast.Constant, ast.Name, ast.Load, ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod, ast.Pow, ast.USub, ast.UAdd, ast.IfExp, ast.Compare, ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.BoolOp, ast.And, ast.Or, ast.Call)
+
+    def _safe_eval_expression(self, expression: str, variables: dict[str, Any]) -> float:
+        tree = ast.parse(expression or "0", mode="eval")
+        for node in ast.walk(tree):
+            if not isinstance(node, self._EXPR_NODES): raise ValueError(f"unsafe formula node: {type(node).__name__}")
+            if isinstance(node, ast.Call) and (not isinstance(node.func, ast.Name) or node.func.id not in self._EXPR_FUNCS): raise ValueError("unsupported formula function")
+            if isinstance(node, ast.Name) and node.id not in self._EXPR_FUNCS and node.id not in variables: variables[node.id] = 0
+        return float(eval(compile(tree, "<formula>", "eval"), {"__builtins__": {}, **self._EXPR_FUNCS}, variables))
 
     def _formula_for(self, actor: Any, stat: str) -> str:
         cache = getattr(actor, "derived_statistics_cache", {}) or {}

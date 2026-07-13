@@ -1716,10 +1716,11 @@ class MudCommandEngine:
         rt=getattr(self,"runtime",None); world_id=getattr(rt,'active_world_id',None) or self.builder.world_id(character)
         store=getattr(rt,'state_store',None) or self.state_store
         attr=CharacterAttributeService(store, world_id=world_id, event_bus=self.event_bus)
+        attr.runtime=rt
         return attr, CombatStatService(attr)
 
     def _cmd_attributes(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        attr,_=self._stat_services(character); attrs=attr.get_all_attributes(character)
+        attr,_=self._stat_services(character); attrs=attr.get_all_attributes(character, {"runtime": getattr(self,"runtime",None)})
         if args:
             key=args[0].lower(); found=attrs.get(key) or next((v for v in attrs.values() if v.name.lower()==key),None)
             if not found: return CommandResult("That attribute is not available.", ok=False)
@@ -1730,7 +1731,7 @@ class MudCommandEngine:
         return CommandResult("\n".join(lines))
 
     def _cmd_combatstats(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        _,combat=self._stat_services(character); s=combat.get_combat_snapshot(character)
+        _,combat=self._stat_services(character); s=combat.get_combat_snapshot(character, {"runtime": getattr(self,"runtime",None)})
         lines=["COMBAT STATS","","OFFENSE"]
         lines += [f"{k.replace('_',' ').title()}: {v}" for k,v in s.offense.items()]
         lines += ["","DEFENSE"] + [f"{k.replace('_',' ').title()}: {v}" for k,v in s.defense.items()]
