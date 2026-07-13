@@ -599,6 +599,26 @@
       "tags": [
         "phase13c3a"
       ]
+    },
+    {
+      "stat_id": "critical_damage",
+      "name": "Critical Damage",
+      "short_name": "CRIT_DMG",
+      "description": "Canonical critical amount multiplier used by melee, spell, and healing criticals where policy permits.",
+      "formula_id": "critical_damage",
+      "base_value": 0,
+      "minimum_value": 1,
+      "maximum_value": 5,
+      "rounding": "round",
+      "display_format": "multiplier",
+      "display_order": 19,
+      "display_group": "criticals",
+      "semantic_role": "critical_damage",
+      "enabled": true,
+      "player_visible": true,
+      "tags": [
+        "phase13c3b3"
+      ]
     }
   ],
   "resistance_types": [
