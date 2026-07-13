@@ -46,7 +46,101 @@ def init_combat_runtime_schema(db_path: str | Path) -> None:
         con.execute("UPDATE combat_death_transactions SET lifecycle_id=COALESCE(lifecycle_id, json_extract(metadata_json, '$.lifecycle_id'), actor_id || ':legacy') WHERE lifecycle_id IS NULL OR lifecycle_id=''")
         con.execute("DROP INDEX IF EXISTS idx_combat_death_actor_once")
         con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_combat_death_actor_lifecycle_once ON combat_death_transactions(world_id,actor_id,lifecycle_id)")
+        con.execute("""CREATE TABLE IF NOT EXISTS combat_action_requests(action_id TEXT PRIMARY KEY,status TEXT,result_json TEXT,created_at TEXT,updated_at TEXT)""")
         con.commit()
+
+
+@dataclass(frozen=True)
+class LifecycleTransitionResult:
+    ok: bool
+    actor_id: str
+    character_id: str = ""
+    transition_id: str = ""
+    transition_type: str = "death"
+    trigger_action_id: str = ""
+    previous_state: str = "alive"
+    new_state: str = "dead"
+    already_processed: bool = False
+    defeat_processed: bool = False
+    death_processed: bool = False
+    corpse_processed: bool = False
+    rewards_processed: bool = False
+    respawn_processed: bool = False
+    combat_end_processed: bool = False
+    corpse_id: str = ""
+    respawn_id: str = ""
+    reward_claim_id: str = ""
+    events: tuple[str, ...] = ()
+    reason_code: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+@dataclass(frozen=True)
+class CombatActionRequest:
+    action_id: str
+    round_id: str = ""
+    world_id: str = ""
+    zone_id: str = ""
+    area_id: str = ""
+    room_id: str = ""
+    attacker_id: str = ""
+    defender_id: str = ""
+    ability_id: str = ""
+    attack_kind: str = "basic_attack"
+    damage_type: str = "physical"
+    base_amount: int = 0
+    formula_id: str = ""
+    coefficient: float = 1.0
+    requires_hit_roll: bool = True
+    can_critical: bool = True
+    critical_type: str = "weapon"
+    armor_applies: bool = True
+    resistance_applies: bool = True
+    save_definition: dict[str, Any] = field(default_factory=dict)
+    resource_costs: tuple[dict[str, Any], ...] = ()
+    source_type: str = "runtime"
+    source_id: str = ""
+    distance: int = 0
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+class RuntimeLifecycleService:
+    def __init__(self, combat_runtime: "CombatRuntimeService"):
+        self.combat = combat_runtime; self.runtime = combat_runtime.runtime; self.db_path = combat_runtime.db_path
+        self.init_schema()
+    def init_schema(self):
+        with sqlite3.connect(self.db_path) as con:
+            con.execute("""CREATE TABLE IF NOT EXISTS actor_lifecycle_transitions(transition_id TEXT PRIMARY KEY,world_id TEXT,room_id TEXT,actor_id TEXT,character_id TEXT,transition_type TEXT,trigger_action_id TEXT,previous_state TEXT,new_state TEXT,defeat_status TEXT DEFAULT 'pending',death_status TEXT DEFAULT 'pending',corpse_status TEXT DEFAULT 'pending',reward_status TEXT DEFAULT 'pending',respawn_status TEXT DEFAULT 'pending',combat_end_status TEXT DEFAULT 'pending',corpse_id TEXT,reward_claim_id TEXT,respawn_id TEXT,created_at TEXT,updated_at TEXT,metadata_json TEXT)""")
+            for col, ddl in {'world_id':'TEXT','room_id':'TEXT','transition_id':'TEXT','actor_id':'TEXT','character_id':'TEXT','transition_type':'TEXT','trigger_action_id':'TEXT','previous_state':'TEXT','new_state':'TEXT','defeat_status':"TEXT DEFAULT 'pending'",'death_status':"TEXT DEFAULT 'pending'",'corpse_status':"TEXT DEFAULT 'pending'",'reward_status':"TEXT DEFAULT 'pending'",'respawn_status':"TEXT DEFAULT 'pending'",'combat_end_status':"TEXT DEFAULT 'pending'",'corpse_id':'TEXT','reward_claim_id':'TEXT','respawn_id':'TEXT','created_at':'TEXT','updated_at':'TEXT','metadata_json':'TEXT'}.items():
+                _ensure_column(con,'actor_lifecycle_transitions',col,ddl)
+            con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_actor_lifecycle_once ON actor_lifecycle_transitions(world_id,actor_id,transition_id)")
+    def process_defeat_or_death(self, *, encounter_id:str, attacker:Actor, defender:Actor, trigger_action_id:str='') -> LifecycleTransitionResult:
+        now=datetime.now(timezone.utc).isoformat(); world=self.runtime.active_world_id or ''; room=defender.identity.current_location
+        transition_id='life_'+uuid.uuid5(uuid.NAMESPACE_URL, f"{world}:{defender.actor_id}:{trigger_action_id or defender.lifecycle_profile.get('lifecycle_id') or defender.actor_id}").hex
+        with sqlite3.connect(self.db_path, timeout=30) as con:
+            con.row_factory=sqlite3.Row; con.execute('BEGIN IMMEDIATE')
+            inserted=con.execute("INSERT OR IGNORE INTO actor_lifecycle_transitions(transition_id,world_id,room_id,actor_id,character_id,transition_type,trigger_action_id,previous_state,new_state,created_at,updated_at,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(transition_id,world,room,defender.actor_id,defender.actor_id.split(':',1)[1] if defender.actor_id.startswith('character:') else '', 'death','' if not trigger_action_id else trigger_action_id,defender.lifecycle_state or 'alive','dead',now,now,json.dumps({'encounter_id':encounter_id,'killer_actor_id':attacker.actor_id}))).rowcount
+            row=con.execute('SELECT * FROM actor_lifecycle_transitions WHERE transition_id=?',(transition_id,)).fetchone(); con.commit()
+        already = not bool(inserted) and row['corpse_status']=='completed' and row['reward_status']=='completed' and row['respawn_status']=='completed' and row['combat_end_status']=='completed'
+        events=[]; corpse_id=row['corpse_id'] or ''; reward_id=row['reward_claim_id'] or ('reward_'+transition_id); respawn_id=row['respawn_id'] or ('respawn_'+transition_id)
+        self.combat._defeat(encounter_id, defender.actor_id); events.append('combat_participant_defeated')
+        if defender.actor_id.startswith('entity:'):
+            defender.lifecycle_state='dead'; defender.resources.health=0; self.combat.persist_actor(defender)
+            if row['corpse_status']!='completed':
+                corpse=self.runtime.create_corpse(defender.actor_id.split(':',1)[1], source_system='runtime_lifecycle', death_id=transition_id, killer_actor_id=attacker.actor_id)
+                corpse_id=str(corpse.get('entity_id') or corpse.get('instance_id') or '')
+                with sqlite3.connect(self.db_path) as con: con.execute("UPDATE actor_lifecycle_transitions SET corpse_status='completed',corpse_id=?,death_status='completed',defeat_status='completed',updated_at=? WHERE transition_id=?",(corpse_id,now,transition_id))
+                events += ['actor_died','corpse_created']
+            if row['reward_status']!='completed':
+                with sqlite3.connect(self.db_path) as con: con.execute("UPDATE actor_lifecycle_transitions SET reward_status='completed',reward_claim_id=?,updated_at=? WHERE transition_id=?",(reward_id,now,transition_id))
+                events.append('reward_claim_created')
+            if row['respawn_status']!='completed':
+                with sqlite3.connect(self.db_path) as con: con.execute("UPDATE actor_lifecycle_transitions SET respawn_status='completed',respawn_id=?,updated_at=? WHERE transition_id=?",(respawn_id,now,transition_id))
+                events.append('respawn_scheduled')
+        else:
+            with sqlite3.connect(self.db_path) as con: con.execute("UPDATE actor_lifecycle_transitions SET defeat_status='completed',death_status='completed',corpse_status='completed',reward_status='completed',respawn_status='completed',updated_at=? WHERE transition_id=?",(now,transition_id))
+        self.combat.end_if_finished(encounter_id)
+        with sqlite3.connect(self.db_path) as con: con.execute("UPDATE actor_lifecycle_transitions SET combat_end_status='completed',updated_at=? WHERE transition_id=?",(now,transition_id))
+        for ev in events: self.combat._publish(ev, {'transition_id':transition_id,'actor_id':defender.actor_id,'world_id':world,'room_id':room})
+        return LifecycleTransitionResult(True, defender.actor_id, defender.actor_id.split(':',1)[1] if defender.actor_id.startswith('character:') else '', transition_id, trigger_action_id=trigger_action_id, already_processed=already, defeat_processed=True, death_processed=True, corpse_processed=True, rewards_processed=True, respawn_processed=True, combat_end_processed=True, corpse_id=corpse_id, respawn_id=respawn_id, reward_claim_id=reward_id, events=tuple(events), metadata={'encounter_id':encounter_id})
 
 @dataclass
 class CombatRuntimeResult:
@@ -68,6 +162,8 @@ class CombatRuntimeService:
         self.engine = CombatEngine(FormulaEngine(), content=CombatContentRegistry(getattr(runtime, 'active_world', None)), combat_stats=runtime.combat_stat_service, event_bus=self.event_bus)
         self.engine.runtime = runtime
         self.engine.resolution.runtime = runtime
+        self.lifecycle = RuntimeLifecycleService(self)
+        self.completed_actions: dict[str, Any] = {}
         if not (self.engine.combat_stats is runtime.combat_stat_service and self.engine.resolution.combat_stats is runtime.combat_stat_service and self.engine.resolution.runtime is runtime):
             raise RuntimeError('Combat runtime invariant failed: canonical combat services are not wired to MudRuntime')
         self.cancel_active_encounters_on_restart()
@@ -348,8 +444,28 @@ class CombatRuntimeService:
         ent=self.runtime.find_entity(actor_id.split(':',1)[1]) if actor_id.startswith('entity:') else None
         return self.actor_from_entity(ent) if ent else None
 
-    def _execute_attack(self,eid:str,attacker:Actor,defender:Actor,opening:bool=False)->CombatRuntimeResult:
-        wt=self.world_time(); self._publish('combat_action_started',{'encounter_id':eid,'actor_id':attacker.actor_id,'target_actor_id':defender.actor_id,'action_type':'basic_attack','world_time':wt})
+    def submit_action(self, request: CombatActionRequest) -> Any:
+        forbidden={'hit','critical','final_damage','health_after','forced_success','ignore_save','ignore_cooldown','ignore_cost'}
+        if forbidden.intersection(request.metadata):
+            self._publish('combat_action_validation_denied', {'action_id':request.action_id,'reason':'controller_outcome_fields_denied','fields':sorted(forbidden.intersection(request.metadata))})
+            return CombatRuntimeResult(False, ['That combat action was denied.'])
+        with sqlite3.connect(self.db_path, timeout=30) as con:
+            con.row_factory=sqlite3.Row; con.execute('BEGIN IMMEDIATE')
+            prior=con.execute('SELECT result_json FROM combat_action_requests WHERE action_id=? AND status=?',(request.action_id,'completed')).fetchone()
+            if prior:
+                con.commit(); return CombatRuntimeResult(True, ['Duplicate action ignored.'])
+            con.execute('INSERT OR IGNORE INTO combat_action_requests(action_id,status,created_at,updated_at) VALUES(?,?,?,?)',(request.action_id,'claimed',datetime.now(timezone.utc).isoformat(),datetime.now(timezone.utc).isoformat()))
+            con.commit()
+        attacker=self._load_actor(request.attacker_id); defender=self._load_actor(request.defender_id)
+        if not attacker or not defender: return CombatRuntimeResult(False, ['Combat action actors are unavailable.'])
+        if attacker.resources.health<=0 or defender.resources.health<=0: return CombatRuntimeResult(False, ['Combat action is no longer valid.'])
+        rr=self._execute_attack_direct(request, attacker, defender)
+        with sqlite3.connect(self.db_path) as con: con.execute('UPDATE combat_action_requests SET status=?,result_json=?,updated_at=? WHERE action_id=?',('completed',json.dumps(rr.__dict__, default=str),datetime.now(timezone.utc).isoformat(),request.action_id))
+        return rr
+
+    def _execute_attack_direct(self, request: CombatActionRequest, attacker:Actor, defender:Actor)->CombatRuntimeResult:
+        eid=request.round_id or self.find_actor_encounter(attacker.actor_id)
+        wt=self.world_time(); self._publish('combat_action_started',{'action_id':request.action_id,'encounter_id':eid,'actor_id':attacker.actor_id,'target_actor_id':defender.actor_id,'action_type':'basic_attack','world_time':wt})
         res=self.engine.resolve_attack(attacker,defender,room_id=attacker.identity.current_location,world_time=wt); self.last_resolution={'attacker_id':attacker.actor_id,'defender_id':defender.actor_id,'hit':res.hit,'damage':res.damage_event.final_damage if res.damage_event else 0,'trace':res.trace,'messages':res.messages}; self.persist_actor(attacker); self.persist_actor(defender)
         dmg=res.damage_event.final_damage if res.damage_event else 0; outcome='hit' if res.hit else 'miss'
         with sqlite3.connect(self.db_path) as con:
@@ -368,9 +484,13 @@ class CombatRuntimeService:
             msgs.append(msg)
             self._broadcast_room(eid, attacker.identity.current_location, msg, category='condition_changed')
         if defender.resources.health<=0:
-            death = self._handle_lethal_damage(eid, attacker, defender)
-            msgs.extend(death.get('messages', []))
+            life = self.lifecycle.process_defeat_or_death(encounter_id=eid, attacker=attacker, defender=defender, trigger_action_id=request.action_id)
+            self.last_resolution['lifecycle_result'] = life.__dict__
+            msgs.append(f'{defender.identity.name} collapses and dies.')
         return CombatRuntimeResult(True,msgs,eid)
+
+    def _execute_attack(self,eid:str,attacker:Actor,defender:Actor,opening:bool=False)->CombatRuntimeResult:
+        return self.submit_action(CombatActionRequest(action_id="act_"+uuid.uuid4().hex, round_id=eid, world_id=self.runtime.active_world_id or "", room_id=attacker.identity.current_location, attacker_id=attacker.actor_id, defender_id=defender.actor_id, source_type="opening" if opening else "round"))
 
     def _round(self,eid):
         with sqlite3.connect(self.db_path) as con: r=con.execute('SELECT current_round FROM combat_encounters WHERE encounter_id=?',(eid,)).fetchone(); return int(r[0] if r else 0)

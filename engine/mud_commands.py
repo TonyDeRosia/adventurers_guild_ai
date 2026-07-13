@@ -28,6 +28,7 @@ from engine.mud_displays import semantic, DisplayDocument, DisplayIntent, Displa
 from engine.actors import actor_from_runtime_character
 from engine.formulas import FormulaEngine
 from engine.character_stats import CharacterAttributeService, CombatStatService, _load_json
+from engine.builder_content_editor import BuilderContentEditor
 from engine.score_renderer import ActorScoreRenderer
 from engine.command_registry import CommandRegistry
 from smart_mud.builder import BuilderWorkspace
@@ -134,6 +135,9 @@ DETERMINISTIC_COMMANDS = {
     "statdef": {"category": "builder", "admin": True},
     "resistanceedit": {"category": "builder", "admin": True},
     "encumbranceedit": {"category": "builder", "admin": True},
+    "postureedit": {"category": "builder", "admin": True},
+    "rangeedit": {"category": "builder", "admin": True},
+    "combatmessage": {"category": "builder", "admin": True},
     "target": {"category": "combat", "admin": False},
     "history": {"category": "info", "admin": False},
     
@@ -323,9 +327,13 @@ class MudCommandEngine:
             "statbreakdown": self._cmd_statbreakdown,
             "attributeedit": self._cmd_attributeedit,
             "formula": self._cmd_formulaedit,
+            "formulaedit": self._cmd_formulaedit,
             "statdef": self._cmd_statdef,
             "resistanceedit": self._cmd_resistanceedit,
             "encumbranceedit": self._cmd_encumbranceedit,
+            "postureedit": self._cmd_postureedit,
+            "rangeedit": self._cmd_rangeedit,
+            "combatmessage": self._cmd_combatmessage,
             "commands": self._cmd_commands,
             "look": self._cmd_look,
             "hide": self._cmd_perception,
@@ -1799,48 +1807,54 @@ class MudCommandEngine:
         if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("Detailed formula diagnostics require Builder access.", ok=False)
         return CommandResult(json.dumps(combat.get_breakdown(character, stat), indent=2, default=str))
 
-    def _cmd_attributeedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
+
+    def _generic_builder_edit(self, character: Any, args: list[str], spec: tuple[str,str,str], label: str) -> CommandResult:
         if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("You do not have permission for that command.", ok=False)
-        attr,_=self._stat_services(character); sub=args[0].lower() if args else 'list'
-        if sub=='list': return CommandResult("Attribute drafts:\n"+'\n'.join(f"- {k}: {v.get('name')}" for k,v in attr.definitions.items()))
-        if len(args)>=2 and sub in {'show','validate','preview'}:
-            d=attr.definitions.get(args[1]); return CommandResult(json.dumps(d or {'error':'not found'}, indent=2))
-        return CommandResult("attributeedit draft workflow is available: list/show/create/clone/name/default/minimum/maximum/order/visible/validate/preview/delete remain draft-isolated in builder JSON.")
+        attr,_=self._stat_services(character); ed=BuilderContentEditor(attr.world_root,*spec); sub=args[0].lower() if args else 'list'
+        try:
+            if sub=='list':
+                data=ed.load(); recs=ed.records(data); vals=list(recs.values()) if isinstance(recs,dict) else list(recs)
+                return CommandResult(label+" drafts:\n"+"\n".join(f"- {(r.get(spec[2]) or r.get('id')) if isinstance(r,dict) else k}: {(r.get('name', r.get('expression','')) if isinstance(r,dict) else r)}" for k,r in ((recs.items() if isinstance(recs,dict) else [(str(i),v) for i,v in enumerate(vals)]))))
+            if sub in {'show','preview','validate'} and len(args)>=2:
+                rec=ed.find(args[1]); return CommandResult(json.dumps(ed.validate(args[1]) if sub=='validate' else (rec or {'error':'not found'}), indent=2), ok=bool(rec) or sub=='validate')
+            if sub=='create' and len(args)>=2: return CommandResult(json.dumps(ed.create(args[1]), indent=2))
+            if sub=='clone' and len(args)>=3: return CommandResult(json.dumps(ed.clone(args[1],args[2]), indent=2))
+            if sub=='delete' and len(args)>=2: ed.delete(args[1]); return CommandResult(f"Deleted draft {args[1]}.")
+            if len(args)>=3 and sub in {'name','short','description','default','minimum','maximum','creationmin','creationmax','order','group','role','visible','enable','expression','rounding','format','formula','unit'}:
+                fmap={'short':'short_name','default':'default_value','minimum':'minimum_value','maximum':'maximum_value','creationmin':'creation_minimum','creationmax':'creation_maximum','enable':'enabled'}
+                val=' '.join(args[2:]);
+                if val.lower() in {'on','true'}: val=True
+                elif val.lower() in {'off','false'}: val=False
+                elif re.fullmatch(r'-?\d+(\.\d+)?', str(val)): val=float(val) if '.' in str(val) else int(val)
+                return CommandResult(json.dumps(ed.set_field(args[1], fmap.get(sub,sub), val), indent=2))
+            if sub in {'tag','variable'} and len(args)>=4 and args[2] in {'add','remove'}:
+                field='tags' if sub=='tag' else 'variables'; return CommandResult(json.dumps(ed.list_value(args[1],field,args[3],args[2]=='add'), indent=2))
+            return CommandResult(f"Usage: {label.lower()} list/show/create/clone/set/delete/validate/preview", ok=False)
+        except Exception as e: return CommandResult(str(e), ok=False)
+
+    def _cmd_attributeedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        return self._generic_builder_edit(character,args,('attributes/attributes.json','attributes','attribute_id'),'Attribute')
 
     def _cmd_formulaedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("You do not have permission for that command.", ok=False)
-        _,combat=self._stat_services(character); sub=args[0].lower() if args else 'list'
-        if sub=='list': return CommandResult("Formulas:\n"+'\n'.join(f"- {k}: {v}" for k,v in sorted(combat.formulas.items())))
-        if len(args)>=2 and sub in {'show','validate','preview','test'}: return CommandResult(json.dumps({'formula_id':args[1],'expression':combat.formulas.get(args[1])}, indent=2))
-        return CommandResult("formula draft workflow is available: list/show/create/clone/expression/minimum/maximum/rounding/test/validate/preview/delete use the safe FormulaEngine expression subset.")
+        return self._generic_builder_edit(character,args,('formulas/stat_formulas.json','formulas','formula_id'),'Formula')
 
     def _cmd_statdef(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("You do not have permission for that command.", ok=False)
-        _,combat=self._stat_services(character); sub=args[0].lower() if args else 'list'
-        if sub=='list': return CommandResult("Derived stat definitions:\n"+'\n'.join(f"- {k}: {v.get('name')}" for k,v in sorted(combat.stat_defs.items())))
-        if len(args)>=2 and sub in {'show','validate','preview'}: return CommandResult(json.dumps(combat.stat_defs.get(args[1], {'error':'not found'}), indent=2))
-        return CommandResult("statdef draft workflow is available: list/show/create/formula/label/format/visible/order/validate/preview/delete.")
-
+        return self._generic_builder_edit(character,args,('formulas/derived_stats.json','derived_stats','stat_id'),'Statdef')
 
     def _cmd_resistanceedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("You do not have permission for that command.", ok=False)
-        _,combat=self._stat_services(character); sub=args[0].lower() if args else 'list'
-        data=_load_json(combat.world_root/'formulas/derived_stats.json',{})
-        types=list(data.get('resistance_types',[]))
-        if sub=='list': return CommandResult("Resistance type drafts:\n"+"\n".join(f"- {t}" for t in types))
-        if sub in {'show','validate'} and len(args)>=2: return CommandResult(json.dumps({'resistance_id':args[1], 'exists':args[1] in types}, indent=2))
-        return CommandResult("resistanceedit draft workflow supports list/show/create/name/description/order/visible/enable/validate/delete; mutations are draft-isolated for transactional stats publish.")
+        return self._generic_builder_edit(character,args,('formulas/derived_stats.json','resistance_types','id'),'Resistance')
 
     def _cmd_encumbranceedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("You do not have permission for that command.", ok=False)
-        _,combat=self._stat_services(character); sub=args[0].lower() if args else 'list'
-        thresholds=dict(getattr(combat,'thresholds',{}) or {})
-        if sub=='list': return CommandResult("Encumbrance threshold drafts:\n"+"\n".join(f"- {k}: {v}%" for k,v in sorted(thresholds.items(), key=lambda kv:kv[1])))
-        if sub in {'validate','preview'}:
-            vals=[v for _,v in sorted(thresholds.items(), key=lambda kv:kv[1])]
-            ok=vals==sorted(vals) and len(vals)==len(set(vals))
-            return CommandResult(json.dumps({'ok':ok,'thresholds':thresholds,'rule':'deterministic ascending unique percentages'}, indent=2), ok=ok)
-        return CommandResult("encumbranceedit draft workflow supports list/set/delete/validate/preview; publish is transactional with the stat-system unit.")
+        return self._generic_builder_edit(character,args,('formulas/derived_stats.json','encumbrance_thresholds','id'),'Encumbrance')
+
+    def _cmd_postureedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        return self._generic_builder_edit(character,args,('combat/postures.json','postures','posture_id'),'Posture')
+
+    def _cmd_rangeedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        return self._generic_builder_edit(character,args,('combat/range_rules.json','range_rules','id'),'Range')
+
+    def _cmd_combatmessage(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        return self._generic_builder_edit(character,args,('combat/combat_messages.json','messages','message_id'),'Combatmessage')
 
     def _cmd_helpedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
         if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("You do not have permission for that command.", ok=False)
@@ -2823,6 +2837,44 @@ class MudCommandEngine:
             return CommandResult("Mob/entity listing is not implemented yet. Mob/entity listing is not fully implemented yet.\nCurrent zone: " + (current_zone or "none") + "\nFuture usage:\nmlist\nmlist all\nmlist zone <zone_id>\nmlist 1500-1599")
         return CommandResult("Object/item listing is not implemented yet. Object/item listing is not fully implemented yet.\nCurrent zone: " + (current_zone or "none") + "\nFuture usage:\nolist\nolist all\nolist zone <zone_id>\nolist 1300-1399")
 
+
+    def _publish_stats(self, character: Any) -> CommandResult:
+        if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("You do not have permission for that command.", ok=False)
+        attr,_=self._stat_services(character); root=attr.world_root
+        pairs=[('builder/attributes/attributes.json','attributes/attributes.json'),('builder/formulas/stat_formulas.json','formulas/stat_formulas.json'),('builder/formulas/derived_stats.json','formulas/derived_stats.json'),('builder/combat/postures.json','combat/postures.json'),('builder/combat/range_rules.json','combat/range_rules.json'),('builder/combat/combat_messages.json','combat/combat_messages.json')]
+        import os, tempfile
+        backups=[]; replaced=[]
+        try:
+            errors=[]
+            for src,_ in pairs:
+                sp=root/src
+                if sp.exists():
+                    try: json.loads(sp.read_text(encoding='utf-8') or '{}')
+                    except Exception as e: errors.append(f"{src}: {e}")
+            if errors: return CommandResult("Builder stats publish failed validation.\n"+"\n".join('- '+e for e in errors), ok=False)
+            for src,dst in pairs:
+                sp=root/src; dp=root/dst
+                if not sp.exists(): continue
+                dp.parent.mkdir(parents=True, exist_ok=True)
+                old=dp.read_bytes() if dp.exists() else None; backups.append((dp,old))
+                fd,tmp=tempfile.mkstemp(dir=str(dp.parent), prefix=dp.name+'.', suffix='.tmp')
+                with os.fdopen(fd,'wb') as f:
+                    data=sp.read_bytes(); f.write(data); f.flush(); os.fsync(f.fileno())
+                os.replace(tmp,dp); replaced.append(str(dst))
+            rt=getattr(self,'runtime',None)
+            if rt and getattr(rt,'attribute_service',None): rt.attribute_service.reload_definitions()
+            if rt and getattr(rt,'combat_stat_service',None): rt.combat_stat_service.reload_definitions()
+            if rt and getattr(rt,'combat_runtime',None): rt.combat_runtime.refresh_content()
+            if getattr(self,'event_bus',None): self.event_bus.publish('stat_definitions_reloaded', {'world_id': getattr(rt,'active_world_id','') if rt else ''}, source_system='builder')
+            return CommandResult("Builder stats publish completed. Active runtime services reloaded where supported.\nPublished: "+", ".join(replaced))
+        except Exception as e:
+            for dp,old in reversed(backups):
+                try:
+                    if old is None and dp.exists(): dp.unlink()
+                    elif old is not None: dp.write_bytes(old)
+                except Exception: pass
+            return CommandResult(f"Builder stats publish failed and rollback was attempted: {e}", ok=False)
+
     def _cmd_builder(self, character: Any, args: list[str], raw: str) -> CommandResult:
         sub = args[0].lower() if args else "status"
         if raw.strip().split()[0].lower() in {"bstatus", "status"}:
@@ -2869,6 +2921,8 @@ class MudCommandEngine:
             res = self.builder.export(character); self.builder.publish("builder_export_completed", character, self.builder.world_id(character), "export", sub, command=raw)
             self.builder.audit(character, self.builder.world_id(character), f"builder {sub}", "export", sub, None, res.data or {})
             return CommandResult(narrative=res.message + "\n" + self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))), ok=res.ok)
+        if sub == "publish" and len(args) >= 2 and args[1].lower() == "stats":
+            return self._publish_stats(character)
         if sub == "publish":
             res = self.builder.publish_drafts(character)
             return CommandResult(narrative=res.message + "\n" + self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))), ok=res.ok)
