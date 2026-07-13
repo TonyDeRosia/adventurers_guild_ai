@@ -514,16 +514,17 @@ def build_abilities_document(rows: list[dict[str, Any]], *, title: str="ABILITIE
     compact = title in {"SKILLS", "SPELLS", "ABILITIES"}
     for r in rows:
         name=str(r.get('name') or r.get('id') or 'Ability').replace('_',' ').title()
-        rank_num=int(r.get('rank') or 1); max_rank=int(r.get('maximum_rank') or 1)
-        rank = f"Rank {rank_num}/{max_rank}" if max_rank and max_rank != 1 else f"Rank {rank_num}"
+        rank_num=int(r.get('rank') or 1)
+        raw_max = r.get('maximum_rank')
+        max_rank = int(raw_max) if raw_max not in (None, '', 0, '0') else 0
+        # A persisted maximum of 100 is a legacy starter/demo fallback, not a canonical
+        # ability cap. Only show authored non-placeholder maxima in compact lists.
+        rank = f"Rank {rank_num}/{max_rank}" if max_rank and max_rank not in {1, 100} else f"Rank {rank_num}"
         out.append(DisplayRow([DisplayCell(name,width=48),DisplayCell(rank,width=17,align='right')], role="character_title"))
         if not compact:
             status=str(r.get('status_text') or r.get('availability_text') or ('Passive' if r.get('passive') else 'Availability unknown.'))
             out.append(DisplayLine(f"Status: {status}", role="character_positive" if status=='Ready' else "warning"))
             out.append(DisplayLine(str(r.get('description') or ''), role="character_value"))
-    if out and compact:
-        sample=str(rows[0].get('name') or rows[0].get('id') or 'skill').replace('_',' ').title()
-        out.append(DisplayDivider(kind="section")); out.append(DisplayLine(f"Type HELP {sample} for detailed information.", role="character_muted"))
     if not out: out=build_empty_display_rows(title.lower(), theme, empty) or [DisplayLine(empty, role=resolve_theme_role(theme, "character_muted"))]
     return build_character_frame_document(DisplayIntent.SKILLS if title=='SKILLS' else DisplayIntent.SPELLS if title=='SPELLS' else DisplayIntent.SYSTEM,title,out,width=70, theme=theme)
 

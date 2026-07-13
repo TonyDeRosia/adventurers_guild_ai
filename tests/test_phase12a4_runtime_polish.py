@@ -18,10 +18,10 @@ def text(rt, cid, command):
 def test_inspection_aliases_and_visible_campfire_lifecycle_persist(tmp_path):
     rt, cid = make_runtime(tmp_path)
 
-    assert "You establish a small campsite here." in text(rt, cid, "set camp")
+    assert "You establish a modest campsite here." in text(rt, cid, "set camp")
     assert "a small campsite" in text(rt, cid, "look")
     assert "You build a small campfire." in text(rt, cid, "build campfire")
-    assert "a small campfire" in text(rt, cid, "look")
+    assert "an unlit campfire" in text(rt, cid, "look")
     assert "Kindling" in text(rt, cid, "look at campfire")
     assert "Kindling" in text(rt, cid, "inspect campfire")
 
@@ -29,11 +29,11 @@ def test_inspection_aliases_and_visible_campfire_lifecycle_persist(tmp_path):
     assert "a lit campfire" in text(rt, cid, "look")
     assert "Warm flames" in text(rt, cid, "examine campfire")
     assert "You extinguish the campfire." in text(rt, cid, "extinguish campfire")
-    assert "an extinguished campfire" in text(rt, cid, "look")
+    assert "a bed of cold ashes" in text(rt, cid, "look")
 
     reloaded = MudRuntime(Path.cwd(), tmp_path, event_bus=EventBus())
     reloaded.load_world("shattered_realms")
-    assert "an extinguished campfire" in text(reloaded, cid, "look")
+    assert "a bed of cold ashes" in text(reloaded, cid, "look")
 
 
 def test_expanded_socials_publish_events(tmp_path):

@@ -231,7 +231,7 @@ class AbilityExecutionService:
             try: in_combat = in_combat or cr.is_actor_in_active_combat(cr.actor_id_for_character(character) if character else actor_id)
             except Exception: pass
         if in_combat and ability_id in {"set_camp","build_campfire","recall"}:
-            return self._validation_result(tr, "BLOCKED_COMBAT", "You cannot do that while fighting." if ability_id != "recall" else "You cannot recall while fighting.", combat_allowed=False)
+            return self._validation_result(tr, "BLOCKED_COMBAT", "You cannot establish a camp while fighting." if ability_id == "set_camp" else ("You cannot do that while fighting." if ability_id != "recall" else "You cannot recall while fighting."), combat_allowed=False)
         room_tags=set(ctx.get("room_tags") or [])
         if str(ctx.get("room_no_recall") or "").lower() in {"1","true","yes"} or "no_recall" in room_tags:
             if ability_id == "recall": return self._validation_result(tr, "BLOCKED_ROOM", "You cannot recall from this place.", room_allowed=False)
@@ -240,13 +240,16 @@ class AbilityExecutionService:
             if not dest: return self._validation_result(tr, "BLOCKED_PREREQUISITE", "No recall destination is configured.", prerequisites=["recall_destination"])
         if ability_id in {"set_camp","build_campfire"} and ("no_camp" in room_tags or str(ctx.get("camping_allowed", "true")).lower() in {"0","false","no"}):
             return self._validation_result(tr, "BLOCKED_ROOM", "You cannot establish a camp here.", room_allowed=False)
-        if ability_id == "build_campfire" and rt and getattr(rt, "survival_needs", None) and getattr(rt.survival_needs, "db_path", None):
+        if ability_id in {"set_camp","build_campfire"} and rt and getattr(rt, "survival_needs", None) and getattr(rt.survival_needs, "db_path", None):
             with sqlite3.connect(rt.survival_needs.db_path) as c:
                 c.row_factory=sqlite3.Row
                 cs=c.execute("SELECT 1 FROM campsite_instances WHERE world_id=? AND created_by_actor_id=? AND room_id=? AND status IN ('active','occupied','abandoned')", (self.world_id, actor_id, room_id)).fetchone()
-                if not cs: return self._validation_result(tr, "BLOCKED_PREREQUISITE", "Requires an established campsite.", prerequisites=["campsite"])
-                cf=c.execute("SELECT 1 FROM campfire_instances WHERE world_id=? AND created_by_actor_id=? AND room_id=? AND status IN ('unlit','lit','low_fuel')", (self.world_id, actor_id, room_id)).fetchone()
-                if cf: return self._validation_result(tr, "BLOCKED_PREREQUISITE", "A campfire is already burning here.", prerequisites=["no_existing_campfire"])
+                if ability_id == "set_camp" and cs:
+                    return self._validation_result(tr, "BLOCKED_PREREQUISITE", "A campsite is already established here.", prerequisites=["no_existing_campsite"])
+                if ability_id == "build_campfire":
+                    if not cs: return self._validation_result(tr, "BLOCKED_PREREQUISITE", "Requires an established campsite.", prerequisites=["campsite"])
+                    cf=c.execute("SELECT 1 FROM campfire_instances WHERE world_id=? AND created_by_actor_id=? AND room_id=? AND status IN ('unlit','lit','low_fuel')", (self.world_id, actor_id, room_id)).fetchone()
+                    if cf: return self._validation_result(tr, "BLOCKED_PREREQUISITE", "A campfire is already burning here.", prerequisites=["no_existing_campfire"])
         return self._validation_result(tr, "READY", "Ready")
     def trace_ability(self, actor_id: str, ability_id: str, target: Any=None, _from_validator: bool=False) -> dict[str, Any]:
         steps=[]; ok=True

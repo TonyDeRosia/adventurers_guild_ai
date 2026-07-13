@@ -33,7 +33,7 @@ def test_recall_camp_and_campfire_runtime_persist(tmp_path):
     rt,cid=make_rt(tmp_path)
     out=text(rt,cid,'cast recall')
     assert 'silver light' in out.lower()
-    assert 'You establish a small campsite here.' in text(rt,cid,'set camp')
+    assert 'You establish a modest campsite here.' in text(rt,cid,'set camp')
     assert 'You build a small campfire.' in text(rt,cid,'build campfire')
     assert 'campfire' in text(rt,cid,'look').lower()
     assert 'Kindling' in text(rt,cid,'look campfire')

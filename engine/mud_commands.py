@@ -617,7 +617,7 @@ class MudCommandEngine:
                     row=c.execute("SELECT campfire_instance_id FROM campfire_instances WHERE room_id=? AND status IN ('unlit','lit','extinguished','low_fuel') ORDER BY created_at DESC LIMIT 1",(rid,)).fetchone()
                 return CommandResult(self._format_campfire_status(svc.trace_campfire(row[0] if row else '')))
             if phrase in {'set camp','make camp','establish camp'}:
-                res=svc.create_campsite(actor_id,'basic_campsite'); msg='You abandon your previous campsite and establish a new one here.' if res.get('replaced_previous') else 'You establish a small campsite here.'; return CommandResult(msg if res.get('ok', True) else 'You cannot establish a campsite here right now.', ok=bool(res.get('ok', True)), state_updates={'render_room': bool(res.get('ok', True))})
+                res=svc.create_campsite(actor_id,'basic_campsite'); msg='You abandon your previous campsite and establish a new one here.' if res.get('replaced_previous') else 'You establish a modest campsite here.'; return CommandResult(msg if res.get('ok', True) else 'You cannot establish a camp here.', ok=bool(res.get('ok', True)), state_updates={'render_room': bool(res.get('ok', True))})
             if phrase in {'break camp','campsite dismantle','dismantle campsite'}:
                 res=svc.dismantle_campsite(actor_id,args[-1] if args and args[-1].startswith('campsite_') else ''); return CommandResult('You dismantle the campsite.' if res.get('ok', True) else 'There is no campsite here to dismantle.', ok=bool(res.get('ok', True)), state_updates={'render_room': bool(res.get('ok', True))})
             if phrase in {'build campfire','make campfire','create campfire'}:
@@ -1851,7 +1851,10 @@ class MudCommandEngine:
                 self.event_bus.publish("movement_succeeded", {"canonical_command":"recall", "character_id": character.id, "current_room_id": old_room, "target_room_id": dest}, source_system="movement", character_id=character.id, room_id=dest)
             return CommandResult(f"{pdata.get('casting_text') or 'You cast Recall.'}\n{pdata.get('arrival_text') or 'You arrive at the recall point.'}", state_updates={"render_room": True})
         if aid == "set_camp":
-            return self._cmd_survival_needs(character, ["camp"], "set camp")
+            created = self._cmd_survival_needs(character, ["camp"], "set camp")
+            if created.ok:
+                created.narrative = "You establish a modest campsite here."
+            return created
         if aid == "build_campfire":
             return self._cmd_survival_needs(character, ["campfire"], "build campfire")
         return CommandResult(res.get("message") or "Ability activated.", ok=True)

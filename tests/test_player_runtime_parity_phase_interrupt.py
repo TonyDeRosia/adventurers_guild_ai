@@ -80,7 +80,7 @@ def test_clean_water_flask_drinks_and_depletes_through_runtime_path(tmp_path):
 def test_multiword_abilities_execute_without_cast_reroute(tmp_path):
     rt, cid = make_runtime(tmp_path)
     skills = output(rt, cid, "skills")
-    assert "Set Camp" in skills and "Status: Ready" in skills
+    assert "Set Camp" in skills and "Rank 1" in skills and "Status:" not in skills
     assert "establish" in output(rt, cid, "set camp").lower()
     assert "small campsite" in output(rt, cid, "look camp").lower()
     assert "campfire" in output(rt, cid, "build campfire").lower()
