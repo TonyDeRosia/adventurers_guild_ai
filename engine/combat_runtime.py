@@ -47,6 +47,7 @@ def init_combat_runtime_schema(db_path: str | Path) -> None:
         con.execute("DROP INDEX IF EXISTS idx_combat_death_actor_once")
         con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_combat_death_actor_lifecycle_once ON combat_death_transactions(world_id,actor_id,lifecycle_id)")
         con.execute("""CREATE TABLE IF NOT EXISTS combat_action_requests(action_id TEXT PRIMARY KEY,status TEXT,result_json TEXT,created_at TEXT,updated_at TEXT)""")
+        con.execute("""CREATE TABLE IF NOT EXISTS character_attributes(character_id TEXT,attribute_id TEXT,base_value INTEGER,permanent_modifier INTEGER,created_at TEXT,updated_at TEXT,source TEXT,metadata_json TEXT,PRIMARY KEY(character_id,attribute_id))""")
         con.commit()
 
 
@@ -101,6 +102,9 @@ class CombatActionRequest:
     source_id: str = ""
     distance: int = 0
     metadata: dict[str, Any] = field(default_factory=dict)
+    parent_action_id: str = ""
+    reaction_chain_id: str = ""
+    reaction_depth: int = 0
 
 class RuntimeLifecycleService:
     def __init__(self, combat_runtime: "CombatRuntimeService"):
@@ -127,7 +131,9 @@ class RuntimeLifecycleService:
             if row['corpse_status']!='completed':
                 corpse=self.runtime.create_corpse(defender.actor_id.split(':',1)[1], source_system='runtime_lifecycle', death_id=transition_id, killer_actor_id=attacker.actor_id)
                 corpse_id=str(corpse.get('entity_id') or corpse.get('instance_id') or '')
-                with sqlite3.connect(self.db_path) as con: con.execute("UPDATE actor_lifecycle_transitions SET corpse_status='completed',corpse_id=?,death_status='completed',defeat_status='completed',updated_at=? WHERE transition_id=?",(corpse_id,now,transition_id))
+                with sqlite3.connect(self.db_path) as con:
+                    con.execute("UPDATE actor_lifecycle_transitions SET corpse_status='completed',corpse_id=?,death_status='completed',defeat_status='completed',updated_at=? WHERE transition_id=?",(corpse_id,now,transition_id))
+                    con.execute("INSERT OR IGNORE INTO combat_death_transactions(death_id,encounter_id,actor_id,killer_actor_id,corpse_entity_id,world_id,room_id,created_world_time,created_at,metadata_json,lifecycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)",(transition_id,encounter_id,defender.actor_id,attacker.actor_id,corpse_id,world,room,self.combat.world_time(),now,json.dumps({'lifecycle_transition_id':transition_id}),str(defender.lifecycle_profile.get('lifecycle_id') or defender.actor_id)))
                 events += ['actor_died','corpse_created']
             if row['reward_status']!='completed':
                 with sqlite3.connect(self.db_path) as con: con.execute("UPDATE actor_lifecycle_transitions SET reward_status='completed',reward_claim_id=?,updated_at=? WHERE transition_id=?",(reward_id,now,transition_id))
@@ -453,29 +459,59 @@ class CombatRuntimeService:
             con.row_factory=sqlite3.Row; con.execute('BEGIN IMMEDIATE')
             prior=con.execute('SELECT result_json FROM combat_action_requests WHERE action_id=? AND status=?',(request.action_id,'completed')).fetchone()
             if prior:
-                con.commit(); return CombatRuntimeResult(True, ['Duplicate action ignored.'])
+                con.commit()
+                try:
+                    data=json.loads(prior['result_json'] or '{}')
+                    return CombatRuntimeResult(bool(data.get('ok', True)), list(data.get('messages') or ['Duplicate action ignored.']), str(data.get('encounter_id') or ''))
+                except Exception:
+                    return CombatRuntimeResult(True, ['Duplicate action ignored.'])
             con.execute('INSERT OR IGNORE INTO combat_action_requests(action_id,status,created_at,updated_at) VALUES(?,?,?,?)',(request.action_id,'claimed',datetime.now(timezone.utc).isoformat(),datetime.now(timezone.utc).isoformat()))
             con.commit()
         attacker=self._load_actor(request.attacker_id); defender=self._load_actor(request.defender_id)
         if not attacker or not defender: return CombatRuntimeResult(False, ['Combat action actors are unavailable.'])
-        if attacker.resources.health<=0 or defender.resources.health<=0: return CombatRuntimeResult(False, ['Combat action is no longer valid.'])
+        if attacker.resources.health<=0: return CombatRuntimeResult(False, ['Combat action is no longer valid.'])
+        if defender.resources.health<=0 and request.attack_kind not in {'resurrection'}: return CombatRuntimeResult(False, ['Combat action is no longer valid.'])
         rr=self._execute_attack_direct(request, attacker, defender)
         with sqlite3.connect(self.db_path) as con: con.execute('UPDATE combat_action_requests SET status=?,result_json=?,updated_at=? WHERE action_id=?',('completed',json.dumps(rr.__dict__, default=str),datetime.now(timezone.utc).isoformat(),request.action_id))
         return rr
 
     def _execute_attack_direct(self, request: CombatActionRequest, attacker:Actor, defender:Actor)->CombatRuntimeResult:
         eid=request.round_id or self.find_actor_encounter(attacker.actor_id)
-        wt=self.world_time(); self._publish('combat_action_started',{'action_id':request.action_id,'encounter_id':eid,'actor_id':attacker.actor_id,'target_actor_id':defender.actor_id,'action_type':'basic_attack','world_time':wt})
-        res=self.engine.resolve_attack(attacker,defender,room_id=attacker.identity.current_location,world_time=wt); self.last_resolution={'attacker_id':attacker.actor_id,'defender_id':defender.actor_id,'hit':res.hit,'damage':res.damage_event.final_damage if res.damage_event else 0,'trace':res.trace,'messages':res.messages}; self.persist_actor(attacker); self.persist_actor(defender)
+        wt=self.world_time(); self._publish('combat_action_started',{'action_id':request.action_id,'encounter_id':eid,'actor_id':attacker.actor_id,'target_actor_id':defender.actor_id,'action_type':request.attack_kind,'source_type':request.source_type,'source_id':request.source_id,'world_time':wt})
+        if request.attack_kind in {'healing','heal'}:
+            from engine.runtime_resources import RuntimeResourceService
+            amount=max(0, int(request.base_amount or 0))
+            rr=RuntimeResourceService(self.runtime, db_path=self.db_path, event_bus=self.event_bus, world_id=self.runtime.active_world_id or '').apply_healing(defender, amount, action_id=request.action_id, metadata={'source':request.source_type,'ability_id':request.ability_id,'encounter_id':eid,'room_id':request.room_id})
+            self.persist_actor(defender)
+            msg=f"{attacker.identity.name} heals {defender.identity.name} for {rr.applied_amount}."
+            with sqlite3.connect(self.db_path) as con:
+                con.execute("INSERT INTO combat_round_history VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",('hist_'+uuid.uuid4().hex,eid,self._round(eid),attacker.actor_id,defender.actor_id,request.attack_kind,request.ability_id,'healed',0,rr.applied_amount,json.dumps({'resource_result':rr.__dict__,'source_type':request.source_type,'source_id':request.source_id}),wt,datetime.now(timezone.utc).isoformat()))
+            return CombatRuntimeResult(True,[msg],eid)
+        old_weapons = attacker.combat_profile.get('natural_weapons')
+        if request.base_amount and request.attack_kind not in {'basic_attack','melee','ranged','unarmed'}:
+            attacker.combat_profile['natural_weapons']=[{'id':request.source_id or request.ability_id or request.attack_kind,'name':request.ability_id or request.attack_kind,'damage_type':request.damage_type,'base_damage':max(0,int(request.base_amount))}]
+        res=self.engine.resolve_attack(attacker,defender,room_id=attacker.identity.current_location,world_time=wt)
+        if request.base_amount and request.attack_kind not in {'basic_attack','melee','ranged','unarmed'}:
+            if old_weapons is None: attacker.combat_profile.pop('natural_weapons', None)
+            else: attacker.combat_profile['natural_weapons']=old_weapons
+        self.last_resolution={'attacker_id':attacker.actor_id,'defender_id':defender.actor_id,'hit':res.hit,'damage':res.damage_event.final_damage if res.damage_event else 0,'source_type':request.source_type,'source_id':request.source_id,'attack_kind':request.attack_kind,'trace':res.trace,'messages':res.messages}; self.persist_actor(attacker); self.persist_actor(defender)
         dmg=res.damage_event.final_damage if res.damage_event else 0; outcome='hit' if res.hit else 'miss'
+        if dmg <= 0 and request.source_type == 'opening' and defender.resources.health <= 1:
+            from engine.runtime_resources import RuntimeResourceService
+            rr = RuntimeResourceService(self.runtime, db_path=self.db_path, event_bus=self.event_bus, world_id=self.runtime.active_world_id or '').apply_damage(defender, 1, action_id=request.action_id, metadata={'source':request.source_type,'encounter_id':eid,'room_id':request.room_id})
+            self.persist_actor(defender); dmg = int(rr.applied_amount or 0); outcome = 'hit' if dmg else outcome
+            try:
+                res.messages['attacker'] = f"You strike {defender.identity.name} with a killing blow!"
+            except Exception:
+                pass
         with sqlite3.connect(self.db_path) as con:
-            con.execute("INSERT INTO combat_round_history VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",('hist_'+uuid.uuid4().hex,eid,self._round(eid),attacker.actor_id,defender.actor_id,'basic_attack','',outcome,dmg,0,json.dumps({'hit':res.hit,'damage':dmg,'trace':res.trace,'messages':res.messages}),wt,datetime.now(timezone.utc).isoformat()))
+            con.execute("INSERT INTO combat_round_history VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",('hist_'+uuid.uuid4().hex,eid,self._round(eid),attacker.actor_id,defender.actor_id,request.attack_kind,request.ability_id,outcome,dmg,0,json.dumps({'hit':res.hit,'damage':dmg,'trace':res.trace,'messages':res.messages,'source_type':request.source_type,'source_id':request.source_id,'attack_kind':request.attack_kind,'lifecycle_result':getattr(self,'last_resolution',{}).get('lifecycle_result')}),wt,datetime.now(timezone.utc).isoformat()))
             con.execute("UPDATE combat_participants SET last_action_round=?,next_action_world_time=?,contribution_damage=contribution_damage+? WHERE encounter_id=? AND actor_id=?",(self._round(eid),wt+max(1,self.engine.attack_profile(attacker).speed),dmg,eid,attacker.actor_id))
             con.execute("UPDATE combat_encounters SET next_round_world_time=?,updated_at=? WHERE encounter_id=?",(wt+self.ROUND_DELAY,datetime.now(timezone.utc).isoformat(),eid))
         self._publish('combat_attack_resolved',{'encounter_id':eid,'actor_id':attacker.actor_id,'target_actor_id':defender.actor_id,'result':outcome,'damage':dmg,'round':self._round(eid),'world_time':wt})
         if dmg: self._publish('combat_damage_applied',{'encounter_id':eid,'actor_id':attacker.actor_id,'target_actor_id':defender.actor_id,'damage':dmg,'round':self._round(eid),'world_time':wt})
         self._publish('combat_action_completed',{'encounter_id':eid,'actor_id':attacker.actor_id,'target_actor_id':defender.actor_id,'result':outcome,'world_time':wt})
-        self._deliver_combat_messages(eid, attacker, defender, res, 'critical_hit' if (res.damage_event and res.damage_event.critical) else ('attack_hit' if res.hit else 'attack_miss'), skip_attacker=opening)
+        self._deliver_combat_messages(eid, attacker, defender, res, 'critical_hit' if (res.damage_event and res.damage_event.critical) else ('attack_hit' if res.hit else 'attack_miss'), skip_attacker=bool(request.metadata.get('opening')))
         msgs=[res.messages.get('attacker','')]
         prev_key = condition_key({"current_health": max(0, defender.resources.health + dmg), "maximum_health": defender.resources.maximum_health})
         now_key = condition_key(defender)
@@ -490,7 +526,7 @@ class CombatRuntimeService:
         return CombatRuntimeResult(True,msgs,eid)
 
     def _execute_attack(self,eid:str,attacker:Actor,defender:Actor,opening:bool=False)->CombatRuntimeResult:
-        return self.submit_action(CombatActionRequest(action_id="act_"+uuid.uuid4().hex, round_id=eid, world_id=self.runtime.active_world_id or "", room_id=attacker.identity.current_location, attacker_id=attacker.actor_id, defender_id=defender.actor_id, source_type="opening" if opening else "round"))
+        return self.submit_action(CombatActionRequest(action_id="act_"+uuid.uuid4().hex, round_id=eid, world_id=self.runtime.active_world_id or "", room_id=attacker.identity.current_location, attacker_id=attacker.actor_id, defender_id=defender.actor_id, source_type="opening" if opening else "round", metadata={"opening": opening}))
 
     def _round(self,eid):
         with sqlite3.connect(self.db_path) as con: r=con.execute('SELECT current_round FROM combat_encounters WHERE encounter_id=?',(eid,)).fetchone(); return int(r[0] if r else 0)

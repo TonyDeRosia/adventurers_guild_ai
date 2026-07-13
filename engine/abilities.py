@@ -538,6 +538,36 @@ class AbilityExecutionService:
             with sqlite3.connect(self.db_path) as c: c.execute("INSERT OR REPLACE INTO actor_ability_cooldowns VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (cid,self.world_id,"actor",actor_id,ab.id,str((ab.cooldowns or {}).get("cooldown_group") or ab.id),wt,wt+dur,max(0,charges-1) if charges else 0,charges,wt+int(num((ab.cooldowns or {}).get("charge_recovery",dur))),1,now(),now(),"{}"))
             self._pub("ability_cooldown_started", {"actor_id":actor_id,"ability_id":ab.id,"ready_world_time":wt+dur})
     def _apply_damage_component(self, actor: Actor, target: Actor, ab: AbilityDefinition, comp: dict[str,Any], cast_id: str) -> dict[str,Any]:
+        rt = getattr(self, "runtime", None)
+        crt = getattr(rt, "combat_runtime", None) if rt else None
+        if crt:
+            from engine.combat_runtime import CombatActionRequest
+            req = CombatActionRequest(
+                action_id=str(comp.get("action_id") or f"ability_{cast_id}_{comp.get('id','damage')}"),
+                round_id=str(getattr(crt, "find_actor_encounter", lambda _a: "")(actor.actor_id) or ""),
+                world_id=self.world_id,
+                room_id=getattr(actor.identity, "current_location", ""),
+                attacker_id=actor.actor_id,
+                defender_id=target.actor_id,
+                ability_id=ab.id,
+                attack_kind=str(comp.get("attack_kind") or "direct_damage"),
+                damage_type=str(comp.get("damage_type") or "physical"),
+                base_amount=int(num(comp.get("base_amount", comp.get("amount", 1)), 1)),
+                formula_id=str(comp.get("formula_id") or ""),
+                coefficient=float(num(comp.get("coefficient", 1), 1)),
+                requires_hit_roll=bool(comp.get("requires_hit_roll", True)),
+                can_critical=bool(comp.get("can_critical", True)),
+                critical_type=str(comp.get("critical_type") or "ability"),
+                armor_applies=bool(comp.get("armor_applies", True)),
+                resistance_applies=bool(comp.get("resistance_applies", True)),
+                save_definition=dict(comp.get("save") or comp.get("save_definition") or {}),
+                source_type="ability",
+                source_id=str(comp.get("id") or ab.id),
+                metadata={"cast_id": cast_id, "component_id": str(comp.get("id") or "")},
+            )
+            rr = crt.submit_action(req)
+            ev = {"ability_id": ab.id, "cast_id": cast_id, "component_id": comp.get("id"), "source_actor_id": actor.actor_id, "target_actor_id": target.actor_id, "action_id": req.action_id, "ok": bool(getattr(rr, "ok", False)), "messages": list(getattr(rr, "messages", []) or []), "final_amount": int((getattr(crt, "last_resolution", {}) or {}).get("damage", 0) or 0), "combat_result": getattr(rr, "__dict__", {})}
+            self._pub("ability_damage_applied", ev); return ev
         old=actor.combat_profile.get("natural_weapons")
         actor.combat_profile["natural_weapons"]=[{"id":comp.get("id","ability_damage"),"name":ab.name,"damage_type":comp.get("damage_type","physical"),"base_damage":int(num(comp.get("base_amount",1)))}]
         res=self.combat.resolve_attack(actor,target,world_time=self.world_time())
