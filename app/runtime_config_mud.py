@@ -46,6 +46,7 @@ class MudColorConfig:
     # Score/stats display
     score_label: str = "#00ffff"
     score_value: str = "#ffffff"
+    ability_list_header: str = "#ffff55"
     equipment_slot: str = "#00ffff"
     equipment_item: str = "#ffffff"
     equipment_empty: str = "#777777"
@@ -119,7 +120,7 @@ def get_mud_color_presets() -> dict[str, dict[str, str]]:
     dark_fantasy = get_default_mud_colors()
     return {
         "Dark Fantasy": dark_fantasy,
-        "Classic MUD": {**dark_fantasy, **{role: "#d8dee9" for role in SUPPORTED_MUD_COLOR_ROLES}, "exit": "#33ff66", "command_echo": "#b9c8dd", "error": "#ff6b6b", "warning": "#ffd166", "success": "#7ee787", "gold": "#ffd700", "hp": "#ff7777", "mp": "#7aa2ff", "stamina": "#ffd166"},
+        "Classic MUD": {**dark_fantasy, **{role: "#d8dee9" for role in SUPPORTED_MUD_COLOR_ROLES}, "ability_list_header":"#ffff55", "exit": "#33ff66", "command_echo": "#b9c8dd", "error": "#ff6b6b", "warning": "#ffd166", "success": "#7ee787", "gold": "#ffd700", "hp": "#ff7777", "mp": "#7aa2ff", "stamina": "#ffd166"},
         "Green Terminal": {**{role: "#33ff66" for role in SUPPORTED_MUD_COLOR_ROLES}, "content":"#ffffff", "room_description":"#ffffff", "dialogue":"#ffffff", "equipment_slot":"#00ffff", "equipment_item":"#ffffff", "equipment_empty":"#777777", "prompt_hp":"#ff5555", "prompt_mana":"#5599ff", "prompt_stamina":"#ffd166", "prompt_gold":"#ffd700"},
         "Amber Terminal": {**{role: "#ffbf00" for role in SUPPORTED_MUD_COLOR_ROLES}, "content":"#ffffff", "room_description":"#ffffff", "equipment_slot":"#00ffff", "equipment_item":"#ffffff", "equipment_empty":"#777777", "prompt_hp":"#ff5555", "prompt_mana":"#5599ff", "prompt_stamina":"#ffd166", "prompt_gold":"#ffd700"},
         "High Contrast": {**dark_fantasy, "content":"#ffffff", "equipment_empty":"#aaaaaa", "room_description": "#ffffff", "exit": "#7cff7c", "error": "#ff5555", "warning": "#ffff55", "score_label": "#00ffff", "score_value": "#ffffff"},

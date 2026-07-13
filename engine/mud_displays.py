@@ -300,12 +300,12 @@ def _cell_segments(cell: DisplayCell) -> list[DisplaySegment]:
 
 def resolve_theme_role(theme: Any, canonical_role: str) -> str:
     default_role_aliases = {
-        "skills.name_header_role": "character_title",
-        "skills.proficiency_header_role": "character_title",
-        "spells.name_header_role": "character_title",
-        "spells.proficiency_header_role": "character_title",
-        "abilities.name_header_role": "character_title",
-        "abilities.proficiency_header_role": "character_title",
+        "skills.name_header_role": "ability_list_header",
+        "skills.proficiency_header_role": "ability_list_header",
+        "spells.name_header_role": "ability_list_header",
+        "spells.proficiency_header_role": "ability_list_header",
+        "abilities.name_header_role": "ability_list_header",
+        "abilities.proficiency_header_role": "ability_list_header",
     }
     base_role = default_role_aliases.get(canonical_role, canonical_role)
     role = str(((getattr(theme, "semantic_roles", {}) or {}).get(canonical_role)) or base_role)
@@ -632,7 +632,18 @@ def _render_role_html(role: str, text: Any, *, trusted_markup: bool = False) -> 
 
 def render_display_ansi(doc: DisplayDocument, *, color_enabled: bool = True) -> str:
     mud = render_display_mud(doc, color_enabled=color_enabled)
-    return render_mud_color_ansi(mud) if color_enabled else render_display_plain(doc)
+    if not color_enabled:
+        return render_display_plain(doc)
+    ansi_roles = {"ability_list_header": "33"}
+    def repl(match: re.Match[str]) -> str:
+        closing, role = match.group(1), match.group(2)
+        if role not in SEMANTIC_COLOR_ROLES:
+            return ""
+        code = ansi_roles.get(role)
+        if not code:
+            return ""
+        return "\033[0m" if closing else f"\033[{code}m"
+    return strip_mud_color_markup(TAG_RE.sub(repl, mud)) + "\033[0m"
 
 def render_display_html(doc: DisplayDocument, *, color_enabled: bool = True) -> str:
     if not color_enabled:
@@ -802,7 +813,7 @@ def build_prompt_document(character: Any, theme: Any = None, template: str | Non
 import html
 import re
 
-from engine.mud_rendering import SEMANTIC_COLOR_ROLES, render_mud_color_html, render_mud_color_ansi, strip_mud_color_markup
+from engine.mud_rendering import SEMANTIC_COLOR_ROLES, TAG_RE, render_mud_color_html, render_mud_color_ansi, strip_mud_color_markup
 from engine.conditions import condition_label
 from collections import OrderedDict
 

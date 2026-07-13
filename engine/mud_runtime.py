@@ -26,6 +26,7 @@ from smart_mud.event_bus import EventBus
 from engine.plugin_system import HookRegistry, PluginRegistry
 from engine.living_world import LivingWorldService, init_living_schema
 from engine.abilities import AbilityExecutionService, init_ability_schema
+from engine.actors import ActorRegistry, actor_from_runtime_character
 from engine.crafting import init_crafting_schema
 from engine.environment import EnvironmentService, init_environment_schema
 from engine.survival_needs import SurvivalNeedsService, init_survival_schema
@@ -600,6 +601,7 @@ class MudRuntime:
         self.entity_templates: dict[str, MappingProxyType] = {}
         self.sessions: dict[str, MudSession] = {}
         self.command_engine = MudCommandEngine(self.state_store, event_bus=self.event_bus)
+        self.actor_registry = ActorRegistry()
         self.abilities = None
         self.builder = BuilderWorkspace(event_bus=self.event_bus)
         self.command_engine.runtime = self
@@ -832,7 +834,8 @@ class MudRuntime:
         self._load_entity_templates()
         self.materialize_world_content(world_id)
         self.living_world.ensure_world_time(world_id)
-        self.abilities = AbilityExecutionService(self.state_store.db_path, self.active_world, self.event_bus, world_id)
+        self.actor_registry = getattr(self, "actor_registry", ActorRegistry())
+        self.abilities = AbilityExecutionService(self.state_store.db_path, self.active_world, self.event_bus, world_id, actor_registry=self.actor_registry)
         self.abilities.runtime = self
         self.command_engine.ability_service = self.abilities
         self.command_engine.world_id = world_id
@@ -898,6 +901,28 @@ class MudRuntime:
         self.event_bus.publish("character_created", {"account_id": account_id, "character_id": char.id, "character_name": char.name}, source_system="runtime", account_id=account_id, world_id=world_id, character_id=char.id)
         return self._character_payload(char, world_id)
 
+    def register_live_character(self, character: MudCharacter) -> None:
+        """Refresh the canonical live Actor for a loaded character.
+
+        MudRuntime owns command-time character loading from persistence. Every
+        freshly loaded character object is immediately converted into the one
+        shared ActorRegistry entry used by AbilityExecutionService and other
+        runtime services, preventing stale per-service actor dictionaries.
+        """
+        if not hasattr(self, "actor_registry"):
+            self.actor_registry = ActorRegistry()
+        actor = actor_from_runtime_character(character, self.active_world_id or getattr(character, "world_id", ""))
+        self.actor_registry.register(actor)
+        if getattr(self, "abilities", None):
+            self.abilities.actor_registry = self.actor_registry
+            self.abilities.actors = self.actor_registry.actors
+
+    def unregister_live_character(self, character_id: str) -> None:
+        if getattr(self, "actor_registry", None):
+            self.actor_registry.unregister(character_id)
+        if getattr(self, "abilities", None):
+            self.abilities.unregister_actor(character_id)
+
     def enter_world(self, character_id: str, account_id: str = "", session_id: str = "") -> dict[str, Any]:
         """Enter the loaded world as a SQLite-backed character."""
         if account_id:
@@ -916,6 +941,7 @@ class MudRuntime:
             if row and row[0]:
                 self.load_world(str(row[0]))
         self._ensure_starter_progression(char)
+        self.register_live_character(char)
         self.hooks.emit("player_login", world_id=self.active_world_id or "", character=char)
         self.event_bus.publish("character_loaded", {"character_id": char.id, "character_name": char.name}, source_system="runtime", world_id=self.active_world_id or "", character_id=char.id)
         self.sessions[character_id] = MudSession(
@@ -1160,6 +1186,7 @@ class MudRuntime:
         char = self.state_store.load_character(character_id)
         if char is None:
             raise ValueError(f"Character not found: {character_id}")
+        self.register_live_character(char)
         if getattr(char, "builder_desc_editor_room_id", ""):
             from engine.mud_commands import CommandResult
             line = command.rstrip("\n")

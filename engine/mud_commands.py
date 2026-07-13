@@ -544,6 +544,7 @@ class MudCommandEngine:
                 self.event_bus.publish("character_session_left", {"character_id": actor_id, "room_id": getattr(character, "room_id", ""), "command": cmd}, source_system="session", character_id=actor_id, room_id=getattr(character, "room_id", ""))
             if rt:
                 try:
+                    rt.unregister_live_character(actor_id)
                     rt.active_character_id = ""
                 except Exception:
                     pass

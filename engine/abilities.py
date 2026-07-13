@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from engine.actors import Actor, actor_from_runtime_character
+from engine.actors import Actor, ActorRegistry, actor_from_runtime_character
 from engine.combat import CombatEngine, DamageEvent, apply_healing as actor_apply_healing, modify_resource
 from engine.combat_equipment import CombatContentRegistry
 
@@ -131,11 +131,20 @@ class AbilityRegistry:
         return out
 
 class AbilityExecutionService:
-    def __init__(self, db_path: Path|str|None=None, package: Any|None=None, event_bus: Any|None=None, world_id: str=""):
+    def __init__(self, db_path: Path|str|None=None, package: Any|None=None, event_bus: Any|None=None, world_id: str="", actor_registry: ActorRegistry | None=None):
         self.db_path = Path(db_path) if db_path else None; self.registry=AbilityRegistry(package); self.event_bus=event_bus; self.world_id=world_id or getattr(package,"id","")
-        self.combat = CombatEngine(content=CombatContentRegistry(package)); self.actors: dict[str, Actor] = {}
+        self.combat = CombatEngine(content=CombatContentRegistry(package)); self.actor_registry = actor_registry or ActorRegistry(); self.actors = self.actor_registry.actors
         if self.db_path: init_ability_schema(self.db_path)
-    def register_actor(self, actor: Actor) -> None: self.actors[actor.actor_id]=actor
+    def register_actor(self, actor: Actor) -> None: self.actor_registry.register(actor)
+    def unregister_actor(self, actor_id: str) -> None: self.actor_registry.unregister(actor_id)
+    def _get_actor(self, actor_id: str) -> Actor | None:
+        actor = self.actor_registry.get(actor_id)
+        if actor is None:
+            logger = __import__("logging").getLogger(__name__)
+            logger.error("Ability actor registration missing", extra={"actor_id": actor_id, "world_id": self.world_id})
+        return actor
+    def _missing_actor_result(self, actor_id: str, ability_id: str) -> dict[str, Any]:
+        return {"ok": False, "message": "Your character is not ready to use abilities yet. Please re-enter the world.", "reason_code": "actor_registration_missing", "trace": {"actor_id": actor_id, "ability_id": ability_id, "availability": "INTERNAL_ERROR"}}
     def actor_from_character(self, c: Any) -> Actor: a=actor_from_runtime_character(c,self.world_id); self.register_actor(a); return a
     def get_actor_abilities(self, actor_id: str) -> list[dict[str, Any]]:
         grants = self._grants(actor_id)
@@ -253,7 +262,7 @@ class AbilityExecutionService:
         return self._validation_result(tr, "READY", "Ready")
     def trace_ability(self, actor_id: str, ability_id: str, target: Any=None, _from_validator: bool=False) -> dict[str, Any]:
         steps=[]; ok=True
-        a=self.actors.get(actor_id); ab=self.registry.abilities.get(ability_id)
+        a=self._get_actor(actor_id); ab=self.registry.abilities.get(ability_id)
         if not a: return {"ok":False,"errors":["actor not found"],"trace":[{"step":"resolve_actor","ok":False}]}
         if not ab: return {"ok":False,"errors":["ability not found"],"trace":[{"step":"resolve_ability","ok":False}]}
         steps.append({"step":"resolve_actor","actor_id":actor_id,"ok":True}); steps.append({"step":"resolve_ability","ability_id":ability_id,"ok":True})
@@ -277,7 +286,9 @@ class AbilityExecutionService:
         if ab.activation_type == "instant" or bool((ab.timing or {}).get("completes_immediately", True)): return self.execute_instant_ability(actor_id, ability_id, target)
         tr=self.validate_ability_use(actor_id,ability_id,target,preview=False)
         if not tr["ok"]: self._pub("ability_failed", {"actor_id":actor_id,"ability_id":ability_id,"trace":tr}); return {"ok":False,"trace":tr,"message":tr.get("message") or "You cannot use that ability.", "reason_code":tr.get("reason_code")}
-        cast_id="cast_"+uuid.uuid4().hex; wt=self.world_time(); dur=int(num((ab.timing or {}).get("cast_time"),0)); costs=self._pay_costs(self.actors[actor_id],ab,"start")
+        cast_id="cast_"+uuid.uuid4().hex; wt=self.world_time(); dur=int(num((ab.timing or {}).get("cast_time"),0)); actor=self._get_actor(actor_id)
+        if actor is None: return self._missing_actor_result(actor_id, ability_id)
+        costs=self._pay_costs(actor,ab,"start")
         if self.db_path:
             with sqlite3.connect(self.db_path) as c: c.execute("INSERT OR REPLACE INTO actor_ability_casts VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (cast_id,self.world_id,"actor",actor_id,ability_id,jdump(tr.get("targets")),"casting",wt,wt+dur,wt+dur,jdump(costs),"{}","",now(),now(),"{}"))
         self._start_cooldown(actor_id, ab); self._pub("ability_started", {"actor_id":actor_id,"ability_id":ability_id,"cast_id":cast_id}); self._pub("cast_started", {"cast_id":cast_id})
@@ -285,7 +296,9 @@ class AbilityExecutionService:
     def execute_instant_ability(self, actor_id: str, ability_id: str, target: Any=None) -> dict[str, Any]:
         tr=self.validate_ability_use(actor_id,ability_id,target,preview=False)
         if not tr["ok"]: self._pub("ability_failed", {"actor_id":actor_id,"ability_id":ability_id,"trace":tr}); return {"ok":False,"trace":tr,"message":tr.get("message") or "You cannot use that ability.", "reason_code":tr.get("reason_code")}
-        cast_id="instant_"+uuid.uuid4().hex; actor=self.actors[actor_id]; ab=self.registry.abilities[ability_id]; costs=self._pay_costs(actor,ab,"start"); self._start_cooldown(actor_id,ab)
+        actor=self._get_actor(actor_id)
+        if actor is None: return self._missing_actor_result(actor_id, ability_id)
+        cast_id="instant_"+uuid.uuid4().hex; ab=self.registry.abilities[ability_id]; costs=self._pay_costs(actor,ab,"start"); self._start_cooldown(actor_id,ab)
         result={"ok":True,"cast_id":cast_id,"trace":tr["trace"],"damage_events":[],"healing_events":[],"effect_events":[]}; self._pub("ability_started", {"actor_id":actor_id,"ability_id":ability_id,"cast_id":cast_id})
         for t in tr["targets"]:
             target_actor=self.actors.get(t.get("actor_id"))
@@ -312,7 +325,10 @@ class AbilityExecutionService:
         now_ts = now()
         with sqlite3.connect(self.db_path) as c:
             c.row_factory = sqlite3.Row
-            row = c.execute("SELECT proficiency,maximum_rank,metadata_json FROM actor_ability_progression WHERE actor_id=? AND ability_id=? AND active=1", (actor_id, ability_id)).fetchone()
+            try:
+                row = c.execute("SELECT proficiency,maximum_rank,metadata_json FROM actor_ability_progression WHERE actor_id=? AND ability_id=? AND active=1", (actor_id, ability_id)).fetchone()
+            except sqlite3.OperationalError:
+                return {"attempted": False, "reason": "no_progression"}
             if not row:
                 return {"attempted": False, "reason": "not_learned"}
             current = max(1, min(100, int(row["proficiency"] or 1)))
@@ -408,7 +424,9 @@ class AbilityExecutionService:
         ev=asdict(res.damage_event) if res.damage_event else {}; ev.update({"ability_id":ab.id,"cast_id":cast_id,"component_id":comp.get("id"),"source_actor_id":actor.actor_id,"target_actor_id":target.actor_id,"damage_profile_id":comp.get("damage_profile_id"),"final_amount":ev.get("final_damage",0),"trace":res.trace})
         self._pub("ability_damage_applied", ev); return ev
     def apply_healing(self, source_actor_id: str, target_actor_id: str, amount: int, ability_id: str|None=None, component_id: str|None=None, metadata: dict[str,Any]|None=None) -> HealingEvent:
-        target=self.actors[target_actor_id]; before=int(num(target.resources.health)); maxh=int(num(target.resources.maximum_health,before)); base=max(0,int(amount)); trace=actor_apply_healing(target,base,source="ability_healing",metadata={"ability_id":ability_id,"component_id":component_id}); final=int(trace["after"])-before; ev=HealingEvent("heal_"+uuid.uuid4().hex,self.world_id,source_actor_id,target_actor_id,ability_id,metadata.get("cast_id") if metadata else None,component_id,base,(metadata or {}).get("formula_id"),False,None,{},final,max(0,before+base-maxh),self.world_time(),[{**trace}],metadata or {})
+        target=self._get_actor(target_actor_id)
+        if target is None: raise ValueError(f"Actor not registered: {target_actor_id}")
+        before=int(num(target.resources.health)); maxh=int(num(target.resources.maximum_health,before)); base=max(0,int(amount)); trace=actor_apply_healing(target,base,source="ability_healing",metadata={"ability_id":ability_id,"component_id":component_id}); final=int(trace["after"])-before; ev=HealingEvent("heal_"+uuid.uuid4().hex,self.world_id,source_actor_id,target_actor_id,ability_id,metadata.get("cast_id") if metadata else None,component_id,base,(metadata or {}).get("formula_id"),False,None,{},final,max(0,before+base-maxh),self.world_time(),[{**trace}],metadata or {})
         self._pub("ability_healing_applied", asdict(ev)); return ev
     def _apply_effect(self, actor: Actor, target: Actor, ab: AbilityDefinition, eff: dict[str,Any], cast_id: str) -> dict[str,Any]:
         eid="eff_"+uuid.uuid4().hex; cat=str(eff.get("category") or eff.get("disposition") or ("positive" if ab.ability_type in {"buff","defensive"} else "negative")); rec={"effect_instance_id":eid,"effect_template_id":eff.get("effect_template_id"),"target_actor_id":target.actor_id,"source_actor_id":actor.actor_id,"ability_id":ab.id,"cast_id":cast_id,"category":cat,"stacks":int(num(eff.get("stacks",1),1))}

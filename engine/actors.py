@@ -209,6 +209,30 @@ class Actor:
         return cls(identity=identity, resources=resources, derived_statistics_cache=derived, **{k: v for k, v in data.items() if k in cls.__dataclass_fields__ and k not in {"identity", "resources", "derived_statistics_cache"}})
 
 
+
+class ActorRegistry:
+    """Canonical live Actor registry shared by runtime services."""
+
+    def __init__(self) -> None:
+        self.actors: dict[str, Actor] = {}
+
+    def register(self, actor: Actor) -> Actor:
+        self.actors[actor.actor_id] = actor
+        return actor
+
+    def get(self, actor_id: str) -> Actor | None:
+        return self.actors.get(actor_id)
+
+    def require(self, actor_id: str) -> Actor:
+        actor = self.get(actor_id)
+        if actor is None:
+            raise KeyError(actor_id)
+        return actor
+
+    def unregister(self, actor_id: str) -> None:
+        self.actors.pop(actor_id, None)
+
+
 def default_derived_statistics(extra: dict[str, str] | None = None) -> dict[str, DerivedStatistic]:
     stats = dict(DERIVED_STAT_FORMULAS)
     stats.update(extra or {})
