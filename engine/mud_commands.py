@@ -127,6 +127,7 @@ DETERMINISTIC_COMMANDS = {
     "defend": {"category": "combat", "admin": False},
     "combat": {"category": "combat", "admin": False},
     "combatstats": {"category": "info", "admin": False},
+    "combatbreakdown": {"category": "builder", "admin": True},
     "statbreakdown": {"category": "info", "admin": False},
     "attributeedit": {"category": "builder", "admin": True},
     "formula": {"category": "builder", "admin": True},
@@ -318,6 +319,7 @@ class MudCommandEngine:
             "attributes": self._cmd_attributes,
             "stats": self._cmd_attributes,
             "combatstats": self._cmd_combatstats,
+            "combatbreakdown": self._cmd_combatbreakdown,
             "statbreakdown": self._cmd_statbreakdown,
             "attributeedit": self._cmd_attributeedit,
             "formula": self._cmd_formulaedit,
@@ -1747,6 +1749,25 @@ class MudCommandEngine:
         lines += ["","RESISTANCES"] + [f"{k.title()}: {v}%" for k,v in s.resistances.items()]
         lines += ["","CARRYING"] + [f"{k.replace('_',' ').title()}: {v}" for k,v in s.carrying.items()]
         return CommandResult("\n".join(lines))
+
+
+    def _cmd_combatbreakdown(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("Combat breakdown diagnostics require Builder access.", ok=False)
+        rt=getattr(self, "runtime", None); cr=getattr(rt, "combat_runtime", None) if rt else None
+        sub=(args[0].lower() if args else "last")
+        if sub=="formula" and len(args)>=2:
+            _,combat=self._stat_services(character); fid=args[1]
+            return CommandResult(json.dumps({"formula_id":fid,"expression":combat.formulas.get(fid),"available":fid in combat.formulas}, indent=2), ok=fid in combat.formulas)
+        data=getattr(cr, "last_resolution", None) if cr else None
+        if not data and cr:
+            import sqlite3
+            with sqlite3.connect(cr.db_path) as con:
+                row=con.execute("SELECT result_json FROM combat_round_history ORDER BY created_at DESC LIMIT 1").fetchone()
+                if row:
+                    try: data=json.loads(row[0] or "{}")
+                    except Exception: data={"raw": row[0]}
+        if not data: return CommandResult("No combat resolution breakdown is available yet.", ok=False)
+        return CommandResult("COMBAT BREAKDOWN\n"+json.dumps(data, indent=2, default=str))
 
     def _cmd_statbreakdown(self, character: Any, args: list[str], raw: str) -> CommandResult:
         if not args: return CommandResult("Usage: statbreakdown <stat>", ok=False)

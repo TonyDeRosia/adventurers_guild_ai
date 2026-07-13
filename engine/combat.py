@@ -56,6 +56,34 @@ class CombatResolutionContext:
         return {str(k):v for k,v in (self.metadata or {}).items() if k in allowed and isinstance(v,(str,int,float,bool,type(None)))}
 
 
+@dataclass
+class CanonicalActorProjection:
+    actor_id: str
+    actor_type: str
+    name: str
+    level: int
+    attributes: dict[str, Any]
+    resources: dict[str, int]
+    equipment_owner_id: str
+    equipment: dict[str, Any]
+    affects: Any
+    resistance_profile: dict[str, Any]
+    body_profile_id: str
+    position: str
+    room_id: str
+    world_id: str
+    persistence_identity: str
+    inventory_owner_id: str
+
+    def __post_init__(self):
+        self.id = self.actor_id
+        self.character_id = self.persistence_identity or self.actor_id
+        self.hp = int(self.resources.get("health", 0)); self.max_health = int(self.resources.get("maximum_health", 0))
+        self.mana = int(self.resources.get("mana", 0)); self.max_mana = int(self.resources.get("maximum_mana", 0))
+        self.stamina = int(self.resources.get("stamina", 0)); self.max_stamina = int(self.resources.get("maximum_stamina", 0))
+        self.resistances = self.resistance_profile
+
+
 @dataclass(frozen=True)
 class ResourceChange:
     actor_id: str; resource: str; before: int; amount: int; after: int; operation: str
@@ -140,32 +168,35 @@ class CombatEngine:
         self.states[actor.actor_id] = CombatState(state); actor.combat_profile["combat_state"] = self.states[actor.actor_id].value
 
     def resolve_attack(self, attacker: Actor, defender: Actor, *, room_id: str = "", world_time: int | None = None) -> CombatResult:
-        if self.combat_stats is not None:
-            ctx=CombatResolutionContext(room_id=room_id, attacker_id=attacker.actor_id, defender_id=defender.actor_id, world_time=world_time if world_time is not None else self.tick)
-            rr=self.resolution.resolve(attacker, defender, ctx)
-            dmg=DamageEvent(attacker.actor_id, defender.actor_id, {}, {"name": self.attack_profile(attacker).name}, rr.damage_type, rr.raw_amount, rr.critical, rr.mitigated_amount, rr.final_amount, self.tick) if rr.hit else None
-            return CombatResult(rr.hit, dmg, self.states.get(attacker.actor_id, CombatState.RECOVERING).value if attacker.actor_id in self.states else CombatState.RECOVERING.value, self.states.get(defender.actor_id, CombatState.IN_COMBAT).value if defender.actor_id in self.states else CombatState.IN_COMBAT.value, rr.messages, list(rr.diagnostics.get("trace", [])))
+        if self.combat_stats is None:
+            if getattr(self, 'runtime', None) is not None:
+                raise RuntimeError("CombatEngine requires CombatStatService for normal runtime resolution; use resolve_attack_legacy_for_migration_tests only in isolated migration tests.")
+            return self.resolve_attack_legacy_for_migration_tests(attacker, defender, room_id=room_id, world_time=world_time)
+        ctx=CombatResolutionContext(room_id=room_id, attacker_id=attacker.actor_id, defender_id=defender.actor_id, world_time=world_time if world_time is not None else self.tick)
+        rr=self.resolution.resolve(attacker, defender, ctx)
+        dmg=DamageEvent(attacker.actor_id, defender.actor_id, {}, {"name": self.attack_profile(attacker).name}, rr.damage_type, rr.raw_amount, rr.critical, rr.mitigated_amount, rr.final_amount, self.tick) if rr.hit else None
+        return CombatResult(rr.hit, dmg, self.states.get(attacker.actor_id, CombatState.RECOVERING).value if attacker.actor_id in self.states else CombatState.RECOVERING.value, self.states.get(defender.actor_id, CombatState.IN_COMBAT).value if defender.actor_id in self.states else CombatState.IN_COMBAT.value, rr.messages, list(rr.diagnostics.get("trace", [])))
+
+    def resolve_attack_legacy_for_migration_tests(self, attacker: Actor, defender: Actor, *, room_id: str = "", world_time: int | None = None) -> CombatResult:
         trace: list[dict[str, Any]] = [{"step":"resolve_attacker_actor","actor_id":attacker.actor_id},{"step":"resolve_defender_actor","actor_id":defender.actor_id}]
         self.set_state(attacker, CombatState.ATTACKING); self.set_state(defender, CombatState.IN_COMBAT)
         attack = self.attack_profile(attacker); trace.append({"step":"resolve_attack_profile","attack_profile":asdict(attack)})
+        death = None
         acc = self._stat(attacker,"accuracy",50,trace); defense = self._stat(defender,"defense_rating",10,trace); roll = self.roller.roll_percent(attacker.actor_id, defender.actor_id, self.tick, "hit")
-        hit = roll <= max(0, min(100, 50 + acc - defense)); trace.append({"step":"resolve_hit_chance","roll":roll,"hit":hit})
+        hit = roll <= max(0, min(100, 50 + acc - defense))
         if not hit:
             self.set_state(attacker, CombatState.RECOVERING); return CombatResult(False, None, self.states[attacker.actor_id].value, self.states[defender.actor_id].value, self._messages(attacker, defender, "miss", None), trace)
-        crit_chance = self._stat(attacker,"critical_chance",0,trace); crit = self.roller.roll_percent(attacker.actor_id, defender.actor_id, self.tick, "crit") <= crit_chance
-        power = self._stat(attacker,"attack_power",0,trace); base = max(0, attack.base_damage + power); base = int(base * attack.critical_multiplier) if crit else base
-        equipment_armor = self.content.armor_value((defender.equipment_profile or {}).get("equipped") or defender.equipment_profile or {})
-        armor = 0 if attack.damage_type == "true" else self._stat(defender,"armor",equipment_armor,trace); resist = 0 if attack.damage_type == "true" else _num((defender.resistance_profile or {}).get(attack.damage_type), 0)
-        mitigation = max(0, armor + resist); final = max(0, base - mitigation); trace.append({"step":"resolve_damage_and_mitigation","base":base,"armor":armor,"resistance":resist,"final":final})
-        resource_trace = apply_damage(defender, final, metadata={"attacker_id":attacker.actor_id}); trace.append({"step":"apply_resource_changes", **resource_trace})
-        event = DamageEvent(attacker.actor_id, defender.actor_id, attack.metadata.get("weapon", {}), asdict(attack), attack.damage_type, base, crit, mitigation, final, self.tick)
-        if self.persist_history: self.history.append(event)
-        death = None
+        crit = self.roller.roll_percent(attacker.actor_id, defender.actor_id, self.tick, "crit") <= self._stat(attacker,"critical_chance",0,trace)
+        power = self._stat(attacker,"attack_power",0,trace); base=max(0, attack.base_damage+power); raw=int(base*attack.critical_multiplier) if crit else base
+        armor = 0 if attack.damage_type == "true" else self._stat(defender,"armor", self.content.armor_value((defender.equipment_profile or {}).get("equipped") or defender.equipment_profile or {}), trace)
+        resist = 0 if attack.damage_type == "true" else _num((defender.resistance_profile or {}).get(attack.damage_type), 0)
+        mitigation=max(0, armor+resist); final=max(0, raw-mitigation)
+        rt=apply_damage(defender, final, metadata={"attacker_id":attacker.actor_id}); trace.append({"step":"apply_resource_changes", **rt})
         if defender.resources.health <= 0:
-            self.set_state(defender, CombatState.DEAD); trace.append({"step":"check_death","dead":True})
-            if self.lifecycle: death = self.lifecycle.actor_died(defender.actor_id, room_id, world_time if world_time is not None else self.tick, defender.lifecycle_profile.get("respawn_delay"), defender.lifecycle_profile.get("spawn_definition_id", "")); trace.append({"step":"pass_to_lifecycle_manager","handoff":death})
-        self.set_state(attacker, CombatState.RECOVERING); self.cooldowns[attacker.actor_id] = self.tick + max(1, attack.speed)
-        return CombatResult(True, event, self.states[attacker.actor_id].value, self.states[defender.actor_id].value, self._messages(attacker, defender, "hit", event), trace, death)
+            self.set_state(defender, CombatState.DEAD)
+            if self.lifecycle: death = self.lifecycle.actor_died(defender.actor_id, room_id, world_time if world_time is not None else self.tick, defender.lifecycle_profile.get("respawn_delay"), defender.lifecycle_profile.get("spawn_definition_id", ""))
+        event=DamageEvent(attacker.actor_id, defender.actor_id, {}, asdict(attack), attack.damage_type, raw, crit, mitigation, final, self.tick)
+        self.set_state(attacker, CombatState.RECOVERING); return CombatResult(True,event,self.states[attacker.actor_id].value,self.states[defender.actor_id].value,self._messages(attacker,defender,"hit",event),trace,death)
 
     def _stat(self, actor: Actor, stat: str, base: int, trace: list[dict[str, Any]]) -> int:
         r = actor.get_derived_value(stat, self.formula_engine, base_value=base); trace.append({"step":"resolve_derived_stat","actor_id":actor.actor_id,"stat":stat,"formula":r.formula_name,"value":r.final_value,"trace":r.calculation_trace}); return _num(r.final_value, base)
@@ -214,16 +245,38 @@ class CombatEngine:
 
 class CombatResolutionService:
     """Authoritative combat outcome pipeline backed by CombatStatService snapshots."""
-    def __init__(self, engine: CombatEngine, *, combat_stats: Any | None = None, event_bus: Any | None = None, rng: Callable[..., int] | None = None) -> None:
-        self.engine=engine; self.combat_stats=combat_stats; self.event_bus=event_bus; self.rng=rng or engine.roller.roll_percent
+    def __init__(self, engine: CombatEngine, *, combat_stats: Any | None = None, event_bus: Any | None = None, rng: Callable[..., int] | None = None, runtime: Any | None = None) -> None:
+        self.engine=engine; self.combat_stats=combat_stats; self.event_bus=event_bus; self.rng=rng or engine.roller.roll_percent; self.runtime=runtime
 
-    def _actor_view(self, actor: Actor):
-        from types import SimpleNamespace
-        return SimpleNamespace(id=actor.actor_id, character_id=actor.actor_id, name=actor.identity.name, level=int((actor.progression_profile or {}).get('level',1) or 1), attributes=actor.attributes or {}, hp=actor.resources.health, max_hp=actor.resources.maximum_health, mana=actor.resources.mana, max_mana=actor.resources.maximum_mana, stamina=actor.resources.stamina, max_stamina=actor.resources.maximum_stamina, inventory=[], equipment=actor.equipment_profile or {}, affects=actor.effect_container or {}, resistance_profile=actor.resistance_profile or {}, resistances=actor.resistance_profile or {})
+    def _actor_view(self, actor: Actor, context: CombatResolutionContext | None = None) -> CanonicalActorProjection:
+        ctx=context or CombatResolutionContext()
+        pid=actor.actor_id.split(':',1)[1] if ':' in actor.actor_id else actor.actor_id
+        if actor.actor_id.startswith('character:'):
+            actor_type='player'
+        else:
+            actor_type=str(getattr(actor.identity, 'actor_type', '') or getattr(actor, 'actor_type', '') or 'npc')
+        resources={
+            'health': _num(actor.resources.health), 'maximum_health': _num(actor.resources.maximum_health),
+            'mana': _num(actor.resources.mana), 'maximum_mana': _num(actor.resources.maximum_mana),
+            'stamina': _num(actor.resources.stamina), 'maximum_stamina': _num(actor.resources.maximum_stamina),
+        }
+        return CanonicalActorProjection(actor.actor_id, actor_type, actor.identity.name, int((actor.progression_profile or {}).get('level',1) or 1), dict(actor.attributes or {}), resources, pid, dict(actor.equipment_profile or {}), actor.effect_container or {}, dict(actor.resistance_profile or {}), str(actor.body_profile_id or ''), str((actor.combat_profile or {}).get('combat_state') or ctx.attacker_position or 'standing'), str(actor.identity.current_location or ctx.room_id), str(actor.identity.current_world or ctx.world_id), pid, pid)
 
     def _snapshot(self, actor: Actor, context: CombatResolutionContext):
         if not self.combat_stats: return None
-        return self.combat_stats.get_combat_snapshot(self._actor_view(actor), {"combat_context": asdict(context), "runtime": None})
+        return self.combat_stats.get_combat_snapshot(self._actor_view(actor, context), {"combat_context": asdict(context), "runtime": self.runtime})
+
+    @property
+    def runtime(self):
+        return getattr(self, '_runtime', None) or getattr(self.engine, 'runtime', None)
+
+    @runtime.setter
+    def runtime(self, value):
+        self._runtime=value
+
+    def _publish(self, name: str, payload: dict[str, Any]) -> None:
+        if self.event_bus:
+            self.event_bus.publish(name, payload, source_system='combat_resolution', world_id=payload.get('world_id',''))
 
     def _formula(self, formula_id: str, expression: str, variables: dict[str, Any]) -> float:
         if self.combat_stats and getattr(self.combat_stats,'formulas',None): expression=self.combat_stats.formulas.get(formula_id, expression)
@@ -236,6 +289,24 @@ class CombatResolutionService:
         atk=self.engine.attack_profile(attacker); attack_kind=ctx.attack_kind or (AttackKind.MELEE_WEAPON.value if atk.source=='weapon' else AttackKind.UNARMED.value)
         a=self._snapshot(attacker, ctx); d=self._snapshot(defender, ctx)
         if not a or not d: return CombatResolutionResult(False,'missing_combat_stat_service',attacker.actor_id,defender.actor_id,attack_kind,diagnostics={"trace":trace})
+        if attack_kind == AttackKind.HEALING.value and not bool(ctx.safe_metadata().get('requires_hit_roll')):
+            heal_power=int(a.offense.get('healing_power', a.offense.get('spell_power', a.offense.get('attack_power',0))) or 0)
+            coeff=float(ctx.safe_metadata().get('healing_coefficient') or 1.0)
+            base=int(ctx.safe_metadata().get('base_amount') or max(1, heal_power or 10))
+            crit_chance=max(0,min(100,int(a.critical.get('critical_heal',0))-int(d.critical.get('critical_avoidance',0))))
+            crit_roll=self.rng(attacker.actor_id,defender.actor_id,ctx.round_id or self.engine.tick,ctx.action_id or 'heal_crit')
+            crit=bool(ctx.safe_metadata().get('can_critical', True)) and crit_roll<=crit_chance
+            mult=float(ctx.safe_metadata().get('critical_multiplier') or 1.5)
+            raw=round(self._formula('healing_resolution','base_amount + healing_power * healing_coefficient', {'base_amount':base,'healing_power':heal_power,'healing_coefficient':coeff}))
+            effective=int(raw*mult) if crit else int(raw)
+            rt=apply_healing(defender, effective, source='combat_healing', metadata={'attacker_id':attacker.actor_id})
+            actual=int(rt['after'])-int(rt['before']); overheal=max(0,effective-actual)
+            change=ResourceChange(defender.actor_id,str(ctx.safe_metadata().get('resource_target') or 'health'),int(rt['before']),actual,int(rt['after']),'healing')
+            events.extend([{'event':'critical_resolved','critical':crit,'critical_kind':'critical_heal'},{'event':'healing_calculated','actor_id':defender.actor_id,'raw':raw,'effective':actual,'overheal':overheal},{'event':'healing_applied','actor_id':defender.actor_id,'amount':actual}])
+            for ev in events: self._publish(ev.get('event','combat_event'), ev)
+            trace.append({'step':'healing_calculated','formula_id':'healing_resolution','inputs':{'base_amount':base,'healing_power':heal_power,'healing_coefficient':coeff},'raw':raw,'effective':actual,'overheal':overheal,'critical':crit})
+            self.engine.set_state(attacker, CombatState.RECOVERING)
+            return CombatResolutionResult(True,'healed',attacker.actor_id,defender.actor_id,attack_kind,ctx.ability_id,ctx.weapon_instance_id,True,'',crit,'critical_heal',raw,0,actual,'healing',(change,),(),False,{'attacker':f'You heal {defender.identity.name} for {actual}.','victim':f'{attacker.identity.name} heals you for {actual}.','observers':f'{attacker.identity.name} heals {defender.identity.name}.'},tuple(events),{'trace':trace,'attacker_source_version':a.source_version,'defender_source_version':d.source_version,'overheal':overheal})
         acc=int(a.offense.get('accuracy',0)); hit_bonus=int(a.offense.get('hit_bonus',0)); evasion=int(d.defense.get('evasion',0))
         posture=-10 if str(ctx.defender_position).lower() in {'standing','fighting'} else 10
         range_mod=-max(0,int(ctx.distance or 0)-int(atk.reach or 0))*5
@@ -245,6 +316,7 @@ class CombatResolutionService:
         events.append({'event':'attack_roll_resolved','attacker_id':attacker.actor_id,'defender_id':defender.actor_id,'chance':chance,'roll':roll,'hit':hit})
         if not hit:
             self.engine.set_state(attacker, CombatState.RECOVERING); messages=self.engine._messages(attacker,defender,'miss',None); events.append({'event':'attack_missed','attacker_id':attacker.actor_id,'defender_id':defender.actor_id})
+            for ev in events: self._publish(ev.get('event','combat_event'), ev)
             return CombatResolutionResult(True,'miss',attacker.actor_id,defender.actor_id,attack_kind,ctx.ability_id,ctx.weapon_instance_id,False,'evasion',messages=messages,events=tuple(events),diagnostics={'trace':trace,'attacker_source_version':a.source_version,'defender_source_version':d.source_version})
         crit_stat='critical_spell' if attack_kind==AttackKind.SPELL_ATTACK.value else 'critical_heal' if attack_kind==AttackKind.HEALING.value else 'critical_melee'
         crit_chance=max(0,min(100,int(a.critical.get(crit_stat,0))-int(d.critical.get('critical_avoidance',0))))
@@ -263,4 +335,5 @@ class CombatResolutionService:
         if defeated: self.engine.set_state(defender, CombatState.DEAD); events.append({'event':'actor_defeated','actor_id':defender.actor_id})
         self.engine.set_state(attacker, CombatState.RECOVERING); evname='healing_applied' if attack_kind==AttackKind.HEALING.value else 'damage_applied'; events.extend([{'event':'attack_hit','attacker_id':attacker.actor_id,'defender_id':defender.actor_id},{'event':'critical_resolved','critical':crit,'critical_kind':crit_stat},{'event':evname,'actor_id':defender.actor_id,'amount':final}])
         de=DamageEvent(attacker.actor_id,defender.actor_id,atk.metadata.get('weapon',{}),asdict(atk),dtype,raw,crit,mitigated,final,self.engine.tick); messages=self.engine._messages(attacker,defender,'hit',de)
+        for ev in events: self._publish(ev.get('event','combat_event'), ev)
         return CombatResolutionResult(True,'hit',attacker.actor_id,defender.actor_id,attack_kind,ctx.ability_id,ctx.weapon_instance_id,True,'',crit,crit_stat,raw,mitigated,final,dtype,(change,),(),defeated,messages,tuple(events),{'trace':trace,'attacker_source_version':a.source_version,'defender_source_version':d.source_version})

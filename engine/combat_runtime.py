@@ -17,6 +17,7 @@ from engine.actors import Actor, ActorIdentity, ActorResources, actor_from_runti
 from engine.combat import CombatEngine, CombatState
 from engine.combat_equipment import CombatContentRegistry
 from engine.formulas import FormulaEngine
+from engine.character_stats import CharacterAttributeService, CombatStatService
 from engine.conditions import condition_label, condition_key, transition_text
 
 
@@ -59,11 +60,22 @@ class CombatRuntimeService:
     def __init__(self, runtime: Any):
         self.runtime = runtime; self.db_path = runtime.state_store.db_path; self.event_bus = runtime.event_bus
         init_combat_runtime_schema(self.db_path)
-        self.engine = CombatEngine(FormulaEngine(), content=CombatContentRegistry(getattr(runtime, 'active_world', None)))
+        
+        if not getattr(runtime, 'combat_stat_service', None):
+            runtime.attribute_service = CharacterAttributeService(runtime.state_store, getattr(runtime, 'active_world_id', None) or 'shattered_realms', event_bus=self.event_bus)
+            runtime.attribute_service.runtime = runtime
+            runtime.combat_stat_service = CombatStatService(runtime.attribute_service)
+        self.engine = CombatEngine(FormulaEngine(), content=CombatContentRegistry(getattr(runtime, 'active_world', None)), combat_stats=runtime.combat_stat_service, event_bus=self.event_bus)
+        self.engine.runtime = runtime
+        self.engine.resolution.runtime = runtime
+        if not (self.engine.combat_stats is runtime.combat_stat_service and self.engine.resolution.combat_stats is runtime.combat_stat_service and self.engine.resolution.runtime is runtime):
+            raise RuntimeError('Combat runtime invariant failed: canonical combat services are not wired to MudRuntime')
         self.cancel_active_encounters_on_restart()
 
     def refresh_content(self) -> None:
         self.engine.content = CombatContentRegistry(getattr(self.runtime, 'active_world', None))
+        if getattr(self.runtime, 'combat_stat_service', None):
+            self.engine.combat_stats = self.runtime.combat_stat_service; self.engine.resolution.combat_stats = self.runtime.combat_stat_service; self.engine.runtime = self.runtime; self.engine.resolution.runtime = self.runtime
 
     def world_time(self) -> int:
         wt = self.runtime.get_world_time(self.runtime.active_world_id or '')
@@ -338,10 +350,10 @@ class CombatRuntimeService:
 
     def _execute_attack(self,eid:str,attacker:Actor,defender:Actor,opening:bool=False)->CombatRuntimeResult:
         wt=self.world_time(); self._publish('combat_action_started',{'encounter_id':eid,'actor_id':attacker.actor_id,'target_actor_id':defender.actor_id,'action_type':'basic_attack','world_time':wt})
-        res=self.engine.resolve_attack(attacker,defender,room_id=attacker.identity.current_location,world_time=wt); self.persist_actor(attacker); self.persist_actor(defender)
+        res=self.engine.resolve_attack(attacker,defender,room_id=attacker.identity.current_location,world_time=wt); self.last_resolution={'attacker_id':attacker.actor_id,'defender_id':defender.actor_id,'hit':res.hit,'damage':res.damage_event.final_damage if res.damage_event else 0,'trace':res.trace,'messages':res.messages}; self.persist_actor(attacker); self.persist_actor(defender)
         dmg=res.damage_event.final_damage if res.damage_event else 0; outcome='hit' if res.hit else 'miss'
         with sqlite3.connect(self.db_path) as con:
-            con.execute("INSERT INTO combat_round_history VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",('hist_'+uuid.uuid4().hex,eid,self._round(eid),attacker.actor_id,defender.actor_id,'basic_attack','',outcome,dmg,0,json.dumps({'hit':res.hit,'damage':dmg}),wt,datetime.now(timezone.utc).isoformat()))
+            con.execute("INSERT INTO combat_round_history VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",('hist_'+uuid.uuid4().hex,eid,self._round(eid),attacker.actor_id,defender.actor_id,'basic_attack','',outcome,dmg,0,json.dumps({'hit':res.hit,'damage':dmg,'trace':res.trace,'messages':res.messages}),wt,datetime.now(timezone.utc).isoformat()))
             con.execute("UPDATE combat_participants SET last_action_round=?,next_action_world_time=?,contribution_damage=contribution_damage+? WHERE encounter_id=? AND actor_id=?",(self._round(eid),wt+max(1,self.engine.attack_profile(attacker).speed),dmg,eid,attacker.actor_id))
             con.execute("UPDATE combat_encounters SET next_round_world_time=?,updated_at=? WHERE encounter_id=?",(wt+self.ROUND_DELAY,datetime.now(timezone.utc).isoformat(),eid))
         self._publish('combat_attack_resolved',{'encounter_id':eid,'actor_id':attacker.actor_id,'target_actor_id':defender.actor_id,'result':outcome,'damage':dmg,'round':self._round(eid),'world_time':wt})

@@ -33,6 +33,7 @@ from engine.survival_needs import SurvivalNeedsService, init_survival_schema
 from engine.schedules import ScheduleService
 from engine.combat_runtime import CombatRuntimeService, init_combat_runtime_schema
 from engine.agent_runtime import AgentRuntimeGateway, DeterministicControllerEvaluator, init_agent_runtime_schema
+from engine.character_stats import CharacterAttributeService, CombatStatService
 
 logger = logging.getLogger(__name__)
 
@@ -607,6 +608,9 @@ class MudRuntime:
         self.command_engine.runtime = self
         self.presentation_preferences = PlayerPresentationPreferenceService(self.state_store.db_path)
         self.character_display_snapshots = CharacterDisplaySnapshotService(self)
+        self.attribute_service = CharacterAttributeService(self.state_store, 'shattered_realms', event_bus=self.event_bus)
+        self.attribute_service.runtime = self
+        self.combat_stat_service = CombatStatService(self.attribute_service)
         self.command_engine.presentation_preferences = self.presentation_preferences
         self.command_engine.character_display_snapshots = self.character_display_snapshots
         init_agent_runtime_schema(self.state_store.db_path)
@@ -830,6 +834,9 @@ class MudRuntime:
         self.plugin_registry.resolve_required([str(p) for p in self.active_world.manifest.get("required_plugins", [])])
         self.event_bus.publish("plugins_resolved", {"world_id": world_id}, source_system="plugin", world_id=world_id)
         self.active_world_id = world_id
+        self.attribute_service = CharacterAttributeService(self.state_store, world_id, self.active_world.root, self.event_bus)
+        self.attribute_service.runtime = self
+        self.combat_stat_service = CombatStatService(self.attribute_service)
         self._load_item_templates()
         self._load_entity_templates()
         self.materialize_world_content(world_id)
@@ -844,6 +851,8 @@ class MudRuntime:
         self.environment = EnvironmentService(self.state_store.db_path, self.active_world.root, world_id, self.event_bus)
         self.command_engine.environment_service = self.environment
         self.combat_runtime.refresh_content()
+        if not (self.combat_runtime.engine.combat_stats is self.combat_stat_service and self.combat_runtime.engine.resolution.combat_stats is self.combat_stat_service and self.combat_runtime.engine.resolution.runtime is self):
+            raise RuntimeError('Combat startup invariant failed: canonical combat services are not wired to MudRuntime')
         self.hooks.emit("world_loaded", world_id=world_id, world=self.active_world)
         self.event_bus.publish("world_loaded", {"world_id": world_id}, source_system="runtime", world_id=world_id)
         return self.active_world
