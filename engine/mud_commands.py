@@ -18,6 +18,7 @@ from engine.score_renderer import ActorScoreRenderer
 from engine.command_registry import CommandRegistry
 from smart_mud.builder import BuilderWorkspace
 from engine.abilities import AbilityExecutionService
+from engine.help_service import HelpService, HelpEntry, normalize_help_query
 from engine.display_services import CharacterDisplaySnapshotService, AbilityDisplaySnapshotService, ability_snapshots_as_rows
 from engine.player_preferences import PlayerPresentationPreferenceService
 from engine.display_themes import preview_display_theme, resolve_effective_display_theme, load_display_themes, SUPPORTED_FAMILIES, ThemeResolutionMode
@@ -88,6 +89,7 @@ DETERMINISTIC_COMMANDS = {
     "where": {"category": "info", "admin": False},
     "commands": {"category": "help", "aliases": ["cmds"], "admin": False},
     "help": {"category": "help", "aliases": ["h"], "admin": False},
+    "helpedit": {"category": "builder", "admin": True},
     "socials": {"category": "help", "admin": False},
     "areas": {"category": "info", "admin": False},
     "map": {"category": "info", "admin": False},
@@ -249,7 +251,7 @@ class MudCommandEngine:
             "collections": self._cmd_achievements,
             "collection": self._cmd_achievements,
             "titles": self._cmd_achievements,
-            "title": self._cmd_achievements,
+            "title": self._cmd_title,
             "accolades": self._cmd_achievements,
             "profile": self._cmd_achievements,
             "ability": self._cmd_ability_detail,
@@ -289,6 +291,9 @@ class MudCommandEngine:
             "recall": self._cmd_generic,
             "grantrole": self._cmd_grantrole,
             "help": self._cmd_help,
+            "helpedit": self._cmd_helpedit,
+            "attributes": self._cmd_attributes,
+            "stats": self._cmd_attributes,
             "commands": self._cmd_commands,
             "look": self._cmd_look,
             "hide": self._cmd_perception,
@@ -1294,7 +1299,13 @@ class MudCommandEngine:
         self._publish("command_received", character, command_text, raw_input=command_text, canonical_command=raw_cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""))
         
         print(f"[mud-command] Routing {raw_cmd_name} as {cmd_name} for {character.name}")
-        
+
+        # Exact help topics that are not usable player commands should guide to HELP.
+        exact_topic = self._help_service(character).suggest(command_text, character)
+        meta_for_topic = self.registry.commands.get(cmd_name)
+        if exact_topic and normalize_help_query(command_text) in {normalize_help_query(exact_topic.title), *(normalize_help_query(x) for x in exact_topic.keywords), *(normalize_help_query(x) for x in exact_topic.aliases)} and cmd_name not in {"help", "title"} and (not meta_for_topic or meta_for_topic.builder_only or meta_for_topic.admin_only or cmd_name not in self.command_handlers):
+            return CommandResult(f"{command_text.strip().upper()} is a help topic, not a command.\nType HELP {exact_topic.title.upper()} for more information.", ok=False)
+
         if cmd_name == "target" and str(getattr(character, "role", "player")).lower() not in {"builder", "admin", "owner"}:
             result = self._cmd_combat_foundation(character, args, command_text)
             self._publish("command_executed", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary=result.narrative[:120])
@@ -1353,10 +1364,23 @@ class MudCommandEngine:
                 self._publish("command_executed", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary=result.narrative[:120])
                 return result
         
-        # Fallback
+        # Fallback with help-topic and typo guidance
         print(f"[mud-command] Unknown command: {cmd_name}")
         self._publish("command_unknown", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary="unknown")
-        result = CommandResult(narrative=semantic("error", "Unknown command. Type HELP or COMMANDS."), ok=False)
+        topic = self._help_service(character).suggest(command_text, character)
+        if topic and normalize_help_query(command_text) in {normalize_help_query(topic.title), *(normalize_help_query(x) for x in topic.keywords), *(normalize_help_query(x) for x in topic.aliases)}:
+            msg = f"{command_text.strip().upper()} is a help topic, not a command.\nType HELP {topic.title.upper()} for more information."
+        else:
+            import difflib
+            names=[m.command for m in self.registry.available(getattr(character,'role','player'), include_planned=False) if not (m.admin_only or m.builder_only)]
+            close=difflib.get_close_matches(raw_cmd_name, names, n=1, cutoff=0.78)
+            if close:
+                msg=f"Unknown command “{raw_cmd_name}.”\nDid you mean {close[0].upper()}?"
+            elif topic:
+                msg=f"Unknown command “{raw_cmd_name}.”\nDid you mean {topic.title.upper()}?\nType HELP {topic.title.upper()} for more information."
+            else:
+                msg="Unknown command. Type HELP or COMMANDS."
+        result = CommandResult(narrative=semantic("error", msg), ok=False)
         self._publish("command_executed", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary=result.narrative[:120])
         return result
 
@@ -1615,6 +1639,92 @@ class MudCommandEngine:
         doc=build_equipment_document(items, ["head","body","main_hand","off_hand","legs","feet"], theme=theme)
         return CommandResult(narrative=render_display_mud(doc, color_enabled=theme.color_enabled), display_document=doc, display_intent="EQUIPMENT")
 
+
+    def _world_root(self, character: Any) -> Path:
+        rt=getattr(self,"runtime",None); wid=getattr(rt,"active_world_id","") if rt else self.builder.world_id(character)
+        wid=wid or getattr(character,"world_id","") or "shattered_realms"
+        root=getattr(rt,"root",Path(".")) if rt else Path(".")
+        return Path(root)/"worlds"/wid if not (Path(root)/wid).exists() else Path(root)/wid
+
+    def _help_service(self, character: Any) -> HelpService:
+        root=self._world_root(character); svc=getattr(self,"help_service",None)
+        if not svc or getattr(svc,"world_root",None)!=root:
+            svc=HelpService(root, self._ability_service(character)); self.help_service=svc
+        else:
+            svc.ability_service=self._ability_service(character)
+        return svc
+
+    def _render_help_entry(self, entry: HelpEntry, character: Any, *, title_prefix: str="") -> str:
+        lines=[(title_prefix + entry.title).upper()]
+        if entry.summary: lines += ["", entry.summary]
+        if entry.body: lines += ["", entry.body]
+        if entry.syntax: lines += ["", "Syntax:", *[f"  {x}" for x in entry.syntax]]
+        if entry.examples: lines += ["", "Examples:", *[f"  {x}" for x in entry.examples]]
+        if entry.related_topics: lines += ["", "Related topics: " + ", ".join(entry.related_topics)]
+        if entry.category: lines += ["", f"Category: {entry.category}"]
+        return "\n".join(lines)
+
+    def _cmd_title(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if not args:
+            current=getattr(character,"title","") or "no custom title"
+            return CommandResult(f"Current title: {current}\nUsage: title <text>\nType HELP TITLE for more information.")
+        text=" ".join(args).strip()
+        if len(text)>60: return CommandResult("Titles must be 60 characters or fewer.", ok=False)
+        if not re.fullmatch(r"[A-Za-z0-9 ,.'-]+", text): return CommandResult("Titles may contain letters, numbers, spaces, commas, periods, apostrophes, and hyphens.", ok=False)
+        setattr(character,"title",text)
+        return CommandResult(f"Your title is now: {text}")
+
+    def _cmd_attributes(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        svc=getattr(self,"character_display_snapshots",None) or CharacterDisplaySnapshotService(getattr(self,"runtime",None))
+        attrs=svc.build_snapshot(character).attributes
+        if not attrs: return CommandResult("Attributes are not available for this character yet.\nType HELP ATTRIBUTES for more information.")
+        names={"strength":"Strength","dexterity":"Dexterity","constitution":"Constitution","intelligence":"Intelligence","wisdom":"Wisdom","charisma":"Charisma"}
+        lines=["ATTRIBUTES"]
+        for key,label in names.items():
+            if key in attrs:
+                v=attrs[key] if isinstance(attrs[key],dict) else {"final":attrs[key]}
+                base=v.get("base", v.get("final", "—")); mod=v.get("modifier", v.get("modifiers", 0) or 0); final=v.get("final", base)
+                lines.append(f"{label:<14} {base:>3}" + (f" {mod:+} = {final}" if mod else f"     {final}"))
+        return CommandResult("\n".join(lines))
+
+    def _cmd_helpedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("You do not have permission for that command.", ok=False)
+        svc=self._help_service(character); drafts=svc.load_drafts(); sub=(args[0].lower() if args else "list")
+        try:
+            if sub=="list": return CommandResult("Help drafts:\n"+"\n".join(f"- {e.help_id}: {e.title}" for e in sorted(drafts.values(), key=lambda e:e.help_id)))
+            if len(args)<2: return CommandResult("Usage: helpedit <show|create|clone|title|summary|body|syntax|example|keyword|alias|category|related|access|visible|validate|preview|delete|publish> <id> ...", ok=False)
+            hid=args[1]
+            if sub=="create":
+                if hid in drafts: return CommandResult("That help entry already exists.", ok=False)
+                drafts[hid]=HelpEntry(help_id=hid, keywords=(hid.replace('_',' '),), title=hid.replace('_',' ').title(), summary="Draft help entry."); svc.save_drafts(drafts); return CommandResult(f"Created draft help entry {hid}.")
+            if sub=="clone" and len(args)>=3:
+                src=svc.get_entry(hid, character); nid=args[2]
+                if not isinstance(src, HelpEntry): return CommandResult("Source help entry not found.", ok=False)
+                data=src.to_dict(); data["help_id"]=nid; data["keywords"]=[nid.replace('_',' ')]; drafts[nid]=HelpEntry.from_dict(data); svc.save_drafts(drafts); return CommandResult(f"Cloned {src.help_id} to {nid}.")
+            e=drafts.get(hid) or svc._entry_exact(hid, drafts)
+            if not e: return CommandResult("Help draft not found.", ok=False)
+            data=e.to_dict()
+            rest=" ".join(args[2:]).strip()
+            if sub=="show": return CommandResult(json.dumps(data, indent=2))
+            if sub in {"title","summary","body","category"}: data[sub]=rest
+            elif sub=="syntax": data.setdefault("syntax",[]); data["syntax"].append(rest)
+            elif sub=="example": data.setdefault("examples",[]); data["examples"].append(rest)
+            elif sub in {"keyword","alias","related"} and len(args)>=4:
+                key={"keyword":"keywords","alias":"aliases","related":"related_topics"}[sub]; op=args[2].lower(); val=" ".join(args[3:])
+                items=list(data.get(key) or [])
+                if op=="add" and val not in items: items.append(val)
+                if op=="remove": items=[x for x in items if normalize_help_query(x)!=normalize_help_query(val)]
+                data[key]=items
+            elif sub=="access": data["minimum_access_level"]=rest.lower()
+            elif sub=="visible": data["player_visible"]=rest.lower() in {"on","true","yes","1"}
+            elif sub=="delete": drafts.pop(e.help_id,None); svc.save_drafts(drafts); return CommandResult(f"Deleted draft help entry {e.help_id}.")
+            elif sub=="validate": svc.validate_entry(e); return CommandResult(f"Help entry {e.help_id} is valid.")
+            elif sub=="preview": return CommandResult(self._render_help_entry(e, character, title_prefix="Preview: "))
+            else: return CommandResult("Unknown helpedit action.", ok=False)
+            ne=HelpEntry.from_dict(data); svc.validate_entry(ne); drafts[e.help_id]=ne; svc.save_drafts(drafts); return CommandResult(f"Updated help draft {ne.help_id}.")
+        except Exception as exc:
+            return CommandResult(f"Help edit failed: {exc}", ok=False)
+
     def _cmd_resists(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display resistances through the single score renderer."""
         return CommandResult(narrative=self._render_score_section(character, "resistances"))
@@ -1818,7 +1928,7 @@ class MudCommandEngine:
         svc = getattr(self, "character_display_snapshots", None) or getattr(getattr(self, "runtime", None), "character_display_snapshots", None) or CharacterDisplaySnapshotService(getattr(self, "runtime", None))
         snap = svc.build_snapshot(character)
         doc = build_worth_document(character, snapshot=snap, theme=resolve_effective_display_theme(character, family="worth"))
-        return CommandResult(narrative=render_display_mud(doc, color_enabled=getattr(doc.frames[0] if doc.frames else None, "color_enabled", True)), display_document=doc, display_intent="SCORE")
+        return CommandResult(narrative=render_display_mud(doc, color_enabled=getattr(doc.frames[0] if doc.frames else None, "color_enabled", True)), display_document=doc, display_intent="WORTH")
 
     def _cmd_who(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """List connected players."""
@@ -1859,30 +1969,30 @@ class MudCommandEngine:
         return CommandResult(narrative="", state_updates={"render_room": True})
 
     def _cmd_help(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        """Display help."""
+        """Display canonical searchable help."""
+        svc=self._help_service(character)
         if not args:
-            narrative = """
-Available commands:
-  score - Display your stats
-  inventory - List your items
-  equipment - Show worn items
-  look - Examine surroundings
-  help <topic> - Get help on a topic
-  """
-        else:
-            topic = args[0].lower()
-            resolved = self.resolve_alias(topic) or topic
-            meta = self.registry.commands.get(resolved)
-            self._publish("command_help_requested", character, raw, topic=topic, resolved_command=resolved)
-            builder_help = self._builder_list_help(resolved)
-            if builder_help:
-                narrative = builder_help
-            elif meta:
-                narrative = f"Command: {meta.command}\nPurpose: {meta.long_help or meta.short_help}\nUsage: {meta.usage or meta.command}\nAliases: {', '.join(meta.aliases) if meta.aliases else 'none'}\nCategory: {meta.category}\nStatus: {meta.status}"
-            else:
-                narrative = f"Help on '{topic}' is not available."
-        
-        return CommandResult(narrative=narrative)
+            cats=", ".join(svc.categories(character)[:12]) or "general"
+            topics=", ".join(e.title for e in svc.list_topics(actor_context=character)[:8])
+            return CommandResult(f"HELP\n\nType HELP <topic> for details, HELP SEARCH <text> to search, HELP CATEGORIES to list categories, or HELP CATEGORY <category>.\n\nCommon topics: {topics}\nCategories: {cats}", display_intent="HELP")
+        sub=args[0].lower(); query=" ".join(args[1:] if sub in {"search","category","related"} else args)
+        if sub=="categories": return CommandResult("Help categories:\n"+"\n".join(f"- {c}" for c in svc.categories(character)))
+        if sub=="category":
+            rows=svc.list_topics(query, character); return CommandResult((f"Help category: {query}\n" if query else "Help topics:\n")+ ("\n".join(f"- {e.title}" for e in rows) if rows else "No visible topics in that category."))
+        if sub=="search":
+            rows=svc.search(query, character); return CommandResult("Help search results:\n"+("\n".join(f"- {e.title} ({e.category})" for e in rows[:10]) if rows else "No matching help topics."))
+        if sub=="related":
+            rows=svc.related(query, character); return CommandResult("Related help topics:\n"+("\n".join(f"- {e.title}" for e in rows) if rows else "No related topics."))
+        res=svc.get_entry(query, character)
+        self._publish("command_help_requested", character, raw, topic=query)
+        if isinstance(res, dict) and res.get("ambiguous"):
+            return CommandResult(f"Help topic “{query}” matches:\n"+"\n".join(f"- {e.title}" for e in res["ambiguous"])+"\n\nType HELP <topic> using one of the names above.", ok=False)
+        if isinstance(res, HelpEntry): return CommandResult(self._render_help_entry(res, character), display_intent="HELP")
+        resolved = self.resolve_alias(query) or query
+        meta = self.registry.commands.get(resolved)
+        if meta:
+            return CommandResult(f"Command: {meta.command}\nPurpose: {meta.long_help or meta.short_help}\nUsage: {meta.usage or meta.command}\nAliases: {', '.join(meta.aliases) if meta.aliases else 'none'}\nCategory: {meta.category}\nStatus: {meta.status}")
+        return CommandResult(f"Help on '{query}' is not available. Try HELP SEARCH {query}.", ok=False)
 
     def _cmd_commands(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """List available commands."""

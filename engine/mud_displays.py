@@ -9,7 +9,7 @@ from enum import Enum
 
 class DisplayIntent(str, Enum):
     ROOM = "ROOM"; TARGET_LOOK = "TARGET_LOOK"; TARGET_EXAMINE = "TARGET_EXAMINE"; IDENTIFY = "IDENTIFY"; READ = "READ"; LOOK_INSIDE = "LOOK_INSIDE"; LOOK_DIRECTION = "LOOK_DIRECTION"; EXITS = "EXITS"
-    INVENTORY = "INVENTORY"; EQUIPMENT = "EQUIPMENT"; SCORE = "SCORE"; ATTRIBUTES = "ATTRIBUTES"; AFFECTS = "AFFECTS"; SKILLS = "SKILLS"; SPELLS = "SPELLS"; COOLDOWNS = "COOLDOWNS"; PROMPT = "PROMPT"; COMBAT_STATUS = "COMBAT_STATUS"; QUEST_STATUS = "QUEST_STATUS"
+    INVENTORY = "INVENTORY"; EQUIPMENT = "EQUIPMENT"; SCORE = "SCORE"; WORTH = "WORTH"; ATTRIBUTES = "ATTRIBUTES"; AFFECTS = "AFFECTS"; SKILLS = "SKILLS"; SPELLS = "SPELLS"; COOLDOWNS = "COOLDOWNS"; PROMPT = "PROMPT"; COMBAT_STATUS = "COMBAT_STATUS"; QUEST_STATUS = "QUEST_STATUS"
     ITEM_ACTION = "ITEM_ACTION"; MOVEMENT = "MOVEMENT"; POSTURE = "POSTURE"; COMMUNICATION = "COMMUNICATION"; SOCIAL = "SOCIAL"; SHOP = "SHOP"; BOARD = "BOARD"; QUEST = "QUEST"; TRAINER = "TRAINER"; CRAFTING = "CRAFTING"; GATHERING = "GATHERING"
     COMBAT = "COMBAT"; DEATH = "DEATH"; REWARD = "REWARD"; RESPAWN = "RESPAWN"; AMBIENT = "AMBIENT"
     HELP = "HELP"; WHO = "WHO"; WHERE = "WHERE"; SYSTEM = "SYSTEM"; SUCCESS = "SUCCESS"; WARNING = "WARNING"; ERROR = "ERROR"; ADMIN = "ADMIN"; BUILDER = "BUILDER"
@@ -459,7 +459,11 @@ def build_score_document(character: Any, *, snapshot: CharacterDisplaySnapshot |
     section_rows: dict[str, list[Any]] = {k: [] for k in ("identity","resources","progression","carrying","attributes","combat","currency","survival","effects","time")}
     rows=section_rows["identity"]
     rows.append(_row_fields((theme_label(theme,"name","Name"), ident.get("display_name","Adventurer")), (theme_label(theme,"title","Title"), ident.get("title","—"))))
-    rows.append(_row_fields((theme_label(theme,"race","Race"), ident.get("race_name","—")), (theme_label(theme,"class","Class"), ident.get("class_name","—"))))
+    race=ident.get("race_name"); cls=ident.get("class_name")
+    pairs=[]
+    if race not in (None,"","—"): pairs.append((theme_label(theme,"race","Race"), race))
+    if cls not in (None,"","—"): pairs.append((theme_label(theme,"class","Class"), cls))
+    if pairs: rows.append(_row_fields(*pairs))
     rows.append(_row_fields((theme_label(theme,"level","Level"), ident.get("level","—")), (theme_label(theme,"alignment","Alignment"), ident.get("alignment","—"))))
     if ident.get("age") or ident.get("birthday"): rows.append(_row_fields((theme_label(theme,"age","Age"), ident.get("age","—")), (theme_label(theme,"birthday","Birthday"), ident.get("birthday","—"))))
     rows.append(DisplayDivider())
@@ -471,7 +475,7 @@ def build_score_document(character: Any, *, snapshot: CharacterDisplaySnapshot |
     if prog: rows.append(_row_fields((theme_label(theme,"experience","Experience"), prog.get("xp","—")), (theme_label(theme,"tnl","TNL"), prog.get("xp_to_next_level","—"))))
     pts=[(theme_label(theme, {"practice_points":"practice","training_points":"training","level_progress_percent":"level_progress"}.get(k,k), k.replace("_"," ").title()),v) for k,v in prog.items() if k in {"practice_points","training_points","quest_points","level_progress_percent"}]
     if pts: rows.append(_row_fields(*pts[:2]))
-    if carry:
+    if carry and (carry.get("current_weight") is not None or carry.get("carry_weight") is not None or carry.get("carry_capacity") is not None):
         section_rows["carrying"].append(DisplayLine(f"{theme_label(theme,'carry_capacity','Carry Capacity')}: {carry.get('current_weight', carry.get('carry_weight','—'))} / {carry.get('carry_capacity','—')} — {theme_label(theme,'encumbrance','Encumbrance')}: {carry.get('encumbrance_text', carry.get('encumbrance','—'))}"))
     rows=section_rows["attributes"]
     labels=[(theme_label(theme,"strength","Str"),"strength"),(theme_label(theme,"dexterity","Dex"),"dexterity"),(theme_label(theme,"constitution","Con"),"constitution"),(theme_label(theme,"intelligence","Int"),"intelligence"),(theme_label(theme,"wisdom","Wis"),"wisdom"),(theme_label(theme,"charisma","Cha"),"charisma")]
@@ -499,7 +503,7 @@ def build_worth_document(character: Any, *, snapshot: CharacterDisplaySnapshot |
     currency=(snapshot or build_character_display_snapshot(character)).currency
     cells=[DisplayCell(width=18, segments=_field_segments(k.title(), v, value_role="gold" if k=="gold" else "character_value")) for k,v in currency.items() if v is not None]
     if not cells: cells=[DisplayCell("You are broke.", role="character_muted", width=30)]
-    return build_character_frame_document(DisplayIntent.SCORE,"CURRENCIES",[DisplayRow(cells)],width=48, theme=theme)
+    return build_character_frame_document(DisplayIntent.WORTH,"CURRENCIES",[DisplayRow(cells)],width=48, theme=theme)
 
 def _ability_cost(row: dict[str, Any]) -> str:
     costs=row.get('costs') or []
@@ -507,19 +511,19 @@ def _ability_cost(row: dict[str, Any]) -> str:
 
 def build_abilities_document(rows: list[dict[str, Any]], *, title: str="ABILITIES", empty: str="You have no abilities.", theme: Any = None) -> DisplayDocument:
     out=[]
-    for i,r in enumerate(rows):
-        if i: out.append(DisplayDivider(kind="item"))
-        rank=f"Rank: {int(r.get('rank') or 1)}/{int(r.get('maximum_rank') or 100)}"
-        out.append(DisplayRow([DisplayCell(str(r.get('name') or r.get('id') or 'Ability').replace('_',' ').title(),width=48),DisplayCell(rank,width=17,align='right')], role="character_title"))
-        status=str(r.get('status_text') or r.get('availability_text') or ('Passive' if r.get('passive') else 'Availability unknown.'))
-        out.append(DisplayLine(f"Status: {status}", role="character_positive" if status=='Ready' else "warning"))
-        meta=[]
-        if title == 'SPELLS':
-            meta=[DisplayCell(f"Mana: {next((c.get('amount') for c in (r.get('costs') or []) if c.get('resource_id') in {'mana','mp'}), 0)}",width=18),DisplayCell(f"Cooldown: {r.get('cooldown_remaining') or r.get('cooldown') or '—'}",width=22),DisplayCell(f"Target: {((r.get('targeting') or {}).get('mode') or 'Self').title()}",width=20)]
-        else:
-            cat=str(r.get('category') or r.get('ability_type') or 'General').replace('_',' ').title(); meta=[DisplayCell(f"Category: {cat}",width=34),DisplayCell(f"Cost: {_ability_cost(r)}",width=28)]
-        out.append(DisplayRow(meta));
-        if r.get('description'): out.append(DisplayLine(str(r.get('description')), role="character_value"))
+    compact = title in {"SKILLS", "SPELLS", "ABILITIES"}
+    for r in rows:
+        name=str(r.get('name') or r.get('id') or 'Ability').replace('_',' ').title()
+        rank_num=int(r.get('rank') or 1); max_rank=int(r.get('maximum_rank') or 1)
+        rank = f"Rank {rank_num}/{max_rank}" if max_rank and max_rank != 1 else f"Rank {rank_num}"
+        out.append(DisplayRow([DisplayCell(name,width=48),DisplayCell(rank,width=17,align='right')], role="character_title"))
+        if not compact:
+            status=str(r.get('status_text') or r.get('availability_text') or ('Passive' if r.get('passive') else 'Availability unknown.'))
+            out.append(DisplayLine(f"Status: {status}", role="character_positive" if status=='Ready' else "warning"))
+            out.append(DisplayLine(str(r.get('description') or ''), role="character_value"))
+    if out and compact:
+        sample=str(rows[0].get('name') or rows[0].get('id') or 'skill').replace('_',' ').title()
+        out.append(DisplayDivider(kind="section")); out.append(DisplayLine(f"Type HELP {sample} for detailed information.", role="character_muted"))
     if not out: out=build_empty_display_rows(title.lower(), theme, empty) or [DisplayLine(empty, role=resolve_theme_role(theme, "character_muted"))]
     return build_character_frame_document(DisplayIntent.SKILLS if title=='SKILLS' else DisplayIntent.SPELLS if title=='SPELLS' else DisplayIntent.SYSTEM,title,out,width=70, theme=theme)
 
@@ -914,7 +918,7 @@ def build_room_document(room: Any, viewer: Any = None) -> DisplayDocument:
 
 def render_room(room: Any, colors: dict[str, str] | None = None, character: Any = None) -> str:
     """Compatibility wrapper around the canonical room DisplayDocument."""
-    return render_display_html(build_room_document(room, character))
+    return render_display_html(build_room_document(room, character), color_enabled=not bool(getattr(character, "preferences", {}).get("no_color")))
 
 
 def render_object(obj: Any) -> str:
@@ -927,7 +931,7 @@ def render_object(obj: Any) -> str:
 
 def render_prompt(character: Any, colors: dict[str, str]) -> str:
     """Render the canonical configurable-style prompt as safe browser HTML."""
-    return render_display_html(build_prompt_document(character))
+    return render_display_html(build_prompt_document(character), color_enabled=not bool(getattr(character, "preferences", {}).get("no_color")))
 
 
 def render_scrollback_line(output: str, role: str = "default", colors: dict[str, str] = None) -> str:
