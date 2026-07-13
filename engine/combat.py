@@ -391,7 +391,7 @@ class CombatResolutionService:
             crit_chance=max(0,min(100,int(a.critical.get('critical_heal',0))-int(d.critical.get('critical_avoidance',0))))
             crit_roll=self.rng(attacker.actor_id,defender.actor_id,ctx.round_id or self.engine.tick,ctx.action_id or 'heal_crit')
             crit=bool(ctx.safe_metadata().get('can_critical', True)) and crit_roll<=crit_chance
-            mult=float(ctx.safe_metadata().get('critical_multiplier') or 1.5)
+            mult=float(ctx.safe_metadata().get('critical_multiplier') or a.critical.get('critical_damage', 1.5) or 1.5)
             raw=round(self._formula('healing_resolution','base_amount + healing_power * healing_coefficient', {'base_amount':base,'healing_power':heal_power,'healing_coefficient':coeff}))
             effective=int(raw*mult) if crit else int(raw)
             rt=RuntimeResourceService(self.runtime, event_bus=self.event_bus).apply_healing(defender, effective, action_id=ctx.action_id, metadata={'source':'combat_healing','action_id':ctx.action_id})
@@ -431,7 +431,7 @@ class CombatResolutionService:
         crit_raw=self._formula('critical_resolution','critical_rating - critical_avoidance', {'critical_rating':int(a.critical.get(crit_stat,0)),'critical_avoidance':int(d.critical.get('critical_avoidance',0))})
         crit_chance=max(0,min(100,round(crit_raw)))
         crit_roll=self.rng(attacker.actor_id,defender.actor_id,ctx.round_id or self.engine.tick,ctx.action_id or 'crit')
-        crit=crit_roll<=crit_chance; mult=float(ctx.safe_metadata().get('critical_multiplier') or 2.0); trace.append({'step':'critical_resolved','critical_kind':crit_stat,'chance':crit_chance,'roll':crit_roll,'critical':crit})
+        crit=crit_roll<=crit_chance; mult=float(ctx.safe_metadata().get('critical_multiplier') or a.critical.get('critical_damage', 1.5) or 1.5); trace.append({'step':'critical_resolved','critical_kind':crit_stat,'chance':crit_chance,'roll':crit_roll,'critical':crit,'critical_multiplier':mult})
         profile=a.weapon_profile if atk.source=='weapon' and a.weapon_profile else a.unarmed_profile
         base=max(int(profile.minimum_damage), int((int(profile.minimum_damage)+int(profile.maximum_damage))/2)) + int(a.offense.get('attack_power',0)) + int(a.offense.get('damage_bonus',0))
         raw=int(base*mult) if crit else int(base); dtype=ctx.damage_kind or profile.damage_type or atk.damage_type

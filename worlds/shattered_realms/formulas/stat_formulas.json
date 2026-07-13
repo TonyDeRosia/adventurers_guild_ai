@@ -2,19 +2,19 @@
   "formulas": [
     {
       "formula_id": "max_health",
-      "expression": "50 + (constitution * 5) + (level * 5)",
+      "expression": "50 + (endurance * 5) + (level * 5)",
       "enabled": true,
       "metadata": {}
     },
     {
       "formula_id": "max_mana",
-      "expression": "20 + (intelligence * 4) + (wisdom * 2)",
+      "expression": "20 + (intellect * 4) + (willpower * 2)",
       "enabled": true,
       "metadata": {}
     },
     {
       "formula_id": "max_stamina",
-      "expression": "40 + (constitution * 3) + (strength * 2)",
+      "expression": "40 + (endurance * 3) + (physical_power * 2)",
       "enabled": true,
       "metadata": {}
     },
@@ -26,85 +26,85 @@
     },
     {
       "formula_id": "evasion",
-      "expression": "dexterity * 2",
+      "expression": "agility * 2",
       "enabled": true,
       "metadata": {}
     },
     {
       "formula_id": "accuracy",
-      "expression": "dexterity * 2 + level",
+      "expression": "agility * 2 + level",
       "enabled": true,
       "metadata": {}
     },
     {
       "formula_id": "hit_bonus",
-      "expression": "(strength + dexterity) / 4",
+      "expression": "(physical_power + agility) / 4",
       "enabled": true,
       "metadata": {}
     },
     {
       "formula_id": "damage_bonus",
-      "expression": "strength / 3",
+      "expression": "physical_power / 3",
       "enabled": true,
       "metadata": {}
     },
     {
       "formula_id": "physical_save",
-      "expression": "constitution + strength / 2",
+      "expression": "endurance + physical_power / 2",
       "enabled": true,
       "metadata": {}
     },
     {
       "formula_id": "mental_save",
-      "expression": "wisdom + intelligence / 2",
+      "expression": "willpower + intellect / 2",
       "enabled": true,
       "metadata": {}
     },
     {
       "formula_id": "magic_save",
-      "expression": "wisdom + intelligence / 2",
+      "expression": "willpower + intellect / 2",
       "enabled": true,
       "metadata": {}
     },
     {
       "formula_id": "critical_melee",
-      "expression": "dexterity / 2",
+      "expression": "agility / 2",
       "enabled": true,
       "metadata": {}
     },
     {
       "formula_id": "critical_spell",
-      "expression": "intelligence / 2",
+      "expression": "intellect / 2",
       "enabled": true,
       "metadata": {}
     },
     {
       "formula_id": "critical_heal",
-      "expression": "wisdom / 2",
+      "expression": "willpower / 2",
       "enabled": true,
       "metadata": {}
     },
     {
       "formula_id": "critical_avoidance",
-      "expression": "constitution / 3 + dexterity / 3",
+      "expression": "endurance / 3 + agility / 3",
       "enabled": true,
       "metadata": {}
     },
     {
       "formula_id": "attack_power",
-      "expression": "strength * 2 + level",
+      "expression": "physical_power * 2 + level",
       "enabled": true,
       "metadata": {}
     },
     {
       "formula_id": "spell_power",
-      "expression": "intelligence * 2 + level",
+      "expression": "intellect * 2 + level",
       "enabled": true,
       "metadata": {}
     },
     {
       "formula_id": "healing_power",
-      "expression": "wisdom * 2 + level",
+      "expression": "willpower * 2 + level",
       "enabled": true,
       "metadata": {}
     },
@@ -122,49 +122,49 @@
     },
     {
       "formula_id": "unarmed_damage_min",
-      "expression": "1 + strength / 10",
+      "expression": "1 + physical_power / 10",
       "enabled": true,
       "metadata": {}
     },
     {
       "formula_id": "unarmed_damage_max",
-      "expression": "2 + strength / 5",
+      "expression": "2 + physical_power / 5",
       "enabled": true,
       "metadata": {}
     },
     {
       "formula_id": "initiative",
-      "expression": "dexterity + wisdom / 2",
+      "expression": "agility + willpower / 2",
       "enabled": true,
       "metadata": {}
     },
     {
       "formula_id": "attack_speed",
-      "expression": "100 + dexterity",
+      "expression": "100 + agility",
       "enabled": true,
       "metadata": {}
     },
     {
       "formula_id": "casting_speed",
-      "expression": "100 + intelligence",
+      "expression": "100 + intellect",
       "enabled": true,
       "metadata": {}
     },
     {
       "formula_id": "recovery_speed",
-      "expression": "100 + constitution",
+      "expression": "100 + endurance",
       "enabled": true,
       "metadata": {}
     },
     {
       "formula_id": "movement_speed",
-      "expression": "100 + dexterity",
+      "expression": "100 + agility",
       "enabled": true,
       "metadata": {}
     },
     {
       "formula_id": "carry_capacity",
-      "expression": "50 + strength * 10",
+      "expression": "50 + physical_power * 10",
       "enabled": true,
       "metadata": {}
     },
@@ -278,6 +278,15 @@
         "authoritative_combat_stage": true
       },
       "expression": "0"
+    },
+    {
+      "formula_id": "critical_damage",
+      "expression": "1.5 + (physical_power + agility + intellect + willpower) / 200",
+      "enabled": true,
+      "metadata": {
+        "unit": "multiplier",
+        "phase": "13C3-B3"
+      }
     }
   ]
 }

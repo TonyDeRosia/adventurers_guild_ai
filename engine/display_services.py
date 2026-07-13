@@ -192,12 +192,6 @@ class CharacterDisplaySnapshotService:
         rt = self.runtime
         canonical_snapshot = None
         combat_service = getattr(rt, "combat_stat_service", None) if rt else None
-        if combat_service is None and rt and getattr(rt, "attribute_service", None):
-            try:
-                from engine.character_stats import CombatStatService
-                combat_service = CombatStatService(rt.attribute_service)
-            except Exception:
-                combat_service = None
         if combat_service is not None:
             try:
                 canonical_snapshot = combat_service.get_combat_snapshot(character, {"runtime": rt})
