@@ -9,6 +9,7 @@ import re
 import logging
 import sqlite3
 import traceback
+import copy
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ from engine.actors import actor_from_runtime_character
 from engine.formulas import FormulaEngine
 from engine.character_stats import CharacterAttributeService, CombatStatService, _load_json
 from engine.builder_content_editor import BuilderContentEditor
+from engine.builder_stat_content import (AttributeDocumentAdapter, FormulaDocumentAdapter, StatDefinitionDocumentAdapter, ResistanceDocumentAdapter, EncumbranceDocumentAdapter, PostureDocumentAdapter, RangeRulesDocumentAdapter, CombatMessageDocumentAdapter, StatCombatPublishValidator, StatCombatPublisher, parse_bool, parse_num, safe_id, norm_hash, now)
 from engine.score_renderer import ActorScoreRenderer
 from engine.command_registry import CommandRegistry
 from smart_mud.builder import BuilderWorkspace
@@ -492,7 +494,7 @@ class MudCommandEngine:
             "wizhelp": self._cmd_wizhelp,
             "goto": self._cmd_goto,
             "stat": self._cmd_stat,
-            "formula": self._cmd_formula_diag,
+            "formuladiag": self._cmd_formula_diag,
             "modifier": self._cmd_modifier_diag,
             "actor": self._cmd_actor_diag,
             "bodylist": self._cmd_phase5f, "bodyshow": self._cmd_phase5f, "slotlist": self._cmd_phase5f,
@@ -1813,53 +1815,182 @@ class MudCommandEngine:
         return CommandResult(json.dumps(combat.get_breakdown(character, stat), indent=2, default=str))
 
 
-    def _generic_builder_edit(self, character: Any, args: list[str], spec: tuple[str,str,str], label: str) -> CommandResult:
-        if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("You do not have permission for that command.", ok=False)
-        attr,_=self._stat_services(character); ed=BuilderContentEditor(attr.world_root,*spec); sub=args[0].lower() if args else 'list'
+    def _stats_actor_id(self, character: Any) -> str:
+        return str(getattr(character, "id", None) or getattr(character, "name", None) or "unknown")
+
+    def _audit_stat_edit(self, root, actor, command, adapter, rid, before, after, validation):
         try:
+            p=root/'builder'/'audit'/'stats_edits.jsonl'; p.parent.mkdir(parents=True, exist_ok=True)
+            rec={'actor':actor,'world':root.name,'command':command,'document':adapter.name,'record_id':rid,'before_hash':norm_hash(before) if before is not None else None,'after_hash':norm_hash(after) if after is not None else None,'validation_result':validation,'timestamp':now()}
+            with p.open('a',encoding='utf-8') as f: f.write(json.dumps(rec, sort_keys=True, default=str)+'\n')
+        except Exception: pass
+
+    def _adapter_edit(self, character: Any, args: list[str], raw: str, adapter_cls: Any, label: str) -> CommandResult:
+        if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("You do not have permission for that command.", ok=False)
+        attr,_=self._stat_services(character); root=attr.world_root; a=adapter_cls(root); sub=args[0].lower() if args else 'list'; actor=self._stats_actor_id(character)
+        def validate(data):
+            docs=StatCombatPublishValidator(root).load_all(); docs[a.name]=data; ctx=StatCombatPublishValidator(root).graph(docs); return a.validate_doc(data,ctx)
+        try:
+            data=a.load_draft()
             if sub=='list':
-                data=ed.load(); recs=ed.records(data); vals=list(recs.values()) if isinstance(recs,dict) else list(recs)
-                return CommandResult(label+" drafts:\n"+"\n".join(f"- {(r.get(spec[2]) or r.get('id')) if isinstance(r,dict) else k}: {(r.get('name', r.get('expression','')) if isinstance(r,dict) else r)}" for k,r in ((recs.items() if isinstance(recs,dict) else [(str(i),v) for i,v in enumerate(vals)]))))
+                vals=a.values(data); lines=[f"{label} drafts ({len(vals)})"]
+                for r in vals:
+                    rid=r.get(a.id_key) or r.get('id'); lines.append(f"- {rid} | {r.get('name','')} | {r.get('short_name','')} | default={r.get('default_value','')} min={r.get('minimum_value','')} max={r.get('maximum_value','')} creation={r.get('creation_minimum','')}-{r.get('creation_maximum','')} group={r.get('display_group','')} order={r.get('display_order',r.get('order',''))} enabled={r.get('enabled','')} visible={r.get('player_visible',r.get('visible',''))}")
+                return CommandResult('\n'.join(lines))
+            if adapter_cls is RangeRulesDocumentAdapter:
+                return self._range_edit(a, data, args, raw, actor)
+            if adapter_cls is EncumbranceDocumentAdapter:
+                return self._encumbrance_edit(a, data, args, raw, actor)
             if sub in {'show','preview','validate'} and len(args)>=2:
-                rec=ed.find(args[1]); return CommandResult(json.dumps(ed.validate(args[1]) if sub=='validate' else (rec or {'error':'not found'}), indent=2), ok=bool(rec) or sub=='validate')
-            if sub=='create' and len(args)>=2: return CommandResult(json.dumps(ed.create(args[1]), indent=2))
-            if sub=='clone' and len(args)>=3: return CommandResult(json.dumps(ed.clone(args[1],args[2]), indent=2))
-            if sub=='delete' and len(args)>=2: ed.delete(args[1]); return CommandResult(f"Deleted draft {args[1]}.")
-            if len(args)>=3 and sub in {'name','short','description','default','minimum','maximum','creationmin','creationmax','order','group','role','visible','enable','expression','rounding','format','formula','unit'}:
-                fmap={'short':'short_name','default':'default_value','minimum':'minimum_value','maximum':'maximum_value','creationmin':'creation_minimum','creationmax':'creation_maximum','enable':'enabled'}
-                val=' '.join(args[2:]);
-                if val.lower() in {'on','true'}: val=True
-                elif val.lower() in {'off','false'}: val=False
-                elif re.fullmatch(r'-?\d+(\.\d+)?', str(val)): val=float(val) if '.' in str(val) else int(val)
-                return CommandResult(json.dumps(ed.set_field(args[1], fmap.get(sub,sub), val), indent=2))
-            if sub in {'tag','variable'} and len(args)>=4 and args[2] in {'add','remove'}:
-                field='tags' if sub=='tag' else 'variables'; return CommandResult(json.dumps(ed.list_value(args[1],field,args[3],args[2]=='add'), indent=2))
-            return CommandResult(f"Usage: {label.lower()} list/show/create/clone/set/delete/validate/preview", ok=False)
+                rec=a.find(data,args[1]); issues=validate(data)
+                if sub=='validate':
+                    rel=[i.__dict__ for i in issues if i.record_id in {args[1],'*','unburdened'}]; return CommandResult(json.dumps({'ok':not rel,'errors':rel}, indent=2), ok=not rel)
+                return CommandResult(json.dumps({'record':rec,'validation_errors':[i.__dict__ for i in issues if i.record_id in {args[1],'*'}]}, indent=2), ok=bool(rec))
+            if sub=='create' and len(args)>=2:
+                rid=safe_id(args[1]);
+                if a.find(data,rid): return CommandResult(f"{rid} already exists", ok=False)
+                before=copy.deepcopy(data); rec=a.default_record(rid); a.put(data,rec); issues=validate(data)
+                if issues: return CommandResult('\n'.join(i.line() for i in issues), ok=False)
+                a.save_draft(data); self._audit_stat_edit(root,actor,raw,a,rid,before,data,{'ok':True}); return CommandResult(json.dumps(rec, indent=2))
+            if sub=='clone' and len(args)>=3:
+                src,new=args[1],safe_id(args[2]); old=a.find(data,src)
+                if not old: return CommandResult('Source not found.', ok=False)
+                if a.find(data,new): return CommandResult('Target already exists.', ok=False)
+                before=copy.deepcopy(data); rec=copy.deepcopy(old); rec[a.id_key]=new; rec['id']=new; a.put(data,rec); issues=validate(data)
+                if issues: return CommandResult('\n'.join(i.line() for i in issues), ok=False)
+                a.save_draft(data); self._audit_stat_edit(root,actor,raw,a,new,before,data,{'ok':True}); return CommandResult(json.dumps(rec, indent=2))
+            if sub=='delete' and len(args)>=2:
+                rid=args[1]; ref=StatCombatPublishValidator(root).deletion_errors(a.name, rid)
+                if ref: return CommandResult('\n'.join(i.line() for i in ref), ok=False)
+                if adapter_cls is PostureDocumentAdapter and rid in a.required: return CommandResult('Required posture cannot be deleted.', ok=False)
+                before=copy.deepcopy(data); a.remove(data,rid); issues=validate(data)
+                if issues: return CommandResult('\n'.join(i.line() for i in issues), ok=False)
+                a.save_draft(data); self._audit_stat_edit(root,actor,raw,a,rid,before,data,{'ok':True}); return CommandResult(f"Deleted draft {rid}.")
+            if sub in {'tag','variable'} and len(args)>=4 and args[2].lower() in {'add','remove'}:
+                rid=args[1]; rec=a.find(data,rid)
+                if not rec: return CommandResult('Record not found.', ok=False)
+                before=copy.deepcopy(data); field='tags' if sub=='tag' else 'variables'; vals=list(rec.setdefault(field,[])); val=args[3]
+                if args[2].lower()=='add' and val not in vals: vals.append(val)
+                if args[2].lower()=='remove': vals=[x for x in vals if x!=val]
+                rec[field]=vals; a.normalize_record(rec); issues=validate(data)
+                if issues: return CommandResult('\n'.join(i.line() for i in issues), ok=False)
+                a.save_draft(data); self._audit_stat_edit(root,actor,raw,a,rid,before,data,{'ok':True}); return CommandResult(json.dumps(rec, indent=2))
+            if adapter_cls is CombatMessageDocumentAdapter and sub in {'field','condition'}:
+                rid=args[1]; rec=a.find(data,rid)
+                if not rec: return CommandResult('Record not found.', ok=False)
+                before=copy.deepcopy(data)
+                if sub=='field' and len(args)>=4 and args[2] in {'attacker','defender','observer'}: rec[args[2]]=' '.join(args[3:])
+                elif sub=='condition' and len(args)>=4: rec.setdefault('conditions',{})[args[2]]=' '.join(args[3:])
+                else: return CommandResult('Usage: combatmessage field <id> <attacker|defender|observer> <template> | condition <id> <field> <value>', ok=False)
+                issues=validate(data)
+                if issues: return CommandResult('\n'.join(i.line() for i in issues), ok=False)
+                a.save_draft(data); self._audit_stat_edit(root,actor,raw,a,rid,before,data,{'ok':True}); return CommandResult(json.dumps(rec, indent=2))
+            if adapter_cls is PostureDocumentAdapter and sub in {'modifier','allow','automatic-hit-against','wake-on-damage'}:
+                rid=args[1]; rec=a.find(data,rid)
+                if not rec: return CommandResult('Record not found.', ok=False)
+                before=copy.deepcopy(data)
+                if sub=='modifier' and len(args)>=4:
+                    if args[2] not in a.fields: return CommandResult('Unknown modifier field.', ok=False)
+                    rec[args[2]]=parse_num(args[3])
+                elif sub=='allow' and len(args)>=4 and args[2] in {'attack','cast','move'}: rec[{'attack':'attack_allowed','cast':'cast_allowed','move':'movement_allowed'}[args[2]]]=parse_bool(args[3])
+                elif sub in {'automatic-hit-against','wake-on-damage'} and len(args)>=3: rec[sub.replace('-','_')]=parse_bool(args[2])
+                else: return CommandResult('Usage: postureedit modifier/allow/automatic-hit-against/wake-on-damage ...', ok=False)
+                issues=validate(data)
+                if issues: return CommandResult('\n'.join(i.line() for i in issues), ok=False)
+                a.save_draft(data); self._audit_stat_edit(root,actor,raw,a,rid,before,data,{'ok':True}); return CommandResult(json.dumps(rec, indent=2))
+            if len(args)>=3:
+                rid=args[1]; rec=a.find(data,rid)
+                if not rec: return CommandResult('Record not found.', ok=False)
+                before=copy.deepcopy(data); val=' '.join(args[2:])
+                fmap={'short':'short_name','default':'default_value','minimum':'minimum_value','maximum':'maximum_value','creationmin':'creation_minimum','creationmax':'creation_maximum','order':'display_order','group':'display_group','role':'semantic_role','visible':'player_visible','enable':'enabled','formula':'formula_id','format':'display_format'}
+                field=fmap.get(sub,sub)
+                if sub in {'visible','enable'}: val=parse_bool(val)
+                elif sub in {'default','minimum','maximum','creationmin','creationmax','order'}: val=parse_num(val)
+                elif sub in {'minimum','maximum'} and adapter_cls is FormulaDocumentAdapter: field=sub; val=parse_num(val)
+                elif sub in {'rounding'} and val not in ROUNDINGS: return CommandResult('Unsupported rounding.', ok=False)
+                rec[field]=val; issues=validate(data)
+                if issues: return CommandResult('\n'.join(i.line() for i in issues), ok=False)
+                a.save_draft(data); self._audit_stat_edit(root,actor,raw,a,rid,before,data,{'ok':True}); return CommandResult(json.dumps(rec, indent=2))
+            return CommandResult(f"Usage: {label.lower()} list/show/create/clone/edit/delete/validate/preview", ok=False)
         except Exception as e: return CommandResult(str(e), ok=False)
 
+    def _encumbrance_edit(self, a, data, args, raw, actor):
+        attr,_=self._stat_services(actor) if False else (None,None); root=a.root; sub=args[0].lower() if args else 'list'
+        if sub=='list': return CommandResult('Encumbrance drafts:\n'+'\n'.join(f"- {r['id']} {r.get('threshold_percent')}% order={r.get('display_order')}" for r in a.values(data)))
+        if sub in {'validate','preview'}:
+            issues=a.validate_doc(data,{}); return CommandResult(json.dumps({'ok':not issues,'errors':[i.__dict__ for i in issues],'records':a.values(data)}, indent=2), ok=not issues)
+        if len(args)<2: return CommandResult('Usage: encumbranceedit show|set|rename|order|description|penalty|delete|validate|preview ...', ok=False)
+        rid=safe_id(args[1]); rec=a.find(data,rid) or a.default_record(rid); before=copy.deepcopy(data)
+        if sub=='show': return CommandResult(json.dumps(rec, indent=2), ok=bool(a.find(data,rid)))
+        if sub=='set' and len(args)>=3: rec['threshold_percent']=parse_num(args[2]); a.put(data,rec)
+        elif sub=='rename' and len(args)>=3: rec['name']=' '.join(args[2:]); a.put(data,rec)
+        elif sub=='order' and len(args)>=3: rec['display_order']=int(args[2]); a.put(data,rec)
+        elif sub=='description' and len(args)>=3: rec['description']=' '.join(args[2:]); a.put(data,rec)
+        elif sub=='penalty' and len(args)>=4: rec.setdefault('penalties',{})[args[2]]=parse_num(args[3]); a.put(data,rec)
+        elif sub=='delete': a.remove(data,rid)
+        else: return CommandResult('Usage: encumbranceedit show|set|rename|order|description|penalty|delete|validate|preview ...', ok=False)
+        issues=a.validate_doc(data,{})
+        if issues: return CommandResult('\n'.join(i.line() for i in issues), ok=False)
+        a.save_draft(data); self._audit_stat_edit(root,actor,raw,a,rid,before,data,{'ok':True}); return CommandResult(json.dumps(a.find(data,rid) or {'deleted':rid}, indent=2))
+
+    def _range_edit(self, a, data, args, raw, actor):
+        root=a.root; sub=args[0].lower() if args else 'show'; rr=data.setdefault('range_rules',{})
+        if sub in {'show','preview'}: return CommandResult(json.dumps({'range_rules':rr}, indent=2))
+        if sub=='validate':
+            issues=StatCombatPublishValidator(root).validate()['errors']; rel=[i for i in issues if i.document=='range_rules']; return CommandResult(json.dumps({'ok':not rel,'errors':[i.__dict__ for i in rel]}, indent=2), ok=not rel)
+        if sub in {'set','reset'} and len(args)>=2:
+            field=args[1]
+            if field not in a.allowed: return CommandResult('Unknown range field.', ok=False)
+            before=copy.deepcopy(data)
+            if sub=='reset': rr[field]=a.default_document()['range_rules'].get(field)
+            else:
+                if len(args)<3: return CommandResult('Usage: rangeedit set <field> <value>', ok=False)
+                typ=a.allowed[field]; val=' '.join(args[2:]); rr[field]=parse_bool(val) if typ is bool else typ(parse_num(val) if typ is int else val)
+            issues=StatCombatPublishValidator(root).validate()['errors']; rel=[i for i in issues if i.document=='range_rules']
+            if rel: return CommandResult('\n'.join(i.line() for i in rel), ok=False)
+            a.save_draft(data); self._audit_stat_edit(root,actor,raw,a,'range_rules',before,data,{'ok':True}); return CommandResult(json.dumps({'range_rules':rr}, indent=2))
+        return CommandResult('Usage: rangeedit show|set|reset|validate|preview', ok=False)
+
     def _cmd_attributeedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        return self._generic_builder_edit(character,args,('attributes/attributes.json','attributes','attribute_id'),'Attribute')
+        return self._adapter_edit(character,args,raw,AttributeDocumentAdapter,'Attribute')
 
     def _cmd_formulaedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        return self._generic_builder_edit(character,args,('formulas/stat_formulas.json','formulas','formula_id'),'Formula')
+        if args and args[0].lower()=='test' and len(args)>=2:
+            attr,_=self._stat_services(character); a=FormulaDocumentAdapter(attr.world_root); rec=a.find(a.load_draft(),args[1])
+            if not rec: return CommandResult('Formula not found.', ok=False)
+            supplied={};
+            for tok in args[2:]:
+                if '=' in tok:
+                    k,v=tok.split('=',1); supplied[k]=parse_num(v)
+            defaults={v:0 for v in rec.get('variables',[]) if v not in supplied}; vals={**defaults,**supplied}; errors=[]; rawv=None; final=None
+            try:
+                rawv=FormulaEngine().evaluate_expression(rec['formula_id'], rec.get('expression','0'), vals).final_value; final=rawv
+                if rec.get('rounding')=='floor': import math; final=math.floor(final)
+                elif rec.get('rounding')=='ceil': import math; final=math.ceil(final)
+                elif rec.get('rounding')=='round': final=round(final)
+                if rec.get('minimum') is not None: final=max(float(rec['minimum']), final)
+                if rec.get('maximum') is not None: final=min(float(rec['maximum']), final)
+            except Exception as e: errors.append(str(e))
+            return CommandResult(json.dumps({'expression':rec.get('expression'),'supplied_inputs':supplied,'defaulted_inputs':defaults,'raw_result':rawv,'rounding':rec.get('rounding'),'clamp':[rec.get('minimum'),rec.get('maximum')],'final_result':final,'errors':errors}, indent=2), ok=not errors)
+        return self._adapter_edit(character,args,raw,FormulaDocumentAdapter,'Formula')
 
     def _cmd_statdef(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        return self._generic_builder_edit(character,args,('formulas/derived_stats.json','derived_stats','stat_id'),'Statdef')
+        return self._adapter_edit(character,args,raw,StatDefinitionDocumentAdapter,'Statdef')
 
     def _cmd_resistanceedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        return self._generic_builder_edit(character,args,('formulas/derived_stats.json','resistance_types','id'),'Resistance')
+        return self._adapter_edit(character,args,raw,ResistanceDocumentAdapter,'Resistance')
 
     def _cmd_encumbranceedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        return self._generic_builder_edit(character,args,('formulas/derived_stats.json','encumbrance_thresholds','id'),'Encumbrance')
+        return self._adapter_edit(character,args,raw,EncumbranceDocumentAdapter,'Encumbrance')
 
     def _cmd_postureedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        return self._generic_builder_edit(character,args,('combat/postures.json','postures','posture_id'),'Posture')
+        return self._adapter_edit(character,args,raw,PostureDocumentAdapter,'Posture')
 
     def _cmd_rangeedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        return self._generic_builder_edit(character,args,('combat/range_rules.json','range_rules','id'),'Range')
+        return self._adapter_edit(character,args,raw,RangeRulesDocumentAdapter,'Range')
 
     def _cmd_combatmessage(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        return self._generic_builder_edit(character,args,('combat/combat_messages.json','messages','message_id'),'Combatmessage')
+        return self._adapter_edit(character,args,raw,CombatMessageDocumentAdapter,'Combatmessage')
 
     def _cmd_helpedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
         if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("You do not have permission for that command.", ok=False)
@@ -2849,42 +2980,45 @@ class MudCommandEngine:
         return CommandResult("Object/item listing is not implemented yet. Object/item listing is not fully implemented yet.\nCurrent zone: " + (current_zone or "none") + "\nFuture usage:\nolist\nolist all\nolist zone <zone_id>\nolist 1300-1399")
 
 
+    def _stats_status(self, character: Any) -> CommandResult:
+        if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("You do not have permission for that command.", ok=False)
+        attr,_=self._stat_services(character); pub=StatCombatPublisher(attr.world_root, getattr(self,'event_bus',None), getattr(self,'runtime',None)); val,h,changed=pub.preview()
+        lines=['Builder stats status']
+        for doc,x in h.items():
+            dirty=bool(x['draft'] and x['draft']!=x['published']); lines.append(f"- {doc}: {'dirty' if dirty else 'clean'} draft={x['draft']} published={x['published']} validation={'error' if any(e.document==doc for e in val['errors']) else 'ok'}")
+        audits=attr.world_root/'builder'/'audit'/'stats_publish_manifests.jsonl'
+        if audits.exists(): lines.append('last_publish_id='+json.loads(audits.read_text().splitlines()[-1]).get('publish_id',''))
+        return CommandResult('\n'.join(lines), ok=not val['errors'])
+
+    def _validate_stats(self, character: Any) -> CommandResult:
+        if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("You do not have permission for that command.", ok=False)
+        attr,_=self._stat_services(character); val=StatCombatPublishValidator(attr.world_root).validate()
+        lines=['Builder stats validation: '+('OK' if val['ok'] else 'FAILED')]
+        if val['errors']: lines += ['Errors:']+[f"- {e.line()}" for e in val['errors']]
+        if val['warnings']: lines += ['Warnings:']+[f"- {w.line()}" for w in val['warnings']]
+        lines += ['Dependency graph:']+[f"- {s}:{sid} -> {t}:{tid}" for s,sid,t,tid in val['graph']['references'] if tid]
+        return CommandResult('\n'.join(lines), ok=val['ok'])
+
+    def _preview_stats(self, character: Any) -> CommandResult:
+        if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("You do not have permission for that command.", ok=False)
+        attr,_=self._stat_services(character); val,h,changed=StatCombatPublisher(attr.world_root, getattr(self,'event_bus',None), getattr(self,'runtime',None)).preview()
+        lines=['Builder stats publish preview','Changed documents: '+(', '.join(changed) if changed else 'none'),'Draft/current hashes:']
+        for doc,x in h.items(): lines.append(f"- {doc}: draft={x['draft']} published={x['published']}")
+        if val['errors']: lines += ['Validation errors:']+[f"- {e.line()}" for e in val['errors']]
+        if val['warnings']: lines += ['Warnings:']+[f"- {w.line()}" for w in val['warnings']]
+        lines.append('activation_capability=hot_reload_when_runtime_services_accept_reload')
+        lines.append('restart_requirement=only if no runtime services are attached or reload fails after valid file publication')
+        return CommandResult('\n'.join(lines), ok=not val['errors'])
+
     def _publish_stats(self, character: Any) -> CommandResult:
         if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("You do not have permission for that command.", ok=False)
-        attr,_=self._stat_services(character); root=attr.world_root
-        pairs=[('builder/attributes/attributes.json','attributes/attributes.json'),('builder/formulas/stat_formulas.json','formulas/stat_formulas.json'),('builder/formulas/derived_stats.json','formulas/derived_stats.json'),('builder/combat/postures.json','combat/postures.json'),('builder/combat/range_rules.json','combat/range_rules.json'),('builder/combat/combat_messages.json','combat/combat_messages.json')]
-        import os, tempfile
-        backups=[]; replaced=[]
-        try:
-            errors=[]
-            for src,_ in pairs:
-                sp=root/src
-                if sp.exists():
-                    try: json.loads(sp.read_text(encoding='utf-8') or '{}')
-                    except Exception as e: errors.append(f"{src}: {e}")
-            if errors: return CommandResult("Builder stats publish failed validation.\n"+"\n".join('- '+e for e in errors), ok=False)
-            for src,dst in pairs:
-                sp=root/src; dp=root/dst
-                if not sp.exists(): continue
-                dp.parent.mkdir(parents=True, exist_ok=True)
-                old=dp.read_bytes() if dp.exists() else None; backups.append((dp,old))
-                fd,tmp=tempfile.mkstemp(dir=str(dp.parent), prefix=dp.name+'.', suffix='.tmp')
-                with os.fdopen(fd,'wb') as f:
-                    data=sp.read_bytes(); f.write(data); f.flush(); os.fsync(f.fileno())
-                os.replace(tmp,dp); replaced.append(str(dst))
-            rt=getattr(self,'runtime',None)
-            if rt and getattr(rt,'attribute_service',None): rt.attribute_service.reload_definitions()
-            if rt and getattr(rt,'combat_stat_service',None): rt.combat_stat_service.reload_definitions()
-            if rt and getattr(rt,'combat_runtime',None): rt.combat_runtime.refresh_content()
-            if getattr(self,'event_bus',None): self.event_bus.publish('stat_definitions_reloaded', {'world_id': getattr(rt,'active_world_id','') if rt else ''}, source_system='builder')
-            return CommandResult("Builder stats publish completed. Active runtime services reloaded where supported.\nPublished: "+", ".join(replaced))
-        except Exception as e:
-            for dp,old in reversed(backups):
-                try:
-                    if old is None and dp.exists(): dp.unlink()
-                    elif old is not None: dp.write_bytes(old)
-                except Exception: pass
-            return CommandResult(f"Builder stats publish failed and rollback was attempted: {e}", ok=False)
+        attr,_=self._stat_services(character); inj=getattr(self,'_stats_publish_failure_injection',None)
+        res=StatCombatPublisher(attr.world_root, getattr(self,'event_bus',None), getattr(self,'runtime',None)).publish(self._stats_actor_id(character), inj)
+        if not res.get('ok'):
+            errs=res.get('errors') or []
+            detail='\n'.join('- '+(e.line() if hasattr(e,'line') else str(e)) for e in errs) or res.get('message','publish failed')
+            return CommandResult('Builder stats publish failed. Published files unchanged or rolled back.\n'+detail, ok=False)
+        m=res['manifest']; return CommandResult(f"Builder stats publish completed. publish_id={m['publish_id']} published=true active_runtime={m['active_runtime']} restart_required={m['restart_required']}\nChanged documents: "+', '.join(res.get('changed') or []))
 
     def _cmd_builder(self, character: Any, args: list[str], raw: str) -> CommandResult:
         sub = args[0].lower() if args else "status"
@@ -2925,6 +3059,12 @@ class MudCommandEngine:
             elif action == "apply": res = self.builder.import_apply(character, args[2], replace=("--replace-drafts" in args[3:]))
             else: return CommandResult(narrative=f"Unknown builder import command: {action}", ok=False)
             return CommandResult(narrative=res.message, ok=res.ok)
+        if sub == "validate" and len(args) >= 2 and args[1].lower() == "stats":
+            return self._validate_stats(character)
+        if sub == "preview" and len(args) >= 2 and args[1].lower() == "stats":
+            return self._preview_stats(character)
+        if sub == "status" and len(args) >= 2 and args[1].lower() == "stats":
+            return self._stats_status(character)
         if sub == "validate":
             res = self.builder.validate(character); return CommandResult(narrative=res.message + "\n" + self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))), ok=res.ok)
         if sub in {"save", "export"}:
