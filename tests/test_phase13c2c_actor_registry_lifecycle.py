@@ -48,3 +48,20 @@ def test_set_camp_public_path_no_keyerror_repeated_and_campfire(tmp_path):
     assert 'A campsite is already established here.' in second
     fire = rt.handle_input(cid, 'build campfire')['semantic_output']
     assert 'campfire' in fire.lower() and 'Requires an established campsite' not in fire
+
+
+def test_stale_actor_data_id_is_repaired_and_persisted(tmp_path):
+    rt = _runtime(tmp_path)
+    cid = rt.create_character(world_id='shattered_realms', name='Kraevok')['character_id']
+    char = rt.state_store.load_character(cid)
+    char.actor_data = {'actor_id': 'actor', 'actor_type': 'player', 'identity': {'name': 'Kraevok'}, 'resources': {'health': 77, 'maximum_health': 100}}
+    rt.state_store.save_character(char, 'shattered_realms')
+
+    rt.enter_world(cid)
+    actor = rt.actor_registry.require(cid)
+    assert actor.actor_id == cid
+    assert rt.actor_registry.get('actor') is None
+    repaired = rt.state_store.load_character(cid)
+    assert repaired.actor_data['actor_id'] == cid
+    assert repaired.actor_data['plugin_data']['actor_data_migration']['migrated_from_actor_id'] == 'actor'
+    assert rt.handle_input(cid, 'set camp')['ok'] is True

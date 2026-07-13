@@ -1857,29 +1857,11 @@ class MudCommandEngine:
         if aid not in svc.registry.abilities and aid not in by_name:
             first = args[0].lower().replace(" ", "_"); aid = first; target = " ".join(args[1:]) or "self"
         aid = aid if aid in svc.registry.abilities else by_name.get(aid, aid)
-        res = svc.start_ability(character.id, aid, target) if aid in svc.registry.abilities else {"ok": False, "message": "Unknown ability."}
-        if not res.get("ok"):
-            return CommandResult(res.get("message") or "You cannot use that ability.", ok=False)
-        ability = svc.registry.abilities.get(aid)
-        pdata = getattr(ability, "plugin_data", {}) or {}
-        rt = getattr(self, "runtime", None)
-        if aid == "recall" and rt is not None:
-            dest = str(pdata.get("recall_destination_room_id") or getattr(getattr(rt, "active_world", None), "default_starting_room_id", "") or "")
-            if not dest: return CommandResult("No recall point is available right now.", ok=False)
-            old_room = getattr(character, "room_id", "")
-            setattr(character, "room_id", dest); rt.state_store.save_character(character, getattr(rt, "active_world_id", "") or getattr(character, "world_id", ""))
-            if self.event_bus:
-                self.event_bus.publish("recall_spell_completed", {"actor_id": character.id, "from_room_id": old_room, "to_room_id": dest}, source_system="ability", character_id=character.id, room_id=dest)
-                self.event_bus.publish("movement_succeeded", {"canonical_command":"recall", "character_id": character.id, "current_room_id": old_room, "target_room_id": dest}, source_system="movement", character_id=character.id, room_id=dest)
-            return CommandResult(f"{pdata.get('casting_text') or 'You cast Recall.'}\n{pdata.get('arrival_text') or 'You arrive at the recall point.'}", state_updates={"render_room": True})
-        if aid == "set_camp":
-            created = self._cmd_survival_needs(character, ["camp"], "set camp")
-            if created.ok:
-                created.narrative = "You establish a modest campsite here."
-            return created
-        if aid == "build_campfire":
-            return self._cmd_survival_needs(character, ["campfire"], "build campfire")
-        return CommandResult(res.get("message") or "Ability activated.", ok=True)
+        gateway = svc.gateway() if hasattr(svc, "gateway") else None
+        res = gateway.execute(character.id, aid, target, {"command": raw}) if gateway else None
+        if res is None:
+            return CommandResult("Ability system is unavailable.", ok=False)
+        return CommandResult(res.player_message or ("Ability activated." if res.ok else "You cannot use that ability."), ok=res.ok, state_updates={"render_room": res.ok and res.ability_id in {"set_camp","build_campfire","recall"}})
 
     def _cmd_cancel_ability(self, character: Any, args: list[str], raw: str) -> CommandResult:
         svc = self._ability_service(character)

@@ -837,6 +837,8 @@ class MudRuntime:
         self.actor_registry = getattr(self, "actor_registry", ActorRegistry())
         self.abilities = AbilityExecutionService(self.state_store.db_path, self.active_world, self.event_bus, world_id, actor_registry=self.actor_registry)
         self.abilities.runtime = self
+        if self.abilities.actor_registry is not self.actor_registry:
+            raise RuntimeError("AbilityExecutionService registry wiring failed during world load")
         self.command_engine.ability_service = self.abilities
         self.command_engine.world_id = world_id
         self.environment = EnvironmentService(self.state_store.db_path, self.active_world.root, world_id, self.event_bus)
@@ -913,9 +915,17 @@ class MudRuntime:
             self.actor_registry = ActorRegistry()
         actor = actor_from_runtime_character(character, self.active_world_id or getattr(character, "world_id", ""))
         self.actor_registry.register(actor)
+        character.actor_data = actor.to_dict()
         if getattr(self, "abilities", None):
             self.abilities.actor_registry = self.actor_registry
             self.abilities.actors = self.actor_registry.actors
+            if hasattr(self.abilities, "runtime"):
+                self.abilities.runtime = self
+        registered = self.actor_registry.get(character.id)
+        if registered is None or registered.actor_id != character.id:
+            raise RuntimeError(f"Canonical actor registration failed for {character.id}")
+        if getattr(self, "abilities", None) and self.abilities.actor_registry is not self.actor_registry:
+            raise RuntimeError("AbilityExecutionService is not using MudRuntime.actor_registry")
 
     def unregister_live_character(self, character_id: str) -> None:
         if getattr(self, "actor_registry", None):
@@ -942,6 +952,7 @@ class MudRuntime:
                 self.load_world(str(row[0]))
         self._ensure_starter_progression(char)
         self.register_live_character(char)
+        self.state_store.save_character(char, self.active_world_id or "")
         self.hooks.emit("player_login", world_id=self.active_world_id or "", character=char)
         self.event_bus.publish("character_loaded", {"character_id": char.id, "character_name": char.name}, source_system="runtime", world_id=self.active_world_id or "", character_id=char.id)
         self.sessions[character_id] = MudSession(

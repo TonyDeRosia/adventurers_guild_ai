@@ -74,6 +74,66 @@ class HealingEvent:
     event_id: str; world_id: str; source_actor_id: str; target_actor_id: str; ability_id: str|None; cast_id: str|None; component_id: str|None
     base_amount: int; formula_id: str|None; critical: bool; critical_profile_id: str|None; modifiers: dict[str, Any]; final_amount: int; overheal: int; world_time: int; trace: list[dict[str, Any]]; metadata: dict[str, Any]
 
+@dataclass(frozen=True)
+class AbilityUseResult:
+    ok: bool
+    ability_id: str = ""
+    ability_name: str = ""
+    reason_code: str = ""
+    player_message: str = ""
+    actor_id: str = ""
+    target_id: str = ""
+    resource_changes: list[dict[str, Any]] = field(default_factory=list)
+    cooldown_started: bool = False
+    effects_applied: list[dict[str, Any]] = field(default_factory=list)
+    proficiency_before: int | None = None
+    proficiency_after: int | None = None
+    proficiency_increased: bool = False
+    events: list[dict[str, Any]] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+class AbilityRuntimeGateway:
+    """One public runtime entry point for player ability use."""
+
+    def __init__(self, service: "AbilityExecutionService", runtime: Any | None = None):
+        self.service = service
+        self.runtime = runtime or getattr(service, "runtime", None)
+
+    def execute(self, character_id: str, ability_query: str, target_query: Any=None, invocation_context: dict[str, Any] | None=None) -> AbilityUseResult:
+        actor = self.service.actor_registry.get(character_id)
+        if actor is None:
+            self.service._log_missing_actor(character_id, ability_query, invocation_context or {})
+            return AbilityUseResult(False, reason_code="actor_registration_missing", player_message="Your character is not ready to use abilities yet. Please re-enter the world.", actor_id=character_id)
+        resolved = self.resolve_ability(actor.actor_id, ability_query)
+        if not resolved:
+            return AbilityUseResult(False, reason_code="unknown_ability", player_message="Unknown ability.", actor_id=character_id)
+        ab = self.service.registry.abilities[resolved]
+        before = self.service._proficiency(actor.actor_id, resolved)
+        res = self.service.start_ability(actor.actor_id, resolved, target_query or "self")
+        after = self.service._proficiency(actor.actor_id, resolved)
+        return AbilityUseResult(
+            ok=bool(res.get("ok")), ability_id=resolved, ability_name=ab.name, reason_code=str(res.get("reason_code") or ("ok" if res.get("ok") else "blocked")),
+            player_message=str(res.get("message") or self.service._ability_success_message(resolved) or "Ability activated."), actor_id=actor.actor_id,
+            target_id=str(target_query or ""), resource_changes=list(res.get("resource_changes") or []), cooldown_started=bool(res.get("cooldown_started")),
+            effects_applied=list(res.get("effect_events") or []), proficiency_before=before, proficiency_after=after, proficiency_increased=after is not None and before is not None and after > before,
+            events=list(res.get("events") or []), metadata={k: v for k, v in (res.get("metadata") or {}).items() if k in {"effect_type", "room_id"}},
+        )
+
+    def resolve_ability(self, actor_id: str, query: str) -> str:
+        q = re.sub(r"\s+", " ", str(query or "").lower().replace("_", " ")).strip()
+        explicit = re.sub(r"^(use|cast|perform|invoke)\s+", "", q)
+        learned = {r["id"] for r in self.service.get_actor_abilities(actor_id)}
+        matches: list[str] = []
+        for aid, ab in self.service.registry.abilities.items():
+            pdata = ab.plugin_data or {}
+            command = re.sub(r"\s+", " ", str(pdata.get("command") or pdata.get("usage") or "").lower()).strip()
+            aliases = pdata.get("aliases") or []
+            if isinstance(aliases, str): aliases = [aliases]
+            names = {aid.replace("_", " "), str(ab.name).lower(), str(ab.short_name).lower()}
+            if aid in learned and (q == command or q in {str(a).lower() for a in aliases} or explicit in names or explicit == command):
+                matches.append(aid)
+        return matches[0] if len(set(matches)) == 1 else ""
+
 class AbilityRegistry:
     def __init__(self, package: Any|None=None, records: dict[str, list[dict[str, Any]]]|None=None):
         records = records or {}
@@ -140,12 +200,32 @@ class AbilityExecutionService:
     def _get_actor(self, actor_id: str) -> Actor | None:
         actor = self.actor_registry.get(actor_id)
         if actor is None:
-            logger = __import__("logging").getLogger(__name__)
-            logger.error("Ability actor registration missing", extra={"actor_id": actor_id, "world_id": self.world_id})
+            self._log_missing_actor(actor_id, "", {})
         return actor
+    def _log_missing_actor(self, actor_id: str, ability_id: str="", context: dict[str, Any] | None=None) -> None:
+        logger = __import__("logging").getLogger(__name__)
+        rt = getattr(self, "runtime", None)
+        logger.error(
+            "Ability actor registration missing: requested=%s ability=%s registry_keys=%s runtime_id=%s registry_id=%s service_id=%s world=%s command=%s",
+            actor_id, ability_id, sorted(self.actor_registry.actors.keys()), id(rt) if rt else None, id(self.actor_registry), id(self),
+            self.world_id, (context or {}).get("command", ""),
+        )
     def _missing_actor_result(self, actor_id: str, ability_id: str) -> dict[str, Any]:
         return {"ok": False, "message": "Your character is not ready to use abilities yet. Please re-enter the world.", "reason_code": "actor_registration_missing", "trace": {"actor_id": actor_id, "ability_id": ability_id, "availability": "INTERNAL_ERROR"}}
     def actor_from_character(self, c: Any) -> Actor: a=actor_from_runtime_character(c,self.world_id); self.register_actor(a); return a
+    def gateway(self) -> AbilityRuntimeGateway:
+        return AbilityRuntimeGateway(self, getattr(self, "runtime", None))
+    def _proficiency(self, actor_id: str, ability_id: str) -> int | None:
+        if not self.db_path: return None
+        try:
+            with sqlite3.connect(self.db_path) as c:
+                row=c.execute("SELECT proficiency FROM actor_ability_progression WHERE actor_id=? AND ability_id=? AND active=1", (actor_id, ability_id)).fetchone()
+            return max(1, min(100, int(row[0] if row else 1)))
+        except Exception:
+            return None
+    def _ability_success_message(self, ability_id: str) -> str:
+        ab=self.registry.abilities.get(ability_id); pdata=(ab.plugin_data or {}) if ab else {}
+        return str(pdata.get("success_message") or (ab.messages or {}).get("complete_self") or "").strip()
     def get_actor_abilities(self, actor_id: str) -> list[dict[str, Any]]:
         grants = self._grants(actor_id)
         progression=[]
@@ -281,6 +361,7 @@ class AbilityExecutionService:
         cd=self._cooldown_status(actor_id, ab); steps.append({"step":"validate_cooldowns", **cd}); ok &= cd.get("ready",True)
         return {"ok":bool(ok),"errors":[s for s in steps if s.get("ok") is False or s.get("ready") is False],"trace":steps,"targets":targets.get("targets",[]),"costs":costs.get("costs",[]),"cooldowns":cd}
     def start_ability(self, actor_id: str, ability_id: str, target: Any=None) -> dict[str, Any]:
+        if ability_id not in self.registry.abilities: return {"ok":False,"message":"Unknown ability.","reason_code":"unknown_ability"}
         ab=self.registry.abilities[ability_id]
         if ab.ability_type == "passive": return {"ok":False,"message":"Passive abilities do not create active casts."}
         if ab.activation_type == "instant" or bool((ab.timing or {}).get("completes_immediately", True)): return self.execute_instant_ability(actor_id, ability_id, target)
@@ -299,7 +380,7 @@ class AbilityExecutionService:
         actor=self._get_actor(actor_id)
         if actor is None: return self._missing_actor_result(actor_id, ability_id)
         cast_id="instant_"+uuid.uuid4().hex; ab=self.registry.abilities[ability_id]; costs=self._pay_costs(actor,ab,"start"); self._start_cooldown(actor_id,ab)
-        result={"ok":True,"cast_id":cast_id,"trace":tr["trace"],"damage_events":[],"healing_events":[],"effect_events":[]}; self._pub("ability_started", {"actor_id":actor_id,"ability_id":ability_id,"cast_id":cast_id})
+        result={"ok":True,"cast_id":cast_id,"trace":tr["trace"],"damage_events":[],"healing_events":[],"effect_events":[],"message": self._ability_success_message(ability_id)}; self._pub("ability_started", {"actor_id":actor_id,"ability_id":ability_id,"cast_id":cast_id})
         for t in tr["targets"]:
             target_actor=self.actors.get(t.get("actor_id"))
             if not target_actor: continue
@@ -308,9 +389,49 @@ class AbilityExecutionService:
                 amount = int(num(comp.get("base_amount", comp.get("amount", 0))))
                 result["healing_events"].append(asdict(self.apply_healing(actor.actor_id, target_actor.actor_id, amount, ability_id, comp.get("id"), {"cast_id": cast_id, "formula_id": comp.get("formula_id")})))
             for eff in ab.effects_applied: result["effect_events"].append(self._apply_effect(actor,target_actor,ab,eff,cast_id))
+        for eff in (ab.plugin_data or {}).get("effects", []) or []:
+            handled = self._apply_registered_effect(actor, ab, eff, cast_id)
+            result["effect_events"].append(handled)
+            if not handled.get("ok", True):
+                result.update(ok=False, message=handled.get("message") or "You cannot use that ability.", reason_code=handled.get("reason") or handled.get("reason_code") or "effect_blocked")
+                self._record_failed_use(actor_id, ability_id)
+                return result
+            if handled.get("message"):
+                result["message"] = str(handled.get("message"))
         improvement = self.attempt_proficiency_improvement(actor_id, ability_id)
         result["proficiency_improvement"] = improvement
         self._pub("ability_completed", {"actor_id":actor_id,"ability_id":ability_id,"cast_id":cast_id,"proficiency_improvement":improvement}); return result
+
+    def _apply_registered_effect(self, actor: Actor, ab: AbilityDefinition, eff: dict[str, Any], cast_id: str) -> dict[str, Any]:
+        etype = str(eff.get("type") or eff.get("effect_type") or "")
+        rt = getattr(self, "runtime", None)
+        svc = getattr(rt, "survival_needs", None) if rt else None
+        if etype == "create_campsite" and svc:
+            res = svc.create_campsite(actor.actor_id, str(eff.get("profile") or "basic_campsite"))
+            return {"effect_type": etype, **res, "message": "You establish a modest campsite here." if res.get("ok", True) else res.get("message") or "A campsite is already established here."}
+        if etype == "create_campfire" and svc:
+            res = svc.create_campfire(actor.actor_id, str(eff.get("profile") or "basic_campfire"))
+            return {"effect_type": etype, **res, "message": "You build a small campfire." if res.get("ok", True) else res.get("message") or "You need an active campsite here before building a campfire."}
+        if etype == "teleport_home" and rt:
+            dest = str(eff.get("room_id") or (ab.plugin_data or {}).get("recall_destination_room_id") or getattr(getattr(rt, "active_world", None), "default_starting_room_id", "") or "")
+            ch = rt.state_store.load_character(actor.actor_id) if getattr(rt, "state_store", None) else None
+            if not dest or ch is None: return {"ok": False, "effect_type": etype, "reason": "no_destination", "message": "No recall point is available right now."}
+            old=getattr(ch, "room_id", ""); ch.room_id=dest; rt.state_store.save_character(ch, getattr(rt, "active_world_id", "") or "")
+            return {"ok": True, "effect_type": etype, "from_room_id": old, "room_id": dest, "message": f"{(ab.plugin_data or {}).get('casting_text') or 'You cast Recall.'}\n{(ab.plugin_data or {}).get('arrival_text') or 'You arrive at the recall point.'}"}
+        if etype == "send_message":
+            return {"ok": True, "effect_type": etype, "message": str(eff.get("message") or "")}
+        return {"ok": False, "effect_type": etype, "reason": "unknown_effect", "message": "That ability is not configured correctly."}
+
+    def _record_failed_use(self, actor_id: str, ability_id: str) -> None:
+        if not self.db_path: return
+        try:
+            with sqlite3.connect(self.db_path) as c:
+                row=c.execute("SELECT metadata_json FROM actor_ability_progression WHERE actor_id=? AND ability_id=? AND active=1", (actor_id, ability_id)).fetchone()
+                if row:
+                    meta=jload(row[0], {}); state=meta.setdefault("proficiency_state", {}); state["failed_uses"]=int(state.get("failed_uses",0) or 0)+1
+                    c.execute("UPDATE actor_ability_progression SET metadata_json=? WHERE actor_id=? AND ability_id=?", (jdump(meta), actor_id, ability_id))
+        except Exception:
+            pass
 
     def attempt_proficiency_improvement(self, actor_id: str, ability_id: str, context: dict[str, Any] | None = None) -> dict[str, Any]:
         """Canonical +1% proficiency improvement hook for successful ability use."""

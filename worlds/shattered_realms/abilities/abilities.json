@@ -695,7 +695,46 @@
       "improvement_difficulty": 0,
       "minimum_successful_uses": 1,
       "improvement_roll_cooldown_seconds": 0,
-      "usage": "set camp"
+      "usage": "set camp",
+      "command": "set camp",
+      "aliases": [
+        "make camp",
+        "establish camp"
+      ],
+      "success_message": "You establish a modest campsite here.",
+      "effects": [
+        {
+          "type": "create_campsite",
+          "profile": "basic_campsite"
+        }
+      ],
+      "requirements": [
+        {
+          "rule": "learned"
+        },
+        {
+          "rule": "not_in_combat"
+        },
+        {
+          "rule": "standing"
+        },
+        {
+          "rule": "room_allows_camp"
+        },
+        {
+          "rule": "campsite_not_exists"
+        }
+      ],
+      "improvement_policy": {
+        "enabled": true,
+        "chance": 1.0,
+        "increment": 1,
+        "minimum_successful_uses": 1,
+        "roll_cooldown_seconds": 0,
+        "requires_success": true,
+        "difficulty": 1,
+        "formula_id": "ability_proficiency_improvement"
+      }
     },
     "version": "1.0.0"
   },
@@ -758,7 +797,43 @@
       "improvement_difficulty": 0,
       "minimum_successful_uses": 1,
       "improvement_roll_cooldown_seconds": 0,
-      "usage": "build campfire"
+      "usage": "build campfire",
+      "command": "build campfire",
+      "aliases": [
+        "make campfire",
+        "create campfire"
+      ],
+      "success_message": "You build a small campfire.",
+      "effects": [
+        {
+          "type": "create_campfire",
+          "profile": "basic_campfire"
+        }
+      ],
+      "requirements": [
+        {
+          "rule": "learned"
+        },
+        {
+          "rule": "standing"
+        },
+        {
+          "rule": "campsite_exists"
+        },
+        {
+          "rule": "campfire_not_exists"
+        }
+      ],
+      "improvement_policy": {
+        "enabled": true,
+        "chance": 0.0,
+        "increment": 1,
+        "minimum_successful_uses": 1,
+        "roll_cooldown_seconds": 30,
+        "requires_success": true,
+        "difficulty": 1,
+        "formula_id": "ability_proficiency_improvement"
+      }
     },
     "version": "1.0.0"
   },
@@ -833,7 +908,41 @@
       "improvement_difficulty": 0,
       "minimum_successful_uses": 1,
       "improvement_roll_cooldown_seconds": 0,
-      "usage": "recall"
+      "usage": "recall",
+      "command": "recall",
+      "aliases": [
+        "cast recall"
+      ],
+      "effects": [
+        {
+          "type": "teleport_home",
+          "room_id": "guildhall_crossing_square"
+        }
+      ],
+      "requirements": [
+        {
+          "rule": "learned"
+        },
+        {
+          "rule": "not_in_combat"
+        },
+        {
+          "rule": "standing"
+        },
+        {
+          "rule": "cooldown_ready"
+        }
+      ],
+      "improvement_policy": {
+        "enabled": true,
+        "chance": 0.0,
+        "increment": 1,
+        "minimum_successful_uses": 1,
+        "roll_cooldown_seconds": 30,
+        "requires_success": true,
+        "difficulty": 1,
+        "formula_id": "ability_proficiency_improvement"
+      }
     },
     "version": "1.0.0"
   }
