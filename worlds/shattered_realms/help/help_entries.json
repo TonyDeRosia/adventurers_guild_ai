@@ -673,11 +673,13 @@
       "aliases": [],
       "title": "Set Camp",
       "summary": "Create a campsite.",
-      "body": "Set Camp is an ability-backed survival skill. Use HELP SET CAMP for mechanics from the canonical ability definition when available.",
+      "body": "Usage: Establish a modest campsite in your current room. Requirements: you must know Set Camp, be standing, be out of combat, and the room must allow camping. Typical purpose: creates a campsite for resting and follow-up survival abilities. Related abilities: Build Campfire.",
       "syntax": [
-        "help set camp"
+        "set camp"
       ],
-      "examples": [],
+      "examples": [
+        "set camp"
+      ],
       "related_topics": [
         "build campfire"
       ],
@@ -699,11 +701,13 @@
       "aliases": [],
       "title": "Build Campfire",
       "summary": "Build a campfire at camp.",
-      "body": "Build Campfire is an ability-backed survival skill. It may require an established campsite. Mechanics come from the canonical ability definition.",
+      "body": "Usage: Build a simple campfire at an established campsite. Requirements: you must know Build Campfire, be out of combat, and have an active campsite here. Typical purpose: prepares fire support for survival gameplay. Related abilities: Set Camp.",
       "syntax": [
-        "help build campfire"
+        "build campfire"
       ],
-      "examples": [],
+      "examples": [
+        "build campfire"
+      ],
       "related_topics": [
         "set camp"
       ],

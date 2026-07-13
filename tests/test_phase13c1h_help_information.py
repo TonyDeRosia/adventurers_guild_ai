@@ -32,12 +32,12 @@ def test_unknown_topic_guidance_and_title_no_json():
 def test_compact_abilities_score_worth_and_no_color():
     rows=[{'name':'Build Campfire','rank':1,'maximum_rank':100,'description':'long text','costs':[{'resource_id':'mana','amount':5}]},{'name':'Set Camp','rank':1,'maximum_rank':1}]
     skills=render_display_plain(build_abilities_document(rows, title='SKILLS'))
-    assert 'Build Campfire' in skills and 'Set Camp' in skills and 'Rank 1' in skills
+    assert 'Build Campfire' in skills and 'Set Camp' in skills and '1%' in skills and 'Rank' not in skills
     assert 'long text' not in skills and '/100' not in skills and 'Type HELP' not in skills and '─' not in skills
     spells=render_display_plain(build_abilities_document([{'name':'Recall','rank':1,'maximum_rank':100}], title='SPELLS'))
-    assert 'Recall' in spells and 'Rank 1' in spells and '/100' not in spells and 'Type HELP' not in spells
+    assert 'Recall' in spells and '1%' in spells and 'Rank' not in spells and '/100' not in spells and 'Type HELP' not in spells
     abilities=render_display_plain(build_abilities_document(rows + [{'name':'Recall','rank':1,'maximum_rank':100}], title='ABILITIES'))
-    assert all(x in abilities for x in ('Build Campfire','Set Camp','Recall')) and 'Type HELP' not in abilities and '/100' not in abilities
+    assert all(x in abilities for x in ('Build Campfire','Set Camp','Recall')) and 'Type HELP' not in abilities and '/100' not in abilities and 'Rank' not in abilities
     score=render_display_plain(build_score_document(actor(title='', level=1, hp=5, max_hp=10, xp=0, xp_to_next_level=100)))
     assert 'Race:' not in score and 'Class:' not in score and 'Carry Capacity' not in score
     worth=render_display_plain(build_worth_document(actor()))
@@ -75,3 +75,8 @@ def test_set_camp_specific_results_and_validation_consistency(tmp_path):
     second = rt.handle_input(cid, 'set camp')['semantic_output']
     assert existing['message'] in second
     assert 'Something went wrong' not in second
+
+    with rt.state_store.connect() as con:
+        prof = con.execute("SELECT proficiency,maximum_rank FROM actor_ability_progression WHERE actor_id=? AND ability_id='set_camp'", (cid,)).fetchone()
+    assert int(prof['proficiency']) == 2
+    assert int(prof['maximum_rank']) == 100

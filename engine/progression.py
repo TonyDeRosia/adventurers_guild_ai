@@ -235,7 +235,7 @@ class ProgressionService:
         cost=int(source.get("practice_cost",0) or 0)
         if cost: self.spend_currency(actor_id,"practice_sessions",cost,f"learn {ability_id}",actor_type)
         now=utc_now()
-        with self.store.connect() as con: con.execute("INSERT OR IGNORE INTO actor_ability_progression VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(actor_id,ability_id,1,int(source.get("maximum_rank",1) or 1),0,(self.get_actor_progression(actor_id,actor_type) or {}).get("level",1),source.get("class_id"),source.get("race_id"),source.get("profession_id"),source.get("track_id"),cost,int(source.get("training_cost",0) or 0),int(source.get("skill_point_cost",0) or 0),_json(source.get("requirements",[])),1,now,_json(source)))
+        with self.store.connect() as con: con.execute("INSERT OR IGNORE INTO actor_ability_progression VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(actor_id,ability_id,1,int(source.get("maximum_rank", source.get("maximum_proficiency",100)) or 100),max(1,min(100,int(source.get("default_proficiency", source.get("proficiency",1)) or 1))),(self.get_actor_progression(actor_id,actor_type) or {}).get("level",1),source.get("class_id"),source.get("race_id"),source.get("profession_id"),source.get("track_id"),cost,int(source.get("training_cost",0) or 0),int(source.get("skill_point_cost",0) or 0),_json(source.get("requirements",[])),1,now,_json(source)))
         try: self.store.save_abilities(actor_id, list(set(self.store.load_abilities(actor_id)+[ability_id])))
         except Exception: pass
         return self.trace_ability_learning(actor_id,ability_id,actor_type)

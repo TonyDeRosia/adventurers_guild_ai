@@ -751,7 +751,7 @@ class MudRuntime:
                 flags["starter_attribute_points_30"] = True
                 ps.update_actor_progression(char.id, {"advancement_flags_json": flags})
         for aid in ("set_camp", "build_campfire", "recall"):
-            ps.learn_ability(char.id, aid, {"source_type":"starter_character","source_id":"starter_demonstration","maximum_rank":1})
+            ps.learn_ability(char.id, aid, {"source_type":"starter_character","source_id":"starter_demonstration","default_proficiency":1,"maximum_proficiency":100,"maximum_rank":100})
         if self.abilities:
             self.abilities.actor_from_character(char)
 

@@ -514,12 +514,8 @@ def build_abilities_document(rows: list[dict[str, Any]], *, title: str="ABILITIE
     compact = title in {"SKILLS", "SPELLS", "ABILITIES"}
     for r in rows:
         name=str(r.get('name') or r.get('id') or 'Ability').replace('_',' ').title()
-        rank_num=int(r.get('rank') or 1)
-        raw_max = r.get('maximum_rank')
-        max_rank = int(raw_max) if raw_max not in (None, '', 0, '0') else 0
-        # A persisted maximum of 100 is a legacy starter/demo fallback, not a canonical
-        # ability cap. Only show authored non-placeholder maxima in compact lists.
-        rank = f"Rank {rank_num}/{max_rank}" if max_rank and max_rank not in {1, 100} else f"Rank {rank_num}"
+        proficiency=max(1, min(100, int(r.get('proficiency') or r.get('rank') or 1)))
+        rank = f"{proficiency}%"
         out.append(DisplayRow([DisplayCell(name,width=48),DisplayCell(rank,width=17,align='right')], role="character_title"))
         if not compact:
             status=str(r.get('status_text') or r.get('availability_text') or ('Passive' if r.get('passive') else 'Availability unknown.'))

@@ -688,7 +688,14 @@
     "ai_hints": {},
     "plugin_data": {
       "help": "SET CAMP establishes a persistent campsite here.",
-      "source": "starter demonstration"
+      "source": "starter demonstration",
+      "default_proficiency": 1,
+      "maximum_proficiency": 100,
+      "improvement_chance": 1.0,
+      "improvement_difficulty": 0,
+      "minimum_successful_uses": 1,
+      "improvement_roll_cooldown_seconds": 0,
+      "usage": "set camp"
     },
     "version": "1.0.0"
   },
@@ -744,7 +751,14 @@
     "plugin_data": {
       "help": "BUILD CAMPFIRE creates a persistent campfire object after you set camp.",
       "requires_campsite": true,
-      "source": "starter demonstration"
+      "source": "starter demonstration",
+      "default_proficiency": 1,
+      "maximum_proficiency": 100,
+      "improvement_chance": 0.0,
+      "improvement_difficulty": 0,
+      "minimum_successful_uses": 1,
+      "improvement_roll_cooldown_seconds": 0,
+      "usage": "build campfire"
     },
     "version": "1.0.0"
   },
@@ -812,7 +826,14 @@
       "recall_destination_room_id": "guildhall_crossing_square",
       "casting_text": "You speak the old wayhome word and silver light gathers around you.",
       "arrival_text": "The silver light fades as you arrive at the recall point.",
-      "source": "starter demonstration"
+      "source": "starter demonstration",
+      "default_proficiency": 1,
+      "maximum_proficiency": 100,
+      "improvement_chance": 0.0,
+      "improvement_difficulty": 0,
+      "minimum_successful_uses": 1,
+      "improvement_roll_cooldown_seconds": 0,
+      "usage": "recall"
     },
     "version": "1.0.0"
   }

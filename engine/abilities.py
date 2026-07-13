@@ -144,7 +144,7 @@ class AbilityExecutionService:
             try:
                 with sqlite3.connect(self.db_path) as c:
                     c.row_factory=sqlite3.Row
-                    progression=[dict(r) for r in c.execute("SELECT ability_id,rank,maximum_rank,metadata_json FROM actor_ability_progression WHERE actor_id=? AND active=1", (actor_id,))]
+                    progression=[dict(r) for r in c.execute("SELECT ability_id,rank,maximum_rank,proficiency,metadata_json FROM actor_ability_progression WHERE actor_id=? AND active=1", (actor_id,))]
             except Exception:
                 progression=[]
         ids={g["ability_id"] for g in grants} | {p["ability_id"] for p in progression} | set(getattr(self.actors.get(actor_id), "plugin_data", {}).get("ability_ids", []) or [])
@@ -153,7 +153,7 @@ class AbilityExecutionService:
             if i in self.registry.abilities and self.registry.abilities[i].enabled:
                 row=dict(self.registry.abilities[i].to_dict(), grants=[g for g in grants if g["ability_id"]==i])
                 prog=next((p for p in progression if p["ability_id"]==i), None)
-                if prog: row.update(rank=int(prog.get("rank") or 0), maximum_rank=int(prog.get("maximum_rank") or 1), progression_metadata=jload(prog.get("metadata_json"), {}))
+                if prog: row.update(rank=int(prog.get("rank") or 0), maximum_rank=int(prog.get("maximum_rank") or 100), proficiency=max(1, min(100, int(prog.get("proficiency") or 1))), maximum_proficiency=max(1, min(100, int(prog.get("maximum_rank") or 100))), progression_metadata=jload(prog.get("metadata_json"), {}))
                 out.append(row)
         return out
     def grant_ability(self, actor_id: str, ability_id: str, source_type: str="admin", source_id: str="", source_instance_id: str="", temporary: bool=False) -> str:
@@ -295,7 +295,48 @@ class AbilityExecutionService:
                 amount = int(num(comp.get("base_amount", comp.get("amount", 0))))
                 result["healing_events"].append(asdict(self.apply_healing(actor.actor_id, target_actor.actor_id, amount, ability_id, comp.get("id"), {"cast_id": cast_id, "formula_id": comp.get("formula_id")})))
             for eff in ab.effects_applied: result["effect_events"].append(self._apply_effect(actor,target_actor,ab,eff,cast_id))
-        self._pub("ability_completed", {"actor_id":actor_id,"ability_id":ability_id,"cast_id":cast_id}); return result
+        improvement = self.attempt_proficiency_improvement(actor_id, ability_id)
+        result["proficiency_improvement"] = improvement
+        self._pub("ability_completed", {"actor_id":actor_id,"ability_id":ability_id,"cast_id":cast_id,"proficiency_improvement":improvement}); return result
+
+    def attempt_proficiency_improvement(self, actor_id: str, ability_id: str, context: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Canonical +1% proficiency improvement hook for successful ability use."""
+        if not self.db_path:
+            return {"attempted": False, "reason": "no_store"}
+        ab = self.registry.abilities.get(ability_id)
+        pdata = (getattr(ab, "plugin_data", {}) or {}) if ab else {}
+        chance = float(pdata.get("improvement_chance", pdata.get("proficiency_improvement_chance", 0)))
+        minimum_successful_uses = int(pdata.get("minimum_successful_uses", 1) or 1)
+        cooldown = int(pdata.get("improvement_roll_cooldown_seconds", 0) or 0)
+        difficulty = int(pdata.get("improvement_difficulty", 0) or 0)
+        now_ts = now()
+        with sqlite3.connect(self.db_path) as c:
+            c.row_factory = sqlite3.Row
+            row = c.execute("SELECT proficiency,maximum_rank,metadata_json FROM actor_ability_progression WHERE actor_id=? AND ability_id=? AND active=1", (actor_id, ability_id)).fetchone()
+            if not row:
+                return {"attempted": False, "reason": "not_learned"}
+            current = max(1, min(100, int(row["proficiency"] or 1)))
+            maximum = max(1, min(100, int(row["maximum_rank"] or pdata.get("maximum_proficiency", 100) or 100)))
+            meta = jload(row["metadata_json"], {})
+            state = meta.setdefault("proficiency_state", {})
+            state["successful_uses"] = int(state.get("successful_uses", 0) or 0) + 1
+            if current >= maximum:
+                c.execute("UPDATE actor_ability_progression SET proficiency=?,metadata_json=? WHERE actor_id=? AND ability_id=?", (maximum, jdump(meta), actor_id, ability_id))
+                return {"attempted": False, "reason": "at_cap", "proficiency": maximum}
+            if state["successful_uses"] < minimum_successful_uses:
+                c.execute("UPDATE actor_ability_progression SET metadata_json=? WHERE actor_id=? AND ability_id=?", (jdump(meta), actor_id, ability_id))
+                return {"attempted": False, "reason": "minimum_successful_uses", "proficiency": current}
+            # Deterministic roll hook: 0 means disabled, >=1 means always succeeds; fractional formulas can be added here.
+            attempted = chance > 0
+            improved = attempted and chance >= 1
+            if improved:
+                current = min(maximum, current + 1)
+                state["last_improvement_at"] = now_ts
+                c.execute("UPDATE actor_ability_progression SET proficiency=?,metadata_json=? WHERE actor_id=? AND ability_id=?", (current, jdump(meta), actor_id, ability_id))
+                self._pub("ability_proficiency_increased", {"actor_id": actor_id, "ability_id": ability_id, "proficiency": current, "difficulty": difficulty})
+            else:
+                c.execute("UPDATE actor_ability_progression SET metadata_json=? WHERE actor_id=? AND ability_id=?", (jdump(meta), actor_id, ability_id))
+            return {"attempted": attempted, "improved": improved, "proficiency": current, "chance": chance, "difficulty": difficulty, "cooldown_seconds": cooldown}
     def complete_ability(self, cast_id: str) -> dict[str, Any]:
         if not self.db_path: return {"ok":False,"message":"No cast store."}
         with sqlite3.connect(self.db_path) as c: row=c.execute("SELECT actor_id,ability_id,target_data_json,state FROM actor_ability_casts WHERE cast_id=?",(cast_id,)).fetchone()
