@@ -1590,17 +1590,35 @@ class MudCommandEngine:
 
     def _cmd_score(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display normal player score as a focused structured document."""
-        section = args[0].lower() if args else "all"
-        valid = {"all", "resources", "attributes", "combat", "progression", "currency", "survival", "quests"}
-        if section not in valid:
-            if self._is_score_admin(character):
+        section = args[0].lower() if args else "score"
+        mode_aliases = {"all": "score", "compact": "compact", "full": "full", "detailed": "detailed", "score": "score"}
+        legacy_sections = {"resources", "attributes", "combat", "progression", "currency", "survival", "quests"}
+        if section not in mode_aliases:
+            if section in legacy_sections:
+                section = "score"
+            elif self._is_score_admin(character):
                 return CommandResult(self._render_score_section(character, section))
-            return CommandResult("That score section is not available.", ok=False, display_intent="WARNING", semantic_role="warning")
+            else:
+                return CommandResult("That score mode is not available. Try SCORE, SCORE COMPACT, or SCORE FULL.", ok=False, display_intent="WARNING", semantic_role="warning")
+        mode = mode_aliases.get(section, "score")
+        if mode == "detailed" and not self._is_score_admin(character):
+            return CommandResult("Detailed SCORE is available to Builder/admin characters only.", ok=False, display_intent="WARNING", semantic_role="warning")
         svc = getattr(self, "character_display_snapshots", None) or getattr(getattr(self, "runtime", None), "character_display_snapshots", None) or CharacterDisplaySnapshotService(getattr(self, "runtime", None))
-        snap = svc.build_snapshot(character)
+        try:
+            snap = svc.build_snapshot(character)
+        except Exception:
+            return CommandResult("Your character sheet is temporarily unavailable.", ok=False, display_intent="ERROR", semantic_role="error")
         theme = resolve_effective_display_theme(character, family="score")
-        doc = build_score_document(character, snapshot=snap, theme=theme)
-        return CommandResult(narrative=render_display_mud(doc, color_enabled=theme.color_enabled), display_document=doc, display_intent="SCORE")
+        try:
+            doc = build_score_document(character, snapshot=snap, theme=theme, mode=mode, detailed_allowed=self._is_score_admin(character))
+        except (ValueError, PermissionError) as exc:
+            return CommandResult(str(exc), ok=False, display_intent="WARNING", semantic_role="warning")
+        return CommandResult(
+            narrative=render_display_mud(doc, color_enabled=theme.color_enabled),
+            display_document=doc,
+            display_intent="SCORE",
+            state_updates={"snapshot_version": doc.debug_metadata.get("snapshot_version"), "display_mode": mode},
+        )
 
 
     def _cmd_phase7a_reward(self, character: Any, args: list[str], raw: str) -> CommandResult:

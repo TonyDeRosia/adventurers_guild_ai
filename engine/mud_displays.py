@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 from dataclasses import dataclass, field
 from enum import Enum
@@ -96,7 +96,10 @@ class DisplaySection:
 
 @dataclass(frozen=True)
 class CharacterDisplaySnapshot:
-    snapshot_version: str = "phase13c3a3c.v1"
+    schema_version: str = "phase13c3-b.snapshot.v1"
+    snapshot_version: str = "phase13c3-b.snapshot.v1"
+    character_id: str = ""
+    generated_at: str = ""
     identity: dict[str, Any] = field(default_factory=dict)
     title: str = ""
     race: dict[str, Any] = field(default_factory=dict)
@@ -132,6 +135,50 @@ class CharacterDisplaySnapshot:
     equipment: list[dict[str, Any]] = field(default_factory=list)
     inventory: list[dict[str, Any]] = field(default_factory=list)
     quest_summary: dict[str, Any] = field(default_factory=dict)
+
+@dataclass(frozen=True)
+class DisplayStat:
+    stat_id: str
+    label: str
+    value: Any = None
+    formatted_value: str = ""
+    unit: str = ""
+    display_group: str = ""
+    display_order: int = 0
+    active: bool = True
+    inactive_reason: str = ""
+    visible: bool = True
+    style_role: str = "character_value"
+    tooltip: str = ""
+    source_version: str = ""
+    availability: str = "available"
+
+@dataclass(frozen=True)
+class ScoreViewModel:
+    schema_version: str
+    character_id: str
+    generated_at: str = ""
+    identity: tuple[DisplayStat, ...] = ()
+    progression: tuple[DisplayStat, ...] = ()
+    resources: tuple[DisplayStat, ...] = ()
+    attributes: tuple[DisplayStat, ...] = ()
+    offense: tuple[DisplayStat, ...] = ()
+    defense: tuple[DisplayStat, ...] = ()
+    damage: tuple[DisplayStat, ...] = ()
+    criticals: tuple[DisplayStat, ...] = ()
+    saves: tuple[DisplayStat, ...] = ()
+    resistances: tuple[DisplayStat, ...] = ()
+    speed: tuple[DisplayStat, ...] = ()
+    carrying: tuple[DisplayStat, ...] = ()
+    survival: tuple[DisplayStat, ...] = ()
+    conditions: tuple[DisplayStat, ...] = ()
+    effects: tuple[dict[str, Any], ...] = ()
+    companions: tuple[DisplayStat, ...] = ()
+    location: tuple[DisplayStat, ...] = ()
+    currencies: tuple[DisplayStat, ...] = ()
+    mechanics: tuple[DisplayStat, ...] = ()
+    availability: dict[str, str] = field(default_factory=dict)
+    source_versions: dict[str, Any] = field(default_factory=dict)
 
 @dataclass(frozen=True)
 class AbilityDisplaySnapshot:
@@ -485,51 +532,211 @@ def _ordered_sections(section_rows: dict[str, list[Any]], theme: Any, *, require
         first=False; rows.extend(part)
     return rows or [DisplayLine("Character information is unavailable.", role="character_muted")]
 
-def build_score_document(character: Any, *, snapshot: CharacterDisplaySnapshot | None = None, theme: Any = None) -> DisplayDocument:
+SCORE_SCHEMA_VERSION = "phase13c3-b.snapshot.v1"
+SCORE_SECTION_TITLES = {
+    "identity": "Character Identity", "progression": "Progression", "resources": "Resources",
+    "attributes": "Primary Attributes", "offense": "Offense", "defense": "Defense",
+    "damage": "Damage", "criticals": "Criticals", "saves": "Saving Throws",
+    "resistances": "Resistances", "speed": "Speed and Initiative",
+    "carrying": "Carrying and Encumbrance", "survival": "Survival and Condition",
+    "effects": "Active Effects", "mechanics": "Status and Mechanics",
+    "location": "Location", "companions": "Companions", "currencies": "Currencies",
+    "diagnostics": "Snapshot Diagnostics",
+}
+SCORE_MODES = {"score", "compact", "full", "detailed"}
+
+def _availability_text(value: Any, availability: str = "available") -> str:
+    if availability == "unsupported": return "Not implemented"
+    if availability == "inactive": return "Inactive"
+    if availability == "not_applicable": return "Not applicable"
+    if availability == "hidden_by_world": return "Hidden by world"
+    if availability == "unavailable": return "Unavailable"
+    return str(value) if value not in (None, "") else "Not selected"
+
+def _display_value(value: Any, unit: str = "", fmt: str = "") -> str:
+    if isinstance(value, Mapping):
+        if value.get("formatted_value") not in (None, ""): return str(value.get("formatted_value"))
+        if value.get("display") not in (None, ""): return str(value.get("display"))
+        if value.get("final") is not None: value = value.get("final")
+        elif value.get("value") is not None: value = value.get("value")
+    if value is None: return "—"
+    if fmt in {"integer", "number", "thousands"}:
+        try: return f"{int(value):,}"
+        except Exception: pass
+    if fmt in {"percent", "percentage"} or unit in {"%", "percent", "percentage"}:
+        try: return f"{float(value):g}%"
+        except Exception: return f"{value}%"
+    if unit and unit not in {"", "number"} and str(value) != "—":
+        return f"{value} {unit}"
+    return str(value)
+
+def _stat_from_entry(stat_id: str, entry: Any, fallback_label: str, *, group: str, order: int = 0) -> DisplayStat:
+    if isinstance(entry, Mapping):
+        active = bool(entry.get("active", True))
+        availability = str(entry.get("availability") or ("available" if active else "inactive"))
+        return DisplayStat(
+            stat_id=str(entry.get("stat_id") or stat_id),
+            label=str(entry.get("label") or entry.get("display_label") or fallback_label),
+            value=entry.get("value", entry.get("final", entry.get("display"))),
+            formatted_value=str(entry.get("formatted_value") or _availability_text(_display_value(entry, str(entry.get("unit") or ""), str(entry.get("display_format") or "")), availability)),
+            unit=str(entry.get("unit") or ""),
+            display_group=group,
+            display_order=int(entry.get("display_order") or order),
+            active=active,
+            inactive_reason=str(entry.get("inactive_reason") or ""),
+            visible=bool(entry.get("visible", True)),
+            style_role=str(entry.get("style_role") or ("character_muted" if not active else "character_value")),
+            tooltip=str(entry.get("description") or entry.get("tooltip") or ""),
+            source_version=str(entry.get("source_version") or ""),
+            availability=availability,
+        )
+    return DisplayStat(stat_id=stat_id, label=fallback_label, value=entry, formatted_value=_display_value(entry), display_group=group, display_order=order)
+
+def _stats_from_mapping(data: Mapping[str, Any], *, group: str) -> tuple[DisplayStat, ...]:
+    out=[]
+    for i, (key, value) in enumerate(data.items()):
+        if key.startswith("_"): continue
+        out.append(_stat_from_entry(str(key), value, str(key).replace("_", " ").title(), group=group, order=i * 10))
+    return tuple(sorted((s for s in out if s.visible), key=lambda s: (s.display_order, s.label)))
+
+def _resource_stats(res: Mapping[str, Any]) -> tuple[DisplayStat, ...]:
+    pairs=(("health","HP","hp","max_hp","resource_health"),("mana","Mana","mana","max_mana","resource_mana"),("stamina","Stamina","stamina","max_stamina","resource_stamina"),("movement","Movement","movement","max_movement","resource_movement"))
+    out=[]
+    for i,(sid,label,cur,mx,role) in enumerate(pairs):
+        if cur in res or mx in res:
+            out.append(DisplayStat(sid,label,formatted_value=f"{res.get(cur, '—')} / {res.get(mx, '—')}",display_group="resources",display_order=i*10,style_role=role))
+    return tuple(out)
+
+def _damage_stats(snap: CharacterDisplaySnapshot) -> tuple[DisplayStat, ...]:
+    rows=[]
+    for sid, label, prof in (("weapon","Weapon",snap.weapon_profile or {}),("unarmed","Unarmed",snap.unarmed_profile or {})):
+        if not isinstance(prof, Mapping) or not prof: continue
+        if prof.get("summary"):
+            value=str(prof.get("summary"))
+        else:
+            name=prof.get("weapon_name") or prof.get("name")
+            lo=prof.get("minimum_damage", prof.get("min_damage"))
+            hi=prof.get("maximum_damage", prof.get("max_damage"))
+            dtype=prof.get("damage_type") or ""
+            value=" ".join(x for x in (f"{lo}–{hi}" if lo is not None and hi is not None else "", str(dtype), f"({name})" if name else "") if x)
+        if value and value != "0–0":
+            rows.append(DisplayStat(sid,label,formatted_value=value,display_group="damage",display_order=10 if sid=="weapon" else 20))
+        for extra in ("attack_speed","reach","range"):
+            if prof.get(extra) is not None:
+                rows.append(DisplayStat(f"{sid}_{extra}", extra.replace("_"," ").title(), formatted_value=str(prof.get(extra)), display_group="damage", display_order=30))
+    return tuple(rows)
+
+def build_score_view_model(snapshot: CharacterDisplaySnapshot, *, mode: str = "score") -> ScoreViewModel:
+    version = getattr(snapshot, "schema_version", getattr(snapshot, "snapshot_version", ""))
+    if version != SCORE_SCHEMA_VERSION:
+        raise ValueError(f"Unsupported score snapshot version: {version}")
+    ident=snapshot.identity or {}; prog=snapshot.progression or {}
+    identity=[
+        DisplayStat("name","Name",formatted_value=str(ident.get("display_name") or "Adventurer"),display_group="identity",display_order=10),
+    ]
+    if ident.get("title"): identity.append(DisplayStat("title","Title",formatted_value=str(ident.get("title")),display_group="identity",display_order=20))
+    for sid, label, obj, fallback in (("race","Race",snapshot.race,"unavailable"),("class","Class",snapshot.character_class,"unsupported"),("deity","Deity",(snapshot.mechanics or {}).get("deity", {"availability":"unavailable"}),"unavailable"),("hometown","Hometown",(snapshot.mechanics or {}).get("hometown", {"availability":"unavailable"}),"unavailable")):
+        avail=str((obj or {}).get("availability") or ("available" if (obj or {}).get("name") else fallback))
+        identity.append(DisplayStat(sid,label,formatted_value=_availability_text((obj or {}).get("name"), avail),display_group="identity",display_order=30 + len(identity),availability=avail,active=avail=="available",style_role="character_muted" if avail!="available" else "character_value"))
+    identity.extend([DisplayStat("level","Level",formatted_value=_display_value(snapshot.level),display_group="identity",display_order=70),
+                     DisplayStat("alignment","Alignment",formatted_value=str(snapshot.alignment or "Neutral/unspecified"),display_group="identity",display_order=80)])
+    if snapshot.age.get("display"): identity.append(DisplayStat("age","Age",formatted_value=str(snapshot.age.get("display")),display_group="identity",display_order=90))
+    if snapshot.time.get("play_time"): identity.append(DisplayStat("played_time","Played",formatted_value=str(snapshot.time.get("play_time")),display_group="identity",display_order=100))
+    if snapshot.survival.get("posture"): identity.append(DisplayStat("position","Position",formatted_value=str(snapshot.survival.get("posture")).title(),display_group="identity",display_order=110))
+    progression=_stats_from_mapping(prog, group="progression")
+    currencies=_stats_from_mapping(snapshot.currency or {}, group="currencies")
+    carrying=list(_stats_from_mapping(snapshot.carrying or {}, group="carrying"))
+    if snapshot.encumbrance:
+        carrying.extend(_stats_from_mapping(snapshot.encumbrance, group="carrying"))
+    return ScoreViewModel(
+        schema_version=version, character_id=str(snapshot.character_id or ident.get("character_id") or ""), generated_at=str(snapshot.generated_at or ""),
+        identity=tuple(sorted(identity,key=lambda s:s.display_order)), progression=progression, resources=_resource_stats(snapshot.resources or {}),
+        attributes=_stats_from_mapping(snapshot.attributes or {}, group="attributes"), offense=_stats_from_mapping(snapshot.offense or {}, group="offense"),
+        defense=_stats_from_mapping(snapshot.defense or {}, group="defense"), damage=_damage_stats(snapshot),
+        criticals=_stats_from_mapping(snapshot.criticals or {}, group="criticals"), saves=_stats_from_mapping(snapshot.saves or {}, group="saves"),
+        resistances=_stats_from_mapping(snapshot.resistances or {}, group="resistances"), speed=_stats_from_mapping(snapshot.speed or {}, group="speed"),
+        carrying=tuple(carrying), survival=_stats_from_mapping(snapshot.survival or {}, group="survival"),
+        conditions=tuple(DisplayStat(f"condition_{i}", "Condition", formatted_value=str(c.get("name") or c.get("label") or c), display_group="conditions", display_order=i) for i,c in enumerate(snapshot.conditions or [])),
+        effects=tuple(snapshot.effects or ()), location=_stats_from_mapping(snapshot.location or {}, group="location"),
+        currencies=currencies, mechanics=_stats_from_mapping(snapshot.mechanics or {}, group="mechanics"), source_versions=dict(snapshot.source_versions or {}),
+    )
+
+def render_display_field(stat: DisplayStat) -> DisplayCell:
+    role = stat.style_role or ("character_muted" if not stat.active else "character_value")
+    text = stat.formatted_value or _display_value(stat.value, stat.unit)
+    if not stat.active and stat.inactive_reason:
+        text = f"{text} ({stat.inactive_reason})"
+    return DisplayCell(width=25, segments=_field_segments(stat.label, text, value_role=role), metadata={"stat_id": stat.stat_id, "tooltip": stat.tooltip, "availability": stat.availability})
+
+def render_display_section(title: str, stats: tuple[DisplayStat, ...], *, columns: int = 2) -> list[Any]:
+    visible=[s for s in stats if s.visible and (s.availability != "hidden_by_world")]
+    if not visible: return []
+    rows=[DisplayLine(title.upper(), role="character_title")]
+    cells=[render_display_field(s) for s in visible]
+    for i in range(0, len(cells), columns): rows.append(DisplayRow(cells[i:i+columns]))
+    return rows
+
+def render_resource_pair(stats: tuple[DisplayStat, ...]) -> list[Any]: return render_display_section("Resources", stats, columns=2)
+def render_damage_profile(stats: tuple[DisplayStat, ...]) -> list[Any]: return render_display_section("Damage", stats, columns=2)
+def render_resistance_grid(stats: tuple[DisplayStat, ...]) -> list[Any]: return render_display_section("Resistances", stats, columns=3)
+def render_identity_summary(stats: tuple[DisplayStat, ...]) -> list[Any]: return render_display_section("Character Identity", stats, columns=2)
+def render_location_summary(stats: tuple[DisplayStat, ...]) -> list[Any]: return render_display_section("Location", stats, columns=2)
+def render_effect_list(effects: tuple[dict[str, Any], ...]) -> list[Any]:
+    if not effects: return []
+    rows=[DisplayLine("ACTIVE EFFECTS", role="character_title")]
+    for e in effects:
+        kind=str(e.get("classification") or e.get("category") or e.get("type") or "neutral").lower()
+        role="character_positive" if kind in {"beneficial","positive","buff"} else "character_negative" if kind in {"harmful","negative","debuff"} else "character_value"
+        bits=[str(e.get("display_name") or e.get("name") or "Effect")]
+        if e.get("remaining") or e.get("duration"): bits.append(f"Duration: {e.get('remaining') or e.get('duration')}")
+        if e.get("stacks") or e.get("stack_count"): bits.append(f"Stacks: {e.get('stacks') or e.get('stack_count')}")
+        rows.append(DisplayLine(" — ".join(bits), role=role))
+    return rows
+
+def build_score_document(character: Any = None, *, snapshot: CharacterDisplaySnapshot | None = None, theme: Any = None, mode: str = "score", detailed_allowed: bool = False) -> DisplayDocument:
     snap=snapshot or build_character_display_snapshot(character)
-    ident,res,prog,attrs,combat,carry,currency,surv,time=snap.identity,snap.resources,snap.progression,snap.attributes,snap.combat,snap.carrying,snap.currency,snap.survival,snap.time
-    section_rows: dict[str, list[Any]] = {k: [] for k in ("identity","resources","progression","carrying","attributes","combat","currency","survival","effects","time")}
-    rows=section_rows["identity"]
-    rows.append(_row_fields((theme_label(theme,"name","Name"), ident.get("display_name","Adventurer")), (theme_label(theme,"title","Title"), ident.get("title","—"))))
-    race=ident.get("race_name"); cls=ident.get("class_name")
-    pairs=[]
-    if race not in (None,"","—"): pairs.append((theme_label(theme,"race","Race"), race))
-    if cls not in (None,"","—"): pairs.append((theme_label(theme,"class","Class"), cls))
-    if pairs: rows.append(_row_fields(*pairs))
-    rows.append(_row_fields((theme_label(theme,"level","Level"), ident.get("level","—")), (theme_label(theme,"alignment","Alignment"), ident.get("alignment","—"))))
-    if ident.get("age") or ident.get("birthday"): rows.append(_row_fields((theme_label(theme,"age","Age"), ident.get("age","—")), (theme_label(theme,"birthday","Birthday"), ident.get("birthday","—"))))
-    rows.append(DisplayDivider())
-    resource_parts=[]
-    for label,a,b in ((theme_label(theme,"hp","HP"),"hp","max_hp"),(theme_label(theme,"mana","Mana"),"mana","max_mana"),(theme_label(theme,"stamina","Stamina"),"stamina","max_stamina")):
-        if a in res or b in res: resource_parts.append(f"{label}: {res.get(a,'—')}/{res.get(b,'—')}")
-    if resource_parts: section_rows["resources"].append(DisplayLine("   ".join(resource_parts)))
-    rows=section_rows["progression"]
-    if prog: rows.append(_row_fields((theme_label(theme,"experience","Experience"), prog.get("xp","—")), (theme_label(theme,"tnl","TNL"), prog.get("xp_to_next_level","—"))))
-    pts=[(theme_label(theme, {"practice_points":"practice","training_points":"training","level_progress_percent":"level_progress"}.get(k,k), k.replace("_"," ").title()),v) for k,v in prog.items() if k in {"practice_points","training_points","quest_points","level_progress_percent"}]
-    if pts: rows.append(_row_fields(*pts[:2]))
-    if carry and (carry.get("current_weight") is not None or carry.get("carry_weight") is not None or carry.get("carry_capacity") is not None):
-        section_rows["carrying"].append(DisplayLine(f"{theme_label(theme,'carry_capacity','Carry Capacity')}: {carry.get('current_weight', carry.get('carry_weight','—'))} / {carry.get('carry_capacity','—')} — {theme_label(theme,'encumbrance','Encumbrance')}: {carry.get('encumbrance_text', carry.get('encumbrance','—'))}"))
-    rows=section_rows["attributes"]
-    labels=[(theme_label(theme,"strength","Str"),"strength"),(theme_label(theme,"dexterity","Dex"),"dexterity"),(theme_label(theme,"constitution","Con"),"constitution"),(theme_label(theme,"intelligence","Int"),"intelligence"),(theme_label(theme,"wisdom","Wis"),"wisdom"),(theme_label(theme,"charisma","Cha"),"charisma")]
-    attr_cells=[DisplayCell(width=22, segments=_field_segments(lab, _fmt_attr(attrs[key]), theme=theme)) for lab,key in labels if key in attrs]
-    for i in range(0,len(attr_cells),3): rows.append(DisplayRow(attr_cells[i:i+3]))
-    if combat:
-        rows=section_rows["combat"]
-        for chunk in (("Armor","armor","Evasion","evasion"),("Spell Saves","spell_saves","Accuracy","accuracy"),("Hit Bonus","hit_bonus","Damage Bonus","damage_bonus"),("Critical Melee","critical_melee","Critical Spell","critical_spell"),("Critical Heal","critical_heal","Weapon","weapon_damage_summary"),("Unarmed","unarmed_damage_summary","Resistances","resistances")):
-            pairs=[]
-            for lab,key in zip(chunk[::2], chunk[1::2]):
-                if key in combat: pairs.append((theme_label(theme, key.replace("_damage_summary", ""), lab), combat[key]))
-            if pairs: rows.append(_row_fields(*pairs[:2]))
-    if currency:
-        section_rows["currency"].append(DisplayRow([DisplayCell(width=22, segments=_field_segments(theme_label(theme, f"currency.{k}", k.title()), v, value_role="gold" if k=="gold" else "character_value")) for k,v in currency.items() if v is not None]))
-    st=[(k.replace('_',' ').title(),v) for k,v in surv.items() if v not in (None,"")]
-    if st: section_rows["survival"].append(_row_fields(*st[:2]))
-    eff=list(getattr(snap, "effects", []) or [])
-    if eff: section_rows["effects"].append(DisplayLine(f"Active effects: {len(eff)}", role="character_value"))
-    tt=[(k.replace('_',' ').title(),v) for k,v in time.items() if v not in (None,"")]
-    if tt: section_rows["time"].append(_row_fields(*tt[:2]))
-    rows=_ordered_sections(section_rows, theme, required={"identity","resources"})
-    return build_character_frame_document(DisplayIntent.SCORE,"CHARACTER STATUS",rows,width=79, theme=theme)
+    mode=(mode or "score").lower()
+    if mode not in SCORE_MODES: raise ValueError(f"Unsupported score display mode: {mode}")
+    if mode == "detailed" and not detailed_allowed: raise PermissionError("Detailed SCORE is available to Builder/admin characters only.")
+    vm=build_score_view_model(snap, mode=mode)
+    order = ["identity","progression","resources","attributes","offense","defense"] if mode == "compact" else ["identity","progression","resources","attributes","offense","defense","damage","criticals","saves","resistances","speed","carrying","survival","effects","mechanics","location","companions"]
+    theme_order = list(getattr(theme, "section_order", ()) or ()) if theme is not None else []
+    theme_visible = set(getattr(theme, "visible_sections", ()) or ()) if theme is not None else set()
+    if theme_order:
+        order = [s for s in theme_order if s in set(order) | {"currencies", "currency"}] + [s for s in order if s not in theme_order]
+    rows=[]
+    section_map={
+        "identity": render_identity_summary(vm.identity), "progression": render_display_section("Progression", vm.progression, columns=2),
+        "resources": render_resource_pair(vm.resources), "attributes": render_display_section("Primary Attributes", vm.attributes, columns=3),
+        "offense": render_display_section("Offense", vm.offense, columns=2), "defense": render_display_section("Defense", vm.defense, columns=2),
+        "damage": render_damage_profile(vm.damage), "criticals": render_display_section("Criticals", vm.criticals, columns=2),
+        "saves": render_display_section("Saving Throws", vm.saves, columns=3), "resistances": render_resistance_grid(vm.resistances),
+        "speed": render_display_section("Speed and Initiative", vm.speed, columns=2), "carrying": render_display_section("Carrying and Encumbrance", vm.carrying, columns=2),
+        "survival": render_display_section("Survival and Condition", vm.survival + vm.conditions, columns=2), "effects": render_effect_list(vm.effects),
+        "mechanics": render_display_section("Status and Mechanics", vm.mechanics, columns=2), "location": render_location_summary(vm.location),
+        "companions": render_display_section("Companions", vm.companions, columns=2),
+    }
+    if vm.currencies and mode != "compact":
+        section_map["currencies"] = render_display_section("Currencies", vm.currencies, columns=3)
+        section_map["currency"] = section_map["currencies"]
+        if "currencies" not in order and "currency" not in order:
+            section_map["progression"].extend(section_map["currencies"])
+    for sid in order:
+        if theme_visible and sid not in theme_visible and not (sid == "currencies" and "currency" in theme_visible):
+            continue
+        part=section_map.get(sid) or []
+        if not part: continue
+        if rows: rows.append(DisplayDivider())
+        rows.extend(part)
+    if mode == "detailed":
+        diag=[DisplayLine("SNAPSHOT DIAGNOSTICS", role="character_title")]
+        diag.extend(DisplayLine(f"{k}: {v}", role="character_muted") for k,v in sorted(vm.source_versions.items()))
+        if rows: rows.append(DisplayDivider())
+        rows.extend(diag)
+    doc=build_character_frame_document(DisplayIntent.SCORE,"CHARACTER SCORE",rows or [DisplayLine("Character information is unavailable.", role="character_muted")],width=79, theme=theme)
+    doc.renderer_hints.update({"score_view_model": vm, "score_mode": mode, "snapshot_version": vm.schema_version})
+    doc.debug_metadata.update({"snapshot_version": vm.schema_version, "display_mode": mode})
+    return doc
 
 def build_worth_document(character: Any, *, snapshot: CharacterDisplaySnapshot | None = None, theme: Any = None) -> DisplayDocument:
     currency=(snapshot or build_character_display_snapshot(character)).currency
@@ -667,6 +874,35 @@ def render_display_ansi(doc: DisplayDocument, *, color_enabled: bool = True) -> 
     return strip_mud_color_markup(TAG_RE.sub(repl, mud)) + "\033[0m"
 
 def render_display_html(doc: DisplayDocument, *, color_enabled: bool = True) -> str:
+    vm = (getattr(doc, "renderer_hints", {}) or {}).get("score_view_model")
+    if vm is not None:
+        section_names = ["identity","progression","resources","attributes","offense","defense","damage","criticals","saves","resistances","speed","carrying","survival","location"]
+        parts = ['<section class="mud-score" role="region" aria-label="Character score">', f'<header><h2>{html.escape(str(doc.title or "Character Score"))}</h2></header>']
+        for name in section_names:
+            stats = tuple(getattr(vm, name, ()) or ())
+            if name == "survival":
+                stats = stats + tuple(getattr(vm, "conditions", ()) or ())
+            if not stats: continue
+            parts.append(f'<section class="score-section score-section-{html.escape(name)}"><h3>{html.escape(SCORE_SECTION_TITLES.get(name, name.title()))}</h3><dl>')
+            for stat in stats:
+                if not stat.visible or stat.availability == "hidden_by_world": continue
+                value = stat.formatted_value or _display_value(stat.value, stat.unit)
+                cls = re.sub(r"[^a-z0-9_-]+", "-", f"score-field {stat.style_role} {stat.availability}".lower())
+                title = f' title="{html.escape(stat.tooltip)}"' if stat.tooltip else ""
+                parts.append(f'<div class="{cls}" data-stat-id="{html.escape(stat.stat_id)}"{title}><dt>{html.escape(stat.label)}</dt><dd>{html.escape(value)}</dd></div>')
+            parts.append("</dl></section>")
+        effects = tuple(getattr(vm, "effects", ()) or ())
+        if effects:
+            parts.append('<section class="score-section score-section-effects"><h3>Active Effects</h3><ul>')
+            for e in effects:
+                name = str(e.get("display_name") or e.get("name") or "Effect")
+                bits=[name]
+                if e.get("remaining") or e.get("duration"): bits.append(f"Duration: {e.get('remaining') or e.get('duration')}")
+                if e.get("stacks") or e.get("stack_count"): bits.append(f"Stacks: {e.get('stacks') or e.get('stack_count')}")
+                parts.append(f'<li>{html.escape(" — ".join(bits))}</li>')
+            parts.append("</ul></section>")
+        parts.append("</section>")
+        return "".join(parts)
     if not color_enabled:
         return html.escape(render_display_plain(doc))
     # Render each field independently. Trusted Builder markup is parsed only for
