@@ -1783,6 +1783,11 @@ class MudCommandEngine:
             if not rows: return CommandResult("No combat action diagnostic matched that ID.", ok=False)
             try: data=json.loads(rows[0][10] or "{}")
             except Exception: data={"raw": rows[0][10]}
+            with sqlite3.connect(cr.db_path) as con:
+                con.row_factory=sqlite3.Row
+                life=con.execute("SELECT transition_id,corpse_status,reward_status,loot_status,kill_credit_status,quest_credit_status,respawn_status,combat_end_status,corpse_id,reward_claim_id,respawn_id,new_state FROM actor_lifecycle_transitions WHERE trigger_action_id=? ORDER BY created_at DESC LIMIT 1", (args[1],)).fetchone()
+                if life:
+                    data["lifecycle_status"] = dict(life)
             return CommandResult("COMBAT BREAKDOWN ACTION\n"+json.dumps({"history_id":rows[0][0],"round":rows[0][2],"actor":rows[0][3],"target":rows[0][4],"result":data}, indent=2, default=str))
         if sub=="target" and len(args)>=2:
             q=args[1]; aid=q if ':' in q else ('character:'+q)
