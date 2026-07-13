@@ -8,8 +8,21 @@ import json
 import re
 import logging
 import sqlite3
+import traceback
 
 logger = logging.getLogger(__name__)
+
+def _command_exception_context(character: Any, command_text: str, resolved_command: str) -> dict[str, Any]:
+    rt = getattr(character, "runtime", None)
+    return {
+        "command_text": command_text,
+        "resolved_command_or_ability_id": resolved_command,
+        "actor_id": getattr(character, "id", ""),
+        "actor_name": getattr(character, "name", ""),
+        "room_id": getattr(character, "room_id", getattr(character, "current_room_id", "")),
+        "world_id": getattr(rt, "active_world_id", getattr(character, "world_id", "")) if rt else getattr(character, "world_id", ""),
+    }
+
 from pathlib import Path
 from engine.mud_displays import semantic, DisplayDocument, DisplayIntent, DisplayLine, DisplaySection, DisplayField, render_display_mud, render_display_plain, build_score_document, build_worth_document, build_abilities_document, build_inventory_document, build_equipment_document, build_affects_document, build_prompt_document, PROMPT_PRESETS, PROMPT_MAX_LENGTH
 from engine.actors import actor_from_runtime_character
@@ -617,7 +630,7 @@ class MudCommandEngine:
                     row=c.execute("SELECT campfire_instance_id FROM campfire_instances WHERE room_id=? AND status IN ('unlit','lit','extinguished','low_fuel') ORDER BY created_at DESC LIMIT 1",(rid,)).fetchone()
                 return CommandResult(self._format_campfire_status(svc.trace_campfire(row[0] if row else '')))
             if phrase in {'set camp','make camp','establish camp'}:
-                res=svc.create_campsite(actor_id,'basic_campsite'); msg='You abandon your previous campsite and establish a new one here.' if res.get('replaced_previous') else 'You establish a modest campsite here.'; return CommandResult(msg if res.get('ok', True) else 'You cannot establish a camp here.', ok=bool(res.get('ok', True)), state_updates={'render_room': bool(res.get('ok', True))})
+                res=svc.create_campsite(actor_id,'basic_campsite'); msg='You abandon your previous campsite and establish a new one here.' if res.get('replaced_previous') else 'You establish a modest campsite here.'; denial=res.get('message') or ('A campsite is already established here.' if res.get('reason')=='existing_campsite' else 'You cannot establish a camp here.'); return CommandResult(msg if res.get('ok', True) else denial, ok=bool(res.get('ok', True)), state_updates={'render_room': bool(res.get('ok', True))})
             if phrase in {'break camp','campsite dismantle','dismantle campsite'}:
                 res=svc.dismantle_campsite(actor_id,args[-1] if args and args[-1].startswith('campsite_') else ''); return CommandResult('You dismantle the campsite.' if res.get('ok', True) else 'There is no campsite here to dismantle.', ok=bool(res.get('ok', True)), state_updates={'render_room': bool(res.get('ok', True))})
             if phrase in {'build campfire','make campfire','create campfire'}:
@@ -1332,8 +1345,16 @@ class MudCommandEngine:
             try:
                 raw_result = self.command_handlers[cmd_name](character, args, command_text)
                 result = self._normalize_command_result(raw_result, cmd_name)
-            except Exception:
-                logger.exception("Command handler failed", extra={"command": cmd_name, "raw_input": command_text, "character_id": getattr(character, "id", "")})
+            except Exception as exc:
+                context = _command_exception_context(character, command_text, cmd_name)
+                if not context.get("world_id") and getattr(self, "runtime", None):
+                    context["world_id"] = getattr(self.runtime, "active_world_id", "")
+                context.update({
+                    "exception_type": type(exc).__name__,
+                    "exception_message": str(exc),
+                    "traceback": traceback.format_exc(),
+                })
+                logger.error("Unexpected command exception", extra=context, exc_info=True)
                 result = CommandResult("Something went wrong while handling that command. Please try again or use HELP for syntax.", ok=False)
             self._publish("command_executed", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary=(result.narrative or "render_room")[:120])
             return result

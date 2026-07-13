@@ -92,8 +92,15 @@ class SurvivalNeedsService:
             c.row_factory=sqlite3.Row
             if not c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='characters'").fetchone():
                 return {"id":actor_id,"world_id":self.world_id,"data":"{}"}
-            r=c.execute("SELECT * FROM characters WHERE id=?",(actor_id,)).fetchone()
-            return dict(r) if r else {"id":actor_id,"world_id":self.world_id,"data":"{}"}
+            columns={r[1] for r in c.execute("PRAGMA table_info(characters)").fetchall()}
+            if "id" in columns:
+                r=c.execute("SELECT * FROM characters WHERE id=?",(actor_id,)).fetchone()
+                return dict(r) if r else {"id":actor_id,"world_id":self.world_id,"data":"{}"}
+            if "character_id" in columns:
+                r=c.execute("SELECT * FROM characters WHERE character_id=?",(actor_id,)).fetchone()
+                if r:
+                    d=dict(r); d.setdefault("id", d.get("character_id", actor_id)); d.setdefault("room_id", d.get("current_room_id", "")); d.setdefault("data", "{}"); return d
+            return {"id":actor_id,"world_id":self.world_id,"data":"{}"}
     def _profile_for_actor(self, actor_id: str) -> dict[str, Any]:
         data=_loads(self._actor_row(actor_id).get('data'),{})
         actor_type='player' if actor_id.startswith('char_') or data.get('role','player')=='player' else data.get('actor_type','npc')
@@ -221,7 +228,8 @@ class SurvivalNeedsService:
             r=c.execute("SELECT * FROM actor_rest_sessions WHERE world_id=? AND actor_id=? AND status IN ('started','resting','sleeping') ORDER BY started_world_time DESC LIMIT 1",(self.world_id,actor_id)).fetchone()
             return dict(r) if r else None
     def _room_for_actor(self, actor_id: str) -> str:
-        row=self._actor_row(actor_id); return row.get('room_id') or _loads(row.get('data'),{}).get('room_id') or 'guildhall_crossing_square'
+        row=self._actor_row(actor_id); data=_loads(row.get('data'),{})
+        return row.get('room_id') or row.get('current_room_id') or data.get('room_id') or data.get('current_room_id') or 'guildhall_crossing_square'
     def _rest_location(self, location_id: str|None, rest_type: str) -> dict[str, Any]:
         if location_id: return self.content.get('rest_location_profiles', location_id) or {'id':location_id,'location_type':'custom','rest_allowed':True,'sleep_allowed':rest_type=='sleep','capacity':1,'rest_quality_profile_id':'ground_rest'}
         pref='ground_rest' if rest_type!='sleep' else 'basic_bed'
@@ -359,6 +367,9 @@ class SurvivalNeedsService:
         room_id=room_id or self._room_for_actor(actor_id); wt=self._world_minutes(); iid=f"campsite_{_stable(self.world_id,profile_id,room_id,actor_id,wt)}"; prof=self.content.get('campsite_profiles',profile_id); now=utc_now(); exp=wt+int(prof.get('duration_minutes',480) or 480); replaced=False
         with sqlite3.connect(self.db_path) as c:
             c.row_factory=sqlite3.Row; c.execute('BEGIN IMMEDIATE')
+            prev_here=self._active_campsite_for_owner(c,actor_id,room_id)
+            if prev_here:
+                return {'ok':False,'reason':'existing_campsite','message':'A campsite is already established here.','campsite_instance_id':prev_here['campsite_instance_id']}
             prev=self._active_campsite_for_owner(c,actor_id)
             if prev:
                 replaced=True; c.execute("UPDATE campsite_instances SET status='replaced',updated_at=? WHERE campsite_instance_id=?",(now,prev['campsite_instance_id']))

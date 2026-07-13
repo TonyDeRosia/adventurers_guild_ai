@@ -53,3 +53,43 @@ def test_future_multiword_ability_alias_resolves(tmp_path):
     ab = rt.abilities.registry.abilities['set_camp']
     ab.plugin_data = {**(ab.plugin_data or {}), 'aliases': ['establish camp']}
     assert rt._match_player_ability_command(['establish','camp'])['args'] == ['establish','camp']
+
+
+def test_compact_ability_headers_use_dedicated_bright_yellow_roles():
+    from engine.mud_displays import render_display_mud
+    rows=[{"name":"Build Campfire","rank":1},{"name":"Set Camp","rank":1}]
+    mud=render_display_mud(build_abilities_document(rows, title="SKILLS"), color_enabled=True)
+    assert "{character_title}SKILLS{/character_title}" in mud
+    assert "{character_title}PROFICIENCY{/character_title}" in mud
+    assert "{character_value}Build Campfire{/character_value}" in mud
+    assert "{character_value}1%{/character_value}" in mud
+    plain=render_display_mud(build_abilities_document(rows, title="SKILLS"), color_enabled=False)
+    assert "{character_title}" not in plain and "SKILLS" in plain and "PROFICIENCY" in plain
+    override=SimpleNamespace(width=70, labels={}, semantic_roles={"skills.name_header_role":"warning", "skills.proficiency_header_role":"quest"})
+    themed=render_display_mud(build_abilities_document(rows, title="SKILLS", theme=override), color_enabled=True)
+    assert "{warning}SKILLS{/warning}" in themed
+    assert "{quest}PROFICIENCY{/quest}" in themed
+
+
+def test_legacy_character_schema_set_camp_persists_and_reloads(tmp_path):
+    from engine.mud_runtime import MudRuntime
+    import json, sqlite3
+    rt = MudRuntime(root=Path('.'), user_data_dir=tmp_path)
+    rt.load_world('shattered_realms')
+    cid = 'char_shattered_realms_kraevok_legacy'
+    data = {"id": cid, "name": "Kraevok", "role": "player", "room_id": rt.active_world.default_starting_room_id, "hp": 100, "max_hp": 100, "mana": 50, "max_mana": 50, "stamina": 100, "max_stamina": 100, "abilities": []}
+    with sqlite3.connect(rt.state_store.db_path) as con:
+        con.execute("""CREATE TABLE IF NOT EXISTS actor_ability_progression(actor_id TEXT,ability_id TEXT,rank INTEGER,maximum_rank INTEGER,proficiency INTEGER,learned_at_level INTEGER,source_class_id TEXT,source_race_id TEXT,source_profession_id TEXT,source_track_id TEXT,practice_cost INTEGER,training_cost INTEGER,skill_point_cost INTEGER,requirements_json TEXT,active INTEGER,learned_at TEXT,metadata_json TEXT,PRIMARY KEY(actor_id,ability_id))""")
+        con.execute("INSERT OR REPLACE INTO characters(id,account_id,world_id,name,slug,role,immortal_level,builder_enabled,data) VALUES(?,?,?,?,?,?,?,?,?)", (cid,'','shattered_realms','Kraevok','kraevok','player',0,0,json.dumps(data)))
+        con.execute("INSERT OR REPLACE INTO actor_ability_progression(actor_id,ability_id,rank,maximum_rank,proficiency,learned_at_level,source_class_id,source_race_id,source_profession_id,source_track_id,practice_cost,training_cost,skill_point_cost,requirements_json,active,learned_at,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (cid,'set_camp',1,1,None,1,None,None,None,None,0,0,0,'[]',1,'legacy','{}'))
+        con.execute("INSERT OR REPLACE INTO actor_ability_progression(actor_id,ability_id,rank,maximum_rank,proficiency,learned_at_level,source_class_id,source_race_id,source_profession_id,source_track_id,practice_cost,training_cost,skill_point_cost,requirements_json,active,learned_at,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (cid,'build_campfire',1,1,None,1,None,None,None,None,0,0,0,'[]',1,'legacy','{}'))
+    rt.enter_world(cid)
+    first = rt.handle_input(cid, 'set camp')['semantic_output']
+    assert 'You establish a modest campsite here.' in first
+    assert 'Something went wrong' not in first
+    rt2 = MudRuntime(root=Path('.'), user_data_dir=tmp_path)
+    rt2.load_world('shattered_realms')
+    rt2.enter_world(cid)
+    second = rt2.handle_input(cid, 'set camp')['semantic_output']
+    assert 'A campsite is already established here.' in second
+    assert 'Something went wrong' not in second
