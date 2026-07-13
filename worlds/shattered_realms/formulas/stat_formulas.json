@@ -191,7 +191,7 @@
     },
     {
       "formula_id": "armor_mitigation",
-      "expression": "raw_damage - effective_armor",
+      "expression": "max(minimum_damage, raw_damage - max(0, armor - armor_penetration))",
       "enabled": true,
       "metadata": {
         "phase": "13C3-A3",
@@ -200,7 +200,7 @@
     },
     {
       "formula_id": "resistance_mitigation",
-      "expression": "post_armor_damage * (100 - resistance_percent) / 100",
+      "expression": "0 if immunity else damage_after_armor * (100 - min(resistance_cap, max(0, resistance_value)) + max(0, vulnerability)) / 100",
       "enabled": true,
       "metadata": {
         "phase": "13C3-A3",
@@ -209,7 +209,7 @@
     },
     {
       "formula_id": "saving_throw_resolution",
-      "expression": "50 + save_rating - difficulty",
+      "expression": "50 + defender_save - difficulty + attacker_stat + level_difference + ability_proficiency + situational_modifier",
       "enabled": true,
       "metadata": {
         "phase": "13C3-A3",
@@ -224,6 +224,60 @@
         "phase": "13C3-A3",
         "authoritative_combat_stage": true
       }
+    },
+    {
+      "formula_id": "physical_damage_resolution",
+      "enabled": true,
+      "metadata": {
+        "phase": "13C3-A3C",
+        "authoritative_combat_stage": true
+      },
+      "expression": "base_damage + attack_power + damage_bonus"
+    },
+    {
+      "formula_id": "spell_damage_resolution",
+      "enabled": true,
+      "metadata": {
+        "phase": "13C3-A3C",
+        "authoritative_combat_stage": true
+      },
+      "expression": "base_amount + spell_power * coefficient"
+    },
+    {
+      "formula_id": "healing_resolution",
+      "enabled": true,
+      "metadata": {
+        "phase": "13C3-A3C",
+        "authoritative_combat_stage": true
+      },
+      "expression": "base_amount + healing_power * healing_coefficient"
+    },
+    {
+      "formula_id": "range_distance_penalty",
+      "enabled": true,
+      "metadata": {
+        "phase": "13C3-A3C",
+        "authoritative_combat_stage": true
+      },
+      "expression": "0 if distance <= reach else (distance - reach) * -5"
+    },
+    {
+      "formula_id": "parry_resolution",
+      "enabled": true,
+      "metadata": {
+        "phase": "13C3-A3C",
+        "authoritative_combat_stage": true
+      },
+      "expression": "0"
+    },
+    {
+      "formula_id": "block_resolution",
+      "enabled": true,
+      "metadata": {
+        "phase": "13C3-A3C",
+        "authoritative_combat_stage": true
+      },
+      "expression": "0"
     }
   ]
 }

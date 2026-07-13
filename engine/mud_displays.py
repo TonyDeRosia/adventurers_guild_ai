@@ -96,16 +96,37 @@ class DisplaySection:
 
 @dataclass(frozen=True)
 class CharacterDisplaySnapshot:
+    snapshot_version: str = "phase13c3a3c.v1"
     identity: dict[str, Any] = field(default_factory=dict)
+    title: str = ""
+    race: dict[str, Any] = field(default_factory=dict)
+    character_class: dict[str, Any] = field(default_factory=dict)
+    level: int = 1
+    alignment: str = ""
+    age: dict[str, Any] = field(default_factory=dict)
+    location: dict[str, Any] = field(default_factory=dict)
     resources: dict[str, Any] = field(default_factory=dict)
     progression: dict[str, Any] = field(default_factory=dict)
     attributes: dict[str, Any] = field(default_factory=dict)
     combat: dict[str, Any] = field(default_factory=dict)
+    offense: dict[str, Any] = field(default_factory=dict)
+    defense: dict[str, Any] = field(default_factory=dict)
+    saves: dict[str, Any] = field(default_factory=dict)
+    resistances: dict[str, Any] = field(default_factory=dict)
+    criticals: dict[str, Any] = field(default_factory=dict)
+    weapon_profile: dict[str, Any] = field(default_factory=dict)
+    unarmed_profile: dict[str, Any] = field(default_factory=dict)
+    speed: dict[str, Any] = field(default_factory=dict)
     carrying: dict[str, Any] = field(default_factory=dict)
+    encumbrance: dict[str, Any] = field(default_factory=dict)
     currency: dict[str, Any] = field(default_factory=dict)
     survival: dict[str, Any] = field(default_factory=dict)
+    conditions: list[dict[str, Any]] = field(default_factory=list)
     time: dict[str, Any] = field(default_factory=dict)
     effects: list[dict[str, Any]] = field(default_factory=list)
+    active_affects: list[dict[str, Any]] = field(default_factory=list)
+    mechanics: dict[str, Any] = field(default_factory=dict)
+    source_versions: dict[str, Any] = field(default_factory=dict)
     abilities: list[dict[str, Any]] = field(default_factory=list)
     cooldowns: list[dict[str, Any]] = field(default_factory=list)
     equipment: list[dict[str, Any]] = field(default_factory=list)

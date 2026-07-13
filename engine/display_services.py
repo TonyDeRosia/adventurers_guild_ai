@@ -118,10 +118,16 @@ class AttributeDisplaySource:
 
 class CombatDisplaySource:
     def __init__(self, runtime: Any=None) -> None: self.runtime=runtime
+    def mechanic(self, key: str, value: Any, label: str, *, active: bool=True, inactive_reason: str="", unit: str="", display_format: str="number", source_version: str="") -> dict[str, Any]:
+        return {"value": value, "label": label, "active": bool(active), "inactive_reason": inactive_reason, "unit": unit, "display_format": display_format, "source_version": source_version}
     def snapshot(self, c: Any) -> dict[str, Any]:
         stats = _field(c, "calculated_stats", "stats", default={}) or {}
         keys=("armor","evasion","accuracy","hit_bonus","damage_bonus","spell_saves","saves","resistances","critical_melee","critical_spell","critical_heal","weapon_damage_summary","unarmed_damage_summary")
-        return {k:(stats.get(k) if isinstance(stats, Mapping) and k in stats else _field(c,k)) for k in keys if (isinstance(stats, Mapping) and k in stats) or _field(c,k) is not None}
+        out={k:(stats.get(k) if isinstance(stats, Mapping) and k in stats else _field(c,k)) for k in keys if (isinstance(stats, Mapping) and k in stats) or _field(c,k) is not None}
+        out.setdefault("mechanics", {})
+        out["mechanics"].setdefault("parry", self.mechanic("parry", out.get("parry", 0), "Parry", active=False, inactive_reason="Parry is not an active combat mechanic in this ruleset yet."))
+        out["mechanics"].setdefault("block", self.mechanic("block", out.get("block", 0), "Block", active=False, inactive_reason="Block is not an active combat mechanic in this ruleset yet."))
+        return out
 
 class CarryingDisplaySource:
     def __init__(self, runtime: Any=None) -> None: self.runtime=runtime
@@ -187,17 +193,43 @@ class CharacterDisplaySnapshotService:
         combat = self.combat.snapshot(character)
         carrying = self.carrying.snapshot(character)
         currency = self.currency.snapshot(character)
-        return CharacterDisplaySnapshot(
-            identity={k:v for k,v in {
+        identity={k:v for k,v in {
                 "character_id": _field(character,"id","character_id"), "display_name": _field(character,"name","display_name", default="Adventurer"),
                 "title": _field(character,"title"), "race_name": _field(character,"race_name","race"), "class_name": _field(character,"class_name","character_class","char_class"),
                 "level": prog.get("level"), "alignment": _field(character,"alignment"), "age": self._natural_age(character), "birthday": _field(character,"birthday"),
-            }.items() if v not in (None, "")},
+            }.items() if v not in (None, "")}
+        resources={k:_field(character,k) for k in ("hp","max_hp","mana","max_mana","stamina","max_stamina","hp_regen","mana_regen","stamina_regen") if _field(character,k) is not None}
+        combat_sections = {
+            "offense": {k: combat.get(k) for k in ("accuracy","hit_bonus","damage_bonus") if k in combat},
+            "defense": {k: combat.get(k) for k in ("armor","evasion") if k in combat},
+            "saves": combat.get("saves", combat.get("spell_saves", {})) or {},
+            "resistances": combat.get("resistances", {}) or {},
+            "criticals": {k: combat.get(k) for k in ("critical_melee","critical_spell","critical_heal") if k in combat},
+            "mechanics": combat.get("mechanics", {}),
+        }
+        return CharacterDisplaySnapshot(
+            identity=identity,
+            title=str(identity.get("title") or ""),
+            race={"name": identity.get("race_name"), "placeholder": identity.get("race_name") in (None, "")},
+            character_class={"name": identity.get("class_name"), "placeholder": identity.get("class_name") in (None, "")},
+            level=int(prog.get("level") or identity.get("level") or 1),
+            alignment=str(identity.get("alignment") or ""),
+            age={"display": identity.get("age"), "birthday": identity.get("birthday")},
+            location={"room_id": _field(character, "room_id", "current_room_id"), "room_name": _field(character, "room_name")},
             resources={k:_field(character,k) for k in ("hp","max_hp","mana","max_mana","stamina","max_stamina","hp_regen","mana_regen","stamina_regen") if _field(character,k) is not None},
             progression=prog, attributes=attrs, combat=combat, carrying=carrying, currency=currency,
+            offense=combat_sections["offense"], defense=combat_sections["defense"], saves=combat_sections["saves"], resistances=combat_sections["resistances"], criticals=combat_sections["criticals"],
+            weapon_profile=combat.get("weapon_damage_summary", {}) if isinstance(combat.get("weapon_damage_summary", {}), Mapping) else {"summary": combat.get("weapon_damage_summary", "")},
+            unarmed_profile=combat.get("unarmed_damage_summary", {}) if isinstance(combat.get("unarmed_damage_summary", {}), Mapping) else {"summary": combat.get("unarmed_damage_summary", "")},
+            speed={k: combat.get(k) for k in ("attack_speed","casting_speed","movement_speed","recovery_speed") if k in combat},
+            encumbrance={k: carrying.get(k) for k in ("encumbrance_text","encumbrance_state","encumbrance_percent") if k in carrying},
             survival=self.survival.snapshot(character),
+            conditions=list(_field(character, "conditions", "status_conditions", default=[]) or []),
             time=self.time_source.snapshot(self, character),
             effects=self.effects.snapshot(character), inventory=list(_field(character,"inventory", default=[]) or []), equipment=list(_field(character,"equipment", default=[]) or []),
+            active_affects=self.effects.snapshot(character),
+            mechanics=combat_sections["mechanics"],
+            source_versions={"snapshot": "phase13c3a3c.v1", "combat": combat.get("source_version", "")},
         )
 
     def _attributes(self, c: Any) -> dict[str, Any]:

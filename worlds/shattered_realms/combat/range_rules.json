@@ -1,0 +1,13 @@
+{
+  "range_rules": {
+    "melee_reach_default": 1,
+    "ranged_minimum_range": 2,
+    "ranged_maximum_range": 8,
+    "spell_range": 6,
+    "distance_penalty_formula_id": "range_distance_penalty",
+    "out_of_range_behavior": "miss_with_reason",
+    "point_blank_behavior": "allowed_with_penalty",
+    "point_blank_penalty": -10,
+    "line_of_sight_required": true
+  }
+}
