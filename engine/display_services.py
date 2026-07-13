@@ -208,10 +208,14 @@ class CharacterDisplaySnapshotService:
             "mechanics": combat.get("mechanics", {}),
         }
         return CharacterDisplaySnapshot(
+            schema_version="phase13c3-b.snapshot.v1",
+            snapshot_version="phase13c3-b.snapshot.v1",
+            character_id=str(identity.get("character_id") or ""),
+            generated_at=datetime.now(timezone.utc).isoformat(),
             identity=identity,
             title=str(identity.get("title") or ""),
-            race={"name": identity.get("race_name"), "placeholder": identity.get("race_name") in (None, "")},
-            character_class={"name": identity.get("class_name"), "placeholder": identity.get("class_name") in (None, "")},
+            race={"name": identity.get("race_name"), "availability": "available" if identity.get("race_name") else "unavailable"},
+            character_class={"name": identity.get("class_name"), "availability": "available" if identity.get("class_name") else "unsupported"},
             level=int(prog.get("level") or identity.get("level") or 1),
             alignment=str(identity.get("alignment") or ""),
             age={"display": identity.get("age"), "birthday": identity.get("birthday")},
@@ -229,7 +233,7 @@ class CharacterDisplaySnapshotService:
             effects=self.effects.snapshot(character), inventory=list(_field(character,"inventory", default=[]) or []), equipment=list(_field(character,"equipment", default=[]) or []),
             active_affects=self.effects.snapshot(character),
             mechanics=combat_sections["mechanics"],
-            source_versions={"snapshot": "phase13c3a3c.v1", "combat": combat.get("source_version", "")},
+            source_versions={"snapshot": "phase13c3-b.snapshot.v1", "attributes": "", "combat": combat.get("source_version", ""), "equipment": "", "effects": "", "resources": "", "progression": "", "definitions": "", "location": ""},
         )
 
     def _attributes(self, c: Any) -> dict[str, Any]:
