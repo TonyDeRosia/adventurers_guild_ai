@@ -203,6 +203,26 @@ def load_display_themes(world_root: str | Any = "worlds/shattered_realms") -> di
         if tid: out[tid] = DisplayTheme(theme_id=tid, name=str(item.get("name") or tid), description=str(item.get("description") or ""), frame_style=str(item.get("frame_style") or "classic_double"), width=int(item.get("width") or 79), title_alignment=str(item.get("title_alignment") or "center"), section_order=dict(item.get("section_order") or {}), visible_sections=dict(item.get("visible_sections") or {}), empty_section_policy=str(item.get("empty_section_policy") or "hide"), labels=dict(item.get("labels") or {}), semantic_roles=dict(item.get("semantic_roles") or {}), border_characters=dict(item.get("border_characters") or {}), divider_characters=dict(item.get("divider_characters") or {}), prompt_presets=dict(item.get("prompt_presets") or {}), templates=dict(item.get("templates") or {}), metadata=dict(item.get("metadata") or {}))
     return out
 
+def load_builder_draft_display_themes(world_root: str | Any = "worlds/shattered_realms") -> dict[str, DisplayTheme]:
+    root = Path(world_root)
+    path = root / "builder" / "display_themes.json"
+    if not path.exists():
+        return {}
+    raw = _load_json(path, {})
+    items = raw.get("display_themes", raw) if isinstance(raw, dict) else raw
+    if isinstance(items, dict):
+        seq = list(items.values())
+    else:
+        seq = items if isinstance(items, list) else []
+    out: dict[str, DisplayTheme] = {}
+    for item in seq:
+        if not isinstance(item, dict) or validate_display_theme(item):
+            continue
+        tid = str(item.get("theme_id") or item.get("id") or "")
+        if tid:
+            out[tid] = DisplayTheme(theme_id=tid, name=str(item.get("name") or tid), description=str(item.get("description") or ""), frame_style=str(item.get("frame_style") or "classic_double"), width=int(item.get("width") or 79), title_alignment=str(item.get("title_alignment") or "center"), section_order=dict(item.get("section_order") or {}), visible_sections=dict(item.get("visible_sections") or {}), empty_section_policy=str(item.get("empty_section_policy") or "hide"), labels=dict(item.get("labels") or {}), semantic_roles=dict(item.get("semantic_roles") or {}), border_characters=dict(item.get("border_characters") or {}), divider_characters=dict(item.get("divider_characters") or {}), prompt_presets=dict(item.get("prompt_presets") or {}), templates=dict(item.get("templates") or {}), metadata=dict(item.get("metadata") or {}))
+    return out
+
 
 def _load_json(path: Path, default: Any) -> Any:
     import json
@@ -259,10 +279,12 @@ def _assignment_theme(scope: dict[str, Any], family: str) -> tuple[str, str]:
 
 def resolve_effective_display_theme(character: Any = None, world_id: str = "shattered_realms", zone_id: str = "", area_id: str = "", family: str = "score", themes: dict[str, DisplayTheme] | None = None, world_root: str | Path | None = None, resolution_mode: ThemeResolutionMode | str = ThemeResolutionMode.PUBLISHED) -> ResolvedDisplayTheme:
     root = Path(world_root) if world_root else Path("worlds") / (world_id or "shattered_realms")
+    mode = ThemeResolutionMode(resolution_mode)
     themes = themes or load_display_themes(root)
+    if mode is ThemeResolutionMode.BUILDER_DRAFT_PREVIEW:
+        themes = {**themes, **load_builder_draft_display_themes(root)}
     if not themes:
         themes = {"classic_adventurer": DisplayTheme("classic_adventurer", "Classic Adventurer"), "minimal_modern": DisplayTheme("minimal_modern", "Minimal Modern", frame_style="minimal", width=60, title_alignment="left")}
-    mode = ThemeResolutionMode(resolution_mode)
     assignments = load_effective_builder_preview_assignments(root) if mode is ThemeResolutionMode.BUILDER_DRAFT_PREVIEW else load_published_theme_assignments(root)
     if character is not None:
         room_id, z2, a2 = _room_scope(character, assignments); zone_id = zone_id or z2; area_id = area_id or a2

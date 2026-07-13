@@ -307,7 +307,9 @@ def resolve_theme_role(theme: Any, canonical_role: str) -> str:
     return role if role in SEMANTIC_COLOR_ROLES else (canonical_role if canonical_role in SEMANTIC_COLOR_ROLES else "system")
 
 def theme_label(theme: Any, key: str, default: str) -> str:
-    return str((getattr(theme, "labels", {}) or {}).get(key, default))
+    labels = getattr(theme, "labels", {}) or {}
+    aliases = {"hp": "health", "practice": "practice_points", "training": "training_points"}
+    return str(labels.get(key, labels.get(aliases.get(key, ""), default)))
 
 def _seg(text: Any, role: str, theme: Any = None, trusted: bool = False) -> DisplaySegment:
     return DisplaySegment(str(text), resolve_theme_role(theme, role), trusted)
@@ -420,7 +422,15 @@ def _empty_row(section_id: str, theme: Any) -> DisplayLine | None:
     policy = str(getattr(theme, "empty_section_policy", "hide") if theme is not None else "hide")
     labels = getattr(theme, "labels", {}) or {}
     if policy == "show_muted": return DisplayLine(labels.get(f"{section_id}.empty", f"{section_id.title()}: none"), role="character_muted", trusted_markup=True)
-    if policy == "show_empty_message": return DisplayLine(labels.get(f"{section_id}.empty", f"No {section_id.replace("_", " ")} to show."), role="character_muted", trusted_markup=True)
+    if policy == "show_empty_message":
+        return DisplayLine(
+            labels.get(
+                f"{section_id}.empty",
+                f"No {section_id.replace('_', ' ')} to show.",
+            ),
+            role="character_muted",
+            trusted_markup=True,
+        )
     return None
 
 def _ordered_sections(section_rows: dict[str, list[Any]], theme: Any, *, required: set[str] | None = None) -> list[Any]:
@@ -459,10 +469,10 @@ def build_score_document(character: Any, *, snapshot: CharacterDisplaySnapshot |
     if resource_parts: section_rows["resources"].append(DisplayLine("   ".join(resource_parts)))
     rows=section_rows["progression"]
     if prog: rows.append(_row_fields((theme_label(theme,"experience","Experience"), prog.get("xp","—")), (theme_label(theme,"tnl","TNL"), prog.get("xp_to_next_level","—"))))
-    pts=[(k.replace("_"," ").title(),v) for k,v in prog.items() if k in {"practice_points","training_points","quest_points","level_progress_percent"}]
+    pts=[(theme_label(theme, {"practice_points":"practice","training_points":"training","level_progress_percent":"level_progress"}.get(k,k), k.replace("_"," ").title()),v) for k,v in prog.items() if k in {"practice_points","training_points","quest_points","level_progress_percent"}]
     if pts: rows.append(_row_fields(*pts[:2]))
     if carry:
-        section_rows["carrying"].append(DisplayLine(f"Carry Capacity: {carry.get('current_weight', carry.get('carry_weight','—'))} / {carry.get('carry_capacity','—')} — {carry.get('encumbrance_text', carry.get('encumbrance','—'))}"))
+        section_rows["carrying"].append(DisplayLine(f"{theme_label(theme,'carry_capacity','Carry Capacity')}: {carry.get('current_weight', carry.get('carry_weight','—'))} / {carry.get('carry_capacity','—')} — {theme_label(theme,'encumbrance','Encumbrance')}: {carry.get('encumbrance_text', carry.get('encumbrance','—'))}"))
     rows=section_rows["attributes"]
     labels=[(theme_label(theme,"strength","Str"),"strength"),(theme_label(theme,"dexterity","Dex"),"dexterity"),(theme_label(theme,"constitution","Con"),"constitution"),(theme_label(theme,"intelligence","Int"),"intelligence"),(theme_label(theme,"wisdom","Wis"),"wisdom"),(theme_label(theme,"charisma","Cha"),"charisma")]
     attr_cells=[DisplayCell(width=22, segments=_field_segments(lab, _fmt_attr(attrs[key]), theme=theme)) for lab,key in labels if key in attrs]
@@ -472,10 +482,10 @@ def build_score_document(character: Any, *, snapshot: CharacterDisplaySnapshot |
         for chunk in (("Armor","armor","Evasion","evasion"),("Spell Saves","spell_saves","Accuracy","accuracy"),("Hit Bonus","hit_bonus","Damage Bonus","damage_bonus"),("Critical Melee","critical_melee","Critical Spell","critical_spell"),("Critical Heal","critical_heal","Weapon","weapon_damage_summary"),("Unarmed","unarmed_damage_summary","Resistances","resistances")):
             pairs=[]
             for lab,key in zip(chunk[::2], chunk[1::2]):
-                if key in combat: pairs.append((lab, combat[key]))
+                if key in combat: pairs.append((theme_label(theme, key.replace("_damage_summary", ""), lab), combat[key]))
             if pairs: rows.append(_row_fields(*pairs[:2]))
     if currency:
-        section_rows["currency"].append(DisplayRow([DisplayCell(width=22, segments=_field_segments(k.title(), v, value_role="gold" if k=="gold" else "character_value")) for k,v in currency.items() if v is not None]))
+        section_rows["currency"].append(DisplayRow([DisplayCell(width=22, segments=_field_segments(theme_label(theme, f"currency.{k}", k.title()), v, value_role="gold" if k=="gold" else "character_value")) for k,v in currency.items() if v is not None]))
     st=[(k.replace('_',' ').title(),v) for k,v in surv.items() if v not in (None,"")]
     if st: section_rows["survival"].append(_row_fields(*st[:2]))
     eff=list(getattr(snap, "effects", []) or [])

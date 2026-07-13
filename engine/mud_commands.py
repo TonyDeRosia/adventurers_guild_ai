@@ -1978,29 +1978,44 @@ Available commands:
         """Builder-facing display theme draft commands."""
         if self._effective_role(character) not in {"builder", "admin", "owner"}:
             return CommandResult("You do not have permission for that command.", ok=False)
-        store = getattr(self, "_displaytheme_drafts", None)
-        if store is None:
-            store = {"classic_adventurer":{"theme_id":"classic_adventurer","name":"Classic Adventurer","width":79,"title_alignment":"center"}, "minimal_modern":{"theme_id":"minimal_modern","name":"Minimal Modern","width":60,"title_alignment":"left"}}
-            self._displaytheme_drafts = store
+        world_id = self.builder.world_id(character)
+        drafts = self.builder.load(world_id)
+        store = drafts.setdefault("display_themes", {})
+        if not store:
+            for tid, theme in load_display_themes(self.builder.worlds_dir / world_id).items():
+                store[tid] = dict(theme.__dict__, theme_id=tid)
+            store.setdefault("classic_adventurer", {"theme_id":"classic_adventurer","name":"Classic Adventurer","width":79,"title_alignment":"center"})
+            store.setdefault("minimal_modern", {"theme_id":"minimal_modern","name":"Minimal Modern","width":60,"title_alignment":"left"})
+            self.builder.save_drafts(world_id, drafts)
+        def save_store() -> None:
+            drafts["display_themes"] = store
+            self.builder.save_drafts(world_id, drafts)
         sub=args[0].lower() if args else "list"
         if sub == "list": return CommandResult("Display themes:\n" + "\n".join(f"- {k}" for k in sorted(store)))
         if sub == "show" and len(args)>1: return CommandResult(json.dumps(store.get(args[1], {}), indent=2, sort_keys=True) if args[1] in store else "Display theme not found.", ok=args[1] in store)
-        if sub == "create" and len(args)>1: store[args[1]]={"theme_id":args[1],"name":args[1].replace('_',' ').title(),"width":79}; return CommandResult(f"Display theme {args[1]} created as a Builder draft.")
-        if sub == "clone" and len(args)>2 and args[1] in store: store[args[2]]=dict(store[args[1]], theme_id=args[2], name=args[2].replace('_',' ').title()); return CommandResult(f"Display theme {args[2]} cloned from {args[1]}.")
+        if sub == "create" and len(args)>1:
+            store[args[1]]={"theme_id":args[1],"name":args[1].replace('_',' ').title(),"width":79}; save_store(); return CommandResult(f"Display theme {args[1]} created as a Builder draft.")
+        if sub == "clone" and len(args)>2 and args[1] in store:
+            store[args[2]]=dict(store[args[1]], theme_id=args[2], name=args[2].replace('_',' ').title()); save_store(); return CommandResult(f"Display theme {args[2]} cloned from {args[1]}.")
         if sub == "set" and len(args)>3 and args[1] in store:
-            field=args[2]; value=" ".join(args[3:]); store[args[1]][field]=int(value) if field=="width" and value.isdigit() else value; return CommandResult(f"Display theme {args[1]} {field} set.")
-        if sub == "label" and len(args)>3 and args[1] in store: store[args[1]].setdefault("labels", {})[args[2]]=" ".join(args[3:]); return CommandResult(f"Display theme {args[1]} label {args[2]} set.")
-        if sub == "role" and len(args)>3 and args[1] in store: store[args[1]].setdefault("semantic_roles", {})[args[2]]=args[3]; return CommandResult(f"Display theme {args[1]} role {args[2]} set.")
-        if sub in {"sectionorder","sections"} and len(args)>3 and args[1] in store: store[args[1]].setdefault("section_order" if sub=="sectionorder" else "visible_sections", {})[args[2]]=args[3:]; return CommandResult(f"Display theme {args[1]} {sub} updated.")
-        if sub == "border" and len(args)>3 and args[1] in store: store[args[1]].setdefault("border_characters", {})[args[2]]=args[3]; return CommandResult(f"Display theme {args[1]} border {args[2]} set.")
-        if sub == "prompt" and len(args)>3 and args[1] in store: store[args[1]].setdefault("prompt_presets", {})[args[2]]=" ".join(args[3:]); return CommandResult(f"Display theme {args[1]} prompt {args[2]} set.")
+            field=args[2]; value=" ".join(args[3:]); store[args[1]][field]=int(value) if field=="width" and value.isdigit() else value; save_store(); return CommandResult(f"Display theme {args[1]} {field} set.")
+        if sub == "label" and len(args)>3 and args[1] in store:
+            store[args[1]].setdefault("labels", {})[args[2]]=" ".join(args[3:]); save_store(); return CommandResult(f"Display theme {args[1]} label {args[2]} set.")
+        if sub == "role" and len(args)>3 and args[1] in store:
+            store[args[1]].setdefault("semantic_roles", {})[args[2]]=args[3]; save_store(); return CommandResult(f"Display theme {args[1]} role {args[2]} set.")
+        if sub in {"sectionorder","sections"} and len(args)>3 and args[1] in store:
+            store[args[1]].setdefault("section_order" if sub=="sectionorder" else "visible_sections", {})[args[2]]=args[3:]; save_store(); return CommandResult(f"Display theme {args[1]} {sub} updated.")
+        if sub == "border" and len(args)>3 and args[1] in store:
+            store[args[1]].setdefault("border_characters", {})[args[2]]=args[3]; save_store(); return CommandResult(f"Display theme {args[1]} border {args[2]} set.")
+        if sub == "prompt" and len(args)>3 and args[1] in store:
+            store[args[1]].setdefault("prompt_presets", {})[args[2]]=" ".join(args[3:]); save_store(); return CommandResult(f"Display theme {args[1]} prompt {args[2]} set.")
         if sub == "validate" and len(args)>1 and args[1] in store:
             from engine.display_themes import validate_display_theme
             errs=validate_display_theme(store[args[1]]); return CommandResult("Valid." if not errs else "Errors:\n"+"\n".join(errs), ok=not errs)
         if sub == "preview" and len(args)>2 and args[1] in store:
             prev=preview_display_theme(store[args[1]], args[2]); header=f"Preview theme={args[1]} scope=draft family={args[2]} mode=draft\n"; return CommandResult((header + (prev.get("plain") or prev.get("errors") or "Preview unavailable.")), ok=prev.get("ok") == "true")
         if sub == "assign" and len(args)>2:
-            world_id=self.builder.world_id(character); drafts=self.builder.load(world_id); scope=args[1].lower(); theme_id=args[-1]
+            scope=args[1].lower(); theme_id=args[-1]
             if theme_id not in store: return CommandResult(f"Display theme not found: {theme_id}", ok=False)
             if scope == "world":
                 meta=drafts.setdefault("world", {}).setdefault(world_id, {"id": world_id}); meta["default_display_theme_id"]=theme_id; self.builder.save_drafts(world_id,drafts); return CommandResult(f"Display theme {theme_id} assigned to world.")
@@ -2014,7 +2029,7 @@ Available commands:
                 else: bucket[obj_id]["display_theme_id"]=theme_id
                 self.builder.save_drafts(world_id,drafts); return CommandResult(f"Display theme {theme_id} assigned to {scope} {obj_id}.")
         if sub == "unassign" and len(args)>1:
-            world_id=self.builder.world_id(character); drafts=self.builder.load(world_id); scope=args[1].lower()
+            scope=args[1].lower()
             if scope == "world":
                 drafts.setdefault("world", {}).setdefault(world_id, {"id": world_id}).pop("default_display_theme_id", None); self.builder.save_drafts(world_id,drafts); return CommandResult("Display theme assignment removed for world.")
             if scope in {"zone","area"} and len(args)>=3:
@@ -2023,7 +2038,8 @@ Available commands:
                 if len(args)>=4: (bucket[obj_id].get("display_theme_ids") or {}).pop(args[3].lower(), None)
                 else: bucket[obj_id].pop("display_theme_id", None); bucket[obj_id].pop("display_theme_ids", None)
                 self.builder.save_drafts(world_id,drafts); return CommandResult(f"Display theme assignment removed for {scope} {obj_id}.")
-        if sub == "delete" and len(args)>1: store.pop(args[1], None); return CommandResult(f"Display theme {args[1]} deleted from Builder drafts.")
+        if sub == "delete" and len(args)>1:
+            store.pop(args[1], None); save_store(); return CommandResult(f"Display theme {args[1]} deleted from Builder drafts.")
         return CommandResult("Usage: displaytheme list|show|create|clone|set|label|role|sectionorder|sections|border|prompt|validate|preview|assign|unassign|delete", ok=False)
 
     def _cmd_prompt(self, character: Any, args: list[str], raw: str) -> CommandResult:
@@ -2602,6 +2618,9 @@ Available commands:
             self.builder.publish("builder_export_requested", character, self.builder.world_id(character), "export", sub, command=raw)
             res = self.builder.export(character); self.builder.publish("builder_export_completed", character, self.builder.world_id(character), "export", sub, command=raw)
             self.builder.audit(character, self.builder.world_id(character), f"builder {sub}", "export", sub, None, res.data or {})
+            return CommandResult(narrative=res.message + "\n" + self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))), ok=res.ok)
+        if sub == "publish":
+            res = self.builder.publish_drafts(character)
             return CommandResult(narrative=res.message + "\n" + self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))), ok=res.ok)
         if sub == "reload":
             self.builder.publish("builder_reload_requested", character, self.builder.world_id(character), "builder", "reload", command="builder reload")
