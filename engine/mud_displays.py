@@ -299,12 +299,21 @@ def _cell_segments(cell: DisplayCell) -> list[DisplaySegment]:
 
 
 def resolve_theme_role(theme: Any, canonical_role: str) -> str:
-    role = str(((getattr(theme, "semantic_roles", {}) or {}).get(canonical_role)) or canonical_role)
+    default_role_aliases = {
+        "skills.name_header_role": "character_title",
+        "skills.proficiency_header_role": "character_title",
+        "spells.name_header_role": "character_title",
+        "spells.proficiency_header_role": "character_title",
+        "abilities.name_header_role": "character_title",
+        "abilities.proficiency_header_role": "character_title",
+    }
+    base_role = default_role_aliases.get(canonical_role, canonical_role)
+    role = str(((getattr(theme, "semantic_roles", {}) or {}).get(canonical_role)) or base_role)
     if "high_contrast" in tuple(getattr(theme, "accessibility", ()) or ()):
         role = {"character_frame":"character_title","character_muted":"character_value","equipment_empty":"character_value"}.get(role, role)
     if "colorblind" in tuple(getattr(theme, "accessibility", ()) or ()):
         role = {"character_positive":"success","character_negative":"warning"}.get(role, role)
-    return role if role in SEMANTIC_COLOR_ROLES else (canonical_role if canonical_role in SEMANTIC_COLOR_ROLES else "system")
+    return role if role in SEMANTIC_COLOR_ROLES else (base_role if base_role in SEMANTIC_COLOR_ROLES else "system")
 
 def theme_label(theme: Any, key: str, default: str) -> str:
     labels = getattr(theme, "labels", {}) or {}
@@ -517,8 +526,8 @@ def build_abilities_document(rows: list[dict[str, Any]], *, title: str="ABILITIE
     family = title.lower()
     if compact:
         out.append(DisplayRow([
-            DisplayCell(theme_label(theme, f"{family}.name_header", title), width=48, role="character_title", min_width=min(len(title), 8), shrink_priority=10, wrap=False),
-            DisplayCell(theme_label(theme, f"{family}.proficiency_header", "PROFICIENCY"), width=17, align='right', role="character_label", min_width=len("PROFICIENCY"), shrink_priority=1, wrap=False),
+            DisplayCell(theme_label(theme, f"{family}.name_header", title), width=48, role=resolve_theme_role(theme, f"{family}.name_header_role"), min_width=min(len(title), 8), shrink_priority=10, wrap=False),
+            DisplayCell(theme_label(theme, f"{family}.proficiency_header", "PROFICIENCY"), width=17, align='right', role=resolve_theme_role(theme, f"{family}.proficiency_header_role"), min_width=len("PROFICIENCY"), shrink_priority=1, wrap=False),
         ], role="character_label"))
     for r in rows:
         name=str(r.get('name') or r.get('id') or 'Ability').replace('_',' ').title()
