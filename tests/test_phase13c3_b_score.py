@@ -45,6 +45,10 @@ def frozen_snapshot():
 
 def test_score_renders_full_snapshot_sections_without_six_stat_hardcoding():
     text = render_display_plain(build_score_document(snapshot=frozen_snapshot(), mode="full"))
+    assert "RESOURCES" not in text
+    assert "HP:" not in text and "Mana:" not in text and "Stamina:" not in text
+    assert "PRIMARY STATISTICS" in text
+    assert "SECONDARY COMBAT STATISTICS" in text
     assert "Race: Unavailable" in text
     assert "Class: Not implemented" in text
     assert "Might: 14" in text and "Grace: 13" in text
@@ -92,3 +96,14 @@ def test_score_command_uses_snapshot_service_once_and_routes_sc():
     result = engine._cmd_score(character, [], "sc")
     assert result.ok
     assert svc.calls == 2
+
+
+def test_combatstats_modes_use_canonical_snapshot():
+    engine = MudCommandEngine()
+    character = SimpleNamespace(id="hero", name="Hero", level=1, hp=50, mana=20, stamina=20, attributes={"strength": 12, "dexterity": 11, "constitution": 10, "intelligence": 9, "wisdom": 8, "charisma": 7})
+    assert "OFFENSE" in engine._cmd_combatstats(character, ["offense"], "combatstats offense").narrative
+    assert "DEFENSE" in engine._cmd_combatstats(character, ["defense"], "combatstats defense").narrative
+    assert "SAVES" in engine._cmd_combatstats(character, ["saves"], "combatstats saves").narrative
+    assert "RESISTANCES" in engine._cmd_combatstats(character, ["resistances"], "combatstats resistances").narrative
+    assert "DAMAGE" in engine._cmd_combatstats(character, ["damage"], "combatstats damage").narrative
+    assert "COMBAT STAT BREAKDOWN" in engine._cmd_combatstats(character, ["breakdown", "accuracy"], "combatstats breakdown accuracy").narrative

@@ -1766,17 +1766,36 @@ class MudCommandEngine:
 
     def _cmd_combatstats(self, character: Any, args: list[str], raw: str) -> CommandResult:
         _,combat=self._stat_services(character); s=combat.get_combat_snapshot(character, {"runtime": getattr(self,"runtime",None)})
-        lines=["COMBAT STATS","","OFFENSE"]
-        lines += [f"{k.replace('_',' ').title()}: {v}" for k,v in s.offense.items()]
-        lines += ["","DEFENSE"] + [f"{k.replace('_',' ').title()}: {v}" for k,v in s.defense.items()]
-        lines += ["","SAVES"] + [f"{k.replace('_',' ').title()}: {v}" for k,v in s.saves.items()]
-        lines += ["","CRITICALS"] + [f"{k.replace('_',' ').title()}: {v}" for k,v in s.critical.items()]
-        lines += ["","DAMAGE", f"Unarmed: {s.unarmed_profile.minimum_damage}-{s.unarmed_profile.maximum_damage} {s.unarmed_profile.damage_type}"]
-        if s.weapon_profile: lines.append(f"Weapon: {s.weapon_profile.minimum_damage}-{s.weapon_profile.maximum_damage} {s.weapon_profile.damage_type}")
-        lines += ["","SPEED"] + [f"{k.replace('_',' ').title()}: {v}" for k,v in s.speed.items()]
-        lines += ["","RESISTANCES"] + [f"{k.title()}: {v}%" for k,v in s.resistances.items()]
-        lines += ["","CARRYING"] + [f"{k.replace('_',' ').title()}: {v}" for k,v in s.carrying.items()]
+        mode=(args[0].lower() if args else "all")
+        valid={"all","offense","defense","saves","resistances","damage","speed","breakdown"}
+        if mode not in valid:
+            mode="all"
+        if mode=="breakdown":
+            if len(args)<2: return CommandResult("Usage: combatstats breakdown <stat-id>", ok=False)
+            stat=args[1].lower()
+            return CommandResult("COMBAT STAT BREAKDOWN\n"+json.dumps(combat.get_breakdown(character, stat, {"runtime": getattr(self,"runtime",None)}), indent=2, default=str))
+        sections=[]
+        def add(title, mapping, formatter=None):
+            lines=[title]
+            for k,v in (mapping or {}).items():
+                val=formatter(k,v) if formatter else v
+                lines.append(f"{k.replace('_',' ').title()}: {val}")
+            sections.append(lines)
+        if mode in {"all","offense"}: add("OFFENSE", s.offense)
+        if mode in {"all","defense"}: add("DEFENSE", s.defense)
+        if mode in {"all","saves"}: add("SAVES", s.saves)
+        if mode in {"all","resistances"}: add("RESISTANCES", s.resistances, lambda k,v: f"{v}%")
+        if mode in {"all","damage"}:
+            lines=["DAMAGE", f"Unarmed: {s.unarmed_profile.minimum_damage}-{s.unarmed_profile.maximum_damage} {s.unarmed_profile.damage_type}"]
+            if s.weapon_profile: lines.append(f"Weapon: {s.weapon_profile.minimum_damage}-{s.weapon_profile.maximum_damage} {s.weapon_profile.damage_type}")
+            sections.append(lines)
+        if mode in {"all","speed"}: add("SPEED", s.speed)
+        if mode=="all": add("CARRYING", s.carrying)
+        lines=["COMBAT STATS"]
+        for section in sections:
+            lines.append(""); lines.extend(section)
         return CommandResult("\n".join(lines))
+
 
 
     def _cmd_combatbreakdown(self, character: Any, args: list[str], raw: str) -> CommandResult:

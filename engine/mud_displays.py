@@ -643,14 +643,26 @@ def build_score_view_model(snapshot: CharacterDisplaySnapshot, *, mode: str = "s
     if snapshot.age.get("display"): identity.append(DisplayStat("age","Age",formatted_value=str(snapshot.age.get("display")),display_group="identity",display_order=90))
     if snapshot.time.get("play_time"): identity.append(DisplayStat("played_time","Played",formatted_value=str(snapshot.time.get("play_time")),display_group="identity",display_order=100))
     if snapshot.survival.get("posture"): identity.append(DisplayStat("position","Position",formatted_value=str(snapshot.survival.get("posture")).title(),display_group="identity",display_order=110))
-    progression=_stats_from_mapping(prog, group="progression")
+    
+    # Normal SCORE uses concise progression fields and avoids the old wrapped
+    # "XP Required Next Level"/"XP To Next Level" duplication.
+    prog_normalized={}
+    if "level" in prog: prog_normalized["level"]={"label":"Level","value":prog.get("level"),"display_order":10}
+    if "xp" in prog: prog_normalized["xp"]={"label":"Experience","value":prog.get("xp"),"display_order":20,"display_format":"thousands"}
+    tnl = prog.get("xp_to_next_level", prog.get("experience_to_next_level"))
+    if tnl is not None: prog_normalized["to_next_level"]={"label":"To Next Level","value":tnl,"display_order":30,"display_format":"thousands"}
+    if "practice_points" in prog: prog_normalized["practice_points"]={"label":"Practice","value":prog.get("practice_points"),"display_order":40}
+    if "training_points" in prog: prog_normalized["training_points"]={"label":"Training","value":prog.get("training_points"),"display_order":50}
+    if mode == "detailed":
+        for k,v in prog.items(): prog_normalized.setdefault(k, v)
+    progression=_stats_from_mapping(prog_normalized, group="progression")
     currencies=_stats_from_mapping(snapshot.currency or {}, group="currencies")
     carrying=list(_stats_from_mapping(snapshot.carrying or {}, group="carrying"))
     if snapshot.encumbrance:
         carrying.extend(_stats_from_mapping(snapshot.encumbrance, group="carrying"))
     return ScoreViewModel(
         schema_version=version, character_id=str(snapshot.character_id or ident.get("character_id") or ""), generated_at=str(snapshot.generated_at or ""),
-        identity=tuple(sorted(identity,key=lambda s:s.display_order)), progression=progression, resources=_resource_stats(snapshot.resources or {}),
+        identity=tuple(sorted(identity,key=lambda s:s.display_order)), progression=progression, resources=(),
         attributes=_stats_from_mapping(snapshot.attributes or {}, group="attributes"), offense=_stats_from_mapping(snapshot.offense or {}, group="offense"),
         defense=_stats_from_mapping(snapshot.defense or {}, group="defense"), damage=_damage_stats(snapshot),
         criticals=_stats_from_mapping(snapshot.criticals or {}, group="criticals"), saves=_stats_from_mapping(snapshot.saves or {}, group="saves"),
@@ -699,7 +711,7 @@ def build_score_document(character: Any = None, *, snapshot: CharacterDisplaySna
     if mode not in SCORE_MODES: raise ValueError(f"Unsupported score display mode: {mode}")
     if mode == "detailed" and not detailed_allowed: raise PermissionError("Detailed SCORE is available to Builder/admin characters only.")
     vm=build_score_view_model(snap, mode=mode)
-    order = ["identity","progression","resources","attributes","offense","defense"] if mode == "compact" else ["identity","progression","resources","attributes","offense","defense","damage","criticals","saves","resistances","speed","carrying","survival","effects","mechanics","location","companions"]
+    order = ["identity","progression","attributes","offense","defense"] if mode == "compact" else ["identity","progression","attributes","offense","defense","damage","criticals","saves","resistances","speed","carrying","survival","effects","mechanics","location","companions"]
     theme_order = list(getattr(theme, "section_order", ()) or ()) if theme is not None else []
     theme_visible = set(getattr(theme, "visible_sections", ()) or ()) if theme is not None else set()
     if theme_order:
@@ -707,8 +719,8 @@ def build_score_document(character: Any = None, *, snapshot: CharacterDisplaySna
     rows=[]
     section_map={
         "identity": render_identity_summary(vm.identity), "progression": render_display_section("Progression", vm.progression, columns=2),
-        "resources": render_resource_pair(vm.resources), "attributes": render_display_section("Primary Attributes", vm.attributes, columns=3),
-        "offense": render_display_section("Offense", vm.offense, columns=2), "defense": render_display_section("Defense", vm.defense, columns=2),
+        "resources": [], "attributes": render_display_section("Primary Statistics", vm.attributes, columns=3),
+        "offense": render_display_section("Secondary Combat Statistics — Offense", vm.offense, columns=2), "defense": render_display_section("Secondary Combat Statistics — Defense", vm.defense, columns=2),
         "damage": render_damage_profile(vm.damage), "criticals": render_display_section("Criticals", vm.criticals, columns=2),
         "saves": render_display_section("Saving Throws", vm.saves, columns=3), "resistances": render_resistance_grid(vm.resistances),
         "speed": render_display_section("Speed and Initiative", vm.speed, columns=2), "carrying": render_display_section("Carrying and Encumbrance", vm.carrying, columns=2),

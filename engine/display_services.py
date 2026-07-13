@@ -189,22 +189,36 @@ class CharacterDisplaySnapshotService:
 
     def build_snapshot(self, character: Any) -> CharacterDisplaySnapshot:
         prog = self.progression.snapshot(character)
-        attrs = self.attributes.snapshot(character)
-        combat = self.combat.snapshot(character)
-        carrying = self.carrying.snapshot(character)
+        rt = self.runtime
+        canonical_snapshot = None
+        combat_service = getattr(rt, "combat_stat_service", None) if rt else None
+        if combat_service is None and rt and getattr(rt, "attribute_service", None):
+            try:
+                from engine.character_stats import CombatStatService
+                combat_service = CombatStatService(rt.attribute_service)
+            except Exception:
+                combat_service = None
+        if combat_service is not None:
+            try:
+                canonical_snapshot = combat_service.get_combat_snapshot(character, {"runtime": rt})
+            except Exception:
+                logger.exception("canonical_combat_snapshot_failed")
+        attrs = self._canonical_attributes(canonical_snapshot) if canonical_snapshot is not None else self.attributes.snapshot(character)
+        combat = self._canonical_combat(canonical_snapshot) if canonical_snapshot is not None else self.combat.snapshot(character)
+        carrying = self._canonical_carrying(canonical_snapshot) if canonical_snapshot is not None else self.carrying.snapshot(character)
         currency = self.currency.snapshot(character)
         identity={k:v for k,v in {
                 "character_id": _field(character,"id","character_id"), "display_name": _field(character,"name","display_name", default="Adventurer"),
                 "title": _field(character,"title"), "race_name": _field(character,"race_name","race"), "class_name": _field(character,"class_name","character_class","char_class"),
                 "level": prog.get("level"), "alignment": _field(character,"alignment"), "age": self._natural_age(character), "birthday": _field(character,"birthday"),
             }.items() if v not in (None, "")}
-        resources={k:_field(character,k) for k in ("hp","max_hp","mana","max_mana","stamina","max_stamina","hp_regen","mana_regen","stamina_regen") if _field(character,k) is not None}
+        resources={}
         combat_sections = {
-            "offense": {k: combat.get(k) for k in ("accuracy","hit_bonus","damage_bonus") if k in combat},
-            "defense": {k: combat.get(k) for k in ("armor","evasion") if k in combat},
+            "offense": combat.get("offense", {k: combat.get(k) for k in ("accuracy","hit_bonus","attack_power","damage_bonus","spell_power","healing_power") if k in combat}),
+            "defense": combat.get("defense", {k: combat.get(k) for k in ("armor","evasion","critical_avoidance") if k in combat}),
             "saves": combat.get("saves", combat.get("spell_saves", {})) or {},
             "resistances": combat.get("resistances", {}) or {},
-            "criticals": {k: combat.get(k) for k in ("critical_melee","critical_spell","critical_heal") if k in combat},
+            "criticals": combat.get("criticals", {k: combat.get(k) for k in ("critical_melee","critical_spell","critical_heal","critical_damage") if k in combat}),
             "mechanics": combat.get("mechanics", {}),
         }
         return CharacterDisplaySnapshot(
@@ -220,12 +234,12 @@ class CharacterDisplaySnapshotService:
             alignment=str(identity.get("alignment") or ""),
             age={"display": identity.get("age"), "birthday": identity.get("birthday")},
             location={"room_id": _field(character, "room_id", "current_room_id"), "room_name": _field(character, "room_name")},
-            resources={k:_field(character,k) for k in ("hp","max_hp","mana","max_mana","stamina","max_stamina","hp_regen","mana_regen","stamina_regen") if _field(character,k) is not None},
+            resources=resources,
             progression=prog, attributes=attrs, combat=combat, carrying=carrying, currency=currency,
             offense=combat_sections["offense"], defense=combat_sections["defense"], saves=combat_sections["saves"], resistances=combat_sections["resistances"], criticals=combat_sections["criticals"],
-            weapon_profile=combat.get("weapon_damage_summary", {}) if isinstance(combat.get("weapon_damage_summary", {}), Mapping) else {"summary": combat.get("weapon_damage_summary", "")},
-            unarmed_profile=combat.get("unarmed_damage_summary", {}) if isinstance(combat.get("unarmed_damage_summary", {}), Mapping) else {"summary": combat.get("unarmed_damage_summary", "")},
-            speed={k: combat.get(k) for k in ("attack_speed","casting_speed","movement_speed","recovery_speed") if k in combat},
+            weapon_profile=combat.get("weapon_profile", {}) if isinstance(combat.get("weapon_profile", {}), Mapping) else (combat.get("weapon_damage_summary", {}) if isinstance(combat.get("weapon_damage_summary", {}), Mapping) else {"summary": combat.get("weapon_damage_summary", "")}),
+            unarmed_profile=combat.get("unarmed_profile", {}) if isinstance(combat.get("unarmed_profile", {}), Mapping) else (combat.get("unarmed_damage_summary", {}) if isinstance(combat.get("unarmed_damage_summary", {}), Mapping) else {"summary": combat.get("unarmed_damage_summary", "")}),
+            speed=combat.get("speed", {k: combat.get(k) for k in ("initiative","attack_speed","casting_speed","movement_speed","recovery_speed") if k in combat}),
             encumbrance={k: carrying.get(k) for k in ("encumbrance_text","encumbrance_state","encumbrance_percent") if k in carrying},
             survival=self.survival.snapshot(character),
             conditions=list(_field(character, "conditions", "status_conditions", default=[]) or []),
@@ -233,8 +247,38 @@ class CharacterDisplaySnapshotService:
             effects=self.effects.snapshot(character), inventory=list(_field(character,"inventory", default=[]) or []), equipment=list(_field(character,"equipment", default=[]) or []),
             active_affects=self.effects.snapshot(character),
             mechanics=combat_sections["mechanics"],
-            source_versions={"snapshot": "phase13c3-b.snapshot.v1", "attributes": "", "combat": combat.get("source_version", ""), "equipment": "", "effects": "", "resources": "", "progression": "", "definitions": "", "location": ""},
+            source_versions=self._source_versions(canonical_snapshot, combat, prog),
         )
+
+
+    def _stat_entry(self, stat_id: str, label: str, value: Any, source_version: str, *, order: int = 0, unit: str = "") -> dict[str, Any]:
+        return {"stat_id": stat_id, "label": label, "value": value, "display_order": order, "unit": unit, "active": True, "source_version": source_version}
+
+    def _canonical_attributes(self, snap: Any) -> dict[str, Any]:
+        out={}
+        for i,(sid,a) in enumerate((getattr(snap, "attributes", {}) or {}).items()):
+            out[sid]={"stat_id": sid, "label": getattr(a, "name", sid.replace("_"," ").title()), "short_label": getattr(a, "short_name", sid[:3].upper()), "base": getattr(a,"base_value",0), "permanent_modifier": getattr(a,"permanent_modifier",0), "equipment_modifier": getattr(a,"equipment_modifier",0), "effect_modifier": getattr(a,"affect_modifier",0), "temporary_modifier": getattr(a,"temporary_modifier",0), "final": getattr(a,"final_value",0), "value": getattr(a,"final_value",0), "minimum": getattr(a,"minimum_value",0), "maximum": getattr(a,"maximum_value",0), "display_order": i*10+10, "active": True, "source_version": getattr(snap,"source_version","")}
+        return out
+
+    def _canonical_combat(self, snap: Any) -> dict[str, Any]:
+        if snap is None: return {}
+        sv=getattr(snap,"source_version","")
+        def entries(mapping):
+            return {k:self._stat_entry(k, k.replace("_"," ").title(), v, sv, order=i*10+10) for i,(k,v) in enumerate((mapping or {}).items())}
+        weapon=getattr(snap,"weapon_profile",None); unarmed=getattr(snap,"unarmed_profile",None)
+        def prof(p):
+            return {} if not p else {"name": getattr(p,"source", ""), "weapon_name": getattr(p,"source", ""), "minimum_damage": getattr(p,"minimum_damage",0), "maximum_damage": getattr(p,"maximum_damage",0), "damage_type": getattr(p,"damage_type", "physical"), "attack_speed": getattr(p,"attack_speed",0), "reach": getattr(p,"reach",0), "range": getattr(p,"range",0), "active": True, "source_version": sv}
+        return {"offense": entries(getattr(snap,"offense",{})), "defense": entries(getattr(snap,"defense",{})), "saves": entries(getattr(snap,"saves",{})), "resistances": {k:self._stat_entry(k,k.replace("_"," ").title(),v,sv,order=i*10+10,unit="percentage") for i,(k,v) in enumerate((getattr(snap,"resistances",{}) or {}).items())}, "criticals": entries(getattr(snap,"critical",{})), "speed": entries(getattr(snap,"speed",{})), "weapon_profile": prof(weapon), "unarmed_profile": prof(unarmed), "mechanics": {"parry":{"label":"Parry","value":0,"active":False,"inactive_reason":"Parry is not an active combat mechanic in this ruleset yet."}, "block":{"label":"Block","value":0,"active":False,"inactive_reason":"Block is not an active combat mechanic in this ruleset yet."}}, "source_version": sv}
+
+    def _canonical_carrying(self, snap: Any) -> dict[str, Any]:
+        sv=getattr(snap,"source_version","")
+        c=dict(getattr(snap,"carrying",{}) or {})
+        if not c: return {}
+        return {"current_weight":{"label":"Current Weight","value":c.get("current_carry_weight"),"unit":"lb","display_order":10,"source_version":sv}, "carry_capacity":{"label":"Capacity","value":c.get("carry_capacity"),"unit":"lb","display_order":20,"source_version":sv}, "encumbrance_percent":{"label":"Encumbrance","value":c.get("encumbrance_percent"),"unit":"percentage","display_order":30,"source_version":sv}, "encumbrance_state":{"label":"State","value":str(c.get("encumbrance_state","unburdened")).title(),"display_order":40,"source_version":sv}}
+
+    def _source_versions(self, snap: Any, combat: Mapping[str, Any], prog: Mapping[str, Any]) -> dict[str, Any]:
+        sv=getattr(snap,"source_version","") or combat.get("source_version") or "legacy-display-adapter"
+        return {"snapshot": "phase13c3-b.snapshot.v1", "attributes": sv, "combat": sv, "equipment": sv, "effects": sv, "resources": sv, "progression": str(prog.get("source_version") or "progression-display-adapter"), "definitions": sv, "location": "character-location-fields"}
 
     def _attributes(self, c: Any) -> dict[str, Any]:
         raw = _field(c, "attributes", "ability_scores", default={}) or {}
