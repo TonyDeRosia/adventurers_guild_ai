@@ -56,7 +56,7 @@ class CombatResolutionContext:
     world_time: int = 0; round_id: str = ""; action_id: str = ""; metadata: dict[str, Any] = field(default_factory=dict)
 
     def safe_metadata(self) -> dict[str, Any]:
-        allowed={"difficulty","base_amount","damage_type","save_type","partial_percent","armor_penetration","minimum_damage","maximum_mitigation_percent","critical_multiplier"}
+        allowed={"difficulty","save_difficulty","base_amount","damage_type","save_type","partial_percent","damage_remaining_percent","damage_reduction_percent","duration_remaining_percent","duration_reduction_percent","effect_remaining_percent","effect_reduction_percent","armor_penetration","minimum_damage","maximum_mitigation_percent","critical_multiplier","formula_id","can_critical","requires_hit_roll","armor_applies","resistance_applies","coefficient","healing_coefficient","save_attacker_stat","attacker_penetration","ability_proficiency","situational_modifier","negates"}
         return {str(k):v for k,v in (self.metadata or {}).items() if k in allowed and isinstance(v,(str,int,float,bool,type(None)))}
 
 
@@ -362,14 +362,22 @@ class CombatResolutionService:
         attacker_value = float((getattr(attacker_snapshot, "offense", {}) or {}).get(attacker_stat_name, 0) or 0)
         defender_value = float((getattr(defender_snapshot, "saves", {}) or {}).get(save_type, 0) or 0)
         inputs = {"attacker_stat": attacker_value, "defender_save": defender_value, "save_rating": defender_value, "difficulty": difficulty, "level_difference": float(getattr(attacker_snapshot, "level", 1) - getattr(defender_snapshot, "level", 1)) if hasattr(attacker_snapshot, "level") else 0, "ability_proficiency": float(dec.get("ability_proficiency") or 0), "situational_modifier": float(dec.get("situational_modifier") or 0)}
-        raw = self._formula(formula_id, "50 + defender_save - difficulty + attacker_stat + level_difference + ability_proficiency + situational_modifier", inputs)
+        raw = self._formula(formula_id, "50 + defender_save - difficulty - attacker_stat - level_difference + ability_proficiency + situational_modifier", inputs)
         lo = int(dec.get("minimum_success_chance") or 5); hi = int(dec.get("maximum_success_chance") or 95)
         chance = max(lo, min(hi, round(raw)))
         roll = self.rng(ctx.attacker_id, ctx.defender_id, ctx.round_id or self.engine.tick, ctx.action_id or "save", save_type)
         success = roll <= chance
-        partial_percent = int(dec.get("partial_percent") or dec.get("reduced_amount_percent") or 0)
-        duration_multiplier = (100 - int(dec.get("reduced_duration_percent") or 0)) / 100 if success else 1.0
-        effect_multiplier = (100 - int(dec.get("reduced_amount_percent") or partial_percent or 0)) / 100 if success else 1.0
+        remaining = dec.get("damage_remaining_percent")
+        if remaining is None:
+            if dec.get("damage_reduction_percent") is not None:
+                remaining = 100 - int(dec.get("damage_reduction_percent") or 0)
+            elif dec.get("reduced_amount_percent") is not None:
+                remaining = 100 - int(dec.get("reduced_amount_percent") or 0)
+            else:
+                remaining = dec.get("partial_percent") or 0
+        partial_percent = max(0, min(100, int(remaining or 0)))
+        duration_multiplier = (int(dec.get("duration_remaining_percent")) / 100) if success and dec.get("duration_remaining_percent") is not None else ((100 - int(dec.get("duration_reduction_percent") or dec.get("reduced_duration_percent") or 0)) / 100 if success else 1.0)
+        effect_multiplier = (int(dec.get("effect_remaining_percent")) / 100) if success and dec.get("effect_remaining_percent") is not None else ((100 - int(dec.get("effect_reduction_percent") or 0)) / 100 if success else 1.0)
         negated = bool(success and dec.get("negates"))
         result = SavingThrowResult(True, save_type, ctx.attacker_id, ctx.defender_id, ctx.ability_id, formula_id, difficulty, attacker_value, defender_value, chance, roll, success, bool(success and partial_percent), partial_percent if success else 0, negated, duration_multiplier, effect_multiplier, "success" if success else "failure", {"inputs": inputs, "raw": raw, "clamp": [lo, hi]}, ())
         event = {**asdict(result), "event": "saving_throw_resolved"}
@@ -385,7 +393,7 @@ class CombatResolutionService:
         if not a or not d: return CombatResolutionResult(False,'missing_combat_stat_service',attacker.actor_id,defender.actor_id,ctx.attack_kind or AttackKind.UNARMED.value,diagnostics={"trace":trace})
         prof=a.weapon_profile or (a.natural_weapon_profiles[0] if getattr(a,'natural_weapon_profiles',None) else a.unarmed_profile)
         source='weapon' if a.weapon_profile else ('natural' if getattr(a,'natural_weapon_profiles',None) else 'unarmed')
-        atk=AttackProfile(id=getattr(prof,'profile_id',source), name=getattr(prof,'name',getattr(prof,'source',source)), damage_type=getattr(prof,'damage_type','physical'), base_damage=int((getattr(prof,'minimum_damage',getattr(prof,'minimum_damage',1))+getattr(prof,'maximum_damage',getattr(prof,'maximum_damage',1)))/2), speed=max(1,int(getattr(prof,'attack_speed',100) or 100)), reach=int(getattr(prof,'reach',1) or 1), critical_multiplier=float(a.criticals.get('critical_damage',1.5) or 1.5), source=source, metadata={'snapshot_authority':True})
+        atk=AttackProfile(id=getattr(prof,'profile_id',source), name=getattr(prof,'name',getattr(prof,'source',source)), damage_type=getattr(prof,'damage_type','physical'), base_damage=int((getattr(prof,'minimum_damage',1)+getattr(prof,'maximum_damage',1))/2), speed=max(1,int(getattr(prof,'attack_speed',100) or 100)), reach=int(getattr(prof,'reach',1) or 1), critical_multiplier=float(a.criticals.get('critical_damage',1.5) or 1.5), source=source, metadata={'snapshot_authority':True})
         attack_kind=ctx.attack_kind or (AttackKind.MELEE_WEAPON.value if source=='weapon' else AttackKind.UNARMED.value)
         if attack_kind == AttackKind.HEALING.value and not bool(ctx.safe_metadata().get('requires_hit_roll')):
             heal_power=int(a.offense.get('healing_power', a.offense.get('spell_power', a.offense.get('attack_power',0))) or 0)
@@ -412,12 +420,17 @@ class CombatResolutionService:
             return CombatResolutionResult(False,'attacker_posture_forbids_attack',attacker.actor_id,defender.actor_id,attack_kind,diagnostics={"trace":trace,"posture_rule":attacker_posture})
         posture=int(defender_posture.get("defense_evasion_modifier", 0) or 0)
         range_mod, range_diag = self._range_modifier(ctx, atk)
-        if defender_posture.get("automatic_hit_against"):
-            chance = 100
+        hit_inputs={'base_chance':30,'attacker_level':int(a.level),'defender_level':int(d.level),'accuracy':acc,'hit_bonus':hit_bonus,'evasion':evasion,'strength_to_hit':int(getattr(a.primary_stats.get('strength'), 'final_value', 10)//5) if a.primary_stats.get('strength') else 0,'intelligence_to_hit':int(getattr(a.primary_stats.get('intelligence'), 'final_value', 10)//10) if a.primary_stats.get('intelligence') else 0,'wisdom_to_hit':int(getattr(a.primary_stats.get('wisdom'), 'final_value', 10)//10) if a.primary_stats.get('wisdom') else 0,'posture_modifier':posture,'range_modifier':range_mod,'concealment_modifier':int(ctx.safe_metadata().get('concealment_modifier') or 0)}
+        offensive = hit_inputs['base_chance'] + hit_inputs['attacker_level'] + hit_inputs['accuracy'] + hit_inputs['hit_bonus'] + hit_inputs['strength_to_hit'] + hit_inputs['intelligence_to_hit'] + hit_inputs['wisdom_to_hit'] + hit_inputs['range_modifier'] + hit_inputs['concealment_modifier']
+        defensive = hit_inputs['defender_level'] + hit_inputs['evasion'] - hit_inputs['posture_modifier']
+        if not bool(ctx.safe_metadata().get('requires_hit_roll', True)):
+            chance=100; auto_reason='requires_hit_roll_false'
+        elif defender_posture.get("automatic_hit_against"):
+            chance = 100; auto_reason='helpless_target'
         else:
-            chance=max(5,min(95,round(self._formula('attack_hit_resolution','50 + accuracy + hit_bonus - evasion + posture_modifier + range_modifier', {'accuracy':acc,'hit_bonus':hit_bonus,'evasion':evasion,'posture_modifier':posture,'range_modifier':range_mod}))))
+            chance=max(5,min(95,round(self._formula('attack_hit_resolution','base_chance + attacker_level + accuracy + hit_bonus + strength_to_hit + intelligence_to_hit + wisdom_to_hit - defender_level - evasion + posture_modifier + range_modifier + concealment_modifier', hit_inputs)))); auto_reason=''
         roll=self.rng(attacker.actor_id,defender.actor_id,ctx.round_id or self.engine.tick,ctx.action_id or 'hit')
-        hit=roll<=chance; trace.append({'step':'attack_roll_resolved','formula_id':'attack_hit_resolution','inputs':{'accuracy':acc,'hit_bonus':hit_bonus,'evasion':evasion,'posture_modifier':posture,'range_modifier':range_mod},'chance':chance,'roll':roll,'hit':hit})
+        hit=roll<=chance; trace.append({'step':'attack_roll_resolved','formula_id':'attack_hit_resolution','inputs':hit_inputs,'attacker_offensive_hit_value':offensive,'defender_evasion_value':defensive,'chance':chance,'roll':roll,'hit':hit,'automatic_hit_reason':auto_reason})
         events.append({'event':'attack_roll_resolved','attacker_id':attacker.actor_id,'defender_id':defender.actor_id,'chance':chance,'roll':roll,'hit':hit})
         if not hit:
             self.engine.set_state(attacker, CombatState.RECOVERING); messages=self.engine._messages(attacker,defender,'miss',None); events.append({'event':'attack_missed','attacker_id':attacker.actor_id,'defender_id':defender.actor_id})
@@ -434,21 +447,30 @@ class CombatResolutionService:
         crit_raw=self._formula('critical_resolution','critical_rating - critical_avoidance', {'critical_rating':int(a.critical.get(crit_stat,0)),'critical_avoidance':int(d.critical.get('critical_avoidance',0))})
         crit_chance=max(0,min(100,round(crit_raw)))
         crit_roll=self.rng(attacker.actor_id,defender.actor_id,ctx.round_id or self.engine.tick,ctx.action_id or 'crit')
-        crit=crit_roll<=crit_chance; mult=float(ctx.safe_metadata().get('critical_multiplier') or a.critical.get('critical_damage', 1.5) or 1.5); trace.append({'step':'critical_resolved','critical_kind':crit_stat,'chance':crit_chance,'roll':crit_roll,'critical':crit,'critical_multiplier':mult})
+        crit=bool(ctx.safe_metadata().get('can_critical', True)) and crit_roll<=crit_chance; mult=float(ctx.safe_metadata().get('critical_multiplier') or a.critical.get('critical_damage', 1.5) or 1.5); trace.append({'step':'critical_resolved','critical_kind':crit_stat,'chance':crit_chance,'roll':crit_roll,'critical':crit,'critical_multiplier':mult})
         profile=prof
-        base=max(int(getattr(profile,'minimum_damage',1)), int((int(getattr(profile,'minimum_damage',1))+int(getattr(profile,'maximum_damage',1)))/2)) + int(a.offense.get('attack_power',0)) + int(a.offense.get('damage_bonus',0))
-        raw=int(base*mult) if crit else int(base); dtype=ctx.damage_kind or getattr(profile,'damage_type',atk.damage_type) or atk.damage_type
+        roll_min=int(getattr(profile,'minimum_damage',1)); roll_max=max(roll_min, int(getattr(profile,'maximum_damage',roll_min)))
+        weapon_roll=roll_min + (self.rng(attacker.actor_id,defender.actor_id,ctx.round_id or self.engine.tick,ctx.action_id or 'damage_roll') - 1) % (roll_max-roll_min+1)
+        dtype=ctx.damage_kind or getattr(profile,'damage_type',atk.damage_type) or atk.damage_type
+        formula_id=ctx.safe_metadata().get('formula_id') or ('spell_damage_resolution' if attack_kind==AttackKind.SPELL_ATTACK.value else 'physical_damage_resolution')
+        if formula_id == 'spell_damage_resolution':
+            base=round(self._formula('spell_damage_resolution','base_amount + spell_power * coefficient', {'base_amount':int(ctx.safe_metadata().get('base_amount') or weapon_roll),'spell_power':int(a.offense.get('spell_power',0)),'coefficient':float(ctx.safe_metadata().get('coefficient') or 1.0)}))
+        else:
+            base=round(self._formula('physical_damage_resolution','base_damage + attack_power + damage_bonus', {'base_damage':int(ctx.safe_metadata().get('base_amount') or weapon_roll),'attack_power':int(a.offense.get('attack_power',0)),'damage_bonus':int(a.offense.get('damage_bonus',0))}))
+        raw=int(base)
         penetration=int(ctx.safe_metadata().get('armor_penetration') or 0); armor=int(d.defense.get('armor',0))
-        after_armor = raw if dtype == "true" else round(self._formula('armor_mitigation','max(minimum_damage, raw_damage - max(0, armor - armor_penetration))', {'raw_damage':raw,'armor':armor,'armor_penetration':penetration,'attacker_level':1,'defender_level':1,'maximum_mitigation_percent':95,'minimum_damage':int(ctx.safe_metadata().get('minimum_damage') or 0)}))
+        after_armor = raw if dtype == "true" or not bool(ctx.safe_metadata().get('armor_applies', True)) else round(self._formula('armor_mitigation','max(minimum_damage, raw_damage - max(0, armor - armor_penetration))', {'raw_damage':raw,'armor':armor,'armor_penetration':penetration,'attacker_level':1,'defender_level':1,'maximum_mitigation_percent':95,'minimum_damage':int(ctx.safe_metadata().get('minimum_damage') or 0)}))
         resist=int(d.resistances.get(dtype,0) or 0)
-        final = raw if dtype == "true" else max(0, round(self._formula('resistance_mitigation','0 if immunity else damage_after_armor * (100 - min(resistance_cap, max(0, resistance_value)) + max(0, vulnerability)) / 100', {'damage_after_armor':after_armor,'post_armor_damage':after_armor,'resistance_value':resist,'resistance_percent':resist,'resistance_cap':95,'immunity':0,'vulnerability':0,'damage_type':0})))
+        final = after_armor if dtype == "true" or not bool(ctx.safe_metadata().get('resistance_applies', True)) else max(0, round(self._formula('resistance_mitigation','0 if immunity else damage_after_armor * (100 - min(resistance_cap, max(0, resistance_value)) + max(0, vulnerability)) / 100', {'damage_after_armor':after_armor,'post_armor_damage':after_armor,'resistance_value':resist,'resistance_percent':resist,'resistance_cap':95,'immunity':0,'vulnerability':0,'damage_type':0})))
+        if crit:
+            final = int(final * mult)
         if save_result and save_result.partial:
             final = max(0, round(final * (save_result.partial_percent / 100)))
         mitigated=raw-final
         armor_event={'event':'armor_mitigation_resolved','raw_damage':raw,'armor':armor,'armor_penetration':penetration,'damage_after_armor':after_armor}
         resist_event={'event':'resistance_mitigation_resolved','damage_after_armor':after_armor,'resistance_value':resist,'final_damage':final}
         events.extend([armor_event,resist_event,{'event':'damage_calculated','raw_amount':raw,'final_amount':final,'damage_type':dtype}])
-        trace.append({'step':'damage_mitigated','raw':raw,'armor':armor,'armor_penetration':penetration,'after_armor':after_armor,'resistance_value':resist,'order':'armor_then_resistance','final':final,'range':range_diag,'posture_rule':defender_posture,'saving_throw':asdict(save_result) if save_result else None})
+        trace.append({'step':'damage_mitigated','raw':raw,'armor':armor,'armor_penetration':penetration,'after_armor':after_armor,'resistance_value':resist,'weapon_roll':weapon_roll,'base_damage':base,'formula_id':formula_id,'order':'base_roll_then_bonuses_then_armor_then_resistance_then_critical_then_save','final':final,'range':range_diag,'posture_rule':defender_posture,'saving_throw':asdict(save_result) if save_result else None})
         rsvc=RuntimeResourceService(self.runtime, event_bus=self.event_bus)
         rt=rsvc.apply_healing(defender, final, action_id=ctx.action_id, metadata={'source':'combat_healing','action_id':ctx.action_id}) if attack_kind==AttackKind.HEALING.value else rsvc.apply_damage(defender, final, action_id=ctx.action_id, metadata={'source':'combat_damage','action_id':ctx.action_id})
         change=ResourceChange(defender.actor_id,'health',int(rt.before),int(rt.applied_amount),int(rt.after),str(rt.operation))

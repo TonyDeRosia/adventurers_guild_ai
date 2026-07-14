@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from engine.actors import Actor, ActorIdentity, ActorResources, actor_from_runtime_character, default_derived_statistics
-from engine.combat import CombatEngine, CombatState
+from engine.combat import CombatEngine, CombatState, CombatResult
 from engine.combat_equipment import CombatContentRegistry
 from engine.formulas import FormulaEngine
 from engine.character_stats import CharacterAttributeService, CombatStatService
@@ -670,7 +670,9 @@ class CombatRuntimeService:
         old_weapons = attacker.combat_profile.get('natural_weapons')
         if request.base_amount and request.attack_kind not in {'basic_attack','melee','ranged','unarmed'}:
             attacker.combat_profile['natural_weapons']=[{'id':request.source_id or request.ability_id or request.attack_kind,'name':request.ability_id or request.attack_kind,'damage_type':request.damage_type,'base_damage':max(0,int(request.base_amount))}]
-        res=self.engine.resolve_attack(attacker,defender,room_id=attacker.identity.current_location,world_time=wt)
+        ctx=__import__('engine.combat', fromlist=['CombatResolutionContext']).CombatResolutionContext(world_id=request.world_id, zone_id=request.zone_id, area_id=request.area_id, room_id=request.room_id or attacker.identity.current_location, attacker_id=attacker.actor_id, defender_id=defender.actor_id, ability_id=request.ability_id or None, attack_kind=request.attack_kind, damage_kind=request.damage_type, distance=request.distance, world_time=wt, round_id=eid, action_id=request.action_id, metadata={**(request.metadata or {}), 'base_amount': request.base_amount, 'formula_id': request.formula_id, 'coefficient': request.coefficient, 'requires_hit_roll': request.requires_hit_roll, 'can_critical': request.can_critical, 'critical_type': request.critical_type, 'armor_applies': request.armor_applies, 'resistance_applies': request.resistance_applies, **(request.save_definition or {})})
+        rr=self.engine.resolution.resolve(attacker, defender, ctx)
+        res=CombatResult(rr.hit, __import__('engine.combat', fromlist=['DamageEvent']).DamageEvent(attacker.actor_id, defender.actor_id, {}, rr.diagnostics.get('selected_attack_profile', {'name':'attack'}), rr.damage_type, rr.raw_amount, rr.critical, rr.mitigated_amount, rr.final_amount, self.engine.tick) if rr.hit else None, 'recovering', 'in_combat', rr.messages, list(rr.diagnostics.get('trace', [])))
         if request.base_amount and request.attack_kind not in {'basic_attack','melee','ranged','unarmed'}:
             if old_weapons is None: attacker.combat_profile.pop('natural_weapons', None)
             else: attacker.combat_profile['natural_weapons']=old_weapons

@@ -110,25 +110,25 @@
     },
     {
       "formula_id": "weapon_damage_min",
-      "expression": "weapon_base_min + damage_bonus",
+      "expression": "weapon_base_min",
       "enabled": true,
       "metadata": {}
     },
     {
       "formula_id": "weapon_damage_max",
-      "expression": "weapon_base_max + damage_bonus",
+      "expression": "weapon_base_max",
       "enabled": true,
       "metadata": {}
     },
     {
       "formula_id": "unarmed_damage_min",
-      "expression": "1 + physical_power / 10",
+      "expression": "min(4, 1 + level / 30) + max(0, level / 30)",
       "enabled": true,
       "metadata": {}
     },
     {
       "formula_id": "unarmed_damage_max",
-      "expression": "2 + physical_power / 5",
+      "expression": "min(4, 1 + level / 30) * min(7, 2 + level / 20) + max(0, level / 30)",
       "enabled": true,
       "metadata": {}
     },
@@ -182,7 +182,7 @@
     },
     {
       "formula_id": "attack_hit_resolution",
-      "expression": "50 + accuracy + hit_bonus - evasion + posture_modifier + range_modifier",
+      "expression": "base_chance + attacker_level + accuracy + hit_bonus + strength_to_hit + intelligence_to_hit + wisdom_to_hit - defender_level - evasion + posture_modifier + range_modifier + concealment_modifier",
       "enabled": true,
       "metadata": {
         "phase": "13C3-A3",
@@ -191,7 +191,7 @@
     },
     {
       "formula_id": "armor_mitigation",
-      "expression": "max(minimum_damage, raw_damage - max(0, armor - armor_penetration))",
+      "expression": "max(minimum_damage, raw_damage * 100 / (100 + max(0, armor - armor_penetration)))",
       "enabled": true,
       "metadata": {
         "phase": "13C3-A3",
@@ -209,7 +209,7 @@
     },
     {
       "formula_id": "saving_throw_resolution",
-      "expression": "50 + defender_save - difficulty + attacker_stat + level_difference + ability_proficiency + situational_modifier",
+      "expression": "50 + defender_save - difficulty - attacker_stat - level_difference + ability_proficiency + situational_modifier",
       "enabled": true,
       "metadata": {
         "phase": "13C3-A3",

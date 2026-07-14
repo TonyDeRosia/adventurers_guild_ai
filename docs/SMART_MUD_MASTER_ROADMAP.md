@@ -412,3 +412,17 @@ Cooking is a canonical CraftingService specialization. The runtime uses recipe d
 
 ## Phase 15A: Canonical Zone Reset and Builder Reset
 Status: **Partial implemented**. Added `ZoneResetService`, typed reset profiles/commands, Builder draft commands, SQLite history tables, bounded preview/manual execution, count limits, resident occupancy checks, and documentation. Future work: full scheduler wiring in the live server pulse, richer dependency graph skipping, and canonical door/container authority completion.
+
+## 2026-07-14 Combat legitimacy/parity correction
+
+Completed a focused canonical combat correction pass:
+
+* Removed damage-bonus double application from weapon min/max formulas.
+* Replaced live average damage with deterministic per-action damage rolls.
+* Updated unarmed damage formulas to the Adventurer's Lair parity contract.
+* Replaced flat armor subtraction with higher-is-better scaling mitigation.
+* Corrected saving throw direction and explicit partial-save semantics.
+* Routed typed `CombatActionRequest` fields into the canonical resolution context.
+* Documented inactive speed, parry, block, and presence limits.
+
+Remaining: repeat direct Adventurer's Lair C-source audit in an environment with repository access; expand end-to-end Windows acceptance coverage with Kraevok.
