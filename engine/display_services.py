@@ -6,7 +6,7 @@ player-visible values for display builders and prompt rendering.
 from __future__ import annotations
 
 import logging, math, sqlite3
-from dataclasses import asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
@@ -14,6 +14,20 @@ from typing import Any, Mapping
 logger = logging.getLogger(__name__)
 
 from engine.mud_displays import CharacterDisplaySnapshot, AbilityDisplaySnapshot
+
+
+@dataclass(frozen=True)
+class CharacterWorthSnapshot:
+    character_id: str = ""
+    level: int = 1
+    experience: int = 0
+    experience_to_next_level: int = 0
+    practice_points: int = 0
+    training_points: int = 0
+    quest_points: int = 0
+    remort_count: int = 0
+    currencies: dict[str, Any] = field(default_factory=dict)
+    source_versions: dict[str, Any] = field(default_factory=dict)
 
 
 def _field(obj: Any, *names: str, default: Any = None) -> Any:
@@ -146,8 +160,10 @@ class CurrencyDisplaySource:
         rt=self.runtime
         if rt and getattr(rt, "state_store", None):
             try:
-                from engine.economy import EconomyService
-                svc=EconomyService(rt.state_store.db_path, getattr(rt,"active_world_id","") or "shattered_realms", getattr(getattr(rt,"active_world",None),"root",None), getattr(rt,"event_bus",None), rt)
+                svc = rt._economy_service() if hasattr(rt, "_economy_service") else getattr(rt, "economy_service", None)
+                if svc is None:
+                    from engine.economy import EconomyService
+                    svc=EconomyService(rt.state_store.db_path, getattr(rt,"active_world_id","") or "shattered_realms", getattr(getattr(rt,"active_world",None),"root",None), getattr(rt,"event_bus",None), rt)
                 balances=svc.get_currency_balances("actor", actor_id)
                 profiles={p.get("id"):p for p in svc.content.list("currency_profiles")}
                 ordered=sorted(balances, key=lambda k:int((profiles.get(k) or {}).get("display_order", {"gold":10,"silver":20,"copper":30}.get(k,999)) or 999))
@@ -178,6 +194,9 @@ class TimeDisplaySource:
 class CharacterDisplaySnapshotService:
     def __init__(self, runtime: Any = None) -> None:
         self.runtime = runtime
+        self._snapshot_cache: dict[tuple[Any, ...], CharacterDisplaySnapshot] = {}
+        self._worth_cache: dict[tuple[Any, ...], CharacterWorthSnapshot] = {}
+        self.last_cache_hit = False
         self.progression = ProgressionDisplayAdapter(runtime)
         self.attributes = AttributeDisplaySource()
         self.combat = CombatDisplaySource(runtime)
@@ -187,7 +206,38 @@ class CharacterDisplaySnapshotService:
         self.effects = EffectDisplaySource()
         self.time_source = TimeDisplaySource()
 
+    def _version_key(self, character: Any, *, worth: bool = False) -> tuple[Any, ...]:
+        actor_data = _field(character, "actor_data", default={}) or {}
+        versions = actor_data.get("source_versions", {}) if isinstance(actor_data, Mapping) else {}
+        pieces = [
+            _field(character, "id", "character_id", default=""),
+            getattr(self.runtime, "active_world_id", "") if self.runtime else "",
+            _field(character, "level", default=1), _field(character, "xp", "experience", default=0),
+            _field(character, "gold", default=0), _field(character, "room_id", "current_room_id", default=""),
+            len(_field(character, "inventory", default=[]) or []), len(_field(character, "equipment", default=[]) or []),
+            len(_field(character, "effects", "affects", default=[]) or []),
+            repr(sorted((versions or {}).items())) if isinstance(versions, Mapping) else repr(versions),
+        ]
+        if worth:
+            return tuple(pieces[:5] + [pieces[-1]])
+        return tuple(pieces)
+
+    def invalidate(self, character_id: str | None = None) -> None:
+        if not character_id:
+            self._snapshot_cache.clear(); self._worth_cache.clear(); return
+        self._snapshot_cache = {k:v for k,v in self._snapshot_cache.items() if str(k[0]) != str(character_id)}
+        self._worth_cache = {k:v for k,v in self._worth_cache.items() if str(k[0]) != str(character_id)}
+
     def build_snapshot(self, character: Any) -> CharacterDisplaySnapshot:
+        key = self._version_key(character)
+        cached = self._snapshot_cache.get(key)
+        if cached is not None:
+            self.last_cache_hit = True
+            return cached
+        self.last_cache_hit = False
+        if self.runtime is not None:
+            getattr(self.runtime, "performance_counters", {}).setdefault("display_snapshot_builds", 0)
+            self.runtime.performance_counters["display_snapshot_builds"] += 1
         prog = self.progression.snapshot(character)
         rt = self.runtime
         canonical_snapshot = None
@@ -215,7 +265,7 @@ class CharacterDisplaySnapshotService:
             "criticals": combat.get("criticals", {k: combat.get(k) for k in ("critical_melee","critical_spell","critical_heal","critical_damage") if k in combat}),
             "mechanics": combat.get("mechanics", {}),
         }
-        return CharacterDisplaySnapshot(
+        snapshot = CharacterDisplaySnapshot(
             schema_version="phase13c3-b.snapshot.v1",
             snapshot_version="phase13c3-b.snapshot.v1",
             character_id=str(identity.get("character_id") or ""),
@@ -243,6 +293,32 @@ class CharacterDisplaySnapshotService:
             mechanics=combat_sections["mechanics"],
             source_versions=self._source_versions(canonical_snapshot, combat, prog),
         )
+        self._snapshot_cache[key] = snapshot
+        return snapshot
+
+    def build_worth_snapshot(self, character: Any) -> CharacterWorthSnapshot:
+        key = self._version_key(character, worth=True)
+        cached = self._worth_cache.get(key)
+        if cached is not None:
+            self.last_cache_hit = True
+            return cached
+        self.last_cache_hit = False
+        prog = self.progression.snapshot(character)
+        currency = self.currency.snapshot(character)
+        snap = CharacterWorthSnapshot(
+            character_id=str(_field(character, "id", "character_id", default="")),
+            level=int(prog.get("level") or _field(character, "level", default=1) or 1),
+            experience=int(prog.get("xp") or 0),
+            experience_to_next_level=int(prog.get("xp_to_next_level") or 0),
+            practice_points=int(prog.get("practice_points") or 0),
+            training_points=int(prog.get("training_points") or 0),
+            quest_points=int(prog.get("quest_points") or 0),
+            remort_count=int(_field(character, "remort_count", default=0) or 0),
+            currencies=currency,
+            source_versions={"progression": str(prog.get("source_version") or "progression-display-adapter"), "currency": "currency-display-source"},
+        )
+        self._worth_cache[key] = snap
+        return snap
 
 
     def _stat_entry(self, stat_id: str, label: str, value: Any, source_version: str, *, order: int = 0, unit: str = "") -> dict[str, Any]:
@@ -345,4 +421,4 @@ class AbilityDisplaySnapshotService:
 def ability_snapshots_as_rows(snaps: list[AbilityDisplaySnapshot]) -> list[dict[str, Any]]:
     return [{"id":s.ability_id,"name":s.display_name,"ability_type":s.ability_kind,"category":s.category,"rank":s.rank,"maximum_rank":s.maximum_rank,"description":s.description,"costs":list(s.resource_costs),"status_text":s.availability_text,"availability_text":s.availability_text,"passive":s.passive,"cooldown_remaining":s.cooldown_remaining} for s in snaps]
 
-__all__ = ["CharacterDisplaySnapshotService", "AbilityDisplaySnapshotService", "ProgressionDisplayAdapter", "AttributeDisplaySource", "CombatDisplaySource", "CarryingDisplaySource", "CurrencyDisplaySource", "SurvivalDisplaySource", "EffectDisplaySource", "TimeDisplaySource", "LegacyCharacterDisplayAdapter", "DisplayFormatters", "ability_snapshots_as_rows", "_natural_seconds"]
+__all__ = ["CharacterWorthSnapshot", "CharacterDisplaySnapshotService", "AbilityDisplaySnapshotService", "ProgressionDisplayAdapter", "AttributeDisplaySource", "CombatDisplaySource", "CarryingDisplaySource", "CurrencyDisplaySource", "SurvivalDisplaySource", "EffectDisplaySource", "TimeDisplaySource", "LegacyCharacterDisplayAdapter", "DisplayFormatters", "ability_snapshots_as_rows", "_natural_seconds"]

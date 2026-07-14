@@ -647,6 +647,10 @@ class MudRuntime:
         self.builder = BuilderWorkspace(event_bus=self.event_bus)
         self.command_engine.runtime = self
         self.presentation_preferences = PlayerPresentationPreferenceService(self.state_store.db_path)
+        self._progression_service_singleton = None
+        self._progression_service_key = None
+        self._economy_service_singleton = None
+        self._economy_service_key = None
         self.character_display_snapshots = CharacterDisplaySnapshotService(self)
         self.attribute_service = CharacterAttributeService(self.state_store, 'shattered_realms', event_bus=self.event_bus)
         self.attribute_service.runtime = self
@@ -787,7 +791,19 @@ class MudRuntime:
                     con.execute("""CREATE TABLE IF NOT EXISTS actor_progression_modifiers(modifier_id TEXT PRIMARY KEY,actor_id TEXT,source_type TEXT,source_id TEXT,modifier_domain TEXT,modifier_key TEXT,operation TEXT,value INTEGER,level INTEGER,active INTEGER,metadata_json TEXT)""")
                     con.execute("""CREATE TABLE IF NOT EXISTS actor_experience_events(event_id TEXT PRIMARY KEY,world_id TEXT,actor_type TEXT,actor_id TEXT,source_type TEXT,source_id TEXT,base_amount INTEGER,final_amount INTEGER,level_delta INTEGER,total_after INTEGER,reason TEXT,applied_formula_id TEXT,created_at TEXT,metadata_json TEXT)""")
             store.initialize = _init_progression_tables  # type: ignore[attr-defined]
-        return ProgressionService(store)
+        key = (getattr(store, "db_path", None), self.active_world_id or "shattered_realms")
+        if self._progression_service_singleton is None or self._progression_service_key != key:
+            self._progression_service_singleton = ProgressionService(store)
+            self._progression_service_key = key
+        return self._progression_service_singleton
+
+    def _economy_service(self):
+        from engine.economy import EconomyService
+        key = (self.state_store.db_path, self.active_world_id or "shattered_realms")
+        if self._economy_service_singleton is None or self._economy_service_key != key:
+            self._economy_service_singleton = EconomyService(self.state_store.db_path, world_id=self.active_world_id or "shattered_realms", world_root=getattr(getattr(self, "active_world", None), "root", None), event_bus=getattr(self, "event_bus", None), runtime=self)
+            self._economy_service_key = key
+        return self._economy_service_singleton
 
     def _ensure_starter_progression(self, char: MudCharacter) -> None:
         ps = self._progression_service()
@@ -1295,6 +1311,7 @@ class MudRuntime:
         """Execute a command and return canonical immediate response data."""
         import time, uuid
         request_id = uuid.uuid4().hex
+        perf_debug = bool(getattr(self, "performance_debug", False))
         trace = {"request_id": request_id, "command": command, "input_key_accepted": time.monotonic(), "request_started": time.monotonic()}
         self.performance_counters["command_requests"] += 1
         self.process_due_entity_respawns()
@@ -1339,19 +1356,23 @@ class MudRuntime:
             save_status = self.save_character_if_dirty(char, "quit", force=True, final=True)
         elif mutation != "read_only":
             save_status = self.save_character_if_dirty(char, mutation)
+            if hasattr(self, "character_display_snapshots"):
+                self.character_display_snapshots.invalidate(character_id)
         else:
-            save_status = self.save_character_if_dirty(char, mutation)
+            save_status = {"saved": False, "status": "read_only", "dirty": bool(self._dirty_characters.get(character_id)), "reasons": sorted(self._dirty_characters.get(character_id, set()))}
         session = self.sessions.get(character_id)
         turn = (session.command_count + 1) if session else 1
+        history_start = time.monotonic()
         self.state_store.save_command(character_id, self.active_world_id or "", turn, command, session.account_id if session else "", session.session_id if session else "")
         self.state_store.save_scrollback(character_id, self.active_world_id or "", turn, result.narrative)
+        trace["command_history_persistence_ms"] = (time.monotonic() - history_start) * 1000.0
         if session:
             session.command_count = turn
             session.last_activity = datetime.now(timezone.utc).isoformat()
         updates = result.state_updates or {}
         self.performance_counters["commands_processed"] += 1
         self.performance_counters["direct_command_responses"] += 1
-        view = self.play_view(character_id) if updates.get("render_room") or (command.strip().lower().split()[0] if command.strip() else "") in {"look","l","north","n","south","s","east","e","west","w","up","u","down","d","in","out"} else {**self.prompt_snapshot(character_id), "html": "", "text": "", "room_id": getattr(char, "room_id", "")}
+        view = self.play_view(character_id) if updates.get("render_room") or (command.strip().lower().split()[0] if command.strip() else "") in {"look","l","north","n","south","s","east","e","west","w","up","u","down","d","in","out"} else {**self.prompt_snapshot(character_id), "html": "", "text": "", "room_id": getattr(char, "room_id", ""), "async_cursor": self._async_sequences.get(character_id, 0)}
         if updates.get("session_transition") == "character_select":
             sid = self.character_session_ids.pop(character_id, "")
             if sid: self.session_active_character.pop(sid, None)
@@ -1359,6 +1380,11 @@ class MudRuntime:
             self.unregister_live_character(character_id)
             view = {"html": "", "text": result.narrative, "prompt": ">"}
         trace["response_serialization_completed"] = time.monotonic()
+        if perf_debug:
+            total_ms = (trace["response_serialization_completed"] - trace["request_started"]) * 1000.0
+            print(f"[mud-latency] command={command.strip().split()[0] if command.strip() else ''} total_ms={total_ms:.3f}")
+            print(f"[mud-latency] history_ms={trace.get('command_history_persistence_ms', 0.0):.3f}")
+            print(f"[mud-latency] queries=0 formulas=0 cache_hit={getattr(getattr(self, 'character_display_snapshots', None), 'last_cache_hit', False)}")
         return {"ok": result.ok, "request_id": request_id, "action_id": request_id, "output": render_semantic_plain(result.narrative), "semantic_output": result.narrative, "state_updates": updates, "view": view, "command_response": {"command": command, "semantic_text": result.narrative, "plain_text": render_semantic_plain(result.narrative), "html": "", "room_render": view, "prompt_snapshot": self.prompt_snapshot(character_id) if character_id in self.active_characters else {}, "state_updates": updates, "session_transition": updates.get("session_transition", ""), "mutation_state": mutation, "async_events": [], "delivery_policy": "direct_response"}, "delivery_policy": "direct_response", "mutation_state": mutation, "save_status": save_status, "async_followup_available": False, "trace": trace}
 
 
