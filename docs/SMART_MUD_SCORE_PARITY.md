@@ -141,3 +141,9 @@ Linux focused tests include Kraevok-like legacy identity repair and SCORE render
 ### Remaining partial systems
 
 Calendar aging remains a lifecycle compatibility value rather than a complete world-calendar feature. Survival displays consume canonical/display-authority values initialized during entry for legacy characters; broader survival simulation remains documented in survival-system docs. HP, Mana, Move, and Alignment remain omitted from normal SCORE by the approved parity contract.
+
+## 2026-07-14 combat legitimacy addendum
+
+SCORE combat fields were re-audited against the canonical combat path. The active combat fields that demonstrably affect real gameplay are Armor, Evasion, Spell Saves, Hitroll/Hit Bonus, Damroll/Damage Bonus, Accuracy as a hit-chance input, Critical hit, Critical Spell, Critical Heal, and the Unarmed Damage profile. Initiative, Attack Speed, Casting Speed, Recovery Speed, Movement Speed, Parry, and Block remain explicitly inactive until the runtime scheduler or defense resolver consumes them. Presence remains non-combat/partial and is not invented as a combat stat.
+
+Live combat now consumes the same `CombatStatService` snapshot family used by SCORE. Weapon averages may remain display-friendly, but live damage rolls the canonical profile min/max per action.
