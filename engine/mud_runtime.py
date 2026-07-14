@@ -9,6 +9,7 @@ import uuid
 import hashlib
 import logging
 import time
+import threading
 from types import MappingProxyType
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
@@ -636,7 +637,7 @@ class MudRuntime:
         self.active_characters: dict[str, MudCharacter] = {}
         self.session_active_character: dict[str, str] = {}
         self.character_session_ids: dict[str, str] = {}
-        self.performance_counters = {k: 0 for k in ["play_view_requests","async_message_requests","character_sql_loads","character_sql_saves","world_package_loads","room_renders","prompt_renders","display_snapshot_builds","commands_processed","messages_delivered","overlapping_requests_prevented","command_requests","direct_command_responses","command_outputs_enqueued_async","duplicate_command_outputs_filtered","async_messages_delivered","character_saves","save_coalesced","save_skipped_clean","quit_final_saves","character_entry_total_ms","inventory_load_ms","equipment_load_ms","effect_load_ms","ability_load_ms","actor_registration_ms","essential_snapshot_ms","initial_room_render_ms","prompt_render_ms","warmup_queue_ms","warmup_build_ms","warmup_cache_hits","warmup_cancelled","stale_task_rejected","projection_cache_hits","projection_cache_misses","projection_invalidations","autosave_attempts","autosave_successes","autosave_skipped_clean","autosave_failures"]}
+        self.performance_counters = {k: 0 for k in ["play_view_requests","async_message_requests","character_sql_loads","character_sql_saves","world_package_loads","room_renders","prompt_renders","display_snapshot_builds","commands_processed","messages_delivered","overlapping_requests_prevented","command_requests","direct_command_responses","command_outputs_enqueued_async","duplicate_command_outputs_filtered","async_messages_delivered","character_saves","save_coalesced","save_skipped_clean","quit_final_saves","character_entry_total_ms","inventory_load_ms","equipment_load_ms","effect_load_ms","ability_load_ms","actor_registration_ms","essential_snapshot_ms","initial_room_render_ms","prompt_render_ms","warmup_queue_ms","warmup_build_ms","warmup_cache_hits","warmup_cancelled","stale_task_rejected","projection_cache_hits","projection_cache_misses","projection_invalidations","autosave_attempts","autosave_successes","autosave_skipped_clean","autosave_failures","combat_rounds_processed","combat_round_duration_ms","combat_character_sql_loads","combat_character_sql_saves","combat_sql_queries","combat_messages_queued","combat_messages_delivered","combat_message_delivery_latency_ms","combat_scheduler_lag_ms","practice_command_duration_ms","train_command_duration_ms","position_command_duration_ms","autosave_coalesced","resident_actor_cache_hits","resident_actor_cache_misses"]}
         self._dirty_characters: dict[str, set[str]] = {}
         self._save_locks: dict[str, Any] = {}
         self._quit_final_saved: set[str] = set()
@@ -666,6 +667,9 @@ class MudRuntime:
         self.command_engine.character_display_snapshots = self.character_display_snapshots
         init_agent_runtime_schema(self.state_store.db_path)
         self.combat_runtime = CombatRuntimeService(self)
+        self._pulse_stop = threading.Event()
+        self._pulse_thread: threading.Thread | None = None
+        self.start_runtime_scheduler()
         self.agent_gateway = AgentRuntimeGateway(self)
         self.deterministic_controller_evaluator = DeterministicControllerEvaluator(self.agent_gateway)
         self.command_engine.combat_runtime = self.combat_runtime
@@ -678,6 +682,27 @@ class MudRuntime:
         self.sqlite_ready = (user_data_dir / "mud_state.db").exists()
         self.event_bus.publish("runtime_ready", {"sqlite_ready": self.sqlite_ready}, source_system="runtime")
         print("[mud-runtime] Smart MUD runtime initialized")
+
+    def start_runtime_scheduler(self) -> None:
+        if self._pulse_thread and self._pulse_thread.is_alive():
+            return
+        self._pulse_stop.clear()
+        def _loop() -> None:
+            while not self._pulse_stop.wait(0.2):
+                started = time.monotonic()
+                try:
+                    if getattr(self, "combat_runtime", None):
+                        self.combat_runtime.process_due_rounds()
+                    self.performance_counters["combat_scheduler_lag_ms"] = int(max(0, (time.monotonic() - started) * 1000 - 200))
+                except Exception:
+                    logger.exception("runtime pulse task failed")
+        self._pulse_thread = threading.Thread(target=_loop, name="smartmud-runtime-pulse", daemon=True)
+        self._pulse_thread.start()
+
+    def stop_runtime_scheduler(self) -> None:
+        self._pulse_stop.set()
+        if self._pulse_thread and self._pulse_thread.is_alive():
+            self._pulse_thread.join(timeout=2)
 
 
     # Phase 5B living-world facade APIs.
@@ -814,7 +839,7 @@ class MudRuntime:
     def _ensure_starter_progression(self, char: MudCharacter) -> None:
         ps = self._progression_service()
         repair = ps.repair_legacy_progression_identity(char, apply=True)
-        state = repair.get("state") or ps.initialize_actor_progression(char, defaults={"attribute_points": 30})
+        state = repair.get("state") or ps.initialize_actor_progression(char, defaults={})
         try:
             ident = ps.progression_identity_snapshot(char.id, "player", state=state)
             setattr(char, "race_id", ident.get("race_id")); setattr(char, "race_name", ident.get("race_name"))
@@ -833,12 +858,6 @@ class MudRuntime:
         if not getattr(char, "thirst", None): setattr(char, "thirst", "Hydrated")
         if repair.get("applied") and hasattr(self, "projection_cache"):
             self.invalidate_character_projections(char.id, "progression_identity")
-        if int(state.get("attribute_points", 0) or 0) < 30:
-            flags = state.get("advancement_flags") or {}
-            if not flags.get("starter_attribute_points_30"):
-                ps.grant_currency(char.id, "attribute_points", 30 - int(state.get("attribute_points", 0) or 0), "starter_character", "starter_demonstration", "starter attribute points")
-                flags["starter_attribute_points_30"] = True
-                ps.update_actor_progression(char.id, {"advancement_flags_json": flags})
         for aid in ("set_camp", "build_campfire", "recall"):
             ps.learn_ability(char.id, aid, {"source_type":"starter_character","source_id":"starter_demonstration","default_proficiency":1,"maximum_proficiency":100,"maximum_rank":100})
         if self.abilities:

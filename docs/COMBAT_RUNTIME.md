@@ -1,44 +1,47 @@
-# Combat Runtime
+# Adventurer's Lair Gameplay Stabilization Notes
 
-`CombatRuntimeService` owns live encounters, participants, rounds, queued actions, room legality, targeting, and combat flow. The live server wires combat ticks from `MudRuntime.tick()` into `combat_runtime.process_due_rounds()`, so automatic rounds continue without the player re-entering `attack` each pulse.
+This update replaces the normal player-facing numbered Smart MUD training marketplace with Adventurer's Lair-style `train` and `practice` command semantics. The data-driven `TrainingService` remains available for future builder/admin surfaces, but normal gameplay no longer routes `train`, `tr`, `practice`, `prac`, or `pr` through global numbered lessons, profession offers, spell offers, respec offers, or fallback trainers outside the current room.
 
-## Canonical resolution order
+Reference audit status: the remote `tbamud_adventurers_lair` repository could not be cloned in this execution environment because GitHub access returned `CONNECT tunnel failed, response 403`. The implemented behavior is therefore a faithful Smart MUD compatibility layer based on the requested Adventurer's Lair behavior, and this limitation should be re-audited on a network that can access Tony's repository.
 
-1. Build typed `CombatResolutionContext` from `CombatActionRequest`.
-2. Load resident attacker and defender actors.
-3. Build `CombatStatService` snapshots.
-4. Resolve hit projection: base 30 + attacker level + accuracy + hit bonus + strength + intelligence + wisdom - defender level - evasion + posture + range + concealment, clamped 5-95 unless automatic hit applies.
-5. Resolve saving throw if declared.
-6. Roll weapon/natural/unarmed damage from min/max profile with deterministic seed/action identity.
-7. Apply `physical_damage_resolution` or spell/healing formula.
-8. Apply armor scaling when `armor_applies` and damage is not true.
-9. Apply typed resistance when `resistance_applies` and damage is not true.
-10. Apply critical multiplier when allowed.
-11. Apply partial-save remaining percent.
-12. Mutate health/healing through `RuntimeResourceService`.
-13. Hand zero health to lifecycle exactly once.
-14. Persist round history, enqueue messages, update next action/round times, and end combat when no valid opponents remain.
+## Training
 
-## Windows manual acceptance checklist
+`train` requires a current guild/trainer room. Listing shows available training sessions, six base stats with cap 20, and the supported stat/resource syntax only. Stat training costs one training session and changes the permanent runtime base stat exactly once. Resource training costs ten sessions and adds ten to max hit points, mana, or Move/Stamina.
 
-1. In PowerShell, `cd "C:\Users\antho\Desktop\Smart MUD\smartmud-main-v2\smartmud-main-v2"`.
-2. Start Smart MUD with the project's normal command, for example `python -m engine.mud_runtime` if that is the configured entrypoint.
-3. Log in/enter existing Kraevok (`char_shattered_realms_kraevok`); do not recreate the character.
-4. Run `score` and record Armor, Evasion, Spell Saves, Hitroll, Damroll, Accuracy, critical fields, and unarmed damage.
-5. Locate or spawn a safe test NPC using existing builder tools.
-6. Use authorized combat diagnostics/trace output if available; otherwise inspect combat round history.
-7. Attack unarmed and record hit chance trace and rolled damage.
-8. Equip a weapon and confirm actual rolled damage changes.
-9. Equip armor on the target and confirm physical mitigation changes.
-10. Add Evasion to the target and confirm hit chance decreases.
-11. Add Hitroll to Kraevok and confirm hit chance increases.
-12. Add Damroll and confirm damage changes once.
-13. Test melee criticals, spell saves, spell criticals, and healing criticals through existing ability definitions.
-14. Kill the target and confirm combat ends, corpse creation/rewards/credit occur once.
-15. Restart Smart MUD and confirm persistent results remain correct.
+## Practice
 
-Windows testing was not executed by this agent.
+`practice` lists remaining practice sessions and active known abilities with proficiency percentages and descriptors. `practice <ability>` requires the current guild/trainer room, resolves partial names, rejects ambiguity/unknown abilities, spends one practice session, and increases proficiency without exceeding cap.
 
-## Emberwood live combat coverage
+## Advancement currencies
 
-Emberwood Forest provides formula-backed creatures for baseline melee (`forest_wolf`), Evasion (`emberwood_fox`), Armor (`wild_boar`), hostile save/effect-path observation without fake poison (`giant_wood_spider`), Hitroll/Damroll/criticals (`dire_forest_wolf`), and long armored combat (`ashback_bear`).
+Character entry no longer grants automatic demonstration attribute points. Existing legitimate progression is preserved. The admin inspection/correction command for Kraevok is:
+
+```text
+progressioninspect char_shattered_realms_kraevok
+```
+
+If the history shows only `starter_character` / `starter_demonstration` unspent attribute grants, remove the unspent demonstration balance with the progression repair/admin workflow; do not reset Kraevok or SQLite.
+
+## Runtime combat
+
+Combat now uses the existing canonical `CombatRuntimeService` with a MudRuntime-owned pulse thread. The pulse ticks every 200ms and processes eligible combat rounds on a real-time two-second cadence. The opening `kill` attack still resolves in the direct command response; later rounds are queued to the async channel.
+
+## Persistence and performance
+
+Active character combat persistence now updates resident characters and dirty state instead of loading/saving characters for each attack. Combat messages use resident active characters for room delivery. SQLite remains for encounter tables, history, outbound queue, death lifecycle, initial hydration, autosave, and shutdown checkpoints.
+
+## Browser delivery
+
+The browser uses adaptive polling: 150-250ms immediately after combat messages, approximately 1000ms while idle/playing, and slower polling for hidden tabs. Opening command output is direct and not duplicated through async output.
+
+## Combat messages and death
+
+Generic `dealing damage` prose was removed from normal attack messages. Messages now use attack nouns such as fist and bite and severity bands such as graze, glance, hit, strike, slam, crush, blast, shred, and pulverize. Existing lifecycle death/corpse/reward handling remains the canonical authority and is invoked once by combat runtime.
+
+## Positions and regeneration
+
+Ground `sit`, `rest`, `sleep`, `wake`, `stand`, `lay`, and `lie` are supported. Combat rejects sit/rest/sleep with Adventurer's Lair-style text. Position is stored on resident actor data and marks the character dirty for coalesced persistence. Regeneration remains an intentional follow-up area for deeper Adventurer's Lair parity.
+
+## Tests and Windows status
+
+Focused Linux tests were run in this environment and are reported in the PR/final response. Windows manual acceptance at `C:\Users\antho\Desktop\Smart MUD\smartmud-main-v2\smartmud-main-v2` was not performed here.

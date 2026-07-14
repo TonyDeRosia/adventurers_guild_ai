@@ -266,22 +266,28 @@ class CombatEngine:
     def _messages(self, a: Actor, d: Actor, outcome: str, e: DamageEvent | None) -> dict[str, str]:
         verb = str(((e.attack_profile if e else {}) or {}).get("name") or "strike")
         weapon = str(((e.weapon if e else {}) or {}).get("name") or verb).lower()
+        if weapon in {"unarmed", "unarmed strike", "strike", "attack", "natural attack"}:
+            weapon = "fist"
         dname = d.identity.name; aname = a.identity.name
         if outcome == "miss":
-            return {"attacker":f"You narrowly miss {dname}.","victim":f"{aname}'s attack passes wide of you.","observers":f"{aname} misses {dname}."}
+            return {"attacker":f"You narrowly miss {dname}.","victim":f"{aname} narrowly misses you.","observers":f"{aname} narrowly misses {dname}."}
         dmg = max(0, e.final_damage if e else 0); maxhp = max(1, int(getattr(d.resources, "maximum_health", 1) or 1)); rel = dmg / maxhp
-        if dmg <= 0: sev = "glances harmlessly from"
-        elif rel < .08: sev = "grazes"
-        elif rel < .18: sev = "strikes"
-        elif rel < .35: sev = "wounds"
-        else: sev = "devastates"
-        if condition_key(d) == "dead": sev = "finishes"
-        bang = "!" if (e and e.critical) or sev in {"devastates", "finishes"} else "."
-        crit = " with a brutal critical blow" if e and e.critical else ""
+        if dmg <= 0: sev = "glance"
+        elif rel < .05: sev = "graze"
+        elif rel < .10: sev = "glance"
+        elif rel < .18: sev = "hit"
+        elif rel < .28: sev = "strike"
+        elif rel < .40: sev = "slam"
+        elif rel < .55: sev = "crush"
+        elif rel < .70: sev = "blast"
+        elif rel < .90: sev = "shred"
+        else: sev = "pulverize"
+        bang = "!" if (e and e.critical) or sev in {"blast", "shred", "pulverize"} else "."
+        crit_wrap = (lambda word: f"** {word} **") if e and e.critical else (lambda word: word)
         if "bite" in verb.lower():
-            return {"attacker":f"You bite into {dname}{crit}{bang}","victim":f"{aname} bites into you{crit}{bang}","observers":f"{aname} bites into {dname}{crit}{bang}"}
-        attacker_verb = "finish" if sev == "finishes" else ("glance harmlessly off" if sev == "glances harmlessly from" else (sev[:-1] if sev.endswith("s") else sev))
-        return {"attacker":f"You {attacker_verb} {dname} with {weapon}, dealing damage{crit}{bang}","victim":f"{aname} {sev} you with {weapon}, dealing damage{crit}{bang}","observers":f"{aname} {sev} {dname} with {weapon}, dealing damage{crit}{bang}"}
+            weapon = "bite"
+        v = crit_wrap(sev)
+        return {"attacker":f"You {v} {dname} with your {weapon}{bang}","victim":f"{aname} {v} you with its {weapon}{bang}","observers":f"{aname} {v} {dname} with its {weapon}{bang}"}
 
 
 class CombatResolutionService:

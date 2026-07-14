@@ -340,6 +340,7 @@ class MudCommandEngine:
             "postureedit": self._cmd_postureedit,
             "rangeedit": self._cmd_rangeedit,
             "combatmessage": self._cmd_combatmessage,
+            "perfstat": self._cmd_perfstat,
             "commands": self._cmd_commands,
             "look": self._cmd_look,
             "hide": self._cmd_perception,
@@ -361,7 +362,13 @@ class MudCommandEngine:
             "emote": self._cmd_emote,
             "study": self._cmd_generic,
             "train": self._cmd_training_player,
+            "tr": self._cmd_training_player,
             "practice": self._cmd_training_player,
+            "prac": self._cmd_training_player,
+            "pr": self._cmd_training_player,
+            "buypractice": self._cmd_training_player,
+            "buyprac": self._cmd_training_player,
+            "buytrain": self._cmd_training_player,
             "socials": self._cmd_generic,
             "holler": self._cmd_generic,
             "shout": self._cmd_generic,
@@ -536,6 +543,8 @@ class MudCommandEngine:
             self.command_handlers[_name] = self._cmd_session
         for _name in "social socials wave bow nod salute point laugh smile cry cheer applaud hug highfive dance spit sit stand rest yawn stretch clap shake glare thank".split():
             self.command_handlers[_name] = self._cmd_social
+        for _name in "stand sit rest sleep wake lay lie".split():
+            self.command_handlers[_name] = self._cmd_position
 
 
 
@@ -636,6 +645,56 @@ class MudCommandEngine:
         if self.event_bus:
             self.event_bus.publish("social_emote_performed", {"actor_id": getattr(character, "id", ""), "actor_name": actor_name, "target_name": target_name, "social_id": social_id, "room_id": getattr(character, "room_id", "")}, source_system="social", character_id=getattr(character, "id", ""), room_id=getattr(character, "room_id", ""))
         return CommandResult(text)
+
+    def _cmd_perfstat(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if str(getattr(character, "role", "player")).lower() not in {"admin", "owner", "builder"} and int(getattr(character, "immortal_level", 0) or 0) <= 0:
+            return CommandResult("You do not have permission for that command.", ok=False)
+        rt = getattr(self, "runtime", None)
+        counters = getattr(rt, "performance_counters", {}) if rt else {}
+        keys = [k for k in sorted(counters) if k.startswith(("combat_", "practice_", "train_", "position_", "autosave_", "resident_"))]
+        return CommandResult("Performance counters:\n" + "\n".join(f"{k}: {counters.get(k,0)}" for k in keys))
+
+    def _cmd_position(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        import time
+        t0 = time.monotonic()
+        cmd = (raw.split() or [""])[0].lower()
+        if cmd in {"lay", "lie"}:
+            cmd = "sleep"
+        rt = getattr(self, "runtime", None)
+        cr = getattr(rt, "combat_runtime", None) if rt else None
+        actor_id = cr.actor_id_for_character(character) if cr else f"character:{getattr(character,'id','')}"
+        in_combat = bool(cr and cr.is_actor_in_active_combat(actor_id))
+        data = getattr(character, "actor_data", {}) if isinstance(getattr(character, "actor_data", {}), dict) else {}
+        pos = str(data.get("position") or data.get("posture") or "standing").lower()
+        def finish(msg: str, ok: bool = True, newpos: str | None = None) -> CommandResult:
+            if newpos:
+                data["position"] = newpos; data["posture"] = newpos; character.actor_data = data
+                if rt: rt.mark_character_dirty(getattr(character, "id", ""), "position")
+            if rt: rt.performance_counters["position_command_duration_ms"] = int((time.monotonic()-t0)*1000)
+            return CommandResult(msg, ok=ok, state_updates={"prompt": True})
+        if cmd == "sit":
+            if in_combat: return finish("Sit down while fighting? Are you MAD?", False)
+            if pos == "sitting": return finish("You're sitting already.")
+            return finish("You sit down.", True, "sitting")
+        if cmd == "rest":
+            if in_combat: return finish("Rest while fighting? Are you MAD?", False)
+            if pos == "resting": return finish("You are already resting.")
+            return finish("You sit down and rest your tired bones." if pos == "standing" else "You rest your tired bones.", True, "resting")
+        if cmd == "sleep":
+            if in_combat: return finish("Sleep while fighting? Are you MAD?", False)
+            if pos == "sleeping": return finish("You are already sound asleep.")
+            return finish("You go to sleep.", True, "sleeping")
+        if cmd == "stand":
+            if in_combat: return finish("Do you not consider fighting as standing?", False)
+            if pos == "sleeping": return finish("You have to wake up first!", False)
+            if pos == "resting": return finish("You stop resting, and stand up.", True, "standing")
+            if pos == "sitting": return finish("You stand up.", True, "standing")
+            return finish("You are already standing.")
+        if cmd == "wake":
+            if pos == "sleeping": return finish("You awaken, and stand up.", True, "standing")
+            if pos in {"resting", "sitting"}: return finish("You stand up.", True, "standing")
+            return finish("You are already awake...")
+        return finish("You cannot do that right now.", False)
 
     def _cmd_survival_needs(self, character: Any, args: list[str], raw: str) -> CommandResult:
         svc=self._survival_service(character); cmd=raw.split()[0].lower(); actor_id=str(getattr(character,'id',getattr(character,'character_id','self')))
@@ -743,66 +802,87 @@ class MudCommandEngine:
         return TrainingService(store, economy=getattr(self, "economy_service", None), event_bus=self.event_bus, world_id=world_id, world_root=Path("worlds")/world_id)
 
     def _cmd_training_player(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        svc = self._training_service(character); cmd = self.resolve_alias((raw.split() or ["train"])[0].lower()); actor_id = str(getattr(character, "id", "self")); room_id = str(getattr(character, "room_id", ""))
-        trainers = svc.list_trainers(actor_id, room_id) or svc.list_trainers(actor_id, None)
-        def _eligible_offers():
-            numbered=[]
-            for tr in trainers:
-                for offer in svc.list_training_offers(actor_id, tr.get('id')):
-                    numbered.append((tr, offer, svc.preview_training(actor_id, tr.get('id'), offer.get('id'))))
-            return numbered
-        def _cost_text(costs: dict[str, Any]) -> str:
-            bits=[]
-            for key in ("practice_sessions","training_sessions","skill_points","attribute_points"):
-                val=int(costs.get(key,0) or 0)
-                if val:
-                    label=key.replace("_", " ")
-                    if val == 1 and label.endswith("s"): label=label[:-1]
-                    bits.append(f"{val} {label}")
-            return ", ".join(bits) or "no cost"
-        if cmd in {"train", "practice"} and not args:
-            state = svc.progression.initialize_actor_progression(character)
-            if cmd == "practice":
-                lines = [f"Practice sessions: {state.get('practice_sessions', 0)}", "", "Use TRAIN to view available lessons.", "Use PRACTICE <lesson> or TRAIN <number> to select one."]
-                return CommandResult("\n".join(lines))
-            if not trainers:
-                return CommandResult("No trainer here is ready to teach you. Seek a trainer and try TRAIN again.", ok=False)
-            lines = ["Training options", f"Attribute points available: {state.get('attribute_points', 0)}", f"Current stats: strength {getattr(character, 'strength', getattr(character, 'level', 1))}, level {getattr(character, 'level', 1)}"]
-            idx = 1
-            for trainer in trainers:
-                lines.append(f"{trainer.get('name') or trainer.get('id')} can teach:")
-                offers = svc.list_training_offers(actor_id, trainer.get('id'))
-                if not offers: lines.append(f"{trainer.get('name') or trainer.get('id')} has no lessons available to you right now.")
-                for o in offers:
-                    prev = svc.preview_training(actor_id, trainer.get('id'), o.get('id'))
-                    lines.append(f"{idx}. {o.get('name') or o.get('id')}")
-                    lines.append(f"   Cost: {_cost_text(prev.get('costs') or {})}")
-                    if not prev.get('eligible'): lines.append("   Requirements are not met yet.")
-                    idx += 1
-            lines.extend(["", f"Practice sessions: {state.get('practice_sessions', 0)}", f"Training sessions: {state.get('training_sessions', 0)}", f"Skill points: {state.get('skill_points', 0)}", f"Attribute points: {state.get('attribute_points', 0)}", "", "Use TRAIN 1 to begin that lesson."])
-            return CommandResult("\n".join(lines))
-        if not trainers: return CommandResult("No trainer here is ready to teach you.", ok=False)
-        query_raw = " ".join(args).strip()
-        query = query_raw.lower().replace(" ", "_")
-        offers = _eligible_offers()
-        for idx, (tr, offer, prev) in enumerate(offers, start=1):
-            vals = {str(offer.get('id','')).lower(), str(offer.get('name','')).lower().replace(' ','_')}
-            if query == str(idx) or query in vals or any(query and query in v for v in vals):
-                if not prev.get("eligible"):
-                    return CommandResult(f"{offer.get('name') or offer.get('id')} is not available to you right now.", ok=False)
-                try:
-                    q = svc.create_training_quote(actor_id, tr.get('id'), offer.get('id'))
-                    svc.confirm_training(actor_id, q['quote_id'])
-                except Exception as exc:
-                    msg = str(exc).lower()
-                    if "practice_sessions" in msg or "insufficient" in msg:
-                        return CommandResult("You do not have enough practice sessions for that lesson.", ok=False)
-                    if "unique" in msg or "known" in msg or "already" in msg:
-                        return CommandResult("You have already completed that lesson.", ok=False)
-                    raise
-                state = svc.progression.get_actor_progression(actor_id) or {}
-                return CommandResult(f"Training complete: {offer.get('name') or offer.get('id')}. Remaining points: {state.get('attribute_points', 0)}. New value recorded.")
-        return CommandResult("That lesson is not available here. Use TRAIN to see options.", ok=False)
+        import time
+        t0 = time.monotonic()
+        rt = getattr(self, "runtime", None)
+        ps = rt._progression_service() if rt and hasattr(rt, "_progression_service") else self._training_service(character).progression
+        cmd = (raw.split() or ["train"])[0].lower()
+        if cmd == "tr": cmd = "train"
+        if cmd in {"prac", "pr"}: cmd = "practice"
+        actor_id = str(getattr(character, "id", "self"))
+        room_id = str(getattr(character, "room_id", ""))
+        world_id = getattr(character, "world_id", "") or getattr(rt, "active_world_id", "") or "shattered_realms"
+        root = Path("worlds") / world_id
+        trainers = []
+        try:
+            data = json.loads((root/"trainer_definitions"/"trainer_definitions.json").read_text(encoding="utf-8"))
+            trainers = [t for t in data.get("trainer_definitions", data if isinstance(data, list) else []) if room_id in (t.get("room_ids") or []) and t.get("enabled", True)]
+        except Exception:
+            trainers = []
+        def at_trainer() -> bool:
+            return bool(trainers) or "guild" in room_id or "training" in room_id or "practice" in room_id
+        state = ps.initialize_actor_progression(character)
+        def done(text: str, ok: bool = True) -> CommandResult:
+            if rt: rt.performance_counters["train_command_duration_ms" if cmd in {"train","buytrain"} else "practice_command_duration_ms"] = int((time.monotonic()-t0)*1000)
+            return CommandResult(text, ok=ok)
+        if cmd in {"buypractice", "buyprac", "buytrain"}:
+            if not at_trainer(): return done("You need to be at your guild or trainer for that.", False)
+            cur = "practice_sessions" if cmd != "buytrain" else "training_sessions"
+            new = ps.grant_currency(actor_id, cur, 1, "glory_purchase", "guild_trainer", "Adventurer's Lair guild purchase")
+            return done(f"You buy one {'practice' if cur.startswith('practice') else 'training'} session. You now have {new}.")
+        if cmd == "train":
+            if not at_trainer(): return done("You need to be at your guild or trainer to train.", False)
+            stats = {"str":"strength","dex":"dexterity","con":"constitution","int":"intelligence","wis":"wisdom","cha":"charisma"}
+            aliases = {**stats, "strength":"strength","dexterity":"dexterity","constitution":"constitution","intelligence":"intelligence","wisdom":"wisdom","charisma":"charisma"}
+            query = " ".join(args).lower().strip()
+            if not query:
+                lines=[f"You have {state.get('training_sessions',0)} training sessions available.","","Base stats"]
+                for short, full in stats.items():
+                    val = int(getattr(character, full, getattr(character, short, 10)) or 10)
+                    lines.append(f"{short.capitalize()} {val}/20" + (" [MAX]" if val >= 20 else ""))
+                lines += ["", "Train str dex con int wis cha (cost 1, cap 20)", "Train hit mana move (cost 10)"]
+                return done("\n".join(lines))
+            if query in aliases:
+                if int(state.get("training_sessions",0) or 0) < 1: return done("You do not have enough training sessions.", False)
+                attr = aliases[query]; old = int(getattr(character, attr, 10) or 10)
+                if old >= 20: return done(f"Your {attr} is already at the training cap.", False)
+                setattr(character, attr, old+1); ps.spend_currency(actor_id, "training_sessions", 1, f"train {attr}")
+                if rt: rt.mark_character_dirty(actor_id, "training")
+                return done(f"You train your {attr}. {attr.capitalize()}: {old} -> {old+1}\nTraining sessions remaining: {int(state.get('training_sessions',0))-1}")
+            resmap = {"hit":"max_hp","hp":"max_hp","mana":"max_mana","move":"max_stamina"}
+            if query in resmap:
+                if int(state.get("training_sessions",0) or 0) < 10: return done("You need ten training sessions for that.", False)
+                field = resmap[query]; old = int(getattr(character, field, 0) or 0); setattr(character, field, old+10)
+                ps.spend_currency(actor_id, "training_sessions", 10, f"train {query}")
+                if rt: rt.mark_character_dirty(actor_id, "training")
+                label = "Move" if query == "move" else ("Hit points" if query in {"hit","hp"} else "Mana")
+                return done(f"{label}: {old} -> {old+10}\nTraining sessions remaining: {int(state.get('training_sessions',0))-10}")
+            return done("Train what? Try TRAIN STR, DEX, CON, INT, WIS, CHA, HIT, MANA, or MOVE.", False)
+        # practice
+        abilities=[]
+        with ps.store.connect() as con:
+            con.row_factory = __import__("sqlite3").Row
+            abilities=[dict(r) for r in con.execute("SELECT * FROM actor_ability_progression WHERE actor_id=? AND active=1 ORDER BY ability_id",(actor_id,))]
+        if not args:
+            lines=[f"You have {state.get('practice_sessions',0)} practice sessions remaining.","","You know:"]
+            if not abilities: lines.append("  No practiced abilities yet.")
+            for a in abilities:
+                prof=int(a.get("proficiency") or 1); desc="awful" if prof<20 else "poor" if prof<40 else "fair" if prof<60 else "good" if prof<80 else "superb"
+                lines.append(f"  {str(a.get('ability_id')).replace('_',' ').title():24s} {prof:3d}% ({desc})")
+            return done("\n".join(lines))
+        if not at_trainer(): return done("You need to be at your guild or trainer to practice.", False)
+        query=" ".join(args).lower().strip()
+        matches=[a for a in abilities if query in str(a.get("ability_id","")).replace("_"," ").lower()]
+        if not matches: return done("You do not know of that ability.", False)
+        if len(matches)>1: return done("Which ability do you mean? " + ", ".join(a["ability_id"].replace("_"," ") for a in matches), False)
+        a=matches[0]; prof=int(a.get("proficiency") or 1); cap=min(100, int(a.get("maximum_rank") or 100))
+        if prof >= cap: return done("You are already learned in that area.", False)
+        if int(state.get("practice_sessions",0) or 0) < 1: return done("You do not have enough practice sessions.", False)
+        gain=max(1, 5 + (int(getattr(character, "intelligence", 10) or 10)-10)//2); new=min(cap, prof+gain)
+        with ps.store.connect() as con: con.execute("UPDATE actor_ability_progression SET proficiency=? WHERE actor_id=? AND ability_id=?", (new, actor_id, a["ability_id"]))
+        ps.spend_currency(actor_id, "practice_sessions", 1, f"practice {a['ability_id']}")
+        if rt: rt.mark_character_dirty(actor_id, "practice")
+        return done(f"You practice {a['ability_id'].replace('_',' ')}.\nYou are now {new}% learned. Practice sessions remaining: {int(state.get('practice_sessions',0))-1}")
 
     def _gathering_service(self, character: Any):
         from engine.gathering import GatheringService

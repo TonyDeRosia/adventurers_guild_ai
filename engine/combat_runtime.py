@@ -7,7 +7,7 @@ The legacy `rules.combat` module is not imported here and is compatibility-only.
 """
 from __future__ import annotations
 
-import hashlib, json, sqlite3, uuid
+import hashlib, json, sqlite3, uuid, time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -335,7 +335,7 @@ class CombatRuntimeResult:
     encounter_id: str = ""
 
 class CombatRuntimeService:
-    ROUND_DELAY = 1
+    ROUND_DELAY = 2.0
     MAX_ACTIONS_PER_PULSE = 8
     def __init__(self, runtime: Any):
         self.runtime = runtime; self.db_path = runtime.state_store.db_path; self.event_bus = runtime.event_bus
@@ -349,6 +349,7 @@ class CombatRuntimeService:
         self.engine.runtime = runtime
         self.engine.resolution.runtime = runtime
         self.lifecycle = RuntimeLifecycleService(self)
+        self._real_start = time.monotonic()
         self.completed_actions: dict[str, Any] = {}
         if not (self.engine.combat_stats is runtime.combat_stat_service and self.engine.resolution.combat_stats is runtime.combat_stat_service and self.engine.resolution.runtime is runtime):
             raise RuntimeError('Combat runtime invariant failed: canonical combat services are not wired to MudRuntime')
@@ -360,8 +361,7 @@ class CombatRuntimeService:
             self.engine.combat_stats = self.runtime.combat_stat_service; self.engine.resolution.combat_stats = self.runtime.combat_stat_service; self.engine.runtime = self.runtime; self.engine.resolution.runtime = self.runtime
 
     def world_time(self) -> int:
-        wt = self.runtime.get_world_time(self.runtime.active_world_id or '')
-        return int(wt.get('total_minutes') or (int(wt.get('day', 1))*1440 + int(wt.get('hour', 0))*60 + int(wt.get('minute', 0))))
+        return int((time.monotonic() - getattr(self, "_real_start", time.monotonic())) * 1000)
 
     def _publish(self, name: str, payload: dict[str, Any]) -> None:
         if self.event_bus: self.event_bus.publish(name, payload, source_system='combat_runtime', world_id=payload.get('world_id') or self.runtime.active_world_id or '')
@@ -390,9 +390,11 @@ class CombatRuntimeService:
 
     def persist_actor(self, actor: Actor) -> None:
         if actor.actor_id.startswith('character:'):
-            cid=actor.actor_id.split(':',1)[1]; ch=self.runtime.state_store.load_character(cid)
+            cid=actor.actor_id.split(':',1)[1]; ch=getattr(self.runtime, "active_characters", {}).get(cid)
             if ch:
-                ch.hp=actor.resources.health; ch.max_hp=actor.resources.maximum_health; ch.mana=actor.resources.mana; ch.max_mana=actor.resources.maximum_mana; ch.stamina=actor.resources.stamina; ch.max_stamina=actor.resources.maximum_stamina; ch.actor_data=actor.to_dict(); self.runtime.state_store.save_character(ch,self.runtime.active_world_id or '')
+                ch.hp=actor.resources.health; ch.max_hp=actor.resources.maximum_health; ch.mana=actor.resources.mana; ch.max_mana=actor.resources.maximum_mana; ch.stamina=actor.resources.stamina; ch.max_stamina=actor.resources.maximum_stamina; ch.actor_data=actor.to_dict()
+                if hasattr(self.runtime, "mark_character_dirty"):
+                    self.runtime.mark_character_dirty(cid, "combat")
         elif actor.actor_id.startswith('entity:'):
             eid=actor.actor_id.split(':',1)[1]; ent=self.runtime.find_entity(eid)
             if ent:
@@ -421,11 +423,7 @@ class CombatRuntimeService:
 
     def active_character_ids_in_room(self, room_id: str) -> list[str]:
         ids=[]
-        for session in getattr(self.runtime, "sessions", {}).values():
-            if getattr(session, "state", "playing") == "disconnected":
-                continue
-            cid=getattr(session, "character_id", "")
-            ch=self.runtime.state_store.load_character(cid) if cid else None
+        for cid, ch in getattr(self.runtime, "active_characters", {}).items():
             if ch and ch.room_id == room_id and cid not in ids:
                 ids.append(cid)
         return ids
@@ -433,6 +431,7 @@ class CombatRuntimeService:
     def enqueue_output(self, character_id: str, message: str, *, encounter_id: str = "", room_id: str = "", category: str = "combat") -> None:
         if not character_id or not str(message or "").strip():
             return
+        self.runtime.performance_counters["combat_messages_queued"] = self.runtime.performance_counters.get("combat_messages_queued", 0) + 1
         with sqlite3.connect(self.db_path) as con:
             con.execute("INSERT INTO combat_outbound_messages(world_id,room_id,character_id,encounter_id,category,message,created_world_time,created_at,delivered) VALUES(?,?,?,?,?,?,?,?,0)", (self.runtime.active_world_id or "", room_id, character_id, encounter_id, category, str(message).strip(), self.world_time(), datetime.now(timezone.utc).isoformat()))
 
@@ -445,6 +444,7 @@ class CombatRuntimeService:
                 con.executemany("UPDATE combat_outbound_messages SET claim_token=?,claimed_at=?,delivered=1 WHERE message_id=? AND character_id=? AND delivered=0", [(token,now,i,character_id) for i in ids])
             rows=con.execute("SELECT message FROM combat_outbound_messages WHERE character_id=? AND claim_token=? ORDER BY message_id", (character_id, token)).fetchall()
             con.commit()
+        self.runtime.performance_counters["combat_messages_delivered"] = self.runtime.performance_counters.get("combat_messages_delivered", 0) + len(rows)
         return [r[0] for r in rows]
 
     def _deliver_combat_messages(self, eid: str, attacker: Actor, defender: Actor, result: Any, category: str = "attack_hit", skip_attacker: bool = False) -> None:
@@ -603,7 +603,7 @@ class CombatRuntimeService:
 
     def start_encounter(self, room_id: str) -> str:
         eid='enc_'+uuid.uuid4().hex; now=datetime.now(timezone.utc).isoformat(); wt=self.world_time()
-        with sqlite3.connect(self.db_path) as con: con.execute("INSERT INTO combat_encounters VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(eid,self.runtime.active_world_id or '',room_id,'active',wt,0,wt+self.ROUND_DELAY,now,now,None,None,'{}'))
+        with sqlite3.connect(self.db_path) as con: con.execute("INSERT INTO combat_encounters VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(eid,self.runtime.active_world_id or '',room_id,'active',wt,0,wt+int(self.ROUND_DELAY*1000),now,now,None,None,'{}'))
         self._publish('combat_encounter_started', {'encounter_id':eid,'world_id':self.runtime.active_world_id or '', 'room_id':room_id,'round':0,'world_time':wt}); return eid
 
     def join_encounter(self,eid:str,actor:Actor,side:str)->None:
@@ -624,7 +624,8 @@ class CombatRuntimeService:
 
     def _load_actor(self, actor_id:str)->Actor|None:
         if actor_id.startswith('character:'):
-            ch=self.runtime.state_store.load_character(actor_id.split(':',1)[1]);
+            cid=actor_id.split(':',1)[1]
+            ch=getattr(self.runtime, "active_characters", {}).get(cid) or self.runtime._resident_character(cid)
             if not ch: return None
             a=actor_from_runtime_character(ch,self.runtime.active_world_id or ''); a.actor_id=actor_id; return a
         ent=self.runtime.find_entity(actor_id.split(':',1)[1]) if actor_id.startswith('entity:') else None
@@ -688,8 +689,8 @@ class CombatRuntimeService:
                 pass
         with sqlite3.connect(self.db_path) as con:
             con.execute("INSERT INTO combat_round_history VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",('hist_'+uuid.uuid4().hex,eid,self._round(eid),attacker.actor_id,defender.actor_id,request.attack_kind,request.ability_id,outcome,dmg,0,json.dumps({'action_id':request.action_id,'hit':res.hit,'damage':dmg,'trace':res.trace,'messages':res.messages,'source_type':request.source_type,'source_id':request.source_id,'attack_kind':request.attack_kind,'lifecycle_result':getattr(self,'last_resolution',{}).get('lifecycle_result')}),wt,datetime.now(timezone.utc).isoformat()))
-            con.execute("UPDATE combat_participants SET last_action_round=?,next_action_world_time=?,contribution_damage=contribution_damage+? WHERE encounter_id=? AND actor_id=?",(self._round(eid),wt+max(1,self.engine.attack_profile(attacker).speed),dmg,eid,attacker.actor_id))
-            con.execute("UPDATE combat_encounters SET next_round_world_time=?,updated_at=? WHERE encounter_id=?",(wt+self.ROUND_DELAY,datetime.now(timezone.utc).isoformat(),eid))
+            con.execute("UPDATE combat_participants SET last_action_round=?,next_action_world_time=?,contribution_damage=contribution_damage+? WHERE encounter_id=? AND actor_id=?",(self._round(eid),wt+max(1,int(self.engine.attack_profile(attacker).speed*1000)),dmg,eid,attacker.actor_id))
+            con.execute("UPDATE combat_encounters SET next_round_world_time=?,updated_at=? WHERE encounter_id=?",(wt+int(self.ROUND_DELAY*1000),datetime.now(timezone.utc).isoformat(),eid))
         self._publish('combat_attack_resolved',{'encounter_id':eid,'actor_id':attacker.actor_id,'target_actor_id':defender.actor_id,'result':outcome,'damage':dmg,'round':self._round(eid),'world_time':wt})
         if dmg: self._publish('combat_damage_applied',{'encounter_id':eid,'actor_id':attacker.actor_id,'target_actor_id':defender.actor_id,'damage':dmg,'round':self._round(eid),'world_time':wt})
         self._publish('combat_action_completed',{'encounter_id':eid,'actor_id':attacker.actor_id,'target_actor_id':defender.actor_id,'result':outcome,'world_time':wt})
@@ -758,9 +759,10 @@ class CombatRuntimeService:
         return out
 
     def process_encounter_round(self,eid:str,wt:int|None=None)->list[str]:
+        started = time.monotonic()
         wt=self.world_time() if wt is None else wt; rnd=self._round(eid)+1
         with sqlite3.connect(self.db_path) as con:
-            con.execute('UPDATE combat_encounters SET current_round=?,next_round_world_time=?,updated_at=? WHERE encounter_id=?',(rnd,wt+self.ROUND_DELAY,datetime.now(timezone.utc).isoformat(),eid))
+            con.execute('UPDATE combat_encounters SET current_round=?,next_round_world_time=?,updated_at=? WHERE encounter_id=?',(rnd,wt+int(self.ROUND_DELAY*1000),datetime.now(timezone.utc).isoformat(),eid))
             rows=con.execute("SELECT actor_id,current_target_actor_id,initiative_value,next_action_world_time FROM combat_participants WHERE encounter_id=? AND participation_status='active' AND defeated=0 AND fled=0 ORDER BY initiative_value DESC, actor_id",(eid,)).fetchall()
         self._publish('combat_round_started',{'encounter_id':eid,'round':rnd,'world_time':wt,'world_id':self.runtime.active_world_id or ''})
         msgs=[]
@@ -772,13 +774,15 @@ class CombatRuntimeService:
             atype=(act or {}).get('action_type') or 'basic_attack'
             if atype == 'defend':
                 self._start_defense(eid, a); msgs.append('You raise your guard and prepare for the next attack.' if aid.startswith('character:') else f'{a.identity.name} raises a guard.')
-                with sqlite3.connect(self.db_path) as con: con.execute("UPDATE combat_participants SET last_action_round=?,next_action_world_time=? WHERE encounter_id=? AND actor_id=?",(rnd,wt+1,eid,aid))
+                with sqlite3.connect(self.db_path) as con: con.execute("UPDATE combat_participants SET last_action_round=?,next_action_world_time=? WHERE encounter_id=? AND actor_id=?",(rnd,wt+1000,eid,aid))
             elif atype == 'flee':
                 pass
             elif atype == 'ability' and (act or {}).get('ability_id'):
                 rr=self._execute_ability(eid,a,d,act); msgs += rr.messages
             else:
                 rr=self._execute_attack(eid,a,d); msgs += rr.messages
+        self.runtime.performance_counters["combat_rounds_processed"] = self.runtime.performance_counters.get("combat_rounds_processed", 0) + 1
+        self.runtime.performance_counters["combat_round_duration_ms"] = int((time.monotonic() - started) * 1000)
         self.end_if_finished(eid); return msgs
 
     def _broadcast_room(self, eid: str, room_id: str, message: str, *, category: str = 'combat') -> None:
@@ -817,7 +821,7 @@ class CombatRuntimeService:
         attacker_msg = f"You strike {defender.identity.name} with a killing blow!"
         if attacker.actor_id.startswith('character:'):
             self.enqueue_output(attacker.actor_id.split(':',1)[1], "Your opponent is dead. Combat ends.", encounter_id=eid, room_id=room_id, category='combat_end')
-        room_text = self.runtime._room_text(self.runtime._current_room(self.runtime.state_store.load_character(attacker.actor_id.split(':',1)[1]))) if attacker.actor_id.startswith('character:') else ''
+        room_text = self.runtime._room_text(self.runtime._current_room(getattr(self.runtime, 'active_characters', {}).get(attacker.actor_id.split(':',1)[1]))) if attacker.actor_id.startswith('character:') else ''
         if room_text and attacker.actor_id.startswith('character:'):
             self.enqueue_output(attacker.actor_id.split(':',1)[1], room_text, encounter_id=eid, room_id=room_id, category='room_refresh')
         self._publish('room_refresh_requested', {'room_id':room_id,'world_id':self.runtime.active_world_id or '', 'reason':'actor_died','corpse_entity_id':corpse.get('entity_id','')})
