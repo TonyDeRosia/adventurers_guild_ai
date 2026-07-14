@@ -631,6 +631,13 @@ class MudRuntime:
         self.item_templates: dict[str, MappingProxyType] = {}
         self.entity_templates: dict[str, MappingProxyType] = {}
         self.sessions: dict[str, MudSession] = {}
+        self.active_characters: dict[str, MudCharacter] = {}
+        self.session_active_character: dict[str, str] = {}
+        self.character_session_ids: dict[str, str] = {}
+        self.performance_counters = {k: 0 for k in ["play_view_requests","async_message_requests","character_sql_loads","character_sql_saves","world_package_loads","room_renders","prompt_renders","display_snapshot_builds","commands_processed","messages_delivered","overlapping_requests_prevented"]}
+        self._async_sequences: dict[str, int] = {}
+        self._async_messages: dict[str, list[dict[str, Any]]] = {}
+        self._play_view_inflight: set[str] = set()
         self.command_engine = MudCommandEngine(self.state_store, event_bus=self.event_bus)
         self.actor_registry = ActorRegistry()
         self.abilities = None
@@ -861,6 +868,7 @@ class MudRuntime:
 
     def load_world(self, world_id: str) -> Any:
         """Load a read-only world template package for gameplay."""
+        self.performance_counters["world_package_loads"] += 1
         self.active_world = self.world_registry.load_world(world_id)
         self.plugin_registry.resolve_required([str(p) for p in self.active_world.manifest.get("required_plugins", [])])
         self.event_bus.publish("plugins_resolved", {"world_id": world_id}, source_system="plugin", world_id=world_id)
@@ -983,7 +991,7 @@ class MudRuntime:
                     raise PermissionError("Character does not belong to this account.")
                 if row and not row[0]:
                     conn.execute("UPDATE characters SET account_id=? WHERE id=?", (account_id, character_id))
-        char = self.state_store.load_character(character_id)
+        char = self._resident_character(character_id)
         if char is None:
             raise ValueError(f"Character not found: {character_id}")
         if not self.active_world_id:
@@ -996,6 +1004,11 @@ class MudRuntime:
             self.runtime_resources.hydrate_character(char)
         self._ensure_starter_progression(char)
         self.register_live_character(char)
+        self.active_characters[character_id] = char
+        if session_id:
+            self.session_active_character[session_id] = character_id
+            self.character_session_ids[character_id] = session_id
+        self.performance_counters["character_sql_saves"] += 1
         self.state_store.save_character(char, self.active_world_id or "")
         self.hooks.emit("player_login", world_id=self.active_world_id or "", character=char)
         self.event_bus.publish("character_loaded", {"character_id": char.id, "character_name": char.name}, source_system="runtime", world_id=self.active_world_id or "", character_id=char.id)
@@ -1012,28 +1025,64 @@ class MudRuntime:
             conn.execute("UPDATE characters SET last_played_at=CURRENT_TIMESTAMP WHERE id=?", (character_id,))
         self.event_bus.publish("character_selected", {"account_id": account_id, "character_id": char.id, "session_id": session_id}, source_system="runtime", account_id=account_id, world_id=self.active_world_id or "", character_id=char.id, session_id=session_id)
         self.event_bus.publish("character_entered_world", {"account_id": account_id, "character_id": char.id, "character_name": char.name, "room_id": char.room_id, "session_id": session_id}, source_system="runtime", account_id=account_id, world_id=self.active_world_id or "", character_id=char.id, session_id=session_id)
-        return {"ok": True, "character": self._character_payload(char, self.active_world_id or ""), "view": self.play_view(character_id)}
+        return {"ok": True, "character": self._character_payload(char, self.active_world_id or ""), "view": self.play_view(character_id), "async_cursor": self._async_sequences.get(character_id, 0)}
+
+    def _resident_character(self, character_id: str) -> MudCharacter | None:
+        if not character_id:
+            return None
+        char = self.active_characters.get(character_id)
+        if char is not None:
+            return char
+        self.performance_counters["character_sql_loads"] += 1
+        char = self.state_store.load_character(character_id)
+        if char is not None:
+            self.active_characters[character_id] = char
+            self.register_live_character(char)
+        return char
+
+    def prompt_snapshot(self, character_id: str) -> dict[str, Any]:
+        char = self._resident_character(character_id)
+        if char is None:
+            return {"prompt_html": "", "prompt_text": ""}
+        colors = self.get_effective_mud_colors()
+        self.performance_counters["prompt_renders"] += 1
+        prompt = render_prompt(char, colors)
+        return {"prompt_html": prompt, "prompt_text": render_semantic_plain(prompt)}
 
     def play_view(self, character_id: str) -> dict[str, Any]:
-        """Render the current room through the single MUD display pipeline."""
-        char = self.state_store.load_character(character_id) if character_id else None
-        if char is None:
-            return {"html": "", "text": "Create a character to enter the world.", "prompt": ">"}
-        if getattr(self, "runtime_resources", None):
-            self.runtime_resources.hydrate_character(char)
-        room = self._current_room(char)
-        colors = self.get_effective_mud_colors()
-        html = render_room(room, colors, char)
-        self.event_bus.publish("room_rendered", {"world_id": self.active_world_id or "", "character_id": char.id, "room_id": char.room_id, "output_format": "web_html", "render_kind": "room"}, source_system="render", world_id=self.active_world_id or "", character_id=char.id)
-        prompt = render_prompt(char, colors)
-        self.event_bus.publish("prompt_rendered", {"world_id": self.active_world_id or "", "character_id": char.id, "room_id": char.room_id, "output_format": "web_html", "render_kind": "prompt"}, source_system="render", world_id=self.active_world_id or "", character_id=char.id)
-        async_messages = self.drain_session_output(character_id)
-        text = self._room_text(room)
-        if async_messages:
-            from engine.mud_displays import semantic_html
-            html = semantic_html('\n'.join(f'{{combat}}{m}{{/combat}}' for m in async_messages)) + '\n' + html
-            text = '\n'.join(async_messages) + '\n' + text
-        return {"html": html, "text": text, "prompt": prompt, "room_id": char.room_id, "async_messages": async_messages}
+        """Render the current room using the resident active character when available."""
+        self.performance_counters["play_view_requests"] += 1
+        if character_id in self._play_view_inflight:
+            self.performance_counters["overlapping_requests_prevented"] += 1
+            return {"html": "", "text": "", "prompt": "", "room_id": "", "async_messages": [], "not_modified": True}
+        self._play_view_inflight.add(character_id)
+        try:
+            char = self._resident_character(character_id)
+            if char is None:
+                return {"html": "", "text": "Create a character to enter the world.", "prompt": ">"}
+            room = self._current_room(char)
+            colors = self.get_effective_mud_colors()
+            self.performance_counters["room_renders"] += 1
+            html = render_room(room, colors, char)
+            self.event_bus.publish("room_rendered", {"world_id": self.active_world_id or "", "character_id": char.id, "room_id": char.room_id, "output_format": "web_html", "render_kind": "room"}, source_system="render", world_id=self.active_world_id or "", character_id=char.id)
+            self.performance_counters["prompt_renders"] += 1
+            prompt = render_prompt(char, colors)
+            self.event_bus.publish("prompt_rendered", {"world_id": self.active_world_id or "", "character_id": char.id, "room_id": char.room_id, "output_format": "web_html", "render_kind": "prompt"}, source_system="render", world_id=self.active_world_id or "", character_id=char.id)
+            return {"html": html, "text": self._room_text(room), "prompt": prompt, "room_id": char.room_id, "async_messages": [], "async_cursor": self._async_sequences.get(character_id, 0)}
+        finally:
+            self._play_view_inflight.discard(character_id)
+
+    def async_messages(self, character_id: str, after: int = 0, session_id: str = "") -> dict[str, Any]:
+        self.performance_counters["async_message_requests"] += 1
+        messages = self.drain_session_output(character_id)
+        for text in messages:
+            seq = self._async_sequences.get(character_id, 0) + 1
+            self._async_sequences[character_id] = seq
+            char = self.active_characters.get(character_id)
+            self._async_messages.setdefault(character_id, []).append({"message_id": seq, "session_id": session_id or self.character_session_ids.get(character_id, ""), "character_id": character_id, "world_id": self.active_world_id or "", "event_type": "async_output", "output_text": text, "output_html": "", "prompt_invalidated": True, "room_invalidated": False, "session_state": "playing", "created_at": datetime.now(timezone.utc).isoformat()})
+        new = [m for m in self._async_messages.get(character_id, []) if int(m.get("message_id") or 0) > int(after or 0)]
+        self.performance_counters["messages_delivered"] += len(new)
+        return {"ok": True, "messages": new, "cursor": self._async_sequences.get(character_id, 0), **self.prompt_snapshot(character_id)}
 
 
     def _builder_visible(self, char: MudCharacter) -> bool:
@@ -1240,13 +1289,14 @@ class MudRuntime:
     def handle_input(self, character_id: str, command: str) -> dict[str, Any]:
         """Execute a command and persist command/output scrollback to SQLite."""
         self.process_due_entity_respawns()
-        char = self.state_store.load_character(character_id)
+        char = self._resident_character(character_id)
         if char is None:
             raise ValueError(f"Character not found: {character_id}")
         if getattr(self, "runtime_resources", None):
             self.runtime_resources.world_id = self.active_world_id or self.runtime_resources.world_id
             self.runtime_resources.hydrate_character(char)
         self.register_live_character(char)
+        self.active_characters[character_id] = char
         if getattr(char, "builder_desc_editor_room_id", ""):
             from engine.mud_commands import CommandResult
             line = command.rstrip("\n")
@@ -1269,7 +1319,10 @@ class MudRuntime:
                 result = CommandResult("No active editor session.", ok=False)
             else:
                 result = self._handle_runtime_command(char, command)
-        self.state_store.save_character(char, self.active_world_id or "")
+        read_only_command = command.strip().lower().split()[0] if command.strip() else ""
+        if read_only_command not in {"look", "l", "score", "inventory", "inv", "i", "equipment", "eq"}:
+            self.performance_counters["character_sql_saves"] += 1
+            self.state_store.save_character(char, self.active_world_id or "")
         session = self.sessions.get(character_id)
         turn = (session.command_count + 1) if session else 1
         self.state_store.save_command(character_id, self.active_world_id or "", turn, command, session.account_id if session else "", session.session_id if session else "")
@@ -1285,8 +1338,15 @@ class MudRuntime:
             result.narrative = (result.narrative + '\n' if result.narrative else '') + '\n'.join(async_messages)
             self.state_store.save_scrollback(character_id, self.active_world_id or '', turn, '\n'.join(async_messages))
         updates = result.state_updates or {}
-        view = self.play_view(character_id)
+        self.performance_counters["commands_processed"] += 1
+        view = self.play_view(character_id) if updates.get("render_room") or (command.strip().lower().split()[0] if command.strip() else "") in {"look","l","north","n","south","s","east","e","west","w","up","u","down","d","in","out"} else {**self.prompt_snapshot(character_id), "html": "", "text": "", "room_id": getattr(char, "room_id", "")}
         if updates.get("session_transition") == "character_select":
+            self.performance_counters["character_sql_saves"] += 1
+            self.state_store.save_character(char, self.active_world_id or "")
+            sid = self.character_session_ids.pop(character_id, "")
+            if sid: self.session_active_character.pop(sid, None)
+            self.active_characters.pop(character_id, None)
+            self.unregister_live_character(character_id)
             view = {"html": "", "text": result.narrative, "prompt": ">"}
         return {"ok": result.ok, "output": render_semantic_plain(result.narrative), "semantic_output": result.narrative, "state_updates": updates, "view": view}
 
@@ -1636,7 +1696,7 @@ class MudRuntime:
             self.deliver_room_action(old_room, f"{char.name} leaves {direction}.", actor_id=char.id, category="actor_departed")
             self.deliver_room_action(char.room_id, f"{char.name} arrives from the {reverse}.", actor_id=char.id, category="actor_arrived")
             self.event_bus.publish("movement_succeeded", {"canonical_command": direction, "character_id": char.id, "character_name": char.name, "current_room_id": room_id, "target_room_id": char.room_id, "result_summary": "moved"}, source_system="movement", world_id=self.active_world_id or "", character_id=char.id, command=direction)
-            return CommandResult(narrative=f"You travel {direction}.", state_updates={"render_room": True}, display_intent="MOVEMENT", semantic_role="success")
+            return CommandResult(narrative=f"You head {direction}.", state_updates={"render_room": True}, display_intent="MOVEMENT", semantic_role="success")
         summary = reason if exit_data else "no_exit"
         if exit_data:
             self.event_bus.publish("builder_exit_graph_mismatch_detected", {"character_id": char.id, "room_id": room_id, "direction": direction, "reason": summary}, source_system="builder", world_id=self.active_world_id or "", character_id=char.id, room_id=room_id)
