@@ -314,6 +314,8 @@ class MudCommandEngine:
             "abilitycooldowns": self._cmd_abilitycooldowns,
             "abilitycasts": self._cmd_abilitycasts,
             "affects": self._cmd_affects,
+
+            "resetlist": self._cmd_builder_reset, "resetstat": self._cmd_builder_reset, "resetcreate": self._cmd_builder_reset, "resetclone": self._cmd_builder_reset, "resetset": self._cmd_builder_reset, "resetdelete": self._cmd_builder_reset, "resetcommand": self._cmd_builder_reset, "resetvalidate": self._cmd_builder_reset, "resetpreview": self._cmd_builder_reset, "resetrun": self._cmd_builder_reset, "resethistory": self._cmd_builder_reset, "resettrace": self._cmd_builder_reset, "zreset": self._cmd_builder_reset, "zresetstat": self._cmd_builder_reset, "zresetpreview": self._cmd_builder_reset, "zresetrun": self._cmd_builder_reset,
             "who": self._cmd_who,
             "whoami": self._cmd_whoami,
             "save": self._cmd_save,
@@ -3051,6 +3053,103 @@ class MudCommandEngine:
             detail='\n'.join('- '+(e.line() if hasattr(e,'line') else str(e)) for e in errs) or res.get('message','publish failed')
             return CommandResult('Builder stats publish failed. Published files unchanged or rolled back.\n'+detail, ok=False)
         m=res['manifest']; return CommandResult(f"Builder stats publish completed. publish_id={m['publish_id']} published=true active_runtime={m['active_runtime']} restart_required={m['restart_required']}\nChanged documents: "+', '.join(res.get('changed') or []))
+
+
+    def _reset_service(self, character: Any):
+        from engine.zone_resets import ZoneResetService
+        runtime = getattr(self, "runtime", None)
+        db_path = getattr(getattr(runtime, "state_store", None), "db_path", None) or getattr(getattr(self, "state_store", None), "db_path", ":memory:")
+        return ZoneResetService(runtime=runtime, db_path=db_path, event_bus=getattr(self, "event_bus", None))
+
+    def _cmd_builder_reset(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if self._effective_role(character) not in {"builder", "admin", "owner"}:
+            return CommandResult("You do not have permission for that command.", ok=False)
+        import json, uuid
+        from pathlib import Path
+        cmd = raw.strip().split()[0].lower() if raw.strip() else "resetlist"
+        world_id = self.builder.world_id(character)
+        root = self.builder.ensure(world_id)
+        path = root / "resets.json"
+        def load():
+            try: return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+            except Exception: return {}
+        def save(d):
+            path.write_text(json.dumps(d, indent=2, sort_keys=True)+"\n", encoding="utf-8")
+        svc = self._reset_service(character)
+        data = load()
+        profiles = [svc.normalize_profile(v, world_id) for v in data.values()]
+        action = {"zreset":"resetlist","zresetstat":"resetstat","zresetpreview":"resetpreview","zresetrun":"resetrun"}.get(cmd, cmd)
+        if action == "resetlist":
+            lines=["Reset profiles"]
+            for p in profiles:
+                if args and args[0].startswith("zone=") and p.get("zone_id") != args[0].split("=",1)[1]: continue
+                lines.append(f"- {p['reset_profile_id']} zone={p.get('zone_id')} enabled={p.get('enabled')} mode={p.get('reset_mode')} commands={len(p.get('commands') or [])}")
+            return CommandResult("\n".join(lines if len(lines)>1 else ["No reset profiles."]))
+        if action == "resetcreate":
+            if len(args)<2: return CommandResult("Usage: resetcreate <profile_id> <zone_id> [display name]", ok=False)
+            pid, zid = args[0], args[1]
+            if pid in data: return CommandResult("Reset profile already exists.", ok=False)
+            prof={"reset_profile_id":pid,"world_id":world_id,"zone_id":zid,"display_name":" ".join(args[2:]) or pid.replace('_',' ').title(),"enabled":True,"reset_mode":"manual_only","reset_interval_seconds":None,"priority":100,"definition_version":"1","commands":[],"metadata":{"builder_draft":True}}
+            data[pid]=prof; save(data); self.builder.audit(character, world_id, "resetcreate", "reset", pid, None, prof); return CommandResult(f"Draft reset profile {pid} created for zone {zid}.")
+        if action == "resetclone":
+            if len(args)<2: return CommandResult("Usage: resetclone <source_profile_id> <new_profile_id>", ok=False)
+            if args[0] not in data: return CommandResult("Source reset profile not found.", ok=False)
+            if args[1] in data: return CommandResult("Target reset profile already exists.", ok=False)
+            prof=json.loads(json.dumps(data[args[0]])); prof["reset_profile_id"]=args[1]; prof["display_name"]=prof.get("display_name",args[0])+" clone"
+            for c in prof.get("commands",[]): c["reset_command_id"] = "rcmd_"+uuid.uuid4().hex[:8]
+            data[args[1]]=prof; save(data); return CommandResult(f"Draft reset profile {args[1]} cloned from {args[0]}.")
+        pid = args[0] if args else ""
+        prof = data.get(pid)
+        if action in {"resetstat","resetset","resetdelete","resetcommand","resetvalidate","resetpreview","resetrun"} and not prof:
+            return CommandResult(f"Reset profile not found: {pid}", ok=False)
+        if action == "resetstat":
+            v=svc.validate_profile(prof); lines=[f"Profile: {pid}",f"Display: {prof.get('display_name')}",f"World: {prof.get('world_id')}",f"Zone: {prof.get('zone_id')}",f"Enabled: {prof.get('enabled')}",f"Mode: {prof.get('reset_mode')}",f"Interval: {prof.get('reset_interval_seconds')}",f"Priority: {prof.get('priority')}",f"Definition version: {prof.get('definition_version')}",f"Command count: {len(prof.get('commands') or [])}",f"Validation: {'ok' if v.ok else 'failed'}"]
+            lines += [f"- {c.get('order',0)} {c.get('reset_command_id')} {c.get('command_type')} enabled={c.get('enabled',True)}" for c in sorted(prof.get('commands') or [], key=lambda x:int(x.get('order',0)))]
+            return CommandResult("\n".join(lines), ok=v.ok)
+        if action == "resetset":
+            if len(args)<3: return CommandResult("Usage: resetset <profile_id> <field> <value>", ok=False)
+            field,val=args[1]," ".join(args[2:]); allowed={"display_name","enabled","reset_mode","reset_interval_seconds","priority","definition_version","maximum_actions_per_run","maximum_entities_created_per_run","maximum_items_created_per_run","maximum_execution_seconds"}
+            if field not in allowed: return CommandResult("Unknown reset field.", ok=False)
+            if field=="enabled": val=val.lower() in {"1","true","yes","on"}
+            if field in {"reset_interval_seconds","priority","maximum_actions_per_run","maximum_entities_created_per_run","maximum_items_created_per_run","maximum_execution_seconds"}: val=None if val.lower()=="none" else int(val)
+            prof[field]=val; data[pid]=prof; save(data); return CommandResult(f"Reset profile {pid} updated: {field}={val}")
+        if action == "resetdelete":
+            before=data.pop(pid); save(data); self.builder.audit(character, world_id, "resetdelete", "reset", pid, before, None); return CommandResult(f"Draft reset profile {pid} deleted. Runtime population was not changed.")
+        if action == "resetcommand":
+            if len(args)<2: return CommandResult("Usage: resetcommand <profile_id> <add|set|move|enable|disable|delete|condition|failure> ...", ok=False)
+            sub=args[1]; cmds=prof.setdefault('commands',[])
+            if sub=='add':
+                if len(args)<3: return CommandResult("Usage: resetcommand <profile_id> add <command_type> key=value ...", ok=False)
+                c={"reset_command_id":"rcmd_"+uuid.uuid4().hex[:8],"command_type":args[2].upper(),"enabled":True,"order":(max([int(x.get('order',0)) for x in cmds] or [0])+10),"condition":{"type":"always"},"failure_policy":"continue","comment":"","metadata":{}}
+                for tok in args[3:]:
+                    if '=' in tok:
+                        k,v=tok.split('=',1); c[k]=int(v) if k in {'spawn_count','maximum_count','stack_count'} else v
+                cmds.append(c)
+            else:
+                if len(args)<3: return CommandResult("Command id required.", ok=False)
+                c=next((x for x in cmds if x.get('reset_command_id')==args[2]), None)
+                if not c: return CommandResult("Reset command not found.", ok=False)
+                if sub=='set':
+                    for tok in args[3:]:
+                        if '=' in tok:
+                            k,v=tok.split('=',1); c[k]=int(v) if k in {'order','spawn_count','maximum_count','stack_count'} else v
+                elif sub=='move': c['order']=int(args[3])
+                elif sub=='enable': c['enabled']=True
+                elif sub=='disable': c['enabled']=False
+                elif sub=='delete': cmds.remove(c)
+                elif sub=='condition': c['condition']={"type":args[3], **({"reference":args[4]} if len(args)>4 else {})}
+                elif sub=='failure': c['failure_policy']=args[3]
+                else: return CommandResult("Unknown resetcommand action.", ok=False)
+            save(data); return CommandResult("Reset command draft updated.")
+        if action == "resetvalidate":
+            v=svc.validate_profile(prof); return CommandResult("Reset validation: "+("OK" if v.ok else "FAILED")+"\nErrors:\n"+"\n".join('- '+e for e in v.errors or ['none'])+"\nWarnings:\n"+"\n".join('- '+w for w in v.warnings or ['none']), ok=v.ok)
+        if action == "resetpreview" or (action == "resetrun" and "--dry-run" in args):
+            res=svc.execute_plan(svc.compile_plan(prof), trigger='preview', requested_by=getattr(character,'id',''), preview=True); return CommandResult("Reset preview\n"+json.dumps(res, indent=2, sort_keys=True))
+        if action == "resetrun":
+            res=svc.execute_plan(svc.compile_plan(prof), trigger='manual_force' if '--force' in args else 'manual', requested_by=getattr(character,'id',''), force='--force' in args); return CommandResult("Reset run\n"+json.dumps({k:v for k,v in res.items() if k!='results'}, indent=2, sort_keys=True), ok=res.get('status') in {'succeeded','partial'})
+        if action == "resethistory": return CommandResult("Reset history\n"+json.dumps(svc.history(), indent=2, sort_keys=True))
+        if action == "resettrace": return CommandResult("Reset trace\n"+json.dumps(svc.trace(args[0] if args else ''), indent=2, sort_keys=True))
+        return CommandResult("Unknown reset command.", ok=False)
 
     def _cmd_builder(self, character: Any, args: list[str], raw: str) -> CommandResult:
         sub = args[0].lower() if args else "status"
