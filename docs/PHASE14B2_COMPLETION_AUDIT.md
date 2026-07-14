@@ -51,3 +51,32 @@ This audit is based on the checked-out repository state at implementation time a
 | Room effects | Implemented but isolated | Creation/tick/removal exists; movement and resident reconciliation partial. |
 | Builder editors | Missing / partial | Basic content editor exists; all requested `abilityedit` and advanced editors are not fully implemented. |
 | Runtime acceptance | Incorrectly claimed complete if asserted elsewhere | Linux automated tests were run; Windows manual acceptance was not performed. |
+
+## Phase 14B3 Runtime Matrix
+
+This matrix records the runtime state of the checked-out repository after the Phase 14B3 service-wiring/grant-projection patch. It is intentionally conservative: broad lifecycle systems that still lack movement-owned reconciliation, restart proof, or command parity remain **incomplete**.
+
+| System | Model only | Operation handler exists | Persistence exists | Runtime event wiring exists | Command routing exists | Gameplay verified | Restart verified | Complete / incomplete | Exact files and methods |
+|---|---:|---:|---:|---:|---:|---:|---:|---|---|
+| Ability service wiring | No | Yes | N/A | Partial | Yes | Focused | No | Incomplete | `engine/abilities.py` `AbilityExecutionService.__init__`, `assert_runtime_combat_authority`, `_apply_damage_component`, `apply_healing`; `engine/mud_runtime.py` `MudRuntime.load_world`. |
+| Grant projection | No | Yes | Yes | Partial | Display only | Focused | Partial | Incomplete | `engine/abilities.py` `AbilityGrantProjection`, `project_ability_grants`, `_legacy_npc_ability_grants`, `_grants`, `get_actor_abilities`. |
+| Auras | No | Yes | Yes | Partial | Via ability use | Focused primitive | No | Incomplete | `engine/abilities.py` `create_aura`, `update_aura_membership`, `remove_aura_member`, `remove_aura`. |
+| Stances | No | Yes | Yes | Partial | Partial | Focused primitive | Partial | Incomplete | `engine/abilities.py` `activate_stance`, `remove_effects`; command surface in `engine/mud_commands.py`. |
+| Transformations | No | Yes | Yes | Partial | Via ability use | Focused primitive | No | Incomplete | `engine/abilities.py` `start_transformation`, `process_effect_expirations`; stats read through combat profile but equipment policy is partial. |
+| Summons | No | Yes | Yes | Partial | Partial | Focused primitive | No | Incomplete | `engine/abilities.py` `create_summons`, `dismiss_summon`, `process_summon_expirations`. |
+| Summon profiles | No | Yes | Yes | No | Diagnostics partial | Focused primitive | Partial | Incomplete | `engine/abilities.py` `save_summon_profile`, `restore_summon_profile`, `repair_summon_profile`. |
+| Passives | Partial | Partial | Trigger claims only | Partial | Listing partial | No broad proof | No | Incomplete | `engine/abilities.py` passive validation path, `trigger_claims` schema. |
+| Triggers | Partial | Placeholder | Yes | No | Diagnostics partial | No | No | Incomplete | `engine/abilities.py` `trigger_claims` schema; no complete bounded trigger-chain executor. |
+| Item abilities | Partial | Partial | Yes | Partial | `use` gateway partial | Focused legacy | Partial | Incomplete | `engine/abilities.py` grant projection from DB/effects, item activation through canonical ability gateway where commands call it. |
+| Item creation/alteration | No | Yes | Yes | Partial | Via ability op | Focused primitive | Partial | Incomplete | `engine/abilities.py` `create_item`, `destroy_item`, `alter_item`, `_ensure_item_instance_material_columns`. |
+| Room effects | No | Yes | Yes | Partial | Via ability op | Focused primitive | No | Incomplete | `engine/abilities.py` `create_room_effect`, `process_room_effect_ticks`, `remove_room_effect`. |
+| Set Camp | No | Yes | Existing campsite tables | Runtime ability validation | Yes | Existing tests | Partial | Incomplete | `engine/abilities.py` `validate_ability_use`, `_apply_registered_effect`; survival service methods invoked by ability effects. |
+| Build Campfire | No | Yes | Existing campfire tables | Runtime ability validation | Yes | Existing tests | Partial | Incomplete | `engine/abilities.py` `validate_ability_use`, `_apply_registered_effect`. |
+| Recall | No | Yes | Character room state | Runtime ability validation | Yes | Existing tests | Partial | Incomplete | `engine/abilities.py` `validate_ability_use`, `_apply_registered_effect`. |
+
+### Phase 14B3 audit notes
+
+- Normal `MudRuntime.load_world` now injects the runtime-owned `CombatRuntimeService`, `CombatStatService`, state store, registries, and related canonical services into `AbilityExecutionService`, then calls `assert_runtime_combat_authority()` to fail startup if the ability service owns a duplicate normal-runtime `CombatEngine`.
+- Isolated tests may still instantiate `AbilityExecutionService` without a `CombatRuntimeService`; only that mode creates the fallback `CombatEngine`.
+- `project_ability_grants()` is now the named grant projection API. It records source type, source IDs, source instance IDs, proficiency, temporary/active/suppressed/visible state, source version, and de-duplicates by ability/source/source-instance. The legacy `actor.plugin_data.npc_ability_ids` path is retained only through `_legacy_npc_ability_grants()`.
+- The remaining Phase 14B3 completion requirements are not all satisfied by this patch; movement-owned aura reconciliation, full room-effect resident behavior, full passive trigger chains, complete summon world-controller parity, and Windows manual acceptance remain open.

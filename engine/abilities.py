@@ -110,6 +110,24 @@ class ActorAbilityProficiency:
     actor_id: str; ability_id: str; learned: bool = True; proficiency: int = 1; maximum_proficiency: int = 100; practice_progress: int = 0; mastery_rank: str = "novice"; uses: int = 0; successes: int = 0; failures: int = 0; last_used: str = ""; source: str = "learned"; version: int = 1
 
 @dataclass(frozen=True)
+class AbilityGrantProjection:
+    ability_id: str
+    source_type: str
+    source_id: str = ""
+    source_instance_id: str = ""
+    proficiency: int = 1
+    temporary: bool = False
+    active: bool = True
+    suppressed: bool = False
+    visible: bool = True
+    source_version: str = "1"
+    grant_id: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class AbilityEffectOperationSpec:
     operation_id: str
     result_type: str = "operation_result"
@@ -157,7 +175,7 @@ class AbilityAvailabilityService:
     def resolve_actor_abilities(self, actor_id: str) -> list[dict[str, Any]]:
         rows=[]
         for row in self.service.get_actor_abilities(actor_id):
-            rows.append({"ability": row, "availability_state": "active" if row.get("enabled", True) else "inactive", "source_type": (row.get("grants") or [{}])[0].get("source_type", row.get("source", "learned")), "source_id": (row.get("grants") or [{}])[0].get("source_id", ""), "proficiency": row.get("proficiency", 1), "hidden": row.get("visibility") == "hidden", "visible": row.get("visibility") != "hidden", "active": row.get("enabled", True), "denial_reason": ""})
+            rows.append({"ability": row, "availability_state": "active" if row.get("enabled", True) else "inactive", "source_type": ("NPC template" if (row.get("grants") or [{}])[0].get("source_type") == "legacy_actor_plugin_adapter" else (row.get("grants") or [{}])[0].get("source_type", row.get("source", "learned"))), "source_id": (row.get("grants") or [{}])[0].get("source_id", ""), "proficiency": row.get("proficiency", 1), "hidden": row.get("visibility") == "hidden", "visible": row.get("visibility") != "hidden", "active": row.get("enabled", True), "denial_reason": ""})
         actor=self.service.actors.get(actor_id)
         for aid in (getattr(actor, "plugin_data", {}) or {}).get("npc_ability_ids", []) if actor else []:
             if aid in self.service.registry.abilities and not any(r["ability"].get("id")==aid for r in rows):
@@ -372,9 +390,14 @@ class AbilityRegistry:
         return out
 
 class AbilityExecutionService:
-    def __init__(self, db_path: Path|str|None=None, package: Any|None=None, event_bus: Any|None=None, world_id: str="", actor_registry: ActorRegistry | None=None):
+    def __init__(self, db_path: Path|str|None=None, package: Any|None=None, event_bus: Any|None=None, world_id: str="", actor_registry: ActorRegistry | None=None, combat_runtime: Any|None=None, combat_stat_service: Any|None=None, resource_service: Any|None=None, effect_service: Any|None=None, lifecycle_service: Any|None=None, item_service: Any|None=None, world_registry: Any|None=None, room_service: Any|None=None, formula_engine: Any|None=None, state_store: Any|None=None, allow_isolated_combat_engine: bool=False):
         self.db_path = Path(db_path) if db_path else None; self.registry=AbilityRegistry(package); self.event_bus=event_bus; self.world_id=world_id or getattr(package,"id","")
-        self.combat = CombatEngine(content=CombatContentRegistry(package)); self.actor_registry = actor_registry or ActorRegistry(); self.actors = self.actor_registry.actors; self.availability = AbilityAvailabilityService(self); self.effect_operations = AbilityEffectOperationRegistry()
+        self.combat_runtime = combat_runtime; self.combat_stat_service = combat_stat_service; self.resource_service = resource_service; self.effect_service = effect_service; self.lifecycle_service = lifecycle_service; self.item_service = item_service; self.world_registry = world_registry; self.room_service = room_service; self.formula_engine = formula_engine; self.state_store = state_store
+        self.allow_isolated_combat_engine = bool(allow_isolated_combat_engine or combat_runtime is None)
+        self.combat = CombatEngine(content=CombatContentRegistry(package)) if self.allow_isolated_combat_engine else None
+        self.actor_registry = actor_registry or ActorRegistry(); self.actors = self.actor_registry.actors; self.availability = AbilityAvailabilityService(self); self.effect_operations = AbilityEffectOperationRegistry()
+        if combat_runtime is not None and self.combat is not None:
+            raise RuntimeError("AbilityExecutionService cannot own a duplicate CombatEngine when CombatRuntimeService is injected")
         if self.db_path: init_ability_schema(self.db_path)
     def register_actor(self, actor: Actor) -> None: self.actor_registry.register(actor)
     def unregister_actor(self, actor_id: str) -> None: self.actor_registry.unregister(actor_id)
@@ -396,6 +419,12 @@ class AbilityExecutionService:
     def actor_from_character(self, c: Any) -> Actor: a=actor_from_runtime_character(c,self.world_id); self.register_actor(a); return a
     def gateway(self) -> AbilityRuntimeGateway:
         return AbilityRuntimeGateway(self, getattr(self, "runtime", None))
+    def assert_runtime_combat_authority(self) -> None:
+        rt = getattr(self, "runtime", None)
+        crt = self.combat_runtime or (getattr(rt, "combat_runtime", None) if rt else None)
+        if crt is not None and self.combat is not None:
+            raise RuntimeError("Duplicate normal-runtime combat authority detected")
+
     def _proficiency(self, actor_id: str, ability_id: str) -> int | None:
         if not self.db_path: return None
         try:
@@ -1036,7 +1065,7 @@ class AbilityExecutionService:
             self._pub("ability_cooldown_started", {"actor_id":actor_id,"ability_id":ab.id,"ready_world_time":wt+dur})
     def _apply_damage_component(self, actor: Actor, target: Actor, ab: AbilityDefinition, comp: dict[str,Any], cast_id: str) -> dict[str,Any]:
         rt = getattr(self, "runtime", None)
-        crt = getattr(rt, "combat_runtime", None) if rt else None
+        crt = self.combat_runtime or (getattr(rt, "combat_runtime", None) if rt else None)
         if crt:
             from engine.combat_runtime import CombatActionRequest
             req = CombatActionRequest(
@@ -1065,6 +1094,8 @@ class AbilityExecutionService:
             rr = crt.submit_action(req)
             ev = {"ability_id": ab.id, "cast_id": cast_id, "component_id": comp.get("id"), "source_actor_id": actor.actor_id, "target_actor_id": target.actor_id, "action_id": req.action_id, "ok": bool(getattr(rr, "ok", False)), "messages": list(getattr(rr, "messages", []) or []), "final_amount": int((getattr(crt, "last_resolution", {}) or {}).get("damage", 0) or 0), "combat_result": getattr(rr, "__dict__", {})}
             self._pub("ability_damage_applied", ev); return ev
+        if self.combat is None:
+            raise RuntimeError("Ability damage requires CombatRuntimeService in normal runtime")
         old=actor.combat_profile.get("natural_weapons")
         actor.combat_profile["natural_weapons"]=[{"id":comp.get("id","ability_damage"),"name":ab.name,"damage_type":comp.get("damage_type","physical"),"base_damage":int(num(comp.get("base_amount",1)))}]
         res=self.combat.resolve_attack(actor,target,world_time=self.world_time())
@@ -1088,10 +1119,42 @@ class AbilityExecutionService:
         if self.db_path:
             with sqlite3.connect(self.db_path) as c: c.execute("UPDATE actor_ability_casts SET state=?,interrupt_reason=?,updated_at=? WHERE cast_id=?",(state,reason,now(),cast_id))
         self._pub("ability_"+state, {"cast_id":cast_id,"reason":reason}); self._pub("cast_interrupted", {"cast_id":cast_id,"state":state,"reason":reason}); return {"ok":True,"cast_id":cast_id,"state":state,"reason":reason}
+    def _grant_key(self, grant: dict[str, Any]) -> tuple[str, str, str, str]:
+        return (str(grant.get("ability_id") or ""), str(grant.get("source_type") or ""), str(grant.get("source_id") or ""), str(grant.get("source_instance_id") or ""))
+
+    def _legacy_npc_ability_grants(self, actor_id: str) -> list[dict[str, Any]]:
+        actor = self.actors.get(actor_id)
+        pdata = getattr(actor, "plugin_data", {}) or {} if actor else {}
+        grants=[]
+        for aid in list(pdata.get("npc_ability_ids", []) or []) + list(pdata.get("ability_ids", []) or []):
+            grants.append(AbilityGrantProjection(ability_id=str(aid), source_type="legacy_actor_plugin_adapter", source_id=actor_id, source_instance_id=actor_id, proficiency=int(num(pdata.get("proficiency", 50), 50)), temporary=False, active=True, suppressed=False, visible=True, source_version=str(pdata.get("source_version", "legacy")), grant_id=f"legacy_{actor_id}_{aid}").to_dict())
+        return grants
+
+    def project_ability_grants(self, actor_id: str, include_suppressed: bool=True) -> list[dict[str, Any]]:
+        projected: list[dict[str, Any]] = []
+        if self.db_path:
+            with sqlite3.connect(self.db_path) as c:
+                c.row_factory=sqlite3.Row
+                rows=c.execute("SELECT grant_id,ability_id,source_type,source_id,source_instance_id,rank,proficiency,enabled,temporary,starts_at,expires_at,metadata_json FROM actor_ability_grants WHERE actor_id=? ORDER BY ability_id,source_type,grant_id",(actor_id,)).fetchall()
+                for r in rows:
+                    meta=jload(r["metadata_json"], {})
+                    projected.append(AbilityGrantProjection(ability_id=r["ability_id"], source_type=r["source_type"], source_id=r["source_id"] or "", source_instance_id=r["source_instance_id"] or "", proficiency=max(1, min(100, int(num(r["proficiency"], 1)))), temporary=bool(r["temporary"]), active=bool(r["enabled"]), suppressed=bool(meta.get("suppressed", False)), visible=bool(meta.get("visible", True)), source_version=str(meta.get("source_version", "1")), grant_id=r["grant_id"]).to_dict())
+                effect_rows=c.execute("SELECT effect_instance_id,effect_template_id,metadata_json,active,suspended,source_ability_id FROM actor_effect_instances WHERE target_actor_id=?", (actor_id,)).fetchall()
+                for er in effect_rows:
+                    meta=jload(er["metadata_json"], {})
+                    params=meta.get("parameters") or {}
+                    for aid in list(meta.get("ability_grants") or params.get("ability_grants") or []):
+                        projected.append(AbilityGrantProjection(ability_id=str(aid), source_type="active_effect", source_id=str(er["effect_template_id"] or er["source_ability_id"] or ""), source_instance_id=str(er["effect_instance_id"]), proficiency=int(num(meta.get("proficiency", 1), 1)), temporary=True, active=bool(er["active"]), suppressed=bool(er["suspended"]), visible=True, source_version=str(meta.get("source_version", "1")), grant_id=f"effect_{er['effect_instance_id']}_{aid}").to_dict())
+        projected.extend(self._legacy_npc_ability_grants(actor_id))
+        dedup: dict[tuple[str,str,str,str], dict[str,Any]] = {}
+        for g in projected:
+            if not include_suppressed and (g.get("suppressed") or not g.get("active", True)):
+                continue
+            dedup.setdefault(self._grant_key(g), g)
+        return sorted(dedup.values(), key=lambda g:(g.get("ability_id",""), g.get("source_type",""), g.get("source_instance_id","")))
+
     def _grants(self, actor_id: str) -> list[dict[str,Any]]:
-        if not self.db_path: return []
-        with sqlite3.connect(self.db_path) as c: rows=c.execute("SELECT grant_id,ability_id,source_type,source_id,source_instance_id,rank,proficiency,enabled,temporary,starts_at,expires_at,metadata_json FROM actor_ability_grants WHERE actor_id=? AND enabled=1 ORDER BY ability_id,source_type,grant_id",(actor_id,)).fetchall()
-        return [{"grant_id":r[0],"ability_id":r[1],"source_type":r[2],"source_id":r[3],"source_instance_id":r[4],"rank":r[5],"proficiency":r[6],"enabled":bool(r[7]),"temporary":bool(r[8]),"starts_at":r[9],"expires_at":r[10],"metadata":jload(r[11])} for r in rows]
+        return [g for g in self.project_ability_grants(actor_id, include_suppressed=False) if g.get("active", True) and not g.get("suppressed", False)]
     def world_time(self) -> int:
         rt = getattr(self, "runtime", None)
         if rt and hasattr(rt, "get_world_time"):

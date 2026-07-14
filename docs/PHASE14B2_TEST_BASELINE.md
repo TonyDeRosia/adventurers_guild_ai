@@ -36,3 +36,19 @@ A complete full-suite run was completed after the patch with `pytest -q`. Result
 
 - Focused Phase 14A/14B/14B2 command after patch: `pytest -q tests/test_phase14b2_schema_registry.py tests/test_phase14a_ability_foundation.py tests/test_phase14b_advanced_abilities.py` → **9 passed**.
 - Full-suite command after patch: `pytest -q` → **421 failed, 1956 passed, 17 skipped, 20 warnings**.
+
+## Phase 14B3 Runtime Patch Test Baseline
+
+Before this Phase 14B3 runtime patch, no fresh pre-edit full-suite run was recorded in this worktree. The most recent documented broad baseline remains the Phase 14B2 result above: **421 failed, 1956 passed, 17 skipped, 0 xfailed recorded, 0 errors recorded in the summary text**.
+
+After the Phase 14B3 patch, focused runtime checks were run instead of a new full-suite pass because the full suite is already documented as long-running and broadly failing from legacy subsystems. The focused after-result is:
+
+- `pytest -q tests/test_phase14a_ability_foundation.py tests/test_phase14b_advanced_abilities.py tests/test_phase14b2_schema_registry.py` → **9 passed, 0 failed, 0 skipped, 0 xfailed, 0 errors**.
+
+| Module | Before | After | Root cause / note |
+|---|---:|---:|---|
+| `tests/test_phase14a_ability_foundation.py` | Not re-run before edit | 0 failures | Canonical foundation still passes after service injection changes. |
+| `tests/test_phase14b_advanced_abilities.py` | Not re-run before edit | 0 failures | Advanced primitive stance/transform/summon/item/room-effect/profile tests still pass. |
+| `tests/test_phase14b2_schema_registry.py` | Not re-run before edit | 0 failures | Schema adaptation and operation registry tests still pass. |
+
+No regressions were observed in the focused ability suites. A new broad-suite after-count is not claimed for this patch.
