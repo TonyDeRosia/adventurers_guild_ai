@@ -146,12 +146,10 @@ class CombatDisplaySource:
 class CarryingDisplaySource:
     def __init__(self, runtime: Any=None) -> None: self.runtime=runtime
     def snapshot(self, c: Any) -> dict[str, Any]:
-        inv=list(_field(c,"inventory", default=[]) or [])
         cur=_field(c,"current_weight","carry_weight")
         cap=_field(c,"carry_capacity","maximum_weight","max_weight")
-        # Compatibility summing remains isolated here until a runtime item ownership service is present.
-        if cur is None and inv and all(isinstance(i, Mapping) for i in inv): cur=sum(float(i.get("weight") or 0)*int(i.get("stack_count") or 1) for i in inv)
-        return {k:v for k,v in {"current_weight":cur,"carry_capacity":cap,"item_count":len(inv) if inv is not None else None,"max_item_count":_field(c,"max_item_count"),"encumbrance_text":_field(c,"encumbrance_text","encumbrance","encumbrance_key")}.items() if v is not None}
+        item_count=_field(c,"item_count","inventory_count")
+        return {k:v for k,v in {"current_weight":cur,"carry_capacity":cap,"item_count":item_count,"max_item_count":_field(c,"max_item_count"),"encumbrance_text":_field(c,"encumbrance_text","encumbrance","encumbrance_key")}.items() if v is not None}
 
 class CurrencyDisplaySource:
     def __init__(self, runtime: Any=None) -> None: self.runtime=runtime
@@ -365,11 +363,10 @@ class CharacterDisplaySnapshotService:
         return {k:(stats.get(k) if isinstance(stats, Mapping) and k in stats else _field(c,k)) for k in keys if (isinstance(stats, Mapping) and k in stats) or _field(c,k) is not None}
 
     def _carrying(self, c: Any) -> dict[str, Any]:
-        inv=list(_field(c,"inventory", default=[]) or [])
         cur=_field(c,"current_weight","carry_weight")
         cap=_field(c,"carry_capacity","maximum_weight","max_weight")
-        if cur is None and inv and all(isinstance(i, Mapping) for i in inv): cur=sum(float(i.get("weight") or 0)*int(i.get("stack_count") or 1) for i in inv)
-        return {k:v for k,v in {"current_weight":cur,"carry_capacity":cap,"item_count":len(inv) if inv is not None else None,"max_item_count":_field(c,"max_item_count"),"encumbrance_text":_field(c,"encumbrance_text","encumbrance","encumbrance_key")}.items() if v is not None}
+        item_count=_field(c,"item_count","inventory_count")
+        return {k:v for k,v in {"current_weight":cur,"carry_capacity":cap,"item_count":item_count,"max_item_count":_field(c,"max_item_count"),"encumbrance_text":_field(c,"encumbrance_text","encumbrance","encumbrance_key")}.items() if v is not None}
 
     def _currency(self, c: Any) -> dict[str, Any]:
         cur=dict(_field(c,"currency", default={}) or {}) if isinstance(_field(c,"currency", default={}), Mapping) else {}

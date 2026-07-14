@@ -43,31 +43,28 @@ def frozen_snapshot():
     )
 
 
-def test_score_renders_full_snapshot_sections_without_six_stat_hardcoding():
+def test_score_renders_adventurers_lair_sheet_without_modern_sections():
     text = render_display_plain(build_score_document(snapshot=frozen_snapshot(), mode="full"))
     assert "RESOURCES" not in text
     assert "HP:" not in text and "Mana:" not in text and "Stamina:" not in text
-    assert "PRIMARY STATISTICS" in text
-    assert "SECONDARY COMBAT STATISTICS" in text
+    assert "PRIMARY STATISTICS" not in text
+    assert "SECONDARY COMBAT STATISTICS" not in text
+    assert "Aster the Bold" in text
     assert "Race: Unavailable" in text
     assert "Class: Not implemented" in text
-    assert "Might: 14" in text and "Grace: 13" in text
-    assert "Strength" not in text
-    assert "Iron Longsword" in text and "8–13 slashing" in text
-    assert "Void: -5%" in text
-    assert "Parry: Inactive" in text and "consumed by combat" in text
-    assert "Blessing <script>" in text
+    assert "Experience:" in text and "TNL:" in text
+    assert "Practices:" in text and "Trains:" in text
+    assert "STR:" in text and "Armor:" in text and "Hitroll:" in text
+    assert "Resistances" not in text and "Speed" not in text and "ACTIVE EFFECTS" not in text
 
 
-def test_score_compact_omits_full_sections_and_html_is_semantic_and_escaped():
+def test_score_compact_keeps_same_adventurers_lair_layout_and_html_escapes():
     doc = build_score_document(snapshot=frozen_snapshot(), mode="compact")
     text = render_display_plain(doc)
     assert "ACTIVE EFFECTS" not in text
     html = render_display_html(build_score_document(snapshot=frozen_snapshot(), mode="full"))
-    assert '<section class="mud-score"' in html
-    assert '<dl>' in html and '<dt>Name</dt>' in html
+    assert '&lt;script&gt;' not in html  # effects are not part of normal AL score
     assert '<script>' not in html
-    assert '&lt;script&gt;' in html
 
 
 def test_score_requires_v1_snapshot_and_detailed_permission():
@@ -76,7 +73,7 @@ def test_score_requires_v1_snapshot_and_detailed_permission():
         build_score_document(snapshot=bad)
     with pytest.raises(PermissionError):
         build_score_document(snapshot=frozen_snapshot(), mode="detailed", detailed_allowed=False)
-    assert "SNAPSHOT DIAGNOSTICS" in render_display_plain(build_score_document(snapshot=frozen_snapshot(), mode="detailed", detailed_allowed=True))
+    assert "IMMORTAL INFORMATION" in render_display_plain(build_score_document(snapshot=frozen_snapshot(), mode="detailed", detailed_allowed=True))
 
 
 def test_score_command_uses_snapshot_service_once_and_routes_sc():

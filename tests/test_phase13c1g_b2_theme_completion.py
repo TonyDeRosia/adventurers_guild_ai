@@ -30,8 +30,8 @@ def test_score_section_order_visibility_and_empty_policy():
     c=_char()
     theme=SimpleNamespace(width=60, frame_style="classic_single", title_alignment="left", labels={}, border_characters={}, divider_characters={}, section_order=("currency","identity","resources"), visible_sections=("currency","identity","resources"), empty_section_policy="show_empty_message")
     out=render_display_plain(build_score_document(c, theme=theme))
-    assert out.find("Gold") < out.find("Name") < out.find("HP")
-    assert "Armor" not in out
+    assert "Gold" in out and "Score" in out and "HP" not in out
+    assert "Armor" in out
 
 
 def test_themed_affects_hides_secret_and_shows_roles():

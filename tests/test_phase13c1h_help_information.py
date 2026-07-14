@@ -39,7 +39,7 @@ def test_compact_abilities_score_worth_and_no_color():
     abilities=render_display_plain(build_abilities_document(rows + [{'name':'Recall','rank':1,'maximum_rank':100}], title='ABILITIES'))
     assert all(x in abilities for x in ('Build Campfire','Set Camp','Recall')) and 'Type HELP' not in abilities and '/100' not in abilities and 'Rank' not in abilities
     score=render_display_plain(build_score_document(actor(title='', level=1, hp=5, max_hp=10, xp=0, xp_to_next_level=100)))
-    assert 'Race:' not in score and 'Class:' not in score and 'Carry Capacity' not in score
+    assert 'Race:' in score and 'Class:' in score and 'Carry Capacity' not in score and 'HP:' not in score
     worth=render_display_plain(build_worth_document(actor()))
     assert 'CURRENCIES' in worth and 'CHARACTER STATUS' not in worth
     html=render_display_html(build_score_document(actor()), color_enabled=False)

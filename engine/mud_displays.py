@@ -705,49 +705,93 @@ def render_effect_list(effects: tuple[dict[str, Any], ...]) -> list[Any]:
         rows.append(DisplayLine(" — ".join(bits), role=role))
     return rows
 
+def _al_stat_value(data: Mapping[str, Any], key: str, label: str | None = None) -> str | None:
+    entry = data.get(key)
+    if entry is None:
+        return None
+    return _display_value(entry, str(entry.get("unit") or "") if isinstance(entry, Mapping) else "", str(entry.get("display_format") or "") if isinstance(entry, Mapping) else "")
+
+def _al_attr(snapshot: CharacterDisplaySnapshot, *keys: str) -> str:
+    aliases = {"str": ("str", "strength"), "int": ("int", "intelligence"), "wis": ("wis", "wisdom"), "dex": ("dex", "dexterity"), "con": ("con", "constitution"), "cha": ("cha", "charisma")}
+    for key in keys:
+        for candidate in aliases.get(key, (key,)):
+            if candidate in (snapshot.attributes or {}):
+                return _display_value((snapshot.attributes or {})[candidate])
+    return "--"
+
+def _al_line(text: str) -> DisplayLine:
+    return DisplayLine(text, role="character_value")
+
 def build_score_document(character: Any = None, *, snapshot: CharacterDisplaySnapshot | None = None, theme: Any = None, mode: str = "score", detailed_allowed: bool = False) -> DisplayDocument:
+    """Render SCORE in the Adventurer's Lair visible order.
+
+    The renderer formats only values already present in CharacterDisplaySnapshot;
+    gameplay ownership remains in runtime snapshot/projection services.
+    """
     snap=snapshot or build_character_display_snapshot(character)
     mode=(mode or "score").lower()
     if mode not in SCORE_MODES: raise ValueError(f"Unsupported score display mode: {mode}")
     if mode == "detailed" and not detailed_allowed: raise PermissionError("Detailed SCORE is available to Builder/admin characters only.")
-    vm=build_score_view_model(snap, mode=mode)
-    order = ["identity","progression","attributes","offense","defense"] if mode == "compact" else ["identity","progression","attributes","offense","defense","damage","criticals","saves","resistances","speed","carrying","survival","effects","mechanics","location","companions"]
-    theme_order = list(getattr(theme, "section_order", ()) or ()) if theme is not None else []
-    theme_visible = set(getattr(theme, "visible_sections", ()) or ()) if theme is not None else set()
-    if theme_order:
-        order = [s for s in theme_order if s in set(order) | {"currencies", "currency"}] + [s for s in order if s not in theme_order]
-    rows=[]
-    section_map={
-        "identity": render_identity_summary(vm.identity), "progression": render_display_section("Progression", vm.progression, columns=2),
-        "resources": [], "attributes": render_display_section("Primary Statistics", vm.attributes, columns=3),
-        "offense": render_display_section("Secondary Combat Statistics — Offense", vm.offense, columns=2), "defense": render_display_section("Secondary Combat Statistics — Defense", vm.defense, columns=2),
-        "damage": render_damage_profile(vm.damage), "criticals": render_display_section("Criticals", vm.criticals, columns=2),
-        "saves": render_display_section("Saving Throws", vm.saves, columns=3), "resistances": render_resistance_grid(vm.resistances),
-        "speed": render_display_section("Speed and Initiative", vm.speed, columns=2), "carrying": render_display_section("Carrying and Encumbrance", vm.carrying, columns=2),
-        "survival": render_display_section("Survival and Condition", vm.survival + vm.conditions, columns=2), "effects": render_effect_list(vm.effects),
-        "mechanics": render_display_section("Status and Mechanics", vm.mechanics, columns=2), "location": render_location_summary(vm.location),
-        "companions": render_display_section("Companions", vm.companions, columns=2),
-    }
-    if vm.currencies and mode != "compact":
-        section_map["currencies"] = render_display_section("Currencies", vm.currencies, columns=3)
-        section_map["currency"] = section_map["currencies"]
-        if "currencies" not in order and "currency" not in order:
-            section_map["progression"].extend(section_map["currencies"])
-    for sid in order:
-        if theme_visible and sid not in theme_visible and not (sid == "currencies" and "currency" in theme_visible):
-            continue
-        part=section_map.get(sid) or []
-        if not part: continue
-        if rows: rows.append(DisplayDivider())
-        rows.extend(part)
+    version = getattr(snap, "schema_version", getattr(snap, "snapshot_version", ""))
+    if version != SCORE_SCHEMA_VERSION:
+        raise ValueError(f"Unsupported score snapshot version: {version}")
+    ident=snap.identity or {}; prog=snap.progression or {}; carry=snap.carrying or {}; enc=snap.encumbrance or {}; surv=snap.survival or {}
+    name=str(ident.get("display_name") or "Adventurer")
+    title=str(ident.get("title") or snap.title or "")
+    race=_availability_text((snap.race or {}).get("name"), str((snap.race or {}).get("availability") or ("available" if (snap.race or {}).get("name") else "unavailable")))
+    cls=_availability_text((snap.character_class or {}).get("name"), str((snap.character_class or {}).get("availability") or ("available" if (snap.character_class or {}).get("name") else "unsupported")))
+    age=str((snap.age or {}).get("display") or "Unknown")
+    alignment=str(snap.alignment or "Neutral")
+    xp=_display_value(prog.get("xp", prog.get("experience", 0)), fmt="thousands")
+    tnl=_display_value(prog.get("xp_to_next_level", prog.get("experience_to_next_level", 0)), fmt="thousands")
+    prac=_display_value(prog.get("practice_points", prog.get("practice_sessions", 0)))
+    train=_display_value(prog.get("training_points", prog.get("training_sessions", 0)))
+    quest=_display_value(prog.get("quest_points", 0))
+    remorts=_display_value(prog.get("remort_count", prog.get("remorts", 0)))
+    curw=_display_value(carry.get("current_weight", 0))
+    maxw=_display_value(carry.get("carry_capacity", carry.get("maximum_weight", 0)))
+    enc_text=_display_value(enc.get("encumbrance_text", carry.get("encumbrance_text", enc.get("encumbrance_state", "None"))))
+    itemc=_display_value(carry.get("item_count", 0)); maxitems=_display_value(carry.get("max_item_count", "--"))
+    offense=snap.offense or {}; defense=snap.defense or {}; saves=snap.saves or {}; crit=snap.criticals or {}
+    armor=_al_stat_value(defense, "armor") or _al_stat_value(snap.combat or {}, "armor") or "--"
+    hit=_al_stat_value(offense, "hit_bonus") or _al_stat_value(offense, "accuracy") or "--"
+    dam=_al_stat_value(offense, "damage_bonus") or "--"
+    spell_save=_al_stat_value(saves, "spell") or _al_stat_value(saves, "magic") or _al_stat_value(snap.combat or {}, "spell_saves") or "--"
+    crit_melee=_al_stat_value(crit, "critical_melee") or "--"
+    rows=[
+        _al_line(f"{name}{(' ' + title) if title else ''}"),
+        _al_line(f"Race: {race:<16} Class: {cls:<16} Level: {snap.level}"),
+        _al_line(f"Age: {age:<17} Alignment: {alignment}"),
+    ]
+    birthday=(snap.age or {}).get("birthday") or ident.get("birthday")
+    if birthday: rows.append(_al_line(str(birthday)))
+    rows += [
+        _al_line(""),
+        _al_line(f"Experience: {xp:<12} TNL: {tnl}"),
+        _al_line(f"Practices:  {prac:<12} Trains: {train:<8} Quest Points: {quest:<8} Remorts: {remorts}"),
+        _al_line(f"Carrying:   {curw}/{maxw} weight ({enc_text})   Items: {itemc}/{maxitems}"),
+        _al_line(""),
+        _al_line(f"STR: {_al_attr(snap,'str'):>3}  INT: {_al_attr(snap,'int'):>3}  WIS: {_al_attr(snap,'wis'):>3}  DEX: {_al_attr(snap,'dex'):>3}  CON: {_al_attr(snap,'con'):>3}  CHA: {_al_attr(snap,'cha'):>3}"),
+        _al_line(f"Armor: {armor:<8} Hitroll: {hit:<8} Damroll: {dam:<8} Spell Save: {spell_save:<8} Critical: {crit_melee}"),
+    ]
+    if snap.currency:
+        rows.append(_al_line(""))
+        rows.append(_al_line("  ".join(f"{str(k).replace('_',' ').title()}: {_display_value(v, fmt='thousands')}" for k,v in snap.currency.items())))
+    if snap.quest_summary:
+        rows.append(_al_line("")); rows.append(_al_line("Quest: " + _display_value(snap.quest_summary)))
+    played=(snap.time or {}).get("play_time")
+    if played: rows.append(_al_line(f"You have been playing for {played}."))
+    if surv.get("hunger") is not None or surv.get("thirst") is not None:
+        rows.append(_al_line(f"Hunger: {_display_value(surv.get('hunger', '')):<16} Thirst: {_display_value(surv.get('thirst', ''))}"))
+    for cond in snap.conditions or []:
+        rows.append(_al_line(str(cond.get("label") or cond.get("name") or cond)))
     if mode == "detailed":
-        diag=[DisplayLine("SNAPSHOT DIAGNOSTICS", role="character_title")]
-        diag.extend(DisplayLine(f"{k}: {v}", role="character_muted") for k,v in sorted(vm.source_versions.items()))
-        if rows: rows.append(DisplayDivider())
-        rows.extend(diag)
-    doc=build_character_frame_document(DisplayIntent.SCORE,"CHARACTER SCORE",rows or [DisplayLine("Character information is unavailable.", role="character_muted")],width=79, theme=theme)
-    doc.renderer_hints.update({"score_view_model": vm, "score_mode": mode, "snapshot_version": vm.schema_version})
-    doc.debug_metadata.update({"snapshot_version": vm.schema_version, "display_mode": mode})
+        rows.append(DisplayDivider())
+        rows.append(_al_line("IMMORTAL INFORMATION"))
+        rows.extend(_al_line(f"{k}: {v}") for k,v in sorted((snap.source_versions or {}).items()))
+    doc=build_character_frame_document(DisplayIntent.SCORE,"Score",rows,width=79, theme=theme)
+    doc.renderer_hints.update({"score_mode": mode, "snapshot_version": version})
+    doc.debug_metadata.update({"snapshot_version": version, "display_mode": mode})
     return doc
 
 def build_worth_document(character: Any = None, *, snapshot: CharacterDisplaySnapshot | None = None, worth_snapshot: Any = None, theme: Any = None) -> DisplayDocument:
