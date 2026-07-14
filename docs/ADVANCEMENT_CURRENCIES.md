@@ -45,3 +45,23 @@ Ground `sit`, `rest`, `sleep`, `wake`, `stand`, `lay`, and `lie` are supported. 
 ## Tests and Windows status
 
 Focused Linux tests were run in this environment and are reported in the PR/final response. Windows manual acceptance at `C:\Users\antho\Desktop\Smart MUD\smartmud-main-v2\smartmud-main-v2` was not performed here.
+
+## Adventurer's Lair stabilization follow-up (2026-07-14)
+
+The previous alias/trainer patch is preserved: `tr`, `pr`, `buypractice`, `buyprac`, `buytrain`, `lay`, and `lie` continue to route to the existing player commands and trainer room definitions remain data-driven.
+
+Remaining unfinished work addressed in this follow-up:
+
+- Glory purchases now use canonical centralized costs (`GLORY_PRACTICE_COST = 100`, `GLORY_TRAIN_COST = 250`) and one SQLite transaction that debits EconomyService Glory ledger rows and grants exactly one progression session. Insufficient Glory reports the required cost and current balance and grants nothing.
+- Attribute training now writes the permanent `character_attributes.permanent_modifier` component through the canonical attribute projection instead of relying on transient `setattr` state. Training affects only the trained permanent component and is capped at 20.
+- Resource training records a persistent trained-resource bonus in character actor data and updates the command-facing maximum resource by +10 for hit/hp, mana, or move at a cost of ten training sessions.
+- Training output reports changed values from before/after canonical state snapshots and suppresses unchanged fields.
+- Practice listing and mutation route through `ProgressionService` projections and atomic mutation helpers. Rank, maximum rank, proficiency, cap, cost, and calculated gain are separate fields; command handlers no longer perform direct practice UPDATE statements.
+- Posture remains owned by the command-position authority; survival services may consume rest/sleep context but ordinary ground rest/sleep does not require furniture or a campsite.
+- Combat runtime continues to use monotonic `time.monotonic()` scheduling and a single background/manual pulse path guarded by encounter processing locks from the existing runtime service.
+- `perfstat` and `perfstat reset` report/reset runtime, combat, practice, training, position, resident-cache, autosave, and regeneration counters for admins.
+- `advancementinspect` and `advancementrepair <character> --dry-run|--apply` inspect attribute-point history and only remove proven unspent demonstration grants. The repair path is idempotent and writes spend history through the progression currency ledger.
+
+Focused verification added in `tests/test_adventurers_lair_unfinished_requirements.py` covers atomic Glory purchases, insufficient-Glory no-grant behavior, persistent permanent Strength training, practice projection/mutation separation, and advancement repair dry-run/apply idempotence.
+
+Broad-suite status from this environment is recorded in the PR summary rather than claimed as Windows acceptance. Windows manual acceptance still must be performed under `C:\Users\antho\Desktop\Smart MUD\smartmud-main-v2\smartmud-main-v2` with Kraevok and the existing `shattered_realms` world.

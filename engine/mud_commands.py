@@ -256,6 +256,8 @@ class MudCommandEngine:
             "score": self._cmd_score,
             "progressioninspect": self._cmd_progression_repair,
             "progressionrepair": self._cmd_progression_repair,
+            "advancementinspect": self._cmd_advancement_repair,
+            "advancementrepair": self._cmd_advancement_repair,
             "display": self._cmd_display,
             "displaytheme": self._cmd_displaytheme,
             "recipes": self._cmd_crafting_player,
@@ -653,8 +655,46 @@ class MudCommandEngine:
             return CommandResult("You do not have permission for that command.", ok=False)
         rt = getattr(self, "runtime", None)
         counters = getattr(rt, "performance_counters", {}) if rt else {}
-        keys = [k for k in sorted(counters) if k.startswith(("combat_", "practice_", "train_", "position_", "autosave_", "resident_"))]
+        if args and args[0].lower() == "reset":
+            for k in list(counters):
+                counters[k] = 0
+            return CommandResult("Performance counters reset.")
+        keys = [k for k in sorted(counters) if k.startswith(("runtime_", "combat_", "practice_", "train_", "position_", "autosave_", "resident_", "regeneration_"))]
         return CommandResult("Performance counters:\n" + "\n".join(f"{k}: {counters.get(k,0)}" for k in keys))
+
+    def _cmd_advancement_repair(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if str(getattr(character, "role", "player")).lower() not in {"admin", "owner", "builder"} and int(getattr(character, "immortal_level", 0) or 0) <= 0:
+            return CommandResult("You do not have permission for that command.", ok=False)
+        rt = getattr(self, "runtime", None)
+        ps = rt._progression_service() if rt and hasattr(rt, "_progression_service") else self._training_service(character).progression
+        cmd = (raw.split() or [""])[0].lower()
+        target = args[0] if args else str(getattr(character, "id", ""))
+        apply = "--apply" in args
+        state = ps.initialize_actor_progression(target)
+        events = []
+        with ps.store.connect() as con:
+            con.row_factory = sqlite3.Row
+            events = [dict(r) for r in con.execute("SELECT * FROM actor_advancement_currency_events WHERE actor_id=? AND currency_id='attribute_points' ORDER BY created_at", (target,))]
+        demo_grants = [e for e in events if "demonstration" in (str(e.get("reason","")) + str(e.get("source_type","")) + str(e.get("metadata_json",""))).lower()]
+        spent = sum(int(e.get("amount") or 0) for e in events if e.get("event_type") == "spend")
+        demo_total = sum(int(e.get("amount") or 0) for e in demo_grants)
+        removable = max(0, min(int(state.get("attribute_points") or 0), max(0, demo_total - spent)))
+        if cmd == "advancementrepair" and apply and removable:
+            ps.spend_currency(target, "attribute_points", removable, "remove proven unspent demonstration points")
+            state = ps.get_actor_progression(target) or state
+        report = {
+            "character": target,
+            "current_attribute_points": int(state.get("attribute_points") or 0),
+            "grant_history": [e for e in events if e.get("event_type") == "grant"],
+            "spending_history": [e for e in events if e.get("event_type") == "spend"],
+            "demonstration_grant_amount": demo_total,
+            "legitimate_grants": sum(int(e.get("amount") or 0) for e in events if e.get("event_type") == "grant" and e not in demo_grants),
+            "unspent_demonstration_amount": removable,
+            "proposed_correction": f"remove {removable} attribute_points",
+            "ambiguity_status": "ambiguous_no_demonstration_history" if not demo_grants else "proven_by_history",
+            "applied": bool(cmd == "advancementrepair" and apply),
+        }
+        return CommandResult(json.dumps(report, indent=2, sort_keys=True))
 
     def _cmd_position(self, character: Any, args: list[str], raw: str) -> CommandResult:
         import time
@@ -835,8 +875,12 @@ class MudCommandEngine:
         if cmd in {"buypractice", "buyprac", "buytrain"}:
             if not at_trainer(): return done("You need to be at your guild or trainer for that.", False)
             cur = "practice_sessions" if cmd != "buytrain" else "training_sessions"
-            new = ps.grant_currency(actor_id, cur, 1, "glory_purchase", "guild_trainer", "Adventurer's Lair guild purchase")
-            return done(f"You buy one {'practice' if cur.startswith('practice') else 'training'} session. You now have {new}.")
+            res = ps.purchase_session_with_glory(actor_id, cur, source_id=str((trainers[0] if trainers else {}).get("id") or "guild_trainer"))
+            if not res.get("ok"):
+                return done(f"You need {res.get('cost')} Glory for that purchase; you currently have {res.get('glory')} Glory.", False)
+            if rt: rt.mark_character_dirty(actor_id, "progression")
+            label = "practice" if cur.startswith("practice") else "training"
+            return done(f"You spend {res['cost']} Glory and buy one {label} session. You now have {res['sessions']} {label} sessions and {res['glory']} Glory remaining.")
         if cmd == "train":
             if not at_trainer(): return done("You need to be at your guild or trainer to train.", False)
             stats = {"str":"strength","dex":"dexterity","con":"constitution","int":"intelligence","wis":"wisdom","cha":"charisma"}
@@ -851,45 +895,64 @@ class MudCommandEngine:
                 return done("\n".join(lines))
             if query in aliases:
                 if int(state.get("training_sessions",0) or 0) < 1: return done("You do not have enough training sessions.", False)
-                attr = aliases[query]; old = int(getattr(character, attr, 10) or 10)
-                if old >= 20: return done(f"Your {attr} is already at the training cap.", False)
-                setattr(character, attr, old+1); ps.spend_currency(actor_id, "training_sessions", 1, f"train {attr}")
+                attr = aliases[query]
+                from engine.progression import TRAINING_ATTRIBUTE_CAP
+                attrsvc = getattr(rt, "attribute_service", None) if rt else None
+                if attrsvc is None:
+                    from engine.character_stats import CharacterAttributeService
+                    attrsvc = CharacterAttributeService(ps.store, world_id=world_id, world_root=root)
+                before_stats = attrsvc.get_primary_stats(character, {"runtime": rt} if rt else {})
+                old = int(before_stats.get(attr).base_value + before_stats.get(attr).permanent_component) if before_stats.get(attr) else int(getattr(character, attr, 10) or 10)
+                if old >= TRAINING_ATTRIBUTE_CAP: return done(f"Your {attr} is already at the training cap.", False)
+                ps.spend_currency(actor_id, "training_sessions", 1, f"train {attr}")
+                with ps.store.connect() as con:
+                    con.execute("UPDATE character_attributes SET permanent_modifier=permanent_modifier+1,updated_at=?,source=? WHERE character_id=? AND attribute_id=?", (__import__("engine.mud_state_store", fromlist=["utc_now"]).utc_now(), "training", actor_id, attr))
+                if hasattr(character, "actor_data"):
+                    character.actor_data.setdefault("trained_attributes", {})[attr] = character.actor_data.setdefault("trained_attributes", {}).get(attr, 0) + 1
                 if rt: rt.mark_character_dirty(actor_id, "training")
-                return done(f"You train your {attr}. {attr.capitalize()}: {old} -> {old+1}\nTraining sessions remaining: {int(state.get('training_sessions',0))-1}")
+                after_stats = attrsvc.get_primary_stats(character, {"runtime": rt} if rt else {})
+                changed = [f"Training successful.", f"  {attr.capitalize()}: {old} -> {old+1}", f"  Training sessions: {int(state.get('training_sessions',0))} -> {int(state.get('training_sessions',0))-1}"]
+                return done("\n".join(changed))
             resmap = {"hit":"max_hp","hp":"max_hp","mana":"max_mana","move":"max_stamina"}
             if query in resmap:
+                from engine.progression import TRAINING_RESOURCE_BONUS, TRAINING_RESOURCE_SESSION_COST
                 if int(state.get("training_sessions",0) or 0) < 10: return done("You need ten training sessions for that.", False)
-                field = resmap[query]; old = int(getattr(character, field, 0) or 0); setattr(character, field, old+10)
-                ps.spend_currency(actor_id, "training_sessions", 10, f"train {query}")
+                field = resmap[query]; old = int(getattr(character, field, 0) or 0)
+                ps.spend_currency(actor_id, "training_sessions", TRAINING_RESOURCE_SESSION_COST, f"train {query}")
+                data = getattr(character, "actor_data", {}) if isinstance(getattr(character, "actor_data", {}), dict) else {}
+                bonuses = data.setdefault("trained_resource_bonuses", {})
+                rkey = "health" if query in {"hit","hp"} else ("mana" if query == "mana" else "stamina")
+                bonuses[rkey] = int(bonuses.get(rkey, 0) or 0) + TRAINING_RESOURCE_BONUS
+                character.actor_data = data
+                setattr(character, field, old + TRAINING_RESOURCE_BONUS)
                 if rt: rt.mark_character_dirty(actor_id, "training")
                 label = "Move" if query == "move" else ("Hit points" if query in {"hit","hp"} else "Mana")
-                return done(f"{label}: {old} -> {old+10}\nTraining sessions remaining: {int(state.get('training_sessions',0))-10}")
+                return done(f"Training successful.\n  {label}: {old} -> {old+TRAINING_RESOURCE_BONUS}\n  Training sessions: {int(state.get('training_sessions',0))} -> {int(state.get('training_sessions',0))-TRAINING_RESOURCE_SESSION_COST}")
             return done("Train what? Try TRAIN STR, DEX, CON, INT, WIS, CHA, HIT, MANA, or MOVE.", False)
         # practice
-        abilities=[]
-        with ps.store.connect() as con:
-            con.row_factory = __import__("sqlite3").Row
-            abilities=[dict(r) for r in con.execute("SELECT * FROM actor_ability_progression WHERE actor_id=? AND active=1 ORDER BY ability_id",(actor_id,))]
+        intelligence = int(getattr(character, "intelligence", 10) or 10)
+        abilities = ps.list_known_practice_abilities(actor_id, intelligence=intelligence) if hasattr(ps, "list_known_practice_abilities") else []
         if not args:
             lines=[f"Practice sessions: {state.get('practice_sessions',0)}", "Use TRAIN for permanent attributes and resources.", "","You know:"]
             if not abilities: lines.append("  No practiced abilities yet.")
             for a in abilities:
-                prof=int(a.get("proficiency") or 1); desc="awful" if prof<20 else "poor" if prof<40 else "fair" if prof<60 else "good" if prof<80 else "superb"
-                lines.append(f"  {str(a.get('ability_id')).replace('_',' ').title():24s} {prof:3d}% ({desc})")
+                prof=int(a.get("current_proficiency") or 1); desc="awful" if prof<20 else "poor" if prof<40 else "fair" if prof<60 else "good" if prof<80 else "superb"
+                lines.append(f"  {str(a.get('display_name') or a.get('ability_id')):24s} {prof:3d}% ({desc})")
             return done("\n".join(lines))
         if not at_trainer(): return done("You need to be at your guild or trainer to practice.", False)
         query=" ".join(args).lower().strip()
-        matches=[a for a in abilities if query in str(a.get("ability_id","")).replace("_"," ").lower()]
-        if not matches: return done("You do not know of that ability.", False)
-        if len(matches)>1: return done("Which ability do you mean? " + ", ".join(a["ability_id"].replace("_"," ") for a in matches), False)
-        a=matches[0]; prof=int(a.get("proficiency") or 1); cap=min(100, int(a.get("maximum_rank") or 100))
-        if prof >= cap: return done("You are already learned in that area.", False)
-        if int(state.get("practice_sessions",0) or 0) < 1: return done("You do not have enough practice sessions.", False)
-        gain=max(1, 5 + (int(getattr(character, "intelligence", 10) or 10)-10)//2); new=min(cap, prof+gain)
-        with ps.store.connect() as con: con.execute("UPDATE actor_ability_progression SET proficiency=? WHERE actor_id=? AND ability_id=?", (new, actor_id, a["ability_id"]))
-        ps.spend_currency(actor_id, "practice_sessions", 1, f"practice {a['ability_id']}")
+        resolved = ps.resolve_practice_ability(actor_id, query, intelligence=intelligence)
+        if not resolved.get("ok"):
+            if resolved.get("ambiguous"): return done("Which ability do you mean? " + ", ".join(resolved["ambiguous"]), False)
+            return done("You do not know of that ability.", False)
+        a = resolved["ability"]
+        res = ps.practice_ability(actor_id, a["ability_id"], intelligence=intelligence, trainer_ok=True)
+        if not res.get("ok"):
+            if res.get("reason") == "at_cap": return done("You are already learned in that area.", False)
+            if res.get("reason") == "insufficient_practice_sessions": return done("You do not have enough practice sessions.", False)
+            return done("You cannot practice that right now.", False)
         if rt: rt.mark_character_dirty(actor_id, "practice")
-        return done(f"You practice {a['ability_id'].replace('_',' ')}.\nYou are now {new}% learned. Practice sessions remaining: {int(state.get('practice_sessions',0))-1}")
+        return done(f"You practice {a['display_name']}.\nYou are now {res['after']}% learned. Practice sessions remaining: {res['sessions']}")
 
     def _gathering_service(self, character: Any):
         from engine.gathering import GatheringService

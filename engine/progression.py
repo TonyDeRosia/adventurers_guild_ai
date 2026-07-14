@@ -15,6 +15,14 @@ from typing import Any, Mapping
 
 SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 CURRENCIES = {"practice_sessions", "training_sessions", "skill_points", "attribute_points", "talent_points_placeholder"}
+
+# Adventurer's Lair parity: canonical Shattered Realms Glory purchase costs.
+# These are intentionally centralized so command handlers never hard-code them.
+GLORY_PRACTICE_COST = 100
+GLORY_TRAIN_COST = 250
+TRAINING_ATTRIBUTE_CAP = 20
+TRAINING_RESOURCE_SESSION_COST = 10
+TRAINING_RESOURCE_BONUS = 10
 COLLECTIONS = [
     "species_profiles","race_profiles","class_profiles","class_tracks","profession_profiles","experience_curves",
     "progression_profiles","attribute_growth_profiles","resource_growth_profiles","derived_stat_growth_profiles",
@@ -235,6 +243,39 @@ class ProgressionService:
         if amount<0 or int(s.get(currency,0))<amount: raise ValueError("insufficient advancement currency")
         with self.store.connect() as con: con.execute("INSERT INTO actor_advancement_currency_events VALUES(?,?,?,?,?,?,?,?,?,?,?)",(str(uuid.uuid4()),actor_id,currency,"spend",amount,"ability",None,reason,None,utc_now(),_json({"actor_type":actor_type})))
         return self.update_actor_progression(actor_id,{currency:int(s.get(currency,0))-amount},actor_type)
+    def purchase_session_with_glory(self, actor_id: str, session_currency: str, *, actor_type: str="player", source_id: str="guild_trainer") -> dict[str, Any]:
+        """Atomically spend Glory and grant one practice/training session.
+
+        The economy ledger and progression currency history are written in one
+        SQLite transaction.  If the Glory debit cannot be applied, the session
+        grant is not recorded.
+        """
+        if session_currency not in {"practice_sessions", "training_sessions"}:
+            raise ValueError("unsupported glory purchase")
+        cost = GLORY_PRACTICE_COST if session_currency == "practice_sessions" else GLORY_TRAIN_COST
+        self.initialize_actor_progression(actor_id, actor_type=actor_type)
+        from engine.economy import init_economy_schema, stable_id
+        init_economy_schema(self.store.db_path)
+        now = utc_now()
+        bal_id = stable_id("bal", self.store.world_id, "actor", actor_id, "glory")
+        txn = stable_id("txn", "glory_session_purchase", actor_id, session_currency, now)
+        with self.store.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            con.execute("INSERT OR IGNORE INTO actor_currency_balances VALUES(?,?,?,?,?,?,?,?,?)", (bal_id,self.store.world_id,"actor",actor_id,"glory",0,now,now,_json({})))
+            row = con.execute("SELECT balance FROM actor_currency_balances WHERE balance_id=?", (bal_id,)).fetchone()
+            before_glory = int(row["balance"] if hasattr(row, "keys") else row[0])
+            if before_glory < cost:
+                con.rollback()
+                return {"ok": False, "reason": "insufficient_glory", "cost": cost, "glory": before_glory, "currency": session_currency}
+            after_glory = before_glory - cost
+            state = con.execute("SELECT * FROM actor_progression_state WHERE actor_id=? AND actor_type=?", (actor_id, actor_type)).fetchone()
+            before_sessions = int(state[session_currency] if hasattr(state, "keys") else state[14 if session_currency=="training_sessions" else 13])
+            after_sessions = before_sessions + 1
+            con.execute("UPDATE actor_currency_balances SET balance=?,updated_at=? WHERE balance_id=?", (after_glory, now, bal_id))
+            con.execute("INSERT INTO economy_ledger_entries VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (stable_id("led", txn, 1, actor_id, "glory"), self.store.world_id, txn, 1, "actor", actor_id, "glory", "debit", cost, before_glory, after_glory, "guild", source_id, "glory_session_purchase", session_currency, f"buy {session_currency}", None, now, _json({"actor_type": actor_type})))
+            con.execute(f"UPDATE actor_progression_state SET {session_currency}=?,updated_at=? WHERE actor_id=? AND actor_type=?", (after_sessions, now, actor_id, actor_type))
+            con.execute("INSERT INTO actor_advancement_currency_events VALUES(?,?,?,?,?,?,?,?,?,?,?)", (str(uuid.uuid4()), actor_id, session_currency, "grant", 1, "glory_purchase", source_id, f"buy {session_currency}", after_sessions, now, _json({"actor_type": actor_type, "glory_cost": cost, "glory_after": after_glory, "transaction_id": txn})))
+        return {"ok": True, "cost": cost, "glory": after_glory, "currency": session_currency, "sessions": after_sessions}
     def learn_ability(self, actor_id: str, ability_id: str, source: dict[str,Any]|None=None, actor_type="player") -> dict[str,Any]:
         source=source or {}; self.initialize_actor_progression(actor_id,actor_type=actor_type)
         cost=int(source.get("practice_cost",0) or 0)
@@ -319,6 +360,50 @@ class ProgressionService:
     def trace_ability_learning(self, actor_id, ability_id, actor_type="player"):
         with self.store.connect() as con: r=con.execute("SELECT * FROM actor_ability_progression WHERE actor_id=? AND ability_id=?",(actor_id,ability_id)).fetchone()
         return {"actor_id":actor_id,"ability_id":ability_id,"known":bool(r),"grant":dict(r) if r else None}
+    def _practice_projection(self, row: Mapping[str, Any], intelligence: int=10) -> dict[str, Any]:
+        meta = _loads(row.get("metadata_json") if isinstance(row, Mapping) else row["metadata_json"], {})
+        ability_id = str(row.get("ability_id") if isinstance(row, Mapping) else row["ability_id"])
+        display = str(meta.get("name") or meta.get("display_name") or ability_id.replace("_", " ").title())
+        rank = int(row.get("rank", 1) if isinstance(row, Mapping) else row["rank"] or 1)
+        maximum_rank = int(row.get("maximum_rank", 1) if isinstance(row, Mapping) else row["maximum_rank"] or 1)
+        proficiency = int(row.get("proficiency", 1) if isinstance(row, Mapping) else row["proficiency"] or 1)
+        cap = int(meta.get("practice_proficiency_cap") or meta.get("maximum_proficiency") or 75)
+        gain = max(1, min(15, 5 + (int(intelligence)-10)//2))
+        return {"ability_id": ability_id, "display_name": display, "ability_type": str(meta.get("ability_type") or meta.get("type") or "skill"), "current_rank": rank, "maximum_rank": maximum_rank, "current_proficiency": proficiency, "practice_proficiency_cap": cap, "required_level": int(meta.get("required_level") or row.get("learned_at_level", 1) if isinstance(row, Mapping) else 1), "source_class": row.get("source_class_id") if isinstance(row, Mapping) else row["source_class_id"], "source_class_track": row.get("source_track_id") if isinstance(row, Mapping) else row["source_track_id"], "source_race": row.get("source_race_id") if isinstance(row, Mapping) else row["source_race_id"], "source_profession": row.get("source_profession_id") if isinstance(row, Mapping) else row["source_profession_id"], "availability": "known", "practice_eligibility": proficiency < cap, "practice_cost": 1, "calculated_learning_gain": gain}
+    def list_known_practice_abilities(self, actor_id: str, actor_type: str="player", *, intelligence: int=10) -> list[dict[str, Any]]:
+        self.initialize_actor_progression(actor_id, actor_type=actor_type)
+        with self.store.connect() as con:
+            con.row_factory=sqlite3.Row
+            return [self._practice_projection(dict(r), intelligence) for r in con.execute("SELECT * FROM actor_ability_progression WHERE actor_id=? AND active=1 ORDER BY ability_id",(actor_id,))]
+    def resolve_practice_ability(self, actor_id: str, query: str, actor_type: str="player", *, intelligence: int=10) -> dict[str, Any]:
+        q = " ".join(str(query).lower().replace("_"," ").split())
+        rows = self.list_known_practice_abilities(actor_id, actor_type, intelligence=intelligence)
+        def norm(s): return " ".join(str(s).lower().replace("_"," ").split())
+        for a in rows:
+            names = [norm(a["display_name"]), norm(a["ability_id"])]
+            if q in names: return {"ok": True, "ability": a}
+        matches = [a for a in rows if q and q in norm(a["display_name"]).split()]
+        if not matches: matches = [a for a in rows if q and norm(a["display_name"]).startswith(q)]
+        if len(matches) == 1: return {"ok": True, "ability": matches[0]}
+        if len(matches) > 1: return {"ok": False, "ambiguous": [a["display_name"] for a in matches]}
+        return {"ok": False, "reason": "unknown"}
+    def practice_ability(self, actor_id: str, ability_id: str, actor_type: str="player", *, intelligence: int=10, trainer_ok: bool=False) -> dict[str, Any]:
+        if not trainer_ok: return {"ok": False, "reason": "trainer_required"}
+        state = self.initialize_actor_progression(actor_id, actor_type=actor_type)
+        if int(state.get("practice_sessions",0) or 0) < 1: return {"ok": False, "reason": "insufficient_practice_sessions"}
+        with self.store.connect() as con:
+            con.row_factory=sqlite3.Row
+            con.execute("BEGIN IMMEDIATE")
+            row = con.execute("SELECT * FROM actor_ability_progression WHERE actor_id=? AND ability_id=? AND active=1", (actor_id, ability_id)).fetchone()
+            if not row: con.rollback(); return {"ok": False, "reason": "unknown"}
+            proj = self._practice_projection(dict(row), intelligence)
+            if int(proj["current_proficiency"]) >= int(proj["practice_proficiency_cap"]): con.rollback(); return {"ok": False, "reason": "at_cap", "projection": proj}
+            before = int(proj["current_proficiency"]); new = min(int(proj["practice_proficiency_cap"]), before + int(proj["calculated_learning_gain"]))
+            before_sessions = int(state.get("practice_sessions",0) or 0); after_sessions = before_sessions - 1; now=utc_now()
+            con.execute("UPDATE actor_ability_progression SET proficiency=? WHERE actor_id=? AND ability_id=?", (new, actor_id, ability_id))
+            con.execute("UPDATE actor_progression_state SET practice_sessions=?,updated_at=? WHERE actor_id=? AND actor_type=?", (after_sessions, now, actor_id, actor_type))
+            con.execute("INSERT INTO actor_advancement_currency_events VALUES(?,?,?,?,?,?,?,?,?,?,?)", (str(uuid.uuid4()), actor_id, "practice_sessions", "spend", 1, "practice", ability_id, f"practice {ability_id}", after_sessions, now, _json({"actor_type": actor_type, "before_proficiency": before, "after_proficiency": new})))
+        return {"ok": True, "ability_id": ability_id, "before": before, "after": new, "sessions": after_sessions, "projection": {**proj, "current_proficiency": new}}
     def trace_actor_progression(self, actor_id, actor_type="player"):
         s=self.initialize_actor_progression(actor_id,actor_type=actor_type); return {"state":s,"species":self.content.get("species_profiles",s.get("species_id")),"race":self.content.get("race_profiles",s.get("race_id")),"class":self.content.get("class_profiles",s.get("primary_class_id")),"experience_to_next":self.get_experience_to_next(actor_id,actor_type),"history":self.get_experience_history(actor_id,5,actor_type)}
     def trace_experience_curve(self, curve_id, level): return {"curve_id":curve_id,"level":level,"threshold":self.get_experience_threshold(curve_id,int(level)),"curve":self.content.get("experience_curves",curve_id)}
