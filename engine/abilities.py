@@ -48,7 +48,8 @@ PHASE14A_OPERATIONS = {
     "grant_resistance","grant_immunity","grant_vulnerability","damage_over_time","healing_over_time","resource_over_time",
     "dispel","cleanse","send_message","trigger_ability","set_cooldown","reduce_cooldown","teleport","recall","move_target",
 }
-PHASE14B_RESERVED_OPERATIONS = {"aura","stance","transform","summon","dismiss_summon","create_item","destroy_item","alter_item","create_room_effect","remove_room_effect"}
+PHASE14B_ADVANCED_OPERATIONS = {"aura","stance","transform","summon","dismiss_summon","create_item","destroy_item","alter_item","create_room_effect","remove_room_effect"}
+PHASE14B_RESERVED_OPERATIONS: set[str] = set()
 TARGET_KINDS = {"self","single_actor","single_enemy","single_ally","group","room_allies","room_enemies","room_all","area","single_item","inventory_item","equipped_item","room_item","room","exit","direction","location","no_target"}
 STACKING_POLICIES = {"stack","refresh_duration","replace","highest","lowest","unique","unique_by_source","unique_by_ability","unique_by_tag","increase_stacks","increase_intensity","independent_instances"}
 DURATION_POLICIES = {"instant","rounds","world_ticks","world_minutes","real_time","until_logout","until_death","until_room_change","until_combat_ends","permanent","while_equipped","while_source_exists"}
@@ -108,13 +109,46 @@ class AbilityUseRequest:
 class ActorAbilityProficiency:
     actor_id: str; ability_id: str; learned: bool = True; proficiency: int = 1; maximum_proficiency: int = 100; practice_progress: int = 0; mastery_rank: str = "novice"; uses: int = 0; successes: int = 0; failures: int = 0; last_used: str = ""; source: str = "learned"; version: int = 1
 
+@dataclass(frozen=True)
+class AbilityEffectOperationSpec:
+    operation_id: str
+    result_type: str = "operation_result"
+    idempotency_policy: str = "action_id"
+    allowed_target_types: tuple[str, ...] = ("self", "actor")
+    required_services: tuple[str, ...] = ()
+    event_names: tuple[str, ...] = ()
+    builder_field_schema: dict[str, Any] = field(default_factory=dict)
+    executable: bool = True
+
+
 class AbilityEffectOperationRegistry:
     def __init__(self):
-        self.operations = set(PHASE14A_OPERATIONS) | set(PHASE14B_RESERVED_OPERATIONS)
-        self.reserved = set(PHASE14B_RESERVED_OPERATIONS)
+        self.specs: dict[str, AbilityEffectOperationSpec] = {}
+        self.reserved: set[str] = set()
+        for op in sorted(set(PHASE14A_OPERATIONS) | set(PHASE14B_ADVANCED_OPERATIONS)):
+            self.register(AbilityEffectOperationSpec(
+                operation_id=op,
+                result_type="runtime_effect" if op in {"apply_affect","apply_condition","modify_stat","grant_resistance","grant_immunity","grant_vulnerability","damage_over_time","healing_over_time","resource_over_time","aura","stance","transform","create_room_effect"} else "operation_result",
+                idempotency_policy="origin_action_id" if op in PHASE14B_ADVANCED_OPERATIONS else "component_id",
+                allowed_target_types=("self","actor","room","item") if op in PHASE14B_ADVANCED_OPERATIONS else ("self","actor"),
+                required_services=("effect_store",) if op in {"aura","stance","transform","create_room_effect","remove_room_effect"} else (),
+                event_names=(f"{op}_completed", "effect_applied"),
+                builder_field_schema={"operation": {"type": "string", "const": op}, "parameters": {"type": "object"}},
+                executable=True,
+            ))
+    @property
+    def operations(self) -> set[str]: return set(self.specs)
+    def register(self, spec: AbilityEffectOperationSpec) -> None:
+        if not spec.operation_id or not spec.executable:
+            raise ValueError("Registered ability operations must be executable and named")
+        self.specs[spec.operation_id] = spec
     def validate(self, operation: str) -> None:
-        if operation not in self.operations:
+        if operation not in self.specs:
             raise ValueError(f"Unknown ability effect operation: {operation}")
+        if not self.specs[operation].executable:
+            raise ValueError(f"Ability effect operation is not executable: {operation}")
+    def schema_for(self, operation: str) -> dict[str, Any]:
+        self.validate(operation); return dict(self.specs[operation].builder_field_schema)
     def is_reserved(self, operation: str) -> bool: return operation in self.reserved
 
 class AbilityAvailabilityService:
@@ -143,13 +177,46 @@ class AbilityDefinition:
     movement_components: list[dict[str, Any]] = field(default_factory=list); state_requirements: dict[str, Any] = field(default_factory=dict); state_changes: list[dict[str, Any]] = field(default_factory=list)
     interrupt_rules: dict[str, Any] = field(default_factory=dict); messages: dict[str, str] = field(default_factory=dict); ai_hints: dict[str, Any] = field(default_factory=dict)
     plugin_data: dict[str, Any] = field(default_factory=dict); version: str = "1.0.0"
+    canonical_effects: list[dict[str, Any]] = field(default_factory=list); prerequisites: list[dict[str, Any]] = field(default_factory=list)
+    materials: list[dict[str, Any]] = field(default_factory=list); proficiency_policy: dict[str, Any] = field(default_factory=dict)
+    display: dict[str, Any] = field(default_factory=dict); source_version: str = "1"
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "AbilityDefinition":
-        data = {k: raw.get(k) for k in cls.__dataclass_fields__ if k in raw}; data.setdefault("name", raw.get("name") or raw.get("id", "")); return cls(**data)
+        return LegacyAbilityDefinitionAdapter.adapt(raw)
     def to_dict(self) -> dict[str, Any]: return asdict(self)
     @property
+    def ordered_effects(self) -> list[dict[str, Any]]: return list(self.canonical_effects or (self.plugin_data or {}).get("canonical_effects", []) or [])
+    @property
     def activation_type(self) -> str: return str((self.timing or {}).get("activation_type") or "instant")
+
+
+class LegacyAbilityDefinitionAdapter:
+    """Deterministically normalizes older Phase 6C ability dictionaries.
+
+    Published runtime code consumes AbilityDefinition.canonical_effects,
+    prerequisites, materials, proficiency_policy, display, and source_version.
+    Legacy plugin_data.canonical_effects/materials remain loadable, but are copied
+    into typed top-level fields so new definitions do not hide behavior in
+    generic plugin_data.
+    """
+    @staticmethod
+    def adapt(raw: dict[str, Any]) -> AbilityDefinition:
+        data = {k: raw.get(k) for k in AbilityDefinition.__dataclass_fields__ if k in raw and k != "canonical_effects"}
+        data.setdefault("name", raw.get("name") or raw.get("id", ""))
+        pdata = dict(raw.get("plugin_data") or {})
+        canonical = raw.get("canonical_effects")
+        if canonical is None:
+            canonical = pdata.get("canonical_effects") or []
+        data["canonical_effects"] = [dict(e) for e in canonical if isinstance(e, dict)]
+        data["materials"] = list(raw.get("materials") or pdata.get("materials") or [])
+        data["prerequisites"] = list(raw.get("prerequisites") or raw.get("requirements", {}).get("prerequisites", []) if isinstance(raw.get("requirements"), dict) else [])
+        data["proficiency_policy"] = dict(raw.get("proficiency_policy") or pdata.get("proficiency_policy") or {})
+        data["display"] = dict(raw.get("display") or {"name": data.get("name", ""), "short_name": raw.get("short_name", ""), "visibility": raw.get("visibility", "normal")})
+        data["source_version"] = str(raw.get("source_version") or raw.get("version") or "1")
+        pdata.pop("canonical_effects", None); pdata.pop("materials", None); pdata.pop("proficiency_policy", None)
+        data["plugin_data"] = pdata
+        return AbilityDefinition(**data)
 
 @dataclass
 class AbilityLoadout:
@@ -279,7 +346,7 @@ class AbilityRegistry:
                 if ph not in PLACEHOLDERS: errors.append(f"ability {a.id} invalid message placeholder: {ph}")
         if a.ability_type == "passive" and (a.costs or a.damage_components or a.healing_components or a.activation_type not in {"passive","instant"}): errors.append(f"ability {a.id} passive/active contradiction")
         if "spellup_eligible" in (a.tags or []) and (a.damage_components or a.ability_type in {"debuff","monster","natural"}): errors.append(f"ability {a.id} harmful ability tagged spellup_eligible")
-        for eff in (a.plugin_data or {}).get("canonical_effects", []) or []:
+        for eff in a.ordered_effects or []:
             op=str(eff.get("operation") or "")
             if op not in self.effect_operations.operations: errors.append(f"ability {a.id} unknown operation: {op}")
             if eff.get("duration", {}).get("amount", 0) is not None and num(eff.get("duration", {}).get("amount", 0)) < 0: errors.append(f"ability {a.id} negative duration")
@@ -288,7 +355,7 @@ class AbilityRegistry:
             for key,msg in (eff.get("messages") or {}).items():
                 for ph in re.findall(r"{([^{}]+)}", str(msg)):
                     if ph not in PLACEHOLDERS: errors.append(f"ability {a.id} invalid message placeholder: {ph}")
-        if not (a.damage_components or a.healing_components or a.effects_applied or a.effects_removed or a.state_changes or (a.plugin_data or {}).get("canonical_effects")): warnings.append(f"ability {a.id} has no components")
+        if not (a.damage_components or a.healing_components or a.effects_applied or a.effects_removed or a.state_changes or a.ordered_effects): warnings.append(f"ability {a.id} has no components")
         if not a.messages: warnings.append(f"ability {a.id} has no messages")
         return errors,warnings
     def validate(self) -> list[str]:
@@ -504,7 +571,7 @@ class AbilityExecutionService:
                 amount = int(num(comp.get("base_amount", comp.get("amount", 0))))
                 result["healing_events"].append(asdict(self.apply_healing(actor.actor_id, target_actor.actor_id, amount, ability_id, comp.get("id"), {"cast_id": cast_id, "formula_id": comp.get("formula_id")})))
             for eff in ab.effects_applied: result["effect_events"].append(self._apply_effect(actor,target_actor,ab,eff,cast_id))
-        for eff in (ab.plugin_data or {}).get("canonical_effects", []) or []:
+        for eff in ab.ordered_effects or []:
             handled = self._apply_canonical_effect(actor, tr.get("targets", []), ab, eff, cast_id)
             result["effect_events"].append(handled)
             if handled.get("message"):
@@ -902,7 +969,7 @@ class AbilityExecutionService:
             pass
 
     def _validate_materials(self, actor_id: str, ab: AbilityDefinition) -> dict[str, Any]:
-        reqs=list((ab.plugin_data or {}).get("materials") or [])
+        reqs=list(ab.materials or (ab.plugin_data or {}).get("materials") or [])
         if not reqs or not self.db_path: return {"ok": True, "materials": []}
         out=[]; ok=True
         with sqlite3.connect(self.db_path) as c:
@@ -916,7 +983,7 @@ class AbilityExecutionService:
         return {"ok": bool(ok), "materials": out}
 
     def _consume_materials(self, actor_id: str, ab: AbilityDefinition, timing: str) -> list[dict[str, Any]]:
-        reqs=[r for r in list((ab.plugin_data or {}).get("materials") or []) if str(r.get("consume_timing","start")) == timing]
+        reqs=[r for r in list(ab.materials or (ab.plugin_data or {}).get("materials") or []) if str(r.get("consume_timing","start")) == timing]
         if not reqs or not self.db_path: return []
         results=[]
         with sqlite3.connect(self.db_path) as c:
