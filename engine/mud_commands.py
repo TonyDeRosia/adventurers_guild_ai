@@ -2254,8 +2254,8 @@ class MudCommandEngine:
     def _cmd_worth(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display net worth through the unified character display suite."""
         svc = getattr(self, "character_display_snapshots", None) or getattr(getattr(self, "runtime", None), "character_display_snapshots", None) or CharacterDisplaySnapshotService(getattr(self, "runtime", None))
-        snap = svc.build_snapshot(character)
-        doc = build_worth_document(character, snapshot=snap, theme=resolve_effective_display_theme(character, family="worth"))
+        worth_snapshot = svc.build_worth_snapshot(character) if hasattr(svc, "build_worth_snapshot") else None
+        doc = build_worth_document(character, worth_snapshot=worth_snapshot, theme=resolve_effective_display_theme(character, family="worth"))
         return CommandResult(narrative=render_display_mud(doc, color_enabled=getattr(doc.frames[0] if doc.frames else None, "color_enabled", True)), display_document=doc, display_intent="WORTH")
 
     def _cmd_who(self, character: Any, args: list[str], raw: str) -> CommandResult:

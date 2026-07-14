@@ -750,8 +750,8 @@ def build_score_document(character: Any = None, *, snapshot: CharacterDisplaySna
     doc.debug_metadata.update({"snapshot_version": vm.schema_version, "display_mode": mode})
     return doc
 
-def build_worth_document(character: Any, *, snapshot: CharacterDisplaySnapshot | None = None, theme: Any = None) -> DisplayDocument:
-    currency=(snapshot or build_character_display_snapshot(character)).currency
+def build_worth_document(character: Any = None, *, snapshot: CharacterDisplaySnapshot | None = None, worth_snapshot: Any = None, theme: Any = None) -> DisplayDocument:
+    currency=(worth_snapshot.currencies if worth_snapshot is not None else (snapshot or build_character_display_snapshot(character)).currency)
     cells=[DisplayCell(width=18, segments=_field_segments(k.title(), v, value_role="gold" if k=="gold" else "character_value")) for k,v in currency.items() if v is not None]
     if not cells: cells=[DisplayCell("You are broke.", role="character_muted", width=30)]
     return build_character_frame_document(DisplayIntent.WORTH,"CURRENCIES",[DisplayRow(cells)],width=48, theme=theme)
