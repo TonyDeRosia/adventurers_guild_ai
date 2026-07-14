@@ -17,10 +17,25 @@ class CalculatedAttribute:
     attribute_id:str; name:str; base_value:int; permanent_modifier:int; equipment_modifier:float; affect_modifier:float; temporary_modifier:float; situational_modifier:float; final_value:int; minimum_value:int; maximum_value:int; sources:list[dict[str,Any]]=field(default_factory=list)
 @dataclass(frozen=True)
 class PrimaryStatValue:
+    @property
+    def name(self): return self.label
+    @property
+    def affect_modifier(self): return self.effect_component
+    @property
+    def equipment_modifier(self): return self.equipment_component
+    @property
+    def permanent_modifier(self): return self.permanent_component
+    @property
+    def situational_modifier(self): return self.situational_component
+    @property
+    def minimum_value(self): return self.minimum
+    @property
+    def maximum_value(self): return self.maximum
+
     stat_id:str; semantic_role:str; label:str; short_label:str; base_value:int; permanent_component:float; equipment_component:float; effect_component:float; template_component:float; instance_component:float; situational_component:float; final_value:int; minimum:int; maximum:int; active:bool=True; inactive_reason:str=""; formula_or_aggregation:str="base+components"; source_versions:dict[str,Any]=field(default_factory=dict)
 @dataclass(frozen=True)
 class CombatStatValue:
-    stat_id:str; label:str; value:Any; unit:str; display_format:str; display_group:str; display_order:int; active:bool; inactive_reason:str; minimum:Any; maximum:Any; base_component:float; attribute_component:float; equipment_component:float; effect_component:float; template_component:float; instance_component:float; situational_component:float; formula_id:str; formula_inputs:dict[str,Any]=field(default_factory=dict); source_versions:dict[str,Any]=field(default_factory=dict)
+    stat_id:str; label:str; value:Any; unit:str; display_format:str; display_group:str; display_order:int; active:bool; inactive_reason:str; minimum:Any; maximum:Any; base_component:float; attribute_component:float; equipment_component:float; effect_component:float; template_component:float; instance_component:float; situational_component:float; formula_id:str; formula_inputs:dict[str,Any]=field(default_factory=dict); source_versions:dict[str,Any]=field(default_factory=dict); operation_trace:list[dict[str,Any]]=field(default_factory=list)
     def __str__(self): return str(self.value)
     def __int__(self):
         try: return int(self.value)
@@ -38,9 +53,13 @@ class CombatStatValue:
     def __gt__(self, other): return float(self) > self._coerce(other)
     def __ge__(self, other): return float(self) >= self._coerce(other)
     def __eq__(self, other): return self.value == (getattr(other,'value',other))
+    def __sub__(self, other): return float(self)-self._coerce(other)
+    def __rsub__(self, other): return self._coerce(other)-float(self)
+    def __add__(self, other): return float(self)+self._coerce(other)
+    def __radd__(self, other): return self._coerce(other)+float(self)
 @dataclass(frozen=True)
 class ResistanceStatValue:
-    resistance_id:str; label:str; value:float; unit:str; minimum:float; maximum:float; display_order:int; active:bool; inactive_reason:str; covered_damage_types:list[str]; base_component:float; equipment_component:float; effect_component:float; template_component:float; instance_component:float; formula_id:str; source_versions:dict[str,Any]=field(default_factory=dict)
+    resistance_id:str; label:str; value:float; unit:str; minimum:float; maximum:float; display_order:int; active:bool; inactive_reason:str; covered_damage_types:list[str]; base_component:float; equipment_component:float; effect_component:float; template_component:float; instance_component:float; formula_id:str; source_versions:dict[str,Any]=field(default_factory=dict); operation_trace:list[dict[str,Any]]=field(default_factory=list)
     def __str__(self): return str(self.value)
     def __int__(self): return int(self.value)
     def __eq__(self, other): return self.value == (getattr(other,'value',other))
@@ -194,14 +213,38 @@ class CharacterAttributeService:
         if hi is not None: v=min(v,hi)
         return v,src
     def get_all_attributes(self, character, context=None):
-        self.migrate_character(character); rows=self._rows(_cid(character)); mods=self.collect_modifiers(character,context); out={}
+        prim=self.get_primary_stats(character,context); out={}
+        for aid,p in prim.items():
+            out[aid]=CalculatedAttribute(aid,p.label,p.base_value,int(p.permanent_component),p.equipment_component,p.effect_component,0,p.situational_component,p.final_value,p.minimum,p.maximum,[])
+        return out
+
+    def get_primary_stats(self, actor_input_or_actor, context=None):
+        context=context or {}
+        if isinstance(actor_input_or_actor, ActorStatInput):
+            ai=actor_input_or_actor; mods=[]
+            # ActorStatInput stores already-normalized source snapshots.
+            for bucket in (ai.permanent_modifiers, getattr(ai.equipment_snapshot,'modifier_sources',[]) if ai.equipment_snapshot else [], ai.effect_snapshot, ai.template_modifiers, ai.instance_modifiers, ai.situational_modifiers):
+                for m in bucket or []:
+                    mods.append(m if isinstance(m,StatModifier) else StatModifier(**m))
+            rows={k:{'base_value':v,'permanent_modifier':0} for k,v in ai.primary_attribute_bases.items()}
+            source_versions=ai.source_versions
+        else:
+            self.migrate_character(actor_input_or_actor); rows=self._rows(_cid(actor_input_or_actor)); mods=self.collect_modifiers(actor_input_or_actor,context); source_versions={'attributes':self.migration_version}
+        out={}
+        aliases={'affect':'effect','temporary':'effect'}
         for aid,d in sorted(self.definitions.items(), key=lambda kv:kv[1].get('display_order',99)):
             row=rows.get(aid,{})
-            legacy=getattr(character,'attributes',None) or (getattr(character,'actor_data',{}) or {}).get('attributes',{})
+            legacy=getattr(actor_input_or_actor,'attributes',None) or (getattr(actor_input_or_actor,'actor_data',{}) or {}).get('attributes',{})
             legacy_val=legacy.get(aid) if isinstance(legacy,dict) else None
-            base=int(row.get('base_value', legacy_val if legacy_val is not None else d.get('default_value',10))); perm=int(row.get('permanent_modifier',0)); rel=[m for m in mods if m.target_stat in {aid, 'attribute.'+aid}]; v,src=self._apply(base+perm, rel); final=max(int(d.get('minimum_value',1)), min(int(d.get('maximum_value',30)), int(math.floor(v))))
-            sums={k:sum((m.value if m.operation=='add' else -m.value if m.operation=='subtract' else 0) for m in rel if m.source_type==k) for k in ['equipment','affect','temporary','situational']}
-            out[aid]=CalculatedAttribute(aid,d.get('name',aid.title()),base,perm,sums['equipment'],sums['affect'],sums['temporary'],sums['situational'],final,int(d.get('minimum_value',1)),int(d.get('maximum_value',30)),src)
+            base=int(row.get('base_value', legacy_val if legacy_val is not None else d.get('default_value',10))); perm=float(row.get('permanent_modifier',0) or 0)
+            rel=[m for m in mods if m.target_stat in {aid, 'attribute.'+aid}]
+            v,src=self._apply(base+perm, rel)
+            final=max(int(d.get('minimum_value',1)), min(int(d.get('maximum_value',30)), int(math.floor(v))))
+            comps={k:0.0 for k in ['equipment','effect','template','instance','situational']}
+            for tr in src:
+                cat=aliases.get(str(tr.get('source_type')),str(tr.get('source_type')))
+                if cat in comps: comps[cat]+=float(tr.get('after',0))-float(tr.get('before',0))
+            out[aid]=PrimaryStatValue(aid,d.get('semantic_role',''),d.get('name',aid.title()),d.get('short_name',aid[:3].upper()),base,perm,comps['equipment'],comps['effect'],comps['template'],comps['instance'],comps['situational'],final,int(d.get('minimum_value',1)),int(d.get('maximum_value',30)),True,'','base+components',source_versions)
         return out
     def get_attribute(self, character, attribute_id, context=None): return self.get_all_attributes(character,context).get(attribute_id)
     def get_breakdown(self, character, attribute_id, context=None): return self.get_attribute(character,attribute_id,context)
@@ -210,7 +253,7 @@ class PlayerStatInputAdapter:
     def __init__(self, service): self.service=service
     def build(self, actor, context=None):
         attrs=self.service.attribute_service.get_all_attributes(actor,context)
-        return ActorStatInput(_cid(actor),'player',self.service.attribute_service.world_id,None,None,None,_cid(actor),int(getattr(actor,'level',1) or 1),{k:v.base_value for k,v in attrs.items()},equipment_snapshot=self.service.equipment_snapshot(actor,context),resistance_profile=getattr(actor,'resistance_profile',None) or getattr(actor,'resistances',None) or {},resource_projection={'health':getattr(actor,'hp',getattr(actor,'hp_current',0))},source_versions={'adapter':'player'})
+        return ActorStatInput(_cid(actor),'player',self.service.attribute_service.world_id,None,None,None,_cid(actor),int(getattr(actor,'level',1) or 1),{k:v.base_value for k,v in attrs.items()},equipment_snapshot=self.service.equipment_snapshot(actor,context),resistance_profile=getattr(actor,'resistance_profile',None) or getattr(actor,'resistances',None) or {},effect_snapshot=[m if isinstance(m,StatModifier) else StatModifier(**m) for m in ((context or {}).get('modifiers') or [])],resource_projection={'health':getattr(actor,'hp',getattr(actor,'hp_current',0)),'mana':getattr(actor,'mana',0),'stamina':getattr(actor,'stamina',0),'weight_snapshot':self.service._inventory_weight_snapshot(actor,context)},source_versions={'adapter':'player','equipment':getattr(self.service.equipment_snapshot(actor,context),'version','')})
 class EntityTemplateStatInputAdapter:
     def __init__(self, service): self.service=service
     def build(self, template, context=None):
@@ -234,7 +277,7 @@ class CombatStatService:
     schema_version='phase13c3-b3.combat-snapshot.v1'
     inactive_speed_reason='Combat rounds do not currently use initiative ordering or speed-based timing.'
     semantic_roles={'physical_power':'strength','agility':'dexterity','endurance':'constitution','intellect':'intelligence','willpower':'wisdom','presence':'charisma'}
-    active_secondary={'accuracy','hit_bonus','attack_power','damage_bonus','spell_power','healing_power','armor','evasion','critical_avoidance','critical_melee','critical_spell','critical_heal','critical_damage','physical_save','mental_save','magic_save','max_health','max_mana','max_stamina','carry_capacity','current_carry_weight','encumbrance_percent'}
+    active_secondary={'accuracy','hit_bonus','attack_power','damage_bonus','spell_power','healing_power','armor','evasion','critical_avoidance','critical_melee','critical_spell','critical_heal','critical_damage','physical_save','mental_save','magic_save','max_health','max_mana','max_stamina','maximum_health','maximum_mana','maximum_stamina','carry_capacity','current_carry_weight','encumbrance_percent'}
     def __init__(self, attribute_service:CharacterAttributeService): self.attribute_service=attribute_service; self.world_root=attribute_service.world_root; self.formula_engine=FormulaEngine(); self.reload_definitions()
     def reload_definitions(self):
         raw=_load_json(self.world_root/'formulas/derived_stats.json',{}); self.stat_defs={d['stat_id']:d for d in raw.get('derived_stats',[])}; self.formulas={f['formula_id']:f['expression'] for f in _load_json(self.world_root/'formulas/stat_formulas.json',{}).get('formulas',[])}; self.thresholds=raw.get('encumbrance_thresholds',{}); self.resistance_defs={str(r.get('id')):r for r in _load_json(self.world_root/'resistance_profiles/resistance_profiles.json',[])}; self.validate_semantic_roles()
@@ -255,9 +298,11 @@ class CombatStatService:
         if getattr(actor_or_character,'template',None) or getattr(actor_or_character,'actor_type',None) in {'npc','mob','summon','pet','follower','temporary','environment'}: return ActorRuntimeStatInputAdapter(self).build(actor_or_character,context)
         return PlayerStatInputAdapter(self).build(actor_or_character,context)
     def project_legacy_template_attributes(self, tid, level, role, template):
-        base=10+min(10,max(0,level//3)); vals={k:base for k in self.attribute_service.definitions}; shifts={'brute':('strength','constitution'),'skirmisher':('dexterity','strength'),'caster':('intelligence','wisdom'),'healer':('wisdom','charisma'),'leader':('charisma','wisdom'),'balanced':('strength','dexterity')}.get(role,('strength','constitution'))
-        for i,a in enumerate(shifts): vals[a]=min(30,base+(3-i))
-        if template.get('accuracy'): vals['dexterity']=min(30,vals.get('dexterity',base)+int(template.get('accuracy',0))//10)
+        base=10+min(10,max(0,level//3)); vals={aid:base for aid in self.attribute_service.definitions}
+        def aid(role_id): return self.semantic_roles.get(role_id, role_id)
+        shifts={'brute':('physical_power','endurance'),'skirmisher':('agility','physical_power'),'caster':('intellect','willpower'),'healer':('willpower','presence'),'leader':('presence','willpower'),'balanced':('physical_power','agility')}.get(role,('physical_power','endurance'))
+        for i,r in enumerate(shifts): vals[aid(r)]=min(30,base+(3-i))
+        if template.get('accuracy') and aid('agility') in vals: vals[aid('agility')]=min(30,vals.get(aid('agility'),base)+int(template.get('accuracy',0))//10)
         return vals
     def legacy_template_hash(self,t): return hashlib.sha1(json.dumps(t,sort_keys=True,default=str).encode()).hexdigest() if isinstance(t,dict) else ''
     def resolve_natural_weapons_from_data(self,data,versions=None):
@@ -268,30 +313,72 @@ class CombatStatService:
             if not isinstance(w,dict): continue
             out.append(NaturalWeaponProfile(str(w.get('id') or f'natural_{i}'),str(w.get('name') or w.get('attack') or 'Natural Attack'),str(w.get('attack_kind') or 'melee'),int(w.get('minimum_damage') or w.get('min_damage') or w.get('damage_min') or 1),int(w.get('maximum_damage') or w.get('max_damage') or w.get('damage_max') or w.get('damage') or 2),str(w.get('damage_type') or 'physical'),int(w.get('attack_speed') or 100),int(w.get('reach') or 1),int(w.get('minimum_range') or 0),int(w.get('maximum_range') or w.get('range') or 0),str(w.get('scaling_role') or 'physical_power'),float(w.get('scaling_coefficient') or 0),bool(w.get('can_critical',True)),str(w.get('critical_multiplier_policy') or 'actor_stat'),bool(w.get('armor_applies',True)),bool(w.get('resistance_applies',True)),str((versions or {}).get('template','')),str((versions or {}).get('body','')),versions or {}))
         return out
+
+    def collect_actor_modifiers(self, actor_input, context=None):
+        ai=self.build_actor_stat_input(actor_input, context)
+        ordered=[]
+        def add_many(seq, category=None):
+            for m in seq or []:
+                sm=m if isinstance(m,StatModifier) else StatModifier(**m)
+                if category and sm.source_type!=category:
+                    sm=StatModifier(sm.modifier_id,category,sm.source_id,sm.target_stat,sm.operation,sm.value,sm.priority,sm.stacking_group,sm.stacking_rule,sm.duration,sm.expires_at,sm.condition,sm.tags,sm.metadata)
+                ordered.append(sm)
+        add_many(ai.permanent_modifiers,'permanent')
+        add_many(getattr(ai.equipment_snapshot,'modifier_sources',[]) if ai.equipment_snapshot else [],'equipment')
+        add_many(ai.effect_snapshot,'effect')
+        add_many(ai.template_modifiers,'template')
+        add_many(ai.instance_modifiers,'instance')
+        add_many(ai.situational_modifiers,'situational')
+        add_many((ai.body_profile or {}).get('modifiers') if isinstance(ai.body_profile,dict) else [],'body_profile')
+        add_many((ai.combat_profile or {}).get('modifiers') if isinstance(ai.combat_profile,dict) else [],'combat_profile')
+        return self.attribute_service._stack(ordered)
+
+    def _inventory_weight_snapshot(self,ch,context=None):
+        if isinstance(ch,ActorStatInput) and isinstance(ch.resource_projection,dict) and isinstance(ch.resource_projection.get('weight_snapshot'),dict):
+            return ch.resource_projection.get('weight_snapshot')
+        rt=(context or {}).get('runtime') or getattr(self.attribute_service,'runtime',None)
+        cid=_cid(ch)
+        if rt and hasattr(rt,'inventory_projection_service') and hasattr(rt.inventory_projection_service,'get_weight_snapshot'):
+            return rt.inventory_projection_service.get_weight_snapshot(cid)
+        eq=self.equipment_snapshot(ch,context); inv=0.0
+        # Compatibility fallback for tests without canonical item services.
+        for i in (getattr(ch,'inventory',[]) or []):
+            if isinstance(i,dict) and not i.get('destroyed') and not i.get('equipped_slot'):
+                inv += float(i.get('weight',0) or 0)*int(i.get('quantity',i.get('stack_count',1)) or 1)
+        return {'current_inventory_weight':inv,'current_equipped_weight':getattr(eq,'total_weight',0.0),'total_carried_weight':inv+getattr(eq,'total_weight',0.0),'container_adjusted_weight':inv+getattr(eq,'total_weight',0.0),'source_version':getattr(eq,'version','')}
     def _weight(self,ch,context=None):
-        eq=self.equipment_snapshot(ch,context); total=getattr(eq,'total_weight',0.0); return total+sum(float((i if isinstance(i,dict) else {}).get('weight',0) or 0)*int((i if isinstance(i,dict) else {}).get('quantity',1) or 1) for i in (getattr(ch,'inventory',[]) or []))
+        return float(self._inventory_weight_snapshot(ch,context).get('total_carried_weight',0) or 0)
     def _variables(self,ch,attrs,extra=None,context=None):
-        eq=self.equipment_snapshot(ch,context); armor=sum(int(i.get('armor_value',0) or 0) for i in getattr(eq,'armor_instances',[])); weapon=getattr(eq,'weapon_instance',None)
+        eq=ch.equipment_snapshot if isinstance(ch,ActorStatInput) and ch.equipment_snapshot is not None else self.equipment_snapshot(ch,context); armor=sum(int(i.get('armor_value',0) or 0) for i in getattr(eq,'armor_instances',[])); weapon=getattr(eq,'weapon_instance',None)
         v={k:getattr(a,'final_value',a) for k,a in attrs.items()}
         for role,aid in self.semantic_roles.items(): v[role]=v.get(aid,10)
         v.update(level=int(getattr(ch,'level',1) or 1), equipment_armor=armor, inventory_weight=self._weight(ch,context), weapon_base_min=(weapon.minimum_damage if weapon else 0), weapon_base_max=(weapon.maximum_damage if weapon else 0)); v.update(extra or {}); return v
     def get_stat(self,ch,stat_id,context=None): return self.get_breakdown(ch,stat_id,context)['value']
     def get_breakdown(self,ch,stat_id,context=None):
-        attrs=self.attribute_service.get_all_attributes(ch,context) if not isinstance(ch,ActorStatInput) else {k:v for k,v in ch.primary_attribute_bases.items()}; vars=self._variables(ch,attrs,context=context); d=self.stat_defs.get(stat_id,{}); fid=d.get('formula_id',stat_id); expr=self.formulas.get(fid,'0')
-        val=self.formula_engine.evaluate_expression(fid, expr, vars).final_value; mods=[m for m in self.attribute_service.collect_modifiers(ch,context) if m.target_stat in {stat_id,'derived.'+stat_id}] if not isinstance(ch,ActorStatInput) else []
-        val,src=self.attribute_service._apply(val,mods); val=max(float(d.get('minimum_value',0)), min(float(d.get('maximum_value',100000)), val)); rounded=int(math.floor(val)) if d.get('rounding','floor')=='floor' else round(val)
-        return {'stat_id':stat_id,'value':rounded,'formula':expr,'formula_id':fid,'inputs':vars,'modifiers':src,'rounding':d.get('rounding','floor'),'clamping':[d.get('minimum_value',0),d.get('maximum_value',100000)]}
+        ai=self.build_actor_stat_input(ch,context); attrs=self.attribute_service.get_primary_stats(ai,context); vars=self._variables(ai,attrs,context=context); d=self.stat_defs.get(stat_id,{}); fid=d.get('formula_id',stat_id); expr=self.formulas.get(fid,'0')
+        base=self.formula_engine.evaluate_expression(fid, expr, vars).final_value; mods=[m for m in self.collect_actor_modifiers(ai,context) if m.target_stat in {stat_id,'derived.'+stat_id}]
+        val,src=self.attribute_service._apply(base,mods); unclamped=val; val=max(float(d.get('minimum_value',0)), min(float(d.get('maximum_value',100000)), val)); rounded=int(math.floor(val)) if d.get('rounding','floor')=='floor' else round(val)
+        comps={k:0.0 for k in ['equipment','effect','template','instance','situational','body_profile','combat_profile','permanent']}
+        aliases={'affect':'effect','temporary':'effect'}
+        for tr in src:
+            cat=aliases.get(str(tr.get('source_type')),str(tr.get('source_type')))
+            if cat in comps: comps[cat]+=float(tr.get('after',0))-float(tr.get('before',0))
+        return {'stat_id':stat_id,'value':rounded,'formula':expr,'formula_id':fid,'inputs':vars,'modifiers':src,'components':comps,'base_component':base,'rounding':d.get('rounding','floor'),'clamping':[d.get('minimum_value',0),d.get('maximum_value',100000)],'unclamped':unclamped}
     def _combat_value(self,ch,stat_id,context=None, *, value=None, active=None, reason=''):
         d=self.stat_defs.get(stat_id,{}); bd=self.get_breakdown(ch,stat_id,context) if value is None and stat_id in self.stat_defs else {'value':value,'formula_id':'','inputs':{}}
         active = (stat_id in self.active_secondary) if active is None else active
-        return CombatStatValue(stat_id,d.get('name',stat_id.replace('_',' ').title()),bd['value'],'multiplier' if stat_id=='critical_damage' else ('lb' if 'weight' in stat_id or 'capacity' in stat_id else ('percent' if stat_id.endswith('percent') else 'rating')),d.get('display_format','number'),d.get('display_group','combat'),int(d.get('display_order',999)),bool(active),'' if active else reason,float(d.get('minimum_value',0)),float(d.get('maximum_value',100000)),float(d.get('base_value',0)),0,0,0,0,0,0,bd.get('formula_id',''),bd.get('inputs',{}),{'snapshot':self._source_version(ch,context)})
+        return CombatStatValue(stat_id,d.get('name',stat_id.replace('_',' ').title()),bd['value'],'multiplier' if stat_id=='critical_damage' else ('lb' if 'weight' in stat_id or 'capacity' in stat_id else ('percent' if stat_id.endswith('percent') else 'rating')),d.get('display_format','number'),d.get('display_group','combat'),int(d.get('display_order',999)),bool(active),'' if active else reason,float(d.get('minimum_value',0)),float(d.get('maximum_value',100000)),float(bd.get('base_component',d.get('base_value',0)) or 0),0,float(bd.get('components',{}).get('equipment',0)+bd.get('components',{}).get('body_profile',0)+bd.get('components',{}).get('combat_profile',0)),float(bd.get('components',{}).get('effect',0)),float(bd.get('components',{}).get('template',0)),float(bd.get('components',{}).get('instance',0)),float(bd.get('components',{}).get('situational',0)),bd.get('formula_id',''),bd.get('inputs',{}),self._source_versions(ch,context),bd.get('modifiers',[]))
     def get_resistances(self,ch,context=None): return {k:v.value for k,v in self.get_resistance_values(ch,context).items()}
     def get_resistance_values(self,ch,context=None):
-        mods=self.attribute_service.collect_modifiers(ch,context) if not isinstance(ch,ActorStatInput) else []; profile=getattr(ch,'resistance_profile',None) or getattr(ch,'resistances',None) or {}; out={}
+        ai=self.build_actor_stat_input(ch,context); mods=self.collect_actor_modifiers(ai,context); profile=ai.resistance_profile or getattr(ch,'resistances',None) or {}; out={}
         ids=list(self.resistance_defs) or _load_json(self.world_root/'formulas/derived_stats.json',{}).get('resistance_types',[])
         for i,t in enumerate(ids):
-            d=self.resistance_defs.get(t,{}); base=float((profile or {}).get(t,d.get('base',0)) or 0); val=self.attribute_service._apply(base,[m for m in mods if m.target_stat in {f'resistance.{t}',t+'_resistance'}])[0]
-            out[t]=ResistanceStatValue(t,d.get('display_name',t.title()),val,str(d.get('unit') or 'percent'),float(d.get('minimum',0)),float(d.get('maximum',100)),i*10+10,True,'',[t],base,0,0,0,0,str(d.get('formula_id','')),{'snapshot':self._source_version(ch,context)})
+            d=self.resistance_defs.get(t,{}); base=float((profile or {}).get(t,d.get('base',0)) or 0); val,src=self.attribute_service._apply(base,[m for m in mods if m.target_stat in {f'resistance.{t}',t+'_resistance'}])
+            comps={k:0.0 for k in ['equipment','effect','template','instance']}
+            for tr in src:
+                cat={'affect':'effect','temporary':'effect'}.get(str(tr.get('source_type')),str(tr.get('source_type')))
+                if cat in comps: comps[cat]+=float(tr.get('after',0))-float(tr.get('before',0))
+            out[t]=ResistanceStatValue(t,d.get('display_name',t.title()),val,str(d.get('unit') or d.get('value_unit') or 'percent'),float(d.get('minimum',0)),float(d.get('maximum',100)),i*10+10,True,'',list(d.get('covered_damage_types') or [t]),base,comps['equipment'],comps['effect'],comps['template'],comps['instance'],str(d.get('formula_id','')),self._source_versions(ch,context),src)
         return out
     def get_encumbrance(self,ch,context=None):
         weight=self.get_stat(ch,'current_carry_weight',context); cap=max(1,self.get_stat(ch,'carry_capacity',context)); pct=int(weight/cap*100); state='unburdened'
@@ -301,7 +388,15 @@ class CombatStatService:
     def get_damage_profile(self,ch,context=None):
         eq=self.equipment_snapshot(ch,context); mn=self.get_stat(ch,'weapon_damage_min',context); mx=self.get_stat(ch,'weapon_damage_max',context); return None if not getattr(eq,'weapon_instance',None) or mx<=0 else DamageProfile(mn,mx,eq.weapon_instance.damage_type,eq.weapon_instance.attack_speed,eq.weapon_instance.reach,eq.weapon_instance.range,eq.weapon_instance.name)
     def _source_version(self,ch,context=None):
-        payload={'migration':self.attribute_service.migration_version,'formulas':self.formulas,'stat_defs':self.stat_defs,'actor':_cid(ch)}; return hashlib.sha1(json.dumps(payload,sort_keys=True,default=str).encode()).hexdigest()
+        return self._source_versions(ch,context).get('overall_snapshot','')
+    def _source_versions(self,ch,context=None):
+        ai=self.build_actor_stat_input(ch,context) if not isinstance(ch,ActorStatInput) else ch
+        base=dict(ai.source_versions or {})
+        payload={'migration':self.attribute_service.migration_version,'formulas':self.formulas,'stat_defs':self.stat_defs,'actor':ai.actor_id,'sources':base}
+        overall=hashlib.sha1(json.dumps(payload,sort_keys=True,default=str).encode()).hexdigest()
+        defaults={k:base.get(k,overall) for k in ['primary_attributes','permanent_modifiers','equipment','inventory_weight','effects','template','spawn_definition','instance','resistances','body_profile','combat_profile','natural_weapons','definitions_formulas','situational_context']}
+        defaults['overall_snapshot']=overall; defaults['snapshot']=overall
+        return defaults
     def synchronize_resources(self,ch,resources): return self.refresh_actor_maxima(ch,'legacy_synchronize_resources',resources)
     def refresh_actor_maxima(self,ch,reason,resources=None):
         resources=resources or {'max_health':self.get_stat(ch,'max_health'),'max_mana':self.get_stat(ch,'max_mana'),'max_stamina':self.get_stat(ch,'max_stamina')}; events=[]
@@ -310,10 +405,7 @@ class CombatStatService:
             if cur>maxv: setattr(ch,attr,maxv); events.append(('resource_current_clamped',{'reason':reason,'resource':key,'old_current':cur,'new_current':maxv}))
         return events
     def get_combat_snapshot(self,ch,context=None):
-        attrs=self.attribute_service.get_all_attributes(ch,context); sv=self._source_version(ch,context); primary={}
-        for sid,a in attrs.items():
-            d=self.attribute_service.definitions.get(sid,{})
-            primary[sid]=PrimaryStatValue(sid,d.get('semantic_role',''),getattr(a,'name',sid.title()),d.get('short_name',sid[:3].upper()),a.base_value,a.permanent_modifier,a.equipment_modifier,a.affect_modifier,0,0,a.situational_modifier,a.final_value,a.minimum_value,a.maximum_value,True,'','base+components',{'snapshot':sv})
+        ai=self.build_actor_stat_input(ch,context); primary=self.attribute_service.get_primary_stats(ai,context); sv=self._source_version(ai,context); source_versions=self._source_versions(ai,context)
         offense={k:self._combat_value(ch,k,context) for k in ['accuracy','hit_bonus','attack_power','damage_bonus','spell_power','healing_power']}
         defense={k:self._combat_value(ch,k,context) for k in ['armor','evasion','critical_avoidance']}
         crit={k:self._combat_value(ch,k,context) for k in ['critical_melee','critical_spell','critical_heal','critical_avoidance','critical_damage']}
@@ -321,9 +413,10 @@ class CombatStatService:
         speed={k:self._combat_value(ch,k,context,active=False,reason=self.inactive_speed_reason) for k in ['initiative','attack_speed','casting_speed','recovery_speed','movement_speed']}
         maxima={k:self._combat_value(ch,k,context) for k in ['max_health','max_mana','max_stamina']}
         enc=self.get_encumbrance(ch,context); carrying={k:self._combat_value(ch,k,context,value=v) for k,v in enc.items() if k!='encumbrance_state'}; encvals={**carrying,'encumbrance_state':self._combat_value(ch,'encumbrance_state',context,value=enc['encumbrance_state'],active=True)}
-        resources={**maxima,'health':self._combat_value(ch,'health',context,value=int(getattr(ch,'hp',getattr(ch,'hp_current',0)) or 0),active=True),'mana':self._combat_value(ch,'mana',context,value=int(getattr(ch,'mana',0) or 0),active=True),'stamina':self._combat_value(ch,'stamina',context,value=int(getattr(ch,'stamina',0) or 0),active=True)}
+        raw_health=int((ai.resource_projection or {}).get('health',getattr(ch,'hp',getattr(ch,'hp_current',0))) or 0)
+        resources={**maxima,'health':self._combat_value(ch,'health',context,value=raw_health,active=True),'mana':self._combat_value(ch,'mana',context,value=int((ai.resource_projection or {}).get('mana',getattr(ch,'mana',0)) or 0),active=True),'stamina':self._combat_value(ch,'stamina',context,value=int((ai.resource_projection or {}).get('stamina',getattr(ch,'stamina',0)) or 0),active=True)}
         unarmed=DamageProfile(self.get_stat(ch,'unarmed_damage_min',context),self.get_stat(ch,'unarmed_damage_max',context),'physical',100,1,0,'unarmed')
-        nw=getattr(self.build_actor_stat_input(ch,context),'natural_weapon_profiles',[])
+        nw=getattr(ai,'natural_weapon_profiles',[])
         weapon=self.get_damage_profile(ch,context)
         if not weapon and nw: weapon=DamageProfile(nw[0].minimum_damage,nw[0].maximum_damage,nw[0].damage_type,nw[0].attack_speed,nw[0].reach,nw[0].maximum_range,nw[0].name)
-        return CombatStatSnapshot(self.schema_version,hashlib.sha1((sv+utc_now()).encode()).hexdigest(),_cid(ch),getattr(ch,'actor_type','player'),self.attribute_service.world_id,getattr(ch,'template_id',None),getattr(ch,'instance_id',None),int(getattr(ch,'level',1) or 1),primary,offense,defense,crit,saves,self.get_resistance_values(ch,context),speed,weapon,unarmed,nw,resources,carrying,encvals,{'presence':{'active_attribute':True,'combat_consumed':False,'current_consumers':[]}}, {'snapshot':sv,'attributes':sv,'combat':sv,'equipment':sv,'effects':sv,'templates':sv,'instances':sv,'definitions':sv}, utc_now())
+        return CombatStatSnapshot(self.schema_version,hashlib.sha1((sv+utc_now()).encode()).hexdigest(),ai.actor_id,ai.actor_type,self.attribute_service.world_id,ai.template_id,ai.instance_id,ai.level,primary,offense,defense,crit,saves,self.get_resistance_values(ch,context),speed,weapon,unarmed,nw,resources,carrying,encvals,{'presence':{'active_attribute':True,'combat_consumed':False,'current_consumers':[]}}, source_versions, utc_now())
