@@ -9,7 +9,6 @@ import uuid
 import hashlib
 import logging
 import time
-import threading
 from types import MappingProxyType
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
@@ -637,7 +636,7 @@ class MudRuntime:
         self.active_characters: dict[str, MudCharacter] = {}
         self.session_active_character: dict[str, str] = {}
         self.character_session_ids: dict[str, str] = {}
-        self.performance_counters = {k: 0 for k in ["play_view_requests","async_message_requests","character_sql_loads","character_sql_saves","world_package_loads","room_renders","prompt_renders","display_snapshot_builds","commands_processed","messages_delivered","overlapping_requests_prevented","command_requests","direct_command_responses","command_outputs_enqueued_async","duplicate_command_outputs_filtered","async_messages_delivered","character_saves","save_coalesced","save_skipped_clean","quit_final_saves","character_entry_total_ms","inventory_load_ms","equipment_load_ms","effect_load_ms","ability_load_ms","actor_registration_ms","essential_snapshot_ms","initial_room_render_ms","prompt_render_ms","warmup_queue_ms","warmup_build_ms","warmup_cache_hits","warmup_cancelled","stale_task_rejected","projection_cache_hits","projection_cache_misses","projection_invalidations","autosave_attempts","autosave_successes","autosave_skipped_clean","autosave_failures","combat_rounds_processed","combat_round_duration_ms","combat_character_sql_loads","combat_character_sql_saves","combat_sql_queries","combat_messages_queued","combat_messages_delivered","combat_message_delivery_latency_ms","combat_scheduler_lag_ms","practice_command_duration_ms","train_command_duration_ms","position_command_duration_ms","autosave_coalesced","resident_actor_cache_hits","resident_actor_cache_misses"]}
+        self.performance_counters = {k: 0 for k in ["play_view_requests","async_message_requests","character_sql_loads","character_sql_saves","world_package_loads","room_renders","prompt_renders","display_snapshot_builds","commands_processed","messages_delivered","overlapping_requests_prevented","command_requests","direct_command_responses","command_outputs_enqueued_async","duplicate_command_outputs_filtered","async_messages_delivered","character_saves","save_coalesced","save_skipped_clean","quit_final_saves","character_entry_total_ms","inventory_load_ms","equipment_load_ms","effect_load_ms","ability_load_ms","actor_registration_ms","essential_snapshot_ms","initial_room_render_ms","prompt_render_ms","warmup_queue_ms","warmup_build_ms","warmup_cache_hits","warmup_cancelled","stale_task_rejected","projection_cache_hits","projection_cache_misses","projection_invalidations","autosave_attempts","autosave_successes","autosave_skipped_clean","autosave_failures","scheduler_starts","scheduler_duplicate_start_attempts","scheduler_stops","runtime_pulses","runtime_pulse_duration_ms","runtime_pulse_max_duration_ms","scheduler_lag_ms","scheduler_max_lag_ms","combat_encounters_active","combat_rounds_processed","combat_round_duration_ms","combat_backlog","combat_character_sql_loads","combat_character_sql_saves","combat_entity_sql_reads","combat_entity_sql_writes","combat_encounter_sql_reads","combat_encounter_sql_writes","combat_output_sqlite_writes","combat_output_in_memory_queued","combat_messages_queued","combat_messages_delivered","combat_message_delivery_latency_ms","combat_scheduler_lag_ms","practice_command_duration_ms","train_command_duration_ms","position_command_duration_ms","autosave_coalesced","coalesced_autosaves","resident_actor_cache_hits","resident_actor_cache_misses","resident_entity_cache_hits","resident_entity_cache_misses","regeneration_pulses","regeneration_actors_processed","regeneration_resource_changes"]}
         self._dirty_characters: dict[str, set[str]] = {}
         self._save_locks: dict[str, Any] = {}
         self._quit_final_saved: set[str] = set()
@@ -667,9 +666,7 @@ class MudRuntime:
         self.command_engine.character_display_snapshots = self.character_display_snapshots
         init_agent_runtime_schema(self.state_store.db_path)
         self.combat_runtime = CombatRuntimeService(self)
-        self._pulse_stop = threading.Event()
-        self._pulse_thread: threading.Thread | None = None
-        self.start_runtime_scheduler()
+        self._last_pulse_due_monotonic: float | None = None
         self.agent_gateway = AgentRuntimeGateway(self)
         self.deterministic_controller_evaluator = DeterministicControllerEvaluator(self.agent_gateway)
         self.command_engine.combat_runtime = self.combat_runtime
@@ -684,25 +681,43 @@ class MudRuntime:
         print("[mud-runtime] Smart MUD runtime initialized")
 
     def start_runtime_scheduler(self) -> None:
-        if self._pulse_thread and self._pulse_thread.is_alive():
-            return
-        self._pulse_stop.clear()
-        def _loop() -> None:
-            while not self._pulse_stop.wait(0.2):
-                started = time.monotonic()
-                try:
-                    if getattr(self, "combat_runtime", None):
-                        self.combat_runtime.process_due_rounds()
-                    self.performance_counters["combat_scheduler_lag_ms"] = int(max(0, (time.monotonic() - started) * 1000 - 200))
-                except Exception:
-                    logger.exception("runtime pulse task failed")
-        self._pulse_thread = threading.Thread(target=_loop, name="smartmud-runtime-pulse", daemon=True)
-        self._pulse_thread.start()
+        self.performance_counters["scheduler_duplicate_start_attempts"] += 1
+        return None
 
     def stop_runtime_scheduler(self) -> None:
-        self._pulse_stop.set()
-        if self._pulse_thread and self._pulse_thread.is_alive():
-            self._pulse_thread.join(timeout=2)
+        return None
+
+    def process_runtime_pulse(self, now_monotonic: float | None = None, *, scheduler_lag_ms: float = 0.0) -> dict[str, Any]:
+        started = time.monotonic() if now_monotonic is None else float(now_monotonic)
+        attempted: list[str] = []
+        processed: list[str] = []
+        errors: dict[str, str] = {}
+        self.performance_counters["runtime_pulses"] += 1
+        self.performance_counters["scheduler_lag_ms"] = int(max(0, scheduler_lag_ms))
+        self.performance_counters["scheduler_max_lag_ms"] = max(self.performance_counters.get("scheduler_max_lag_ms", 0), int(max(0, scheduler_lag_ms)))
+        try:
+            if getattr(self, "combat_runtime", None):
+                attempted.append("combat")
+                rounds = self.combat_runtime.process_due_rounds(int(started * 1000))
+                if rounds:
+                    processed.append("combat")
+        except Exception as exc:
+            errors["combat"] = str(exc)[:160]
+            logger.exception("combat runtime pulse failed")
+        try:
+            if getattr(self, "runtime_resources", None) and hasattr(self.runtime_resources, "process_due_regeneration"):
+                attempted.append("regeneration")
+                count = self.runtime_resources.process_due_regeneration(started)
+                if count:
+                    processed.append("regeneration")
+        except Exception as exc:
+            errors["regeneration"] = str(exc)[:160]
+            logger.exception("regeneration runtime pulse failed")
+        completed = time.monotonic()
+        duration_ms = int(max(0, (completed - started) * 1000))
+        self.performance_counters["runtime_pulse_duration_ms"] = duration_ms
+        self.performance_counters["runtime_pulse_max_duration_ms"] = max(self.performance_counters.get("runtime_pulse_max_duration_ms", 0), duration_ms)
+        return {"started_at": started, "completed_at": completed, "duration_ms": duration_ms, "scheduler_lag_ms": int(max(0, scheduler_lag_ms)), "subsystems_attempted": attempted, "subsystems_processed": processed, "subsystem_errors": errors, "backlog_counts": {"combat": self.performance_counters.get("combat_backlog", 0)}}
 
 
     # Phase 5B living-world facade APIs.
@@ -713,7 +728,6 @@ class MudRuntime:
         if getattr(self, "survival_needs", None):
             self.survival_needs.process_world_needs(world_id, wt)
             self.survival_needs.process_due_runtime_objects(wt)
-        if getattr(self, "combat_runtime", None): self.combat_runtime.process_due_rounds()
         return wt
     def runtime_pulse(self, minutes: int = 1) -> dict[str, Any]:
         world_id=self.active_world_id or ''
@@ -721,12 +735,7 @@ class MudRuntime:
         if getattr(self, 'abilities', None):
             try: self.abilities.process_ability_casts(world_id, int(wt.get('total_minutes') or 0))
             except Exception: pass
-        if getattr(self, "combat_runtime", None):
-            try:
-                now_ms = self.combat_runtime.world_time()
-                self.combat_runtime.process_due_rounds(now_ms + max(0, int(minutes)) * 1000)
-            except Exception:
-                pass
+        self.process_runtime_pulse(time.monotonic())
         self.process_due_agent_controllers(int(wt.get('total_minutes') or 0))
         return wt
 

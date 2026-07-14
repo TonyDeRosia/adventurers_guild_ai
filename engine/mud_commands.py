@@ -907,8 +907,6 @@ class MudCommandEngine:
                 ps.spend_currency(actor_id, "training_sessions", 1, f"train {attr}")
                 with ps.store.connect() as con:
                     con.execute("UPDATE character_attributes SET permanent_modifier=permanent_modifier+1,updated_at=?,source=? WHERE character_id=? AND attribute_id=?", (__import__("engine.mud_state_store", fromlist=["utc_now"]).utc_now(), "training", actor_id, attr))
-                if hasattr(character, "actor_data"):
-                    character.actor_data.setdefault("trained_attributes", {})[attr] = character.actor_data.setdefault("trained_attributes", {}).get(attr, 0) + 1
                 if rt: rt.mark_character_dirty(actor_id, "training")
                 after_stats = attrsvc.get_primary_stats(character, {"runtime": rt} if rt else {})
                 changed = [f"Training successful.", f"  {attr.capitalize()}: {old} -> {old+1}", f"  Training sessions: {int(state.get('training_sessions',0))} -> {int(state.get('training_sessions',0))-1}"]
@@ -919,12 +917,14 @@ class MudCommandEngine:
                 if int(state.get("training_sessions",0) or 0) < 10: return done("You need ten training sessions for that.", False)
                 field = resmap[query]; old = int(getattr(character, field, 0) or 0)
                 ps.spend_currency(actor_id, "training_sessions", TRAINING_RESOURCE_SESSION_COST, f"train {query}")
-                data = getattr(character, "actor_data", {}) if isinstance(getattr(character, "actor_data", {}), dict) else {}
-                bonuses = data.setdefault("trained_resource_bonuses", {})
                 rkey = "health" if query in {"hit","hp"} else ("mana" if query == "mana" else "stamina")
-                bonuses[rkey] = int(bonuses.get(rkey, 0) or 0) + TRAINING_RESOURCE_BONUS
-                character.actor_data = data
                 setattr(character, field, old + TRAINING_RESOURCE_BONUS)
+                curfield = {"health": "hp", "mana": "mana", "stamina": "stamina"}[rkey]
+                current = int(getattr(character, curfield, 0) or 0)
+                with ps.store.connect() as con:
+                    con.execute("CREATE TABLE IF NOT EXISTS actor_progression_modifiers(modifier_id TEXT PRIMARY KEY,actor_id TEXT,modifier_type TEXT,resource_id TEXT,amount INTEGER,source_type TEXT,source_id TEXT,active INTEGER DEFAULT 1,created_at TEXT,metadata_json TEXT)")
+                    con.execute("INSERT INTO actor_progression_modifiers(modifier_id,actor_id,modifier_type,resource_id,amount,source_type,source_id,active,created_at,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?)", ("mod_"+__import__("uuid").uuid4().hex, actor_id, "maximum_resource", rkey, TRAINING_RESOURCE_BONUS, "training", f"train {query}", 1, __import__("engine.mud_state_store", fromlist=["utc_now"]).utc_now(), "{}"))
+                    con.execute("INSERT INTO actor_resource_versions(actor_id,resource,value,maximum,version,updated_at) VALUES(?,?,?,?,1,?) ON CONFLICT(actor_id,resource) DO UPDATE SET maximum=actor_resource_versions.maximum+?,version=actor_resource_versions.version+1,updated_at=excluded.updated_at", ("character:"+actor_id, rkey, current, old + TRAINING_RESOURCE_BONUS, __import__("engine.mud_state_store", fromlist=["utc_now"]).utc_now(), TRAINING_RESOURCE_BONUS))
                 if rt: rt.mark_character_dirty(actor_id, "training")
                 label = "Move" if query == "move" else ("Hit points" if query in {"hit","hp"} else "Mana")
                 return done(f"Training successful.\n  {label}: {old} -> {old+TRAINING_RESOURCE_BONUS}\n  Training sessions: {int(state.get('training_sessions',0))} -> {int(state.get('training_sessions',0))-TRAINING_RESOURCE_SESSION_COST}")

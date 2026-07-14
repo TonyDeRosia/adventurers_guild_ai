@@ -1,4 +1,5 @@
 from pathlib import Path
+import time
 
 from engine.mud_runtime import MudRuntime
 
@@ -18,10 +19,18 @@ def test_runtime_pulse_delivers_delayed_combat_output_once(tmp_path):
     rt, cid = _runtime(tmp_path)
     first = rt.handle_input(cid, 'attack forest wolf')
     assert first['ok']
-    rt.runtime_pulse(2)
+    rt.process_runtime_pulse(time.monotonic() + 2.1)
     view = rt.play_view(cid)
     assert view['async_messages']
     assert any(any(word in m.lower() for word in ('hit', 'miss', 'strike', 'attack', 'graz', 'slash', 'bite')) for m in view['async_messages'])
+    assert rt.play_view(cid)['async_messages'] == []
+
+
+def test_world_time_advancement_does_not_trigger_combat_round(tmp_path):
+    rt, cid = _runtime(tmp_path)
+    assert rt.handle_input(cid, 'attack forest wolf')['ok']
+    rt.play_view(cid)
+    rt.advance_world_time('shattered_realms', 120)
     assert rt.play_view(cid)['async_messages'] == []
 
 

@@ -98,6 +98,7 @@ class WebRuntime:
         self.active_character_id = ""
         self._pulse_task = None
         self._pulse_running = False
+        self._pulse_interval_seconds = 0.2
         self.event_bus.publish("runtime_ready", {"transport": "web"}, source_system="startup")
         print("[startup] Ready.")
         print("SQLite Ready")
@@ -106,21 +107,27 @@ class WebRuntime:
 
     async def start_runtime_pulse(self) -> None:
         if self._pulse_task and not self._pulse_task.done():
+            self.mud_runtime.performance_counters["scheduler_duplicate_start_attempts"] += 1
             return
+        self.mud_runtime.performance_counters["scheduler_starts"] += 1
         self._pulse_running = True
         self._pulse_task = asyncio.create_task(self._runtime_pulse_loop())
 
     async def _runtime_pulse_loop(self) -> None:
+        next_due = __import__("time").monotonic() + self._pulse_interval_seconds
         while self._pulse_running:
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(max(0.0, next_due - __import__("time").monotonic()))
+            now = __import__("time").monotonic()
+            lag_ms = max(0.0, (now - next_due) * 1000.0)
+            next_due = now + self._pulse_interval_seconds
             try:
-                if self.active_world_id:
-                    self.mud_runtime.runtime_pulse(1)
+                self.mud_runtime.process_runtime_pulse(now, scheduler_lag_ms=lag_ms)
             except Exception as exc:
                 self.event_bus.publish("runtime_pulse_failed", {"reason": str(exc)[:160]}, source_system="runtime_pulse", world_id=self.active_world_id)
 
     async def stop_runtime_pulse(self) -> None:
         self._pulse_running = False
+        self.mud_runtime.performance_counters["scheduler_stops"] += 1
         task = self._pulse_task
         self._pulse_task = None
         if task:

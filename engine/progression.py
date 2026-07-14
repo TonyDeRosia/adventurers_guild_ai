@@ -18,8 +18,8 @@ CURRENCIES = {"practice_sessions", "training_sessions", "skill_points", "attribu
 
 # Adventurer's Lair parity: canonical Shattered Realms Glory purchase costs.
 # These are intentionally centralized so command handlers never hard-code them.
-GLORY_PRACTICE_COST = 100
-GLORY_TRAIN_COST = 250
+GLORY_PRACTICE_COST = 250
+GLORY_TRAIN_COST = 600
 TRAINING_ATTRIBUTE_CAP = 20
 TRAINING_RESOURCE_SESSION_COST = 10
 TRAINING_RESOURCE_BONUS = 10

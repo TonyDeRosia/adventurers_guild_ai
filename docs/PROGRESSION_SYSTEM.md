@@ -52,7 +52,7 @@ The previous alias/trainer patch is preserved: `tr`, `pr`, `buypractice`, `buypr
 
 Remaining unfinished work addressed in this follow-up:
 
-- Glory purchases now use canonical centralized costs (`GLORY_PRACTICE_COST = 100`, `GLORY_TRAIN_COST = 250`) and one SQLite transaction that debits EconomyService Glory ledger rows and grants exactly one progression session. Insufficient Glory reports the required cost and current balance and grants nothing.
+- Glory purchases now use canonical centralized costs (`GLORY_PRACTICE_COST = 250`, `GLORY_TRAIN_COST = 600`) and one SQLite transaction that debits EconomyService Glory ledger rows and grants exactly one progression session. Insufficient Glory reports the required cost and current balance and grants nothing.
 - Attribute training now writes the permanent `character_attributes.permanent_modifier` component through the canonical attribute projection instead of relying on transient `setattr` state. Training affects only the trained permanent component and is capped at 20.
 - Resource training records a persistent trained-resource bonus in character actor data and updates the command-facing maximum resource by +10 for hit/hp, mana, or move at a cost of ten training sessions.
 - Training output reports changed values from before/after canonical state snapshots and suppresses unchanged fields.
@@ -65,3 +65,19 @@ Remaining unfinished work addressed in this follow-up:
 Focused verification added in `tests/test_adventurers_lair_unfinished_requirements.py` covers atomic Glory purchases, insufficient-Glory no-grant behavior, persistent permanent Strength training, practice projection/mutation separation, and advancement repair dry-run/apply idempotence.
 
 Broad-suite status from this environment is recorded in the PR summary rather than claimed as Windows acceptance. Windows manual acceptance still must be performed under `C:\Users\antho\Desktop\Smart MUD\smartmud-main-v2\smartmud-main-v2` with Kraevok and the existing `shattered_realms` world.
+
+## Adventurer’s Lair runtime stabilization update
+
+- Scheduler ownership is canonicalized in the FastAPI/WebRuntime lifecycle: startup creates one asyncio pulse task and shutdown cancels/awaits it. `MudRuntime` no longer starts a daemon scheduler thread in its constructor; it exposes `process_runtime_pulse()` as bounded work.
+- Runtime pulses use monotonic real time for combat cadence, scheduler lag, duration metrics, in-memory message timestamps, and regeneration due checks. `advance_world_time()` remains for calendar/world simulation and no longer advances combat rounds.
+- Active combat now keeps hydrated actors resident in `CombatRuntimeService.resident_actors`; ordinary round loads reuse those actors and mark entity actors dirty rather than writing NPC health after every hit.
+- Live combat output is queued in bounded per-character memory queues with sequence metadata and delivered once without the `combat_outbound_messages` claim transaction. SQLite remains available for audit/history, not normal live delivery.
+- Lethal combat resolution calls `RuntimeLifecycleService.process_defeat_or_death()` as the canonical death transition. It owns defeat marking, corpse creation, rewards/kill credit, respawn scheduling, and idempotency.
+- Player-facing death policy follows the configured lifecycle transition; NPC deaths create one corpse/reward/credit path. Remaining parity work is documented as differences until Windows manual acceptance is performed.
+- Posture remains command-owned; survival needs consumes posture data. Real-time regeneration applies deterministic posture multipliers: sleeping +4/tick, resting +2/tick, standing/sitting +1/tick, fighting/dead +0/tick, capped at maxima.
+- Glory prices now match Tony’s Adventurer’s Lair defaults: `GLORY_PRACTICE_COST = 250` and `GLORY_TRAIN_COST = 600`.
+- Permanent trained attributes use `character_attributes.permanent_modifier` as the writable authority; mutable `actor_data.trained_attributes` updates were removed.
+- Permanent trained resource bonuses are recorded as `actor_progression_modifiers` rows and projected into `actor_resource_versions` maximums so HP, Mana, and Move survive restart/recalculation.
+- Practice remains data-driven through progression profiles; ambiguous advancement repair is not broadened beyond existing safe behavior in this stabilization patch.
+- Focused verification command: `python -m pytest -q tests/test_adventurers_lair_unfinished_requirements.py tests/test_smart_mud_performance_stabilization.py tests/test_live_combat_phase12c2.py tests/test_phase12a2_runtime_fixes.py`. Broad verification command: `python -m pytest -q`.
+- Windows manual acceptance has not been performed in this Linux container. Tony should run the checklist from `C:\Users\antho\Desktop\Smart MUD\smartmud-main-v2\smartmud-main-v2`, confirm one scheduler-start message, attack an Emberwood fox/wolf, observe automatic ~2s rounds without commands, inspect `perfstat`, verify death/corpse/reward once, test ground sit/rest/sleep regeneration, verify 250/600 Glory purchase gates, train HP/Mana/Move, restart, and confirm maximums persist.

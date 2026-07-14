@@ -7,6 +7,7 @@ character persistence, stats rows, prompts, and events move in one direction.
 from __future__ import annotations
 
 import json, sqlite3, uuid
+import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -67,6 +68,7 @@ class RuntimeResourceService:
         self.event_bus = event_bus or getattr(runtime, "event_bus", None)
         self.world_id = world_id or getattr(runtime, "active_world_id", "") or ""
         if self.db_path: self.initialize()
+        self._next_regeneration_monotonic = time.monotonic() + 6.0
 
     def initialize(self) -> None:
         if not self.db_path: return
@@ -194,6 +196,47 @@ class RuntimeResourceService:
     def apply_healing(self, actor: Actor, amount: int, **kw: Any) -> ResourceMutationResult: return self.mutate(actor, "health", "healing", amount, **kw)
     def pay_cost(self, actor: Actor, resource: str, amount: int, **kw: Any) -> ResourceMutationResult: return self.mutate(actor, resource, "cost", amount, **kw)
     def regenerate(self, actor: Actor, resource: str, amount: int, **kw: Any) -> ResourceMutationResult: return self.mutate(actor, resource, "regeneration", amount, **kw)
+
+    def process_due_regeneration(self, now_monotonic: float | None = None) -> int:
+        now = time.monotonic() if now_monotonic is None else float(now_monotonic)
+        if now < self._next_regeneration_monotonic:
+            return 0
+        self._next_regeneration_monotonic = now + 6.0
+        rt = self.runtime
+        if rt is None:
+            return 0
+        counters = getattr(rt, "performance_counters", {})
+        counters["regeneration_pulses"] = counters.get("regeneration_pulses", 0) + 1
+        actors = list(getattr(getattr(rt, "combat_runtime", None), "resident_actors", {}).values())
+        processed = 0
+        changes = 0
+        for actor in actors:
+            if getattr(actor, "lifecycle_state", "alive") == "dead" or _num(actor.resources.health) <= 0:
+                continue
+            processed += 1
+            state = str(actor.combat_profile.get("combat_state") or getattr(actor, "position", "") or "standing").lower()
+            mult = 4 if state == "sleeping" else 2 if state == "resting" else 1
+            if state == "in_combat" or state == "fighting":
+                mult = 0
+            if mult <= 0:
+                continue
+            for resource in ("health", "mana", "stamina"):
+                before = _num(getattr(actor.resources, resource, 0))
+                maximum = _num(getattr(actor.resources, f"maximum_{resource}", before), before)
+                after = min(maximum, before + mult)
+                if after != before:
+                    setattr(actor.resources, resource, after)
+                    changes += 1
+            if changes and actor.actor_id.startswith("character:"):
+                cid = actor.actor_id.split(":", 1)[1]
+                ch = getattr(rt, "active_characters", {}).get(cid)
+                if ch:
+                    ch.hp = actor.resources.health; ch.mana = actor.resources.mana; ch.stamina = actor.resources.stamina
+                    if hasattr(rt, "mark_character_dirty"):
+                        rt.mark_character_dirty(cid, "regeneration")
+        counters["regeneration_actors_processed"] = counters.get("regeneration_actors_processed", 0) + processed
+        counters["regeneration_resource_changes"] = counters.get("regeneration_resource_changes", 0) + changes
+        return processed
 
     def evaluate_zero_health(self, actor: Actor, *, trigger_action_id: str = "") -> LifecycleTransitionResult:
         previous = str(getattr(actor, "lifecycle_state", "alive") or "alive")
