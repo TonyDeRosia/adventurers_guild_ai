@@ -29,7 +29,7 @@ CAST_STATES = {"pending","casting","channeling","completed","interrupted","faile
 STATE_CHANGES = {"stunned","sleeping","resting","standing","fleeing","incapacitated","unconscious"}
 SAFE_ID = re.compile(r"^[a-z0-9]+(?:_[a-z0-9]+)*$")
 MESSAGE_KEYS = {"start_self","start_target","start_room","complete_self","complete_target","complete_room","fail_self","fail_target","fail_room","interrupt_self","interrupt_target","interrupt_room","hit_self","hit_target","hit_room","miss_self","miss_target","miss_room","heal_self","heal_target","heal_room","effect_self","effect_target","effect_room"}
-PLACEHOLDERS = {"actor","target","ability","weapon","damage","healing","damage_type","effect","resource","cost","stacks"}
+PLACEHOLDERS = {"actor","target","ability","weapon","damage","healing","damage_type","effect","resource","cost","stacks","item","amount","duration","room"}
 
 
 def now() -> str: return datetime.now(timezone.utc).isoformat()
@@ -42,6 +42,73 @@ def num(v: Any, default: float=0) -> float:
         n = float(v)
         return n if math.isfinite(n) else default
     except Exception: return default
+
+PHASE14A_OPERATIONS = {
+    "deal_damage","heal","modify_resource","apply_affect","remove_affect","apply_condition","remove_condition","modify_stat",
+    "grant_resistance","grant_immunity","grant_vulnerability","damage_over_time","healing_over_time","resource_over_time",
+    "dispel","cleanse","send_message","trigger_ability","set_cooldown","reduce_cooldown","teleport","recall","move_target",
+}
+PHASE14B_RESERVED_OPERATIONS = {"aura","stance","transform","summon","dismiss_summon","create_item","destroy_item","alter_item","create_room_effect","remove_room_effect"}
+TARGET_KINDS = {"self","single_actor","single_enemy","single_ally","group","room_allies","room_enemies","room_all","area","single_item","inventory_item","equipped_item","room_item","room","exit","direction","location","no_target"}
+STACKING_POLICIES = {"stack","refresh_duration","replace","highest","lowest","unique","unique_by_source","unique_by_ability","unique_by_tag","increase_stacks","increase_intensity","independent_instances"}
+DURATION_POLICIES = {"instant","rounds","world_ticks","world_minutes","real_time","until_logout","until_death","until_room_change","until_combat_ends","permanent","while_equipped","while_source_exists"}
+
+@dataclass(frozen=True)
+class TargetingDefinition:
+    target_kind: str = "self"; allowed_actor_types: tuple[str, ...] = (); self_allowed: bool = True; friendly_allowed: bool = True; hostile_allowed: bool = True
+    dead_allowed: bool = False; defeated_allowed: bool = False; same_room_required: bool = True; same_area_allowed: bool = False
+    minimum_range: int = 0; maximum_range: int = 0; maximum_targets: int = 1; area_shape: str = ""; group_policy: str = ""
+    line_of_sight: bool = False; visibility_required: bool = True; required_tags: tuple[str, ...] = (); forbidden_tags: tuple[str, ...] = (); empty_target_policy: str = "deny"
+
+@dataclass(frozen=True)
+class AbilityCostDefinition:
+    resource: str = "mana"; operation: str = "spend"; flat_amount: int = 0; formula_id: str = ""; percentage_current: float = 0; percentage_maximum: float = 0
+    minimum_cost: int = 0; maximum_cost: int = 0; pay_timing: str = "start"; refund_policy: str = "none"; failure_consumes: bool = False; interrupt_refund_percent: int = 100
+
+@dataclass(frozen=True)
+class AbilityEffectDefinition:
+    effect_id: str; operation: str; target_selector: str = "target"; timing: str = "success"; formula_id: str = ""; base_value: int = 0; coefficient: float = 1.0
+    resource: str = ""; damage_type: str = ""; save_definition: dict[str, Any] = field(default_factory=dict); duration: dict[str, Any] = field(default_factory=dict)
+    tick_interval: int = 0; stacking: dict[str, Any] = field(default_factory=dict); conditions: list[str] = field(default_factory=list); tags: list[str] = field(default_factory=list)
+    messages: dict[str, str] = field(default_factory=dict); parameters: dict[str, Any] = field(default_factory=dict); custom_hook_id: str = ""; source_version: str = "1"
+
+@dataclass(frozen=True)
+class RuntimeEffectInstance:
+    effect_instance_id: str; definition_id: str; source_ability_id: str = ""; source_actor_id: str = ""; source_item_id: str = ""; target_actor_id: str = ""; target_item_id: str = ""; target_room_id: str = ""
+    applied_at: int = 0; expires_at: int | None = None; duration_domain: str = "world_minutes"; next_tick_at: int | None = None; tick_interval: int = 0
+    stacks: int = 1; intensity: int = 1; state: str = "active"; tags: tuple[str, ...] = (); modifiers: tuple[dict[str, Any], ...] = (); origin_action_id: str = ""; source_versions: dict[str, Any] = field(default_factory=dict); metadata: dict[str, Any] = field(default_factory=dict)
+
+@dataclass(frozen=True)
+class AbilityUseRequest:
+    action_id: str; actor_id: str; ability_id: str; command_form: str = "cast"; raw_target: Any = None; resolved_targets: tuple[dict[str, Any], ...] = (); source_type: str = "learned"; source_id: str = ""; world_id: str = ""; room_id: str = ""; context: dict[str, Any] = field(default_factory=dict); requested_at: str = field(default_factory=now); metadata: dict[str, Any] = field(default_factory=dict)
+
+@dataclass(frozen=True)
+class ActorAbilityProficiency:
+    actor_id: str; ability_id: str; learned: bool = True; proficiency: int = 1; maximum_proficiency: int = 100; practice_progress: int = 0; mastery_rank: str = "novice"; uses: int = 0; successes: int = 0; failures: int = 0; last_used: str = ""; source: str = "learned"; version: int = 1
+
+class AbilityEffectOperationRegistry:
+    def __init__(self):
+        self.operations = set(PHASE14A_OPERATIONS)
+        self.reserved = set(PHASE14B_RESERVED_OPERATIONS)
+    def validate(self, operation: str) -> None:
+        if operation not in self.operations:
+            raise ValueError(f"Unknown ability effect operation: {operation}")
+    def is_reserved(self, operation: str) -> bool: return operation in self.reserved
+
+class AbilityAvailabilityService:
+    def __init__(self, service: "AbilityExecutionService"):
+        self.service = service
+    def resolve_actor_abilities(self, actor_id: str) -> list[dict[str, Any]]:
+        rows=[]
+        for row in self.service.get_actor_abilities(actor_id):
+            rows.append({"ability": row, "availability_state": "active" if row.get("enabled", True) else "inactive", "source_type": (row.get("grants") or [{}])[0].get("source_type", row.get("source", "learned")), "source_id": (row.get("grants") or [{}])[0].get("source_id", ""), "proficiency": row.get("proficiency", 1), "hidden": row.get("visibility") == "hidden", "visible": row.get("visibility") != "hidden", "active": row.get("enabled", True), "denial_reason": ""})
+        actor=self.service.actors.get(actor_id)
+        for aid in (getattr(actor, "plugin_data", {}) or {}).get("npc_ability_ids", []) if actor else []:
+            if aid in self.service.registry.abilities and not any(r["ability"].get("id")==aid for r in rows):
+                ab=self.service.registry.abilities[aid]
+                rows.append({"ability": ab.to_dict(), "availability_state": "active", "source_type": "NPC template", "source_id": actor_id, "proficiency": int((getattr(actor,"plugin_data",{}) or {}).get("proficiency", 50)), "hidden": False, "visible": True, "active": True, "denial_reason": ""})
+        return rows
+
 
 @dataclass
 class AbilityDefinition:
@@ -161,7 +228,8 @@ class AbilityRegistry:
         self.effect_templates = {str(x.get("id")) for x in get("effect_templates") if x.get("id")}
         self.resource_ids = {str(x.get("id")) for x in get("resource_profiles") if x.get("id")} | {"health","mana","stamina","movement"}
         self.damage_profiles = {str(x.get("id")) for x in get("damage_profiles") if x.get("id")}
-        self.formulas = {str(x.get("id")) for x in get("combat_formulas") if x.get("id")} | {"flat","base","minor_heal_formula","power_strike_damage"}
+        self.formulas = {str(x.get("id")) for x in get("combat_formulas") if x.get("id")} | {"flat","base","minor_heal_formula","power_strike_damage","spell_power","healing_power"}
+        self.effect_operations = AbilityEffectOperationRegistry()
     def validate_ability(self, a: AbilityDefinition) -> tuple[list[str], list[str]]:
         errors=[]; warnings=[]
         if not SAFE_ID.fullmatch(a.id): errors.append(f"ability ID unsafe: {a.id}")
@@ -189,7 +257,16 @@ class AbilityRegistry:
                 if ph not in PLACEHOLDERS: errors.append(f"ability {a.id} invalid message placeholder: {ph}")
         if a.ability_type == "passive" and (a.costs or a.damage_components or a.healing_components or a.activation_type not in {"passive","instant"}): errors.append(f"ability {a.id} passive/active contradiction")
         if "spellup_eligible" in (a.tags or []) and (a.damage_components or a.ability_type in {"debuff","monster","natural"}): errors.append(f"ability {a.id} harmful ability tagged spellup_eligible")
-        if not (a.damage_components or a.healing_components or a.effects_applied or a.effects_removed or a.state_changes): warnings.append(f"ability {a.id} has no components")
+        for eff in (a.plugin_data or {}).get("canonical_effects", []) or []:
+            op=str(eff.get("operation") or "")
+            if op not in self.effect_operations.operations: errors.append(f"ability {a.id} unknown operation: {op}")
+            if eff.get("duration", {}).get("amount", 0) is not None and num(eff.get("duration", {}).get("amount", 0)) < 0: errors.append(f"ability {a.id} negative duration")
+            st=str((eff.get("stacking") or {}).get("policy") or "unique")
+            if st not in STACKING_POLICIES: errors.append(f"ability {a.id} invalid stacking: {st}")
+            for key,msg in (eff.get("messages") or {}).items():
+                for ph in re.findall(r"{([^{}]+)}", str(msg)):
+                    if ph not in PLACEHOLDERS: errors.append(f"ability {a.id} invalid message placeholder: {ph}")
+        if not (a.damage_components or a.healing_components or a.effects_applied or a.effects_removed or a.state_changes or (a.plugin_data or {}).get("canonical_effects")): warnings.append(f"ability {a.id} has no components")
         if not a.messages: warnings.append(f"ability {a.id} has no messages")
         return errors,warnings
     def validate(self) -> list[str]:
@@ -208,7 +285,7 @@ class AbilityRegistry:
 class AbilityExecutionService:
     def __init__(self, db_path: Path|str|None=None, package: Any|None=None, event_bus: Any|None=None, world_id: str="", actor_registry: ActorRegistry | None=None):
         self.db_path = Path(db_path) if db_path else None; self.registry=AbilityRegistry(package); self.event_bus=event_bus; self.world_id=world_id or getattr(package,"id","")
-        self.combat = CombatEngine(content=CombatContentRegistry(package)); self.actor_registry = actor_registry or ActorRegistry(); self.actors = self.actor_registry.actors
+        self.combat = CombatEngine(content=CombatContentRegistry(package)); self.actor_registry = actor_registry or ActorRegistry(); self.actors = self.actor_registry.actors; self.availability = AbilityAvailabilityService(self); self.effect_operations = AbilityEffectOperationRegistry()
         if self.db_path: init_ability_schema(self.db_path)
     def register_actor(self, actor: Actor) -> None: self.actor_registry.register(actor)
     def unregister_actor(self, actor_id: str) -> None: self.actor_registry.unregister(actor_id)
@@ -372,6 +449,7 @@ class AbilityExecutionService:
         available=bool([g for g in grants if g["ability_id"]==ability_id]) or progression_known or ability_id in getattr(a,"plugin_data",{}).get("ability_ids",[]) or ab.ability_type in {"natural","monster","administrative"}
         steps.append({"step":"confirm_grant","ok":available,"sources":grants,"progression_known":progression_known}); ok &= available
         targets=self.resolve_target(a, ab, target); steps.append({"step":"resolve_target", **targets}); ok &= targets.get("ok",False)
+        mats=self._validate_materials(actor_id, ab); steps.append({"step":"validate_materials", **mats}); ok &= mats.get("ok", True)
         costs=self._validate_costs(a, ab); steps.append({"step":"validate_resources", **costs}); ok &= costs.get("ok",False)
         cd=self._cooldown_status(actor_id, ab); steps.append({"step":"validate_cooldowns", **cd}); ok &= cd.get("ready",True)
         return {"ok":bool(ok),"errors":[s for s in steps if s.get("ok") is False or s.get("ready") is False],"trace":steps,"targets":targets.get("targets",[]),"costs":costs.get("costs",[]),"cooldowns":cd}
@@ -394,8 +472,8 @@ class AbilityExecutionService:
         if not tr["ok"]: self._pub("ability_failed", {"actor_id":actor_id,"ability_id":ability_id,"trace":tr}); return {"ok":False,"trace":tr,"message":tr.get("message") or "You cannot use that ability.", "reason_code":tr.get("reason_code")}
         actor=self._get_actor(actor_id)
         if actor is None: return self._missing_actor_result(actor_id, ability_id)
-        cast_id="instant_"+uuid.uuid4().hex; ab=self.registry.abilities[ability_id]; costs=self._pay_costs(actor,ab,"start"); self._start_cooldown(actor_id,ab)
-        result={"ok":True,"cast_id":cast_id,"trace":tr["trace"],"damage_events":[],"healing_events":[],"effect_events":[],"message": self._ability_success_message(ability_id)}; self._pub("ability_started", {"actor_id":actor_id,"ability_id":ability_id,"cast_id":cast_id})
+        cast_id="instant_"+uuid.uuid4().hex; ab=self.registry.abilities[ability_id]; material_results=self._consume_materials(actor_id, ab, "start"); costs=self._pay_costs(actor,ab,"start"); self._start_cooldown(actor_id,ab)
+        result={"ok":True,"cast_id":cast_id,"trace":tr["trace"],"damage_events":[],"healing_events":[],"effect_events":[],"material_results":material_results,"message": self._ability_success_message(ability_id)}; self._pub("ability_started", {"actor_id":actor_id,"ability_id":ability_id,"cast_id":cast_id})
         for t in tr["targets"]:
             target_actor=self.actors.get(t.get("actor_id"))
             if not target_actor: continue
@@ -404,6 +482,15 @@ class AbilityExecutionService:
                 amount = int(num(comp.get("base_amount", comp.get("amount", 0))))
                 result["healing_events"].append(asdict(self.apply_healing(actor.actor_id, target_actor.actor_id, amount, ability_id, comp.get("id"), {"cast_id": cast_id, "formula_id": comp.get("formula_id")})))
             for eff in ab.effects_applied: result["effect_events"].append(self._apply_effect(actor,target_actor,ab,eff,cast_id))
+        for eff in (ab.plugin_data or {}).get("canonical_effects", []) or []:
+            handled = self._apply_canonical_effect(actor, tr.get("targets", []), ab, eff, cast_id)
+            result["effect_events"].append(handled)
+            if handled.get("message"):
+                result["message"] = str(handled.get("message"))
+            if not handled.get("ok", True):
+                result.update(ok=False, message=handled.get("message") or "You cannot use that ability.", reason_code=handled.get("reason") or handled.get("reason_code") or "effect_blocked")
+                self._record_failed_use(actor_id, ability_id)
+                return result
         for eff in (ab.plugin_data or {}).get("effects", []) or []:
             handled = self._apply_registered_effect(actor, ab, eff, cast_id)
             result["effect_events"].append(handled)
@@ -416,6 +503,105 @@ class AbilityExecutionService:
         improvement = self.attempt_proficiency_improvement(actor_id, ability_id)
         result["proficiency_improvement"] = improvement
         self._pub("ability_completed", {"actor_id":actor_id,"ability_id":ability_id,"cast_id":cast_id,"proficiency_improvement":improvement}); return result
+
+    def _select_effect_targets(self, actor: Actor, resolved_targets: list[dict[str, Any]], selector: str) -> list[Actor]:
+        if selector in {"self","actor","source"}: return [actor]
+        out=[]
+        for t in resolved_targets or []:
+            ta=self.actors.get(t.get("actor_id"))
+            if ta: out.append(ta)
+        return out or [actor]
+
+    def _apply_canonical_effect(self, actor: Actor, targets: list[dict[str, Any]], ab: AbilityDefinition, eff: dict[str, Any], cast_id: str) -> dict[str, Any]:
+        op=str(eff.get("operation") or ""); self.effect_operations.validate(op)
+        selected=self._select_effect_targets(actor, targets, str(eff.get("target_selector") or "target"))
+        out={"ok": True, "operation": op, "targets": [t.actor_id for t in selected], "results": []}
+        for target in selected:
+            amount=int(num(eff.get("base_value", eff.get("amount", 0)),0))
+            if op == "deal_damage":
+                out["results"].append(self._apply_damage_component(actor,target,ab,{"id":eff.get("effect_id",op),"base_amount":amount,"damage_type":eff.get("damage_type","physical"),"formula_id":eff.get("formula_id",""),"coefficient":eff.get("coefficient",1),"save_definition":eff.get("save_definition",{})},cast_id))
+            elif op == "heal":
+                out["results"].append(asdict(self.apply_healing(actor.actor_id,target.actor_id,amount,ab.id,str(eff.get("effect_id") or op),{"cast_id":cast_id,"formula_id":eff.get("formula_id")})))
+            elif op == "modify_resource":
+                rr=RuntimeResourceService(getattr(self,"runtime",None), db_path=self.db_path, event_bus=self.event_bus, world_id=self.world_id).mutate(target,str(eff.get("resource") or "mana"),"regeneration" if amount >= 0 else "cost",abs(amount),metadata={"source":"ability_effect","ability_id":ab.id})
+                out["results"].append({"resource":rr.resource,"before":rr.before,"amount":rr.applied_amount,"after":rr.after})
+            elif op in {"apply_affect","apply_condition","modify_stat","grant_resistance","grant_immunity","grant_vulnerability","damage_over_time","healing_over_time","resource_over_time"}:
+                out["results"].append(self._persist_runtime_effect(actor,target,ab,eff,cast_id))
+            elif op in {"remove_affect","remove_condition","dispel","cleanse"}:
+                out["results"].append(self.remove_effects(target.actor_id, eff, "cleansed" if op=="cleanse" else "dispelled" if op=="dispel" else "removed"))
+            elif op in {"teleport","recall","move_target"}:
+                out.update(self._apply_registered_effect(actor, ab, {"type":"teleport_home","room_id":eff.get("parameters",{}).get("room_id")}, cast_id))
+            elif op == "send_message":
+                out["message"] = str((eff.get("messages") or {}).get("actor_success") or eff.get("message") or "")
+            elif op in {"set_cooldown","reduce_cooldown","trigger_ability"}:
+                out["results"].append({"reserved_runtime_operation": op, "ok": True})
+        if not out.get("message"):
+            out["message"] = str((eff.get("messages") or {}).get("actor_success") or "")
+        self._pub("effect_applied" if op not in {"dispel","cleanse"} else f"effect_{op}", {"actor_id":actor.actor_id,"ability_id":ab.id,"operation":op,"cast_id":cast_id})
+        return out
+
+    def _persist_runtime_effect(self, actor: Actor, target: Actor, ab: AbilityDefinition, eff: dict[str, Any], cast_id: str) -> dict[str, Any]:
+        wt=self.world_time(); dur=eff.get("duration") or {}; amount=int(num(dur.get("amount", eff.get("duration_amount", 0)),0)); domain=str(dur.get("domain") or "world_minutes"); expires=None if domain in {"permanent","while_equipped","while_source_exists"} else wt+amount
+        tick=int(num(eff.get("tick_interval") or (eff.get("parameters") or {}).get("tick_interval"),0)); eid="eff_"+uuid.uuid4().hex; tags=list(eff.get("tags") or [])
+        modifiers=list((eff.get("parameters") or {}).get("modifiers") or [])
+        rec={"effect_instance_id":eid,"definition_id":str(eff.get("effect_id") or eff.get("operation")),"source_actor_id":actor.actor_id,"target_actor_id":target.actor_id,"source_ability_id":ab.id,"state":"active","tags":tags,"modifiers":modifiers,"stacks":int(num((eff.get("stacking") or {}).get("stacks",1),1)),"operation":eff.get("operation"),"origin_action_id":cast_id,"wear_off_messages":eff.get("messages") or {},"tick":{"operation":eff.get("operation"),"amount":eff.get("base_value",0),"damage_type":eff.get("damage_type","poison"),"resource":eff.get("resource","health")}}
+        target.effect_container.setdefault("affects",{}).setdefault("canonical",[]).append(rec)
+        if self.db_path:
+            with sqlite3.connect(self.db_path) as c:
+                c.execute("INSERT OR REPLACE INTO actor_effect_instances(effect_instance_id,world_id,effect_template_id,target_actor_type,target_actor_id,source_actor_type,source_actor_id,source_ability_id,category,disposition,visibility,stack_group,stack_count,maximum_stacks,started_world_time,expires_world_time,next_tick_world_time,active,suspended,created_at,updated_at,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (eid,self.world_id,rec["definition_id"],"actor",target.actor_id,"actor",actor.actor_id,ab.id,",".join(tags),"harmful" if "poison" in tags or "debuff" in tags else "beneficial","public",str((eff.get("stacking") or {}).get("exclusive_group") or rec["definition_id"]),rec["stacks"],int(num((eff.get("stacking") or {}).get("maximum_stacks",1),1)),wt,expires or 0,wt+tick if tick else 0,1,0,now(),now(),jdump(rec)))
+        return rec
+
+    def remove_effects(self, target_actor_id: str, criteria: dict[str, Any], reason: str="removed") -> dict[str, Any]:
+        tags=set(criteria.get("tags") or criteria.get("categories") or [])
+        removed=[]
+        if self.db_path:
+            with sqlite3.connect(self.db_path) as c:
+                c.row_factory=sqlite3.Row
+                rows=c.execute("SELECT effect_instance_id,metadata_json FROM actor_effect_instances WHERE target_actor_id=? AND active=1", (target_actor_id,)).fetchall()
+                for r in rows:
+                    meta=jload(r["metadata_json"], {})
+                    if not tags or tags.intersection(set(meta.get("tags") or [])):
+                        c.execute("UPDATE actor_effect_instances SET active=0,removal_reason=?,updated_at=? WHERE effect_instance_id=?", (reason,now(),r["effect_instance_id"]))
+                        removed.append(r["effect_instance_id"])
+        self._pub("effect_removed", {"target_actor_id":target_actor_id,"removed":removed,"reason":reason})
+        return {"status":"removed" if removed else "not_found", "removed": removed}
+
+    def process_effect_ticks(self, world_time: int | None=None) -> list[dict[str, Any]]:
+        if not self.db_path: return []
+        wt=self.world_time() if world_time is None else int(world_time); work=[]; results=[]
+        with sqlite3.connect(self.db_path) as c:
+            c.row_factory=sqlite3.Row
+            rows=c.execute("SELECT * FROM actor_effect_instances WHERE active=1 AND next_tick_world_time>0 AND next_tick_world_time<=? ORDER BY next_tick_world_time,effect_instance_id", (wt,)).fetchall()
+            for r in rows:
+                claim=f"tick_{r['effect_instance_id']}_{r['next_tick_world_time']}"
+                try: c.execute("INSERT INTO ability_effect_tick_claims VALUES(?,?,?,?,?,?)", (claim,self.world_id,r['effect_instance_id'],r['next_tick_world_time'],now(),"{}"))
+                except sqlite3.IntegrityError: continue
+                work.append((dict(r), claim))
+        for r, claim in work:
+            meta=jload(r['metadata_json'], {}); src=self.actors.get(r['source_actor_id']); tgt=self.actors.get(r['target_actor_id'])
+            tick=meta.get('tick') or {}; amount=int(num(tick.get('amount'),0))
+            if src and tgt and meta.get('operation') == 'damage_over_time': results.append(self._apply_damage_component(src,tgt,self.registry.abilities.get(r['source_ability_id'], AbilityDefinition(r['source_ability_id'])),{"id":claim,"base_amount":amount,"damage_type":tick.get('damage_type','poison'),"requires_hit_roll":False,"can_critical":False},claim))
+            elif tgt and meta.get('operation') in {'healing_over_time','resource_over_time'}:
+                rr=RuntimeResourceService(getattr(self,'runtime',None), db_path=self.db_path, event_bus=self.event_bus, world_id=self.world_id).mutate(tgt,str(tick.get('resource') or 'health'),'regeneration' if amount >= 0 else 'cost',abs(amount),metadata={'source':'effect_tick'})
+                results.append({'effect_instance_id':r['effect_instance_id'],'resource':rr.resource,'amount':rr.applied_amount})
+            interval=int(num(meta.get('tick_interval') or r.get('tick_interval') or 1,1)); next_tick=int(r['next_tick_world_time'])+max(1, interval)
+            with sqlite3.connect(self.db_path) as c:
+                if r['expires_world_time'] and next_tick>int(r['expires_world_time']): c.execute("UPDATE actor_effect_instances SET next_tick_world_time=0 WHERE effect_instance_id=?", (r['effect_instance_id'],))
+                else: c.execute("UPDATE actor_effect_instances SET next_tick_world_time=? WHERE effect_instance_id=?", (next_tick,r['effect_instance_id']))
+            self._pub('effect_tick_completed', {'effect_instance_id':r['effect_instance_id'],'claim_id':claim})
+        return results
+
+    def process_effect_expirations(self, world_time: int | None=None) -> list[dict[str, Any]]:
+        if not self.db_path: return []
+        wt=self.world_time() if world_time is None else int(world_time); expired=[]
+        with sqlite3.connect(self.db_path) as c:
+            c.row_factory=sqlite3.Row
+            rows=c.execute("SELECT effect_instance_id,metadata_json FROM actor_effect_instances WHERE active=1 AND expires_world_time>0 AND expires_world_time<=?", (wt,)).fetchall()
+            for r in rows:
+                c.execute("UPDATE actor_effect_instances SET active=0,removal_reason='expired',updated_at=? WHERE effect_instance_id=?", (now(),r['effect_instance_id']))
+                meta=jload(r['metadata_json'],{}); expired.append({'effect_instance_id':r['effect_instance_id'],'messages':meta.get('wear_off_messages',{})})
+                self._pub('effect_expired', {'effect_instance_id':r['effect_instance_id']})
+        return expired
 
     def _apply_registered_effect(self, actor: Actor, ab: AbilityDefinition, eff: dict[str, Any], cast_id: str) -> dict[str, Any]:
         etype = str(eff.get("type") or eff.get("effect_type") or "")
@@ -518,6 +704,50 @@ class AbilityExecutionService:
             ta=self.actors.get(t.get("actor_id"));
             if ta and not allow_dead and str(ta.lifecycle_state).lower() in {"dead","corpse"}: ok=False; t["invalid"]="dead"
         return {"ok":ok,"mode":mode,"targets":targets,"runtime_instance_ids":[t.get("actor_id") for t in targets]}
+    def _ensure_item_instance_material_columns(self, c: sqlite3.Connection) -> None:
+        try:
+            cols={row[1] for row in c.execute("PRAGMA table_info(item_instances)").fetchall()}
+            if not cols:
+                c.execute("CREATE TABLE IF NOT EXISTS item_instances(instance_id TEXT PRIMARY KEY,world_id TEXT,template_id TEXT,owner_type TEXT,owner_id TEXT,room_id TEXT,equipped_slot TEXT,stack_count INTEGER,condition TEXT,durability INTEGER,created_at TEXT,updated_at TEXT,custom_flags TEXT,plugin_data TEXT,destroyed_at TEXT,destroy_reason TEXT)")
+                return
+            if "destroyed_at" not in cols: c.execute("ALTER TABLE item_instances ADD COLUMN destroyed_at TEXT")
+            if "destroy_reason" not in cols: c.execute("ALTER TABLE item_instances ADD COLUMN destroy_reason TEXT")
+            if "stack_count" not in cols: c.execute("ALTER TABLE item_instances ADD COLUMN stack_count INTEGER DEFAULT 1")
+        except sqlite3.OperationalError:
+            pass
+
+    def _validate_materials(self, actor_id: str, ab: AbilityDefinition) -> dict[str, Any]:
+        reqs=list((ab.plugin_data or {}).get("materials") or [])
+        if not reqs or not self.db_path: return {"ok": True, "materials": []}
+        out=[]; ok=True
+        with sqlite3.connect(self.db_path) as c:
+            c.row_factory=sqlite3.Row
+            self._ensure_item_instance_material_columns(c)
+            for r in reqs:
+                template=str(r.get("template_id") or r.get("specific_template") or ""); qty=int(num(r.get("quantity",1),1)); where="owner_id=? AND destroyed_at IS NULL"; params=[actor_id]
+                if template: where += " AND template_id=?"; params.append(template)
+                row=c.execute(f"SELECT COALESCE(SUM(stack_count),0) AS n FROM item_instances WHERE {where}", params).fetchone()
+                have=int(row["n"] if row else 0); good=have>=qty; ok &= good; out.append({"template_id":template,"quantity":qty,"available":have,"ok":good,"consume_timing":r.get("consume_timing","start")})
+        return {"ok": bool(ok), "materials": out}
+
+    def _consume_materials(self, actor_id: str, ab: AbilityDefinition, timing: str) -> list[dict[str, Any]]:
+        reqs=[r for r in list((ab.plugin_data or {}).get("materials") or []) if str(r.get("consume_timing","start")) == timing]
+        if not reqs or not self.db_path: return []
+        results=[]
+        with sqlite3.connect(self.db_path) as c:
+            c.row_factory=sqlite3.Row; self._ensure_item_instance_material_columns(c); c.execute("BEGIN IMMEDIATE")
+            for r in reqs:
+                template=str(r.get("template_id") or r.get("specific_template") or ""); need=int(num(r.get("quantity",1),1)); consumed=0
+                rows=c.execute("SELECT instance_id,stack_count FROM item_instances WHERE owner_id=? AND template_id=? AND destroyed_at IS NULL ORDER BY instance_id", (actor_id,template)).fetchall()
+                if sum(int(x["stack_count"] or 1) for x in rows) < need: raise ValueError("material requirement became unavailable")
+                for row in rows:
+                    if consumed>=need: break
+                    stack=int(row["stack_count"] or 1); take=min(stack, need-consumed); remain=stack-take; consumed += take
+                    if remain>0: c.execute("UPDATE item_instances SET stack_count=? WHERE instance_id=?", (remain,row["instance_id"]))
+                    else: c.execute("UPDATE item_instances SET destroyed_at=?,destroy_reason=? WHERE instance_id=?", (now(),"ability_material",row["instance_id"]))
+                rec={"template_id":template,"quantity":need,"consumed":consumed}; results.append(rec); self._pub("ability_material_consumed", {"actor_id":actor_id,"ability_id":ab.id,**rec})
+        return results
+
     def _validate_costs(self, actor: Actor, ab: AbilityDefinition) -> dict[str, Any]:
         out=[]; ok=True
         for c in ab.costs:
@@ -632,5 +862,9 @@ def init_ability_schema(db_path: Path|str) -> None:
         c.execute("CREATE INDEX IF NOT EXISTS idx_actor_ability_cooldowns_actor ON actor_ability_cooldowns(world_id,actor_type,actor_id,active)")
         c.execute("CREATE TABLE IF NOT EXISTS actor_ability_casts (cast_id TEXT PRIMARY KEY, world_id TEXT, actor_type TEXT, actor_id TEXT, ability_id TEXT, target_data_json TEXT, state TEXT, started_world_time INTEGER, completes_world_time INTEGER, next_tick_world_time INTEGER, cost_state_json TEXT, cooldown_state_json TEXT, interrupt_reason TEXT, created_at TEXT, updated_at TEXT, metadata_json TEXT)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_actor_ability_casts_actor ON actor_ability_casts(world_id,actor_type,actor_id,state)")
+        c.execute("CREATE TABLE IF NOT EXISTS ability_action_results (action_id TEXT PRIMARY KEY, world_id TEXT, actor_id TEXT, ability_id TEXT, ok INTEGER, reason_code TEXT, requested_at TEXT, completed_at TEXT, result_json TEXT)")
+        c.execute("CREATE TABLE IF NOT EXISTS ability_effect_tick_claims (claim_id TEXT PRIMARY KEY, world_id TEXT, effect_instance_id TEXT, scheduled_world_time INTEGER, claimed_at TEXT, metadata_json TEXT)")
+        c.execute("CREATE TABLE IF NOT EXISTS ability_audit_history (audit_id TEXT PRIMARY KEY, world_id TEXT, actor_id TEXT, ability_id TEXT, event_type TEXT, created_at TEXT, payload_json TEXT)")
+        c.execute("CREATE TABLE IF NOT EXISTS actor_ability_charges (charge_id TEXT PRIMARY KEY, world_id TEXT, actor_id TEXT, ability_id TEXT, charges_current INTEGER, charges_maximum INTEGER, next_charge_world_time INTEGER, updated_at TEXT, metadata_json TEXT)")
         c.execute("CREATE TABLE IF NOT EXISTS actor_effect_instances (effect_instance_id TEXT PRIMARY KEY, world_id TEXT, effect_template_id TEXT, target_actor_type TEXT, target_actor_id TEXT, source_actor_type TEXT, source_actor_id TEXT, source_ability_id TEXT, source_item_instance_id TEXT, category TEXT, disposition TEXT, visibility TEXT, stack_group TEXT, stack_count INTEGER, maximum_stacks INTEGER, started_world_time INTEGER, expires_world_time INTEGER, remaining_duration INTEGER, next_tick_world_time INTEGER, active INTEGER, suspended INTEGER, removal_reason TEXT, created_at TEXT, updated_at TEXT, metadata_json TEXT)")
         c.commit()

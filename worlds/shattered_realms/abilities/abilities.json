@@ -945,5 +945,780 @@
       }
     },
     "version": "1.0.0"
+  },
+  {
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "builder_grant",
+      "loadout"
+    ],
+    "requirements": {},
+    "costs": [],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "phase14a"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "completes_immediately": true
+    },
+    "range": {},
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {},
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {},
+    "ai_hints": {},
+    "version": "14A",
+    "id": "phase14a_fire_bolt",
+    "name": "Fire Bolt",
+    "short_name": "Fire Bolt",
+    "description": "Fire Bolt",
+    "ability_type": "spell",
+    "school": "general",
+    "category": "damage",
+    "tags": [
+      "spell",
+      "offensive"
+    ],
+    "targeting": {
+      "mode": "single_enemy",
+      "maximum_targets": 1,
+      "allow_dead": false
+    },
+    "plugin_data": {
+      "canonical_effects": [
+        {
+          "effect_id": "fire_bolt_damage",
+          "operation": "deal_damage",
+          "base_value": 6,
+          "damage_type": "fire",
+          "formula_id": "spell_power",
+          "coefficient": 1.0,
+          "tags": [
+            "fire",
+            "spell"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "builder_grant",
+      "loadout"
+    ],
+    "requirements": {},
+    "costs": [],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "phase14a"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "completes_immediately": true
+    },
+    "range": {},
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {},
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {},
+    "ai_hints": {},
+    "version": "14A",
+    "id": "phase14a_lesser_heal",
+    "name": "Lesser Heal",
+    "short_name": "Lesser Hea",
+    "description": "Lesser Heal",
+    "ability_type": "spell",
+    "school": "general",
+    "category": "healing",
+    "tags": [
+      "spell",
+      "beneficial"
+    ],
+    "targeting": {
+      "mode": "single_ally",
+      "maximum_targets": 1,
+      "allow_dead": false
+    },
+    "plugin_data": {
+      "canonical_effects": [
+        {
+          "effect_id": "lesser_heal",
+          "operation": "heal",
+          "base_value": 8,
+          "formula_id": "healing_power",
+          "coefficient": 1.0,
+          "tags": [
+            "healing",
+            "spell"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "builder_grant",
+      "loadout"
+    ],
+    "requirements": {},
+    "costs": [],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "phase14a"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "completes_immediately": true
+    },
+    "range": {},
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {},
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {},
+    "ai_hints": {},
+    "version": "14A",
+    "id": "phase14a_bless",
+    "name": "Bless",
+    "short_name": "Bless",
+    "description": "Bless",
+    "ability_type": "spell",
+    "school": "general",
+    "category": "buff",
+    "tags": [
+      "spell",
+      "beneficial"
+    ],
+    "targeting": {
+      "mode": "self",
+      "maximum_targets": 1,
+      "allow_dead": false
+    },
+    "plugin_data": {
+      "canonical_effects": [
+        {
+          "effect_id": "bless_affect",
+          "operation": "modify_stat",
+          "duration": {
+            "domain": "world_minutes",
+            "amount": 10
+          },
+          "stacking": {
+            "policy": "refresh_duration",
+            "exclusive_group": "minor_blessing"
+          },
+          "tags": [
+            "buff",
+            "blessing"
+          ],
+          "parameters": {
+            "modifiers": [
+              {
+                "target_domain": "derived_stat",
+                "target_key": "magic_save",
+                "operation": "add",
+                "value": 2
+              }
+            ]
+          },
+          "messages": {
+            "target_wear_off": "The blessing fades from {target}."
+          }
+        }
+      ]
+    }
+  },
+  {
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "builder_grant",
+      "loadout"
+    ],
+    "requirements": {},
+    "costs": [],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "phase14a"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "completes_immediately": true
+    },
+    "range": {},
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {},
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {},
+    "ai_hints": {},
+    "version": "14A",
+    "id": "phase14a_blindness",
+    "name": "Blindness",
+    "short_name": "Blindness",
+    "description": "Blindness",
+    "ability_type": "spell",
+    "school": "general",
+    "category": "control",
+    "tags": [
+      "spell",
+      "hostile"
+    ],
+    "targeting": {
+      "mode": "single_enemy",
+      "maximum_targets": 1,
+      "allow_dead": false
+    },
+    "plugin_data": {
+      "canonical_effects": [
+        {
+          "effect_id": "blindness",
+          "operation": "apply_condition",
+          "duration": {
+            "domain": "world_minutes",
+            "amount": 5
+          },
+          "stacking": {
+            "policy": "unique_by_tag",
+            "exclusive_group": "control effect"
+          },
+          "tags": [
+            "blind",
+            "control",
+            "debuff"
+          ],
+          "save_definition": {
+            "save": "magic_save",
+            "outcome": "negate"
+          },
+          "messages": {
+            "target_wear_off": "Your sight returns."
+          }
+        }
+      ]
+    }
+  },
+  {
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "builder_grant",
+      "loadout"
+    ],
+    "requirements": {},
+    "costs": [],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "phase14a"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "completes_immediately": true
+    },
+    "range": {},
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {},
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {},
+    "ai_hints": {},
+    "version": "14A",
+    "id": "phase14a_poison",
+    "name": "Poison",
+    "short_name": "Poison",
+    "description": "Poison",
+    "ability_type": "spell",
+    "school": "general",
+    "category": "debuff",
+    "tags": [
+      "spell",
+      "hostile"
+    ],
+    "targeting": {
+      "mode": "single_enemy",
+      "maximum_targets": 1,
+      "allow_dead": false
+    },
+    "plugin_data": {
+      "canonical_effects": [
+        {
+          "effect_id": "major_poison",
+          "operation": "damage_over_time",
+          "base_value": 2,
+          "damage_type": "poison",
+          "duration": {
+            "domain": "world_minutes",
+            "amount": 6
+          },
+          "tick_interval": 1,
+          "stacking": {
+            "policy": "unique_by_tag",
+            "exclusive_group": "major poison"
+          },
+          "tags": [
+            "poison",
+            "debuff"
+          ],
+          "save_definition": {
+            "save": "physical_save",
+            "outcome": "negate"
+          },
+          "messages": {
+            "target_wear_off": "The poison leaves {target}."
+          }
+        }
+      ]
+    }
+  },
+  {
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "builder_grant",
+      "loadout"
+    ],
+    "requirements": {},
+    "costs": [],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "phase14a"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "completes_immediately": true
+    },
+    "range": {},
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {},
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {},
+    "ai_hints": {},
+    "version": "14A",
+    "id": "phase14a_regeneration",
+    "name": "Regeneration",
+    "short_name": "Regenerati",
+    "description": "Regeneration",
+    "ability_type": "spell",
+    "school": "general",
+    "category": "healing",
+    "tags": [
+      "spell",
+      "beneficial"
+    ],
+    "targeting": {
+      "mode": "single_ally",
+      "maximum_targets": 1,
+      "allow_dead": false
+    },
+    "plugin_data": {
+      "canonical_effects": [
+        {
+          "effect_id": "regen_hot",
+          "operation": "healing_over_time",
+          "resource": "health",
+          "base_value": 2,
+          "duration": {
+            "domain": "world_minutes",
+            "amount": 5
+          },
+          "tick_interval": 1,
+          "tags": [
+            "regeneration",
+            "hot"
+          ],
+          "messages": {
+            "target_wear_off": "Regeneration fades from {target}."
+          }
+        }
+      ]
+    }
+  },
+  {
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "builder_grant",
+      "loadout"
+    ],
+    "requirements": {},
+    "costs": [],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "phase14a"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "completes_immediately": true
+    },
+    "range": {},
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {},
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {},
+    "ai_hints": {},
+    "version": "14A",
+    "id": "phase14a_cure_poison",
+    "name": "Cure Poison",
+    "short_name": "Cure Poiso",
+    "description": "Cure Poison",
+    "ability_type": "spell",
+    "school": "general",
+    "category": "cure",
+    "tags": [
+      "spell",
+      "cure"
+    ],
+    "targeting": {
+      "mode": "single_ally",
+      "maximum_targets": 1,
+      "allow_dead": false
+    },
+    "plugin_data": {
+      "canonical_effects": [
+        {
+          "effect_id": "cure_poison",
+          "operation": "cleanse",
+          "tags": [
+            "poison"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "builder_grant",
+      "loadout"
+    ],
+    "requirements": {},
+    "costs": [],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "phase14a"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "completes_immediately": true
+    },
+    "range": {},
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {},
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {},
+    "ai_hints": {},
+    "version": "14A",
+    "id": "phase14a_dispel_magic",
+    "name": "Dispel Magic",
+    "short_name": "Dispel Mag",
+    "description": "Dispel Magic",
+    "ability_type": "spell",
+    "school": "general",
+    "category": "dispel",
+    "tags": [
+      "spell",
+      "dispel"
+    ],
+    "targeting": {
+      "mode": "single_actor",
+      "maximum_targets": 1,
+      "allow_dead": false
+    },
+    "plugin_data": {
+      "canonical_effects": [
+        {
+          "effect_id": "dispel_one",
+          "operation": "dispel",
+          "tags": [
+            "buff",
+            "blessing"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "builder_grant",
+      "loadout"
+    ],
+    "requirements": {},
+    "costs": [],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "phase14a"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "completes_immediately": true
+    },
+    "range": {},
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {},
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {},
+    "ai_hints": {},
+    "version": "14A",
+    "id": "phase14a_stone_ward",
+    "name": "Stone Ward",
+    "short_name": "Stone Ward",
+    "description": "Stone Ward",
+    "ability_type": "spell",
+    "school": "general",
+    "category": "defensive",
+    "tags": [
+      "spell",
+      "defensive"
+    ],
+    "targeting": {
+      "mode": "self",
+      "maximum_targets": 1,
+      "allow_dead": false
+    },
+    "plugin_data": {
+      "canonical_effects": [
+        {
+          "effect_id": "stone_ward",
+          "operation": "grant_resistance",
+          "duration": {
+            "domain": "world_minutes",
+            "amount": 10
+          },
+          "stacking": {
+            "policy": "replace",
+            "exclusive_group": "protective ward"
+          },
+          "tags": [
+            "protective_ward",
+            "earth"
+          ],
+          "parameters": {
+            "modifiers": [
+              {
+                "target_domain": "resistance",
+                "target_key": "physical",
+                "operation": "add",
+                "value": 5
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "builder_grant",
+      "loadout"
+    ],
+    "requirements": {},
+    "costs": [],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "phase14a"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "completes_immediately": true
+    },
+    "range": {},
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {},
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {},
+    "ai_hints": {},
+    "version": "14A",
+    "id": "phase14a_flame_ward",
+    "name": "Flame Ward",
+    "short_name": "Flame Ward",
+    "description": "Flame Ward",
+    "ability_type": "spell",
+    "school": "general",
+    "category": "defensive",
+    "tags": [
+      "spell",
+      "defensive"
+    ],
+    "targeting": {
+      "mode": "self",
+      "maximum_targets": 1,
+      "allow_dead": false
+    },
+    "plugin_data": {
+      "canonical_effects": [
+        {
+          "effect_id": "flame_ward",
+          "operation": "grant_resistance",
+          "duration": {
+            "domain": "world_minutes",
+            "amount": 10
+          },
+          "stacking": {
+            "policy": "replace",
+            "exclusive_group": "protective ward"
+          },
+          "tags": [
+            "protective_ward",
+            "fire"
+          ],
+          "parameters": {
+            "modifiers": [
+              {
+                "target_domain": "resistance",
+                "target_key": "fire",
+                "operation": "add",
+                "value": 5
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "builder_grant",
+      "loadout"
+    ],
+    "requirements": {},
+    "costs": [],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "phase14a"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "completes_immediately": true
+    },
+    "range": {},
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {},
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {},
+    "ai_hints": {},
+    "version": "14A",
+    "id": "phase14a_ruby_flare",
+    "name": "Ruby Flare",
+    "short_name": "Ruby Flare",
+    "description": "Ruby Flare",
+    "ability_type": "spell",
+    "school": "general",
+    "category": "damage",
+    "tags": [
+      "spell",
+      "offensive"
+    ],
+    "targeting": {
+      "mode": "single_enemy",
+      "maximum_targets": 1,
+      "allow_dead": false
+    },
+    "plugin_data": {
+      "canonical_effects": [
+        {
+          "effect_id": "ruby_fire",
+          "operation": "deal_damage",
+          "base_value": 10,
+          "damage_type": "fire",
+          "tags": [
+            "fire"
+          ]
+        }
+      ],
+      "materials": [
+        {
+          "template_id": "ruby_dust",
+          "quantity": 1,
+          "consume_timing": "start"
+        }
+      ]
+    }
   }
 ]
