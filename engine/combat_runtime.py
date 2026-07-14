@@ -507,6 +507,8 @@ class CombatRuntimeService:
         if already:
             return CombatRuntimeResult(True, [f'You keep fighting {defender.identity.name}.'], enc)
         rr=self._execute_attack(enc, attacker, defender, opening=True)
+        if rr.ok and not self.find_actor_encounter(attacker.actor_id):
+            self.enqueue_output(character.id, f"The attack is over.", encounter_id=enc, room_id=character.room_id, category='combat_end')
         for cid in self.active_character_ids_in_room(character.room_id):
             if cid != character.id: self.enqueue_output(cid, f'{character.name} attacks {defender.identity.name}.', encounter_id=enc, room_id=character.room_id, category='combat_start')
         return rr

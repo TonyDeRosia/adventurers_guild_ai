@@ -114,8 +114,10 @@ DETERMINISTIC_COMMANDS = {
     "map": {"category": "info", "admin": False},
     "time": {"category": "info", "admin": False},
     "weather": {"category": "info", "admin": False},
-    "practice": {"category": "info", "aliases": ["prac"], "admin": False},
-    "train": {"category": "shop", "admin": False},
+    "practice": {"category": "info", "aliases": ["prac", "pr"], "admin": False},
+    "train": {"category": "shop", "aliases": ["tr"], "admin": False},
+    "buypractice": {"category": "shop", "aliases": ["buyprac"], "admin": False},
+    "buytrain": {"category": "shop", "admin": False},
     "study": {"category": "shop", "admin": False},
     "list": {"category": "shop", "admin": False},
     "buy": {"category": "shop", "admin": False},
@@ -206,7 +208,7 @@ DETERMINISTIC_COMMANDS = {
     "sit": {"category": "interaction", "admin": False},
     "stand": {"category": "interaction", "admin": False},
     "rest": {"category": "interaction", "admin": False},
-    "sleep": {"category": "interaction", "admin": False},
+    "sleep": {"category": "interaction", "aliases": ["lay", "lie"], "admin": False},
     "wake": {"category": "interaction", "admin": False},
     "talk": {"category": "communication", "admin": False},
     "greet": {"category": "communication", "admin": False},
@@ -816,11 +818,16 @@ class MudCommandEngine:
         trainers = []
         try:
             data = json.loads((root/"trainer_definitions"/"trainer_definitions.json").read_text(encoding="utf-8"))
-            trainers = [t for t in data.get("trainer_definitions", data if isinstance(data, list) else []) if room_id in (t.get("room_ids") or []) and t.get("enabled", True)]
+            raw_trainers = data.get("trainer_definitions", data if isinstance(data, list) else [])
+            if isinstance(raw_trainers, dict):
+                raw_trainers = list(raw_trainers.values())
+            trainers = [t for t in raw_trainers if isinstance(t, dict) and room_id in (t.get("room_ids") or []) and t.get("enabled", True)]
         except Exception:
             trainers = []
         def at_trainer() -> bool:
-            return bool(trainers) or "guild" in room_id or "training" in room_id or "practice" in room_id
+            return bool(trainers)
+        def trainer_name() -> str:
+            return str((trainers[0] if trainers else {}).get("name") or "your trainer")
         state = ps.initialize_actor_progression(character)
         def done(text: str, ok: bool = True) -> CommandResult:
             if rt: rt.performance_counters["train_command_duration_ms" if cmd in {"train","buytrain"} else "practice_command_duration_ms"] = int((time.monotonic()-t0)*1000)
@@ -836,11 +843,11 @@ class MudCommandEngine:
             aliases = {**stats, "strength":"strength","dexterity":"dexterity","constitution":"constitution","intelligence":"intelligence","wisdom":"wisdom","charisma":"charisma"}
             query = " ".join(args).lower().strip()
             if not query:
-                lines=[f"You have {state.get('training_sessions',0)} training sessions available.","","Base stats"]
+                lines=[f"{trainer_name()} can help you train.", f"You have {state.get('training_sessions',0)} training sessions available.","","Base stats"]
                 for short, full in stats.items():
                     val = int(getattr(character, full, getattr(character, short, 10)) or 10)
                     lines.append(f"{short.capitalize()} {val}/20" + (" [MAX]" if val >= 20 else ""))
-                lines += ["", "Train str dex con int wis cha (cost 1, cap 20)", "Train hit mana move (cost 10)"]
+                lines += ["", "Use TRAIN STR/DEX/CON/INT/WIS/CHA (cost 1, cap 20)", "Use TRAIN HIT/MANA/MOVE (cost 10)"]
                 return done("\n".join(lines))
             if query in aliases:
                 if int(state.get("training_sessions",0) or 0) < 1: return done("You do not have enough training sessions.", False)
@@ -864,7 +871,7 @@ class MudCommandEngine:
             con.row_factory = __import__("sqlite3").Row
             abilities=[dict(r) for r in con.execute("SELECT * FROM actor_ability_progression WHERE actor_id=? AND active=1 ORDER BY ability_id",(actor_id,))]
         if not args:
-            lines=[f"You have {state.get('practice_sessions',0)} practice sessions remaining.","","You know:"]
+            lines=[f"Practice sessions: {state.get('practice_sessions',0)}", "Use TRAIN for permanent attributes and resources.", "","You know:"]
             if not abilities: lines.append("  No practiced abilities yet.")
             for a in abilities:
                 prof=int(a.get("proficiency") or 1); desc="awful" if prof<20 else "poor" if prof<40 else "fair" if prof<60 else "good" if prof<80 else "superb"

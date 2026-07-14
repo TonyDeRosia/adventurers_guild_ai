@@ -721,6 +721,12 @@ class MudRuntime:
         if getattr(self, 'abilities', None):
             try: self.abilities.process_ability_casts(world_id, int(wt.get('total_minutes') or 0))
             except Exception: pass
+        if getattr(self, "combat_runtime", None):
+            try:
+                now_ms = self.combat_runtime.world_time()
+                self.combat_runtime.process_due_rounds(now_ms + max(0, int(minutes)) * 1000)
+            except Exception:
+                pass
         self.process_due_agent_controllers(int(wt.get('total_minutes') or 0))
         return wt
 
@@ -1234,7 +1240,8 @@ class MudRuntime:
             self.event_bus.publish("room_rendered", {"world_id": self.active_world_id or "", "character_id": char.id, "room_id": char.room_id, "output_format": "web_html", "render_kind": "room"}, source_system="render", world_id=self.active_world_id or "", character_id=char.id)
             self.performance_counters["prompt_renders"] += 1
             self.event_bus.publish("prompt_rendered", {"world_id": self.active_world_id or "", "character_id": char.id, "room_id": char.room_id, "output_format": "web_html", "render_kind": "prompt"}, source_system="render", world_id=self.active_world_id or "", character_id=char.id)
-            return {"html": rendered.get("html", ""), "text": rendered.get("text", ""), "prompt": prompt_data.get("prompt_html", ""), "room_id": char.room_id, "async_messages": [], "async_cursor": self._async_sequences.get(character_id, 0)}
+            async_messages = self.drain_session_output(character_id)
+            return {"html": rendered.get("html", ""), "text": rendered.get("text", ""), "prompt": prompt_data.get("prompt_html", ""), "room_id": char.room_id, "async_messages": async_messages, "async_cursor": self._async_sequences.get(character_id, 0)}
         finally:
             self._play_view_inflight.discard(character_id)
 
@@ -1628,6 +1635,11 @@ class MudRuntime:
 
     def _match_player_ability_command(self, words: list[str]) -> dict[str, Any] | None:
         phrase = " ".join(words).lower().strip()
+        if words:
+            first = words[0].lower()
+            resolved, kind = self.command_engine.registry.resolve(first)
+            if kind in {"exact", "alias", "abbreviation"} and resolved in self.command_engine.command_handlers:
+                return None
         ability_phrases = self._player_ability_phrases()
         if phrase in ability_phrases:
             return {"tokens": words, "raw_cmd": phrase, "cmd": "use", "args": phrase.split(), "alias_note": "ability command"}
