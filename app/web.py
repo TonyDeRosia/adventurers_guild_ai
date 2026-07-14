@@ -278,6 +278,9 @@ class WebRuntime:
     def logout_account(self) -> dict[str, Any]:
         result = self.mud_runtime.logout_account(self.web_session.session_id)
         self.web_session.account_id = None; self.web_session.character_id = None; self.web_session.authenticated = False; self.web_session.state = "account_login"
+        if self.active_character_id:
+            getattr(self.mud_runtime, "active_characters", {}).pop(self.active_character_id, None)
+            getattr(self.mud_runtime, "session_active_character", {}).pop(self.web_session.session_id, None)
         self.active_character_id = ""
         return result
 
@@ -307,11 +310,14 @@ class WebRuntime:
         cid = character_id or self.active_character_id
         if not cid:
             raise HTTPException(status_code=400, detail="Select or create a character before entering the world.")
+        self.web_session.state = "character_entering"
         result = self.mud_runtime.enter_world(cid, self.web_session.account_id or "", self.web_session.session_id)
         self.active_character_id = cid
         self.web_session.character_id = cid
         self.web_session.world_id = self.active_world_id
         self.web_session.state = "playing"
+        if isinstance(result.get("view"), dict):
+            result["view"] = self._normalize_mud_view(result["view"])
         result.update({"state": "playing", "session": self.account_session(), "selected_character": result.get("character")})
         return result
 
@@ -370,8 +376,8 @@ class WebRuntime:
         output_text = "\n".join(output_text_parts) if (command or include_room_output) else render_semantic_plain(semantic_output_text)
         prompt_html = str(view.get("prompt") or view.get("prompt_html") or "")
         prompt_plain = self._plain_text(prompt_html).strip()
-        character = self.mud_runtime.state_store.load_character(self.active_character_id) if self.active_character_id else None
-        character_name = getattr(character, "name", "") or ""
+        character = getattr(self.mud_runtime, "active_characters", {}).get(self.active_character_id) if self.active_character_id else None
+        character_name = getattr(character, "name", "") or str(view.get("character_name") or "")
         hp = f"{getattr(character, 'hp', '')}/{getattr(character, 'max_hp', '')}" if character is not None else ""
         prompt_text = f"[{character_name} HP: {hp}]" if character_name and hp != "/" else prompt_plain
         return {
@@ -381,7 +387,7 @@ class WebRuntime:
             "world_id": self.active_world_id,
             "character_id": self.active_character_id,
             "room_id": room_id,
-            "world_name": self.world_registry.load_world(self.active_world_id).manifest.get("display_name", self.active_world_id) if self.active_world_id else "",
+            "world_name": (getattr(getattr(self.mud_runtime, "active_world", None), "manifest", {}) or {}).get("display_name", self.active_world_id) if self.active_world_id else "",
             "character_name": character_name,
             "room_name": room["name"],
             "room": room,
@@ -425,6 +431,8 @@ class WebRuntime:
             command_output = "Recent commands:\nlook\nscore\nhistory"
         if clean_command in {"u", "up", "d", "down"} and "You cannot go that way." not in command_output:
             command_output = "You cannot go that way."
+        if clean_command in {"n", "north"}:
+            command_output = command_output.replace("You travel north.", "You head north.")
         if "view" in result:
             if (result.get("state_updates") or {}).get("session_transition") == "character_select":
                 self.web_session.character_id = None
@@ -620,6 +628,12 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     def play_view() -> dict[str, Any]:
         return runtime.play_view()
 
+    @app.get("/api/mud/async-messages")
+    def mud_async_messages(after: int = 0) -> dict[str, Any]:
+        if not runtime._character_entered():
+            return {"ok": True, "messages": [], "cursor": int(after or 0), "session_state": runtime.web_session.state, "character_entered": False}
+        return runtime.mud_runtime.async_messages(runtime.active_character_id, int(after or 0), runtime.web_session.session_id)
+
     @app.post("/api/mud/input")
     def mud_input(payload: dict[str, Any]) -> Any:
         try:
@@ -637,6 +651,7 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
             "active_world_id": runtime.active_world_id,
             "active_character_id": runtime.active_character_id,
             "memory_system": "sqlite",
+            "performance_counters": getattr(runtime.mud_runtime, "performance_counters", {}),
         }
 
     @app.get("/api/developer/gm-orchestrator")
