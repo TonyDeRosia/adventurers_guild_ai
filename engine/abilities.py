@@ -72,6 +72,28 @@ class AbilityEffectDefinition:
     tick_interval: int = 0; stacking: dict[str, Any] = field(default_factory=dict); conditions: list[str] = field(default_factory=list); tags: list[str] = field(default_factory=list)
     messages: dict[str, str] = field(default_factory=dict); parameters: dict[str, Any] = field(default_factory=dict); custom_hook_id: str = ""; source_version: str = "1"
 
+
+
+@dataclass(frozen=True)
+class AuraDefinition:
+    aura_id: str; source_policy: str = "while_source_exists"; scope: str = "room"; radius: int = 0; target_policy: str = "allies"; refresh_policy: str = "no_duplicate"; granted_effect_id: str = ""; update_interval: int = 1; line_of_sight: bool = False; same_room: bool = True; same_area: bool = False; source_required: bool = True; remove_on_leave: bool = True; suppress_on_leave: bool = False; maximum_targets: int = 99; tags: tuple[str, ...] = (); messages: dict[str, str] = field(default_factory=dict); source_version: str = "1"
+
+@dataclass(frozen=True)
+class TransformationDefinition:
+    transformation_id: str; body_profile_id: str = ""; size: str = "medium"; appearance: str = ""; natural_weapon_profiles: tuple[dict[str, Any], ...] = (); movement_mode: str = "walk"; stat_modifiers: tuple[dict[str, Any], ...] = (); resistance_modifiers: tuple[dict[str, Any], ...] = (); ability_grants: tuple[str, ...] = (); suppressed_abilities: tuple[str, ...] = (); equipment_policy: str = "keep_equipped"; duration: dict[str, Any] = field(default_factory=dict); reversion_policy: str = "restore"; exclusive_group: str = "form"; messages: dict[str, str] = field(default_factory=dict); source_version: str = "1"
+
+@dataclass(frozen=True)
+class SummonDefinition:
+    summon_id: str; summon_template_id: str; count: int = 1; duration: int = 10; duration_domain: str = "world_minutes"; level_policy: str = "owner"; stat_scaling: dict[str, Any] = field(default_factory=dict); resource_scaling: dict[str, Any] = field(default_factory=dict); ability_grants: tuple[str, ...] = (); owner_relationship: str = "follow"; control_policy: str = "owner"; follow_policy: str = "same_room"; combat_policy: str = "assist"; death_policy: str = "cleanup"; dismiss_policy: str = "owner"; storage_policy: str = "temporary"; maximum_active: int = 1; maximum_per_ability: int = 1; exclusive_group: str = ""; replacement_policy: str = "dismiss_oldest"; messages: dict[str, str] = field(default_factory=dict); source_version: str = "1"
+
+@dataclass(frozen=True)
+class RoomEffectDefinition:
+    room_effect_id: str; name: str = ""; description: str = ""; tags: tuple[str, ...] = (); duration: int = 10; duration_domain: str = "world_minutes"; tick_interval: int = 0; entry_operations: tuple[dict[str, Any], ...] = (); exit_operations: tuple[dict[str, Any], ...] = (); resident_operations: tuple[dict[str, Any], ...] = (); tick_operations: tuple[dict[str, Any], ...] = (); movement_modifiers: dict[str, Any] = field(default_factory=dict); ability_restrictions: dict[str, Any] = field(default_factory=dict); visibility: str = "public"; messages: dict[str, str] = field(default_factory=dict); persistence_policy: str = "runtime"; source_version: str = "1"
+
+@dataclass(frozen=True)
+class SummonProfile:
+    profile_id: str; owner_actor_id: str; profile_name: str; summon_definition_id: str; entity_template_id: str; identity: dict[str, Any] = field(default_factory=dict); level: int = 1; primary_stat_profile: dict[str, Any] = field(default_factory=dict); secondary_modifier_profile: dict[str, Any] = field(default_factory=dict); resource_profile: dict[str, Any] = field(default_factory=dict); natural_weapons: tuple[dict[str, Any], ...] = (); ability_grants: tuple[str, ...] = (); appearance: str = ""; profile_schema_version: str = "1"; source_hash: str = ""; created_at: str = ""; updated_at: str = ""
+
 @dataclass(frozen=True)
 class RuntimeEffectInstance:
     effect_instance_id: str; definition_id: str; source_ability_id: str = ""; source_actor_id: str = ""; source_item_id: str = ""; target_actor_id: str = ""; target_item_id: str = ""; target_room_id: str = ""
@@ -88,7 +110,7 @@ class ActorAbilityProficiency:
 
 class AbilityEffectOperationRegistry:
     def __init__(self):
-        self.operations = set(PHASE14A_OPERATIONS)
+        self.operations = set(PHASE14A_OPERATIONS) | set(PHASE14B_RESERVED_OPERATIONS)
         self.reserved = set(PHASE14B_RESERVED_OPERATIONS)
     def validate(self, operation: str) -> None:
         if operation not in self.operations:
@@ -535,6 +557,26 @@ class AbilityExecutionService:
                 out["message"] = str((eff.get("messages") or {}).get("actor_success") or eff.get("message") or "")
             elif op in {"set_cooldown","reduce_cooldown","trigger_ability"}:
                 out["results"].append({"reserved_runtime_operation": op, "ok": True})
+            elif op == "aura":
+                out["results"].append(self.create_aura(actor.actor_id, ab.id, eff, cast_id))
+            elif op == "stance":
+                out["results"].append(self.activate_stance(actor.actor_id, ab.id, eff, cast_id))
+            elif op == "transform":
+                out["results"].append(self.start_transformation(actor.actor_id, ab.id, eff, cast_id))
+            elif op == "summon":
+                out["results"].extend(self.create_summons(actor.actor_id, ab.id, eff, cast_id))
+            elif op == "dismiss_summon":
+                out["results"].append(self.dismiss_summon(actor.actor_id, str((eff.get("parameters") or {}).get("summon_id") or "all"), "ability"))
+            elif op == "create_item":
+                out["results"].append(self.create_item(actor.actor_id, ab.id, eff, cast_id))
+            elif op == "destroy_item":
+                out["results"].append(self.destroy_item(actor.actor_id, str((eff.get("parameters") or {}).get("item_instance_id") or eff.get("target_item_id") or ""), cast_id))
+            elif op == "alter_item":
+                out["results"].append(self.alter_item(actor.actor_id, eff, cast_id))
+            elif op == "create_room_effect":
+                out["results"].append(self.create_room_effect(actor.actor_id, ab.id, eff, cast_id))
+            elif op == "remove_room_effect":
+                out["results"].append(self.remove_room_effect(str((eff.get("parameters") or {}).get("room_effect_instance_id") or ""), "ability"))
         if not out.get("message"):
             out["message"] = str((eff.get("messages") or {}).get("actor_success") or "")
         self._pub("effect_applied" if op not in {"dispel","cleanse"} else f"effect_{op}", {"actor_id":actor.actor_id,"ability_id":ab.id,"operation":op,"cast_id":cast_id})
@@ -622,6 +664,149 @@ class AbilityExecutionService:
         if etype == "send_message":
             return {"ok": True, "effect_type": etype, "message": str(eff.get("message") or "")}
         return {"ok": False, "effect_type": etype, "reason": "unknown_effect", "message": "That ability is not configured correctly."}
+
+
+    # Phase 14B advanced operations.  These methods deliberately keep all
+    # state in the canonical ability database/effect tables and ActorRegistry so
+    # player, NPC, script, item, and summon invocations share one path.
+    def create_aura(self, actor_id: str, ability_id: str, eff: dict[str, Any], origin_action_id: str) -> dict[str, Any]:
+        params=eff.get("parameters") or {}; wt=self.world_time(); aid="aura_"+uuid.uuid4().hex; granted=str(params.get("granted_effect_id") or eff.get("effect_id") or "aura_effect")
+        dur=int(num((eff.get("duration") or params.get("duration") or {}).get("amount", params.get("duration", 0)),0)); expires=wt+dur if dur else 0
+        rec={"aura_instance_id":aid,"definition_id":str(params.get("aura_id") or eff.get("effect_id") or ability_id),"source_actor_id":actor_id,"source_ability_id":ability_id,"granted_effect_id":granted,"scope":params.get("scope","room"),"target_policy":params.get("target_policy","allies"),"remove_on_leave":params.get("remove_on_leave", True),"origin_action_id":origin_action_id}
+        if self.db_path:
+            with sqlite3.connect(self.db_path) as c: c.execute("INSERT OR REPLACE INTO aura_instances VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(aid,self.world_id,rec['definition_id'],actor_id,ability_id,"actor",actor_id,wt,expires,1,origin_action_id,now(),now(),jdump(rec),jdump({"source_version":eff.get("source_version","1")})))
+        self._pub("aura_created", {"aura_instance_id":aid,"actor_id":actor_id,"origin_action_id":origin_action_id}); self.update_aura_membership(aid); return {"ok":True,**rec}
+
+    def update_aura_membership(self, aura_instance_id: str) -> list[dict[str, Any]]:
+        if not self.db_path: return []
+        with sqlite3.connect(self.db_path) as c:
+            c.row_factory=sqlite3.Row; row=c.execute("SELECT * FROM aura_instances WHERE aura_instance_id=? AND active=1",(aura_instance_id,)).fetchone()
+            if not row: return []
+            meta=jload(row['metadata_json'],{}); current={r[0] for r in c.execute("SELECT target_actor_id FROM aura_membership WHERE aura_instance_id=? AND active=1",(aura_instance_id,))}
+        desired=set(self.actors.keys()); source=row['source_actor_id']; desired.discard(source); events=[]
+        for actor_id in sorted(desired-current):
+            actor=self.actors.get(actor_id); src=self.actors.get(source)
+            if actor and src:
+                pseudo=AbilityDefinition(str(row['source_ability_id'] or 'aura'), name='Aura')
+                eff={"effect_id":meta.get('granted_effect_id') or row['definition_id'],"operation":"apply_affect","duration":{"domain":"while_source_exists","amount":0},"tags":["aura"],"parameters":{"aura_instance_id":aura_instance_id}}
+                applied=self._persist_runtime_effect(src, actor, pseudo, eff, str(row['origin_action_id'] or aura_instance_id))
+                with sqlite3.connect(self.db_path) as c: c.execute("INSERT OR REPLACE INTO aura_membership VALUES(?,?,?,?,?,?,?,?,?,?,?)",(f"am_{aura_instance_id}_{actor_id}",aura_instance_id,self.world_id,actor_id,applied['effect_instance_id'],1,0,self.world_time(),None,now(),jdump({})))
+                self._pub("aura_member_added", {"aura_instance_id":aura_instance_id,"target_actor_id":actor_id,"origin_action_id":row['origin_action_id']}); events.append({"added":actor_id})
+        for actor_id in sorted(current-desired):
+            self.remove_aura_member(aura_instance_id, actor_id, "left_scope"); events.append({"removed":actor_id})
+        return events
+
+    def remove_aura_member(self, aura_instance_id: str, actor_id: str, reason: str) -> None:
+        if not self.db_path: return
+        with sqlite3.connect(self.db_path) as c:
+            c.row_factory=sqlite3.Row; rows=c.execute("SELECT granted_effect_instance_id FROM aura_membership WHERE aura_instance_id=? AND target_actor_id=? AND active=1",(aura_instance_id,actor_id)).fetchall()
+            for r in rows: c.execute("UPDATE actor_effect_instances SET active=0,removal_reason=?,updated_at=? WHERE effect_instance_id=?",(reason,now(),r[0]))
+            c.execute("UPDATE aura_membership SET active=0,left_world_time=?,updated_at=? WHERE aura_instance_id=? AND target_actor_id=?",(self.world_time(),now(),aura_instance_id,actor_id))
+        self._pub("aura_member_removed", {"aura_instance_id":aura_instance_id,"target_actor_id":actor_id,"reason":reason})
+
+    def remove_aura(self, aura_instance_id: str, reason: str="removed") -> dict[str, Any]:
+        if not self.db_path: return {"ok":False}
+        with sqlite3.connect(self.db_path) as c: c.row_factory=sqlite3.Row; members=[r[0] for r in c.execute("SELECT target_actor_id FROM aura_membership WHERE aura_instance_id=? AND active=1",(aura_instance_id,))]
+        for m in members: self.remove_aura_member(aura_instance_id,m,reason)
+        with sqlite3.connect(self.db_path) as c: c.execute("UPDATE aura_instances SET active=0,updated_at=? WHERE aura_instance_id=?",(now(),aura_instance_id))
+        self._pub("aura_removed", {"aura_instance_id":aura_instance_id,"reason":reason}); return {"ok":True,"removed_members":members}
+
+    def activate_stance(self, actor_id: str, ability_id: str, eff: dict[str, Any], origin_action_id: str) -> dict[str, Any]:
+        params=eff.get('parameters') or {}; group=str(params.get('exclusive_group') or 'stance')
+        self.remove_effects(actor_id, {"tags":[f"stance:{group}"]}, "stance_replaced")
+        actor=self.actors[actor_id]; ab=self.registry.abilities.get(ability_id, AbilityDefinition(ability_id)); eff=dict(eff); eff['operation']='apply_affect'; eff.setdefault('tags',[]); eff['tags']=list(set(eff['tags']+["stance",f"stance:{group}"])); rec=self._persist_runtime_effect(actor,actor,ab,eff,origin_action_id)
+        self._pub("stance_activated", {"actor_id":actor_id,"ability_id":ability_id,"effect_instance_id":rec['effect_instance_id'],"exclusive_group":group}); return {"ok":True,"stance_effect_instance_id":rec['effect_instance_id'],"exclusive_group":group}
+
+    def start_transformation(self, actor_id: str, ability_id: str, eff: dict[str, Any], origin_action_id: str) -> dict[str, Any]:
+        actor=self.actors[actor_id]; params=eff.get('parameters') or {}; meta={"original_body_profile":actor.combat_profile.get('body_profile'),"original_natural_weapons":actor.combat_profile.get('natural_weapons'),"equipment_policy":params.get('equipment_policy','keep_equipped')}
+        actor.combat_profile['body_profile']=params.get('body_profile_id','transformed'); actor.combat_profile['natural_weapons']=params.get('natural_weapon_profiles') or params.get('natural_weapons') or []
+        rec=self._persist_runtime_effect(actor,actor,self.registry.abilities.get(ability_id,AbilityDefinition(ability_id)), {**eff,"operation":"apply_affect","tags":["transformation"],"parameters":{"modifiers":params.get('stat_modifiers',[]),"transformation":meta}}, origin_action_id)
+        self._pub("transformation_started", {"actor_id":actor_id,"ability_id":ability_id,"effect_instance_id":rec['effect_instance_id']}); return {"ok":True,"effect_instance_id":rec['effect_instance_id'],"body_profile_id":actor.combat_profile.get('body_profile')}
+
+    def create_summons(self, owner_id: str, ability_id: str, eff: dict[str, Any], origin_action_id: str) -> list[dict[str, Any]]:
+        params=eff.get('parameters') or {}; count=max(1,int(num(params.get('count',1),1))); out=[]; owner=self.actors[owner_id]
+        for i in range(count):
+            sid="summon_"+uuid.uuid4().hex; name=str(params.get('name') or params.get('summon_template_id') or 'Summon'); actor=Actor.create(sid,name,'summon'); actor.plugin_data.update({"owner_actor_id":owner_id,"source_ability_id":ability_id,"relationship":params.get('owner_relationship','follow'),"npc_ability_ids":list(params.get('ability_grants') or [])}); actor.combat_profile['natural_weapons']=params.get('natural_weapon_profiles') or [] ; self.register_actor(actor)
+            expires=self.world_time()+int(num(params.get('duration', eff.get('duration',{}).get('amount',10) if isinstance(eff.get('duration'),dict) else 10),10))
+            if self.db_path:
+                with sqlite3.connect(self.db_path) as c: c.execute("INSERT OR REPLACE INTO summon_relationships VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(sid,self.world_id,sid,str(params.get('summon_template_id') or ''),owner_id,ability_id,origin_action_id,self.world_time(),expires,'active',params.get('owner_relationship','follow'),params.get('control_policy','owner'),params.get('follow_policy','same_room'),params.get('combat_policy','assist'),now(),now(),jdump(actor.plugin_data)))
+            self._pub("summon_created", {"summon_instance_id":sid,"owner_actor_id":owner_id,"ability_id":ability_id,"origin_action_id":origin_action_id}); out.append({"ok":True,"summon_instance_id":sid,"owner_actor_id":owner_id,"expires_world_time":expires})
+        return out
+
+    def dismiss_summon(self, owner_id: str, summon_id: str="all", reason: str="dismissed") -> dict[str, Any]:
+        ids=[summon_id] if summon_id and summon_id!='all' else [a.actor_id for a in self.actors.values() if (a.plugin_data or {}).get('owner_actor_id')==owner_id]
+        for sid in ids:
+            self.unregister_actor(sid)
+            if self.db_path:
+                with sqlite3.connect(self.db_path) as c: c.execute("UPDATE summon_relationships SET state=?,updated_at=? WHERE owner_actor_id=? AND actor_id=?",(reason,now(),owner_id,sid))
+            self._pub("summon_dismissed", {"summon_instance_id":sid,"owner_actor_id":owner_id,"reason":reason})
+        return {"ok":True,"dismissed":ids}
+
+    def process_summon_expirations(self, world_time: int|None=None) -> list[dict[str, Any]]:
+        if not self.db_path: return []
+        wt=self.world_time() if world_time is None else int(world_time); out=[]
+        with sqlite3.connect(self.db_path) as c: c.row_factory=sqlite3.Row; rows=c.execute("SELECT * FROM summon_relationships WHERE state='active' AND expires_world_time>0 AND expires_world_time<=?",(wt,)).fetchall()
+        for r in rows:
+            self.dismiss_summon(r['owner_actor_id'], r['actor_id'], 'expired'); self._pub('summon_expired', {'summon_instance_id':r['actor_id'],'owner_actor_id':r['owner_actor_id']}); out.append(dict(r))
+        return out
+
+    def create_item(self, actor_id: str, ability_id: str, eff: dict[str, Any], origin_action_id: str) -> dict[str, Any]:
+        params=eff.get('parameters') or {}; iid="item_"+uuid.uuid4().hex; template=str(params.get('template_id') or params.get('template') or 'temporary_item'); qty=max(1,int(num(params.get('quantity',1),1)))
+        if self.db_path:
+            with sqlite3.connect(self.db_path) as c: self._ensure_item_instance_material_columns(c); c.execute("INSERT INTO item_instances(instance_id,world_id,template_id,owner_type,owner_id,room_id,equipped_slot,stack_count,condition,durability,created_at,updated_at,custom_flags,plugin_data) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(iid,self.world_id,template,params.get('owner_type','actor'),actor_id,params.get('room_id',''),'',qty,'normal',100,now(),now(),jdump({}),jdump({'source_ability_id':ability_id,'origin_action_id':origin_action_id,'temporary':bool(params.get('duration'))})))
+        self._pub('item_created', {'item_instance_id':iid,'actor_id':actor_id,'template_id':template,'origin_action_id':origin_action_id}); return {'ok':True,'item_instance_id':iid,'template_id':template,'quantity':qty}
+
+    def destroy_item(self, actor_id: str, item_instance_id: str, origin_action_id: str) -> dict[str, Any]:
+        if not self.db_path or not item_instance_id: return {'ok':False,'reason':'missing_item'}
+        with sqlite3.connect(self.db_path) as c: self._ensure_item_instance_material_columns(c); cur=c.execute("UPDATE item_instances SET destroyed_at=COALESCE(destroyed_at,?),destroy_reason=COALESCE(destroy_reason,?) WHERE instance_id=? AND owner_id=?",(now(),'ability_destroy',item_instance_id,actor_id))
+        self._pub('item_destroyed', {'item_instance_id':item_instance_id,'actor_id':actor_id,'origin_action_id':origin_action_id}); return {'ok':cur.rowcount>=0,'item_instance_id':item_instance_id}
+
+    def alter_item(self, actor_id: str, eff: dict[str, Any], origin_action_id: str) -> dict[str, Any]:
+        params=eff.get('parameters') or {}; iid=str(params.get('item_instance_id') or ''); mutation=str(params.get('mutation') or 'repair_durability'); amount=int(num(params.get('amount',0),0))
+        if self.db_path and iid and mutation in {'repair_durability','damage_durability','change_charges','identify','add_temporary_enchantment','remove_enchantment','apply_temporary_item_effect'}:
+            with sqlite3.connect(self.db_path) as c: self._ensure_item_instance_material_columns(c); c.execute("UPDATE item_instances SET durability=CASE WHEN ?='repair_durability' THEN MIN(100,durability+?) WHEN ?='damage_durability' THEN MAX(0,durability-?) ELSE durability END, updated_at=? WHERE instance_id=? AND owner_id=?",(mutation,amount,mutation,amount,now(),iid,actor_id))
+        self._pub('item_altered', {'item_instance_id':iid,'actor_id':actor_id,'mutation':mutation,'origin_action_id':origin_action_id}); return {'ok':bool(iid),'item_instance_id':iid,'mutation':mutation}
+
+    def create_room_effect(self, actor_id: str, ability_id: str, eff: dict[str, Any], origin_action_id: str) -> dict[str, Any]:
+        params=eff.get('parameters') or {}; rid=str(params.get('room_id') or getattr(self.actors.get(actor_id).identity,'current_location','') or 'room'); rei='roomfx_'+uuid.uuid4().hex; wt=self.world_time(); dur=int(num(params.get('duration', eff.get('duration',{}).get('amount',10) if isinstance(eff.get('duration'),dict) else 10),10)); tick=int(num(params.get('tick_interval', eff.get('tick_interval',0)),0))
+        rec={'room_effect_instance_id':rei,'definition_id':str(params.get('room_effect_id') or eff.get('effect_id') or ability_id),'room_id':rid,'source_actor_id':actor_id,'source_ability_id':ability_id,'origin_action_id':origin_action_id}
+        if self.db_path:
+            with sqlite3.connect(self.db_path) as c: c.execute("INSERT OR REPLACE INTO room_effect_instances VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(rei,self.world_id,rec['definition_id'],actor_id,ability_id,rid,params.get('area_id',''),wt,wt+dur if dur else 0,wt+tick if tick else 0,'active',origin_action_id,now(),now(),jdump({**params,'tick_operations':params.get('tick_operations',[])}),jdump({'source_version':eff.get('source_version','1')})))
+        self._pub('room_effect_created', {**rec}); return {'ok':True,**rec}
+
+    def process_room_effect_ticks(self, world_time: int|None=None) -> list[dict[str, Any]]:
+        if not self.db_path: return []
+        wt=self.world_time() if world_time is None else int(world_time); out=[]
+        with sqlite3.connect(self.db_path) as c: c.row_factory=sqlite3.Row; rows=c.execute("SELECT * FROM room_effect_instances WHERE state='active' AND next_tick_at>0 AND next_tick_at<=?",(wt,)).fetchall()
+        for r in rows:
+            claim=f"roomfx_tick_{r['room_effect_instance_id']}_{r['next_tick_at']}"
+            try:
+                with sqlite3.connect(self.db_path) as c: c.execute("INSERT INTO room_effect_tick_claims VALUES(?,?,?,?,?,?)",(claim,self.world_id,r['room_effect_instance_id'],r['next_tick_at'],now(),jdump({}))); c.execute("UPDATE room_effect_instances SET next_tick_at=? WHERE room_effect_instance_id=?",(int(r['next_tick_at'])+1,r['room_effect_instance_id']))
+            except sqlite3.IntegrityError: continue
+            self._pub('room_effect_tick_completed', {'room_effect_instance_id':r['room_effect_instance_id'],'claim_id':claim}); out.append({'room_effect_instance_id':r['room_effect_instance_id'],'claim_id':claim})
+        return out
+
+    def remove_room_effect(self, room_effect_instance_id: str, reason: str='removed') -> dict[str, Any]:
+        if self.db_path and room_effect_instance_id:
+            with sqlite3.connect(self.db_path) as c: c.execute("UPDATE room_effect_instances SET state=?,updated_at=? WHERE room_effect_instance_id=?",(reason,now(),room_effect_instance_id))
+        self._pub('room_effect_removed', {'room_effect_instance_id':room_effect_instance_id,'reason':reason}); return {'ok':bool(room_effect_instance_id)}
+
+    def save_summon_profile(self, owner_actor_id: str, summon_actor_id: str, profile_name: str='companion') -> dict[str, Any]:
+        actor=self.actors.get(summon_actor_id); pid=f"profile_{owner_actor_id}_{profile_name}"; ts=now(); data={'identity': {'name': getattr(getattr(actor,'identity',None),'name',profile_name) if actor else profile_name}, 'natural_weapons': (actor.combat_profile.get('natural_weapons') if actor else []), 'ability_grants': (actor.plugin_data.get('npc_ability_ids',[]) if actor else [])}
+        if self.db_path:
+            with sqlite3.connect(self.db_path) as c: c.execute("INSERT OR REPLACE INTO summon_profiles VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(pid,self.world_id,owner_actor_id,profile_name,(actor.plugin_data or {}).get('source_ability_id','') if actor else '',summon_actor_id,data['identity'].get('name',''),1,jdump({}),jdump({}),jdump({}),jdump(data['natural_weapons']),jdump(data['ability_grants']),'', '1', str(abs(hash(jdump(data)))), ts,ts,jdump(data)))
+        self._pub('summon_profile_saved', {'profile_id':pid,'owner_actor_id':owner_actor_id}); return {'ok':True,'profile_id':pid}
+
+    def restore_summon_profile(self, owner_actor_id: str, profile_id: str) -> dict[str, Any]:
+        if not self.db_path: return {'ok':False}
+        with sqlite3.connect(self.db_path) as c: c.row_factory=sqlite3.Row; r=c.execute("SELECT * FROM summon_profiles WHERE profile_id=? AND owner_actor_id=?",(profile_id,owner_actor_id)).fetchone()
+        if not r: return {'ok':False,'reason':'not_found'}
+        meta=jload(r['metadata_json'],{}); eff={'parameters': {'name': r['identity'], 'summon_template_id': r['entity_template_id'], 'natural_weapon_profiles': jload(r['natural_weapons_json'],[]), 'ability_grants': jload(r['ability_grants_json'],[]), 'duration': 0}}
+        out=self.create_summons(owner_actor_id, str(r['summon_definition_id'] or 'profile_restore'), eff, 'profile_restore')[0]
+        self._pub('summon_profile_restored', {'profile_id':profile_id,'owner_actor_id':owner_actor_id,'summon_instance_id':out['summon_instance_id']}); return {'ok':True,**out}
+
+    def repair_summon_profile(self, profile: dict[str, Any], source_template: dict[str, Any]|None=None) -> dict[str, Any]:
+        repaired=dict(profile or {}); tmpl=source_template or {}; repaired.setdefault('level', int(tmpl.get('level', 1) or 1)); repaired.setdefault('body_profile_id', tmpl.get('body_profile_id','humanoid')); repaired.setdefault('combat_role', tmpl.get('combat_role','guardian')); repaired['repair_strategy']='template' if source_template else 'deterministic_fallback'; return repaired
 
     def _record_failed_use(self, actor_id: str, ability_id: str) -> None:
         if not self.db_path: return
@@ -867,4 +1052,12 @@ def init_ability_schema(db_path: Path|str) -> None:
         c.execute("CREATE TABLE IF NOT EXISTS ability_audit_history (audit_id TEXT PRIMARY KEY, world_id TEXT, actor_id TEXT, ability_id TEXT, event_type TEXT, created_at TEXT, payload_json TEXT)")
         c.execute("CREATE TABLE IF NOT EXISTS actor_ability_charges (charge_id TEXT PRIMARY KEY, world_id TEXT, actor_id TEXT, ability_id TEXT, charges_current INTEGER, charges_maximum INTEGER, next_charge_world_time INTEGER, updated_at TEXT, metadata_json TEXT)")
         c.execute("CREATE TABLE IF NOT EXISTS actor_effect_instances (effect_instance_id TEXT PRIMARY KEY, world_id TEXT, effect_template_id TEXT, target_actor_type TEXT, target_actor_id TEXT, source_actor_type TEXT, source_actor_id TEXT, source_ability_id TEXT, source_item_instance_id TEXT, category TEXT, disposition TEXT, visibility TEXT, stack_group TEXT, stack_count INTEGER, maximum_stacks INTEGER, started_world_time INTEGER, expires_world_time INTEGER, remaining_duration INTEGER, next_tick_world_time INTEGER, active INTEGER, suspended INTEGER, removal_reason TEXT, created_at TEXT, updated_at TEXT, metadata_json TEXT)")
+
+        c.execute("CREATE TABLE IF NOT EXISTS aura_instances (aura_instance_id TEXT PRIMARY KEY, world_id TEXT, definition_id TEXT, source_actor_id TEXT, source_ability_id TEXT, source_type TEXT, source_instance_id TEXT, created_world_time INTEGER, expires_world_time INTEGER, active INTEGER, origin_action_id TEXT, created_at TEXT, updated_at TEXT, metadata_json TEXT, source_versions_json TEXT)")
+        c.execute("CREATE TABLE IF NOT EXISTS aura_membership (membership_id TEXT PRIMARY KEY, aura_instance_id TEXT, world_id TEXT, target_actor_id TEXT, granted_effect_instance_id TEXT, active INTEGER, suppressed INTEGER, joined_world_time INTEGER, left_world_time INTEGER, updated_at TEXT, metadata_json TEXT)")
+        c.execute("CREATE TABLE IF NOT EXISTS summon_relationships (summon_instance_id TEXT PRIMARY KEY, world_id TEXT, actor_id TEXT, template_id TEXT, owner_actor_id TEXT, source_ability_id TEXT, origin_action_id TEXT, created_world_time INTEGER, expires_world_time INTEGER, state TEXT, relationship_policy TEXT, control_policy TEXT, follow_policy TEXT, combat_policy TEXT, created_at TEXT, updated_at TEXT, metadata_json TEXT)")
+        c.execute("CREATE TABLE IF NOT EXISTS summon_profiles (profile_id TEXT PRIMARY KEY, world_id TEXT, owner_actor_id TEXT, profile_name TEXT, summon_definition_id TEXT, entity_template_id TEXT, identity TEXT, level INTEGER, primary_stat_profile_json TEXT, secondary_modifier_profile_json TEXT, resource_profile_json TEXT, natural_weapons_json TEXT, ability_grants_json TEXT, appearance TEXT, profile_schema_version TEXT, source_hash TEXT, created_at TEXT, updated_at TEXT, metadata_json TEXT)")
+        c.execute("CREATE TABLE IF NOT EXISTS room_effect_instances (room_effect_instance_id TEXT PRIMARY KEY, world_id TEXT, definition_id TEXT, source_actor_id TEXT, source_ability_id TEXT, room_id TEXT, area_id TEXT, created_world_time INTEGER, expires_at INTEGER, next_tick_at INTEGER, state TEXT, origin_action_id TEXT, created_at TEXT, updated_at TEXT, metadata_json TEXT, source_versions_json TEXT)")
+        c.execute("CREATE TABLE IF NOT EXISTS room_effect_tick_claims (claim_id TEXT PRIMARY KEY, world_id TEXT, room_effect_instance_id TEXT, scheduled_world_time INTEGER, claimed_at TEXT, metadata_json TEXT)")
+        c.execute("CREATE TABLE IF NOT EXISTS trigger_claims (claim_id TEXT PRIMARY KEY, world_id TEXT, trigger_chain_id TEXT, actor_id TEXT, trigger_name TEXT, origin_action_id TEXT, depth INTEGER, created_at TEXT, metadata_json TEXT)")
         c.commit()
