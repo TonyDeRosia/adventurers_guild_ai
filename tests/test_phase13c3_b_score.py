@@ -49,12 +49,12 @@ def test_score_renders_adventurers_lair_sheet_without_modern_sections():
     assert "HP:" not in text and "Mana:" not in text and "Stamina:" not in text
     assert "PRIMARY STATISTICS" not in text
     assert "SECONDARY COMBAT STATISTICS" not in text
-    assert "Aster the Bold" in text
+    assert "Name: Aster" in text and "Title: the Bold" in text
     assert "Race: Unavailable" in text
     assert "Class: Not implemented" in text
-    assert "Experience:" in text and "TNL:" in text
-    assert "Practices:" in text and "Trains:" in text
-    assert "STR:" in text and "Armor:" in text and "Hitroll:" in text
+    assert "Exp:" in text and "TNL:" in text
+    assert "Carry Capacity:" in text
+    assert "Base Stats:" in text and "Armor:" in text and "Hitroll" in text
     assert "Resistances" not in text and "Speed" not in text and "ACTIVE EFFECTS" not in text
 
 

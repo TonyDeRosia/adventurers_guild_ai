@@ -169,7 +169,7 @@ class CurrencyDisplaySource:
             except Exception:
                 logger.exception("currency_display_source_failed")
         cur=dict(_field(c,"currency", default={}) or {}) if isinstance(_field(c,"currency", default={}), Mapping) else {}
-        for key in ("gold","silver","copper"):
+        for key in ("gold","diamonds","glory","bank","silver","copper"):
             val=_field(c,key)
             if val is not None: cur.setdefault(key, val)
         return {k:v for k,v in cur.items() if v is not None and not str(k).startswith(("ledger", "premium"))}
@@ -288,6 +288,7 @@ class CharacterDisplaySnapshotService:
             time=self.time_source.snapshot(self, character),
             effects=self.effects.snapshot(character), inventory=list(_field(character,"inventory", default=[]) or []), equipment=list(_field(character,"equipment", default=[]) or []),
             active_affects=self.effects.snapshot(character),
+            quest_summary=_field(character, "quest_summary", "quests", default={}) or {},
             mechanics=combat_sections["mechanics"],
             source_versions=self._source_versions(canonical_snapshot, combat, prog),
         )
@@ -370,7 +371,7 @@ class CharacterDisplaySnapshotService:
 
     def _currency(self, c: Any) -> dict[str, Any]:
         cur=dict(_field(c,"currency", default={}) or {}) if isinstance(_field(c,"currency", default={}), Mapping) else {}
-        for key in ("gold","silver","copper"):
+        for key in ("gold","diamonds","glory","bank","silver","copper"):
             val=_field(c,key)
             if val is not None: cur.setdefault(key, val)
         return {k:v for k,v in cur.items() if v is not None and not str(k).startswith(("ledger", "premium"))}

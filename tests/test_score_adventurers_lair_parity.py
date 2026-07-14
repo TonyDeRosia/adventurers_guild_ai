@@ -31,7 +31,7 @@ def test_score_matches_adventurers_lair_line_order_and_removes_modern_sections()
     lines = text.splitlines()
     assert lines[0].startswith("╔") and len(lines[0]) == 79
     joined = "\n".join(lines)
-    ordered = ["Aster the Bold", "Race: Human", "Age: 22 years old", "You were born", "Experience:", "Practices:", "Carrying:", "STR:", "Armor:", "Gold:", "You have been playing", "Hunger:", "You are standing."]
+    ordered = ["Name: Aster", "Title: the Bold", "Race: Human", "Age: 22 years old", "Exp:", "Carry Capacity:", "Base Stats:", "Armor:", "Gold:", "Quests completed:", "Play time:", "Hunger:", "You are standing."]
     positions = [joined.index(token) for token in ordered]
     assert positions == sorted(positions)
     for forbidden in ["PRIMARY STATISTICS", "SECONDARY COMBAT", "Damage", "Resistances", "Speed", "Mechanics", "Location", "ACTIVE EFFECTS", "HP:", "Mana:", "Movement:"]:

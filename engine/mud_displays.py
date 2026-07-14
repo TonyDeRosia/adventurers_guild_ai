@@ -716,18 +716,41 @@ def _al_attr(snapshot: CharacterDisplaySnapshot, *keys: str) -> str:
     for key in keys:
         for candidate in aliases.get(key, (key,)):
             if candidate in (snapshot.attributes or {}):
-                return _display_value((snapshot.attributes or {})[candidate])
+                entry = (snapshot.attributes or {})[candidate]
+                if isinstance(entry, Mapping):
+                    base = entry.get("base", entry.get("value", entry.get("final")))
+                    final = entry.get("final", entry.get("value", base))
+                    mod = entry.get("total_modifier", entry.get("modifier"))
+                    if mod is None and base is not None and final is not None:
+                        try: mod = int(final) - int(base)
+                        except Exception: mod = None
+                    shown = final if final is not None else base
+                    if mod is not None:
+                        try: return f"{int(shown)} ({int(mod):+d})"
+                        except Exception: return f"{shown} ({mod})"
+                    return _display_value(shown)
+                return _display_value(entry)
     return "--"
+
+def _al_raw_value(data: Mapping[str, Any], *keys: str, default: Any = 0) -> Any:
+    for key in keys:
+        if key in data:
+            value = data.get(key)
+            if isinstance(value, Mapping):
+                return value.get("value", value.get("final", value.get("display", default)))
+            return value
+    return default
+
+def _al_int_text(value: Any) -> str:
+    if isinstance(value, Mapping): value = value.get("value", value.get("final", value.get("display", 0)))
+    try: return str(int(value))
+    except Exception: return str(value if value not in (None, "") else 0)
 
 def _al_line(text: str) -> DisplayLine:
     return DisplayLine(text, role="character_value")
 
 def build_score_document(character: Any = None, *, snapshot: CharacterDisplaySnapshot | None = None, theme: Any = None, mode: str = "score", detailed_allowed: bool = False) -> DisplayDocument:
-    """Render SCORE in the Adventurer's Lair visible order.
-
-    The renderer formats only values already present in CharacterDisplaySnapshot;
-    gameplay ownership remains in runtime snapshot/projection services.
-    """
+    """Render normal SCORE in Adventurer's Lair order, minus prompt resources/alignment."""
     snap=snapshot or build_character_display_snapshot(character)
     mode=(mode or "score").lower()
     if mode not in SCORE_MODES: raise ValueError(f"Unsupported score display mode: {mode}")
@@ -741,57 +764,63 @@ def build_score_document(character: Any = None, *, snapshot: CharacterDisplaySna
     race=_availability_text((snap.race or {}).get("name"), str((snap.race or {}).get("availability") or ("available" if (snap.race or {}).get("name") else "unavailable")))
     cls=_availability_text((snap.character_class or {}).get("name"), str((snap.character_class or {}).get("availability") or ("available" if (snap.character_class or {}).get("name") else "unsupported")))
     age=str((snap.age or {}).get("display") or "Unknown")
-    alignment=str(snap.alignment or "Neutral")
-    xp=_display_value(prog.get("xp", prog.get("experience", 0)), fmt="thousands")
-    tnl=_display_value(prog.get("xp_to_next_level", prog.get("experience_to_next_level", 0)), fmt="thousands")
-    prac=_display_value(prog.get("practice_points", prog.get("practice_sessions", 0)))
-    train=_display_value(prog.get("training_points", prog.get("training_sessions", 0)))
-    quest=_display_value(prog.get("quest_points", 0))
-    remorts=_display_value(prog.get("remort_count", prog.get("remorts", 0)))
-    curw=_display_value(carry.get("current_weight", 0))
-    maxw=_display_value(carry.get("carry_capacity", carry.get("maximum_weight", 0)))
-    enc_text=_display_value(enc.get("encumbrance_text", carry.get("encumbrance_text", enc.get("encumbrance_state", "None"))))
-    itemc=_display_value(carry.get("item_count", 0)); maxitems=_display_value(carry.get("max_item_count", "--"))
-    offense=snap.offense or {}; defense=snap.defense or {}; saves=snap.saves or {}; crit=snap.criticals or {}
-    armor=_al_stat_value(defense, "armor") or _al_stat_value(snap.combat or {}, "armor") or "--"
-    hit=_al_stat_value(offense, "hit_bonus") or _al_stat_value(offense, "accuracy") or "--"
-    dam=_al_stat_value(offense, "damage_bonus") or "--"
-    spell_save=_al_stat_value(saves, "spell") or _al_stat_value(saves, "magic") or _al_stat_value(snap.combat or {}, "spell_saves") or "--"
-    crit_melee=_al_stat_value(crit, "critical_melee") or "--"
+    xp=_al_int_text(prog.get("xp", prog.get("experience", 0)))
+    tnl=_al_int_text(prog.get("xp_to_next_level", prog.get("experience_to_next_level", 0)))
+    curw=_al_int_text(_al_raw_value(carry, "current_weight", "current_carry_weight", default=0))
+    maxw=_al_int_text(_al_raw_value(carry, "carry_capacity", "maximum_weight", default=0))
+    enc_text=_display_value(enc.get("encumbrance_text", carry.get("encumbrance_text", enc.get("encumbrance_state", "Light")))).title()
+    offense=snap.offense or {}; defense=snap.defense or {}; saves=snap.saves or {}; crit=snap.criticals or {}; combat=snap.combat or {}
+    armor=_al_int_text(_al_raw_value(defense, "armor", default=_al_raw_value(combat, "armor", default="--")))
+    evasion=_al_int_text(_al_raw_value(defense, "evasion", default=_al_raw_value(combat, "evasion", default="--")))
+    spell_save=_al_int_text(_al_raw_value(saves, "spell", "magic", "spell_saves", default=_al_raw_value(combat, "spell_saves", default="--")))
+    hit=_al_int_text(_al_raw_value(offense, "hit_bonus", default="--"))
+    dam=_al_int_text(_al_raw_value(offense, "damage_bonus", default="--"))
+    acc=_al_int_text(_al_raw_value(offense, "accuracy", default=_al_raw_value(combat, "accuracy", default="--")))
+    crit_melee=_al_int_text(_al_raw_value(crit, "critical_melee", "critical_hit", default="--"))
+    crit_spell=_al_int_text(_al_raw_value(crit, "critical_spell", default="--"))
+    crit_heal=_al_int_text(_al_raw_value(crit, "critical_heal", default="--"))
+    quest_summary=snap.quest_summary or ident.get("quest_summary") or {}
+    completed=_al_int_text(quest_summary.get("completed_count", quest_summary.get("quests_completed", prog.get("quests_completed", 0))) if isinstance(quest_summary, Mapping) else 0)
+    qpoints=_al_int_text(prog.get("quest_points", quest_summary.get("quest_points", 0) if isinstance(quest_summary, Mapping) else 0))
+    active = quest_summary.get("active") if isinstance(quest_summary, Mapping) else None
+    active_count = quest_summary.get("active_count") if isinstance(quest_summary, Mapping) else None
+    quest_line = "Not currently on a quest." if not active and not active_count else "Currently on a quest."
+    played=(snap.time or {}).get("play_time") or "0 hours"
+    status=str(surv.get("posture") or ident.get("position") or "Standing").title()
+    hunger=_display_value(surv.get("hunger", "Full")); thirst=_display_value(surv.get("thirst", "Hydrated"))
     rows=[
-        _al_line(f"{name}{(' ' + title) if title else ''}"),
-        _al_line(f"Race: {race:<16} Class: {cls:<16} Level: {snap.level}"),
-        _al_line(f"Age: {age:<17} Alignment: {alignment}"),
+        DisplayLine(f"Name: {name:<22} Title: {title}", role="character_value"),
+        DisplayLine(f"Race: {race:<22} Class: {cls}", role="character_value"),
+        DisplayLine(f"Level: {snap.level:<21} Age: {age}", role="character_value"),
+        DisplayDivider(),
+        DisplayLine("", role="character_value"),
+        DisplayLine(f"Exp: {xp:<31} TNL: {tnl}", role="character_value"),
+        DisplayLine("", role="character_value"),
+        DisplayLine(f"Carry Capacity: {curw} / {maxw} ({enc_text})", role="character_value"),
+        DisplayDivider(),
+        DisplayLine(f"Base Stats: Str {_al_attr(snap,'str')} Dex {_al_attr(snap,'dex')} Con {_al_attr(snap,'con')}", role="character_value"),
+        DisplayLine(f"            Int {_al_attr(snap,'int')} Wis {_al_attr(snap,'wis')} Cha {_al_attr(snap,'cha')}", role="character_value"),
+        DisplayLine("", role="character_value"),
+        DisplayLine(f"Armor: {armor:<8} Evasion: {evasion:<5} Spell Saves: {spell_save}", role="character_value"),
+        DisplayLine("", role="character_value"),
+        DisplayLine(f"Offense: Hitroll {int(hit):+d} Damroll {int(dam):+d} Accuracy: {acc}%" if str(hit).lstrip('-').isdigit() and str(dam).lstrip('-').isdigit() else f"Offense: Hitroll {hit} Damroll {dam} Accuracy: {acc}%", role="character_value"),
+        DisplayLine("", role="character_value"),
+        DisplayLine(f"Critical hit: {crit_melee} Critical Spell: {crit_spell} Critical Heal: {crit_heal}", role="character_value"),
+        DisplayDivider(),
+        DisplayLine("Currencies", role="character_value"),
     ]
-    birthday=(snap.age or {}).get("birthday") or ident.get("birthday")
-    if birthday: rows.append(_al_line(str(birthday)))
-    rows += [
-        _al_line(""),
-        _al_line(f"Experience: {xp:<12} TNL: {tnl}"),
-        _al_line(f"Practices:  {prac:<12} Trains: {train:<8} Quest Points: {quest:<8} Remorts: {remorts}"),
-        _al_line(f"Carrying:   {curw}/{maxw} weight ({enc_text})   Items: {itemc}/{maxitems}"),
-        _al_line(""),
-        _al_line(f"STR: {_al_attr(snap,'str'):>3}  INT: {_al_attr(snap,'int'):>3}  WIS: {_al_attr(snap,'wis'):>3}  DEX: {_al_attr(snap,'dex'):>3}  CON: {_al_attr(snap,'con'):>3}  CHA: {_al_attr(snap,'cha'):>3}"),
-        _al_line(f"Armor: {armor:<8} Hitroll: {hit:<8} Damroll: {dam:<8} Spell Save: {spell_save:<8} Critical: {crit_melee}"),
-    ]
-    if snap.currency:
-        rows.append(_al_line(""))
-        rows.append(_al_line("  ".join(f"{str(k).replace('_',' ').title()}: {_display_value(v, fmt='thousands')}" for k,v in snap.currency.items())))
-    if snap.quest_summary:
-        rows.append(_al_line("")); rows.append(_al_line("Quest: " + _display_value(snap.quest_summary)))
-    played=(snap.time or {}).get("play_time")
-    if played: rows.append(_al_line(f"You have been playing for {played}."))
-    if surv.get("hunger") is not None or surv.get("thirst") is not None:
-        rows.append(_al_line(f"Hunger: {_display_value(surv.get('hunger', '')):<16} Thirst: {_display_value(surv.get('thirst', ''))}"))
+    currencies=snap.currency or {}
+    order=["gold","diamonds","diamond","glory","bank","silver","copper"]
+    keys=[k for k in order if k in currencies] + [k for k in currencies if k not in order]
+    rows.append(DisplayLine(" ".join(f"{str(k).replace('_',' ').title()}: {_al_int_text(currencies[k]):>8}" for k in keys) if keys else "Gold:        0 Diamonds:      0 Glory:      0 Bank:        0", role="character_value"))
+    rows += [DisplayDivider(), DisplayLine(f"Quests completed: {completed:<35} Quest Points: {qpoints}", role="character_value"), DisplayLine(quest_line, role="character_value"), DisplayDivider(), DisplayLine(f"Play time: {played}", role="character_value"), DisplayLine(f"Status: {status} Hunger: {hunger} Thirst: {thirst}", role="character_value")]
     for cond in snap.conditions or []:
-        rows.append(_al_line(str(cond.get("label") or cond.get("name") or cond)))
+        rows.append(DisplayLine(str(cond.get("label") or cond.get("name") or cond), role="character_value"))
     if mode == "detailed":
-        rows.append(DisplayDivider())
-        rows.append(_al_line("IMMORTAL INFORMATION"))
-        rows.extend(_al_line(f"{k}: {v}") for k,v in sorted((snap.source_versions or {}).items()))
-    doc=build_character_frame_document(DisplayIntent.SCORE,"Score",rows,width=79, theme=theme)
-    doc.renderer_hints.update({"score_mode": mode, "snapshot_version": version})
-    doc.debug_metadata.update({"snapshot_version": version, "display_mode": mode})
+        rows.append(DisplayDivider()); rows.append(DisplayLine("IMMORTAL INFORMATION", role="character_value"))
+        for k,v in sorted((snap.source_versions or {}).items()): rows.append(DisplayLine(f"{k}: {v}", role="character_value"))
+    doc=build_character_frame_document(DisplayIntent.SCORE, "CHARACTER STATUS", rows, width=79, theme=theme)
+    doc.debug_metadata.update({"snapshot_version": version, "mode": mode, "reference": "Adventurer's Lair ACMD(do_score) parity without HP/Mana/Move/Alignment"})
     return doc
 
 def build_worth_document(character: Any = None, *, snapshot: CharacterDisplaySnapshot | None = None, worth_snapshot: Any = None, theme: Any = None) -> DisplayDocument:

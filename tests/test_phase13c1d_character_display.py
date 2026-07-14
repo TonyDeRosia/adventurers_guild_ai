@@ -13,9 +13,9 @@ def _char(**kw):
 
 def test_score_and_worth_use_classic_frame_without_placeholders():
     score=render_display_plain(build_score_document(_char()))
-    assert '╔' in score and 'Score' in score and '╚' in score
+    assert '╔' in score and 'CHARACTER STATUS' in score and '╚' in score
     assert 'Kraevok' in score and 'HP:' not in score and 'TNL: 100' in score
-    assert 'STR:' in score and 'Gold: 0' in score and 'Posture:' not in score
+    assert 'Base Stats:' in score and 'Gold:' in score and 'Posture:' not in score
     assert 'Premium' not in score and 'future' not in score
     worth=render_display_plain(build_worth_document(_char()))
     assert 'CURRENCIES' in worth and 'Gold: 0' in worth
@@ -60,8 +60,7 @@ def test_builder_theme_validation_and_preview():
 def test_cell_roles_are_rendered_independently_and_unknown_ability_is_not_ready():
     doc = build_score_document(_char(title='Long Title', xp_to_next_level=42, attributes={'strength': {'base': 10, 'modifier': 2, 'final': 12}, 'dexterity': {'base': 10, 'modifier': -1, 'final': 9}}, calculated_stats={'armor': 5}))
     mud = render_display_mud(doc)
-    assert 'Kraevok Long Title' in mud
-    assert 'Title:' not in mud
+    assert 'Name: Kraevok' in mud and 'Title: Long Title' in mud
     assert 'TNL: 42' in render_display_plain(doc)
     abilities = render_display_plain(build_abilities_document([{'name': 'Mystery'}]))
     assert 'Mystery' in abilities and '1%' in abilities and 'Rank' not in abilities
@@ -72,5 +71,5 @@ def test_builder_preview_uses_real_runtime_builder_for_multiple_families():
     raw = {'width': 60}
     score = preview_display_theme(raw, 'score')
     skills = preview_display_theme(raw, 'skills')
-    assert score['ok'] == 'true' and 'Score' in score['plain']
+    assert score['ok'] == 'true' and 'CHARACTER STATUS' in score['plain']
     assert skills['ok'] == 'true' and 'Build Campfire' in skills['plain']
