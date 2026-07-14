@@ -233,3 +233,6 @@ Rest, sleep, rest-location profiles, rest quality, campfire profiles, campsite p
 ## Phase 11E Cooking Integration
 
 Cooking is a canonical CraftingService specialization. The runtime uses recipe definitions, exact item-instance input reservations, crafting jobs, workstation profiles, production profiles, item quality, profession XP, and reward delivery for cooked outputs. SurvivalNeedsService remains authoritative for consumable profiles, portions, servings, freshness interpretation, spoilage, and need mutation. GatheringService remains authoritative for raw gathered materials. Builder/world-package content now includes cooking ingredient, substitution, preparation, serving-yield, consumable-output, nutrition, preservation, heat, failure, message, and render profile collections.
+
+## Reset profiles
+Status: **Implemented/Partial**. World packages may provide `resets/resets.json`; Builder drafts use `builder/resets.json`. SQLite is not a reset-definition source. Reset profile definitions are typed, validated, versioned, and compiled before execution.
