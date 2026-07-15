@@ -19,6 +19,7 @@ from engine.combat_equipment import CombatContentRegistry
 from engine.formulas import FormulaEngine
 from engine.character_stats import CharacterAttributeService, CombatStatService
 from engine.conditions import condition_label, condition_key, transition_text
+from engine.character_state import build_action_state, reconcile_actor_position, state_message, derive_position_from_health, normalize_position
 
 
 def _ensure_column(con: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
@@ -186,6 +187,14 @@ class RuntimeLifecycleService:
             con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_kill_credit_once ON actor_kill_credits(actor_id,transition_id,victim_actor_id)")
             con.execute("""CREATE TABLE IF NOT EXISTS actor_respawn_schedules(respawn_id TEXT PRIMARY KEY,transition_id TEXT UNIQUE,actor_id TEXT,world_id TEXT,destination_room_id TEXT,scheduled_world_time INTEGER,scheduled_at TEXT,status TEXT,completed_at TEXT,metadata_json TEXT)""")
             con.commit()
+
+
+    def update_position(self, actor: Actor, context: str = "lifecycle") -> tuple[str, str, bool]:
+        """Adventurer's Lair-style update_pos using canonical health thresholds."""
+        stored, derived, changed = reconcile_actor_position(actor, self.runtime, reason=context, persist_dirty=True)
+        if derived == "dead" and getattr(actor, "lifecycle_state", "alive") != "dead":
+            self.handle_death(actor, killer_actor_id="", encounter_id="", trigger_action_id=context)
+        return stored, derived, changed
 
     def _stable_id(self, prefix: str, *parts: Any) -> str:
         raw = "|".join(json.dumps(p, sort_keys=True, default=str) for p in parts)
@@ -416,9 +425,30 @@ class CombatRuntimeService:
         return self.runtime.resolve_entity_keywords(query, cands).get('entity')
 
     def validate_attack(self, attacker: Actor, defender: Actor, ent: dict[str,Any]|None=None) -> str:
+        counters = getattr(self.runtime, 'performance_counters', {})
+        counters['combat_validation_attempts'] = counters.get('combat_validation_attempts', 0) + 1
         if attacker.actor_id == defender.actor_id: return 'You cannot attack yourself.'
-        if attacker.resources.health <= 0 or attacker.combat_profile.get('combat_state') in {'dead','sleeping','unconscious','incapacitated'}: return 'You cannot attack right now.'
-        if defender.resources.health <= 0 or defender.lifecycle_state == 'dead': return f'There is no living {defender.identity.name.lower()} here.'
+        reconcile_actor_position(attacker, self.runtime, reason='combat_validation')
+        active_eid = self.find_actor_encounter(attacker.actor_id)
+        action_state = build_action_state(attacker, self.runtime, active_encounter_id=active_eid or '')
+        if active_eid:
+            target_name = self.actor_display_name(action_state.active_target_id) if action_state.active_target_id else 'your opponent'
+            err = f'You are already fighting {target_name}.'
+            counters['combat_validation_rejections'] = counters.get('combat_validation_rejections', 0) + 1
+            by = counters.setdefault('combat_validation_rejection_by_reason', {})
+            by['already_fighting'] = by.get('already_fighting', 0) + 1
+            print(f"[combat-validation] actor={attacker.identity.name} allowed=false reason=already_fighting health={action_state.health} position={action_state.derived_position} lifecycle={action_state.lifecycle_state} encounter={active_eid}")
+            return err
+        msg = state_message(action_state.derived_position)
+        if msg:
+            reason = action_state.derived_position
+            counters['combat_validation_rejections'] = counters.get('combat_validation_rejections', 0) + 1
+            by = counters.setdefault('combat_validation_rejection_by_reason', {})
+            by[reason] = by.get(reason, 0) + 1
+            print(f"[combat-validation] actor={attacker.identity.name} allowed=false reason={reason} health={action_state.health} position={action_state.derived_position} lifecycle={action_state.lifecycle_state} encounter=none")
+            return msg
+        reconcile_actor_position(defender, self.runtime, reason='target_validation')
+        if defender.resources.health <= 0 or defender.lifecycle_state == 'dead': return f'{defender.identity.name} is already dead.'
         if attacker.identity.current_location != defender.identity.current_location: return 'They are not here.'
         if ent:
             tmpl = dict(self.runtime.entity_templates.get(str(ent.get('template_id') or ''), {})); flags=set(tmpl.get('flags') or [])|set(ent.get('flags') or [])|set(tmpl.get('tags') or [])
@@ -509,16 +539,18 @@ class CombatRuntimeService:
                 return CombatRuntimeResult(True, ['You focus on your current opponent.'], eid)
             return CombatRuntimeResult(False, ['Attack whom?'])
         ent=self.resolve_target(character, query)
-        if not ent: return CombatRuntimeResult(False, ["You don't see that target here."])
+        if not ent: return CombatRuntimeResult(False, ['They are not here.'])
         self.refresh_content(); attacker=actor_from_runtime_character(character,self.runtime.active_world_id or ''); attacker.actor_id=self.actor_id_for_character(character); defender=self.actor_from_entity(ent)
         err=self.validate_attack(attacker,defender,ent)
-        if err: return CombatRuntimeResult(False,[err])
+        if err:
+            return CombatRuntimeResult(False,[err])
         enc=self.find_actor_encounter(attacker.actor_id) or self.start_encounter(character.room_id)
         already=bool(self.find_actor_encounter(attacker.actor_id))
         self.join_encounter(enc, attacker, 'side_1'); self.join_encounter(enc, defender, 'side_2'); self.set_target(enc, attacker.actor_id, defender.actor_id); self.set_target(enc, defender.actor_id, attacker.actor_id)
         self.queue_action(enc, attacker.actor_id, 'basic_attack', defender.actor_id, source='default')
         if already:
             return CombatRuntimeResult(True, [f'You keep fighting {defender.identity.name}.'], enc)
+        print(f'[combat-start] actor={attacker.identity.name} target={defender.identity.name} encounter={enc} opening_ms=0')
         rr=self._execute_attack(enc, attacker, defender, opening=True)
         if rr.ok and not self.find_actor_encounter(attacker.actor_id):
             self.enqueue_output(character.id, f"The attack is over.", encounter_id=enc, room_id=character.room_id, category='combat_end')
@@ -888,7 +920,7 @@ class CombatRuntimeService:
         aid = self.actor_id_for_character(character); eid = self.find_actor_encounter(aid)
         if not eid: return CombatRuntimeResult(False, ['You are not currently fighting anyone.'])
         ent = self.resolve_target(character, query)
-        if not ent: return CombatRuntimeResult(False, ["You don't see that target here."])
+        if not ent: return CombatRuntimeResult(False, ['They are not here.'])
         defender = self.actor_from_entity(ent)
         err = self.validate_attack(actor_from_runtime_character(character, self.runtime.active_world_id or ''), defender, ent)
         if err and 'yourself' not in err.lower(): return CombatRuntimeResult(False, [err])

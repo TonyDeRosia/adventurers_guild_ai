@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from engine.actors import Actor
+from engine.character_state import reconcile_actor_position, normalize_position
 
 RESOURCES = ("health", "mana", "stamina", "movement")
 OPS = {"damage", "healing", "cost", "regeneration", "set", "clamp", "maximum_changed"}
@@ -211,27 +212,40 @@ class RuntimeResourceService:
         processed = 0
         changes = 0
         for actor in actors:
-            if getattr(actor, "lifecycle_state", "alive") == "dead" or _num(actor.resources.health) <= 0:
+            if getattr(actor, "lifecycle_state", "alive") == "dead":
                 continue
             processed += 1
-            state = str(actor.combat_profile.get("combat_state") or getattr(actor, "position", "") or "standing").lower()
-            mult = 4 if state == "sleeping" else 2 if state == "resting" else 1
-            if state == "in_combat" or state == "fighting":
-                mult = 0
-            if mult <= 0:
+            reconcile_actor_position(actor, rt, reason="periodic_state_update")
+            state = normalize_position(actor.combat_profile.get("position") or actor.combat_profile.get("combat_state") or "standing")
+            if state in {"incapacitated", "mortally_wounded"}:
+                before = _num(actor.resources.health)
+                actor.resources.health = before - (2 if state == "mortally_wounded" else 1)
+                counters["periodic_suffering_ticks"] = counters.get("periodic_suffering_ticks", 0) + 1
+                changes += 1
+                reconcile_actor_position(actor, rt, reason="periodic_suffering")
+            elif state == "dead":
                 continue
-            for resource in ("health", "mana", "stamina"):
-                before = _num(getattr(actor.resources, resource, 0))
-                maximum = _num(getattr(actor.resources, f"maximum_{resource}", before), before)
-                after = min(maximum, before + mult)
-                if after != before:
-                    setattr(actor.resources, resource, after)
-                    changes += 1
+            else:
+                mult = 4 if state == "sleeping" else 2 if state == "resting" else 1
+                if state in {"in_combat", "fighting"}:
+                    mult = 0
+                if mult <= 0:
+                    continue
+                for resource in ("health", "mana", "stamina"):
+                    before = _num(getattr(actor.resources, resource, 0))
+                    maximum = _num(getattr(actor.resources, f"maximum_{resource}", before), before)
+                    after = min(maximum, before + mult)
+                    if after != before:
+                        setattr(actor.resources, resource, after)
+                        changes += 1
+                reconcile_actor_position(actor, rt, reason="regeneration")
             if changes and actor.actor_id.startswith("character:"):
                 cid = actor.actor_id.split(":", 1)[1]
                 ch = getattr(rt, "active_characters", {}).get(cid)
                 if ch:
                     ch.hp = actor.resources.health; ch.mana = actor.resources.mana; ch.stamina = actor.resources.stamina
+                    data = ch.actor_data if isinstance(ch.actor_data, dict) else {}
+                    data["position"] = actor.combat_profile.get("position", state); data["posture"] = data["position"]; ch.actor_data = data
                     if hasattr(rt, "mark_character_dirty"):
                         rt.mark_character_dirty(cid, "regeneration")
         counters["regeneration_actors_processed"] = counters.get("regeneration_actors_processed", 0) + processed

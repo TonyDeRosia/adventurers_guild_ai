@@ -28,6 +28,7 @@ from engine.plugin_system import HookRegistry, PluginRegistry
 from engine.living_world import LivingWorldService, init_living_schema
 from engine.abilities import AbilityExecutionService, init_ability_schema
 from engine.actors import ActorRegistry, actor_from_runtime_character
+from engine.character_state import reconcile_actor_position
 from engine.crafting import init_crafting_schema
 from engine.environment import EnvironmentService, init_environment_schema
 from engine.survival_needs import SurvivalNeedsService, init_survival_schema
@@ -636,7 +637,7 @@ class MudRuntime:
         self.active_characters: dict[str, MudCharacter] = {}
         self.session_active_character: dict[str, str] = {}
         self.character_session_ids: dict[str, str] = {}
-        self.performance_counters = {k: 0 for k in ["play_view_requests","async_message_requests","character_sql_loads","character_sql_saves","world_package_loads","room_renders","prompt_renders","display_snapshot_builds","commands_processed","messages_delivered","overlapping_requests_prevented","command_requests","direct_command_responses","command_outputs_enqueued_async","duplicate_command_outputs_filtered","async_messages_delivered","character_saves","save_coalesced","save_skipped_clean","quit_final_saves","character_entry_total_ms","inventory_load_ms","equipment_load_ms","effect_load_ms","ability_load_ms","actor_registration_ms","essential_snapshot_ms","initial_room_render_ms","prompt_render_ms","warmup_queue_ms","warmup_build_ms","warmup_cache_hits","warmup_cancelled","stale_task_rejected","projection_cache_hits","projection_cache_misses","projection_invalidations","autosave_attempts","autosave_successes","autosave_skipped_clean","autosave_failures","scheduler_starts","scheduler_duplicate_start_attempts","scheduler_stops","runtime_pulses","runtime_pulse_duration_ms","runtime_pulse_max_duration_ms","scheduler_lag_ms","scheduler_max_lag_ms","combat_encounters_active","combat_rounds_processed","combat_round_duration_ms","combat_backlog","combat_character_sql_loads","combat_character_sql_saves","combat_entity_sql_reads","combat_entity_sql_writes","combat_encounter_sql_reads","combat_encounter_sql_writes","combat_output_sqlite_writes","combat_output_in_memory_queued","combat_messages_queued","combat_messages_delivered","combat_message_delivery_latency_ms","combat_scheduler_lag_ms","practice_command_duration_ms","train_command_duration_ms","position_command_duration_ms","autosave_coalesced","coalesced_autosaves","resident_actor_cache_hits","resident_actor_cache_misses","resident_entity_cache_hits","resident_entity_cache_misses","regeneration_pulses","regeneration_actors_processed","regeneration_resource_changes"]}
+        self.performance_counters = {k: 0 for k in ["play_view_requests","async_message_requests","character_sql_loads","character_sql_saves","world_package_loads","room_renders","prompt_renders","display_snapshot_builds","commands_processed","messages_delivered","overlapping_requests_prevented","command_requests","direct_command_responses","command_outputs_enqueued_async","duplicate_command_outputs_filtered","async_messages_delivered","character_saves","save_coalesced","save_skipped_clean","quit_final_saves","character_entry_total_ms","inventory_load_ms","equipment_load_ms","effect_load_ms","ability_load_ms","actor_registration_ms","essential_snapshot_ms","initial_room_render_ms","prompt_render_ms","warmup_queue_ms","warmup_build_ms","warmup_cache_hits","warmup_cancelled","stale_task_rejected","projection_cache_hits","projection_cache_misses","projection_invalidations","autosave_attempts","autosave_successes","autosave_skipped_clean","autosave_failures","scheduler_starts","scheduler_duplicate_start_attempts","scheduler_stops","runtime_pulses","runtime_pulse_duration_ms","runtime_pulse_max_duration_ms","scheduler_lag_ms","scheduler_max_lag_ms","combat_encounters_active","combat_rounds_processed","combat_round_duration_ms","combat_backlog","combat_character_sql_loads","combat_character_sql_saves","combat_entity_sql_reads","combat_entity_sql_writes","combat_encounter_sql_reads","combat_encounter_sql_writes","combat_output_sqlite_writes","combat_output_in_memory_queued","combat_messages_queued","combat_messages_delivered","combat_message_delivery_latency_ms","combat_scheduler_lag_ms","practice_command_duration_ms","train_command_duration_ms","position_command_duration_ms","autosave_coalesced","coalesced_autosaves","resident_actor_cache_hits","resident_actor_cache_misses","resident_entity_cache_hits","resident_entity_cache_misses","regeneration_pulses","regeneration_actors_processed","regeneration_resource_changes","combat_validation_attempts","combat_validation_rejections","failed_command_saves","read_only_command_saves","combat_validation_saves","state_reconciliations","stale_position_repairs","stale_combat_state_repairs","stale_encounter_repairs","positive_health_incapacitated_repairs","periodic_suffering_ticks","recovery_transitions"]}
         self._dirty_characters: dict[str, set[str]] = {}
         self._save_locks: dict[str, Any] = {}
         self._quit_final_saved: set[str] = set()
@@ -1048,8 +1049,16 @@ class MudRuntime:
         if not hasattr(self, "actor_registry"):
             self.actor_registry = ActorRegistry()
         actor = actor_from_runtime_character(character, self.active_world_id or getattr(character, "world_id", ""))
-        self.actor_registry.register(actor)
-        character.actor_data = actor.to_dict()
+        actor.actor_id = f"character:{character.id}"
+        reconcile_actor_position(actor, self, reason="character_entry", persist_dirty=True)
+        if getattr(self, "combat_runtime", None):
+            self.combat_runtime.resident_actors[actor.actor_id] = actor
+        registry_actor = actor_from_runtime_character(character, self.active_world_id or getattr(character, "world_id", ""))
+        reconcile_actor_position(registry_actor, self, reason="character_entry", persist_dirty=False)
+        self.actor_registry.register(registry_actor)
+        data = character.actor_data if isinstance(getattr(character, "actor_data", {}), dict) else {}
+        data.update({"position": actor.combat_profile.get("position", "standing"), "posture": actor.combat_profile.get("position", "standing"), "actor_projection": actor.to_dict()})
+        character.actor_data = data
         if getattr(self, "abilities", None):
             self.abilities.actor_registry = self.actor_registry
             self.abilities.actors = self.actor_registry.actors
@@ -1518,9 +1527,12 @@ class MudRuntime:
             save_status = self.save_character_if_dirty(char, "quit", force=True, final=True)
         elif mutation != "read_only":
             save_status = self.save_character_if_dirty(char, mutation)
+            if not save_status.get("saved") and not getattr(result, "ok", True):
+                self.performance_counters["failed_command_saves"] = self.performance_counters.get("failed_command_saves", 0)
             # Targeted projection invalidation is owned by mark_character_dirty().
         else:
             save_status = {"saved": False, "status": "read_only", "dirty": bool(self._dirty_characters.get(character_id)), "reasons": sorted(self._dirty_characters.get(character_id, set()))}
+            self.performance_counters["read_only_command_saves"] = self.performance_counters.get("read_only_command_saves", 0)
         session = self.sessions.get(character_id)
         turn = (session.command_count + 1) if session else 1
         history_start = time.monotonic()
@@ -1567,6 +1579,8 @@ class MudRuntime:
             return "session_transition"
         if cmd in self.READ_ONLY_COMMANDS:
             return "read_only"
+        if cmd in {"kill", "attack", "assist", "flee", "target", "defend", "combat", "diagnose", "consider", "stateinspect", "combatstate", "condition"}:
+            return "world_mutation" if getattr(result, "ok", False) and cmd in {"kill", "attack", "assist", "flee", "target", "defend"} else "read_only"
         if cmd in self.MOVEMENT_COMMANDS:
             return "location_mutation" if getattr(result, "ok", False) and updates.get("render_room") else "read_only"
         if cmd in self.EQUIPMENT_MUTATION_COMMANDS:
@@ -1940,8 +1954,12 @@ class MudRuntime:
     def _move_character(self, char: MudCharacter, direction: str, bypass_combat: bool = False):
         from engine.mud_commands import CommandResult
         room_id = char.room_id
-        if not bypass_combat and getattr(self, 'combat_runtime', None) and self.combat_runtime.is_actor_in_active_combat(self.combat_runtime.actor_id_for_character(char)):
-            return CommandResult(narrative='You are fighting! Use FLEE to escape.', ok=False)
+        if not bypass_combat and getattr(self, 'combat_runtime', None):
+            _aid = self.combat_runtime.actor_id_for_character(char)
+            _ra = getattr(self.combat_runtime, 'resident_actors', {}).get(_aid)
+            _cs = str((getattr(_ra, 'combat_profile', {}) or {}).get('combat_state', '')).lower() if _ra else ''
+            if self.combat_runtime.is_actor_in_active_combat(_aid) or _cs in {'in_combat', 'fighting'}:
+                return CommandResult(narrative='You are fighting! Use FLEE to escape.', ok=False)
         self.event_bus.publish("movement_attempted", {"canonical_command": direction, "character_id": char.id, "character_name": char.name, "current_room_id": room_id}, source_system="movement", world_id=self.active_world_id or "", character_id=char.id, command=direction)
         exit_data, reason = self.resolve_exit(char, room_id, direction)
         if exit_data and reason == "ok":

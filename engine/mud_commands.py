@@ -27,6 +27,7 @@ def _command_exception_context(character: Any, command_text: str, resolved_comma
 from pathlib import Path
 from engine.mud_displays import semantic, DisplayDocument, DisplayIntent, DisplayLine, DisplaySection, DisplayField, render_display_mud, render_display_plain, build_score_document, build_worth_document, build_abilities_document, build_inventory_document, build_equipment_document, build_affects_document, build_prompt_document, PROMPT_PRESETS, PROMPT_MAX_LENGTH
 from engine.actors import actor_from_runtime_character
+from engine.character_state import build_action_state, reconcile_actor_position, derive_position_from_health
 from engine.formulas import FormulaEngine
 from engine.character_stats import CharacterAttributeService, CombatStatService, _load_json
 from engine.builder_content_editor import BuilderContentEditor
@@ -345,6 +346,10 @@ class MudCommandEngine:
             "rangeedit": self._cmd_rangeedit,
             "combatmessage": self._cmd_combatmessage,
             "perfstat": self._cmd_perfstat,
+            "stateinspect": self._cmd_stateinspect,
+            "staterepair": self._cmd_stateinspect,
+            "combatstate": self._cmd_stateinspect,
+            "condition": self._cmd_condition,
             "commands": self._cmd_commands,
             "look": self._cmd_look,
             "hide": self._cmd_perception,
@@ -649,6 +654,41 @@ class MudCommandEngine:
         if self.event_bus:
             self.event_bus.publish("social_emote_performed", {"actor_id": getattr(character, "id", ""), "actor_name": actor_name, "target_name": target_name, "social_id": social_id, "room_id": getattr(character, "room_id", "")}, source_system="social", character_id=getattr(character, "id", ""), room_id=getattr(character, "room_id", ""))
         return CommandResult(text)
+
+
+    def _admin_ok(self, character: Any) -> bool:
+        return str(getattr(character, "role", "player")).lower() in {"admin", "owner", "builder"} or int(getattr(character, "immortal_level", 0) or 0) > 0
+
+    def _cmd_condition(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        rt = getattr(self, "runtime", None); cr = getattr(rt, "combat_runtime", None) if rt else None
+        actor = actor_from_runtime_character(character, getattr(rt, "active_world_id", "") if rt else "")
+        actor.actor_id = cr.actor_id_for_character(character) if cr else f"character:{getattr(character,'id','')}"
+        reconcile_actor_position(actor, rt, reason="condition_command")
+        st = build_action_state(actor, rt, active_encounter_id=(cr.find_actor_encounter(actor.actor_id) if cr else "") or "")
+        return CommandResult(f"Condition: {st.health}/{st.maximum_health} health\nPosition: {st.derived_position.replace('_',' ')}\nCan move: {'yes' if st.can_move else 'no'}\nCan fight: {'yes' if st.can_attack else 'no'}" + (f"\nBlocked: {st.blocking_reason}" if st.blocking_reason else ""))
+
+    def _cmd_stateinspect(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if not self._admin_ok(character):
+            return CommandResult("You do not have permission for that command.", ok=False)
+        rt = getattr(self, "runtime", None); cr = getattr(rt, "combat_runtime", None) if rt else None
+        cmd = (raw.split() or [""])[0].lower()
+        target = args[0] if args else getattr(character, "id", "")
+        ch = character if target in {getattr(character,"id", ""), getattr(character,"name", "")} else (rt.state_store.load_character(target) if rt and hasattr(rt, "state_store") else None)
+        if not ch:
+            return CommandResult(f"Character not found: {target}", ok=False)
+        actor = actor_from_runtime_character(ch, getattr(rt, "active_world_id", "") if rt else "")
+        actor.actor_id = cr.actor_id_for_character(ch) if cr else f"character:{getattr(ch,'id','')}"
+        active = cr.find_actor_encounter(actor.actor_id) if cr else ""
+        stored, derived, changed = reconcile_actor_position(actor, rt, reason=cmd, persist_dirty=(cmd == "staterepair" and "--apply" in args)) if (cmd == "staterepair" and "--apply" in args) else (actor.combat_profile.get("combat_state",""), derive_position_from_health(actor.resources.health, actor.combat_profile.get("combat_state","standing"), actor.lifecycle_state), False)
+        st = build_action_state(actor, rt, active_encounter_id=active or "")
+        proposed = []
+        if st.repair_required:
+            proposed.append(f"position: {st.stored_position} -> {st.derived_position} (safe: health/lifecycle threshold)")
+        if active and cmd in {"staterepair", "combatstate"}:
+            proposed.append(f"active encounter: {active} (inspect/cleanup if stale)")
+        applied = cmd == "staterepair" and "--apply" in args and changed
+        title = "Combat State" if cmd == "combatstate" else ("State Repair" if cmd == "staterepair" else "State Inspect")
+        return CommandResult(title + f"\ncharacter: {getattr(ch,'id','')}\ncurrent_health: {actor.resources.health}/{actor.resources.maximum_health}\npersisted_health: {getattr(ch,'hp',0)}/{getattr(ch,'max_hp',0)}\nstored_position: {st.stored_position}\nderived_position: {st.derived_position}\ncombat_state: {st.combat_state}\nlifecycle_state: {st.lifecycle_state}\nactive_encounter: {active or 'none'}\nactive_target: {st.active_target_id or 'none'}\nattack_allowed: {'yes' if st.can_attack else 'no'}\nblocking_reason: {st.blocking_reason or 'none'}\nproposed_repair: {('; '.join(proposed)) if proposed else 'none'}\napplied: {'yes' if applied else 'no'}")
 
     def _cmd_perfstat(self, character: Any, args: list[str], raw: str) -> CommandResult:
         if str(getattr(character, "role", "player")).lower() not in {"admin", "owner", "builder"} and int(getattr(character, "immortal_level", 0) or 0) <= 0:

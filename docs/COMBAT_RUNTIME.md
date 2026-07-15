@@ -81,3 +81,30 @@ Broad-suite status from this environment is recorded in the PR summary rather th
 - Practice remains data-driven through progression profiles; ambiguous advancement repair is not broadened beyond existing safe behavior in this stabilization patch.
 - Focused verification command: `python -m pytest -q tests/test_adventurers_lair_unfinished_requirements.py tests/test_smart_mud_performance_stabilization.py tests/test_live_combat_phase12c2.py tests/test_phase12a2_runtime_fixes.py`. Broad verification command: `python -m pytest -q`.
 - Windows manual acceptance has not been performed in this Linux container. Tony should run the checklist from `C:\Users\antho\Desktop\Smart MUD\smartmud-main-v2\smartmud-main-v2`, confirm one scheduler-start message, attack an Emberwood fox/wolf, observe automatic ~2s rounds without commands, inspect `perfstat`, verify death/corpse/reward once, test ground sit/rest/sleep regeneration, verify 250/600 Glory purchase gates, train HP/Mana/Move, restart, and confirm maximums persist.
+
+## Live player state, death, recovery, and combat-start reconciliation
+
+Smart MUD now uses a canonical `CharacterActionState` projection for command eligibility. The projection derives command-facing state from canonical Health, stored position/posture, lifecycle state, combat state, and active encounter evidence. It prevents handlers from making independent eligibility decisions from only one stale field.
+
+Tony's Adventurer's Lair `update_pos()` behavior was audited from the current reference source: positive Health preserves active positions above stunned; positive Health in stunned-or-worse restores standing; Health 0 through -2 is stunned; -3 through -5 is incapacitated; -6 through -10 is mortally wounded; -11 or lower is dead. Smart MUD reproduces those thresholds in `engine.character_state` without copying C source.
+
+Attack validation now reconciles the attacker's Health/position/lifecycle state before validating. Generic `You cannot attack right now.` has been replaced with specific player messages for sleeping, sitting, resting, stunned, incapacitated, mortally wounded, dead, already fighting, absent targets, dead targets, and protected targets. Failed validation is read-only and must not save the character; command history remains separate from character persistence.
+
+Character entry registers a canonical resident actor and reconciles stale positive-HP down positions through the same state projection. The repair is logged as `[state-reconcile]` and marks resident state dirty for the coalesced autosave path rather than forcing an immediate SQLite write.
+
+The runtime pulse continues to use the existing scheduler. Regeneration now reconciles position after resource recovery; incapacitated and mortally wounded actors take bounded periodic suffering damage and are reconciled after each suffering tick. Dead actors are excluded from ordinary regeneration.
+
+Admin commands:
+
+- `stateinspect <character>` reports current/persisted Health, stored/derived position, combat/lifecycle state, active encounter, attack eligibility, block reason, and proposed repair.
+- `staterepair <character> --dry-run` reports safe repairs without mutation.
+- `staterepair <character> --apply` applies unambiguous position reconciliation through the canonical service and is intended to be idempotent.
+- `combatstate <character>` reports encounter/target state with the same projection.
+
+Normal command:
+
+- `condition` reports Health condition, canonical position, movement eligibility, and fight eligibility without exposing database internals.
+
+Performance counters now include combat validation attempts/rejections, rejection-by-reason, failed/read-only/combat-validation save guards, state reconciliations, stale position/combat/encounter repair counters, positive-health incapacitated repairs, periodic suffering ticks, and recovery transitions.
+
+Windows status: not executed in this Linux container. Tony should run the documented manual acceptance flow on Windows, inspect Kraevok with `stateinspect char_shattered_realms_kraevok`, dry-run and apply `staterepair` only if unambiguous, then verify `condition`, `score`, `kill fox`, specific rejection text, and `perfstat` failed-command save counters.
