@@ -20,14 +20,14 @@ MESSAGE_FAMILIES = ("bite","fangs","claws","gore","crush","sting","slash","pierc
 class CombatWarmupReport:
     world_id: str
     status: str = "pending"
-    duration_ms: int = 0
+    duration_ms: float = 0.0
     formulas: int = 0
     body_profiles: int = 0
     natural_weapons: int = 0
     entity_templates: int = 0
     message_tables: int = 0
     details: list[dict[str, Any]] = field(default_factory=list)
-    timings: dict[str, int] = field(default_factory=dict)
+    timings: dict[str, float] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
 
 class GenerationCache:
@@ -48,7 +48,7 @@ class CombatWarmupService:
     REQUIRED = ("Emberwood Fox","Forest Wolf","Dire Forest Wolf","Wild Boar","Giant Wood Spider","Ashback Bear","Emberwood Stag")
     def __init__(self, runtime: Any): self.runtime=runtime; self.cache=GenerationCache(); self.report=CombatWarmupReport(getattr(runtime,'active_world_id','') or 'shattered_realms')
     def _section(self, name, fn):
-        t=time.perf_counter(); result=fn(); self.report.timings[name]=int((time.perf_counter()-t)*1000); return result
+        t=time.perf_counter(); result=fn(); self.report.timings[name]=round((time.perf_counter()-t)*1000.0, 3); return result
     def warm(self) -> CombatWarmupReport:
         start=time.perf_counter(); rt=self.runtime; world_id=getattr(rt,'active_world_id','') or 'shattered_realms'; self.report=CombatWarmupReport(world_id)
         root=Path(getattr(getattr(rt,'active_world',None),'root','') or f'data/worlds/{world_id}')
@@ -71,8 +71,8 @@ class CombatWarmupService:
         self._section('sqlite_prepared_statement_initialization', lambda: sqlite3.connect(rt.state_store.db_path).execute('SELECT 1').fetchone())
         for k in ['json_parsing','body_profile_construction','natural_weapon_construction','combat_stat_snapshot_construction','grammar_setup','effect_projection','equipment_projection','resident_npc_hydration','reward_quest_service_initialization','corpse_lifecycle_initialization','prompt_rendering']:
             self.report.timings.setdefault(k,0)
-        self.report.status='ready' if not self.report.errors else 'warning'; self.report.duration_ms=int((time.perf_counter()-start)*1000)
-        print(f"[combat-warmup] world={world_id} formulas={self.report.formulas} body_profiles={self.report.body_profiles} natural_weapons={self.report.natural_weapons} entity_templates={self.report.entity_templates} message_tables={self.report.message_tables} duration_ms={self.report.duration_ms} status={self.report.status}")
+        self.report.status='ready' if not self.report.errors else 'warning'; self.report.duration_ms=round((time.perf_counter()-start)*1000.0, 3)
+        print(f"[combat-warmup] world={world_id} formulas={self.report.formulas} body_profiles={self.report.body_profiles} natural_weapons={self.report.natural_weapons} entity_templates={self.report.entity_templates} message_tables={self.report.message_tables} duration_ms={self.report.duration_ms:.3f} status={self.report.status}")
         return self.report
     def _read_json(self,p:Path,default):
         try: return json.loads(p.read_text(encoding='utf-8'))
@@ -81,4 +81,4 @@ class CombatWarmupService:
     def render_stat(self):
         r=self.report; return f"Combat warmup: status={r.status} world={r.world_id} duration_ms={r.duration_ms} formulas={r.formulas} body_profiles={r.body_profiles} natural_weapons={r.natural_weapons} entity_templates={r.entity_templates} message_tables={r.message_tables}"
     def render_trace(self):
-        return "Combat warmup trace:\n"+"\n".join(f"{k}: {v} ms" for k,v in sorted(self.report.timings.items()))
+        return "Combat warmup trace:\n"+"\n".join(f"{k}: {v:.3f} ms" for k,v in sorted(self.report.timings.items()))

@@ -159,3 +159,7 @@ Player death at the true death threshold is idempotently routed through the exis
 Performance counters now have a canonical `CounterDefinition` registry with typed defaults, category, reset policy, classification, and description. The inventory includes live combat SQL counters such as `combat_sql_round_history_insert`. `perfstat validate` lists schema problems read-only; `perfstat schema` displays registered key/type/category/reset/current validity; `perfstat reset` rebuilds typed reset values while preserving scheduler/configuration objects and recomputing live gauges.
 
 Focused regression coverage was added in `tests/test_admin_restore_recovery_perf_schema.py` for zero-HP recovery visibility, RESTORE self/target/all/offline behavior, schema validation/reset, and true-death respawn.
+
+### 2026-07-15 combat-start latency note
+
+Smart MUD now follows the Adventurer's Lair responsiveness model more closely for combat start: the KILL command performs target lookup, resident encounter creation, one opening attack, prompt/message preparation, and response construction before the newly-created encounter is eligible for ordinary violence-pulse processing. Resident violence uses resident round state for attack event publication rather than synchronous SQLite round lookups. Repeated selects of an already-ready world join the existing generation and do not rerun entity materialization or combat warmup.

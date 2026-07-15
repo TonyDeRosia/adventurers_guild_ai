@@ -1066,7 +1066,18 @@ class MudRuntime:
         self.event_bus.publish("session_authenticated", {"session_id": session_id, "account_id": account_id, "transport_type": session.transport_type}, source_system="session", account_id=account_id, session_id=session_id, transport_type=session.transport_type)
 
     def load_world(self, world_id: str) -> Any:
-        """Load a read-only world template package for gameplay."""
+        """Load a read-only world template package for gameplay.
+
+        Repeated browser select/list/restore requests attach to the resident
+        generation instead of rematerializing content and rerunning combat
+        warmup.
+        """
+        self.performance_counters["world_load_requests"] = self.performance_counters.get("world_load_requests", 0) + 1
+        if self.active_world_id == world_id and getattr(self, "active_world", None) is not None and getattr(self, "combat_ready", False):
+            self.performance_counters["world_load_joined_existing"] = self.performance_counters.get("world_load_joined_existing", 0) + 1
+            self.performance_counters["duplicate_world_loads_prevented"] = self.performance_counters.get("duplicate_world_loads_prevented", 0) + 1
+            return self.active_world
+        self.performance_counters["world_load_actual"] = self.performance_counters.get("world_load_actual", 0) + 1
         self.performance_counters["world_package_loads"] += 1
         self.active_world = self.world_registry.load_world(world_id)
         self.plugin_registry.resolve_required([str(p) for p in self.active_world.manifest.get("required_plugins", [])])
@@ -1077,6 +1088,7 @@ class MudRuntime:
         self.combat_stat_service = CombatStatService(self.attribute_service)
         self._load_item_templates()
         self._load_entity_templates()
+        self.performance_counters["entity_materialization_runs"] = self.performance_counters.get("entity_materialization_runs", 0) + 1
         self.materialize_world_content(world_id)
         try:
             from engine.zone_resets import ZoneResetService
@@ -1095,6 +1107,7 @@ class MudRuntime:
         self.environment = EnvironmentService(self.state_store.db_path, self.active_world.root, world_id, self.event_bus)
         self.command_engine.environment_service = self.environment
         self.combat_runtime.refresh_content()
+        self.performance_counters["combat_warmup_runs"] = self.performance_counters.get("combat_warmup_runs", 0) + 1
         self.combat_warmup = CombatWarmupService(self)
         self.combat_warmup.warm()
         self.combat_ready = self.combat_warmup.report.status in {"ready", "warning"}
