@@ -20,16 +20,16 @@ TERMINAL_STATES = {"none","completed","failed","cancelled"}
 OBJECTIVE_TYPES = {"kill_actor","kill_template","kill_tag","collect_item","possess_item","deliver_item","give_item","use_item","equip_item","craft_item","craft_recipe","harvest_resource","interact_feature","enter_room","visit_zone","visit_area","speak_to_actor","conversation_complete","use_ability","apply_effect","remove_effect","gain_level","gain_profession_rank","earn_currency","spend_currency","purchase_item","sell_item","complete_quest","world_state_equals","survive_time","wait_until_world_time","protect_actor_placeholder","escort_actor_placeholder","custom"}
 PROGRESS_MODES = {"increment","set","binary","unique_targets","unique_instances","accumulate_amount","maintain_state","timed","sequence","custom"}
 QUEST_STATUSES = {"offered","accepted","active","ready_to_turn_in","completed_pending_reward","completed","failed","abandoned","expired","cancelled"}
-SUPPORTED_ACTION_TYPES = {"offer_quest","accept_quest","advance_stage","complete_quest","fail_quest","set_world_state","increment_world_state","grant_reward","publish_event","start_conversation","custom"}
+SUPPORTED_ACTION_TYPES = {"offer_quest","accept_quest","advance_stage","complete_quest","fail_quest","set_world_state","increment_world_state","grant_reward","publish_event","start_conversation","turn_in_quest","custom"}
 WORLD_STATE_SCOPES = {"world","area","zone","room","feature","actor","quest_instance","organization","custom"}
 WORLD_STATE_VALUE_TYPES = {"boolean","integer","decimal","string","id","list","map","custom"}
 COLLECTIONS = ["quest_definitions","quest_series","quest_chapters","quest_stages","quest_objectives","quest_availability_profiles","quest_acceptance_profiles","quest_repeat_policies","quest_failure_profiles","quest_abandon_profiles","quest_sharing_profiles","quest_action_definitions","conversation_definitions","conversation_nodes","conversation_choices","conversation_conditions","conversation_actions","quest_message_profiles","quest_time_limit_profiles","world_state_definitions"]
 EVENT_OBJECTIVE_TYPES = {
-    "actor_killed":{"kill_actor","kill_template","kill_tag"}, "actor_died":{"kill_actor","kill_template","kill_tag"},
-    "item_received":{"collect_item","possess_item"}, "item_picked_up":{"collect_item","possess_item"}, "item_delivered":{"deliver_item"}, "item_given":{"give_item"}, "item_used":{"use_item"}, "item_equipped":{"equip_item"},
+    "actor_killed":{"kill_actor","kill_template","kill_tag"}, "actor_died":{"kill_actor","kill_template","kill_tag"}, "enemy_killed":{"kill_actor","kill_template","kill_tag"},
+    "item_received":{"collect_item","possess_item"}, "item_picked_up":{"collect_item","possess_item"}, "item_collected":{"collect_item","possess_item"}, "quest_item_obtained":{"collect_item","possess_item"}, "corpse_looted":{"collect_item","possess_item","custom"}, "item_delivered":{"deliver_item"}, "item_given":{"give_item"}, "item_used":{"use_item"}, "item_equipped":{"equip_item"},
     "room_entered":{"enter_room"}, "zone_entered":{"visit_zone"}, "area_entered":{"visit_area"}, "feature_interacted":{"interact_feature"},
     "conversation_completed":{"conversation_complete","speak_to_actor"}, "ability_completed":{"use_ability"}, "ability_effect_applied":{"apply_effect"}, "ability_effect_removed":{"remove_effect"},
-    "craft_job_completed":{"craft_recipe"}, "crafted_item_created":{"craft_item","craft_recipe"}, "resource_node_harvested":{"harvest_resource"}, "profession_rank_increased":{"gain_profession_rank"}, "actor_leveled_up":{"gain_level"},
+    "craft_job_completed":{"craft_recipe"}, "crafted_item_created":{"craft_item","craft_recipe"}, "resource_node_harvested":{"harvest_resource"}, "resource_gathered":{"harvest_resource","collect_item","possess_item"}, "profession_rank_increased":{"gain_profession_rank"}, "actor_leveled_up":{"gain_level"},
     "currency_credited":{"earn_currency"}, "currency_debited":{"spend_currency"}, "shop_item_purchased":{"purchase_item"}, "shop_item_sold":{"sell_item"}, "quest_completed":{"complete_quest"}, "world_state_changed":{"world_state_equals"}, "world_time_advanced":{"survive_time","wait_until_world_time"}, "custom":{"custom"}
 }
 
@@ -211,6 +211,10 @@ class QuestService:
         for cond in prof.get("conditions",[]):
             ctype=cond.get("condition_type") or cond.get("type"); passed=True
             if ctype=="world_state_equals": passed=self.world_state.compare_state(cond.get("scope_type","world"), cond.get("scope_id",self.world_id), cond.get("key") or cond.get("world_state_key"), cond.get("value"))
+            elif ctype in {"quest_completed","required_quest_completed"}:
+                req=cond.get("quest_id") or cond.get("required_quest_id")
+                with sqlite3.connect(self.db_path) as con:
+                    passed=bool(con.execute("SELECT 1 FROM actor_quest_instances WHERE world_id=? AND actor_id=? AND quest_id=? AND status='completed'",(self.world_id,actor_id,req)).fetchone())
             elif ctype in (None, "custom"): passed = ctype is None
             else: passed=False
             trace.append({"condition":cond,"passed":passed}); ok = ok and passed
@@ -246,7 +250,7 @@ class QuestService:
         for inst in self.get_actor_quests(actor_id):
             q=self.get_quest_definition(inst["quest_id"]) or {}; stage=self.content.get("quest_stages", inst["current_stage_id"]) or {}
             objs=self._objective_states(inst["quest_instance_id"])
-            out.append({"quest_instance_id":inst["quest_instance_id"],"quest_id":inst["quest_id"],"name":q.get("name",inst["quest_id"]),"summary":q.get("summary",""),"status":inst["status"],"current_stage":stage.get("name",inst["current_stage_id"]),"objectives":objs})
+            out.append({"quest_instance_id":inst["quest_instance_id"],"quest_id":inst["quest_id"],"name":q.get("name",inst["quest_id"]),"summary":q.get("summary",""),"description":q.get("description",q.get("summary","")),"status":inst["status"],"current_stage":stage.get("name",inst["current_stage_id"]),"stage_text":stage.get("journal_text",stage.get("description","")),"objectives":objs,"ready_to_turn_in":inst["status"]=="ready_to_turn_in","repeatable":(self.content.get("quest_repeat_policies", q.get("repeat_policy_id")) or {}).get("policy") not in {"never","once_per_actor","once_per_character"},"cooldown":(self.content.get("quest_repeat_policies", q.get("repeat_policy_id")) or {}).get("cooldown_seconds",0),"prerequisites":(self.content.get("quest_availability_profiles", q.get("availability_profile_id")) or {}).get("conditions",[]),"rewards":q.get("reward_definition_id","")})
         return out
     def process_quest_event(self, event):
         event=dict(event); eid=event.get("event_id") or stable_id("evt", event); event["event_id"]=eid; et=event.get("event_type") or event.get("type"); actor=event.get("actor_id") or event.get("killer_actor_id") or event.get("recipient_actor_id") or event.get("player_actor_id")
@@ -275,7 +279,7 @@ class QuestService:
             try: con.execute("INSERT INTO actor_quest_event_consumption VALUES(?,?,?,?,?,?,?)",(stable_id("qcons",inst["quest_instance_id"],oid,eid),inst["quest_instance_id"],oid,eid,event.get("event_type") or event.get("type"),wt,_json({"event":event})))
             except sqlite3.IntegrityError: return False
             st=con.execute("SELECT progress_current,progress_required,progress_json FROM actor_quest_objective_state WHERE quest_instance_id=? AND objective_id=?",(inst["quest_instance_id"],oid)).fetchone(); cur=float(st[0]); req=float(st[1]); pj=_loads(st[2])
-            mode=obj.get("progress_mode","increment"); amount=float(event.get("amount",1) or 1)
+            mode=obj.get("progress_mode","increment"); amount=float(event.get("amount", event.get("quantity",1)) or 1)
             if mode in {"unique_targets","unique_instances","sequence"}: key=str(event.get("target_actor_id") or event.get("item_instance_id") or event.get("room_id") or event.get("target_id") or eid); seen=set(pj.get("seen",[]));
             if mode in {"unique_targets","unique_instances","sequence"}:
                 if key in seen: return False
@@ -326,6 +330,7 @@ class QuestService:
     def turn_in_quest(self, actor_id, quest_instance_id, source=None):
         inst=self.get_quest_instance(quest_instance_id)
         if not inst or inst["actor_id"]!=actor_id: raise ValueError("quest instance not found")
+        if inst["status"]=="completed": return inst
         if inst["status"] not in {"ready_to_turn_in","completed_pending_reward"}: raise ValueError("quest is not ready to turn in")
         q=self.get_quest_definition(inst["quest_id"]) or {}; packet_id=""
         with sqlite3.connect(self.db_path) as con:
@@ -334,8 +339,10 @@ class QuestService:
         if not packet_id and q.get("reward_definition_id") and self.reward_service:
             try:
                 from engine.rewards import RewardSource, RewardRecipient
-                packet=self.reward_service.resolve_reward(q["reward_definition_id"], RewardSource("quest", q["id"], quest_instance_id, self.world_id), RewardRecipient("actor", actor_id))
-                if hasattr(self.reward_service,"deliver_packet"): self.reward_service.deliver_packet(packet["reward_packet_id"] if isinstance(packet,dict) else packet.reward_packet_id)
+                resolver=getattr(self.reward_service,"resolve_reward",None) or getattr(self.reward_service,"resolve_reward_definition")
+                packet=resolver(q["reward_definition_id"], RewardSource("quest", q["id"], quest_instance_id, self.world_id), RewardRecipient("actor", actor_id))
+                deliver=getattr(self.reward_service,"deliver_packet",None) or getattr(self.reward_service,"deliver_reward_packet",None)
+                if deliver: deliver(packet["reward_packet_id"] if isinstance(packet,dict) else packet.reward_packet_id)
                 packet_id=packet["reward_packet_id"] if isinstance(packet,dict) else getattr(packet,"reward_packet_id","")
             except Exception as exc: self._record_reward_claim(quest_instance_id,inst,q,"pending",str(exc)); raise
         self._record_reward_claim(quest_instance_id,inst,q,"delivered",packet_id)
@@ -398,6 +405,9 @@ class ConversationService:
         if t=="offer_quest": self.quest_service.offer_quest(s["actor_id"], a.get("quest_id"), {"source_type":"conversation","source_id":s["conversation_id"]})
         elif t=="accept_quest": self.quest_service.accept_quest(s["actor_id"], a.get("quest_id"), {"source_type":"conversation","source_id":s["conversation_id"]})
         elif t=="complete_quest": self.quest_service.complete_quest(a.get("quest_instance_id"), ready_only=True)
+        elif t=="turn_in_quest":
+            qs=[q for q in self.quest_service.get_actor_quests(s["actor_id"]) if q["quest_id"]==a.get("quest_id") and q["status"] in {"ready_to_turn_in","completed_pending_reward"}]
+            if qs: self.quest_service.turn_in_quest(s["actor_id"], qs[0]["quest_instance_id"], {"source_type":"conversation","source_id":s["conversation_id"]})
         elif t=="set_world_state": self.quest_service.world_state.set_state(a.get("scope_type","world"), a.get("scope_id",self.quest_service.world_id), a.get("key"), a.get("value"), source_type="conversation", source_id=s["conversation_id"])
         elif t=="increment_world_state": self.quest_service.world_state.increment_state(a.get("scope_type","world"), a.get("scope_id",self.quest_service.world_id), a.get("key"), a.get("amount",1), source_type="conversation", source_id=s["conversation_id"])
         elif t in {"custom",None}: raise ValueError("unsupported conversation action")

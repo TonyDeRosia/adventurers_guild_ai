@@ -1,0 +1,349 @@
+{
+  "emberwood_forest_population": {
+    "reset_profile_id": "emberwood_forest_population",
+    "world_id": "shattered_realms",
+    "zone_id": "emberwood_forest",
+    "display_name": "Emberwood Forest Population",
+    "enabled": true,
+    "reset_mode": "when_empty",
+    "reset_interval_seconds": 600,
+    "priority": 50,
+    "definition_version": "1",
+    "metadata": {
+      "ownership": "ZoneResetService recurring population",
+      "static_population_migration": "room npcs and default_room legacy spawn removed"
+    },
+    "commands": [
+      {
+        "reset_command_id": "emberwood_spawn_10_forest_wolf_emberwood_hunting_trail",
+        "command_type": "SPAWN_ENTITY",
+        "enabled": true,
+        "order": 10,
+        "condition": {
+          "type": "always"
+        },
+        "failure_policy": "continue",
+        "entity_template_id": "forest_wolf",
+        "room_id": "emberwood_hunting_trail",
+        "spawn_count": 1,
+        "maximum_scope": "room",
+        "maximum_count": 1,
+        "spawn_state": {
+          "source_reset_profile_id": "emberwood_forest_population"
+        },
+        "spawn_flags": [
+          "emberwood_forest_reset"
+        ],
+        "result_reference": "forest_wolf_10"
+      },
+      {
+        "reset_command_id": "emberwood_spawn_11_emberwood_fox_emberwood_edge",
+        "command_type": "SPAWN_ENTITY",
+        "enabled": true,
+        "order": 11,
+        "condition": {
+          "type": "always"
+        },
+        "failure_policy": "continue",
+        "entity_template_id": "emberwood_fox",
+        "room_id": "emberwood_edge",
+        "spawn_count": 1,
+        "maximum_scope": "room",
+        "maximum_count": 1,
+        "spawn_state": {
+          "source_reset_profile_id": "emberwood_forest_population"
+        },
+        "spawn_flags": [
+          "emberwood_forest_reset"
+        ],
+        "result_reference": "emberwood_fox_11"
+      },
+      {
+        "reset_command_id": "emberwood_spawn_12_forest_wolf_emberwood_game_trail",
+        "command_type": "SPAWN_ENTITY",
+        "enabled": true,
+        "order": 12,
+        "condition": {
+          "type": "always"
+        },
+        "failure_policy": "continue",
+        "entity_template_id": "forest_wolf",
+        "room_id": "emberwood_game_trail",
+        "spawn_count": 1,
+        "maximum_scope": "room",
+        "maximum_count": 1,
+        "spawn_state": {
+          "source_reset_profile_id": "emberwood_forest_population"
+        },
+        "spawn_flags": [
+          "emberwood_forest_reset"
+        ],
+        "result_reference": "forest_wolf_12"
+      },
+      {
+        "reset_command_id": "emberwood_spawn_13_forest_wolf_forest_trail",
+        "command_type": "SPAWN_ENTITY",
+        "enabled": true,
+        "order": 13,
+        "condition": {
+          "type": "always"
+        },
+        "failure_policy": "continue",
+        "entity_template_id": "forest_wolf",
+        "room_id": "forest_trail",
+        "spawn_count": 1,
+        "maximum_scope": "room",
+        "maximum_count": 1,
+        "spawn_state": {
+          "source_reset_profile_id": "emberwood_forest_population"
+        },
+        "spawn_flags": [
+          "emberwood_forest_reset"
+        ],
+        "result_reference": "forest_wolf_13"
+      },
+      {
+        "reset_command_id": "emberwood_spawn_14_emberwood_fox_fern_hollow",
+        "command_type": "SPAWN_ENTITY",
+        "enabled": true,
+        "order": 14,
+        "condition": {
+          "type": "always"
+        },
+        "failure_policy": "continue",
+        "entity_template_id": "emberwood_fox",
+        "room_id": "fern_hollow",
+        "spawn_count": 1,
+        "maximum_scope": "room",
+        "maximum_count": 1,
+        "spawn_state": {
+          "source_reset_profile_id": "emberwood_forest_population"
+        },
+        "spawn_flags": [
+          "emberwood_forest_reset"
+        ],
+        "result_reference": "emberwood_fox_14"
+      },
+      {
+        "reset_command_id": "emberwood_spawn_15_emberwood_stag_mossy_creek",
+        "command_type": "SPAWN_ENTITY",
+        "enabled": true,
+        "order": 15,
+        "condition": {
+          "type": "always"
+        },
+        "failure_policy": "continue",
+        "entity_template_id": "emberwood_stag",
+        "room_id": "mossy_creek",
+        "spawn_count": 1,
+        "maximum_scope": "room",
+        "maximum_count": 1,
+        "spawn_state": {
+          "source_reset_profile_id": "emberwood_forest_population"
+        },
+        "spawn_flags": [
+          "emberwood_forest_reset"
+        ],
+        "result_reference": "emberwood_stag_15"
+      },
+      {
+        "reset_command_id": "emberwood_spawn_16_wild_boar_fallen_oak",
+        "command_type": "SPAWN_ENTITY",
+        "enabled": true,
+        "order": 16,
+        "condition": {
+          "type": "always"
+        },
+        "failure_policy": "continue",
+        "entity_template_id": "wild_boar",
+        "room_id": "fallen_oak",
+        "spawn_count": 1,
+        "maximum_scope": "room",
+        "maximum_count": 1,
+        "spawn_state": {
+          "source_reset_profile_id": "emberwood_forest_population"
+        },
+        "spawn_flags": [
+          "emberwood_forest_reset"
+        ],
+        "result_reference": "wild_boar_16"
+      },
+      {
+        "reset_command_id": "emberwood_spawn_17_wild_boar_briar_thicket",
+        "command_type": "SPAWN_ENTITY",
+        "enabled": true,
+        "order": 17,
+        "condition": {
+          "type": "always"
+        },
+        "failure_policy": "continue",
+        "entity_template_id": "wild_boar",
+        "room_id": "briar_thicket",
+        "spawn_count": 1,
+        "maximum_scope": "room",
+        "maximum_count": 1,
+        "spawn_state": {
+          "source_reset_profile_id": "emberwood_forest_population"
+        },
+        "spawn_flags": [
+          "emberwood_forest_reset"
+        ],
+        "result_reference": "wild_boar_17"
+      },
+      {
+        "reset_command_id": "emberwood_spawn_18_emberwood_fox_fox_burrow",
+        "command_type": "SPAWN_ENTITY",
+        "enabled": true,
+        "order": 18,
+        "condition": {
+          "type": "always"
+        },
+        "failure_policy": "continue",
+        "entity_template_id": "emberwood_fox",
+        "room_id": "fox_burrow",
+        "spawn_count": 1,
+        "maximum_scope": "room",
+        "maximum_count": 1,
+        "spawn_state": {
+          "source_reset_profile_id": "emberwood_forest_population"
+        },
+        "spawn_flags": [
+          "emberwood_forest_reset"
+        ],
+        "result_reference": "emberwood_fox_18"
+      },
+      {
+        "reset_command_id": "emberwood_spawn_19_forest_wolf_wolf_trail",
+        "command_type": "SPAWN_ENTITY",
+        "enabled": true,
+        "order": 19,
+        "condition": {
+          "type": "always"
+        },
+        "failure_policy": "continue",
+        "entity_template_id": "forest_wolf",
+        "room_id": "wolf_trail",
+        "spawn_count": 2,
+        "maximum_scope": "room",
+        "maximum_count": 2,
+        "spawn_state": {
+          "source_reset_profile_id": "emberwood_forest_population"
+        },
+        "spawn_flags": [
+          "emberwood_forest_reset"
+        ],
+        "result_reference": "forest_wolf_19"
+      },
+      {
+        "reset_command_id": "emberwood_spawn_20_dire_forest_wolf_deep_emberwood",
+        "command_type": "SPAWN_ENTITY",
+        "enabled": true,
+        "order": 20,
+        "condition": {
+          "type": "always"
+        },
+        "failure_policy": "continue",
+        "entity_template_id": "dire_forest_wolf",
+        "room_id": "deep_emberwood",
+        "spawn_count": 1,
+        "maximum_scope": "zone",
+        "maximum_count": 2,
+        "spawn_state": {
+          "source_reset_profile_id": "emberwood_forest_population"
+        },
+        "spawn_flags": [
+          "emberwood_forest_reset"
+        ],
+        "result_reference": "dire_forest_wolf_20"
+      },
+      {
+        "reset_command_id": "emberwood_spawn_21_giant_wood_spider_spider_glade",
+        "command_type": "SPAWN_ENTITY",
+        "enabled": true,
+        "order": 21,
+        "condition": {
+          "type": "always"
+        },
+        "failure_policy": "continue",
+        "entity_template_id": "giant_wood_spider",
+        "room_id": "spider_glade",
+        "spawn_count": 2,
+        "maximum_scope": "room",
+        "maximum_count": 2,
+        "spawn_state": {
+          "source_reset_profile_id": "emberwood_forest_population"
+        },
+        "spawn_flags": [
+          "emberwood_forest_reset"
+        ],
+        "result_reference": "giant_wood_spider_21"
+      },
+      {
+        "reset_command_id": "emberwood_spawn_22_forest_wolf_wolf_den",
+        "command_type": "SPAWN_ENTITY",
+        "enabled": true,
+        "order": 22,
+        "condition": {
+          "type": "always"
+        },
+        "failure_policy": "continue",
+        "entity_template_id": "forest_wolf",
+        "room_id": "wolf_den",
+        "spawn_count": 2,
+        "maximum_scope": "room",
+        "maximum_count": 2,
+        "spawn_state": {
+          "source_reset_profile_id": "emberwood_forest_population"
+        },
+        "spawn_flags": [
+          "emberwood_forest_reset"
+        ],
+        "result_reference": "forest_wolf_22"
+      },
+      {
+        "reset_command_id": "emberwood_spawn_23_dire_forest_wolf_wolf_den",
+        "command_type": "SPAWN_ENTITY",
+        "enabled": true,
+        "order": 23,
+        "condition": {
+          "type": "always"
+        },
+        "failure_policy": "continue",
+        "entity_template_id": "dire_forest_wolf",
+        "room_id": "wolf_den",
+        "spawn_count": 1,
+        "maximum_scope": "zone",
+        "maximum_count": 2,
+        "spawn_state": {
+          "source_reset_profile_id": "emberwood_forest_population"
+        },
+        "spawn_flags": [
+          "emberwood_forest_reset"
+        ],
+        "result_reference": "dire_forest_wolf_23"
+      },
+      {
+        "reset_command_id": "emberwood_spawn_24_ashback_bear_ancient_ember_grove",
+        "command_type": "SPAWN_ENTITY",
+        "enabled": true,
+        "order": 24,
+        "condition": {
+          "type": "always"
+        },
+        "failure_policy": "continue",
+        "entity_template_id": "ashback_bear",
+        "room_id": "ancient_ember_grove",
+        "spawn_count": 1,
+        "maximum_scope": "zone",
+        "maximum_count": 1,
+        "spawn_state": {
+          "source_reset_profile_id": "emberwood_forest_population"
+        },
+        "spawn_flags": [
+          "emberwood_forest_reset"
+        ],
+        "result_reference": "ashback_bear_24"
+      }
+    ]
+  }
+}

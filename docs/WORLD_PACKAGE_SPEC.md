@@ -233,3 +233,15 @@ Rest, sleep, rest-location profiles, rest quality, campfire profiles, campsite p
 ## Phase 11E Cooking Integration
 
 Cooking is a canonical CraftingService specialization. The runtime uses recipe definitions, exact item-instance input reservations, crafting jobs, workstation profiles, production profiles, item quality, profession XP, and reward delivery for cooked outputs. SurvivalNeedsService remains authoritative for consumable profiles, portions, servings, freshness interpretation, spoilage, and need mutation. GatheringService remains authoritative for raw gathered materials. Builder/world-package content now includes cooking ingredient, substitution, preparation, serving-yield, consumable-output, nutrition, preservation, heat, failure, message, and render profile collections.
+
+## Reset profiles
+Status: **Implemented/Partial**. World packages may provide `resets/resets.json`; Builder drafts use `builder/resets.json`. SQLite is not a reset-definition source. Reset profile definitions are typed, validated, versioned, and compiled before execution.
+
+## Emberwood Forest package ownership example
+
+The Shattered Realms package now keeps Emberwood rooms, area, zone, NPC templates, loot links, and reset profile in live package files. Builder drafts mirror the same IDs and VNUMs. Runtime creature instances are not authored in room `npcs`; `ZoneResetService` reconciles population.
+
+
+## Runtime heartbeat/combat parity update
+
+See `docs/RUNTIME_HEARTBEAT.md` and `docs/CORPSE_AND_DEATH_LIFECYCLE.md` for the current TBA-style heartbeat mapping, pulse constants, resident authority rules, coalesced autosave, restore behavior, movement/flee cleanup, corpse decay, corpse parser parity, async-poll hints, focused tests, broad-suite status, Windows manual status, and remaining differences.

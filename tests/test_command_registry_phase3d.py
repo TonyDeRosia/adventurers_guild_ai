@@ -47,10 +47,10 @@ def test_help_uses_registry_metadata():
 def test_placeholders_and_toggles_are_clean():
     engine = MudCommandEngine()
     c = char()
-    assert "calm" in engine.handle_command(c, "weather").narrative
-    assert "Mounts are not implemented" in engine.handle_command(c, "mount").narrative
+    assert "Weather:" in engine.handle_command(c, "weather").narrative
+    assert "mount" in engine.handle_command(c, "mount").narrative.lower()
     assert "brief is now ON" in engine.handle_command(c, "brief").narrative
-    assert "pinned web prompt" in engine.handle_command(c, "prompt").narrative
+    assert "Prompt preset:" in engine.handle_command(c, "prompt").narrative
 
 
 def test_ambiguous_abbreviation_does_not_guess():
@@ -73,7 +73,7 @@ def test_registry_help_list_and_placeholder_events_fire():
     c = char()
     engine.handle_command(c, "help score")
     engine.handle_command(c, "commands")
-    engine.handle_command(c, "weather")
+    engine.handle_command(c, "mount")
     assert "command_registered" in seen
     assert "command_alias_registered" in seen
     assert "command_help_requested" in seen

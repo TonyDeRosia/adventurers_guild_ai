@@ -86,9 +86,22 @@
     },
     "clean_water_flask": {
       "description": "clean water flask for beginner Smart MUD play.",
+      "drinkable": true,
       "effects": {},
       "id": "clean_water_flask",
+      "item_type": "consumable",
+      "keywords": [
+        "clean",
+        "clean water",
+        "clean water flask",
+        "flask",
+        "water"
+      ],
+      "long_description": "A small flask filled with clean water.",
       "name": "clean water flask",
+      "plugin_data": {
+        "consumable_profile_id": "clean_water_drink"
+      },
       "rarity": "common",
       "requirements": {},
       "slot": "none",
@@ -483,12 +496,16 @@
       "effects": {},
       "id": "notice_board",
       "keywords": [
+        "board",
         "notice",
-        "board"
+        "notice board"
       ],
       "long_description": "notice board for beginner Smart MUD play.",
       "name": "notice board",
+      "portable": false,
       "rarity": "common",
+      "readable": true,
+      "readable_text": "Posted notices list starter errands, road warnings, and a reminder to carry water before leaving town.",
       "requirements": {},
       "short_description": "notice board for beginner Smart MUD play.",
       "slot": "none",

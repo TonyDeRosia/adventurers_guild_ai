@@ -535,7 +535,7 @@
       "none"
     ],
     "id": "ration",
-    "name": "ration",
+    "name": "Ration",
     "occupies_slots": [
       "none"
     ],
@@ -551,19 +551,39 @@
     "wear_slots": [
       "none"
     ],
-    "weight": 1
+    "weight": 1,
+    "keywords": [
+      "ration",
+      "food"
+    ],
+    "short_description": "a wrapped ration",
+    "look_description": "A wrapped trail ration suitable for a quick meal.",
+    "examine_description": "Hard bread, dried fruit, and a strip of smoked meat are bundled in waxed cloth."
   },
   {
     "description": "clean water flask for beginner Smart MUD play.",
+    "drinkable": true,
     "effects": {},
     "equipment_slots": [
       "none"
     ],
     "id": "clean_water_flask",
-    "name": "clean water flask",
+    "item_type": "consumable",
+    "keywords": [
+      "clean",
+      "clean water",
+      "clean water flask",
+      "flask",
+      "water"
+    ],
+    "long_description": "A small flask filled with clean water.",
+    "name": "Clean Water Flask",
     "occupies_slots": [
       "none"
     ],
+    "plugin_data": {
+      "consumable_profile_id": "clean_water_drink"
+    },
     "rarity": "common",
     "requirements": {},
     "slot": "none",
@@ -576,7 +596,11 @@
     "wear_slots": [
       "none"
     ],
-    "weight": 1
+    "weight": 1,
+    "short_description": "a stoppered leather flask",
+    "look_description": "A stoppered leather flask filled with clean water.",
+    "examine_description": "The flask is made from treated hide and sealed with a wooden stopper. It feels mostly full.",
+    "identify_description": "A simple consumable water flask."
   },
   {
     "description": "torch for beginner Smart MUD play.",
@@ -589,7 +613,7 @@
       "torch",
       "light"
     ],
-    "name": "torch",
+    "name": "Torch",
     "occupies_slots": [
       "light"
     ],
@@ -605,7 +629,10 @@
     "wear_slots": [
       "light"
     ],
-    "weight": 1
+    "weight": 1,
+    "short_description": "a pitch-coated torch",
+    "look_description": "A pitch-coated torch ready to be lit.",
+    "examine_description": "The wrapped head smells of resin and should burn for a useful stretch of travel."
   },
   {
     "description": "spellbook for beginner Smart MUD play.",
@@ -739,7 +766,7 @@
       "none"
     ],
     "id": "rope",
-    "name": "rope",
+    "name": "Rope",
     "occupies_slots": [
       "none"
     ],
@@ -755,7 +782,14 @@
     "wear_slots": [
       "none"
     ],
-    "weight": 1
+    "weight": 1,
+    "keywords": [
+      "rope",
+      "coil"
+    ],
+    "short_description": "a coil of rope",
+    "look_description": "A sturdy coil of hemp rope lies neatly wound.",
+    "examine_description": "The fibers are rough but sound, long enough for simple climbing or tying work."
   },
   {
     "description": "tinderbox for beginner Smart MUD play.",
@@ -880,7 +914,15 @@
     "wear_slots": [
       "none"
     ],
-    "weight": 1
+    "weight": 1,
+    "keywords": [
+      "shard",
+      "gate shard",
+      "old gate shard"
+    ],
+    "short_description": "A broken shard from the Old Gate",
+    "look_description": "A dark splinter of old gate metal, cold despite the air.",
+    "examine_description": "Its fractured edge glints with stress marks from a powerful impact."
   },
   {
     "description": "rat tail for beginner Smart MUD play.",
@@ -905,7 +947,14 @@
     "wear_slots": [
       "none"
     ],
-    "weight": 1
+    "weight": 1,
+    "keywords": [
+      "tail",
+      "rat tail"
+    ],
+    "short_description": "A wiry rat tail",
+    "look_description": "A wiry rat tail, proof of a cellar kill.",
+    "examine_description": "The tail is stiff and unpleasant, but recognizable enough for a bounty."
   },
   {
     "description": "suspicious ledger for beginner Smart MUD play.",
@@ -939,7 +988,7 @@
       "none"
     ],
     "id": "guild_token",
-    "name": "guild token",
+    "name": "Guild Token",
     "occupies_slots": [
       "none"
     ],
@@ -955,7 +1004,16 @@
     "wear_slots": [
       "none"
     ],
-    "weight": 1
+    "weight": 1,
+    "keywords": [
+      "token",
+      "guild token"
+    ],
+    "room_description": "A small guild token lies here.",
+    "short_description": "A small guild token",
+    "look_description": "A palm-sized brass token stamped with the Adventurers Guild crest.",
+    "examine_description": "The crest is worn smooth at the edges from many anxious thumbs.",
+    "identify_description": "A mundane guild credential used for starter training records."
   },
   {
     "description": "old gate for beginner Smart MUD play.",
@@ -965,17 +1023,17 @@
     ],
     "id": "old_gate",
     "keywords": [
-      "old",
-      "gate"
+      "gate",
+      "old gate"
     ],
     "long_description": "old gate for beginner Smart MUD play.",
-    "name": "old gate",
+    "name": "Old Gate",
     "occupies_slots": [
       "none"
     ],
     "rarity": "common",
     "requirements": {},
-    "short_description": "old gate for beginner Smart MUD play.",
+    "short_description": "Old Gate",
     "slot": "none",
     "starter": false,
     "stats": {},
@@ -985,7 +1043,10 @@
     "wear_slots": [
       "none"
     ],
-    "weight": 1
+    "weight": 1,
+    "room_description": "The Old Gate looms over the road.",
+    "look_description": "An old iron-bound gate stands watch over the road beyond the square.",
+    "examine_description": "Rust freckles the hinges, but the stone posts remain solid. Scratches around the latch show years of hurried passage."
   },
   {
     "description": "fountain for beginner Smart MUD play.",
@@ -995,16 +1056,18 @@
     ],
     "id": "fountain",
     "keywords": [
-      "fountain"
+      "fountain",
+      "water",
+      "basin"
     ],
     "long_description": "fountain for beginner Smart MUD play.",
-    "name": "fountain",
+    "name": "Fountain",
     "occupies_slots": [
       "none"
     ],
     "rarity": "common",
     "requirements": {},
-    "short_description": "fountain for beginner Smart MUD play.",
+    "short_description": "Fountain",
     "slot": "none",
     "starter": false,
     "stats": {},
@@ -1014,7 +1077,17 @@
     "wear_slots": [
       "none"
     ],
-    "weight": 1
+    "weight": 1,
+    "room_description": "A weathered stone fountain burbles in the square.",
+    "look_description": "A weathered stone fountain stands in the center of the square. Clear water spills from its carved basin.\n\nThe water appears clean.",
+    "examine_description": "Age has softened the carved figures around the basin. The water is clear, and no foul odor rises from it.",
+    "interaction_hints": [
+      "You could drink from it."
+    ],
+    "drinkable": true,
+    "default_interactions": {
+      "drink": "You drink cool, clean water from the fountain."
+    }
   },
   {
     "description": "notice board for beginner Smart MUD play.",
@@ -1024,17 +1097,21 @@
     ],
     "id": "notice_board",
     "keywords": [
-      "notice",
-      "board"
+      "board",
+      "notice board",
+      "notices"
     ],
     "long_description": "notice board for beginner Smart MUD play.",
-    "name": "notice board",
+    "name": "Notice Board",
     "occupies_slots": [
       "none"
     ],
+    "portable": false,
     "rarity": "common",
+    "readable": true,
+    "readable_text": "Posted notices: New adventurers should report to the training yard and carry clean water before leaving town.",
     "requirements": {},
-    "short_description": "notice board for beginner Smart MUD play.",
+    "short_description": "Notice Board",
     "slot": "none",
     "starter": false,
     "stats": {},
@@ -1044,7 +1121,10 @@
     "wear_slots": [
       "none"
     ],
-    "weight": 1
+    "weight": 1,
+    "room_description": "A notice board is crowded with curling scraps of parchment.",
+    "look_description": "A public notice board stands near the square, pinned with guild notices and local warnings.",
+    "examine_description": "Several notices are weather-stained, but the newest sheet bears the guild seal."
   },
   {
     "equipment_slots": [
@@ -1440,5 +1520,80 @@
       "phase11d1"
     ],
     "version": 1
+  },
+  {
+    "description": "A tagged quest pelt recovered from a starter forest wolf corpse.",
+    "id": "wolf_pelt",
+    "name": "wolf pelt",
+    "plugin_data": {},
+    "rarity": "common",
+    "stackable": true,
+    "tags": [
+      "starter",
+      "quest_item",
+      "crafting_material",
+      "wolf"
+    ],
+    "type": "material",
+    "value": 2,
+    "version": 1,
+    "weight": 1
+  },
+  {
+    "description": "A rough crafting material from a starter wolf.",
+    "id": "torn_hide",
+    "name": "torn hide",
+    "plugin_data": {},
+    "rarity": "common",
+    "stackable": true,
+    "tags": [
+      "starter",
+      "crafting_material",
+      "wolf"
+    ],
+    "type": "material",
+    "value": 1,
+    "version": 1,
+    "weight": 1
+  },
+  {
+    "description": "A rare starter equipment roll from the first hunting trail.",
+    "effects": {},
+    "equipment_slots": [
+      "main_hand"
+    ],
+    "id": "training_dagger",
+    "modifiers": [
+      {
+        "id": "training_dagger_attack_power",
+        "operation": "add",
+        "priority": 100,
+        "stacking_group": "equipment_attack_power",
+        "stacking_policy": "stack",
+        "target_domain": "derived_stat",
+        "target_key": "attack_power",
+        "value": 1,
+        "visible": true
+      }
+    ],
+    "name": "training dagger",
+    "occupies_slots": [
+      "main_hand"
+    ],
+    "plugin_data": {},
+    "rarity": "uncommon",
+    "slot": "main_hand",
+    "stats": {},
+    "tags": [
+      "starter",
+      "rare_roll"
+    ],
+    "type": "weapon",
+    "value": 6,
+    "version": 1,
+    "wear_slots": [
+      "main_hand"
+    ],
+    "weight": 1
   }
 ]

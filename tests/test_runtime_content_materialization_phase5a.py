@@ -22,10 +22,11 @@ def test_blacksmith_stall_canonical_instances_and_get_flow(tmp_path):
     assert all(i.get("instance_id") for i in contents["item_instances"])
     assert [e["name"] for e in contents["entity_instances"]] == ["Blacksmith Harl"]
     look = rt.handle_input(cid, "look")["output"]
-    assert look.count("Iron Sword") == 2 and "Training Sword" in look and "Blacksmith Harl" in look
+    assert "(2) Iron Sword" in look and "Training Sword" in look and "Blacksmith Harl" in look
+    assert rt.resolve_item_keywords("1.sword", contents["item_instances"])["item"]["instance_id"] != rt.resolve_item_keywords("2.sword", contents["item_instances"])["item"]["instance_id"]
     assert rt.handle_input(cid, "get iron")["output"] == "You pick up Iron Sword."
     look = rt.handle_input(cid, "look")["output"]
-    assert look.count("Iron Sword") == 1 and "Training Sword" in look
+    assert "(2) Iron Sword" not in look and look.count("Iron Sword") == 1 and "Training Sword" in look
     msg = rt.handle_input(cid, "get all")["output"]
     assert msg.count("Iron Sword") == 1 and "Training Sword" in msg
     assert not rt.find_room_items("blacksmith_stall")

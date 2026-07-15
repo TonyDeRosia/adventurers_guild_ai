@@ -28,7 +28,7 @@ def out(rt, cid, command):
 def test_unknown_interactions_return_clean_text_and_events(tmp_path):
     rt, cid, events = make_runtime(tmp_path)
     assert "You cannot enter that." in out(rt, cid, "enter gate")
-    assert "You cannot drink from that." in out(rt, cid, "drink from fountain")
+    assert "clean water" in out(rt, cid, "drink from fountain").lower()
     assert "You cannot eat that." in out(rt, cid, "eat gate")
     assert "You cannot pick that." in out(rt, cid, "pick lock")
     assert "interaction_attempted" in events
@@ -38,14 +38,14 @@ def test_unknown_interactions_return_clean_text_and_events(tmp_path):
 
 def test_room_features_are_inspectable_but_not_pickupable(tmp_path):
     rt, cid, events = make_runtime(tmp_path)
-    assert "fountain for beginner Smart MUD play" in out(rt, cid, "look fountain")
-    assert "old gate for beginner Smart MUD play" in out(rt, cid, "look gate")
-    assert "fountain for beginner Smart MUD play" in out(rt, cid, "look at fountain")
-    assert "fountain for beginner Smart MUD play" in out(rt, cid, "examine fountain")
+    assert "weathered stone fountain" in out(rt, cid, "look fountain")
+    assert "old iron-bound gate" in out(rt, cid, "look gate")
+    assert "weathered stone fountain" in out(rt, cid, "look at fountain")
+    assert "Age has softened" in out(rt, cid, "examine fountain")
     assert "You cannot take that." in out(rt, cid, "get fountain")
     assert "You aren't carrying that." in out(rt, cid, "drop fountain")
     assert "You cannot eat that." in out(rt, cid, "eat fountain")
-    assert "You cannot drink from that." in out(rt, cid, "drink fountain")
+    assert "clean water" in out(rt, cid, "drink fountain").lower()
     assert "target_looked" in events
     assert "pick up" not in out(rt, cid, "pick lock")
 

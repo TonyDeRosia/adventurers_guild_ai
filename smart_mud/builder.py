@@ -15,8 +15,9 @@ VALID_WEAR_SLOTS = {"head","face","neck","shoulders","back","chest","body","tors
 VALID_ENTITY_TYPES = {"npc", "mob", "merchant", "trainer", "banker", "healer", "critter", "object"}
 
 DRAFT_FILES = {
+    "world": "world.json", "display_themes": "display_themes.json",
     "areas": "areas.json", "zones": "zones.json", "rooms": "rooms.json",
-    "features": "features.json", "items": "item_templates.json", "item_placements": "item_placements.json", "entities": "entity_templates.json", "spawns": "spawns.json", "schedules": "schedules.json", "relationship_seeds": "relationship_seeds.json", "memory_seeds": "memory_seeds.json", "need_profiles": "need_profiles.json", "goal_profiles": "goal_profiles.json", "formulas": "formulas.json", "modifier_types": "modifier_types.json", "future_formula_templates": "future_formula_templates.json", "abilities": "abilities.json", "ability_loadouts": "ability_loadouts.json", "ability_schools": "ability_schools.json", "ability_categories": "ability_categories.json", "cooldown_groups": "cooldown_groups.json", "targeting_profiles": "targeting_profiles.json", "healing_profiles": "healing_profiles.json", "casting_profiles": "casting_profiles.json", "combat_behavior_profiles": "combat_behavior_profiles.json", "threat_profiles": "threat_profiles.json", "aggression_profiles": "aggression_profiles.json", "assist_profiles": "assist_profiles.json", "flee_profiles": "flee_profiles.json", "surrender_profiles": "surrender_profiles.json", "pursuit_profiles": "pursuit_profiles.json", "combat_groups": "combat_groups.json", "combat_action_rules": "combat_action_rules.json", "recipe_definitions": "recipe_definitions.json", "workstation_profiles": "workstation_profiles.json", "production_profiles": "production_profiles.json", "item_quality_profiles": "item_quality_profiles.json", "crafting_quality_profiles": "crafting_quality_profiles.json", "ingredient_substitution_profiles": "ingredient_substitution_profiles.json", "crafting_message_profiles": "crafting_message_profiles.json", "profession_experience_curves": "profession_experience_curves.json", "profession_growth_profiles": "profession_growth_profiles.json", "quest_definitions": "quest_definitions.json", "quest_series": "quest_series.json", "quest_chapters": "quest_chapters.json", "quest_stages": "quest_stages.json", "quest_objectives": "quest_objectives.json", "quest_availability_profiles": "quest_availability_profiles.json", "quest_acceptance_profiles": "quest_acceptance_profiles.json", "quest_repeat_policies": "quest_repeat_policies.json", "quest_failure_profiles": "quest_failure_profiles.json", "quest_abandon_profiles": "quest_abandon_profiles.json", "quest_sharing_profiles": "quest_sharing_profiles.json", "quest_action_definitions": "quest_action_definitions.json", "conversation_definitions": "conversation_definitions.json", "conversation_nodes": "conversation_nodes.json", "conversation_choices": "conversation_choices.json", "conversation_conditions": "conversation_conditions.json", "conversation_actions": "conversation_actions.json", "quest_message_profiles": "quest_message_profiles.json", "quest_time_limit_profiles": "quest_time_limit_profiles.json", "world_state_definitions": "world_state_definitions.json", "organization_definitions": "organization_definitions.json", "organization_roles": "organization_roles.json", "organization_membership_policies": "organization_membership_policies.json", "organization_invitation_policies": "organization_invitation_policies.json", "organization_application_policies": "organization_application_policies.json", "organization_leadership_policies": "organization_leadership_policies.json", "organization_permission_profiles": "organization_permission_profiles.json", "organization_communication_profiles": "organization_communication_profiles.json", "organization_group_combat_profiles": "organization_group_combat_profiles.json", "organization_shared_quest_profiles": "organization_shared_quest_profiles.json", "organization_reward_profiles": "organization_reward_profiles.json", "organization_relationship_profiles": "organization_relationship_profiles.json", "organization_seeds": "organization_seeds.json", "organization_message_profiles": "organization_message_profiles.json", "faction_definitions": "faction_definitions.json", "faction_reputation_profiles": "faction_reputation_profiles.json", "faction_standing_tier_profiles": "faction_standing_tier_profiles.json", "faction_membership_reputation_policies": "faction_membership_reputation_policies.json", "faction_diplomacy_profiles": "faction_diplomacy_profiles.json", "faction_hostility_profiles": "faction_hostility_profiles.json", "faction_access_profiles": "faction_access_profiles.json", "faction_guard_response_profiles": "faction_guard_response_profiles.json", "faction_economy_modifier_profiles": "faction_economy_modifier_profiles.json", "faction_reward_profiles": "faction_reward_profiles.json", "faction_reputation_decay_profiles": "faction_reputation_decay_profiles.json", "faction_combat_reputation_profiles": "faction_combat_reputation_profiles.json", "faction_title_profiles": "faction_title_profiles.json", "faction_message_profiles": "faction_message_profiles.json", "trainer_definitions": "trainer_definitions.json", "training_offer_definitions": "training_offer_definitions.json", "training_requirement_profiles": "training_requirement_profiles.json", "training_cost_profiles": "training_cost_profiles.json", "training_result_profiles": "training_result_profiles.json", "trainer_availability_profiles": "trainer_availability_profiles.json", "class_track_training_profiles": "class_track_training_profiles.json", "advancement_conversion_profiles": "advancement_conversion_profiles.json", "respec_profiles": "respec_profiles.json", "training_refund_profiles": "training_refund_profiles.json", "training_cooldown_profiles": "training_cooldown_profiles.json", "training_message_profiles": "training_message_profiles.json", "written_document_definitions": "written_document_definitions.json", "written_content_profiles": "written_content_profiles.json", "written_content_pages": "written_content_pages.json", "written_access_profiles": "written_access_profiles.json", "written_retention_profiles": "written_retention_profiles.json", "written_render_profiles": "written_render_profiles.json", "written_sanitization_profiles": "written_sanitization_profiles.json", "mail_service_profiles": "mail_service_profiles.json", "bulletin_board_definitions": "bulletin_board_definitions.json", "bulletin_posting_profiles": "bulletin_posting_profiles.json", "written_moderation_profiles": "written_moderation_profiles.json", "written_message_profiles": "written_message_profiles.json", "readable_item_profiles": "readable_item_profiles.json", "journal_profiles": "journal_profiles.json", "book_profiles": "book_profiles.json"
+    "features": "features.json", "items": "item_templates.json", "item_placements": "item_placements.json", "entities": "entity_templates.json", "spawns": "spawns.json", "resets": "resets.json", "schedules": "schedules.json", "relationship_seeds": "relationship_seeds.json", "memory_seeds": "memory_seeds.json", "need_profiles": "need_profiles.json", "goal_profiles": "goal_profiles.json", "formulas": "formulas.json", "modifier_types": "modifier_types.json", "future_formula_templates": "future_formula_templates.json", "abilities": "abilities.json", "ability_loadouts": "ability_loadouts.json", "ability_schools": "ability_schools.json", "ability_categories": "ability_categories.json", "cooldown_groups": "cooldown_groups.json", "targeting_profiles": "targeting_profiles.json", "healing_profiles": "healing_profiles.json", "casting_profiles": "casting_profiles.json", "combat_behavior_profiles": "combat_behavior_profiles.json", "threat_profiles": "threat_profiles.json", "aggression_profiles": "aggression_profiles.json", "assist_profiles": "assist_profiles.json", "flee_profiles": "flee_profiles.json", "surrender_profiles": "surrender_profiles.json", "pursuit_profiles": "pursuit_profiles.json", "combat_groups": "combat_groups.json", "combat_action_rules": "combat_action_rules.json", "recipe_definitions": "recipe_definitions.json", "workstation_profiles": "workstation_profiles.json", "production_profiles": "production_profiles.json", "item_quality_profiles": "item_quality_profiles.json", "crafting_quality_profiles": "crafting_quality_profiles.json", "ingredient_substitution_profiles": "ingredient_substitution_profiles.json", "crafting_message_profiles": "crafting_message_profiles.json", "profession_experience_curves": "profession_experience_curves.json", "profession_growth_profiles": "profession_growth_profiles.json", "quest_definitions": "quest_definitions.json", "quest_series": "quest_series.json", "quest_chapters": "quest_chapters.json", "quest_stages": "quest_stages.json", "quest_objectives": "quest_objectives.json", "quest_availability_profiles": "quest_availability_profiles.json", "quest_acceptance_profiles": "quest_acceptance_profiles.json", "quest_repeat_policies": "quest_repeat_policies.json", "quest_failure_profiles": "quest_failure_profiles.json", "quest_abandon_profiles": "quest_abandon_profiles.json", "quest_sharing_profiles": "quest_sharing_profiles.json", "quest_action_definitions": "quest_action_definitions.json", "conversation_definitions": "conversation_definitions.json", "conversation_nodes": "conversation_nodes.json", "conversation_choices": "conversation_choices.json", "conversation_conditions": "conversation_conditions.json", "conversation_actions": "conversation_actions.json", "quest_message_profiles": "quest_message_profiles.json", "quest_time_limit_profiles": "quest_time_limit_profiles.json", "world_state_definitions": "world_state_definitions.json", "organization_definitions": "organization_definitions.json", "organization_roles": "organization_roles.json", "organization_membership_policies": "organization_membership_policies.json", "organization_invitation_policies": "organization_invitation_policies.json", "organization_application_policies": "organization_application_policies.json", "organization_leadership_policies": "organization_leadership_policies.json", "organization_permission_profiles": "organization_permission_profiles.json", "organization_communication_profiles": "organization_communication_profiles.json", "organization_group_combat_profiles": "organization_group_combat_profiles.json", "organization_shared_quest_profiles": "organization_shared_quest_profiles.json", "organization_reward_profiles": "organization_reward_profiles.json", "organization_relationship_profiles": "organization_relationship_profiles.json", "organization_seeds": "organization_seeds.json", "organization_message_profiles": "organization_message_profiles.json", "faction_definitions": "faction_definitions.json", "faction_reputation_profiles": "faction_reputation_profiles.json", "faction_standing_tier_profiles": "faction_standing_tier_profiles.json", "faction_membership_reputation_policies": "faction_membership_reputation_policies.json", "faction_diplomacy_profiles": "faction_diplomacy_profiles.json", "faction_hostility_profiles": "faction_hostility_profiles.json", "faction_access_profiles": "faction_access_profiles.json", "faction_guard_response_profiles": "faction_guard_response_profiles.json", "faction_economy_modifier_profiles": "faction_economy_modifier_profiles.json", "faction_reward_profiles": "faction_reward_profiles.json", "faction_reputation_decay_profiles": "faction_reputation_decay_profiles.json", "faction_combat_reputation_profiles": "faction_combat_reputation_profiles.json", "faction_title_profiles": "faction_title_profiles.json", "faction_message_profiles": "faction_message_profiles.json", "trainer_definitions": "trainer_definitions.json", "training_offer_definitions": "training_offer_definitions.json", "training_requirement_profiles": "training_requirement_profiles.json", "training_cost_profiles": "training_cost_profiles.json", "training_result_profiles": "training_result_profiles.json", "trainer_availability_profiles": "trainer_availability_profiles.json", "class_track_training_profiles": "class_track_training_profiles.json", "advancement_conversion_profiles": "advancement_conversion_profiles.json", "respec_profiles": "respec_profiles.json", "training_refund_profiles": "training_refund_profiles.json", "training_cooldown_profiles": "training_cooldown_profiles.json", "training_message_profiles": "training_message_profiles.json", "written_document_definitions": "written_document_definitions.json", "written_content_profiles": "written_content_profiles.json", "written_content_pages": "written_content_pages.json", "written_access_profiles": "written_access_profiles.json", "written_retention_profiles": "written_retention_profiles.json", "written_render_profiles": "written_render_profiles.json", "written_sanitization_profiles": "written_sanitization_profiles.json", "mail_service_profiles": "mail_service_profiles.json", "bulletin_board_definitions": "bulletin_board_definitions.json", "bulletin_posting_profiles": "bulletin_posting_profiles.json", "written_moderation_profiles": "written_moderation_profiles.json", "written_message_profiles": "written_message_profiles.json", "readable_item_profiles": "readable_item_profiles.json", "journal_profiles": "journal_profiles.json", "book_profiles": "book_profiles.json"
 }
 
 COOKING_COLLECTION_FILES = {
@@ -313,9 +314,25 @@ class BuilderWorkspace:
                 path.write_text(json.dumps(starters.get(key, {}), indent=2, sort_keys=True) + "\n", encoding="utf-8")
         return root
 
+    def _coerce_draft_collection(self, key: str, filename: str, raw: Any) -> dict[str, Any]:
+        if not isinstance(raw, dict):
+            return {}
+        wrapper_keys = {key, filename[:-5] if filename.endswith(".json") else filename}
+        if key == "items":
+            wrapper_keys.add("item_templates")
+        for wrapper in wrapper_keys:
+            nested = raw.get(wrapper)
+            if isinstance(nested, dict):
+                return nested
+            if isinstance(nested, list):
+                return {str(x.get("id")): x for x in nested if isinstance(x, dict) and x.get("id")}
+        if raw.get("id"):
+            return {str(raw["id"]): raw}
+        return raw
+
     def load(self, world_id: str) -> dict[str, Any]:
         root = self.ensure(world_id)
-        drafts = {key: self._read(root / filename, {}) for key, filename in DRAFT_FILES.items()}
+        drafts = {key: self._coerce_draft_collection(key, filename, self._read(root / filename, {})) for key, filename in DRAFT_FILES.items()}
         changed = self.normalize_drafts(world_id, drafts)
         if changed:
             self.save_drafts(world_id, drafts)
@@ -333,6 +350,8 @@ class BuilderWorkspace:
         record.setdefault("zone_ids", []); record.setdefault("flags", []); record.setdefault("tags", []); record.setdefault("plugin_data", {})
         record.setdefault("created_at", now); record.setdefault("updated_at", record.get("created_at") or now)
         ordered = {k: record.get(k) for k in ("id","name","description","world_id","vnum_start","vnum_end","room_vnum_start","room_vnum_end","object_vnum_start","object_vnum_end","mob_vnum_start","mob_vnum_end","spawn_vnum_start","spawn_vnum_end","zone_ids","flags","tags","plugin_data","created_at","updated_at")}
+        for k, v in record.items():
+            if k not in ordered: ordered[k] = v
         return ordered, ordered != original
 
     def normalize_zone(self, world_id: str, zone_id: str, zone: Any) -> tuple[dict[str, Any], bool]:
@@ -345,6 +364,8 @@ class BuilderWorkspace:
         record.setdefault("flags", []); record.setdefault("tags", []); record.setdefault("plugin_data", {})
         record.setdefault("created_at", now); record.setdefault("updated_at", record.get("created_at") or now)
         ordered = {k: record.get(k) for k in ("id","name","description","world_id","area_id","vnum_start","vnum_end","room_ids","flags","tags","plugin_data","created_at","updated_at")}
+        for k, v in record.items():
+            if k not in ordered: ordered[k] = v
         return ordered, ordered != original
 
     def normalize_room(self, world_id: str, room_id: str, room: Any) -> tuple[dict[str, Any], bool]:
@@ -369,6 +390,7 @@ class BuilderWorkspace:
 
     def normalize_drafts(self, world_id: str, drafts: dict[str, Any], actor: Any | None = None) -> bool:
         changed = False
+        drafts.setdefault("world", {})
         areas = drafts.setdefault("areas", {})
         for area_id in list(areas.keys()):
             normalized, did = self.normalize_area(world_id, str(area_id), areas[area_id])
@@ -395,6 +417,86 @@ class BuilderWorkspace:
         root = self.ensure(world_id)
         for key, filename in DRAFT_FILES.items():
             (root / filename).write_text(json.dumps(drafts.get(key, {}), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    def _atomic_json_write(self, path: Path, data: Any) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        tmp.replace(path)
+
+    def publish_drafts(self, actor: Any) -> BuilderResult:
+        """Transactionally publish Builder display drafts to canonical package files."""
+        world_id = self.world_id(actor)
+        drafts = self.load(world_id)
+        world_root = self.worlds_dir / world_id
+        from engine.display_themes import SUPPORTED_FAMILIES, validate_display_theme
+        from engine.mud_displays import PROMPT_PRESETS
+
+        errors: list[str] = []
+        theme_drafts = drafts.get("display_themes") or {}
+        if not isinstance(theme_drafts, dict):
+            errors.append("display_themes draft must be an object keyed by theme id")
+            theme_drafts = {}
+        candidate_themes: list[dict[str, Any]] = []
+        theme_ids: set[str] = set()
+        for key, raw in sorted(theme_drafts.items()):
+            if not isinstance(raw, dict):
+                errors.append(f"display theme {key} must be an object")
+                continue
+            rec = deepcopy(raw)
+            tid = str(rec.get("theme_id") or rec.get("id") or key or "").strip()
+            if not tid:
+                errors.append(f"display theme {key} is missing theme_id")
+                continue
+            rec["theme_id"] = tid
+            rec.setdefault("name", tid.replace("_", " ").title())
+            theme_ids.add(tid)
+            for err in validate_display_theme(rec):
+                errors.append(f"display theme {tid}: {err}")
+            candidate_themes.append(rec)
+
+        def _check_assignment(scope: str, object_id: str, record: dict[str, Any]) -> None:
+            one = str(record.get("display_theme_id") or "")
+            if one and one not in theme_ids:
+                errors.append(f"{scope} {object_id} display_theme_id references missing theme {one}")
+            fams = record.get("display_theme_ids") or {}
+            if fams and not isinstance(fams, dict):
+                errors.append(f"{scope} {object_id} display_theme_ids must be an object")
+                return
+            for family, theme_id in fams.items():
+                if str(family) not in SUPPORTED_FAMILIES:
+                    errors.append(f"{scope} {object_id} has unsupported display family {family}")
+                if str(theme_id) not in theme_ids:
+                    errors.append(f"{scope} {object_id} display_theme_ids.{family} references missing theme {theme_id}")
+
+        world_meta_by_id = drafts.get("world") if isinstance(drafts.get("world"), dict) else {}
+        world_meta = deepcopy(world_meta_by_id.get(world_id) if isinstance(world_meta_by_id.get(world_id), dict) else world_meta_by_id)
+        default_theme = str(world_meta.get("default_display_theme_id") or "")
+        if default_theme and default_theme not in theme_ids:
+            errors.append(f"world default_display_theme_id references missing theme {default_theme}")
+        prompt_preset = str(world_meta.get("default_prompt_preset") or "")
+        if prompt_preset and prompt_preset not in PROMPT_PRESETS and not any(prompt_preset in (t.get("prompt_presets") or {}) for t in candidate_themes):
+            errors.append(f"world default_prompt_preset references missing prompt preset {prompt_preset}")
+        _check_assignment("world", world_id, world_meta)
+        for area_id, area in (drafts.get("areas") or {}).items():
+            if isinstance(area, dict): _check_assignment("area", str(area_id), area)
+        for zone_id, zone in (drafts.get("zones") or {}).items():
+            if isinstance(zone, dict): _check_assignment("zone", str(zone_id), zone)
+
+        if errors:
+            return BuilderResult(False, "Builder publish failed.\n" + "\n".join(f"- {e}" for e in errors), {"errors": errors})
+
+        writes = [
+            (world_root / "display_themes" / "display_themes.json", {"display_themes": candidate_themes}),
+            (world_root / "world" / "world.json", world_meta),
+            (world_root / "areas" / "areas.json", list((drafts.get("areas") or {}).values())),
+            (world_root / "zones" / "zones.json", list((drafts.get("zones") or {}).values())),
+        ]
+        for path, data in writes:
+            self._atomic_json_write(path, data)
+        self.audit(actor, world_id, "builder publish", "display_theme", world_id, None, {"themes": sorted(theme_ids)})
+        self.publish("builder_publish_completed", actor, world_id, "display_theme", world_id, command="builder publish")
+        return BuilderResult(True, "Display theme changes were published. Reload the world or restart Smart MUD to apply them.")
 
     def current_room_id(self, actor: Any) -> str:
         return str(getattr(actor, "edit_room_id", "") or getattr(actor, "last_edited_target", "") or getattr(actor, "room_id", "") or getattr(actor, "current_room_id", "") or "start")
@@ -458,6 +560,20 @@ class BuilderWorkspace:
             for a2, two in area_items[i+1:]:
                 if None not in (one.get("vnum_start"), one.get("vnum_end"), two.get("vnum_start"), two.get("vnum_end")) and int(one["vnum_start"]) <= int(two["vnum_end"]) and int(two["vnum_start"]) <= int(one["vnum_end"]):
                     errors.append(f"area vnum ranges overlap: {a1} and {a2}")
+        theme_ids = {str((r or {}).get("theme_id") or (r or {}).get("id")) for r in _records(self.worlds_dir / world_id, "display_themes") if isinstance(r, dict)} | {"classic_adventurer", "minimal_modern"}
+        families = {"score","worth","inventory","equipment","affects","skills","spells","abilities","cooldowns","prompt","quest_log","shop","board","trainer","help"}
+        wmeta = (drafts.get("world") or {}).get(world_id, {}) if isinstance(drafts.get("world"), dict) else {}
+        if wmeta.get("default_display_theme_id") and str(wmeta.get("default_display_theme_id")) not in theme_ids: errors.append(f"world default_display_theme_id references missing theme {wmeta.get('default_display_theme_id')}")
+        for aid, area in areas.items():
+            if area.get("display_theme_id") and str(area.get("display_theme_id")) not in theme_ids: errors.append(f"area {aid} references missing display theme {area.get('display_theme_id')}")
+            for fam, tid in (area.get("display_theme_ids") or {}).items():
+                if fam not in families: errors.append(f"area {aid} invalid display family {fam}")
+                if str(tid) not in theme_ids: errors.append(f"area {aid} family {fam} references missing display theme {tid}")
+        for zid, zone in zones.items():
+            if zone.get("display_theme_id") and str(zone.get("display_theme_id")) not in theme_ids: errors.append(f"zone {zid} references missing display theme {zone.get('display_theme_id')}")
+            for fam, tid in (zone.get("display_theme_ids") or {}).items():
+                if fam not in families: errors.append(f"zone {zid} invalid display family {fam}")
+                if str(tid) not in theme_ids: errors.append(f"zone {zid} family {fam} references missing display theme {tid}")
         for zid, zone in zones.items():
             if not safe_re.fullmatch(str(zid)): errors.append(f"zone {zid} has unsafe id")
             aid = zone.get("area_id")
@@ -535,6 +651,17 @@ class BuilderWorkspace:
                     elif str(rtarget) != str(rid): errors.append(f"room {rid} exit {d} reverse {rev} points to wrong room {rtarget}")
             for fid, feat in (room.get("features") or {}).items():
                 if not feat.get("name"): errors.append(f"feature {fid} missing name")
+        try:
+            from engine.schedules import ScheduleService
+            validator = ScheduleService(db_path=":memory:", world_id=world_id)
+            for sid, schedule in drafts.get("schedules", {}).items():
+                schedule_data = dict(schedule or {})
+                schedule_data.setdefault("id", str(sid))
+                for err in validator.validate_schedule(schedule_data):
+                    errors.append(f"schedule {sid}: {err}")
+        except Exception as exc:
+            warnings.append(f"schedule validation unavailable: {exc}")
+
         for iid, item in drafts["items"].items():
             if not item.get("name"): errors.append(f"item {iid} missing name")
             for slot in item.get("wear_slots", []) if isinstance(item.get("wear_slots", []), list) else []:

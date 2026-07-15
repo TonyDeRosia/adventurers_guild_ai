@@ -1,0 +1,14 @@
+{
+  "postures": [
+    {"posture_id":"standing","name":"Standing","attack_accuracy_modifier":0,"defense_evasion_modifier":0,"critical_modifier":0,"damage_taken_modifier":0,"movement_allowed":true,"attack_allowed":true,"cast_allowed":true,"automatic_hit_against":false,"wake_on_damage":false,"tags":[],"enabled":true},
+    {"posture_id":"fighting","name":"Fighting","attack_accuracy_modifier":0,"defense_evasion_modifier":0,"critical_modifier":0,"damage_taken_modifier":0,"movement_allowed":true,"attack_allowed":true,"cast_allowed":true,"automatic_hit_against":false,"wake_on_damage":false,"tags":["combat"],"enabled":true},
+    {"posture_id":"sitting","name":"Sitting","attack_accuracy_modifier":-10,"defense_evasion_modifier":-10,"critical_modifier":0,"damage_taken_modifier":0,"movement_allowed":false,"attack_allowed":true,"cast_allowed":true,"automatic_hit_against":false,"wake_on_damage":false,"tags":[],"enabled":true},
+    {"posture_id":"resting","name":"Resting","attack_accuracy_modifier":-20,"defense_evasion_modifier":-20,"critical_modifier":5,"damage_taken_modifier":0,"movement_allowed":false,"attack_allowed":false,"cast_allowed":false,"automatic_hit_against":false,"wake_on_damage":true,"tags":[],"enabled":true},
+    {"posture_id":"sleeping","name":"Sleeping","attack_accuracy_modifier":-100,"defense_evasion_modifier":-100,"critical_modifier":25,"damage_taken_modifier":10,"movement_allowed":false,"attack_allowed":false,"cast_allowed":false,"automatic_hit_against":true,"wake_on_damage":true,"tags":["helpless"],"enabled":true},
+    {"posture_id":"stunned","name":"Stunned","attack_accuracy_modifier":-50,"defense_evasion_modifier":-50,"critical_modifier":10,"damage_taken_modifier":5,"movement_allowed":false,"attack_allowed":false,"cast_allowed":false,"automatic_hit_against":false,"wake_on_damage":false,"tags":["disabled"],"enabled":true},
+    {"posture_id":"unconscious","name":"Unconscious","attack_accuracy_modifier":-100,"defense_evasion_modifier":-100,"critical_modifier":25,"damage_taken_modifier":10,"movement_allowed":false,"attack_allowed":false,"cast_allowed":false,"automatic_hit_against":true,"wake_on_damage":false,"tags":["helpless"],"enabled":true},
+    {"posture_id":"incapacitated","name":"Incapacitated","attack_accuracy_modifier":-100,"defense_evasion_modifier":-100,"critical_modifier":25,"damage_taken_modifier":10,"movement_allowed":false,"attack_allowed":false,"cast_allowed":false,"automatic_hit_against":true,"wake_on_damage":false,"tags":["helpless"],"enabled":true},
+    {"posture_id":"dead","name":"Dead","attack_accuracy_modifier":-100,"defense_evasion_modifier":-100,"critical_modifier":0,"damage_taken_modifier":0,"movement_allowed":false,"attack_allowed":false,"cast_allowed":false,"automatic_hit_against":false,"wake_on_damage":false,"tags":["dead"],"enabled":true}
+  ],
+  "unknown_posture_policy": {"attack_allowed": false, "cast_allowed": false, "movement_allowed": false, "defense_evasion_modifier": -25}
+}

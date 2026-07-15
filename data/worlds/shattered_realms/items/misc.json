@@ -29,7 +29,15 @@
     "description": "old gate shard for beginner Smart MUD play.",
     "tags": [
       "starter"
-    ]
+    ],
+    "keywords": [
+      "shard",
+      "gate shard",
+      "old gate shard"
+    ],
+    "short_description": "A broken shard from the Old Gate",
+    "look_description": "A dark splinter of old gate metal, cold despite the air.",
+    "examine_description": "Its fractured edge glints with stress marks from a powerful impact."
   },
   {
     "id": "rat_tail",
@@ -45,7 +53,14 @@
     "description": "rat tail for beginner Smart MUD play.",
     "tags": [
       "starter"
-    ]
+    ],
+    "keywords": [
+      "tail",
+      "rat tail"
+    ],
+    "short_description": "A wiry rat tail",
+    "look_description": "A wiry rat tail, proof of a cellar kill.",
+    "examine_description": "The tail is stiff and unpleasant, but recognizable enough for a bounty."
   },
   {
     "id": "suspicious_ledger",
@@ -65,7 +80,7 @@
   },
   {
     "id": "guild_token",
-    "name": "guild token",
+    "name": "Guild Token",
     "type": "quest",
     "slot": "none",
     "rarity": "common",
@@ -77,11 +92,20 @@
     "description": "guild token for beginner Smart MUD play.",
     "tags": [
       "starter"
-    ]
+    ],
+    "keywords": [
+      "token",
+      "guild token"
+    ],
+    "room_description": "A small guild token lies here.",
+    "short_description": "A small guild token",
+    "look_description": "A palm-sized brass token stamped with the Adventurers Guild crest.",
+    "examine_description": "The crest is worn smooth at the edges from many anxious thumbs.",
+    "identify_description": "A mundane guild credential used for starter training records."
   },
   {
     "id": "old_gate",
-    "name": "old gate",
+    "name": "Old Gate",
     "type": "quest",
     "slot": "none",
     "rarity": "common",
@@ -93,11 +117,19 @@
     "description": "old gate for beginner Smart MUD play.",
     "tags": [
       "starter"
-    ]
+    ],
+    "keywords": [
+      "gate",
+      "old gate"
+    ],
+    "room_description": "The Old Gate looms over the road.",
+    "short_description": "Old Gate",
+    "look_description": "An old iron-bound gate stands watch over the road beyond the square.",
+    "examine_description": "Rust freckles the hinges, but the stone posts remain solid. Scratches around the latch show years of hurried passage."
   },
   {
     "id": "fountain",
-    "name": "fountain",
+    "name": "Fountain",
     "type": "quest",
     "slot": "none",
     "rarity": "common",
@@ -109,11 +141,27 @@
     "description": "fountain for beginner Smart MUD play.",
     "tags": [
       "starter"
-    ]
+    ],
+    "keywords": [
+      "fountain",
+      "water",
+      "basin"
+    ],
+    "room_description": "A weathered stone fountain burbles in the square.",
+    "short_description": "Fountain",
+    "look_description": "A weathered stone fountain stands in the center of the square. Clear water spills from its carved basin.\n\nThe water appears clean.",
+    "examine_description": "Age has softened the carved figures around the basin. The water is clear, and no foul odor rises from it.",
+    "interaction_hints": [
+      "You could drink from it."
+    ],
+    "drinkable": true,
+    "default_interactions": {
+      "drink": "You drink cool, clean water from the fountain."
+    }
   },
   {
     "id": "notice_board",
-    "name": "notice board",
+    "name": "Notice Board",
     "type": "quest",
     "slot": "none",
     "rarity": "common",
@@ -125,6 +173,16 @@
     "description": "notice board for beginner Smart MUD play.",
     "tags": [
       "starter"
-    ]
+    ],
+    "keywords": [
+      "board",
+      "notice board",
+      "notices"
+    ],
+    "room_description": "A notice board is crowded with curling scraps of parchment.",
+    "short_description": "Notice Board",
+    "look_description": "A public notice board stands near the square, pinned with guild notices and local warnings.",
+    "examine_description": "Several notices are weather-stained, but the newest sheet bears the guild seal.",
+    "readable_text": "Posted notices: New adventurers should report to the training yard and carry clean water before leaving town."
   }
 ]

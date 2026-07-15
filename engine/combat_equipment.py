@@ -125,6 +125,12 @@ class CombatContentRegistry:
                 data = self.weapon_attack_data(natural)
                 data["weapon"] = natural
                 return data
+        # Authored starter-creature fallback: never silently use fists for known non-humanoid creatures.
+        name = str(getattr(getattr(actor, "identity", None), "name", "") or "").lower()
+        table = {"giant wood spider": ("spider_fangs", "fangs", "poison", 4), "forest wolf": ("wolf_bite", "bite", "pierce", 4), "dire forest wolf": ("dire_wolf_fangs", "fangs", "pierce", 7), "emberwood fox": ("fox_bite", "bite", "pierce", 2), "wild boar": ("boar_gore", "gore", "pierce", 5), "ashback bear": ("bear_claws", "claws", "slash", 8), "emberwood stag": ("stag_gore", "gore", "pierce", 3)}
+        if name in table:
+            nid, noun, dtype, base = table[name]
+            return {"id": nid, "name": noun, "damage_type": dtype, "base_damage": base, "speed": 1, "reach": 1, "critical_multiplier": 2.0, "weapon": {"id": nid, "name": noun}, "attack_profile_record": {"id": noun, "name": noun}, "damage_profile_record": {"damage_types": [dtype], "base_damage": base}, "critical_profile_record": {"multiplier": 2.0}}
         return None
 
     def armor_value(self, equipment: dict[str, Any]) -> int:

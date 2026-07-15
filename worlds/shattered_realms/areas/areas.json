@@ -85,9 +85,9 @@
   },
   {
     "id": "emberwood_edge",
-    "name": "Emberwood Edge",
+    "name": "Emberwood Forest",
     "world_id": "shattered_realms",
-    "description": "Emberwood Edge beginner area.",
+    "description": "Emberwood Forest is the level 1 to 5 beginner woodland north of Old Gate Road.",
     "reset_enabled": true,
     "reset_interval_minutes": 30,
     "reset_mode": "empty_only",

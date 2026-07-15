@@ -164,6 +164,10 @@ class Actor:
     derived_statistics_cache: dict[str, DerivedStatistic] = field(default_factory=dict)
     builder_metadata: dict[str, Any] = field(default_factory=dict)
     plugin_data: dict[str, Any] = field(default_factory=dict)
+    resident_actor_generation: int = 0
+    resident_actor_source: str = ""
+    resident_actor_owner: str = ""
+    resident_actor_version: int = 0
 
     @classmethod
     def create(cls, actor_id: str, name: str, actor_type: str = "actor", **overrides: Any) -> "Actor":
@@ -209,6 +213,39 @@ class Actor:
         return cls(identity=identity, resources=resources, derived_statistics_cache=derived, **{k: v for k, v in data.items() if k in cls.__dataclass_fields__ and k not in {"identity", "resources", "derived_statistics_cache"}})
 
 
+
+class ActorRegistry:
+    """Canonical live Actor registry shared by runtime services."""
+
+    def __init__(self) -> None:
+        self.actors: dict[str, Actor] = {}
+
+    def register(self, actor: Actor) -> Actor:
+        existing = self.actors.get(actor.actor_id)
+        if existing is not None and existing is not actor:
+            # Detect duplicate live registrations without creating another
+            # writable authority.  Existing callers often construct adapter
+            # projections for help/ability checks; those attach to the
+            # resident actor instead of replacing it.
+            existing.resident_actor_version += 1
+            return existing
+        actor.resident_actor_version += 1
+        self.actors[actor.actor_id] = actor
+        return actor
+
+    def get(self, actor_id: str) -> Actor | None:
+        return self.actors.get(actor_id)
+
+    def require(self, actor_id: str) -> Actor:
+        actor = self.get(actor_id)
+        if actor is None:
+            raise KeyError(actor_id)
+        return actor
+
+    def unregister(self, actor_id: str) -> None:
+        self.actors.pop(actor_id, None)
+
+
 def default_derived_statistics(extra: dict[str, str] | None = None) -> dict[str, DerivedStatistic]:
     stats = dict(DERIVED_STAT_FORMULAS)
     stats.update(extra or {})
@@ -216,11 +253,27 @@ def default_derived_statistics(extra: dict[str, str] | None = None) -> dict[str,
 
 
 def actor_from_runtime_character(character: Any, world_id: str = "") -> Actor:
+    """Convert a persisted MudCharacter into its canonical live Actor.
+
+    Legacy saves may contain actor_data.actor_id values such as ``actor`` or a
+    name-derived id.  For player characters the owning MudCharacter id is the
+    only authoritative live actor id; persisted actor_data may contribute safe
+    mutable state but must never override that identity.
+    """
+    character_id = str(getattr(character, "id", "") or "actor")
     actor_data = getattr(character, "actor_data", None)
-    if isinstance(actor_data, dict) and actor_data.get("actor_id"):
-        actor = Actor.from_dict(actor_data)
+    migrated_from = ""
+    if isinstance(actor_data, dict) and actor_data:
+        migrated_from = str(actor_data.get("actor_id") or "")
+        try:
+            actor = Actor.from_dict({**actor_data, "actor_id": character_id, "actor_type": "player"})
+        except Exception:
+            actor = Actor.create(character_id, getattr(character, "name", "Unnamed"), "player")
+            actor.plugin_data.setdefault("actor_data_migration", {})["malformed_actor_data_repaired"] = True
     else:
-        actor = Actor.create(getattr(character, "id", "actor"), getattr(character, "name", "Unnamed"), "player")
+        actor = Actor.create(character_id, getattr(character, "name", "Unnamed"), "player")
+    actor.actor_id = character_id
+    actor.actor_type = "player"
     actor.identity.name = getattr(character, "name", actor.identity.name)
     actor.identity.current_location = getattr(character, "room_id", "") or actor.identity.current_location
     actor.identity.current_world = world_id or actor.identity.current_world
@@ -235,7 +288,14 @@ def actor_from_runtime_character(character: Any, world_id: str = "") -> Actor:
     actor.effect_container.setdefault("affects", getattr(character, "affects", {}) or {})
     actor.builder_metadata.setdefault("role", getattr(character, "role", "player"))
     actor.builder_metadata.setdefault("account_role", getattr(character, "account_role", "player"))
+    actor.builder_metadata["character_id"] = character_id
+    actor.builder_metadata["actor_data_schema_version"] = 2
     actor.plugin_data.setdefault("currencies", {"gold": getattr(character, "gold", 0)})
+    migration = actor.plugin_data.setdefault("actor_data_migration", {})
+    migration["canonical_actor_id"] = character_id
+    if migrated_from and migrated_from != character_id:
+        migration["migrated_from_actor_id"] = migrated_from
+    migration["version"] = 2
     if not actor.derived_statistics_cache:
         actor.derived_statistics_cache = default_derived_statistics()
     return actor

@@ -3,17 +3,55 @@ from __future__ import annotations
 import html, re
 from typing import Any
 
-SEMANTIC_COLOR_ROLES = ["object_title","object_description","object_interaction","usage","placeholder","feature","entity_title","entity_description","direction","room_name","area_name","room_description","exit","npc","mob","npc_friendly","npc_neutral","npc_hostile","monster","player","object","item_common","item_uncommon","item_rare","item_epic","item_legendary","command_echo","system","error","warning","success","combat","damage","healing","spell","skill","magic","quest","score_label","score_value","equipment_slot","equipment_item","gold","hp","mp","stamina","dialogue","prompt","input","prompt_marker","prompt_hp","prompt_mana","prompt_stamina","prompt_xp","prompt_gold"]
+SEMANTIC_COLOR_ROLES = ["object_title","object_description","object_interaction","usage","placeholder","feature","entity_title","entity_description","direction","room_name","area_name","room_description","content","contents_heading","exit","npc","mob","npc_friendly","npc_neutral","npc_hostile","monster","player","object","item_common","item_uncommon","item_rare","item_epic","item_legendary","command_echo","system","error","warning","success","combat","damage","healing","spell","skill","magic","quest","score_label","score_value","ability_list_header","character_frame","character_title","character_section","character_label","character_value","character_positive","character_negative","character_muted","equipment_slot","equipment_item","equipment_empty","gold","hp","mp","stamina","dialogue","prompt","input","prompt_marker","prompt_hp","prompt_mana","prompt_stamina","prompt_xp","prompt_gold","prompt_alignment","prompt_position","prompt_target","prompt_area","prompt_time"]
 PRESETS = {
- "Classic MUD": {r: "#d8dee9" for r in SEMANTIC_COLOR_ROLES},
- "Green Terminal": {r: "#33ff66" for r in SEMANTIC_COLOR_ROLES},
- "Amber Terminal": {r: "#ffbf00" for r in SEMANTIC_COLOR_ROLES},
- "Dark Fantasy": {**{r: "#c9b79c" for r in SEMANTIC_COLOR_ROLES}, "room_name":"#f2d27c", "exit":"#87ceeb", "npc_friendly":"#9be28f", "npc_hostile":"#ff6b6b", "magic":"#b48cff", "prompt_hp":"#ff7777", "prompt_mana":"#7aa2ff", "prompt_stamina":"#ffd166", "prompt_gold":"#ffd700"},
- "High Contrast": {r: "#ffffff" for r in SEMANTIC_COLOR_ROLES},
- "Colorblind Friendly": {**{r: "#e6e6e6" for r in SEMANTIC_COLOR_ROLES}, "exit":"#56b4e9", "magic":"#cc79a7", "prompt_gold":"#f0e442", "damage":"#d55e00", "healing":"#009e73"},
+ "Classic MUD": {**{r: "#d8dee9" for r in SEMANTIC_COLOR_ROLES}, "ability_list_header":"#ffff55", "character_frame":"#3366ff", "character_title":"#ffd700", "character_label":"#00ffff", "character_value":"#ffffff", "character_positive":"#33ff66", "character_negative":"#ff5555", "character_muted":"#888888", "room_name":"#ffff00", "room_description":"#ffffff", "content":"#ffffff", "contents_heading":"#00ff00", "exit":"#00ff00", "equipment_slot":"#00ffff", "equipment_item":"#ffffff", "equipment_empty":"#777777", "prompt_hp":"#ff0000", "prompt_mana":"#0088ff", "prompt_stamina":"#ffd166", "prompt_gold":"#ffd700"},
+ "Green Terminal": {**{r: "#33ff66" for r in SEMANTIC_COLOR_ROLES}, "content":"#ffffff", "room_description":"#ffffff", "dialogue":"#ffffff", "equipment_slot":"#00ffff", "equipment_item":"#ffffff", "equipment_empty":"#777777", "prompt_hp":"#ff5555", "prompt_mana":"#5599ff", "prompt_stamina":"#ffd166", "prompt_gold":"#ffd700"},
+ "Amber Terminal": {**{r: "#ffbf00" for r in SEMANTIC_COLOR_ROLES}, "content":"#ffffff", "room_description":"#ffffff", "equipment_slot":"#00ffff", "equipment_item":"#ffffff", "equipment_empty":"#777777", "prompt_hp":"#ff5555", "prompt_mana":"#5599ff", "prompt_stamina":"#ffd166", "prompt_gold":"#ffd700"},
+ "Dark Fantasy": {**{r: "#c9b79c" for r in SEMANTIC_COLOR_ROLES}, "content":"#ffffff", "contents_heading":"#7ee787", "equipment_slot":"#00ffff", "equipment_item":"#ffffff", "equipment_empty":"#777777", "room_name":"#f2d27c", "exit":"#87ceeb", "npc_friendly":"#9be28f", "npc_hostile":"#ff6b6b", "magic":"#b48cff", "dialogue":"#ffffff", "prompt_hp":"#ff7777", "prompt_mana":"#7aa2ff", "prompt_stamina":"#ffd166", "prompt_gold":"#ffd700"},
+ "High Contrast": {**{r: "#ffffff" for r in SEMANTIC_COLOR_ROLES}, "ability_list_header":"#ffff00", "contents_heading":"#00ff00", "exit":"#00ff00", "equipment_slot":"#00ffff", "equipment_empty":"#aaaaaa", "prompt_hp":"#ff5555", "prompt_mana":"#5599ff", "prompt_stamina":"#ffff55"},
+ "Colorblind Friendly": {**{r: "#e6e6e6" for r in SEMANTIC_COLOR_ROLES}, "ability_list_header":"#f0e442", "content":"#ffffff", "equipment_slot":"#56b4e9", "equipment_item":"#ffffff", "equipment_empty":"#999999", "prompt_hp":"#d55e00", "prompt_mana":"#56b4e9", "prompt_stamina":"#f0e442", "exit":"#56b4e9", "magic":"#cc79a7", "prompt_gold":"#f0e442", "damage":"#d55e00", "healing":"#009e73"},
 }
 TAG_RE = re.compile(r"\{(/?)([a-z_]+)\}")
 PROMPT_TAG_RE = re.compile(r"\{/?prompt_[a-z_]+\}")
+
+MUD_COLOR_CODES = {"w":"white","W":"white","r":"red","R":"red","g":"green","G":"green","y":"yellow","Y":"yellow","b":"blue","B":"blue","m":"magenta","M":"magenta","c":"cyan","C":"cyan"}
+MUD_COLOR_TO_ANSI = {"white":"37","red":"31","green":"32","yellow":"33","blue":"34","magenta":"35","cyan":"36"}
+MUD_COLOR_RE = re.compile(r"&([wWrRgGyYbBmMcCnN])")
+UNSAFE_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+def validate_mud_color_markup(text: str) -> list[str]:
+    raw=str(text or ""); errors=[]
+    if UNSAFE_ANSI_RE.search(raw): errors.append("unsafe raw ANSI escape sequence")
+    if re.search(r"<\s*/?\s*(script|style|span|div|br|html|body)\b", raw, re.I): errors.append("embedded HTML is not allowed")
+    for bad in re.findall(r"&([^wWrRgGyYbBmMcCnN\s])", raw): errors.append(f"unsupported color token &{bad}")
+    if any((ord(ch)<32 and ch not in "\n\r\t") for ch in raw): errors.append("invalid control character")
+    return errors
+
+def strip_mud_color_markup(text: str) -> str:
+    return MUD_COLOR_RE.sub("", str(text or ""))
+
+def render_mud_color_html(text: str) -> str:
+    raw=UNSAFE_ANSI_RE.sub("", str(text or ""))
+    parts=[]; pos=0; open_span=False
+    for m in MUD_COLOR_RE.finditer(raw):
+        parts.append(html.escape(raw[pos:m.start()]))
+        code=m.group(1)
+        if open_span:
+            parts.append("</span>"); open_span=False
+        if code not in {"n","N"}:
+            color=MUD_COLOR_CODES[code]; parts.append(f'<span class="mud-color-{color}" data-mud-color="{color}">'); open_span=True
+        pos=m.end()
+    parts.append(html.escape(raw[pos:]))
+    if open_span: parts.append("</span>")
+    return "".join(parts).replace("\n","<br>")
+
+def render_mud_color_ansi(text: str) -> str:
+    raw=UNSAFE_ANSI_RE.sub("", str(text or ""))
+    def repl(m):
+        code=m.group(1)
+        return "\033[0m" if code in {"n","N"} else f"\033[{MUD_COLOR_TO_ANSI[MUD_COLOR_CODES[code]]}m"
+    return MUD_COLOR_RE.sub(repl, raw) + "\033[0m"
 
 def semantic(role: str, text: Any) -> str:
     role = role if role in SEMANTIC_COLOR_ROLES else "system"
@@ -34,7 +72,7 @@ def render_semantic_html(text: str, colors: dict[str, str] | None = None) -> str
     return TAG_RE.sub(repl, escaped).replace("\n", "<br>")
 
 def render_semantic_plain(text: str) -> str:
-    return TAG_RE.sub("", strip_prompt_block(text))
+    return strip_mud_color_markup(TAG_RE.sub("", strip_prompt_block(text)))
 
 def render_legacy_mud_room(room: dict[str, Any], world: dict[str, Any], player: dict[str, Any], *, npcs: list[dict[str, Any]] | None = None, objects: list[dict[str, Any]] | None = None, narrative: list[str] | None = None, corpses: list[dict[str, Any]] | None = None) -> str:
     npcs = [n for n in (npcs or []) if str(n.get("status", "alive")) == "alive"]; objects = objects or []; narrative = narrative or []; corpses = corpses or []

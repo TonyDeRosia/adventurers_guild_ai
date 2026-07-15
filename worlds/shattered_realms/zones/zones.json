@@ -1,1 +1,37 @@
-[]
+[
+  {
+    "id": "emberwood_forest",
+    "name": "Emberwood Forest",
+    "world_id": "shattered_realms",
+    "area_id": "emberwood_edge",
+    "description": "Connected level 1 to 5 Emberwood Forest starter zone.",
+    "room_ids": [
+      "emberwood_hunting_trail",
+      "emberwood_edge",
+      "emberwood_game_trail",
+      "forest_trail",
+      "fern_hollow",
+      "mossy_creek",
+      "fallen_oak",
+      "briar_thicket",
+      "fox_burrow",
+      "wolf_trail",
+      "woodland_camp",
+      "old_hunters_blind",
+      "deep_emberwood",
+      "spider_glade",
+      "wolf_den",
+      "ancient_ember_grove"
+    ],
+    "vnum_start": 1210,
+    "vnum_end": 1239,
+    "tags": [
+      "starter",
+      "emberwood_forest"
+    ],
+    "flags": [],
+    "reset_profile_ids": [
+      "emberwood_forest_population"
+    ]
+  }
+]

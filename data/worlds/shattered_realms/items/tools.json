@@ -65,7 +65,7 @@
   },
   {
     "id": "healers_kit",
-    "name": "healer’s kit",
+    "name": "healer\u2019s kit",
     "type": "tool",
     "slot": "none",
     "rarity": "common",
@@ -74,14 +74,14 @@
     "requirements": {},
     "stats": {},
     "effects": {},
-    "description": "healer’s kit for beginner Smart MUD play.",
+    "description": "healer\u2019s kit for beginner Smart MUD play.",
     "tags": [
       "starter"
     ]
   },
   {
     "id": "rope",
-    "name": "rope",
+    "name": "Rope",
     "type": "tool",
     "slot": "none",
     "rarity": "common",
@@ -93,7 +93,14 @@
     "description": "rope for beginner Smart MUD play.",
     "tags": [
       "starter"
-    ]
+    ],
+    "keywords": [
+      "rope",
+      "coil"
+    ],
+    "short_description": "a coil of rope",
+    "look_description": "A sturdy coil of hemp rope lies neatly wound.",
+    "examine_description": "The fibers are rough but sound, long enough for simple climbing or tying work."
   },
   {
     "id": "tinderbox",

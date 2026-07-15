@@ -1,0 +1,292 @@
+{
+  "formulas": [
+    {
+      "formula_id": "max_health",
+      "expression": "50 + (endurance * 5) + (level * 5)",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "max_mana",
+      "expression": "20 + (intellect * 4) + (willpower * 2)",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "max_stamina",
+      "expression": "40 + (endurance * 3) + (physical_power * 2)",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "armor",
+      "expression": "equipment_armor",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "evasion",
+      "expression": "agility * 2",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "accuracy",
+      "expression": "agility * 2 + level",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "hit_bonus",
+      "expression": "(physical_power + agility) / 4",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "damage_bonus",
+      "expression": "physical_power / 3",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "physical_save",
+      "expression": "endurance + physical_power / 2",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "mental_save",
+      "expression": "willpower + intellect / 2",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "magic_save",
+      "expression": "willpower + intellect / 2",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "critical_melee",
+      "expression": "agility / 2",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "critical_spell",
+      "expression": "intellect / 2",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "critical_heal",
+      "expression": "willpower / 2",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "critical_avoidance",
+      "expression": "endurance / 3 + agility / 3",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "attack_power",
+      "expression": "physical_power * 2 + level",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "spell_power",
+      "expression": "intellect * 2 + level",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "healing_power",
+      "expression": "willpower * 2 + level",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "weapon_damage_min",
+      "expression": "weapon_base_min",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "weapon_damage_max",
+      "expression": "weapon_base_max",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "unarmed_damage_min",
+      "expression": "min(4, 1 + level / 30) + max(0, level / 30)",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "unarmed_damage_max",
+      "expression": "min(4, 1 + level / 30) * min(7, 2 + level / 20) + max(0, level / 30)",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "initiative",
+      "expression": "agility + willpower / 2",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "attack_speed",
+      "expression": "100 + agility",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "casting_speed",
+      "expression": "100 + intellect",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "recovery_speed",
+      "expression": "100 + endurance",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "movement_speed",
+      "expression": "100 + agility",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "carry_capacity",
+      "expression": "50 + physical_power * 10",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "current_carry_weight",
+      "expression": "inventory_weight",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "encumbrance_percent",
+      "expression": "(current_carry_weight / carry_capacity) * 100 if carry_capacity else 0",
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "formula_id": "attack_hit_resolution",
+      "expression": "base_chance + attacker_level + accuracy + hit_bonus + strength_to_hit + intelligence_to_hit + wisdom_to_hit - defender_level - evasion + posture_modifier + range_modifier + concealment_modifier",
+      "enabled": true,
+      "metadata": {
+        "phase": "13C3-A3",
+        "authoritative_combat_stage": true
+      }
+    },
+    {
+      "formula_id": "armor_mitigation",
+      "expression": "max(minimum_damage, raw_damage * 100 / (100 + max(0, armor - armor_penetration)))",
+      "enabled": true,
+      "metadata": {
+        "phase": "13C3-A3",
+        "authoritative_combat_stage": true
+      }
+    },
+    {
+      "formula_id": "resistance_mitigation",
+      "expression": "0 if immunity else damage_after_armor * (100 - min(resistance_cap, max(0, resistance_value)) + max(0, vulnerability)) / 100",
+      "enabled": true,
+      "metadata": {
+        "phase": "13C3-A3",
+        "authoritative_combat_stage": true
+      }
+    },
+    {
+      "formula_id": "saving_throw_resolution",
+      "expression": "50 + defender_save - difficulty - attacker_stat - level_difference + ability_proficiency + situational_modifier",
+      "enabled": true,
+      "metadata": {
+        "phase": "13C3-A3",
+        "authoritative_combat_stage": true
+      }
+    },
+    {
+      "formula_id": "critical_resolution",
+      "expression": "critical_rating - critical_avoidance",
+      "enabled": true,
+      "metadata": {
+        "phase": "13C3-A3",
+        "authoritative_combat_stage": true
+      }
+    },
+    {
+      "formula_id": "physical_damage_resolution",
+      "enabled": true,
+      "metadata": {
+        "phase": "13C3-A3C",
+        "authoritative_combat_stage": true
+      },
+      "expression": "base_damage + attack_power + damage_bonus"
+    },
+    {
+      "formula_id": "spell_damage_resolution",
+      "enabled": true,
+      "metadata": {
+        "phase": "13C3-A3C",
+        "authoritative_combat_stage": true
+      },
+      "expression": "base_amount + spell_power * coefficient"
+    },
+    {
+      "formula_id": "healing_resolution",
+      "enabled": true,
+      "metadata": {
+        "phase": "13C3-A3C",
+        "authoritative_combat_stage": true
+      },
+      "expression": "base_amount + healing_power * healing_coefficient"
+    },
+    {
+      "formula_id": "range_distance_penalty",
+      "enabled": true,
+      "metadata": {
+        "phase": "13C3-A3C",
+        "authoritative_combat_stage": true
+      },
+      "expression": "0 if distance <= reach else (distance - reach) * -5"
+    },
+    {
+      "formula_id": "parry_resolution",
+      "enabled": true,
+      "metadata": {
+        "phase": "13C3-A3C",
+        "authoritative_combat_stage": true
+      },
+      "expression": "0"
+    },
+    {
+      "formula_id": "block_resolution",
+      "enabled": true,
+      "metadata": {
+        "phase": "13C3-A3C",
+        "authoritative_combat_stage": true
+      },
+      "expression": "0"
+    },
+    {
+      "formula_id": "critical_damage",
+      "expression": "1.5 + (physical_power + agility + intellect + willpower) / 200",
+      "enabled": true,
+      "metadata": {
+        "unit": "multiplier",
+        "phase": "13C3-B3"
+      }
+    }
+  ]
+}

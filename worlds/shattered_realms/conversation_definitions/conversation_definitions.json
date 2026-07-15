@@ -35,6 +35,19 @@
         "starter"
       ],
       "version": 1
+    },
+    {
+      "id": "maren_emberleaf_errand",
+      "name": "Maren Emberleaf Errand",
+      "description": "Builder-authored starter gameplay conversation for greeting, offer, progress, turn-in, completion, and locked follow-up.",
+      "start_node_id": "maren_emberleaf_greeting",
+      "participant_requirements": [],
+      "tags": [
+        "starter",
+        "phase11f"
+      ],
+      "plugin_data": {},
+      "version": 1
     }
   ]
 }

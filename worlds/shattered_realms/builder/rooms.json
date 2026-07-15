@@ -1,7 +1,7 @@
 {
   "abandoned_watchpost": {
     "area_id": "starter_guildlands",
-    "description": "Abandoned Watchpost is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "description": "The abandoned watchpost sags beneath old weathering, its empty platform overlooking the nearby road.",
     "exits": {
       "in": {
         "description": "in to watchpost entry.",
@@ -31,7 +31,7 @@
   },
   "adventurer_notice_board": {
     "area_id": "starter_guildlands",
-    "description": "Adventurer Notice Board is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "description": "A broad notice board stands under a small awning, layered with posted jobs, warnings, and travel notices.",
     "exits": {
       "north": {
         "description": "north to market lane.",
@@ -69,7 +69,7 @@
   },
   "blacksmith_stall": {
     "area_id": "starter_guildlands",
-    "description": "Blacksmith Stall is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "description": "The blacksmith stall glows with banked coals. Hammers, tongs, and finished tools hang from soot-darkened beams.",
     "exits": {
       "south": {
         "description": "south to market lane.",
@@ -97,7 +97,7 @@
   },
   "broken_fence": {
     "area_id": "starter_guildlands",
-    "description": "Broken Fence is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "description": "Splintered rails and loose posts mark the broken fence, leaving gaps toward the field and the road.",
     "exits": {
       "east": {
         "description": "east to emberwood edge.",
@@ -127,7 +127,7 @@
   },
   "east_farmland_path": {
     "area_id": "starter_guildlands",
-    "description": "East Farmland Path is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "description": "The east farmland path skirts tilled fields and low fences, with wagon ruts pressed deep into the soil.",
     "exits": {
       "north": {
         "description": "north to farmer field.",
@@ -156,68 +156,83 @@
     "zone_id": "east_farmland"
   },
   "emberwood_edge": {
-    "area_id": "starter_guildlands",
-    "description": "Emberwood Edge is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
-    "exits": {
-      "north": {
-        "description": "north to emberwood game trail.",
-        "direction": "north",
-        "target_room_id": "emberwood_game_trail"
-      },
-      "west": {
-        "description": "west to broken fence.",
-        "direction": "west",
-        "target_room_id": "broken_fence"
-      }
-    },
-    "features": {},
-    "flags": [],
     "id": "emberwood_edge",
     "name": "Emberwood Edge",
-    "plugin_data": {
-      "migration_source": "live_starter"
-    },
+    "description": "The last open ground gives way to close trunks and ember-red leaves. Old roots knot through the soil, with the hunting trail south and deeper animal paths ahead.",
+    "world_id": "shattered_realms",
+    "area_id": "emberwood_edge",
+    "zone_id": "emberwood_forest",
+    "vnum": 1210,
     "tags": [
       "starter",
-      "emberwood_edge"
+      "emberwood_forest"
     ],
-    "vnum": 1210,
-    "world_id": "shattered_realms",
-    "zone_id": "emberwood_edge"
-  },
-  "emberwood_game_trail": {
-    "area_id": "starter_guildlands",
-    "description": "Emberwood Game Trail is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "flags": [],
+    "features": {},
     "exits": {
-      "east": {
-        "description": "east to abandoned watchpost.",
-        "direction": "east",
-        "target_room_id": "abandoned_watchpost"
-      },
       "south": {
-        "description": "south to emberwood edge.",
         "direction": "south",
-        "target_room_id": "emberwood_edge"
+        "target_room_id": "emberwood_hunting_trail",
+        "description": "south to Emberwood Hunting Trail."
+      },
+      "north": {
+        "direction": "north",
+        "target_room_id": "emberwood_game_trail",
+        "description": "north to Emberwood Game Trail."
+      },
+      "east": {
+        "direction": "east",
+        "target_room_id": "fern_hollow",
+        "description": "east to Fern Hollow."
+      },
+      "west": {
+        "direction": "west",
+        "target_room_id": "broken_fence",
+        "description": "west to broken fence."
       }
     },
-    "features": {},
-    "flags": [],
+    "plugin_data": {
+      "migration": "emberwood_forest_phase15a"
+    }
+  },
+  "emberwood_game_trail": {
     "id": "emberwood_game_trail",
     "name": "Emberwood Game Trail",
-    "plugin_data": {
-      "migration_source": "live_starter"
-    },
+    "description": "A narrow game trail threads between ferns and black-barked saplings. Pawprints, hoof marks, and broken twigs show where the forest traffic leaves the road behind.",
+    "world_id": "shattered_realms",
+    "area_id": "emberwood_edge",
+    "zone_id": "emberwood_forest",
+    "vnum": 1211,
     "tags": [
       "starter",
-      "emberwood_edge"
+      "emberwood_forest"
     ],
-    "vnum": 1211,
-    "world_id": "shattered_realms",
-    "zone_id": "emberwood_edge"
+    "flags": [],
+    "features": {},
+    "exits": {
+      "south": {
+        "direction": "south",
+        "target_room_id": "emberwood_edge",
+        "description": "south to Emberwood Edge."
+      },
+      "north": {
+        "direction": "north",
+        "target_room_id": "forest_trail",
+        "description": "north to Forest Trail."
+      },
+      "east": {
+        "direction": "east",
+        "target_room_id": "abandoned_watchpost",
+        "description": "east to abandoned watchpost."
+      }
+    },
+    "plugin_data": {
+      "migration": "emberwood_forest_phase15a"
+    }
   },
   "farmer_field": {
     "area_id": "starter_guildlands",
-    "description": "Farmer Field is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "description": "Rows of hardy crops stretch across the farmer field, broken by scarecrows and patches of churned mud.",
     "exits": {
       "east": {
         "description": "east to broken fence.",
@@ -247,7 +262,7 @@
   },
   "guildhall_archway": {
     "area_id": "starter_guildlands",
-    "description": "Guildhall Archway is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "description": "The guildhall archway frames a busy threshold of carved stone, with scuffed flagstones leading toward the square and training grounds.",
     "exits": {
       "north": {
         "description": "north to guildhall registrar office.",
@@ -277,7 +292,7 @@
   },
   "guildhall_crossing_square": {
     "area_id": "starter_guildlands",
-    "description": "Guildhall Crossing Square is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "description": "Guildhall Crossing Square opens beneath worn stone arches, where travelers pass between the guildhall, market lane, and old gate road.",
     "exits": {
       "east": {
         "description": "east to market lane.",
@@ -330,7 +345,7 @@
   },
   "guildhall_registrar_office": {
     "area_id": "starter_guildlands",
-    "description": "Guildhall Registrar Office is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "description": "Tall shelves and ink-stained desks line the registrar office. Notices, ledgers, and stamped forms wait beneath the steady light of brass lamps.",
     "exits": {
       "south": {
         "description": "south to guildhall archway.",
@@ -355,7 +370,7 @@
   },
   "healer_corner": {
     "area_id": "starter_guildlands",
-    "description": "Healer Corner is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "description": "Clean linens, bitter herbs, and a low cot fill the healer corner. The air smells of salve and steeped roots.",
     "exits": {
       "north": {
         "description": "north to training yard.",
@@ -380,7 +395,7 @@
   },
   "market_lane": {
     "area_id": "starter_guildlands",
-    "description": "Market Lane is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "description": "Market Lane runs between bright awnings and crowded stalls, carrying the scents of iron, bread, leather, and rain-washed stone.",
     "exits": {
       "east": {
         "description": "east to provisioner stall.",
@@ -425,7 +440,7 @@
   },
   "milestone_bend": {
     "area_id": "starter_guildlands",
-    "description": "Milestone Bend is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "description": "A worn milestone leans at the bend in the road, its carved directions softened by weather and dust.",
     "exits": {
       "east": {
         "description": "east to east farmland path.",
@@ -462,7 +477,7 @@
   },
   "old_gate_checkpoint": {
     "area_id": "starter_guildlands",
-    "description": "Old Gate Checkpoint is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "description": "The old gate checkpoint holds a watch desk, a raised barrier, and sightlines along the road beyond the Guildlands.",
     "exits": {
       "north": {
         "description": "north to milestone bend.",
@@ -499,7 +514,7 @@
   },
   "old_gate_road": {
     "area_id": "starter_guildlands",
-    "description": "Old Gate Road is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "description": "Old Gate Road follows cracked paving toward the outer gate, bordered by weathered walls and wind-bent weeds.",
     "exits": {
       "north": {
         "description": "north to old gate checkpoint.",
@@ -529,7 +544,7 @@
   },
   "provisioner_stall": {
     "area_id": "starter_guildlands",
-    "description": "Provisioner Stall is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "description": "Crates, sacks, and sealed jars crowd the provisioner stall, each marked with careful chalk prices.",
     "exits": {
       "west": {
         "description": "west to market lane.",
@@ -579,7 +594,7 @@
   },
   "rat_cellar_entry": {
     "area_id": "starter_guildlands",
-    "description": "Rat Cellar Entry is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "description": "A narrow stair descends into the rat cellar entry, where damp stone carries the smell of straw and mildew.",
     "exits": {
       "north": {
         "description": "north to rat cellar storage.",
@@ -609,7 +624,7 @@
   },
   "rat_cellar_nest": {
     "area_id": "starter_guildlands",
-    "description": "Rat Cellar Nest is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "description": "The rat cellar nest is low, foul, and close, with shredded bedding piled against the foundation stones.",
     "exits": {
       "west": {
         "description": "west to rat cellar storage.",
@@ -641,7 +656,7 @@
   },
   "rat_cellar_storage": {
     "area_id": "starter_guildlands",
-    "description": "Rat Cellar Storage is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "description": "Broken crates and torn sacks clutter the rat cellar storage, leaving narrow paths through dust and gnawed wood.",
     "exits": {
       "east": {
         "description": "east to rat cellar nest.",
@@ -678,7 +693,7 @@
   },
   "spell_practice_circle": {
     "area_id": "starter_guildlands",
-    "description": "Spell Practice Circle is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "description": "Chalked sigils and scorched stones mark the spell practice circle, where apprentices test careful gestures under watchful eyes.",
     "exits": {
       "east": {
         "description": "east to training yard.",
@@ -703,7 +718,7 @@
   },
   "tavern_back_room": {
     "area_id": "starter_guildlands",
-    "description": "Tavern Back Room is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "description": "The tavern back room is quieter, with stacked barrels, a narrow table, and the muffled sounds of the common room beyond.",
     "exits": {
       "down": {
         "description": "down to rat cellar entry.",
@@ -740,7 +755,7 @@
   },
   "tavern_common_room": {
     "area_id": "starter_guildlands",
-    "description": "Tavern Common Room is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "description": "Warm lamplight and low conversation fill the tavern common room. Scarred tables cluster around a broad hearth.",
     "exits": {
       "east": {
         "description": "east to tavern back room.",
@@ -770,7 +785,7 @@
   },
   "training_yard": {
     "area_id": "starter_guildlands",
-    "description": "Training Yard is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "description": "The packed earth of the training yard is scarred by boots and practice weapons. Wooden posts and straw targets stand along the walls, while roads lead back toward the Guildlands gate.",
     "exits": {
       "east": {
         "description": "east to guildhall crossing square.",
@@ -810,7 +825,7 @@
   },
   "watchpost_entry": {
     "area_id": "starter_guildlands",
-    "description": "Watchpost Entry is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "description": "The watchpost entry creaks with loose boards and old hinges, opening into a dim shelter of dust and splinters.",
     "exits": {
       "out": {
         "description": "out to abandoned watchpost.",
@@ -835,7 +850,7 @@
   },
   "weapon_practice_ring": {
     "area_id": "starter_guildlands",
-    "description": "Weapon Practice Ring is a playable MUD room in The Shattered Realms, with clear paths, useful details, and enough fixed truth for the GM to narrate without inventing exits or objects.",
+    "description": "A ring of trampled earth marks the weapon practice ground. Blunted blades, shields, and target posts wait beside the boundary ropes.",
     "exits": {
       "south": {
         "description": "south to training yard.",
@@ -857,5 +872,475 @@
     "vnum": 1051,
     "world_id": "shattered_realms",
     "zone_id": "training_grounds"
+  },
+  "forest_trail": {
+    "id": "forest_trail",
+    "name": "Forest Trail",
+    "description": "Several woodland paths meet beneath leaning ash and pine. The ground is trampled enough to follow, but shadows gather between the branching routes.",
+    "world_id": "shattered_realms",
+    "area_id": "emberwood_edge",
+    "zone_id": "emberwood_forest",
+    "vnum": 1212,
+    "tags": [
+      "starter",
+      "emberwood_forest"
+    ],
+    "flags": [],
+    "features": {},
+    "exits": {
+      "south": {
+        "direction": "south",
+        "target_room_id": "emberwood_game_trail",
+        "description": "south to Emberwood Game Trail."
+      },
+      "east": {
+        "direction": "east",
+        "target_room_id": "fallen_oak",
+        "description": "east to Fallen Oak."
+      },
+      "west": {
+        "direction": "west",
+        "target_room_id": "mossy_creek",
+        "description": "west to Mossy Creek."
+      },
+      "north": {
+        "direction": "north",
+        "target_room_id": "woodland_camp",
+        "description": "north to Woodland Camp."
+      }
+    },
+    "plugin_data": {
+      "migration": "emberwood_forest_phase15a"
+    }
+  },
+  "wolf_trail": {
+    "id": "wolf_trail",
+    "name": "Wolf Trail",
+    "description": "A narrow trail climbs past scratched bark and tufts of gray fur caught on splinters. The air smells of musk and cold stone farther north.",
+    "world_id": "shattered_realms",
+    "area_id": "emberwood_edge",
+    "zone_id": "emberwood_forest",
+    "vnum": 1213,
+    "tags": [
+      "starter",
+      "emberwood_forest"
+    ],
+    "flags": [],
+    "features": {},
+    "exits": {
+      "south": {
+        "direction": "south",
+        "target_room_id": "fallen_oak",
+        "description": "south to Fallen Oak."
+      },
+      "north": {
+        "direction": "north",
+        "target_room_id": "wolf_den",
+        "description": "north to Wolf Den."
+      },
+      "west": {
+        "direction": "west",
+        "target_room_id": "woodland_camp",
+        "description": "west to Woodland Camp."
+      }
+    },
+    "plugin_data": {
+      "migration": "emberwood_forest_phase15a"
+    }
+  },
+  "wolf_den": {
+    "id": "wolf_den",
+    "name": "Wolf Den",
+    "description": "Broken stone rises into a shallow den beneath tangled roots. Bones, shed fur, and packed earth mark a lair used by the larger wolves of Emberwood.",
+    "world_id": "shattered_realms",
+    "area_id": "emberwood_edge",
+    "zone_id": "emberwood_forest",
+    "vnum": 1214,
+    "tags": [
+      "starter",
+      "emberwood_forest"
+    ],
+    "flags": [],
+    "features": {},
+    "exits": {
+      "south": {
+        "direction": "south",
+        "target_room_id": "wolf_trail",
+        "description": "south to Wolf Trail."
+      },
+      "west": {
+        "direction": "west",
+        "target_room_id": "spider_glade",
+        "description": "west to Spider Glade."
+      },
+      "east": {
+        "direction": "east",
+        "target_room_id": "ancient_ember_grove",
+        "description": "east to Ancient Ember Grove."
+      }
+    },
+    "plugin_data": {
+      "migration": "emberwood_forest_phase15a"
+    }
+  },
+  "woodland_camp": {
+    "id": "woodland_camp",
+    "name": "Woodland Camp",
+    "description": "A small hunter camp sits in a sheltered clearing, its fire ring cold and its log benches weathered but intact. Paths leave in all directions through the trees.",
+    "world_id": "shattered_realms",
+    "area_id": "emberwood_edge",
+    "zone_id": "emberwood_forest",
+    "vnum": 1215,
+    "tags": [
+      "starter",
+      "emberwood_forest"
+    ],
+    "flags": [],
+    "features": {},
+    "exits": {
+      "south": {
+        "direction": "south",
+        "target_room_id": "forest_trail",
+        "description": "south to Forest Trail."
+      },
+      "west": {
+        "direction": "west",
+        "target_room_id": "fox_burrow",
+        "description": "west to Fox Burrow."
+      },
+      "east": {
+        "direction": "east",
+        "target_room_id": "wolf_trail",
+        "description": "east to Wolf Trail."
+      },
+      "north": {
+        "direction": "north",
+        "target_room_id": "old_hunters_blind",
+        "description": "north to Old Hunter's Blind."
+      }
+    },
+    "plugin_data": {
+      "migration": "emberwood_forest_phase15a"
+    }
+  },
+  "emberwood_hunting_trail": {
+    "id": "emberwood_hunting_trail",
+    "name": "Emberwood Hunting Trail",
+    "description": "A maintained hunting path slips under the first dark boughs of Emberwood. Wheel ruts fade into packed needles, and the city road remains visible through the trees to the south.",
+    "world_id": "shattered_realms",
+    "area_id": "emberwood_edge",
+    "zone_id": "emberwood_forest",
+    "vnum": 1225,
+    "tags": [
+      "starter",
+      "emberwood_forest"
+    ],
+    "flags": [],
+    "features": {},
+    "exits": {
+      "south": {
+        "direction": "south",
+        "target_room_id": "old_gate_road",
+        "description": "south to old gate road."
+      },
+      "north": {
+        "direction": "north",
+        "target_room_id": "emberwood_edge",
+        "description": "north to Emberwood Edge."
+      }
+    },
+    "plugin_data": {
+      "migration": "emberwood_forest_phase15a"
+    }
+  },
+  "fern_hollow": {
+    "id": "fern_hollow",
+    "name": "Fern Hollow",
+    "description": "Waist-high ferns fill a damp hollow where rainwater lingers in dark soil. The fronds hide stones, roots, and small trails through the green.",
+    "world_id": "shattered_realms",
+    "area_id": "emberwood_edge",
+    "zone_id": "emberwood_forest",
+    "vnum": 1216,
+    "tags": [
+      "starter",
+      "emberwood_forest"
+    ],
+    "flags": [],
+    "features": {},
+    "exits": {
+      "west": {
+        "direction": "west",
+        "target_room_id": "emberwood_edge",
+        "description": "west to Emberwood Edge."
+      },
+      "north": {
+        "direction": "north",
+        "target_room_id": "briar_thicket",
+        "description": "north to Briar Thicket."
+      }
+    },
+    "plugin_data": {
+      "migration": "emberwood_forest_phase15a"
+    }
+  },
+  "mossy_creek": {
+    "id": "mossy_creek",
+    "name": "Mossy Creek",
+    "description": "A shallow creek cuts through the forest over slick mossy stones. Water carries flecks of red leaves beneath low banks and hanging roots.",
+    "world_id": "shattered_realms",
+    "area_id": "emberwood_edge",
+    "zone_id": "emberwood_forest",
+    "vnum": 1217,
+    "tags": [
+      "starter",
+      "emberwood_forest"
+    ],
+    "flags": [],
+    "features": {},
+    "exits": {
+      "east": {
+        "direction": "east",
+        "target_room_id": "forest_trail",
+        "description": "east to Forest Trail."
+      },
+      "north": {
+        "direction": "north",
+        "target_room_id": "fox_burrow",
+        "description": "north to Fox Burrow."
+      }
+    },
+    "plugin_data": {
+      "migration": "emberwood_forest_phase15a"
+    }
+  },
+  "fallen_oak": {
+    "id": "fallen_oak",
+    "name": "Fallen Oak",
+    "description": "A massive oak lies split across the trail, its hollow trunk dark enough to shelter small dens. Fresh claw marks score the bark near the broken crown.",
+    "world_id": "shattered_realms",
+    "area_id": "emberwood_edge",
+    "zone_id": "emberwood_forest",
+    "vnum": 1218,
+    "tags": [
+      "starter",
+      "emberwood_forest"
+    ],
+    "flags": [],
+    "features": {},
+    "exits": {
+      "west": {
+        "direction": "west",
+        "target_room_id": "forest_trail",
+        "description": "west to Forest Trail."
+      },
+      "north": {
+        "direction": "north",
+        "target_room_id": "wolf_trail",
+        "description": "north to Wolf Trail."
+      }
+    },
+    "plugin_data": {
+      "migration": "emberwood_forest_phase15a"
+    }
+  },
+  "briar_thicket": {
+    "id": "briar_thicket",
+    "name": "Briar Thicket",
+    "description": "Dense briars crowd the path into a twisting tunnel of thorns. Visibility narrows to a few paces where torn cloth and old feathers snag on the branches.",
+    "world_id": "shattered_realms",
+    "area_id": "emberwood_edge",
+    "zone_id": "emberwood_forest",
+    "vnum": 1219,
+    "tags": [
+      "starter",
+      "emberwood_forest"
+    ],
+    "flags": [],
+    "features": {},
+    "exits": {
+      "south": {
+        "direction": "south",
+        "target_room_id": "fern_hollow",
+        "description": "south to Fern Hollow."
+      },
+      "north": {
+        "direction": "north",
+        "target_room_id": "spider_glade",
+        "description": "north to Spider Glade."
+      },
+      "west": {
+        "direction": "west",
+        "target_room_id": "old_hunters_blind",
+        "description": "west to Old Hunter's Blind."
+      }
+    },
+    "plugin_data": {
+      "migration": "emberwood_forest_phase15a"
+    }
+  },
+  "fox_burrow": {
+    "id": "fox_burrow",
+    "name": "Fox Burrow",
+    "description": "A sandy bank rises beside the creek, riddled with small burrow mouths and screened by roots. Dry leaves collect in sheltered pockets along the slope.",
+    "world_id": "shattered_realms",
+    "area_id": "emberwood_edge",
+    "zone_id": "emberwood_forest",
+    "vnum": 1220,
+    "tags": [
+      "starter",
+      "emberwood_forest"
+    ],
+    "flags": [],
+    "features": {},
+    "exits": {
+      "south": {
+        "direction": "south",
+        "target_room_id": "mossy_creek",
+        "description": "south to Mossy Creek."
+      },
+      "east": {
+        "direction": "east",
+        "target_room_id": "woodland_camp",
+        "description": "east to Woodland Camp."
+      }
+    },
+    "plugin_data": {
+      "migration": "emberwood_forest_phase15a"
+    }
+  },
+  "old_hunters_blind": {
+    "id": "old_hunters_blind",
+    "name": "Old Hunter's Blind",
+    "description": "A decaying hunter's blind leans above the undergrowth on gray wooden stilts. From here, narrow sight lines cut through briar, camp smoke stains, and darker woods northward.",
+    "world_id": "shattered_realms",
+    "area_id": "emberwood_edge",
+    "zone_id": "emberwood_forest",
+    "vnum": 1221,
+    "tags": [
+      "starter",
+      "emberwood_forest"
+    ],
+    "flags": [],
+    "features": {},
+    "exits": {
+      "south": {
+        "direction": "south",
+        "target_room_id": "woodland_camp",
+        "description": "south to Woodland Camp."
+      },
+      "east": {
+        "direction": "east",
+        "target_room_id": "briar_thicket",
+        "description": "east to Briar Thicket."
+      },
+      "north": {
+        "direction": "north",
+        "target_room_id": "deep_emberwood",
+        "description": "north to Deep Emberwood."
+      }
+    },
+    "plugin_data": {
+      "migration": "emberwood_forest_phase15a"
+    }
+  },
+  "deep_emberwood": {
+    "id": "deep_emberwood",
+    "name": "Deep Emberwood",
+    "description": "The canopy closes into a dark roof of needles and ember-colored leaves. Sound falls away among old trunks, and the path bends toward the forest heart.",
+    "world_id": "shattered_realms",
+    "area_id": "emberwood_edge",
+    "zone_id": "emberwood_forest",
+    "vnum": 1222,
+    "tags": [
+      "starter",
+      "emberwood_forest"
+    ],
+    "flags": [],
+    "features": {},
+    "exits": {
+      "south": {
+        "direction": "south",
+        "target_room_id": "old_hunters_blind",
+        "description": "south to Old Hunter's Blind."
+      },
+      "east": {
+        "direction": "east",
+        "target_room_id": "spider_glade",
+        "description": "east to Spider Glade."
+      },
+      "north": {
+        "direction": "north",
+        "target_room_id": "ancient_ember_grove",
+        "description": "north to Ancient Ember Grove."
+      }
+    },
+    "plugin_data": {
+      "migration": "emberwood_forest_phase15a"
+    }
+  },
+  "spider_glade": {
+    "id": "spider_glade",
+    "name": "Spider Glade",
+    "description": "A silent glade opens between crooked trees, threaded with old webbing that glints like wet wire. Pale husks hang in the brush at the clearing edge.",
+    "world_id": "shattered_realms",
+    "area_id": "emberwood_edge",
+    "zone_id": "emberwood_forest",
+    "vnum": 1223,
+    "tags": [
+      "starter",
+      "emberwood_forest"
+    ],
+    "flags": [],
+    "features": {},
+    "exits": {
+      "south": {
+        "direction": "south",
+        "target_room_id": "briar_thicket",
+        "description": "south to Briar Thicket."
+      },
+      "west": {
+        "direction": "west",
+        "target_room_id": "deep_emberwood",
+        "description": "west to Deep Emberwood."
+      },
+      "east": {
+        "direction": "east",
+        "target_room_id": "wolf_den",
+        "description": "east to Wolf Den."
+      }
+    },
+    "plugin_data": {
+      "migration": "emberwood_forest_phase15a"
+    }
+  },
+  "ancient_ember_grove": {
+    "id": "ancient_ember_grove",
+    "name": "Ancient Ember Grove",
+    "description": "Ancient trees stand blackened but alive, their cracked bark leaking faint ember-colored sap. The grove is warmer than the surrounding woods, and old ash softens every footfall.",
+    "world_id": "shattered_realms",
+    "area_id": "emberwood_edge",
+    "zone_id": "emberwood_forest",
+    "vnum": 1224,
+    "tags": [
+      "starter",
+      "emberwood_forest"
+    ],
+    "flags": [],
+    "features": {},
+    "exits": {
+      "south": {
+        "direction": "south",
+        "target_room_id": "deep_emberwood",
+        "description": "south to Deep Emberwood."
+      },
+      "west": {
+        "direction": "west",
+        "target_room_id": "wolf_den",
+        "description": "west to Wolf Den."
+      }
+    },
+    "plugin_data": {
+      "migration": "emberwood_forest_phase15a"
+    }
   }
 }

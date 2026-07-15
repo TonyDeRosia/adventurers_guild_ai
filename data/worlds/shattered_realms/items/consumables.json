@@ -1,82 +1,113 @@
 [
   {
+    "description": "minor healing potion for beginner Smart MUD play.",
+    "effects": {},
     "id": "minor_healing_potion",
     "name": "minor healing potion",
-    "type": "consumable",
-    "slot": "none",
     "rarity": "common",
-    "value": 5,
-    "weight": 1,
     "requirements": {},
+    "slot": "none",
     "stats": {},
-    "effects": {},
-    "description": "minor healing potion for beginner Smart MUD play.",
     "tags": [
       "starter"
-    ]
+    ],
+    "type": "consumable",
+    "value": 5,
+    "weight": 1
   },
   {
+    "description": "minor mana potion for beginner Smart MUD play.",
+    "effects": {},
     "id": "minor_mana_potion",
     "name": "minor mana potion",
-    "type": "consumable",
-    "slot": "none",
     "rarity": "common",
-    "value": 5,
-    "weight": 1,
     "requirements": {},
+    "slot": "none",
     "stats": {},
-    "effects": {},
-    "description": "minor mana potion for beginner Smart MUD play.",
     "tags": [
       "starter"
-    ]
+    ],
+    "type": "consumable",
+    "value": 5,
+    "weight": 1
   },
   {
-    "id": "ration",
-    "name": "ration",
-    "type": "consumable",
-    "slot": "none",
-    "rarity": "common",
-    "value": 5,
-    "weight": 1,
-    "requirements": {},
-    "stats": {},
-    "effects": {},
     "description": "ration for beginner Smart MUD play.",
+    "effects": {},
+    "id": "ration",
+    "name": "Ration",
+    "rarity": "common",
+    "requirements": {},
+    "slot": "none",
+    "stats": {},
     "tags": [
       "starter"
-    ]
-  },
-  {
-    "id": "clean_water_flask",
-    "name": "clean water flask",
+    ],
     "type": "consumable",
-    "slot": "none",
-    "rarity": "common",
     "value": 5,
     "weight": 1,
-    "requirements": {},
-    "stats": {},
-    "effects": {},
+    "keywords": [
+      "ration",
+      "food"
+    ],
+    "short_description": "a wrapped ration",
+    "look_description": "A wrapped trail ration suitable for a quick meal.",
+    "examine_description": "Hard bread, dried fruit, and a strip of smoked meat are bundled in waxed cloth."
+  },
+  {
     "description": "clean water flask for beginner Smart MUD play.",
+    "drinkable": true,
+    "effects": {},
+    "id": "clean_water_flask",
+    "item_type": "consumable",
+    "keywords": [
+      "clean",
+      "clean water",
+      "clean water flask",
+      "flask",
+      "water"
+    ],
+    "long_description": "A small flask filled with clean water.",
+    "name": "Clean Water Flask",
+    "plugin_data": {
+      "consumable_profile_id": "clean_water_drink"
+    },
+    "rarity": "common",
+    "requirements": {},
+    "slot": "none",
+    "stats": {},
     "tags": [
       "starter"
-    ]
-  },
-  {
-    "id": "torch",
-    "name": "torch",
+    ],
     "type": "consumable",
-    "slot": "none",
-    "rarity": "common",
     "value": 5,
     "weight": 1,
-    "requirements": {},
-    "stats": {},
-    "effects": {},
+    "short_description": "a stoppered leather flask",
+    "look_description": "A stoppered leather flask filled with clean water.",
+    "examine_description": "The flask is made from treated hide and sealed with a wooden stopper. It feels mostly full.",
+    "identify_description": "A simple consumable water flask."
+  },
+  {
     "description": "torch for beginner Smart MUD play.",
+    "effects": {},
+    "id": "torch",
+    "name": "Torch",
+    "rarity": "common",
+    "requirements": {},
+    "slot": "none",
+    "stats": {},
     "tags": [
       "starter"
-    ]
+    ],
+    "type": "consumable",
+    "value": 5,
+    "weight": 1,
+    "keywords": [
+      "torch",
+      "light"
+    ],
+    "short_description": "a pitch-coated torch",
+    "look_description": "A pitch-coated torch ready to be lit.",
+    "examine_description": "The wrapped head smells of resin and should burn for a useful stretch of travel."
   }
 ]

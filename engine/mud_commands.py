@@ -2,18 +2,44 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, is_dataclass, asdict
 from typing import Any, Optional, Callable
 import json
 import re
+import logging
+import sqlite3
+import traceback
+import copy
+
+logger = logging.getLogger(__name__)
+
+def _command_exception_context(character: Any, command_text: str, resolved_command: str) -> dict[str, Any]:
+    rt = getattr(character, "runtime", None)
+    return {
+        "command_text": command_text,
+        "resolved_command_or_ability_id": resolved_command,
+        "actor_id": getattr(character, "id", ""),
+        "actor_name": getattr(character, "name", ""),
+        "room_id": getattr(character, "room_id", getattr(character, "current_room_id", "")),
+        "world_id": getattr(rt, "active_world_id", getattr(character, "world_id", "")) if rt else getattr(character, "world_id", ""),
+    }
+
 from pathlib import Path
-from engine.mud_displays import semantic
+from engine.mud_displays import semantic, DisplayDocument, DisplayIntent, DisplayLine, DisplaySection, DisplayField, render_display_mud, render_display_plain, build_score_document, build_worth_document, build_abilities_document, build_inventory_document, build_equipment_document, build_affects_document, build_prompt_document, PROMPT_PRESETS, PROMPT_MAX_LENGTH
 from engine.actors import actor_from_runtime_character
+from engine.character_state import build_action_state, reconcile_actor_position, derive_position_from_health
 from engine.formulas import FormulaEngine
+from engine.character_stats import CharacterAttributeService, CombatStatService, _load_json
+from engine.builder_content_editor import BuilderContentEditor
+from engine.builder_stat_content import (AttributeDocumentAdapter, FormulaDocumentAdapter, StatDefinitionDocumentAdapter, ResistanceDocumentAdapter, EncumbranceDocumentAdapter, PostureDocumentAdapter, RangeRulesDocumentAdapter, CombatMessageDocumentAdapter, StatCombatPublishValidator, StatCombatPublisher, parse_bool, parse_num, safe_id, norm_hash, now)
 from engine.score_renderer import ActorScoreRenderer
 from engine.command_registry import CommandRegistry
 from smart_mud.builder import BuilderWorkspace
 from engine.abilities import AbilityExecutionService
+from engine.help_service import HelpService, HelpEntry, normalize_help_query
+from engine.display_services import CharacterDisplaySnapshotService, AbilityDisplaySnapshotService, ability_snapshots_as_rows
+from engine.player_preferences import PlayerPresentationPreferenceService
+from engine.display_themes import preview_display_theme, resolve_effective_display_theme, load_display_themes, SUPPORTED_FAMILIES, ThemeResolutionMode
 from engine.combat_behavior import CombatBehaviorService
 from engine.crafting import CraftingService, CraftingContent
 from engine.perception import PerceptionService
@@ -22,19 +48,30 @@ from engine.survival_needs import SURVIVAL_COLLECTIONS
 
 @dataclass
 class CommandResult:
-    """Result of command execution."""
-    narrative: str
+    """Result of command execution.
+
+    Commands may return a structured display_document. Runtime renderers use it
+    first, while legacy narrative remains supported during migration.
+    """
+    narrative: str = ""
     prompt: str = ""
     scrollback: str = ""
     state_updates: dict[str, Any] = None
     should_exit: bool = False
     ok: bool = True
+    display_document: Any = None
+    display_intent: str = "SYSTEM"
+    semantic_role: str = "system"
 
 
 # Known deterministic commands (no AI needed)
 DETERMINISTIC_COMMANDS = {
     # Information
     "score": {"category": "info", "aliases": ["sc"], "admin": False},
+    "attributes": {"category": "info", "admin": False},
+    "stats": {"category": "info", "admin": False},
+    "display": {"category": "info", "admin": False},
+    "displaytheme": {"category": "builder", "admin": True},
     "recipes": {"category": "crafting", "admin": False},
     "recipe": {"category": "crafting", "admin": False},
     "craft": {"category": "crafting", "admin": False},
@@ -72,25 +109,41 @@ DETERMINISTIC_COMMANDS = {
     "where": {"category": "info", "admin": False},
     "commands": {"category": "help", "aliases": ["cmds"], "admin": False},
     "help": {"category": "help", "aliases": ["h"], "admin": False},
+    "helpedit": {"category": "builder", "admin": True},
     "socials": {"category": "help", "admin": False},
     "areas": {"category": "info", "admin": False},
     "map": {"category": "info", "admin": False},
     "time": {"category": "info", "admin": False},
     "weather": {"category": "info", "admin": False},
-    "practice": {"category": "info", "aliases": ["prac"], "admin": False},
-    "train": {"category": "shop", "admin": False},
+    "practice": {"category": "info", "aliases": ["prac", "pr"], "admin": False},
+    "train": {"category": "shop", "aliases": ["tr"], "admin": False},
+    "buypractice": {"category": "shop", "aliases": ["buyprac"], "admin": False},
+    "buytrain": {"category": "shop", "admin": False},
     "study": {"category": "shop", "admin": False},
     "list": {"category": "shop", "admin": False},
     "buy": {"category": "shop", "admin": False},
     "sell": {"category": "shop", "admin": False},
     "value": {"category": "shop", "admin": False},
-    "consider": {"category": "combat", "aliases": ["con"], "admin": False},
-    "diagnose": {"category": "combat", "admin": False},
-    "kill": {"category": "combat", "admin": False},
-    "attack": {"category": "combat", "admin": False},
+    "consider": {"category": "combat", "aliases": ["con", "cons", "consi"], "admin": False},
+    "diagnose": {"category": "combat", "aliases": ["diag"], "admin": False},
+    "kill": {"category": "combat", "aliases": ["k"], "admin": False},
+    "attack": {"category": "combat", "aliases": ["hit"], "admin": False},
     "assist": {"category": "combat", "admin": False},
     "flee": {"category": "combat", "admin": False},
+    "defend": {"category": "combat", "admin": False},
     "combat": {"category": "combat", "admin": False},
+    "combatstats": {"category": "info", "admin": False},
+    "combatbreakdown": {"category": "builder", "admin": True},
+    "statbreakdown": {"category": "info", "admin": False},
+    "attributeedit": {"category": "builder", "admin": True},
+    "formula": {"category": "builder", "admin": True},
+    "statdef": {"category": "builder", "admin": True},
+    "resistanceedit": {"category": "builder", "admin": True},
+    "encumbranceedit": {"category": "builder", "admin": True},
+    "postureedit": {"category": "builder", "admin": True},
+    "rangeedit": {"category": "builder", "admin": True},
+    "combatmessage": {"category": "builder", "admin": True},
+    "target": {"category": "combat", "admin": False},
     "history": {"category": "info", "admin": False},
     
     # Movement
@@ -107,7 +160,7 @@ DETERMINISTIC_COMMANDS = {
     "southeast": {"category": "movement", "aliases": ["se"], "admin": False},
     "southwest": {"category": "movement", "aliases": ["sw"], "admin": False},
     "look": {"category": "movement", "aliases": ["l", "glance", "scan"], "admin": False},
-    "examine": {"category": "movement", "admin": False},
+    "examine": {"category": "movement", "aliases": ["exa", "exam", "inspect"], "admin": False},
     "identify": {"category": "interaction", "aliases": ["id"], "admin": False},
     "use": {"category": "interaction", "admin": False},
     "read": {"category": "interaction", "admin": False},
@@ -156,7 +209,7 @@ DETERMINISTIC_COMMANDS = {
     "sit": {"category": "interaction", "admin": False},
     "stand": {"category": "interaction", "admin": False},
     "rest": {"category": "interaction", "admin": False},
-    "sleep": {"category": "interaction", "admin": False},
+    "sleep": {"category": "interaction", "aliases": ["lay", "lie"], "admin": False},
     "wake": {"category": "interaction", "admin": False},
     "talk": {"category": "communication", "admin": False},
     "greet": {"category": "communication", "admin": False},
@@ -165,6 +218,11 @@ DETERMINISTIC_COMMANDS = {
     "put": {"category": "interaction", "admin": False},
     "say": {"category": "communication", "admin": False},
     "emote": {"category": "communication", "admin": False},
+    "restart": {"category": "system", "admin": False},
+    "reconnect": {"category": "system", "admin": False},
+    "disconnect": {"category": "system", "admin": False},
+    "logout": {"category": "system", "admin": False},
+    "quit": {"category": "system", "admin": False},
     
     # Admin/builder
     "wizhelp": {"category": "admin", "admin": True},
@@ -197,6 +255,12 @@ class MudCommandEngine:
         self.command_handlers: dict[str, Callable] = {
             # Info commands
             "score": self._cmd_score,
+            "progressioninspect": self._cmd_progression_repair,
+            "progressionrepair": self._cmd_progression_repair,
+            "advancementinspect": self._cmd_advancement_repair,
+            "advancementrepair": self._cmd_advancement_repair,
+            "display": self._cmd_display,
+            "displaytheme": self._cmd_displaytheme,
             "recipes": self._cmd_crafting_player,
             "recipe": self._cmd_crafting_player,
             "craft": self._cmd_crafting_player,
@@ -224,7 +288,7 @@ class MudCommandEngine:
             "collections": self._cmd_achievements,
             "collection": self._cmd_achievements,
             "titles": self._cmd_achievements,
-            "title": self._cmd_achievements,
+            "title": self._cmd_title,
             "accolades": self._cmd_achievements,
             "profile": self._cmd_achievements,
             "ability": self._cmd_ability_detail,
@@ -257,13 +321,54 @@ class MudCommandEngine:
             "abilitycooldowns": self._cmd_abilitycooldowns,
             "abilitycasts": self._cmd_abilitycasts,
             "affects": self._cmd_affects,
+
+            "resetlist": self._cmd_builder_reset, "resetstat": self._cmd_builder_reset, "resetcreate": self._cmd_builder_reset, "resetclone": self._cmd_builder_reset, "resetset": self._cmd_builder_reset, "resetdelete": self._cmd_builder_reset, "resetcommand": self._cmd_builder_reset, "resetvalidate": self._cmd_builder_reset, "resetpreview": self._cmd_builder_reset, "resetrun": self._cmd_builder_reset, "resethistory": self._cmd_builder_reset, "resettrace": self._cmd_builder_reset, "zreset": self._cmd_builder_reset, "zresetstat": self._cmd_builder_reset, "zresetpreview": self._cmd_builder_reset, "zresetrun": self._cmd_builder_reset,
             "who": self._cmd_who,
             "whoami": self._cmd_whoami,
             "save": self._cmd_save,
             "desc": self._cmd_builder_edit,
-            "recall": self._cmd_generic,
+            "recall": self._cmd_direct_ability,
             "grantrole": self._cmd_grantrole,
             "help": self._cmd_help,
+            "helpedit": self._cmd_helpedit,
+            "attributes": self._cmd_attributes,
+            "stats": self._cmd_attributes,
+            "combatstats": self._cmd_combatstats,
+            "combatbreakdown": self._cmd_combatbreakdown,
+            "statbreakdown": self._cmd_statbreakdown,
+            "attributeedit": self._cmd_attributeedit,
+            "formula": self._cmd_formulaedit,
+            "formulaedit": self._cmd_formulaedit,
+            "statdef": self._cmd_statdef,
+            "resistanceedit": self._cmd_resistanceedit,
+            "encumbranceedit": self._cmd_encumbranceedit,
+            "postureedit": self._cmd_postureedit,
+            "rangeedit": self._cmd_rangeedit,
+            "combatmessage": self._cmd_combatmessage,
+            "perfstat": self._cmd_perfstat,
+            "violenceprofile": self._cmd_runtime_admin,
+            "warmupstat": self._cmd_runtime_admin,
+            "warmuptrace": self._cmd_runtime_admin,
+            "combatcache": self._cmd_runtime_admin,
+            "pulseinfo": self._cmd_runtime_admin,
+            "pointinfo": self._cmd_runtime_admin,
+            "adminstatus": self._cmd_runtime_admin,
+            "pulsetrace": self._cmd_runtime_admin,
+            "pointtrace": self._cmd_runtime_admin,
+            "pulseforce": self._cmd_runtime_admin,
+            "residentlist": self._cmd_runtime_admin,
+            "residentstat": self._cmd_runtime_admin,
+            "occupancystat": self._cmd_runtime_admin,
+            "occupancyvalidate": self._cmd_runtime_admin,
+            "occupancy": self._cmd_runtime_admin,
+            "latencystat": self._cmd_runtime_admin,
+            "commandtrace": self._cmd_runtime_admin,
+            "restore": self._cmd_restore,
+            "restorestat": self._cmd_restore,
+            "stateinspect": self._cmd_stateinspect,
+            "staterepair": self._cmd_stateinspect,
+            "combatstate": self._cmd_stateinspect,
+            "condition": self._cmd_condition,
             "commands": self._cmd_commands,
             "look": self._cmd_look,
             "hide": self._cmd_perception,
@@ -284,8 +389,14 @@ class MudCommandEngine:
             "say": self._cmd_say,
             "emote": self._cmd_emote,
             "study": self._cmd_generic,
-            "train": self._cmd_generic,
-            "practice": self._cmd_generic,
+            "train": self._cmd_training_player,
+            "tr": self._cmd_training_player,
+            "practice": self._cmd_training_player,
+            "prac": self._cmd_training_player,
+            "pr": self._cmd_training_player,
+            "buypractice": self._cmd_training_player,
+            "buyprac": self._cmd_training_player,
+            "buytrain": self._cmd_training_player,
             "socials": self._cmd_generic,
             "holler": self._cmd_generic,
             "shout": self._cmd_generic,
@@ -294,7 +405,7 @@ class MudCommandEngine:
             "ask": self._cmd_generic,
             "reply": self._cmd_generic,
             "tell": self._cmd_generic,
-            "prompt": self._cmd_generic,
+            "prompt": self._cmd_prompt,
             "afk": self._cmd_generic,
             "automap": self._cmd_generic,
             "autosplit": self._cmd_generic,
@@ -330,7 +441,9 @@ class MudCommandEngine:
             "attack": self._cmd_combat_foundation,
             "assist": self._cmd_combat_foundation,
             "flee": self._cmd_combat_foundation,
+            "defend": self._cmd_combat_foundation,
             "combat": self._cmd_combat_foundation,
+            "target": self._cmd_combat_foundation,
             "levels": self._cmd_generic,
             "time": self._cmd_worldtime,
             "worldtime": self._cmd_worldtime,
@@ -420,7 +533,7 @@ class MudCommandEngine:
             "wizhelp": self._cmd_wizhelp,
             "goto": self._cmd_goto,
             "stat": self._cmd_stat,
-            "formula": self._cmd_formula_diag,
+            "formuladiag": self._cmd_formula_diag,
             "modifier": self._cmd_modifier_diag,
             "actor": self._cmd_actor_diag,
             "bodylist": self._cmd_phase5f, "bodyshow": self._cmd_phase5f, "slotlist": self._cmd_phase5f,
@@ -440,13 +553,26 @@ class MudCommandEngine:
         for _name in "achievementlist achievementstat achievementcreate achievementclone achievementset achievementdelete achievementvalidate achievementpreview criteriagrouplist criteriagroupstat criteriagroupcreate criteriagroupset criteriagroupdelete criteriagroupvalidate criterialist criteriastat criteriacreate criteriaclone criteriaset criteriadelete criteriavalidate criteriapreview titlelist titlestat titlecreate titleclone titleset titledelete titlevalidate accoladelist accoladestat accoladecreate accoladeset accoladedelete accoladevalidate collectionlist collectionstat collectioncreate collectionset collectiondelete collectionvalidate actorachievements achievementgrant achievementrevoke achievementprogress achievementreset achievementcomplete achievementtrace achievementevent achievementaudit titlegrant titlerevoke titleselect accoladegrant collectiongrant achievementeventtrace criteriatrace milestonetrace achievementrewardtrace titletrace accoladetrace collectiontrace".split():
             self.command_handlers[_name]=self._cmd_builder_achievement
 
-        for _name in "quests questlog journal quest accept decline abandon turnin talk reply questlist queststat questcreate questclone questset questdelete questvalidate questpreview questtrace stagelist stagestat stagecreate stageclone stageset stagedelete stagevalidate objectivelist objectivestat objectivecreate objectiveclone objectiveset objectivedelete objectivevalidate objectivepreview branchlist branchadd branchset branchdelete branchvalidate questactionlist questactionadd questactionset questactiondelete questactionvalidate conversationlist conversationstat conversationcreate conversationclone conversationset conversationdelete conversationvalidate conversationpreview convnodelist convnodecreate convnodeset convnodedelete convchoiceadd convchoiceset convchoicedelete worldstatelist worldstatestat worldstateset worldstateclear worldstatehistory actorquests questoffer questaccept questadvance questcomplete questfail questabandon questreset questinstance questinstancetrace objectiveprogress questevent questtick questaudit conversationaudit worldstateaudit availabilitytrace objectivetrace questeventtrace branchtrace questrewardtrace conversationtrace worldstatetrace questtimertrace".split():
+        for _name in "resources survey resource gather forage harvest mine chop fish dig excavate salvage skin butcher extract".split():
+            if _name not in self.command_handlers:
+                self.command_handlers[_name] = self._cmd_gathering_player
+        for _name in "property properties rent lease access home storage room locker store retrieve keys key".split():
+            self.command_handlers[_name] = self._cmd_property_player
+
+        for _name in "quests questlog journal quest objectives accept decline abandon turnin talk reply questlist queststat questcreate questclone questset questdelete questvalidate questpreview questtrace stagelist stagestat stagecreate stageclone stageset stagedelete stagevalidate objectivelist objectivestat objectivecreate objectiveclone objectiveset objectivedelete objectivevalidate objectivepreview branchlist branchadd branchset branchdelete branchvalidate questactionlist questactionadd questactionset questactiondelete questactionvalidate conversationlist conversationstat conversationcreate conversationclone conversationset conversationdelete conversationvalidate conversationpreview convnodelist convnodecreate convnodeset convnodedelete convchoiceadd convchoiceset convchoicedelete worldstatelist worldstatestat worldstateset worldstateclear worldstatehistory actorquests questoffer questaccept questadvance questcomplete questfail questabandon questreset questinstance questinstancetrace objectiveprogress questevent questtick questaudit conversationaudit worldstateaudit availabilitytrace objectivetrace questeventtrace branchtrace questrewardtrace conversationtrace worldstatetrace questtimertrace".split():
             self.command_handlers[_name] = self._cmd_phase8a_quest
         for _name in "behaviorlist behaviorstat behaviorvalidate behaviorpreview actorbehavior behaviortrace combatdecision combattrace combatcandidates threatlist threatstat threatadd threatclear hostilitytrace combattick protect protectset unprotect protectclear surrender callforhelp assisttrace fleetrace pursuittrace protecttrace combatgrouptrace petmode order".split():
             self.command_handlers[_name] = self._cmd_combat_behavior
 
-        for _name in "needs hunger thirst fatigue food drink eat consume sip taste rest sleep wake camp make break light extinguish add inspect stop needlist needstat needcreate needclone needset needdelete needvalidate needpreview needsprofilelist needsprofilestat needsprofilecreate needsprofileset needsprofiledelete needsprofilevalidate consumablelist consumablestat consumablecreate consumableclone consumableset consumabledelete consumablevalidate consumablepreview needsinspect needsset needsmodify needstick needstrace consumptiontrace survivalaudit".split():
+        for _name in "needs hunger thirst fatigue food drink eat consume sip taste rest sleep wake camp campfire campsite fire make break light extinguish add inspect stop needlist needstat needcreate needclone needset needdelete needvalidate needpreview needsprofilelist needsprofilestat needsprofilecreate needsprofileset needsprofiledelete needsprofilevalidate consumablelist consumablestat consumablecreate consumableclone consumableset consumabledelete consumablevalidate consumablepreview needsinspect needsset needsmodify needstick needstrace consumptiontrace survivalaudit".split():
             self.command_handlers[_name] = self._cmd_survival_needs
+
+        for _name in "quit logout disconnect reconnect restart".split():
+            self.command_handlers[_name] = self._cmd_session
+        for _name in "social socials wave bow nod salute point laugh smile cry cheer applaud hug highfive dance spit sit stand rest yawn stretch clap shake glare thank".split():
+            self.command_handlers[_name] = self._cmd_social
+        for _name in "stand sit rest sleep wake lay lie".split():
+            self.command_handlers[_name] = self._cmd_position
 
 
 
@@ -458,22 +584,526 @@ class MudCommandEngine:
         world_id=getattr(rt,'active_world_id',None) or getattr(character,'world_id','shattered_realms') or 'shattered_realms'
         return SurvivalNeedsService(getattr(store,'db_path',Path('.smartmud_survival.sqlite3')), Path('worlds')/world_id, world_id, self.event_bus, rt)
 
+    def _format_campsite_status(self, row: Any) -> str:
+        if not row:
+            return "There is no campsite here."
+        status = row.get("status", "active") if isinstance(row, dict) else "active"
+        return "A small campsite has been established here." if status in {"active","occupied","abandoned"} else "There is no campsite here."
+
+    def _format_campfire_status(self, row: Any) -> str:
+        if not row:
+            return "There is no campfire here."
+        status = str(row.get("status") or "unlit") if isinstance(row, dict) else "unlit"
+        fuel = int((row.get("fuel_current") or row.get("fuel_amount") or 0) if isinstance(row, dict) else 0)
+        
+        if status == "lit": return "A small campfire burns steadily here."
+        if status == "extinguished": return "Only a bed of cold ashes remains."
+        return "A small unlit campfire rests within the campsite."
+
+    def _cmd_session(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        cmd = (raw.split() or [""])[0].lower()
+        rt = getattr(self, "runtime", None)
+        actor_id = str(getattr(character, "id", ""))
+        if cmd in {"quit", "logout", "disconnect"}:
+            if self.event_bus:
+                self.event_bus.publish("character_session_left", {"character_id": actor_id, "room_id": getattr(character, "room_id", ""), "command": cmd}, source_system="session", character_id=actor_id, room_id=getattr(character, "room_id", ""))
+            if rt:
+                try:
+                    rt.unregister_live_character(actor_id)
+                    rt.active_character_id = ""
+                except Exception:
+                    pass
+            return CommandResult("You save your progress and leave the game. Choose a character to continue.", state_updates={"session_transition": "character_select"})
+        if cmd == "reconnect":
+            return CommandResult("You are already connected.")
+        if cmd == "restart":
+            return CommandResult("You cannot restart the game server. Use LOGOUT to leave your current character.", ok=False)
+        return CommandResult("Use LOGOUT to leave your current character.", ok=False)
+
+    SOCIAL_DEFINITIONS = {
+        "hug": ("hugs themself awkwardly.", "hugs {target}."),
+        "highfive": ("looks for someone to high-five.", "high-fives {target}."),
+        "wave": ("waves.", "waves to {target}."),
+        "smile": ("smiles.", "smiles at {target}."),
+        "laugh": ("laughs.", "laughs with {target}."),
+        "bow": ("bows.", "bows to {target}."),
+        "nod": ("nods.", "nods to {target}."),
+        "shake": ("shakes their head.", "shakes {target}'s hand."),
+        "dance": ("dances.", "dances with {target}."),
+        "cheer": ("cheers.", "cheers for {target}."),
+        "clap": ("claps.", "claps for {target}."),
+        "applaud": ("applauds.", "applauds {target}."),
+        "point": ("points.", "points at {target}."),
+        "cry": ("cries quietly.", "cries on {target}'s shoulder."),
+        "sit": ("sits down.", "sits beside {target}."),
+        "stand": ("stands up.", "stands beside {target}."),
+        "rest": ("rests for a moment.", "rests beside {target}."),
+        "yawn": ("yawns.", "yawns at {target}."),
+        "stretch": ("stretches.", "stretches beside {target}."),
+        "salute": ("salutes.", "salutes {target}."),
+        "spit": ("spits on the ground.", "spits toward {target}."),
+        "glare": ("glares.", "glares at {target}."),
+        "thank": ("offers thanks.", "thanks {target}."),
+    }
+
+    def _cmd_social(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        social_id = self.resolve_alias((raw.split() or ["social"])[0].lower())
+        if social_id == "socials" or social_id == "social":
+            if not args:
+                return CommandResult("Social commands:\n" + ", ".join(sorted(self.SOCIAL_DEFINITIONS)))
+            social_id = args[0].lower()
+            args = args[1:]
+        if social_id not in self.SOCIAL_DEFINITIONS:
+            return CommandResult("That social is not available. Use SOCIALS to list social commands.", ok=False)
+        actor_name = str(getattr(character, "name", "Someone"))
+        target_name = ""
+        query = " ".join(args).strip()
+        rt = getattr(self, "runtime", None)
+        if query and rt and hasattr(rt, "_resolve_interaction_target"):
+            resolved = rt._resolve_interaction_target(character, query)
+            if resolved.get("status") == "ok":
+                target = resolved.get("target") or {}
+                target_name = str(target.get("name") or target.get("short_label") or query)
+            elif resolved.get("status") == "ambiguous":
+                return CommandResult("Which one do you mean?", ok=False)
+            else:
+                return CommandResult("You do not see that person here.", ok=False)
+        no_target, with_target = self.SOCIAL_DEFINITIONS[social_id]
+        text = f"{actor_name} {with_target.format(target=target_name)}" if target_name else f"{actor_name} {no_target}"
+        if self.event_bus:
+            self.event_bus.publish("social_emote_performed", {"actor_id": getattr(character, "id", ""), "actor_name": actor_name, "target_name": target_name, "social_id": social_id, "room_id": getattr(character, "room_id", "")}, source_system="social", character_id=getattr(character, "id", ""), room_id=getattr(character, "room_id", ""))
+        return CommandResult(text)
+
+
+    def _admin_ok(self, character: Any) -> bool:
+        return str(getattr(character, "role", "player")).lower() in {"admin", "owner", "builder"} or int(getattr(character, "immortal_level", 0) or 0) > 0
+
+    def _cmd_condition(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        rt = getattr(self, "runtime", None); cr = getattr(rt, "combat_runtime", None) if rt else None
+        actor = actor_from_runtime_character(character, getattr(rt, "active_world_id", "") if rt else "")
+        actor.actor_id = cr.actor_id_for_character(character) if cr else f"character:{getattr(character,'id','')}"
+        reconcile_actor_position(actor, rt, reason="condition_command")
+        st = build_action_state(actor, rt, active_encounter_id=(cr.find_actor_encounter(actor.actor_id) if cr else "") or "")
+        return CommandResult(f"Condition: {st.health}/{st.maximum_health} health\nPosition: {st.derived_position.replace('_',' ')}\nCan move: {'yes' if st.can_move else 'no'}\nCan fight: {'yes' if st.can_attack else 'no'}" + (f"\nBlocked: {st.blocking_reason}" if st.blocking_reason else ""))
+
+    def _cmd_stateinspect(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if not self._admin_ok(character):
+            return CommandResult("You do not have permission for that command.", ok=False)
+        rt = getattr(self, "runtime", None); cr = getattr(rt, "combat_runtime", None) if rt else None
+        cmd = (raw.split() or [""])[0].lower()
+        target = args[0] if args else getattr(character, "id", "")
+        ch = character if target in {getattr(character,"id", ""), getattr(character,"name", "")} else (rt.state_store.load_character(target) if rt and hasattr(rt, "state_store") else None)
+        if not ch:
+            return CommandResult(f"Character not found: {target}", ok=False)
+        actor = actor_from_runtime_character(ch, getattr(rt, "active_world_id", "") if rt else "")
+        actor.actor_id = cr.actor_id_for_character(ch) if cr else f"character:{getattr(ch,'id','')}"
+        active = cr.find_actor_encounter(actor.actor_id) if cr else ""
+        stored, derived, changed = reconcile_actor_position(actor, rt, reason=cmd, persist_dirty=(cmd == "staterepair" and "--apply" in args)) if (cmd == "staterepair" and "--apply" in args) else (actor.combat_profile.get("combat_state",""), derive_position_from_health(actor.resources.health, actor.combat_profile.get("combat_state","standing"), actor.lifecycle_state), False)
+        st = build_action_state(actor, rt, active_encounter_id=active or "")
+        proposed = []
+        if st.repair_required:
+            proposed.append(f"position: {st.stored_position} -> {st.derived_position} (safe: health/lifecycle threshold)")
+        if active and cmd in {"staterepair", "combatstate"}:
+            proposed.append(f"active encounter: {active} (inspect/cleanup if stale)")
+        applied = cmd == "staterepair" and "--apply" in args and changed
+        title = "Combat State" if cmd == "combatstate" else ("State Repair" if cmd == "staterepair" else "State Inspect")
+        return CommandResult(title + f"\ncharacter: {getattr(ch,'id','')}\ncurrent_health: {actor.resources.health}/{actor.resources.maximum_health}\npersisted_health: {getattr(ch,'hp',0)}/{getattr(ch,'max_hp',0)}\nstored_position: {st.stored_position}\nderived_position: {st.derived_position}\ncombat_state: {st.combat_state}\nlifecycle_state: {st.lifecycle_state}\nactive_encounter: {active or 'none'}\nactive_target: {st.active_target_id or 'none'}\nattack_allowed: {'yes' if st.can_attack else 'no'}\nblocking_reason: {st.blocking_reason or 'none'}\nproposed_repair: {('; '.join(proposed)) if proposed else 'none'}\napplied: {'yes' if applied else 'no'}")
+
+    def _cmd_perfstat(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if str(getattr(character, "role", "player")).lower() not in {"admin", "owner", "builder"} and int(getattr(character, "immortal_level", 0) or 0) <= 0:
+            return CommandResult("You do not have permission for that command.", ok=False)
+        rt = getattr(self, "runtime", None)
+        counters = getattr(rt, "performance_counters", {}) if rt else {}
+        if args and args[0].lower() == "reset":
+            from engine.performance_counters import reset_performance_counters
+            ok, invalid = reset_performance_counters(rt)
+            if not ok:
+                return CommandResult(f"Performance counter reset aborted; invalid counter schema: {invalid}.", ok=False)
+            return CommandResult("Performance counters reset.")
+        if args and args[0].lower() == "validate":
+            from engine.performance_counters import validate_all_performance_counter_schema
+            errors = validate_all_performance_counter_schema(counters)
+            return CommandResult("Performance counter schema valid." if not errors else "Performance counter schema invalid:\n" + "\n".join(errors), ok=not bool(errors))
+        if args and args[0].lower() == "schema":
+            from engine.performance_counters import schema_rows
+            rows = schema_rows(counters)
+            return CommandResult("Performance counter schema:\n" + "\n".join(f"{r['key']} {r['type']} {r['category']} {r['reset_policy']} current={r['current_type']} {'valid' if r['valid'] else 'invalid'}" for r in rows))
+        keys = [k for k in sorted(counters) if k.startswith(("runtime_", "combat_", "practice_", "train_", "position_", "autosave_", "resident_", "regeneration_"))]
+        return CommandResult("Performance counters:\n" + "\n".join(f"{k}: {counters.get(k,0)}" for k in keys))
+
+    def _is_admin(self, character: Any) -> bool:
+        return str(getattr(character, "role", "player")).lower() in {"admin", "owner", "builder"} or int(getattr(character, "immortal_level", 0) or 0) > 0
+
+    def _cmd_runtime_admin(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if not self._is_admin(character):
+            return CommandResult("You do not have permission for that command.", ok=False)
+        rt = getattr(self, "runtime", None)
+        cmd = (raw.split() or [""])[0].lower()
+        if not rt:
+            return CommandResult("Runtime is unavailable.", ok=False)
+        if cmd == "adminstatus":
+            role = str(getattr(character, "role", "player")).lower(); imm = int(getattr(character, "immortal_level", 0) or 0)
+            allowed = self._is_admin(character)
+            perms = [p for p in ("RESTORE", "PERFSTAT", "PULSEFORCE") if allowed]
+            return CommandResult(f"Admin status:\naccount_id: {getattr(character, 'account_id', '') or 'unknown'}\ncharacter_id: {getattr(character, 'id', '')}\ncanonical_role: {role}\nadministrator_level: {imm}\nimmortal_level: {imm}\npermissions_granted: {', '.join(perms) if perms else 'none'}\nRESTORE allowed: {'yes' if allowed else 'no'}\nPERFSTAT allowed: {'yes' if allowed else 'no'}\nPULSEFORCE allowed: {'yes' if allowed else 'no'}")
+        if cmd in {"pulseinfo", "pointinfo"}:
+            cfg = getattr(rt, "pulse_config", {})
+            lines = ["Pulse configuration:"] + [f"{k}: {v}" for k, v in sorted(cfg.items())] + [f"current_pulse: {getattr(rt, '_runtime_pulse_counter', 0)}"]
+            if cmd == "pointinfo":
+                rr = getattr(rt, "runtime_resources", None); cr=getattr(rt,"combat_runtime",None); aid=f"character:{getattr(character,'id','')}"; actor=getattr(cr,"resident_actors",{}).get(aid) if cr else None
+                pos = (actor.combat_profile.get("position") if actor else (getattr(character, "actor_data", {}) or {}).get("position", "standing"))
+                mult = 4 if pos == "sleeping" else 2 if pos == "resting" else 0 if pos in {"fighting","in_combat","dead"} else 1
+                online = getattr(character,'id','') in getattr(rt,'active_characters',{})
+                eligible = bool(actor and online and mult and not (cr.find_actor_encounter(aid) if cr else ""))
+                reason = "eligible" if eligible else ("not_registered" if not actor else "offline" if not online else "blocked_position")
+                lines += [f"heartbeat pulse: {getattr(rt, '_runtime_pulse_counter', 0)}", f"point-update interval: {getattr(rr, 'point_update_interval_seconds', 6.0) if rr else 6.0}", f"last point-update: {getattr(rr, 'last_point_update_monotonic', 0.0) if rr else 0.0}", f"next point-update: {getattr(rr, '_next_regeneration_monotonic', 0.0) if rr else 0.0}", f"actor registered: {'yes' if actor else 'no'}", f"actor online: {'yes' if online else 'no'}", f"actor eligible: {'yes' if eligible else 'no'}", f"current position: {pos}", f"HP gain formula result: {mult}", f"Mana gain result: {mult}", f"Move gain result: {mult}", "hunger/thirst modifiers: none", "poison modifiers: none", f"blocking reason: {reason}"]
+            return CommandResult("\n".join(lines))
+        if cmd == "warmupstat":
+            cw=getattr(rt,"combat_warmup",None); return CommandResult(cw.render_stat() if cw else "Combat warmup unavailable.", ok=bool(cw))
+        if cmd == "warmuptrace":
+            cw=getattr(rt,"combat_warmup",None); return CommandResult(cw.render_trace() if cw else "Combat warmup unavailable.", ok=bool(cw))
+        if cmd == "combatcache":
+            cw=getattr(rt,"combat_warmup",None)
+            if not cw: return CommandResult("Combat cache unavailable.", ok=False)
+            if args and args[0].lower()=="reset":
+                if any(getattr(e,"status","")=="active" for e in getattr(getattr(rt,"combat_runtime",None),"resident_encounters",{}).values()): return CommandResult("Cannot reset combat cache during active combat.", ok=False)
+                cw.cache.reset(); cw.warm(); return CommandResult("Combat cache reset and rebuilt.")
+            if args and args[0].lower()=="validate": return CommandResult("Combat cache validation: ready" if cw.report.status in {"ready","warning"} else "Combat cache validation failed", ok=cw.report.status in {"ready","warning"})
+            return CommandResult("Combat cache:\n"+"\n".join(f"{k}: {v}" for k,v in cw.cache.stats().items()))
+        if cmd == "violenceprofile":
+            cr = getattr(rt, "combat_runtime", None)
+            if not cr or not getattr(cr, "violence_profiler", None):
+                return CommandResult("Violence profiler is unavailable.", ok=False)
+            if args and args[0].lower() == "reset":
+                cr.violence_profiler.reset(); return CommandResult("Violence profile reset.")
+            return CommandResult(cr.violence_profiler.render())
+        if cmd == "commandtrace":
+            tid = args[0] if args else ""
+            traces = getattr(rt, "command_traces", {})
+            if not tid:
+                recent = list(traces.keys())[-10:]
+                return CommandResult("Command traces:\n" + ("\n".join(recent) if recent else "none"))
+            tr = traces.get(tid)
+            if not tr:
+                return CommandResult(f"Command trace not found: {tid}", ok=False)
+            base = float(tr.get("request_received") or tr.get("request_started") or 0.0)
+            keys = ["request_received","routing_started","target_resolved","encounter_created","opening_attack_started","opening_attack_completed","response_ready","response_sent"]
+            lines = [f"Command trace {tid}:"]
+            for k in keys:
+                if k in tr:
+                    lines.append(f"{k}: {(float(tr[k])-base)*1000.0:.3f} ms")
+            lines.append(f"total_server_ms: {float(tr.get('total_server_ms', 0.0)):.3f}")
+            waits = tr.get("awaits") or []
+            lines.append("awaited_operations:")
+            lines.extend([f"- {w.get('operation','unknown')}: {float(w.get('ms',0.0)):.3f} ms" for w in waits] or ["- none"])
+            return CommandResult("\n".join(lines))
+        if cmd == "pointtrace":
+            mode = args[0].lower() if args else ""
+            if mode in {"on", "off"}:
+                rt.performance_counters["point_update_trace_enabled"] = 1 if mode == "on" else 0
+                return CommandResult(f"Point trace {mode}.")
+            keys = [k for k in sorted(getattr(rt, "performance_counters", {})) if k.startswith(("point_update_", "regeneration_", "recovery_"))]
+            return CommandResult("Point trace:\n" + "\n".join(f"{k}: {rt.performance_counters.get(k,0)}" for k in keys))
+        if cmd == "pulsetrace":
+            keys = [k for k in sorted(getattr(rt, "performance_counters", {})) if k.startswith(("runtime_", "scheduler_", "combat_", "autosave_", "corpse_"))]
+            return CommandResult("Pulse trace:\n" + "\n".join(f"{k}: {rt.performance_counters.get(k,0)}" for k in keys))
+        if cmd == "pulseforce":
+            subsystem = (args[0].lower() if args else "")
+            if subsystem in {"combat", "violence"}:
+                n = rt.combat_runtime.process_due_rounds(rt.combat_runtime.world_time()) if getattr(rt, "combat_runtime", None) else []
+                return CommandResult(f"Forced combat violence pulse; messages={len(n)}.")
+            if subsystem in {"point", "point_update", "regeneration"}:
+                n = rt.runtime_resources.process_due_regeneration(10**12) if getattr(rt, "runtime_resources", None) else 0
+                return CommandResult(f"Forced point update; actors={n}.")
+            if subsystem == "autosave":
+                return CommandResult(f"Forced autosave; characters_saved={rt.autosave_dirty_characters()}.")
+            if subsystem in {"corpse", "corpse_decay"}:
+                return CommandResult(f"Forced corpse decay; corpses_decayed={rt.process_corpse_decay(10**12)}.")
+            return CommandResult("Usage: pulseforce combat|point_update|autosave|corpse_decay", ok=False)
+        if cmd in {"occupancystat", "occupancyvalidate", "occupancy"}:
+            if cmd == "occupancyvalidate":
+                problems = rt.validate_room_occupancy() if hasattr(rt, "validate_room_occupancy") else ["runtime lacks validator"]
+                return CommandResult("Occupancy validation: ok" if not problems else "Occupancy validation errors:\n" + "\n".join(problems), ok=not bool(problems))
+            if cmd == "occupancystat" or not args:
+                idx = getattr(rt, "resident_occupants_by_room", {})
+                total = sum(len(v) for v in idx.values())
+                return CommandResult(f"Resident occupancy rooms={len(idx)} occupants={total} actors={len(getattr(rt.combat_runtime, 'resident_actors', {}))}")
+            if args[0] == "room":
+                rid = rt.canonical_room_id(args[1] if len(args) > 1 else getattr(character, "room_id", ""))
+                ids = list(getattr(rt, "resident_occupants_by_room", {}).get(rid, {}))
+                return CommandResult(f"Occupancy room {rid}:\n" + ("\n".join(ids) if ids else "none"))
+            if args[0] == "actor" and len(args) > 1:
+                aid = args[1]
+                actor = getattr(rt.combat_runtime, "resident_actors", {}).get(aid)
+                return CommandResult(f"Occupancy actor {aid}: room={getattr(getattr(actor, 'identity', None), 'current_location', 'missing')}")
+            return CommandResult("Usage: occupancyvalidate | occupancystat | occupancy room [room] | occupancy actor <actor>", ok=False)
+        if cmd == "residentlist":
+            ids = sorted(getattr(rt, "active_characters", {}).keys())
+            return CommandResult("Residents:\n" + ("\n".join(ids) if ids else "none"))
+        if cmd == "residentstat":
+            cid = args[0] if args else getattr(character, "id", "")
+            cid = cid.removeprefix("character:")
+            ch = getattr(rt, "active_characters", {}).get(cid)
+            aid = f"character:{cid}"
+            dirty = sorted(getattr(rt, "_dirty_characters", {}).get(cid, set()))
+            attached = getattr(rt, "character_session_ids", {}).get(cid, "")
+            combat = rt.combat_runtime.find_actor_encounter(aid) if getattr(rt, "combat_runtime", None) else ""
+            generation = ((getattr(ch, "actor_data", {}) or {}).get("hydration_generation") if ch else "absent")
+            text = (
+                f"Resident {cid}:\n"
+                f"session_attached: {attached or 'no'}\n"
+                f"online: {'yes' if ch else 'no'}\n"
+                "reconnect_grace: no\n"
+                f"resident_actor_generation: {generation}\n"
+                f"dirty: {', '.join(dirty) if dirty else 'no'}\n"
+                f"combat_active: {combat or 'no'}\n"
+                f"regeneration_active: {'yes' if aid in getattr(getattr(rt, 'combat_runtime', None), 'resident_actors', {}) else 'no'}\n"
+                f"last_autosave: {(getattr(rt, 'character_dirty_state', {}).get(cid, {}) or {}).get('last_saved_at', '')}\n"
+                "planned_eviction_time: none"
+            )
+            return CommandResult(text)
+        if cmd == "latencystat":
+            if args and args[0].lower() == "reset":
+                rt.performance_counters["command_blocked_on_save_ms"] = 0
+                return CommandResult("Latency counters reset.")
+            return CommandResult("Latency statistics:\ncommand_blocked_on_save_ms: " + str(rt.performance_counters.get("command_blocked_on_save_ms", 0)) + "\ncombat_message_delivery_latency_ms: " + str(rt.performance_counters.get("combat_message_delivery_latency_ms", 0)))
+        if cmd == "commandtrace":
+            return CommandResult("Command traces are returned per command response in development diagnostics.")
+        return CommandResult("Unknown runtime admin command.", ok=False)
+
+    def _resolve_character_for_admin(self, rt: Any, token: str) -> tuple[Any | None, bool]:
+        key = (token or "").removeprefix("character:")
+        if key.lower() in {"self", "me"}:
+            return None, True
+        for ch in getattr(rt, "active_characters", {}).values():
+            if key.lower() in {str(getattr(ch, "id", "")).lower(), str(getattr(ch, "name", "")).lower()}:
+                return ch, True
+        ch = None
+        try:
+            ch = rt.state_store.load_character(key)
+        except Exception:
+            ch = None
+        if not ch:
+            try:
+                import sqlite3
+                with sqlite3.connect(rt.state_store.db_path) as con:
+                    row = con.execute("SELECT id FROM characters WHERE lower(id)=? OR lower(name)=? LIMIT 1", (key.lower(), key.lower())).fetchone()
+                if row:
+                    ch = rt.state_store.load_character(str(row[0]))
+            except Exception:
+                pass
+        return ch, False
+
+    def _restore_actor_for_character(self, rt: Any, ch: Any, online: bool):
+        rr = getattr(rt, "runtime_resources", None)
+        if online:
+            aid = rt.combat_runtime.actor_id_for_character(ch) if getattr(rt, "combat_runtime", None) else f"character:{getattr(ch,'id','')}"
+            actor = getattr(getattr(rt, "combat_runtime", None), "resident_actors", {}).get(aid)
+            if actor is None:
+                rt.register_live_character(ch)
+                actor = getattr(getattr(rt, "combat_runtime", None), "resident_actors", {}).get(aid)
+        else:
+            actor = actor_from_runtime_character(ch, getattr(rt, "active_world_id", "")); actor.actor_id = f"character:{getattr(ch,'id','')}"
+        if actor is None:
+            actor = actor_from_runtime_character(ch, getattr(rt, "active_world_id", "")); actor.actor_id = f"character:{getattr(ch,'id','')}"
+        before = rr.build_resource_snapshot(actor) if rr else {}
+        removed = []
+        affects = getattr(ch, "affects", {}) if isinstance(getattr(ch, "affects", {}), dict) else {}
+        for key, val in list(affects.items()):
+            meta = val if isinstance(val, dict) else {"type": str(val)}
+            tags = {str(x).lower() for x in meta.get("tags", [])} | {str(meta.get("type", "")).lower(), str(meta.get("category", "")).lower()}
+            if tags & {"poison", "blind", "curse", "debuff", "harmful", "death", "stun"}:
+                removed.append(key); affects.pop(key, None)
+        ch.affects = affects
+        if rr:
+            rr.restore_all_resources(actor)
+        else:
+            actor.resources.health=actor.resources.maximum_health; actor.resources.mana=actor.resources.maximum_mana; actor.resources.stamina=actor.resources.maximum_stamina
+        actor.lifecycle_state = "alive"; actor.combat_profile["position"] = "standing"; actor.combat_profile["combat_state"] = "idle"; actor.combat_profile.pop("target_id", None); actor.combat_profile.pop("active_target_id", None)
+        if getattr(rt, 'combat_runtime', None):
+            rt.combat_runtime.clear_actor_combat_state(actor.actor_id, "admin_restore", status="restored")
+        if rr: rr._sync_runtime_character(actor, reason="admin_restore")
+        else:
+            ch.hp=actor.resources.health; ch.mana=actor.resources.mana; ch.stamina=actor.resources.stamina
+        data = ch.actor_data if isinstance(getattr(ch, "actor_data", {}), dict) else {}
+        data.update({"position":"standing", "posture":"standing", "lifecycle_state":"alive", "combat_state":"idle"}); ch.actor_data=data
+        if online:
+            if hasattr(rt, 'invalidate_character_projections'): rt.invalidate_character_projections(ch.id, 'admin_restore')
+            rt.mark_character_dirty(ch.id, "admin_restore"); rt.save_character_if_dirty(ch, "admin_restore", force=True)
+        else:
+            ch.hp=actor.resources.health; ch.max_hp=actor.resources.maximum_health; ch.mana=actor.resources.mana; ch.max_mana=actor.resources.maximum_mana; ch.stamina=actor.resources.stamina; ch.max_stamina=actor.resources.maximum_stamina
+            rt.state_store.save_character(ch, rt.active_world_id or '')
+        after = rr.build_resource_snapshot(actor) if rr else {}
+        return before, after, removed
+
+    def _cmd_restore(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if not self._is_admin(character):
+            return CommandResult("You do not have permission for that command.", ok=False)
+        rt = getattr(self, "runtime", None)
+        if not rt:
+            return CommandResult("Runtime is unavailable.", ok=False)
+        counters = getattr(rt, "performance_counters", {})
+        counters["restore_attempts"] = counters.get("restore_attempts", 0) + 1
+        cmd = (raw.split() or ["restore"])[0].lower(); readonly = cmd == "restorestat"
+        target_name = args[0] if args else "self"
+        targets: list[tuple[Any, bool]] = []
+        form = target_name.lower()
+        if form in {"self", "me"}:
+            counters["restore_self"] = counters.get("restore_self", 0) + 1; targets = [(character, True)]
+        elif form == "all":
+            targets = [(ch, True) for ch in getattr(rt, "active_characters", {}).values() if str(getattr(ch, "role", "player")).lower() == "player"]
+            counters["restore_all_targets"] = counters.get("restore_all_targets", 0) + len(targets)
+        else:
+            ch, online = self._resolve_character_for_admin(rt, target_name)
+            if ch: targets = [(ch, online)]; counters["restore_online_target" if online else "restore_offline_target"] = counters.get("restore_online_target" if online else "restore_offline_target", 0) + 1
+        if not targets:
+            counters["restore_failures"] = counters.get("restore_failures", 0) + 1
+            return CommandResult(f"Character '{target_name}' not found.", ok=False)
+        lines=[]; restored=0; skipped=0
+        for ch, online in targets:
+            aid=f"character:{getattr(ch,'id','')}"; actor=getattr(getattr(rt,'combat_runtime',None),'resident_actors',{}).get(aid) if online else None
+            rr=getattr(rt,'runtime_resources',None)
+            before = rr.build_resource_snapshot(actor) if (rr and actor) else {"health":getattr(ch,'hp',0),"maximum_health":getattr(ch,'max_hp',0),"mana":getattr(ch,'mana',0),"maximum_mana":getattr(ch,'max_mana',0),"stamina":getattr(ch,'stamina',0),"maximum_stamina":getattr(ch,'max_stamina',0),"hunger":0,"thirst":0,"position":(getattr(ch,'actor_data',{}) or {}).get('position','standing'),"lifecycle":(getattr(ch,'actor_data',{}) or {}).get('lifecycle_state','alive')}
+            if readonly:
+                active = rt.combat_runtime.find_actor_encounter(aid) if getattr(rt, 'combat_runtime', None) else ""
+                lines.append(f"Restore stat {ch.name}:\nresources: {before['health']}/{before['maximum_health']} HP {before['mana']}/{before['maximum_mana']} MP {before['stamina']}/{before['maximum_stamina']} MV\nhunger: {before.get('hunger',0)}\nthirst: {before.get('thirst',0)}\nposition: {before.get('position')}\nlifecycle_state: {before.get('lifecycle')}\nactive_encounter: {active or 'none'}\nactive_harmful_effects: {len(getattr(ch,'affects',{}) or {})}")
+                continue
+            before, after, removed = self._restore_actor_for_character(rt, ch, online)
+            counters["restore_effects_removed"] = counters.get("restore_effects_removed", 0) + len(removed)
+            restored += 1; counters["restore_successes"] = counters.get("restore_successes", 0) + 1
+            if online and ch is not character and getattr(rt, 'combat_runtime', None):
+                rt.combat_runtime.enqueue_output(ch.id, "You have been fully healed by an immortal.", room_id=getattr(ch,'room_id',''), category="recovery")
+            lines.append(f"Restored {ch.name}:\nHealth {before['health']}/{before['maximum_health']} -> {after['health']}/{after['maximum_health']}\nMana {before['mana']}/{before['maximum_mana']} -> {after['mana']}/{after['maximum_mana']}\nMove {before['stamina']}/{before['maximum_stamina']} -> {after['stamina']}/{after['maximum_stamina']}\nHunger {before.get('hunger',0)} -> {after.get('hunger',0)}\nThirst {before.get('thirst',0)} -> {after.get('thirst',0)}\nPosition {before.get('position')} -> {after.get('position')}\nLifecycle {before.get('lifecycle')} -> {after.get('lifecycle')}\nHarmful effects removed: {', '.join(removed) if removed else 'none'}\nCombat state cleared: yes\n({'online' if online else 'offline'})")
+        if form == "all": lines.append(f"Restore all summary: restored={restored} skipped={skipped} failures=0")
+        return CommandResult("\n".join(lines), state_updates={"prompt": True, "score": True, "resource_changed": True, "prompt_changed": True, "position_changed": True, "condition_changed": True})
+
+    def _cmd_advancement_repair(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if str(getattr(character, "role", "player")).lower() not in {"admin", "owner", "builder"} and int(getattr(character, "immortal_level", 0) or 0) <= 0:
+            return CommandResult("You do not have permission for that command.", ok=False)
+        rt = getattr(self, "runtime", None)
+        ps = rt._progression_service() if rt and hasattr(rt, "_progression_service") else self._training_service(character).progression
+        cmd = (raw.split() or [""])[0].lower()
+        target = args[0] if args else str(getattr(character, "id", ""))
+        apply = "--apply" in args
+        state = ps.initialize_actor_progression(target)
+        events = []
+        with ps.store.connect() as con:
+            con.row_factory = sqlite3.Row
+            events = [dict(r) for r in con.execute("SELECT * FROM actor_advancement_currency_events WHERE actor_id=? AND currency_id='attribute_points' ORDER BY created_at", (target,))]
+        demo_grants = [e for e in events if "demonstration" in (str(e.get("reason","")) + str(e.get("source_type","")) + str(e.get("metadata_json",""))).lower()]
+        spent = sum(int(e.get("amount") or 0) for e in events if e.get("event_type") == "spend")
+        demo_total = sum(int(e.get("amount") or 0) for e in demo_grants)
+        removable = max(0, min(int(state.get("attribute_points") or 0), max(0, demo_total - spent)))
+        if cmd == "advancementrepair" and apply and removable:
+            ps.spend_currency(target, "attribute_points", removable, "remove proven unspent demonstration points")
+            state = ps.get_actor_progression(target) or state
+        report = {
+            "character": target,
+            "current_attribute_points": int(state.get("attribute_points") or 0),
+            "grant_history": [e for e in events if e.get("event_type") == "grant"],
+            "spending_history": [e for e in events if e.get("event_type") == "spend"],
+            "demonstration_grant_amount": demo_total,
+            "legitimate_grants": sum(int(e.get("amount") or 0) for e in events if e.get("event_type") == "grant" and e not in demo_grants),
+            "unspent_demonstration_amount": removable,
+            "proposed_correction": f"remove {removable} attribute_points",
+            "ambiguity_status": "ambiguous_no_demonstration_history" if not demo_grants else "proven_by_history",
+            "applied": bool(cmd == "advancementrepair" and apply),
+        }
+        return CommandResult(json.dumps(report, indent=2, sort_keys=True))
+
+    def _cmd_position(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        import time
+        t0 = time.monotonic()
+        cmd = (raw.split() or [""])[0].lower()
+        if cmd in {"lay", "lie"}:
+            cmd = "sleep"
+        rt = getattr(self, "runtime", None)
+        cr = getattr(rt, "combat_runtime", None) if rt else None
+        actor_id = cr.actor_id_for_character(character) if cr else f"character:{getattr(character,'id','')}"
+        in_combat = bool(cr and cr.is_actor_in_active_combat(actor_id))
+        data = getattr(character, "actor_data", {}) if isinstance(getattr(character, "actor_data", {}), dict) else {}
+        pos = str(data.get("position") or data.get("posture") or "standing").lower()
+        def finish(msg: str, ok: bool = True, newpos: str | None = None) -> CommandResult:
+            if newpos:
+                data["position"] = newpos; data["posture"] = newpos; character.actor_data = data
+                if rt: rt.mark_character_dirty(getattr(character, "id", ""), "position")
+            if rt: rt.performance_counters["position_command_duration_ms"] = int((time.monotonic()-t0)*1000)
+            return CommandResult(msg, ok=ok, state_updates={"prompt": True})
+        if cmd == "sit":
+            if in_combat: return finish("Sit down while fighting? Are you MAD?", False)
+            if pos == "sitting": return finish("You're sitting already.")
+            return finish("You sit down.", True, "sitting")
+        if cmd == "rest":
+            if in_combat: return finish("Rest while fighting? Are you MAD?", False)
+            if pos == "resting": return finish("You are already resting.")
+            return finish("You sit down and rest your tired bones." if pos == "standing" else "You rest your tired bones.", True, "resting")
+        if cmd == "sleep":
+            if in_combat: return finish("Sleep while fighting? Are you MAD?", False)
+            if pos == "sleeping": return finish("You are already sound asleep.")
+            return finish("You go to sleep.", True, "sleeping")
+        if cmd == "stand":
+            if in_combat: return finish("Do you not consider fighting as standing?", False)
+            if pos == "sleeping": return finish("You have to wake up first!", False)
+            if pos == "resting": return finish("You stop resting, and stand up.", True, "standing")
+            if pos == "sitting": return finish("You stand up.", True, "standing")
+            return finish("You are already standing.")
+        if cmd == "wake":
+            if pos == "sleeping": return finish("You awaken, and stand up.", True, "standing")
+            if pos in {"resting", "sitting"}: return finish("You stand up.", True, "standing")
+            return finish("You are already awake...")
+        return finish("You cannot do that right now.", False)
+
     def _cmd_survival_needs(self, character: Any, args: list[str], raw: str) -> CommandResult:
         svc=self._survival_service(character); cmd=raw.split()[0].lower(); actor_id=str(getattr(character,'id',getattr(character,'character_id','self')))
-        if cmd in {'rest','sleep','wake','camp','make','break','light','extinguish','add','inspect','stop'}:
-            phrase=' '.join([cmd]+args)
-            if phrase in {'rest status','sleep status'}: return CommandResult(json.dumps(svc.get_rest_context(actor_id), indent=2, sort_keys=True))
-            if phrase in {'stop resting','wake'} or cmd=='wake': return CommandResult(json.dumps(svc.wake_actor(actor_id,'command'), indent=2, sort_keys=True))
-            if cmd=='rest': return CommandResult(json.dumps(svc.start_rest(actor_id, args[0] if args and args[0] not in {'here','status'} else None), indent=2, sort_keys=True))
-            if cmd=='sleep': return CommandResult(json.dumps(svc.start_sleep(actor_id, args[-1] if args and args[0]=='on' else None), indent=2, sort_keys=True))
-            if phrase in {'camp status'} or phrase=='inspect campsite': return CommandResult(json.dumps(svc.trace_campsite(args[-1] if args and args[-1].startswith('campsite_') else ''), indent=2, sort_keys=True))
-            if phrase in {'camp here','make camp'} or cmd=='camp': return CommandResult(json.dumps(svc.create_campsite(actor_id,'basic_campsite'), indent=2, sort_keys=True))
-            if phrase=='break camp': return CommandResult(json.dumps(svc.dismantle_campsite(actor_id,args[-1] if args and args[-1].startswith('campsite_') else ''), indent=2, sort_keys=True))
-            if phrase=='light campfire':
-                cf=svc.create_campfire(actor_id,'basic_campfire'); return CommandResult(json.dumps(svc.light_campfire(actor_id,cf['campfire_instance_id']), indent=2, sort_keys=True))
-            if phrase=='extinguish campfire': return CommandResult(json.dumps(svc.extinguish_campfire(actor_id,args[-1] if args and args[-1].startswith('campfire_') else ''), indent=2, sort_keys=True))
-            if phrase=='add fuel': return CommandResult(json.dumps(svc.add_campfire_fuel(actor_id,args[0] if args and args[0].startswith('campfire_') else '', args[1] if len(args)>1 else None), indent=2, sort_keys=True))
-            if phrase=='inspect campfire': return CommandResult(json.dumps(svc.trace_campfire(args[-1] if args and args[-1].startswith('campfire_') else ''), indent=2, sort_keys=True))
+        if cmd in {'rest','sleep','wake','camp','campfire','campsite','fire','make','break','light','extinguish','add','inspect','stop','set','build'}:
+            phrase=' '.join([cmd]+args).lower().strip()
+            if phrase in {'rest status','sleep status'}: return CommandResult("Rest status is available. You can REST or SLEEP when the area is safe.")
+            if phrase in {'stop resting','wake'} or cmd=='wake':
+                res=svc.wake_actor(actor_id,'command'); return CommandResult("You wake and gather yourself." if res.get('ok', True) else "You are already awake.", ok=bool(res.get('ok', True)))
+            if cmd=='rest':
+                res=svc.start_rest(actor_id, args[0] if args and args[0] not in {'here','status'} else None); return CommandResult("You settle down to rest." if res.get('ok', True) else "You cannot rest here right now.", ok=bool(res.get('ok', True)))
+            if cmd=='sleep':
+                res=svc.start_sleep(actor_id, args[-1] if args and args[0]=='on' else None); return CommandResult("You settle in to sleep." if res.get('ok', True) else "You cannot sleep here right now.", ok=bool(res.get('ok', True)))
+            if phrase in {'camp','campsite','camp status','campsite status'} or phrase in {'inspect campsite','look campsite','examine campsite'}:
+                rid=getattr(character,'room_id','')
+                with sqlite3.connect(svc.db_path) as c:
+                    row=c.execute("SELECT campsite_instance_id FROM campsite_instances WHERE room_id=? AND status IN ('active','occupied','abandoned') ORDER BY created_at DESC LIMIT 1",(rid,)).fetchone()
+                return CommandResult(self._format_campsite_status(svc.trace_campsite(row[0] if row else '')))
+            if phrase in {'campfire','fire','campfire status','fire status','inspect campfire','look campfire','examine campfire'}:
+                rid=getattr(character,'room_id','')
+                with sqlite3.connect(svc.db_path) as c:
+                    row=c.execute("SELECT campfire_instance_id FROM campfire_instances WHERE room_id=? AND status IN ('unlit','lit','extinguished','low_fuel') ORDER BY created_at DESC LIMIT 1",(rid,)).fetchone()
+                return CommandResult(self._format_campfire_status(svc.trace_campfire(row[0] if row else '')))
+            if phrase in {'set camp','make camp','establish camp'}:
+                res=svc.create_campsite(actor_id,'basic_campsite'); msg='You abandon your previous campsite and establish a new one here.' if res.get('replaced_previous') else 'You establish a modest campsite here.'; denial=res.get('message') or ('A campsite is already established here.' if res.get('reason')=='existing_campsite' else 'You cannot establish a camp here.'); return CommandResult(msg if res.get('ok', True) else denial, ok=bool(res.get('ok', True)), state_updates={'render_room': bool(res.get('ok', True))})
+            if phrase in {'break camp','campsite dismantle','dismantle campsite'}:
+                res=svc.dismantle_campsite(actor_id,args[-1] if args and args[-1].startswith('campsite_') else ''); return CommandResult('You dismantle the campsite.' if res.get('ok', True) else 'There is no campsite here to dismantle.', ok=bool(res.get('ok', True)), state_updates={'render_room': bool(res.get('ok', True))})
+            if phrase in {'build campfire','make campfire','create campfire'}:
+                rid=getattr(character,'room_id','')
+                with sqlite3.connect(svc.db_path) as c:
+                    has_camp=c.execute("SELECT 1 FROM campsite_instances WHERE room_id=? AND created_by_actor_id=? AND status IN ('active','occupied','abandoned')",(rid,actor_id)).fetchone()
+                if not has_camp: return CommandResult('You need an active campsite here before building a campfire.', ok=False)
+                cf=svc.create_campfire(actor_id,'basic_campfire'); msg='Your previous campfire fades as you build a new one here.' if cf.get('replaced_previous') else 'You build a small campfire.'; return CommandResult(msg if cf.get('ok', True) else ('You need an active campsite here before building a campfire.' if cf.get('reason')=='requires_campsite' else 'You cannot build a campfire here right now.'), ok=bool(cf.get('ok', True)), state_updates={'render_room': bool(cf.get('ok', True))})
+            if cmd=='light' and (not args or phrase in {'light campfire','light fire'}):
+                cfid = ''
+                try:
+                    with sqlite3.connect(svc.db_path) as c:
+                        row=c.execute("SELECT campfire_instance_id FROM campfire_instances WHERE room_id=(SELECT room_id FROM characters WHERE id=?) ORDER BY created_at DESC LIMIT 1",(actor_id,)).fetchone(); cfid = row[0] if row else ''
+                except Exception: cfid=''
+                res=svc.light_campfire(actor_id,cfid)
+                reason=str(res.get('reason','')).lower()
+                if not res.get('ok', True) and 'already' in reason: return CommandResult('The campfire is already lit.')
+                return CommandResult('You light the campfire. Flames begin to crackle across the fuel.' if res.get('ok', True) else 'There is no unlit campfire here.', ok=bool(res.get('ok', True)), state_updates={'render_room': bool(res.get('ok', True))})
+            if phrase=='extinguish campfire':
+                cfid = args[-1] if args and args[-1].startswith('campfire_') else ''
+                if not cfid:
+                    try:
+                        with sqlite3.connect(svc.db_path) as c:
+                            row=c.execute("SELECT campfire_instance_id FROM campfire_instances WHERE room_id=(SELECT room_id FROM characters WHERE id=?) AND status='lit' ORDER BY created_at DESC LIMIT 1",(actor_id,)).fetchone(); cfid = row[0] if row else ''
+                    except Exception: cfid=''
+                res=svc.extinguish_campfire(actor_id,cfid); return CommandResult('You extinguish the campfire.' if res.get('ok', True) else 'There is no lit campfire here.', ok=bool(res.get('ok', True)), state_updates={'render_room': bool(res.get('ok', True))})
+            if phrase=='add fuel':
+                res=svc.add_campfire_fuel(actor_id,args[0] if args and args[0].startswith('campfire_') else '', args[1] if len(args)>1 else None); return CommandResult('You add fuel to the campfire.' if res.get('ok', True) else 'You need suitable fuel before you can feed the campfire.', ok=bool(res.get('ok', True)))
         if cmd in {'needs','hunger','thirst','fatigue','food'} or (cmd=='drink' and args[:1]==['status']):
             rows=svc.get_actor_needs(actor_id)
             if cmd in {'hunger','thirst','fatigue'}: rows=[r for r in rows if r['need_definition_id']==cmd or cmd in r['need_definition_id']]
@@ -481,7 +1111,7 @@ class MudCommandEngine:
             return CommandResult('\n'.join(lines))
         if cmd in {'eat','drink','consume','sip','taste'}:
             if not args: return CommandResult(f"What do you want to {cmd}?", ok=False)
-            if cmd=='taste': return CommandResult('You inspect it cautiously. Taste effects are read-only placeholders in Phase 11D1.')
+            if cmd=='taste': return CommandResult('You inspect it cautiously and notice nothing safe to taste.')
             target=' '.join(args); item_id=target
             if not target.startswith('item_'):
                 for it in getattr(character,'inventory',[]) or []:
@@ -506,7 +1136,184 @@ class MudCommandEngine:
         if cmd.endswith('stat') and args: return CommandResult(json.dumps(svc.content.get(coll,args[0]), indent=2, sort_keys=True))
         if cmd.endswith('validate') or cmd in {'needvalidate','consumablevalidate','needsprofilevalidate'}: return CommandResult(json.dumps(svc.content.validate(), indent=2, sort_keys=True))
         if cmd.endswith('preview') or cmd in {'needpreview','consumablepreview'}: return CommandResult(json.dumps({'collection':coll,'id':args[0] if args else None,'preview':'draft-safe'}, indent=2, sort_keys=True))
-        return CommandResult('Survival Builder command is draft-safe in Phase 11D1; edit JSON collections through Builder import/apply.')
+        return CommandResult('That survival command is not available here.', ok=False)
+
+
+    def _training_service(self, character: Any):
+        from engine.training import TrainingService
+        store = self.state_store
+        world_id = getattr(character, "world_id", "") or getattr(getattr(self, "runtime", None), "active_world_id", "") or "shattered_realms"
+        if store is not None and not hasattr(store, "connect"):
+            store.connect = lambda: __import__("sqlite3").connect(store.db_path)  # type: ignore[attr-defined]
+        if store is not None and not hasattr(store, "world_id"):
+            store.world_id = world_id  # type: ignore[attr-defined]
+        if store is not None and not hasattr(store, "campaign_id"):
+            store.campaign_id = world_id  # type: ignore[attr-defined]
+        if store is not None and not hasattr(store, "initialize"):
+            
+            def _init_progression_tables():
+                with store.connect() as con:
+                    con.execute("""CREATE TABLE IF NOT EXISTS actor_progression_state(progression_state_id TEXT PRIMARY KEY,world_id TEXT,actor_type TEXT,actor_id TEXT,species_id TEXT,race_id TEXT,primary_class_id TEXT,primary_class_track_id TEXT,profession_ids_json TEXT,level INTEGER,experience INTEGER,experience_to_next INTEGER,total_experience INTEGER,practice_sessions INTEGER,training_sessions INTEGER,skill_points INTEGER,attribute_points INTEGER,talent_points_placeholder INTEGER,remort_count INTEGER,prestige_rank INTEGER,advancement_flags_json TEXT,last_level_at TEXT,created_at TEXT,updated_at TEXT,metadata_json TEXT,UNIQUE(actor_type,actor_id))""")
+                    con.execute("""CREATE TABLE IF NOT EXISTS actor_ability_progression(actor_id TEXT,ability_id TEXT,rank INTEGER,maximum_rank INTEGER,proficiency INTEGER,learned_at_level INTEGER,source_class_id TEXT,source_race_id TEXT,source_profession_id TEXT,source_track_id TEXT,practice_cost INTEGER,training_cost INTEGER,skill_point_cost INTEGER,requirements_json TEXT,active INTEGER,learned_at TEXT,metadata_json TEXT,PRIMARY KEY(actor_id,ability_id))""")
+            store.initialize = _init_progression_tables  # type: ignore[attr-defined]
+        return TrainingService(store, economy=getattr(self, "economy_service", None), event_bus=self.event_bus, world_id=world_id, world_root=Path("worlds")/world_id)
+
+    def _cmd_training_player(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        import time
+        t0 = time.monotonic()
+        rt = getattr(self, "runtime", None)
+        ps = rt._progression_service() if rt and hasattr(rt, "_progression_service") else self._training_service(character).progression
+        cmd = (raw.split() or ["train"])[0].lower()
+        if cmd == "tr": cmd = "train"
+        if cmd in {"prac", "pr"}: cmd = "practice"
+        actor_id = str(getattr(character, "id", "self"))
+        room_id = str(getattr(character, "room_id", ""))
+        world_id = getattr(character, "world_id", "") or getattr(rt, "active_world_id", "") or "shattered_realms"
+        root = Path("worlds") / world_id
+        trainers = []
+        try:
+            data = json.loads((root/"trainer_definitions"/"trainer_definitions.json").read_text(encoding="utf-8"))
+            raw_trainers = data.get("trainer_definitions", data if isinstance(data, list) else [])
+            if isinstance(raw_trainers, dict):
+                raw_trainers = list(raw_trainers.values())
+            trainers = [t for t in raw_trainers if isinstance(t, dict) and room_id in (t.get("room_ids") or []) and t.get("enabled", True)]
+        except Exception:
+            trainers = []
+        def at_trainer() -> bool:
+            return bool(trainers)
+        def trainer_name() -> str:
+            return str((trainers[0] if trainers else {}).get("name") or "your trainer")
+        state = ps.initialize_actor_progression(character)
+        def done(text: str, ok: bool = True) -> CommandResult:
+            if rt: rt.performance_counters["train_command_duration_ms" if cmd in {"train","buytrain"} else "practice_command_duration_ms"] = int((time.monotonic()-t0)*1000)
+            return CommandResult(text, ok=ok)
+        if cmd in {"buypractice", "buyprac", "buytrain"}:
+            if not at_trainer(): return done("You need to be at your guild or trainer for that.", False)
+            cur = "practice_sessions" if cmd != "buytrain" else "training_sessions"
+            res = ps.purchase_session_with_glory(actor_id, cur, source_id=str((trainers[0] if trainers else {}).get("id") or "guild_trainer"))
+            if not res.get("ok"):
+                return done(f"You need {res.get('cost')} Glory for that purchase; you currently have {res.get('glory')} Glory.", False)
+            if rt: rt.mark_character_dirty(actor_id, "progression")
+            label = "practice" if cur.startswith("practice") else "training"
+            return done(f"You spend {res['cost']} Glory and buy one {label} session. You now have {res['sessions']} {label} sessions and {res['glory']} Glory remaining.")
+        if cmd == "train":
+            if not at_trainer(): return done("You need to be at your guild or trainer to train.", False)
+            stats = {"str":"strength","dex":"dexterity","con":"constitution","int":"intelligence","wis":"wisdom","cha":"charisma"}
+            aliases = {**stats, "strength":"strength","dexterity":"dexterity","constitution":"constitution","intelligence":"intelligence","wisdom":"wisdom","charisma":"charisma"}
+            query = " ".join(args).lower().strip()
+            if not query:
+                lines=[f"{trainer_name()} can help you train.", f"You have {state.get('training_sessions',0)} training sessions available.","","Base stats"]
+                for short, full in stats.items():
+                    val = int(getattr(character, full, getattr(character, short, 10)) or 10)
+                    lines.append(f"{short.capitalize()} {val}/20" + (" [MAX]" if val >= 20 else ""))
+                lines += ["", "Use TRAIN STR/DEX/CON/INT/WIS/CHA (cost 1, cap 20)", "Use TRAIN HIT/MANA/MOVE (cost 10)"]
+                return done("\n".join(lines))
+            if query in aliases:
+                if int(state.get("training_sessions",0) or 0) < 1: return done("You do not have enough training sessions.", False)
+                attr = aliases[query]
+                from engine.progression import TRAINING_ATTRIBUTE_CAP
+                attrsvc = getattr(rt, "attribute_service", None) if rt else None
+                if attrsvc is None:
+                    from engine.character_stats import CharacterAttributeService
+                    attrsvc = CharacterAttributeService(ps.store, world_id=world_id, world_root=root)
+                before_stats = attrsvc.get_primary_stats(character, {"runtime": rt} if rt else {})
+                old = int(before_stats.get(attr).base_value + before_stats.get(attr).permanent_component) if before_stats.get(attr) else int(getattr(character, attr, 10) or 10)
+                if old >= TRAINING_ATTRIBUTE_CAP: return done(f"Your {attr} is already at the training cap.", False)
+                ps.spend_currency(actor_id, "training_sessions", 1, f"train {attr}")
+                with ps.store.connect() as con:
+                    con.execute("UPDATE character_attributes SET permanent_modifier=permanent_modifier+1,updated_at=?,source=? WHERE character_id=? AND attribute_id=?", (__import__("engine.mud_state_store", fromlist=["utc_now"]).utc_now(), "training", actor_id, attr))
+                if rt: rt.mark_character_dirty(actor_id, "training")
+                after_stats = attrsvc.get_primary_stats(character, {"runtime": rt} if rt else {})
+                changed = [f"Training successful.", f"  {attr.capitalize()}: {old} -> {old+1}", f"  Training sessions: {int(state.get('training_sessions',0))} -> {int(state.get('training_sessions',0))-1}"]
+                return done("\n".join(changed))
+            resmap = {"hit":"max_hp","hp":"max_hp","mana":"max_mana","move":"max_stamina"}
+            if query in resmap:
+                from engine.progression import TRAINING_RESOURCE_BONUS, TRAINING_RESOURCE_SESSION_COST
+                if int(state.get("training_sessions",0) or 0) < 10: return done("You need ten training sessions for that.", False)
+                field = resmap[query]; old = int(getattr(character, field, 0) or 0)
+                ps.spend_currency(actor_id, "training_sessions", TRAINING_RESOURCE_SESSION_COST, f"train {query}")
+                rkey = "health" if query in {"hit","hp"} else ("mana" if query == "mana" else "stamina")
+                setattr(character, field, old + TRAINING_RESOURCE_BONUS)
+                curfield = {"health": "hp", "mana": "mana", "stamina": "stamina"}[rkey]
+                current = int(getattr(character, curfield, 0) or 0)
+                with ps.store.connect() as con:
+                    con.execute("CREATE TABLE IF NOT EXISTS actor_progression_modifiers(modifier_id TEXT PRIMARY KEY,actor_id TEXT,modifier_type TEXT,resource_id TEXT,amount INTEGER,source_type TEXT,source_id TEXT,active INTEGER DEFAULT 1,created_at TEXT,metadata_json TEXT)")
+                    con.execute("INSERT INTO actor_progression_modifiers(modifier_id,actor_id,modifier_type,resource_id,amount,source_type,source_id,active,created_at,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?)", ("mod_"+__import__("uuid").uuid4().hex, actor_id, "maximum_resource", rkey, TRAINING_RESOURCE_BONUS, "training", f"train {query}", 1, __import__("engine.mud_state_store", fromlist=["utc_now"]).utc_now(), "{}"))
+                    con.execute("INSERT INTO actor_resource_versions(actor_id,resource,value,maximum,version,updated_at) VALUES(?,?,?,?,1,?) ON CONFLICT(actor_id,resource) DO UPDATE SET maximum=actor_resource_versions.maximum+?,version=actor_resource_versions.version+1,updated_at=excluded.updated_at", ("character:"+actor_id, rkey, current, old + TRAINING_RESOURCE_BONUS, __import__("engine.mud_state_store", fromlist=["utc_now"]).utc_now(), TRAINING_RESOURCE_BONUS))
+                if rt: rt.mark_character_dirty(actor_id, "training")
+                label = "Move" if query == "move" else ("Hit points" if query in {"hit","hp"} else "Mana")
+                return done(f"Training successful.\n  {label}: {old} -> {old+TRAINING_RESOURCE_BONUS}\n  Training sessions: {int(state.get('training_sessions',0))} -> {int(state.get('training_sessions',0))-TRAINING_RESOURCE_SESSION_COST}")
+            return done("Train what? Try TRAIN STR, DEX, CON, INT, WIS, CHA, HIT, MANA, or MOVE.", False)
+        # practice
+        intelligence = int(getattr(character, "intelligence", 10) or 10)
+        abilities = ps.list_known_practice_abilities(actor_id, intelligence=intelligence) if hasattr(ps, "list_known_practice_abilities") else []
+        if not args:
+            lines=[f"Practice sessions: {state.get('practice_sessions',0)}", "Use TRAIN for permanent attributes and resources.", "","You know:"]
+            if not abilities: lines.append("  No practiced abilities yet.")
+            for a in abilities:
+                prof=int(a.get("current_proficiency") or 1); desc="awful" if prof<20 else "poor" if prof<40 else "fair" if prof<60 else "good" if prof<80 else "superb"
+                lines.append(f"  {str(a.get('display_name') or a.get('ability_id')):24s} {prof:3d}% ({desc})")
+            return done("\n".join(lines))
+        if not at_trainer(): return done("You need to be at your guild or trainer to practice.", False)
+        query=" ".join(args).lower().strip()
+        resolved = ps.resolve_practice_ability(actor_id, query, intelligence=intelligence)
+        if not resolved.get("ok"):
+            if resolved.get("ambiguous"): return done("Which ability do you mean? " + ", ".join(resolved["ambiguous"]), False)
+            return done("You do not know of that ability.", False)
+        a = resolved["ability"]
+        res = ps.practice_ability(actor_id, a["ability_id"], intelligence=intelligence, trainer_ok=True)
+        if not res.get("ok"):
+            if res.get("reason") == "at_cap": return done("You are already learned in that area.", False)
+            if res.get("reason") == "insufficient_practice_sessions": return done("You do not have enough practice sessions.", False)
+            return done("You cannot practice that right now.", False)
+        if rt: rt.mark_character_dirty(actor_id, "practice")
+        return done(f"You practice {a['display_name']}.\nYou are now {res['after']}% learned. Practice sessions remaining: {res['sessions']}")
+
+    def _gathering_service(self, character: Any):
+        from engine.gathering import GatheringService
+        db = getattr(self.state_store, "db_path", Path(".smartmud_gathering.sqlite3")); world_id=getattr(character,"world_id","") or getattr(getattr(self,"runtime",None),"active_world_id","") or "shattered_realms"
+        return GatheringService(db, world_id=world_id, world_root=Path("worlds")/world_id, event_bus=self.event_bus, reward_service=getattr(self,"reward_service",None))
+
+    def _cmd_gathering_player(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        svc=self._gathering_service(character); cmd=(raw.split() or [""])[0].lower(); actor_id=str(getattr(character,'id','self')); room_id=str(getattr(character,'room_id',''))
+        if cmd in {'resources','resource','survey'}:
+            nodes=svc.list_room_nodes(room_id)
+            return CommandResult("Resources here:\n" + ("\n".join(f"- {n.get('name') or n.get('node_definition_id')}" for n in nodes) if nodes else "No obvious resources are ready here."))
+        if cmd in {'skin','butcher','harvest','extract'} and args and 'corpse' in ' '.join(args).lower():
+            return CommandResult("Corpse processing requires a specific corpse. Use LOOK CORPSE, then SKIN <corpse> or BUTCHER <corpse>.", ok=False)
+        if cmd in {'gather','forage','mine','chop','fish','dig','excavate','salvage','harvest'}:
+            if not args and cmd=='gather': return CommandResult('Usage: gather <resource>. Try RESOURCES HERE first.', ok=False)
+            mode={'forage':'harvesting','harvest':'harvesting','mine':'mining','chop':'lumberjacking','fish':'fishing','dig':'excavation','excavate':'excavation','salvage':'scavenging'}.get(cmd, None)
+            res=svc.gather_mode(mode, actor_id, room_id, ' '.join(args) or None)
+            if not res.get('ok'): return CommandResult('You cannot gather that here: '+str(res.get('reason','no matching resource')), ok=False)
+            ys=', '.join(str(y.get('item_template_id') or y.get('resource_definition_id')) for y in res.get('yields',[])) or 'materials'
+            return CommandResult('You gather '+ys+'.')
+        return CommandResult('Usage: resources here | gather <resource> | forage/mine/harvest <target> | skin/butcher <corpse>.')
+
+    def _property_service(self, character: Any):
+        from engine.property import PropertyService
+        db=getattr(self.state_store,'db_path',Path('.smartmud_property.sqlite3')); world_id=getattr(character,'world_id','') or getattr(getattr(self,'runtime',None),'active_world_id','') or 'shattered_realms'
+        return PropertyService(db, world_id=world_id, world_root=Path('worlds')/world_id, event_bus=self.event_bus, economy_service=getattr(self,'economy_service',None))
+
+    def _cmd_property_player(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        svc=self._property_service(character); cmd=(raw.split() or ['property'])[0].lower(); actor_id=str(getattr(character,'id','self'))
+        if cmd in {'property','properties','lease','home','storage','access'} and (not args or args[0] in {'info','status'}):
+            avail=svc.list_available_properties(actor_id)
+            leases=[]
+            import sqlite3
+            with sqlite3.connect(svc.db_path) as con:
+                con.row_factory=sqlite3.Row; leases=[dict(r) for r in con.execute("SELECT * FROM property_leases WHERE tenant_id=? AND status IN ('active','pending','grace')",(actor_id,))]
+            lines=['Property:']
+            lines.append('Active leases: '+(str(len(leases)) if leases else 'none'))
+            lines.append('Available rentals: '+(str(len(avail)) if avail else 'none here'))
+            for p in avail[:5]: lines.append(f"- {p.get('name')} ({p.get('property_type')})")
+            return CommandResult('\n'.join(lines))
+        if cmd=='rent' or (cmd=='property' and args[:1]==['rent']):
+            avail=svc.list_available_properties(actor_id)
+            if not avail: return CommandResult('No rentable property is available here.', ok=False)
+            q=svc.quote_rent(actor_id, avail[0]['property_instance_id'])
+            return CommandResult(f"Rental quote for {avail[0].get('name')}: {q.total}. Confirm through PROPERTY RENT <property> when ready.")
+        return CommandResult('Usage: property | properties | rent | home | storage | access.')
 
     def _quest_service(self, character: Any):
         from engine.quests import QuestService
@@ -521,7 +1328,7 @@ class MudCommandEngine:
         svc = self._quest_service(character)
         cmd = raw.split()[0].lower() if raw.split() else "quests"
         actor_id = getattr(character, "id", "") or getattr(character, "character_id", "") or "self"
-        if cmd in {"quests", "questlog", "journal"}:
+        if cmd in {"quests", "questlog", "journal", "quest", "progress", "objectives"} and not args:
             if args and args[0].lower() == "available":
                 qs = svc.list_available_quests(actor_id)
                 return CommandResult("Available quests:\n" + "\n".join(f"{i+1}. {q.get('name')}" for i,q in enumerate(qs)))
@@ -546,7 +1353,7 @@ class MudCommandEngine:
             if not qs: return CommandResult("Quest not found.", ok=False)
             svc.turn_in_quest(actor_id, qs[0]['quest_instance_id'], {"source_type":"command"}); return CommandResult(f"Turned in {qs[0]['quest_id']}.")
         if cmd == "decline": return CommandResult("Quest offer declined.")
-        if cmd == "talk": return CommandResult("Conversation foundation is available; choose a Builder-authored conversation and reply choice when active.")
+        if cmd == "talk": return CommandResult("Talk to whom?", ok=False)
         if cmd == "reply": return CommandResult("Reply requires an active canonical conversation choice.")
         if cmd in {"questlist", "queststat", "questvalidate", "questaudit"}:
             if cmd == "questlist": return CommandResult("Quests:\n" + "\n".join(q['id'] for q in svc.content.list('quest_definitions')))
@@ -560,7 +1367,7 @@ class MudCommandEngine:
             if cmd == "worldstatehistory" and len(args) >= 3: return CommandResult(json.dumps(svc.world_state.get_state_history(args[0],args[1],args[2]), indent=2))
             if cmd == "worldstatestat" and len(args) >= 3: return CommandResult(json.dumps(svc.world_state.get_state(args[0],args[1],args[2]) or {}, indent=2))
             return CommandResult("Usage: worldstateset <scope> <scope_id> <key> <value>")
-        return CommandResult("Phase 8A quest Builder/Admin command foundation is available; edits are stored through Builder draft JSON collections.")
+        return CommandResult("Quest command usage: QUESTS, JOURNAL, QUEST <name>, ACCEPT <quest>, TURNIN <quest>.")
 
     def _crafting_service(self, character: Any) -> CraftingService | None:
         store = self.state_store
@@ -699,7 +1506,7 @@ class MudCommandEngine:
             return CommandResult(narrative="Crafting jobs:\n"+"\n".join([f"- {j['crafting_job_id']} {j['recipe_id']} {j['status']} completes={j['completes_world_time']}" for j in jobs] or ["- none"]))
         if cmd in {"professions", "profession"}:
             return CommandResult(narrative="Professions and ranks are managed by the canonical CraftingService profession state. Use score professions for summary.")
-        return CommandResult(narrative="Crafting command recognized.")
+        return CommandResult(narrative="Usage: recipes | ingredients for <recipe> | cook <recipe> [at campfire] | craft preview <recipe>.")
 
     def _cmd_crafting_builder(self, character: Any, args: list[str], raw: str) -> CommandResult:
         svc = self._crafting_service(character)
@@ -976,14 +1783,23 @@ class MudCommandEngine:
 
     def handle_command(self, character: Any, command_text: str) -> CommandResult:
         """Route command to deterministic handler or AI."""
+        command_text = str(command_text or "")
+        if command_text.startswith("'"):
+            spoken = command_text[1:].strip()
+            if not spoken:
+                return CommandResult(narrative="Usage: '<message> (same as say <message>)", ok=False)
+            command_text = "say " + spoken
         cmd_tokens = command_text.strip().split()
         if not cmd_tokens:
             return CommandResult(narrative="")
         
         raw_cmd_name = cmd_tokens[0].lower()
+        if len(cmd_tokens) >= 2 and raw_cmd_name == "combat" and cmd_tokens[1].lower() == "stats":
+            cmd_tokens = ["combatstats"] + cmd_tokens[2:]
+            raw_cmd_name = "combatstats"
         if raw_cmd_name in {".end", ".cancel"}:
             return CommandResult(narrative="No active editor session.", ok=False)
-        cmd_name = self.resolve_alias(raw_cmd_name)
+        cmd_name = 'target' if raw_cmd_name == 'target' else self.resolve_alias(raw_cmd_name)
         if raw_cmd_name in self.command_handlers and not cmd_name:
             cmd_name = raw_cmd_name
         if not cmd_name:
@@ -993,7 +1809,18 @@ class MudCommandEngine:
         self._publish("command_received", character, command_text, raw_input=command_text, canonical_command=raw_cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""))
         
         print(f"[mud-command] Routing {raw_cmd_name} as {cmd_name} for {character.name}")
-        
+
+        # Exact help topics that are not usable player commands should guide to HELP.
+        exact_topic = self._help_service(character).suggest(command_text, character)
+        meta_for_topic = self.registry.commands.get(cmd_name)
+        if exact_topic and normalize_help_query(command_text) in {normalize_help_query(exact_topic.title), *(normalize_help_query(x) for x in exact_topic.keywords), *(normalize_help_query(x) for x in exact_topic.aliases)} and cmd_name not in {"help", "title"} and (not meta_for_topic or meta_for_topic.builder_only or meta_for_topic.admin_only or cmd_name not in self.command_handlers):
+            return CommandResult(f"{command_text.strip().upper()} is a help topic, not a command.\nType HELP {exact_topic.title.upper()} for more information.", ok=False)
+
+        if cmd_name == "target" and str(getattr(character, "role", "player")).lower() not in {"builder", "admin", "owner"}:
+            result = self._cmd_combat_foundation(character, args, command_text)
+            self._publish("command_executed", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary=result.narrative[:120])
+            return result
+
         if cmd_name == "desc":
             result = self._cmd_builder_edit(character, args, command_text)
             self._publish("command_executed", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary=result.narrative[:120])
@@ -1012,7 +1839,20 @@ class MudCommandEngine:
         # Route to deterministic handler if exists
         if cmd_name in self.command_handlers:
             print(f"[mud-command] Deterministic: {cmd_name}")
-            result = self.command_handlers[cmd_name](character, args, command_text)
+            try:
+                raw_result = self.command_handlers[cmd_name](character, args, command_text)
+                result = self._normalize_command_result(raw_result, cmd_name)
+            except Exception as exc:
+                context = _command_exception_context(character, command_text, cmd_name)
+                if not context.get("world_id") and getattr(self, "runtime", None):
+                    context["world_id"] = getattr(self.runtime, "active_world_id", "")
+                context.update({
+                    "exception_type": type(exc).__name__,
+                    "exception_message": str(exc),
+                    "traceback": traceback.format_exc(),
+                })
+                logger.error("Unexpected command exception", extra=context, exc_info=True)
+                result = CommandResult("Something went wrong while handling that command. Please try again or use HELP for syntax.", ok=False)
             self._publish("command_executed", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary=(result.narrative or "render_room")[:120])
             return result
         
@@ -1042,13 +1882,52 @@ class MudCommandEngine:
                 self._publish("command_executed", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary=result.narrative[:120])
                 return result
         
-        # Fallback
+        # Fallback with help-topic and typo guidance
         print(f"[mud-command] Unknown command: {cmd_name}")
         self._publish("command_unknown", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary="unknown")
-        result = CommandResult(narrative=semantic("error", "Unknown command. Type HELP or COMMANDS."), ok=False)
+        topic = self._help_service(character).suggest(command_text, character)
+        if topic and normalize_help_query(command_text) in {normalize_help_query(topic.title), *(normalize_help_query(x) for x in topic.keywords), *(normalize_help_query(x) for x in topic.aliases)}:
+            msg = f"{command_text.strip().upper()} is a help topic, not a command.\nType HELP {topic.title.upper()} for more information."
+        else:
+            import difflib
+            names=[m.command for m in self.registry.available(getattr(character,'role','player'), include_planned=False) if not (m.admin_only or m.builder_only)]
+            close=difflib.get_close_matches(raw_cmd_name, names, n=1, cutoff=0.78)
+            if close:
+                msg=f"Unknown command “{raw_cmd_name}.”\nDid you mean {close[0].upper()}?"
+            elif topic:
+                msg=f"Unknown command “{raw_cmd_name}.”\nDid you mean {topic.title.upper()}?\nType HELP {topic.title.upper()} for more information."
+            else:
+                msg="Unknown command. Type HELP or COMMANDS."
+        result = CommandResult(narrative=semantic("error", msg), ok=False)
         self._publish("command_executed", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary=result.narrative[:120])
         return result
 
+
+    def _normalize_command_result(self, value: Any, command_name: str = "") -> CommandResult:
+        """Normalize player command adapter output to a safe CommandResult."""
+        if isinstance(value, CommandResult):
+            value.narrative = str(value.narrative or "")
+            return value
+        if value is None:
+            return CommandResult("Nothing happens.", ok=False)
+        if isinstance(value, bool):
+            return CommandResult("Done." if value else "That did not work.", ok=bool(value))
+        if isinstance(value, tuple):
+            text = " ".join(str(part) for part in value if part is not None)
+            return CommandResult(text or "Done.")
+        if is_dataclass(value):
+            value = asdict(value)
+        if isinstance(value, sqlite3.Row):
+            value = dict(value)
+        if isinstance(value, dict):
+            ok = bool(value.get("ok", True))
+            text = value.get("message") or value.get("narrative") or value.get("output")
+            if not text:
+                text = "Done." if ok else "That did not work."
+            return CommandResult(str(text), ok=ok)
+        if isinstance(value, list):
+            return CommandResult("\n".join(str(v) for v in value) if value else "Nothing to show.")
+        return CommandResult(str(value))
 
     def _publish(self, event_name: str, character: Any, command: str, **payload: Any) -> None:
         if not self.event_bus:
@@ -1174,19 +2053,83 @@ class MudCommandEngine:
         return CommandResult("PerceptionService is active for stealth, search, tracking, scent, sound, and sensory diagnostics.")
 
     def _cmd_score(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        """Display the modular Actor score sheet or one score section."""
-        section = args[0].lower() if args else "all"
-        if section == "preview" and len(args) > 1:
-            section = args[1].lower()
-        narrative = self._render_score_section(character, section)
-        if section == "all":
-            legacy_top = "\n".join([
-                f"{semantic('score_label', 'Name:')} {semantic('player', character.name)}",
-                f"{semantic('score_label', 'Level:')} {semantic('score_value', character.level)}",
-            ])
-            narrative = legacy_top + "\n" + narrative
-        print(f"[mud-command] Score displayed for {character.name} section={section}")
-        return CommandResult(narrative=narrative)
+        """Display normal player score as a focused structured document."""
+        section = args[0].lower() if args else "score"
+        mode_aliases = {"all": "score", "compact": "compact", "full": "full", "detailed": "detailed", "score": "score"}
+        legacy_sections = {"resources", "attributes", "combat", "progression", "currency", "survival", "quests"}
+        if section not in mode_aliases:
+            if section in legacy_sections:
+                section = "score"
+            elif self._is_score_admin(character):
+                return CommandResult(self._render_score_section(character, section))
+            else:
+                return CommandResult("That score mode is not available. Try SCORE, SCORE COMPACT, or SCORE FULL.", ok=False, display_intent="WARNING", semantic_role="warning")
+        mode = mode_aliases.get(section, "score")
+        if mode == "detailed" and not self._is_score_admin(character):
+            return CommandResult("Detailed SCORE is available to Builder/admin characters only.", ok=False, display_intent="WARNING", semantic_role="warning")
+        svc = getattr(self, "character_display_snapshots", None) or getattr(getattr(self, "runtime", None), "character_display_snapshots", None) or CharacterDisplaySnapshotService(getattr(self, "runtime", None))
+        try:
+            rt = getattr(self, "runtime", None)
+            snap = rt.build_projection(character, "score") if rt and hasattr(rt, "build_projection") else svc.build_snapshot(character)
+        except Exception:
+            return CommandResult("Your character sheet is temporarily unavailable.", ok=False, display_intent="ERROR", semantic_role="error")
+        theme = resolve_effective_display_theme(character, family="score")
+        try:
+            doc = build_score_document(character, snapshot=snap, theme=theme, mode=mode, detailed_allowed=self._is_score_admin(character))
+        except PermissionError as exc:
+            return CommandResult(str(exc), ok=False, display_intent="WARNING", semantic_role="warning")
+        except ValueError as exc:
+            text = str(exc)
+            if text.startswith("score_projection_incomplete"):
+                missing = text.split("field=", 1)[1] if "field=" in text else "unknown"
+                rt = getattr(self, "runtime", None)
+                entry = getattr(character, "entry_context", None)
+                gen = getattr(getattr(rt, "projection_cache", None), "generation", lambda _cid: 0)(str(getattr(character, "id", ""))) if rt else 0
+                logger.error("score_projection_incomplete", extra={"character_id": getattr(character, "id", ""), "world_id": getattr(rt, "active_world_id", "") if rt else "", "entry_id": getattr(entry, "entry_id", ""), "projection_generation": gen, "missing_field": missing})
+                cache = getattr(rt, "projection_cache", None) if rt else None
+                if cache and hasattr(cache, "mark_failed"):
+                    cache.mark_failed(str(getattr(character, "id", "")), getattr(rt, "active_world_id", ""), "score", text)
+                return CommandResult("Your character data could not be loaded completely. Please contact an administrator.", ok=False, display_intent="ERROR", semantic_role="error")
+            return CommandResult(str(exc), ok=False, display_intent="WARNING", semantic_role="warning")
+        return CommandResult(
+            narrative=render_display_mud(doc, color_enabled=theme.color_enabled),
+            display_document=doc,
+            display_intent="SCORE",
+            state_updates={"snapshot_version": doc.debug_metadata.get("snapshot_version"), "display_mode": mode},
+        )
+
+    def _cmd_progression_repair(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if not self._is_score_admin(character):
+            return CommandResult("You are not allowed to repair progression state.", ok=False, display_intent="WARNING", semantic_role="warning")
+        rt = getattr(self, "runtime", None)
+        if not rt or not hasattr(rt, "_progression_service"):
+            return CommandResult("Progression service is unavailable.", ok=False, display_intent="ERROR", semantic_role="error")
+        target = args[0] if args else getattr(character, "id", "")
+        apply = "--apply" in args or raw.split()[0].lower() == "progressioninspect" and False
+        if raw.split()[0].lower() == "progressionrepair" and "--dry-run" not in args and "--apply" not in args:
+            apply = False
+        try:
+            target_char = rt.state_store.load_character(target) if hasattr(rt.state_store, "load_character") else None
+            if target_char is None and target != getattr(character, "id", ""):
+                return CommandResult(f"Character not found: {target}", ok=False, display_intent="ERROR", semantic_role="error")
+            target_char = target_char or character
+            result = rt._progression_service().repair_legacy_progression_identity(target_char, apply=apply)
+            if apply and hasattr(rt, "invalidate_character_projections"):
+                rt.invalidate_character_projections(result["character_id"], "progression_identity")
+            lines=[
+                f"Character ID: {result['character_id']}",
+                f"Current progression row: {'present' if result['row_exists'] else 'missing'}",
+                f"Proposed race ID: {result['proposed_race_id']}",
+                f"Proposed class ID: {result['proposed_class_id']}",
+                f"Proposed track ID: {result['proposed_track_id'] or '(none)'}",
+                f"Definition validation: {result['definition_validation']}",
+                f"Fields that would change: {', '.join(result['changed_fields']) or '(none)'}",
+                f"Applied: {result['applied']}",
+            ]
+            return CommandResult("\n".join(lines), display_intent="ADMIN", semantic_role="admin")
+        except Exception as exc:
+            logger.exception("progression_repair_failed", extra={"target": target})
+            return CommandResult(f"Progression repair failed: {exc}", ok=False, display_intent="ERROR", semantic_role="error")
 
 
     def _cmd_phase7a_reward(self, character: Any, args: list[str], raw: str) -> CommandResult:
@@ -1260,19 +2203,375 @@ class MudCommandEngine:
 
     def _cmd_inventory(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display inventory."""
-        if not character.inventory:
-            narrative = semantic("system", "You are not carrying anything.")
-        else:
-            items = "\n".join([f"  {semantic('item_' + str(i.get('rarity', 'common')), i.get('name', 'unknown'))} x{i.get('quantity', 1)}" 
-                              for i in character.inventory])
-            narrative = f"{semantic('system', 'You are carrying:')}\n{items}"
-        
-        print(f"[mud-command] Inventory for {character.name}")
-        return CommandResult(narrative=narrative)
+        rt = getattr(self, "runtime", None)
+        inv = rt.build_projection(character, "inventory") if rt and hasattr(rt, "build_projection") else list(getattr(character, "inventory", []) or [])
+        theme = resolve_effective_display_theme(character, family="inventory")
+        doc = build_inventory_document(list(inv or []), theme=theme)
+        return CommandResult(narrative=render_display_mud(doc, color_enabled=theme.color_enabled), display_document=doc, display_intent="INVENTORY")
 
     def _cmd_equipment(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display equipped items through the single score renderer."""
-        return CommandResult(narrative=self._render_score_section(character, "equipment"))
+        rt = getattr(self, "runtime", None)
+        items = rt.build_projection(character, "equipment") if rt and hasattr(rt, "build_projection") else (list((getattr(character, "equipment", {}) or {}).values()) if isinstance(getattr(character, "equipment", None), dict) else list(getattr(character, "equipment", []) or []))
+        theme = resolve_effective_display_theme(character, family="equipment")
+        doc=build_equipment_document(items, ["head","body","main_hand","off_hand","legs","feet"], theme=theme)
+        return CommandResult(narrative=render_display_mud(doc, color_enabled=theme.color_enabled), display_document=doc, display_intent="EQUIPMENT")
+
+
+    def _world_root(self, character: Any) -> Path:
+        rt=getattr(self,"runtime",None); wid=getattr(rt,"active_world_id","") if rt else self.builder.world_id(character)
+        wid=wid or getattr(character,"world_id","") or "shattered_realms"
+        root=getattr(rt,"root",Path(".")) if rt else Path(".")
+        return Path(root)/"worlds"/wid if not (Path(root)/wid).exists() else Path(root)/wid
+
+    def _help_service(self, character: Any) -> HelpService:
+        root=self._world_root(character); svc=getattr(self,"help_service",None)
+        if not svc or getattr(svc,"world_root",None)!=root:
+            svc=HelpService(root, self._ability_service(character)); self.help_service=svc
+        else:
+            svc.ability_service=self._ability_service(character)
+        return svc
+
+    def _render_help_entry(self, entry: HelpEntry, character: Any, *, title_prefix: str="") -> str:
+        lines=[(title_prefix + entry.title).upper()]
+        if entry.summary: lines += ["", entry.summary]
+        if entry.body: lines += ["", entry.body]
+        if entry.syntax: lines += ["", "Syntax:", *[f"  {x}" for x in entry.syntax]]
+        if entry.examples: lines += ["", "Examples:", *[f"  {x}" for x in entry.examples]]
+        if entry.related_topics: lines += ["", "Related topics: " + ", ".join(entry.related_topics)]
+        if entry.category: lines += ["", f"Category: {entry.category}"]
+        return "\n".join(lines)
+
+    def _cmd_title(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if not args:
+            current=getattr(character,"title","") or "no custom title"
+            return CommandResult(f"Current title: {current}\nUsage: title <text>\nType HELP TITLE for more information.")
+        text=" ".join(args).strip()
+        if len(text)>60: return CommandResult("Titles must be 60 characters or fewer.", ok=False)
+        if not re.fullmatch(r"[A-Za-z0-9 ,.'-]+", text): return CommandResult("Titles may contain letters, numbers, spaces, commas, periods, apostrophes, and hyphens.", ok=False)
+        setattr(character,"title",text)
+        return CommandResult(f"Your title is now: {text}")
+
+    def _stat_services(self, character: Any):
+        rt=getattr(self,"runtime",None); world_id=getattr(rt,'active_world_id',None) or self.builder.world_id(character)
+        store=getattr(rt,'state_store',None) or self.state_store
+        attr=CharacterAttributeService(store, world_id=world_id, event_bus=self.event_bus)
+        attr.runtime=rt
+        return attr, CombatStatService(attr)
+
+    def _cmd_attributes(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        attr,_=self._stat_services(character); attrs=attr.get_all_attributes(character, {"runtime": getattr(self,"runtime",None)})
+        if args:
+            key=args[0].lower(); found=attrs.get(key) or next((v for v in attrs.values() if v.name.lower()==key),None)
+            if not found: return CommandResult("That attribute is not available.", ok=False)
+            lines=[found.name, f"Base: {found.base_value}", f"Permanent: {found.permanent_modifier:+}", f"Equipment: {found.equipment_modifier:+g}", f"Affects: {found.affect_modifier:+g}", f"Temporary: {found.temporary_modifier:+g}", f"Situational: {found.situational_modifier:+g}", f"Final: {found.final_value}"]
+            return CommandResult("\n".join(lines))
+        lines=["ATTRIBUTES"]
+        for a in attrs.values(): lines.append(f"{a.name + ':':<14} {a.final_value:>3}")
+        return CommandResult("\n".join(lines))
+
+    def _cmd_combatstats(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        _,combat=self._stat_services(character); s=combat.get_combat_snapshot(character, {"runtime": getattr(self,"runtime",None)})
+        mode=(args[0].lower() if args else "all")
+        valid={"all","offense","defense","saves","resistances","damage","speed","breakdown"}
+        if mode not in valid:
+            mode="all"
+        if mode=="breakdown":
+            if len(args)<2: return CommandResult("Usage: combatstats breakdown <stat-id>", ok=False)
+            stat=args[1].lower()
+            return CommandResult("COMBAT STAT BREAKDOWN\n"+json.dumps(combat.get_breakdown(character, stat, {"runtime": getattr(self,"runtime",None)}), indent=2, default=str))
+        sections=[]
+        def add(title, mapping, formatter=None):
+            lines=[title]
+            for k,v in (mapping or {}).items():
+                val=formatter(k,v) if formatter else v
+                lines.append(f"{k.replace('_',' ').title()}: {val}")
+            sections.append(lines)
+        if mode in {"all","offense"}: add("OFFENSE", s.offense)
+        if mode in {"all","defense"}: add("DEFENSE", s.defense)
+        if mode in {"all","saves"}: add("SAVES", s.saves)
+        if mode in {"all","resistances"}: add("RESISTANCES", s.resistances, lambda k,v: f"{v}%")
+        if mode in {"all","damage"}:
+            lines=["DAMAGE", f"Unarmed: {s.unarmed_profile.minimum_damage}-{s.unarmed_profile.maximum_damage} {s.unarmed_profile.damage_type}"]
+            if s.weapon_profile: lines.append(f"Weapon: {s.weapon_profile.minimum_damage}-{s.weapon_profile.maximum_damage} {s.weapon_profile.damage_type}")
+            sections.append(lines)
+        if mode in {"all","speed"}: add("SPEED", s.speed)
+        if mode=="all": add("CARRYING", s.carrying)
+        lines=["COMBAT STATS"]
+        for section in sections:
+            lines.append(""); lines.extend(section)
+        return CommandResult("\n".join(lines))
+
+
+
+    def _cmd_combatbreakdown(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("Combat breakdown diagnostics require Builder access.", ok=False)
+        rt=getattr(self, "runtime", None); cr=getattr(rt, "combat_runtime", None) if rt else None
+        if not cr: return CommandResult("Combat runtime diagnostics are not available.", ok=False)
+        sub=(args[0].lower() if args else "last")
+        import sqlite3
+        def load_rows(where: str = "", params: tuple[Any, ...] = (), limit: int = 10):
+            with sqlite3.connect(cr.db_path) as con:
+                return con.execute("SELECT history_id,encounter_id,round_number,actor_id,target_actor_id,action_type,ability_id,outcome,damage,healing,result_json,world_time,created_at FROM combat_round_history " + where + " ORDER BY created_at DESC LIMIT ?", (*params, limit)).fetchall()
+        if sub=="formula" and len(args)>=2:
+            _,combat=self._stat_services(character); fid=args[1]
+            return CommandResult(json.dumps({"formula_id":fid,"expression":combat.formulas.get(fid),"available":fid in combat.formulas}, indent=2), ok=fid in combat.formulas)
+        if sub=="history":
+            rows=load_rows(limit=int(args[1]) if len(args)>1 and args[1].isdigit() else 10)
+            if not rows: return CommandResult("No combat history is available.", ok=False)
+            lines=["COMBAT BREAKDOWN HISTORY"]
+            for r in rows:
+                lines.append(f"{r[0]} round={r[2]} actor={r[3]} target={r[4]} result={r[7]} damage={r[8]} healing={r[9]} time={r[11]}")
+            return CommandResult("\n".join(lines))
+        if sub=="action" and len(args)>=2:
+            rows=load_rows("WHERE history_id=? OR json_extract(result_json, '$.action_id')=?", (args[1], args[1]), 1)
+            if not rows: return CommandResult("No combat action diagnostic matched that ID.", ok=False)
+            try: data=json.loads(rows[0][10] or "{}")
+            except Exception: data={"raw": rows[0][10]}
+            with sqlite3.connect(cr.db_path) as con:
+                con.row_factory=sqlite3.Row
+                life=con.execute("SELECT transition_id,corpse_status,reward_status,loot_status,kill_credit_status,quest_credit_status,respawn_status,combat_end_status,corpse_id,reward_claim_id,respawn_id,new_state FROM actor_lifecycle_transitions WHERE trigger_action_id=? ORDER BY created_at DESC LIMIT 1", (args[1],)).fetchone()
+                if life:
+                    data["lifecycle_status"] = dict(life)
+            return CommandResult("COMBAT BREAKDOWN ACTION\n"+json.dumps({"history_id":rows[0][0],"round":rows[0][2],"actor":rows[0][3],"target":rows[0][4],"result":data}, indent=2, default=str))
+        if sub=="target" and len(args)>=2:
+            q=args[1]; aid=q if ':' in q else ('character:'+q)
+            rows=load_rows("WHERE actor_id=? OR target_actor_id=? OR actor_id LIKE ? OR target_actor_id LIKE ?", (aid, aid, '%'+q+'%', '%'+q+'%'), 10)
+            if not rows: return CommandResult("No recent diagnostics involved that target.", ok=False)
+            return CommandResult("COMBAT BREAKDOWN TARGET\n"+"\n".join(f"{r[0]} actor={r[3]} target={r[4]} result={r[7]} damage={r[8]}" for r in rows))
+        data=getattr(cr, "last_resolution", None)
+        if not data:
+            rows=load_rows(limit=1)
+            if rows:
+                try: data=json.loads(rows[0][10] or "{}")
+                except Exception: data={"raw": rows[0][10]}
+                data={"history_id":rows[0][0],"round":rows[0][2],"actor":rows[0][3],"target":rows[0][4],"result":data}
+        if not data: return CommandResult("No combat resolution breakdown is available yet.", ok=False)
+        return CommandResult("COMBAT BREAKDOWN LAST\n"+json.dumps(data, indent=2, default=str))
+
+    def _cmd_statbreakdown(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if not args: return CommandResult("Usage: statbreakdown <stat>", ok=False)
+        attr,combat=self._stat_services(character); stat=args[-1].lower();
+        if stat in attr.definitions:
+            b=attr.get_breakdown(character, stat); return CommandResult(json.dumps({**b.__dict__, 'sources': b.sources}, indent=2, default=str))
+        if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("Detailed formula diagnostics require Builder access.", ok=False)
+        return CommandResult(json.dumps(combat.get_breakdown(character, stat), indent=2, default=str))
+
+
+    def _stats_actor_id(self, character: Any) -> str:
+        return str(getattr(character, "id", None) or getattr(character, "name", None) or "unknown")
+
+    def _audit_stat_edit(self, root, actor, command, adapter, rid, before, after, validation):
+        try:
+            p=root/'builder'/'audit'/'stats_edits.jsonl'; p.parent.mkdir(parents=True, exist_ok=True)
+            rec={'actor':actor,'world':root.name,'command':command,'document':adapter.name,'record_id':rid,'before_hash':norm_hash(before) if before is not None else None,'after_hash':norm_hash(after) if after is not None else None,'validation_result':validation,'timestamp':now()}
+            with p.open('a',encoding='utf-8') as f: f.write(json.dumps(rec, sort_keys=True, default=str)+'\n')
+        except Exception: pass
+
+    def _adapter_edit(self, character: Any, args: list[str], raw: str, adapter_cls: Any, label: str) -> CommandResult:
+        if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("You do not have permission for that command.", ok=False)
+        attr,_=self._stat_services(character); root=attr.world_root; a=adapter_cls(root); sub=args[0].lower() if args else 'list'; actor=self._stats_actor_id(character)
+        def validate(data):
+            docs=StatCombatPublishValidator(root).load_all(); docs[a.name]=data; ctx=StatCombatPublishValidator(root).graph(docs); return a.validate_doc(data,ctx)
+        try:
+            data=a.load_draft()
+            if sub=='list':
+                vals=a.values(data); lines=[f"{label} drafts ({len(vals)})"]
+                for r in vals:
+                    rid=r.get(a.id_key) or r.get('id'); lines.append(f"- {rid} | {r.get('name','')} | {r.get('short_name','')} | default={r.get('default_value','')} min={r.get('minimum_value','')} max={r.get('maximum_value','')} creation={r.get('creation_minimum','')}-{r.get('creation_maximum','')} group={r.get('display_group','')} order={r.get('display_order',r.get('order',''))} enabled={r.get('enabled','')} visible={r.get('player_visible',r.get('visible',''))}")
+                return CommandResult('\n'.join(lines))
+            if adapter_cls is RangeRulesDocumentAdapter:
+                return self._range_edit(a, data, args, raw, actor)
+            if adapter_cls is EncumbranceDocumentAdapter:
+                return self._encumbrance_edit(a, data, args, raw, actor)
+            if sub in {'show','preview','validate'} and len(args)>=2:
+                rec=a.find(data,args[1]); issues=validate(data)
+                if sub=='validate':
+                    rel=[i.__dict__ for i in issues if i.record_id in {args[1],'*','unburdened'}]; return CommandResult(json.dumps({'ok':not rel,'errors':rel}, indent=2), ok=not rel)
+                return CommandResult(json.dumps({'record':rec,'validation_errors':[i.__dict__ for i in issues if i.record_id in {args[1],'*'}]}, indent=2), ok=bool(rec))
+            if sub=='create' and len(args)>=2:
+                rid=safe_id(args[1]);
+                if a.find(data,rid): return CommandResult(f"{rid} already exists", ok=False)
+                before=copy.deepcopy(data); rec=a.default_record(rid); a.put(data,rec); issues=validate(data)
+                if issues: return CommandResult('\n'.join(i.line() for i in issues), ok=False)
+                a.save_draft(data); self._audit_stat_edit(root,actor,raw,a,rid,before,data,{'ok':True}); return CommandResult(json.dumps(rec, indent=2))
+            if sub=='clone' and len(args)>=3:
+                src,new=args[1],safe_id(args[2]); old=a.find(data,src)
+                if not old: return CommandResult('Source not found.', ok=False)
+                if a.find(data,new): return CommandResult('Target already exists.', ok=False)
+                before=copy.deepcopy(data); rec=copy.deepcopy(old); rec[a.id_key]=new; rec['id']=new; a.put(data,rec); issues=validate(data)
+                if issues: return CommandResult('\n'.join(i.line() for i in issues), ok=False)
+                a.save_draft(data); self._audit_stat_edit(root,actor,raw,a,new,before,data,{'ok':True}); return CommandResult(json.dumps(rec, indent=2))
+            if sub=='delete' and len(args)>=2:
+                rid=args[1]; ref=StatCombatPublishValidator(root).deletion_errors(a.name, rid)
+                if ref: return CommandResult('\n'.join(i.line() for i in ref), ok=False)
+                if adapter_cls is PostureDocumentAdapter and rid in a.required: return CommandResult('Required posture cannot be deleted.', ok=False)
+                before=copy.deepcopy(data); a.remove(data,rid); issues=validate(data)
+                if issues: return CommandResult('\n'.join(i.line() for i in issues), ok=False)
+                a.save_draft(data); self._audit_stat_edit(root,actor,raw,a,rid,before,data,{'ok':True}); return CommandResult(f"Deleted draft {rid}.")
+            if sub in {'tag','variable'} and len(args)>=4 and args[2].lower() in {'add','remove'}:
+                rid=args[1]; rec=a.find(data,rid)
+                if not rec: return CommandResult('Record not found.', ok=False)
+                before=copy.deepcopy(data); field='tags' if sub=='tag' else 'variables'; vals=list(rec.setdefault(field,[])); val=args[3]
+                if args[2].lower()=='add' and val not in vals: vals.append(val)
+                if args[2].lower()=='remove': vals=[x for x in vals if x!=val]
+                rec[field]=vals; a.normalize_record(rec); issues=validate(data)
+                if issues: return CommandResult('\n'.join(i.line() for i in issues), ok=False)
+                a.save_draft(data); self._audit_stat_edit(root,actor,raw,a,rid,before,data,{'ok':True}); return CommandResult(json.dumps(rec, indent=2))
+            if adapter_cls is CombatMessageDocumentAdapter and sub in {'field','condition'}:
+                rid=args[1]; rec=a.find(data,rid)
+                if not rec: return CommandResult('Record not found.', ok=False)
+                before=copy.deepcopy(data)
+                if sub=='field' and len(args)>=4 and args[2] in {'attacker','defender','observer'}: rec[args[2]]=' '.join(args[3:])
+                elif sub=='condition' and len(args)>=4: rec.setdefault('conditions',{})[args[2]]=' '.join(args[3:])
+                else: return CommandResult('Usage: combatmessage field <id> <attacker|defender|observer> <template> | condition <id> <field> <value>', ok=False)
+                issues=validate(data)
+                if issues: return CommandResult('\n'.join(i.line() for i in issues), ok=False)
+                a.save_draft(data); self._audit_stat_edit(root,actor,raw,a,rid,before,data,{'ok':True}); return CommandResult(json.dumps(rec, indent=2))
+            if adapter_cls is PostureDocumentAdapter and sub in {'modifier','allow','automatic-hit-against','wake-on-damage'}:
+                rid=args[1]; rec=a.find(data,rid)
+                if not rec: return CommandResult('Record not found.', ok=False)
+                before=copy.deepcopy(data)
+                if sub=='modifier' and len(args)>=4:
+                    if args[2] not in a.fields: return CommandResult('Unknown modifier field.', ok=False)
+                    rec[args[2]]=parse_num(args[3])
+                elif sub=='allow' and len(args)>=4 and args[2] in {'attack','cast','move'}: rec[{'attack':'attack_allowed','cast':'cast_allowed','move':'movement_allowed'}[args[2]]]=parse_bool(args[3])
+                elif sub in {'automatic-hit-against','wake-on-damage'} and len(args)>=3: rec[sub.replace('-','_')]=parse_bool(args[2])
+                else: return CommandResult('Usage: postureedit modifier/allow/automatic-hit-against/wake-on-damage ...', ok=False)
+                issues=validate(data)
+                if issues: return CommandResult('\n'.join(i.line() for i in issues), ok=False)
+                a.save_draft(data); self._audit_stat_edit(root,actor,raw,a,rid,before,data,{'ok':True}); return CommandResult(json.dumps(rec, indent=2))
+            if len(args)>=3:
+                rid=args[1]; rec=a.find(data,rid)
+                if not rec: return CommandResult('Record not found.', ok=False)
+                before=copy.deepcopy(data); val=' '.join(args[2:])
+                fmap={'short':'short_name','default':'default_value','minimum':'minimum_value','maximum':'maximum_value','creationmin':'creation_minimum','creationmax':'creation_maximum','order':'display_order','group':'display_group','role':'semantic_role','visible':'player_visible','enable':'enabled','formula':'formula_id','format':'display_format'}
+                field=fmap.get(sub,sub)
+                if sub in {'visible','enable'}: val=parse_bool(val)
+                elif sub in {'default','minimum','maximum','creationmin','creationmax','order'}: val=parse_num(val)
+                elif sub in {'minimum','maximum'} and adapter_cls is FormulaDocumentAdapter: field=sub; val=parse_num(val)
+                elif sub in {'rounding'} and val not in ROUNDINGS: return CommandResult('Unsupported rounding.', ok=False)
+                rec[field]=val; issues=validate(data)
+                if issues: return CommandResult('\n'.join(i.line() for i in issues), ok=False)
+                a.save_draft(data); self._audit_stat_edit(root,actor,raw,a,rid,before,data,{'ok':True}); return CommandResult(json.dumps(rec, indent=2))
+            return CommandResult(f"Usage: {label.lower()} list/show/create/clone/edit/delete/validate/preview", ok=False)
+        except Exception as e: return CommandResult(str(e), ok=False)
+
+    def _encumbrance_edit(self, a, data, args, raw, actor):
+        attr,_=self._stat_services(actor) if False else (None,None); root=a.root; sub=args[0].lower() if args else 'list'
+        if sub=='list': return CommandResult('Encumbrance drafts:\n'+'\n'.join(f"- {r['id']} {r.get('threshold_percent')}% order={r.get('display_order')}" for r in a.values(data)))
+        if sub in {'validate','preview'}:
+            issues=a.validate_doc(data,{}); return CommandResult(json.dumps({'ok':not issues,'errors':[i.__dict__ for i in issues],'records':a.values(data)}, indent=2), ok=not issues)
+        if len(args)<2: return CommandResult('Usage: encumbranceedit show|set|rename|order|description|penalty|delete|validate|preview ...', ok=False)
+        rid=safe_id(args[1]); rec=a.find(data,rid) or a.default_record(rid); before=copy.deepcopy(data)
+        if sub=='show': return CommandResult(json.dumps(rec, indent=2), ok=bool(a.find(data,rid)))
+        if sub=='set' and len(args)>=3: rec['threshold_percent']=parse_num(args[2]); a.put(data,rec)
+        elif sub=='rename' and len(args)>=3: rec['name']=' '.join(args[2:]); a.put(data,rec)
+        elif sub=='order' and len(args)>=3: rec['display_order']=int(args[2]); a.put(data,rec)
+        elif sub=='description' and len(args)>=3: rec['description']=' '.join(args[2:]); a.put(data,rec)
+        elif sub=='penalty' and len(args)>=4: rec.setdefault('penalties',{})[args[2]]=parse_num(args[3]); a.put(data,rec)
+        elif sub=='delete': a.remove(data,rid)
+        else: return CommandResult('Usage: encumbranceedit show|set|rename|order|description|penalty|delete|validate|preview ...', ok=False)
+        issues=a.validate_doc(data,{})
+        if issues: return CommandResult('\n'.join(i.line() for i in issues), ok=False)
+        a.save_draft(data); self._audit_stat_edit(root,actor,raw,a,rid,before,data,{'ok':True}); return CommandResult(json.dumps(a.find(data,rid) or {'deleted':rid}, indent=2))
+
+    def _range_edit(self, a, data, args, raw, actor):
+        root=a.root; sub=args[0].lower() if args else 'show'; rr=data.setdefault('range_rules',{})
+        if sub in {'show','preview'}: return CommandResult(json.dumps({'range_rules':rr}, indent=2))
+        if sub=='validate':
+            issues=StatCombatPublishValidator(root).validate()['errors']; rel=[i for i in issues if i.document=='range_rules']; return CommandResult(json.dumps({'ok':not rel,'errors':[i.__dict__ for i in rel]}, indent=2), ok=not rel)
+        if sub in {'set','reset'} and len(args)>=2:
+            field=args[1]
+            if field not in a.allowed: return CommandResult('Unknown range field.', ok=False)
+            before=copy.deepcopy(data)
+            if sub=='reset': rr[field]=a.default_document()['range_rules'].get(field)
+            else:
+                if len(args)<3: return CommandResult('Usage: rangeedit set <field> <value>', ok=False)
+                typ=a.allowed[field]; val=' '.join(args[2:]); rr[field]=parse_bool(val) if typ is bool else typ(parse_num(val) if typ is int else val)
+            issues=StatCombatPublishValidator(root).validate()['errors']; rel=[i for i in issues if i.document=='range_rules']
+            if rel: return CommandResult('\n'.join(i.line() for i in rel), ok=False)
+            a.save_draft(data); self._audit_stat_edit(root,actor,raw,a,'range_rules',before,data,{'ok':True}); return CommandResult(json.dumps({'range_rules':rr}, indent=2))
+        return CommandResult('Usage: rangeedit show|set|reset|validate|preview', ok=False)
+
+    def _cmd_attributeedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        return self._adapter_edit(character,args,raw,AttributeDocumentAdapter,'Attribute')
+
+    def _cmd_formulaedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if args and args[0].lower()=='test' and len(args)>=2:
+            attr,_=self._stat_services(character); a=FormulaDocumentAdapter(attr.world_root); rec=a.find(a.load_draft(),args[1])
+            if not rec: return CommandResult('Formula not found.', ok=False)
+            supplied={};
+            for tok in args[2:]:
+                if '=' in tok:
+                    k,v=tok.split('=',1); supplied[k]=parse_num(v)
+            defaults={v:0 for v in rec.get('variables',[]) if v not in supplied}; vals={**defaults,**supplied}; errors=[]; rawv=None; final=None
+            try:
+                rawv=FormulaEngine().evaluate_expression(rec['formula_id'], rec.get('expression','0'), vals).final_value; final=rawv
+                if rec.get('rounding')=='floor': import math; final=math.floor(final)
+                elif rec.get('rounding')=='ceil': import math; final=math.ceil(final)
+                elif rec.get('rounding')=='round': final=round(final)
+                if rec.get('minimum') is not None: final=max(float(rec['minimum']), final)
+                if rec.get('maximum') is not None: final=min(float(rec['maximum']), final)
+            except Exception as e: errors.append(str(e))
+            return CommandResult(json.dumps({'expression':rec.get('expression'),'supplied_inputs':supplied,'defaulted_inputs':defaults,'raw_result':rawv,'rounding':rec.get('rounding'),'clamp':[rec.get('minimum'),rec.get('maximum')],'final_result':final,'errors':errors}, indent=2), ok=not errors)
+        return self._adapter_edit(character,args,raw,FormulaDocumentAdapter,'Formula')
+
+    def _cmd_statdef(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        return self._adapter_edit(character,args,raw,StatDefinitionDocumentAdapter,'Statdef')
+
+    def _cmd_resistanceedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        return self._adapter_edit(character,args,raw,ResistanceDocumentAdapter,'Resistance')
+
+    def _cmd_encumbranceedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        return self._adapter_edit(character,args,raw,EncumbranceDocumentAdapter,'Encumbrance')
+
+    def _cmd_postureedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        return self._adapter_edit(character,args,raw,PostureDocumentAdapter,'Posture')
+
+    def _cmd_rangeedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        return self._adapter_edit(character,args,raw,RangeRulesDocumentAdapter,'Range')
+
+    def _cmd_combatmessage(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        return self._adapter_edit(character,args,raw,CombatMessageDocumentAdapter,'Combatmessage')
+
+    def _cmd_helpedit(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("You do not have permission for that command.", ok=False)
+        svc=self._help_service(character); drafts=svc.load_drafts(); sub=(args[0].lower() if args else "list")
+        try:
+            if sub=="list": return CommandResult("Help drafts:\n"+"\n".join(f"- {e.help_id}: {e.title}" for e in sorted(drafts.values(), key=lambda e:e.help_id)))
+            if len(args)<2: return CommandResult("Usage: helpedit <show|create|clone|title|summary|body|syntax|example|keyword|alias|category|related|access|visible|validate|preview|delete|publish> <id> ...", ok=False)
+            hid=args[1]
+            if sub=="create":
+                if hid in drafts: return CommandResult("That help entry already exists.", ok=False)
+                drafts[hid]=HelpEntry(help_id=hid, keywords=(hid.replace('_',' '),), title=hid.replace('_',' ').title(), summary="Draft help entry."); svc.save_drafts(drafts); return CommandResult(f"Created draft help entry {hid}.")
+            if sub=="clone" and len(args)>=3:
+                src=svc.get_entry(hid, character); nid=args[2]
+                if not isinstance(src, HelpEntry): return CommandResult("Source help entry not found.", ok=False)
+                data=src.to_dict(); data["help_id"]=nid; data["keywords"]=[nid.replace('_',' ')]; drafts[nid]=HelpEntry.from_dict(data); svc.save_drafts(drafts); return CommandResult(f"Cloned {src.help_id} to {nid}.")
+            e=drafts.get(hid) or svc._entry_exact(hid, drafts)
+            if not e: return CommandResult("Help draft not found.", ok=False)
+            data=e.to_dict()
+            rest=" ".join(args[2:]).strip()
+            if sub=="show": return CommandResult(json.dumps(data, indent=2))
+            if sub in {"title","summary","body","category"}: data[sub]=rest
+            elif sub=="syntax": data.setdefault("syntax",[]); data["syntax"].append(rest)
+            elif sub=="example": data.setdefault("examples",[]); data["examples"].append(rest)
+            elif sub in {"keyword","alias","related"} and len(args)>=4:
+                key={"keyword":"keywords","alias":"aliases","related":"related_topics"}[sub]; op=args[2].lower(); val=" ".join(args[3:])
+                items=list(data.get(key) or [])
+                if op=="add" and val not in items: items.append(val)
+                if op=="remove": items=[x for x in items if normalize_help_query(x)!=normalize_help_query(val)]
+                data[key]=items
+            elif sub=="access": data["minimum_access_level"]=rest.lower()
+            elif sub=="visible": data["player_visible"]=rest.lower() in {"on","true","yes","1"}
+            elif sub=="delete": drafts.pop(e.help_id,None); svc.save_drafts(drafts); return CommandResult(f"Deleted draft help entry {e.help_id}.")
+            elif sub=="validate": svc.validate_entry(e); return CommandResult(f"Help entry {e.help_id} is valid.")
+            elif sub=="preview": return CommandResult(self._render_help_entry(e, character, title_prefix="Preview: "))
+            else: return CommandResult("Unknown helpedit action.", ok=False)
+            ne=HelpEntry.from_dict(data); svc.validate_entry(ne); drafts[e.help_id]=ne; svc.save_drafts(drafts); return CommandResult(f"Updated help draft {ne.help_id}.")
+        except Exception as exc:
+            return CommandResult(f"Help edit failed: {exc}", ok=False)
 
     def _cmd_resists(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display resistances through the single score renderer."""
@@ -1293,15 +2592,22 @@ class MudCommandEngine:
             rows = [r for r in rows if str(r.get("ability_type")) in kinds]
         return rows
 
-    def _format_ability_list(self, rows: list[dict[str, Any]], empty: str) -> str:
-        if not rows: return empty
-        lines = ["Available abilities:"]
-        for r in rows:
-            costs = ", ".join(f"{c.get('amount', c.get('percentage', 0))} {c.get('resource_id')}" for c in r.get("costs", [])) or "no cost"
-            cd = (r.get("cooldowns") or {}).get("cooldown_duration", (r.get("cooldowns") or {}).get("duration", 0))
-            cast = (r.get("timing") or {}).get("cast_time", 0)
-            lines.append(f"- {r.get('name') or r.get('id')} ({r.get('ability_type')}): {costs}; cooldown {cd}; cast {cast}. {r.get('description','')}")
-        return "\n".join(lines)
+    def _ability_status_text(self, character: Any, row: dict[str, Any]) -> str:
+        aid = str(row.get("id") or "")
+        if aid == "build_campfire" and not (getattr(character, "current_campsite_id", None) or getattr(character, "campsite_id", None)):
+            return "Requires an established campsite."
+        for cost in row.get("costs", []) or []:
+            resource = str(cost.get("resource_id") or "").lower()
+            amount = int(cost.get("amount") or 0)
+            if resource in {"mana", "mp"} and int(getattr(character, "mana", 0) or 0) < amount:
+                return f"Requires {amount} mana."
+        return "Ready"
+
+    def _format_ability_list(self, rows: list[dict[str, Any]], empty: str, title: str = "ABILITIES") -> CommandResult:
+        for row in rows:
+            row["status_text"] = self._ability_status_text(getattr(self, "_format_character", None), row) if getattr(self, "_format_character", None) else row.get("status_text", "Ready")
+        doc = build_abilities_document(rows, title=title, empty=empty, theme=resolve_effective_display_theme(getattr(self, "_format_character", None), family=title.lower()))
+        return CommandResult(narrative=render_display_mud(doc), display_document=doc, display_intent=title)
 
     def _cmd_spellup(self, character: Any, args: list[str], raw: str) -> CommandResult:
         if args and args[0].lower() == "cast":
@@ -1317,30 +2623,79 @@ class MudCommandEngine:
         return CommandResult(narrative=self._render_score_section(character, "spellup"))
 
     def _cmd_spells(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        return CommandResult(self._format_ability_list(self._ability_rows(character, {"spell","heal","buff","debuff"}), "You know no spells."))
+        svc = self._ability_service(character)
+        rows = ability_snapshots_as_rows(AbilityDisplaySnapshotService(svc).list_snapshots(character, "spells")) if svc else []
+        doc = build_abilities_document(rows, title="SPELLS", empty="You know no spells.", theme=resolve_effective_display_theme(character, family="spells"))
+        return CommandResult(render_display_mud(doc), display_document=doc, display_intent="SPELLS")
 
     def _cmd_skills(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        return CommandResult(self._format_ability_list(self._ability_rows(character, {"skill","technique"}), "You know no skills."))
+        svc = self._ability_service(character)
+        rows = ability_snapshots_as_rows(AbilityDisplaySnapshotService(svc).list_snapshots(character, "skills")) if svc else []
+        doc = build_abilities_document(rows, title="SKILLS", empty="You know no skills.", theme=resolve_effective_display_theme(character, family="skills"))
+        return CommandResult(render_display_mud(doc), display_document=doc, display_intent="SKILLS")
 
     def _cmd_abilities(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        return CommandResult(self._format_ability_list(self._ability_rows(character), "You have no abilities."))
+        svc = self._ability_service(character)
+        rt = getattr(self, "runtime", None)
+        warmed = rt.build_projection(character, "abilities") if rt and hasattr(rt, "build_projection") else None
+        rows = ability_snapshots_as_rows(AbilityDisplaySnapshotService(svc).list_snapshots(character, "abilities")) if svc else (warmed or [])
+        doc = build_abilities_document(rows, title="ABILITIES", empty="You have no abilities.", theme=resolve_effective_display_theme(character, family="abilities"))
+        return CommandResult(render_display_mud(doc), display_document=doc, display_intent="ABILITIES")
 
     def _cmd_ability_detail(self, character: Any, args: list[str], raw: str) -> CommandResult:
         q = " ".join(args).lower().replace(" ", "_")
         for r in self._ability_rows(character):
             if q in {str(r.get("id")).lower(), str(r.get("name")).lower().replace(" ", "_")}:
-                return CommandResult(self._format_ability_list([r], "Ability not found."))
+                return self._format_ability_list([r], "Ability not found.", "ABILITY")
         return CommandResult("Ability not found.", ok=False)
+
+    def _cmd_direct_ability(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        cmd = raw.strip().split()[0].lower() if raw.strip() else ""
+        return self._cmd_use_ability(character, [cmd] + list(args), raw)
 
     def _cmd_use_ability(self, character: Any, args: list[str], raw: str) -> CommandResult:
         if not args: return CommandResult("Use which ability?", ok=False)
         svc = self._ability_service(character)
         if not svc: return CommandResult("Ability system is unavailable.", ok=False)
-        aid = args[0].lower().replace(" ", "_"); target = " ".join(args[1:]) or "self"
-        by_name = {str(r.get("name")).lower().replace(" ", "_"): r.get("id") for r in svc.registry.abilities.values()}
+        rt = getattr(self, 'runtime', None)
+        cr = getattr(rt, 'combat_runtime', None) if rt else getattr(self, 'combat_runtime', None)
+        if cr and cr.is_actor_in_active_combat(cr.actor_id_for_character(character)):
+            phrase_parts=list(args)
+            target=''
+            # Prefer longest learned ability name prefix; remaining words become target text.
+            learned=svc.get_actor_abilities(character.id)
+            best=None
+            joined=' '.join(phrase_parts).lower()
+            for row in learned:
+                names=[str(row.get('id','')).replace('_',' '), str(row.get('name',''))]
+                for nm in names:
+                    nm=nm.lower().strip()
+                    if nm and (joined == nm or joined.startswith(nm+' ')) and (best is None or len(nm)>len(best[0])):
+                        best=(nm,row)
+            if best:
+                target=joined[len(best[0]):].strip()
+                res=cr.queue_ability(character, str(best[1].get('id')), target)
+                return CommandResult('\n'.join(res.messages), ok=res.ok)
+
+        if args and args[0].lower() in {"use", "cast", "invoke", "perform"}:
+            args = args[1:]
+        phrase = " ".join(args).lower().strip()
+        aid = phrase.replace(" ", "_")
+        target = "self"
+        by_name = {}
+        for r in svc.registry.abilities.values():
+            rid = getattr(r, "id", None) or (r.get("id") if isinstance(r, dict) else "")
+            rname = getattr(r, "name", None) or (r.get("name") if isinstance(r, dict) else "")
+            if rname:
+                by_name[str(rname).lower().replace(" ", "_")] = rid
+        if aid not in svc.registry.abilities and aid not in by_name:
+            first = args[0].lower().replace(" ", "_"); aid = first; target = " ".join(args[1:]) or "self"
         aid = aid if aid in svc.registry.abilities else by_name.get(aid, aid)
-        res = svc.start_ability(character.id, aid, target) if aid in svc.registry.abilities else {"ok": False, "message": "Unknown ability."}
-        return CommandResult(res.get("message") or ("Ability activated." if res.get("ok") else "You cannot use that ability."), ok=bool(res.get("ok")))
+        gateway = svc.gateway() if hasattr(svc, "gateway") else None
+        res = gateway.execute(character.id, aid, target, {"command": raw}) if gateway else None
+        if res is None:
+            return CommandResult("Ability system is unavailable.", ok=False)
+        return CommandResult(res.player_message or ("Ability activated." if res.ok else "You cannot use that ability."), ok=res.ok, state_updates={"render_room": res.ok and res.ability_id in {"set_camp","build_campfire","recall"}})
 
     def _cmd_cancel_ability(self, character: Any, args: list[str], raw: str) -> CommandResult:
         svc = self._ability_service(character)
@@ -1386,7 +2741,9 @@ class MudCommandEngine:
         import sqlite3
         actor_id=character.id if not args or args[0]=="self" else args[0]
         with sqlite3.connect(svc.db_path) as c: rows=c.execute("SELECT ability_id,cooldown_group,ready_world_time,charges_current,charges_maximum FROM actor_ability_cooldowns WHERE actor_id=? AND active=1 ORDER BY ready_world_time,ability_id", (actor_id,)).fetchall()
-        return CommandResult("Cooldowns:\n" + ("\n".join(f"- {r[0]} group={r[1]} ready={r[2]} charges={r[3]}/{r[4]}" for r in rows) if rows else "- none"))
+        docs = [{"name": str(r[0]).replace("_", " ").title(), "rank": 1, "maximum_rank": 1, "status_text": "Ready", "category": "Cooldown", "costs": [], "description": f"Charges: {r[3]}/{r[4]}"} for r in rows]
+        doc = build_abilities_document(docs, title="COOLDOWNS", empty="No active cooldowns.", theme=resolve_effective_display_theme(character, family="cooldowns"))
+        return CommandResult(render_display_mud(doc), display_document=doc, display_intent="COOLDOWNS")
 
     def _cmd_abilitycasts(self, character: Any, args: list[str], raw: str) -> CommandResult:
         svc=self._ability_service(character)
@@ -1397,12 +2754,24 @@ class MudCommandEngine:
         return CommandResult("Ability casts:\n" + ("\n".join(f"- {r[0]} {r[1]} {r[2]} completes={r[3]}" for r in rows) if rows else "- none"))
 
     def _cmd_affects(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        """Display active affects/buffs through the single score renderer."""
-        return CommandResult(narrative=self._render_score_section(character, "affects"))
+        """Display active visible affects through the unified themed frame family."""
+        rt = getattr(self, "runtime", None)
+        raw_affects = rt.build_projection(character, "effects") if rt and hasattr(rt, "build_projection") else (getattr(character, "affects", {}) or getattr(character, "effects", {}) or {})
+        if isinstance(raw_affects, dict):
+            effects = [dict(v if isinstance(v, dict) else {"name": k}, name=(v.get("name") if isinstance(v, dict) else k) or k) for k, v in raw_affects.items()]
+        else:
+            effects = [dict(x) for x in raw_affects if isinstance(x, dict)]
+        theme = resolve_effective_display_theme(character, family="affects")
+        doc = build_affects_document(effects, theme=theme)
+        return CommandResult(narrative=render_display_mud(doc, color_enabled=theme.color_enabled), display_document=doc, display_intent="AFFECTS")
 
     def _cmd_worth(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        """Display net worth through the single score renderer."""
-        return CommandResult(narrative=self._render_score_section(character, "currencies"))
+        """Display net worth through the unified character display suite."""
+        svc = getattr(self, "character_display_snapshots", None) or getattr(getattr(self, "runtime", None), "character_display_snapshots", None) or CharacterDisplaySnapshotService(getattr(self, "runtime", None))
+        rt = getattr(self, "runtime", None)
+        worth_snapshot = rt.build_projection(character, "worth") if rt and hasattr(rt, "build_projection") else (svc.build_worth_snapshot(character) if hasattr(svc, "build_worth_snapshot") else None)
+        doc = build_worth_document(character, worth_snapshot=worth_snapshot, theme=resolve_effective_display_theme(character, family="worth"))
+        return CommandResult(narrative=render_display_mud(doc, color_enabled=getattr(doc.frames[0] if doc.frames else None, "color_enabled", True)), display_document=doc, display_intent="WORTH")
 
     def _cmd_who(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """List connected players."""
@@ -1413,13 +2782,22 @@ class MudCommandEngine:
         text = raw.split(maxsplit=1)[1] if len(raw.split(maxsplit=1)) > 1 else ""
         if not text:
             return CommandResult(narrative="Say what?")
-        return CommandResult(narrative=f'You say, "{text}."' if not text.endswith((".", "!", "?")) else f'You say, "{text}"')
+        spoken = text if text.endswith((".", "!", "?")) else text + "."
+        rt = getattr(self, "runtime", None)
+        if rt and hasattr(rt, "deliver_perspective_action"):
+            return rt.deliver_perspective_action(character, None, getattr(character, "room_id", ""), f'You say, "{spoken}"', None, f'{character.name} says, "{spoken}"', semantic_role="dialogue", intent="COMMUNICATION")
+        return CommandResult(narrative=semantic("dialogue", f'You say, "{spoken}"'))
 
     def _cmd_emote(self, character: Any, args: list[str], raw: str) -> CommandResult:
         text = raw.split(maxsplit=1)[1] if len(raw.split(maxsplit=1)) > 1 else ""
         if not text:
             return CommandResult(narrative="Emote what?")
-        return CommandResult(narrative=f"{character.name} {text}")
+        rt = getattr(self, "runtime", None)
+        actor_line = f"You {text}" if not text.startswith("'") else f"You{text}"
+        observer_line = f"{character.name} {text}"
+        if rt and hasattr(rt, "deliver_perspective_action"):
+            return rt.deliver_perspective_action(character, None, getattr(character, "room_id", ""), actor_line, None, observer_line, semantic_role="system", intent="COMMUNICATION")
+        return CommandResult(narrative=actor_line)
 
     def _cmd_look(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Look around or at draft Builder features when present."""
@@ -1434,30 +2812,30 @@ class MudCommandEngine:
         return CommandResult(narrative="", state_updates={"render_room": True})
 
     def _cmd_help(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        """Display help."""
+        """Display canonical searchable help."""
+        svc=self._help_service(character)
         if not args:
-            narrative = """
-Available commands:
-  score - Display your stats
-  inventory - List your items
-  equipment - Show worn items
-  look - Examine surroundings
-  help <topic> - Get help on a topic
-  """
-        else:
-            topic = args[0].lower()
-            resolved = self.resolve_alias(topic) or topic
-            meta = self.registry.commands.get(resolved)
-            self._publish("command_help_requested", character, raw, topic=topic, resolved_command=resolved)
-            builder_help = self._builder_list_help(resolved)
-            if builder_help:
-                narrative = builder_help
-            elif meta:
-                narrative = f"Command: {meta.command}\nPurpose: {meta.long_help or meta.short_help}\nUsage: {meta.usage or meta.command}\nAliases: {', '.join(meta.aliases) if meta.aliases else 'none'}\nCategory: {meta.category}\nStatus: {meta.status}"
-            else:
-                narrative = f"Help on '{topic}' is not available."
-        
-        return CommandResult(narrative=narrative)
+            cats=", ".join(svc.categories(character)[:12]) or "general"
+            topics=", ".join(e.title for e in svc.list_topics(actor_context=character)[:8])
+            return CommandResult(f"HELP\n\nType HELP <topic> for details, HELP SEARCH <text> to search, HELP CATEGORIES to list categories, or HELP CATEGORY <category>.\n\nCommon topics: {topics}\nCategories: {cats}", display_intent="HELP")
+        sub=args[0].lower(); query=" ".join(args[1:] if sub in {"search","category","related"} else args)
+        if sub=="categories": return CommandResult("Help categories:\n"+"\n".join(f"- {c}" for c in svc.categories(character)))
+        if sub=="category":
+            rows=svc.list_topics(query, character); return CommandResult((f"Help category: {query}\n" if query else "Help topics:\n")+ ("\n".join(f"- {e.title}" for e in rows) if rows else "No visible topics in that category."))
+        if sub=="search":
+            rows=svc.search(query, character); return CommandResult("Help search results:\n"+("\n".join(f"- {e.title} ({e.category})" for e in rows[:10]) if rows else "No matching help topics."))
+        if sub=="related":
+            rows=svc.related(query, character); return CommandResult("Related help topics:\n"+("\n".join(f"- {e.title}" for e in rows) if rows else "No related topics."))
+        res=svc.get_entry(query, character)
+        self._publish("command_help_requested", character, raw, topic=query)
+        if isinstance(res, dict) and res.get("ambiguous"):
+            return CommandResult(f"Help topic “{query}” matches:\n"+"\n".join(f"- {e.title}" for e in res["ambiguous"])+"\n\nType HELP <topic> using one of the names above.", ok=False)
+        if isinstance(res, HelpEntry): return CommandResult(self._render_help_entry(res, character), display_intent="HELP")
+        resolved = self.resolve_alias(query) or query
+        meta = self.registry.commands.get(resolved)
+        if meta:
+            return CommandResult(f"Command: {meta.command}\nPurpose: {meta.long_help or meta.short_help}\nUsage: {meta.usage or meta.command}\nAliases: {', '.join(meta.aliases) if meta.aliases else 'none'}\nCategory: {meta.category}\nStatus: {meta.status}")
+        return CommandResult(f"Help on '{query}' is not available. Try HELP SEARCH {query}.", ok=False)
 
     def _cmd_commands(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """List available commands."""
@@ -1501,6 +2879,193 @@ Available commands:
             return CommandResult(narrative="Your character is saved automatically.")
         return CommandResult(narrative="Your character is saved automatically.")
 
+
+    def _cmd_display(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        """Manage player display preferences (width and theme)."""
+        prefs = getattr(character, "preferences", None) or {}; setattr(character, "preferences", prefs)
+        sub = (args[0].lower() if args else "")
+        def save():
+            rt=getattr(self,"runtime",None); world_id=getattr(rt,"active_world_id","") if rt else self.builder.world_id(character)
+            if rt and hasattr(rt,"state_store"): rt.state_store.save_character(character, world_id)
+            elif self.state_store and hasattr(self.state_store,"save_character"): self.state_store.save_character(character)
+        if sub == "width":
+            if len(args) == 1:
+                return CommandResult(f"Display width: {prefs.get('display_width', 'auto')}")
+            value=args[1].lower()
+            if value not in {"auto","wide","medium","narrow"}:
+                try:
+                    n=int(value)
+                    if n < 36 or n > 160: return CommandResult("Display width must be auto, wide, medium, narrow, or 36-160.", ok=False)
+                    value=str(n)
+                except Exception:
+                    return CommandResult("Display width must be auto, wide, medium, narrow, or 36-160.", ok=False)
+            prefs["display_width"] = value; save(); return CommandResult(f"Display width set to {value}.")
+        if sub == "theme":
+            if len(args) == 1: return CommandResult(f"Display theme: {prefs.get('display_theme', 'world default')}")
+            if args[1].lower() == "list": return CommandResult("Player-selectable display themes:\n- classic_adventurer\n- minimal_modern")
+            if args[1].lower() == "reset": prefs.pop("display_theme", None); save(); return CommandResult("Display theme reset to the world default.")
+            prefs["display_theme"] = args[1]; save(); return CommandResult(f"Display theme set to {args[1]}.")
+        if sub == "color" and len(args)>1:
+            prefs["no_color"] = args[1].lower() in {"off","false","no","0"}; save(); return CommandResult("Display color disabled." if prefs["no_color"] else "Display color enabled.")
+        if sub == "contrast" and len(args)>1:
+            prefs["high_contrast"] = args[1].lower() == "high"; save(); return CommandResult("Display contrast set to high." if prefs["high_contrast"] else "Display contrast set to normal.")
+        if sub == "colorblind" and len(args)>1:
+            prefs["colorblind"] = args[1].lower() in {"on","true","yes","1"}; save(); return CommandResult("Colorblind-friendly display enabled." if prefs["colorblind"] else "Colorblind-friendly display disabled.")
+        if sub == "decoration" and len(args)>1:
+            prefs["reduced_decoration"] = args[1].lower() in {"reduced","minimal","off"}; save(); return CommandResult("Display decoration reduced." if prefs["reduced_decoration"] else "Display decoration set to normal.")
+        if sub == "accessibility" and len(args)>1 and args[1].lower()=="reset":
+            for k in ("no_color","high_contrast","colorblind","reduced_decoration"): prefs.pop(k, None)
+            save(); return CommandResult("Display accessibility settings reset.")
+        if sub == "reset":
+            for k in ("display_theme","display_width","no_color","high_contrast","colorblind","reduced_decoration"): prefs.pop(k, None)
+            save(); return CommandResult("Display settings reset.")
+        if sub == "preview":
+            fam=args[1].lower() if len(args)>1 else "score"
+            themes=load_display_themes(); selected=prefs.get("display_theme") or "classic_adventurer"
+            raw_theme=themes.get(selected).__dict__ if themes.get(selected) else {"theme_id":selected,"name":"Preview","width":79}
+            prev=preview_display_theme(raw_theme, fam)
+            return CommandResult(prev.get("plain") or prev.get("errors") or "Preview unavailable.", ok=prev.get("ok") == "true")
+        return CommandResult("Usage: display width [auto|wide|medium|narrow|36-160] | display theme [list|<id>|reset] | display preview <family> | display color off|on | display contrast high|normal | display colorblind on|off | display decoration reduced|normal | display reset")
+
+    def _cmd_displaytheme(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        """Builder-facing display theme draft commands."""
+        if self._effective_role(character) not in {"builder", "admin", "owner"}:
+            return CommandResult("You do not have permission for that command.", ok=False)
+        world_id = self.builder.world_id(character)
+        drafts = self.builder.load(world_id)
+        store = drafts.setdefault("display_themes", {})
+        if not store:
+            for tid, theme in load_display_themes(self.builder.worlds_dir / world_id).items():
+                store[tid] = dict(theme.__dict__, theme_id=tid)
+            store.setdefault("classic_adventurer", {"theme_id":"classic_adventurer","name":"Classic Adventurer","width":79,"title_alignment":"center"})
+            store.setdefault("minimal_modern", {"theme_id":"minimal_modern","name":"Minimal Modern","width":60,"title_alignment":"left"})
+            self.builder.save_drafts(world_id, drafts)
+        def save_store() -> None:
+            drafts["display_themes"] = store
+            self.builder.save_drafts(world_id, drafts)
+        sub=args[0].lower() if args else "list"
+        if sub == "list": return CommandResult("Display themes:\n" + "\n".join(f"- {k}" for k in sorted(store)))
+        if sub == "show" and len(args)>1: return CommandResult(json.dumps(store.get(args[1], {}), indent=2, sort_keys=True) if args[1] in store else "Display theme not found.", ok=args[1] in store)
+        if sub == "create" and len(args)>1:
+            store[args[1]]={"theme_id":args[1],"name":args[1].replace('_',' ').title(),"width":79}; save_store(); return CommandResult(f"Display theme {args[1]} created as a Builder draft.")
+        if sub == "clone" and len(args)>2 and args[1] in store:
+            store[args[2]]=dict(store[args[1]], theme_id=args[2], name=args[2].replace('_',' ').title()); save_store(); return CommandResult(f"Display theme {args[2]} cloned from {args[1]}.")
+        if sub == "set" and len(args)>3 and args[1] in store:
+            field=args[2]; value=" ".join(args[3:]); store[args[1]][field]=int(value) if field=="width" and value.isdigit() else value; save_store(); return CommandResult(f"Display theme {args[1]} {field} set.")
+        if sub == "label" and len(args)>3 and args[1] in store:
+            store[args[1]].setdefault("labels", {})[args[2]]=" ".join(args[3:]); save_store(); return CommandResult(f"Display theme {args[1]} label {args[2]} set.")
+        if sub == "role" and len(args)>3 and args[1] in store:
+            store[args[1]].setdefault("semantic_roles", {})[args[2]]=args[3]; save_store(); return CommandResult(f"Display theme {args[1]} role {args[2]} set.")
+        if sub in {"sectionorder","sections"} and len(args)>3 and args[1] in store:
+            store[args[1]].setdefault("section_order" if sub=="sectionorder" else "visible_sections", {})[args[2]]=args[3:]; save_store(); return CommandResult(f"Display theme {args[1]} {sub} updated.")
+        if sub == "border" and len(args)>3 and args[1] in store:
+            store[args[1]].setdefault("border_characters", {})[args[2]]=args[3]; save_store(); return CommandResult(f"Display theme {args[1]} border {args[2]} set.")
+        if sub == "prompt" and len(args)>3 and args[1] in store:
+            store[args[1]].setdefault("prompt_presets", {})[args[2]]=" ".join(args[3:]); save_store(); return CommandResult(f"Display theme {args[1]} prompt {args[2]} set.")
+        if sub == "validate" and len(args)>1 and args[1] in store:
+            from engine.display_themes import validate_display_theme
+            errs=validate_display_theme(store[args[1]]); return CommandResult("Valid." if not errs else "Errors:\n"+"\n".join(errs), ok=not errs)
+        if sub == "preview" and len(args)>2 and args[1] in store:
+            prev=preview_display_theme(store[args[1]], args[2]); header=f"Preview theme={args[1]} scope=draft family={args[2]} mode=draft\n"; return CommandResult((header + (prev.get("plain") or prev.get("errors") or "Preview unavailable.")), ok=prev.get("ok") == "true")
+        if sub == "assign" and len(args)>2:
+            scope=args[1].lower(); theme_id=args[-1]
+            if theme_id not in store: return CommandResult(f"Display theme not found: {theme_id}", ok=False)
+            if scope == "world":
+                meta=drafts.setdefault("world", {}).setdefault(world_id, {"id": world_id}); meta["default_display_theme_id"]=theme_id; self.builder.save_drafts(world_id,drafts); return CommandResult(f"Display theme {theme_id} assigned to world.")
+            if scope in {"zone","area"} and len(args)>=4:
+                obj_id=args[2]; bucket=drafts.setdefault(scope+"s", {})
+                if obj_id not in bucket: return CommandResult(f"{scope.title()} not found: {obj_id}", ok=False)
+                if len(args)==5:
+                    fam=args[3].lower()
+                    if fam not in SUPPORTED_FAMILIES: return CommandResult(f"Unsupported display family: {fam}", ok=False)
+                    bucket[obj_id].setdefault("display_theme_ids", {})[fam]=theme_id
+                else: bucket[obj_id]["display_theme_id"]=theme_id
+                self.builder.save_drafts(world_id,drafts); return CommandResult(f"Display theme {theme_id} assigned to {scope} {obj_id}.")
+        if sub == "unassign" and len(args)>1:
+            scope=args[1].lower()
+            if scope == "world":
+                drafts.setdefault("world", {}).setdefault(world_id, {"id": world_id}).pop("default_display_theme_id", None); self.builder.save_drafts(world_id,drafts); return CommandResult("Display theme assignment removed for world.")
+            if scope in {"zone","area"} and len(args)>=3:
+                obj_id=args[2]; bucket=drafts.setdefault(scope+"s", {})
+                if obj_id not in bucket: return CommandResult(f"{scope.title()} not found: {obj_id}", ok=False)
+                if len(args)>=4: (bucket[obj_id].get("display_theme_ids") or {}).pop(args[3].lower(), None)
+                else: bucket[obj_id].pop("display_theme_id", None); bucket[obj_id].pop("display_theme_ids", None)
+                self.builder.save_drafts(world_id,drafts); return CommandResult(f"Display theme assignment removed for {scope} {obj_id}.")
+        if sub == "delete" and len(args)>1:
+            store.pop(args[1], None); save_store(); return CommandResult(f"Display theme {args[1]} deleted from Builder drafts.")
+        return CommandResult("Usage: displaytheme list|show|create|clone|set|label|role|sectionorder|sections|border|prompt|validate|preview|assign|unassign|delete", ok=False)
+
+    def _cmd_prompt(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        """Manage persistent player prompt presets and safe custom templates."""
+        prefs = getattr(character, "preferences", None)
+        if prefs is None:
+            prefs = {}; setattr(character, "preferences", prefs)
+        sub = (args[0].lower() if args else "show")
+        def save() -> None:
+            rt = getattr(self, "runtime", None)
+            pref = getattr(self, "presentation_preferences", None) or (getattr(rt, "presentation_preferences", None) if rt else None)
+            if pref:
+                pref.save(character.id, prompt_preset=prefs.get("prompt_preset"), prompt_template=prefs.get("prompt_template"), display_theme=prefs.get("display_theme"), display_width=prefs.get("display_width"))
+            else:
+                world_id = getattr(rt, "active_world_id", "") if rt else self.builder.world_id(character)
+                if rt and hasattr(rt, "state_store"):
+                    rt.state_store.save_character(character, world_id)
+                elif self.state_store and hasattr(self.state_store, "save_character"):
+                    self.state_store.save_character(character)
+        if sub in {"show", ""}:
+            preset = getattr(character, "prompt_preset", None) or prefs.get("prompt_preset") or "compact"
+            template = getattr(character, "prompt_template", None) or prefs.get("prompt_template") or ""
+            preview = render_display_plain(build_prompt_document(character))
+            return CommandResult(f"Prompt preset: {preset}\nCustom template: {template or 'none'}\nPreview: {preview}")
+        if sub == "list":
+            return CommandResult("Prompt presets:\n" + "\n".join(f"- {name}: {tmpl}" for name, tmpl in PROMPT_PRESETS.items()))
+        if sub == "tokens":
+            return CommandResult("Prompt tokens:\n%h current HP, %H maximum HP, %m current mana, %M maximum mana, %s current stamina, %S maximum stamina, %x current XP, %X XP to next level, %g gold, %l level, %a alignment, %p posture, %t combat target, %c target condition, %r room, %z area/zone, %q quest timer, %T world time, %n player name, %A age, %P play time, %e encumbrance, %w equipped weapon, %b combat state, %% literal percent.")
+        if sub == "preview":
+            old_preset, old_template = prefs.get("prompt_preset"), prefs.get("prompt_template")
+            old_ap, old_at = getattr(character, "prompt_preset", None), getattr(character, "prompt_template", None)
+            value = " ".join(args[1:]).strip()
+            if value in PROMPT_PRESETS:
+                prefs["prompt_preset"] = value; prefs.pop("prompt_template", None); setattr(character, "prompt_preset", value); setattr(character, "prompt_template", None)
+            elif value:
+                if not self._valid_prompt_template(value): return CommandResult("That prompt template contains unsupported markup or tokens.", ok=False)
+                prefs["prompt_template"] = value; setattr(character, "prompt_template", value)
+            preview = render_display_plain(build_prompt_document(character))
+            if old_preset is None: prefs.pop("prompt_preset", None)
+            else: prefs["prompt_preset"] = old_preset
+            if old_template is None: prefs.pop("prompt_template", None)
+            else: prefs["prompt_template"] = old_template
+            setattr(character, "prompt_preset", old_ap); setattr(character, "prompt_template", old_at)
+            return CommandResult(f"Prompt preview: {preview}")
+        if sub == "reset":
+            prefs.pop("prompt_preset", None); prefs.pop("prompt_template", None); setattr(character, "prompt_preset", None); setattr(character, "prompt_template", None); save()
+            return CommandResult("Prompt reset to the world default.")
+        if sub == "custom":
+            template = raw.split(None, 2)[2] if len(raw.split(None, 2)) >= 3 else ""
+            if not template: return CommandResult("Usage: prompt custom <template>", ok=False)
+            if not self._valid_prompt_template(template): return CommandResult("That prompt template contains unsupported markup or tokens.", ok=False)
+            prefs["prompt_template"] = template[:PROMPT_MAX_LENGTH]; prefs.pop("prompt_preset", None); setattr(character, "prompt_template", prefs["prompt_template"]); setattr(character, "prompt_preset", None); save()
+            return CommandResult("Custom prompt saved.")
+        if sub in PROMPT_PRESETS:
+            prefs["prompt_preset"] = sub; prefs.pop("prompt_template", None); setattr(character, "prompt_preset", sub); setattr(character, "prompt_template", None); save()
+            return CommandResult(f"Prompt preset set to {sub}.")
+        return CommandResult("Usage: prompt [show|list|compact|classic|combat|explorer|minimal|custom <template>|tokens|reset|preview [preset-or-template]]", ok=False)
+
+    def _valid_prompt_template(self, template: str) -> bool:
+        if len(template) > PROMPT_MAX_LENGTH or re.search(r"<|>|javascript:|\x1b|[.][.]|__|\(|\)|select\s|from\s", template, re.I):
+            return False
+        allowed = set("hHmMsSxXglaptcrzqTnAP%")
+        i=0
+        while i < len(template):
+            if template[i] == "%":
+                if i+1 >= len(template) or template[i+1] not in allowed: return False
+                i += 2; continue
+            if template[i] == "&":
+                if i+1 >= len(template) or not re.match(r"[A-Za-z0-9]", template[i+1]): return False
+                i += 2; continue
+            i += 1
+        return True
+
     def _cmd_generic(self, character: Any, args: list[str], raw: str) -> CommandResult:
         cmd = self.resolve_alias(raw.strip().split()[0].lower()) or raw.strip().split()[0].lower()
         toggles = {"brief", "compact", "autoexits", "autoloot", "autogold", "autosplit", "automap", "afk", "norepeat", "notell", "nosummon"}
@@ -1512,8 +3077,6 @@ Available commands:
             future = {"autoloot", "autogold", "autosplit", "automap"}
             suffix = " (preference stored; future systems will use it)." if cmd in future else "."
             return CommandResult(narrative=f"{cmd} is now {'ON' if prefs[cmd] else 'OFF'}{suffix}")
-        if cmd == "prompt":
-            return CommandResult(narrative="Smart MUD uses a pinned web prompt separate from scrollback. Configure the web prompt through Smart MUD settings; future telnet prompt customization is planned.")
         self._publish("command_placeholder_used", character, raw, canonical_command=cmd)
         return CommandResult(narrative=self._placeholder_for(cmd))
 
@@ -1963,6 +3526,144 @@ Available commands:
             return CommandResult("Mob/entity listing is not implemented yet. Mob/entity listing is not fully implemented yet.\nCurrent zone: " + (current_zone or "none") + "\nFuture usage:\nmlist\nmlist all\nmlist zone <zone_id>\nmlist 1500-1599")
         return CommandResult("Object/item listing is not implemented yet. Object/item listing is not fully implemented yet.\nCurrent zone: " + (current_zone or "none") + "\nFuture usage:\nolist\nolist all\nolist zone <zone_id>\nolist 1300-1399")
 
+
+    def _stats_status(self, character: Any) -> CommandResult:
+        if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("You do not have permission for that command.", ok=False)
+        attr,_=self._stat_services(character); pub=StatCombatPublisher(attr.world_root, getattr(self,'event_bus',None), getattr(self,'runtime',None)); val,h,changed=pub.preview()
+        lines=['Builder stats status']
+        for doc,x in h.items():
+            dirty=bool(x['draft'] and x['draft']!=x['published']); lines.append(f"- {doc}: {'dirty' if dirty else 'clean'} draft={x['draft']} published={x['published']} validation={'error' if any(e.document==doc for e in val['errors']) else 'ok'}")
+        audits=attr.world_root/'builder'/'audit'/'stats_publish_manifests.jsonl'
+        if audits.exists(): lines.append('last_publish_id='+json.loads(audits.read_text().splitlines()[-1]).get('publish_id',''))
+        return CommandResult('\n'.join(lines), ok=not val['errors'])
+
+    def _validate_stats(self, character: Any) -> CommandResult:
+        if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("You do not have permission for that command.", ok=False)
+        attr,_=self._stat_services(character); val=StatCombatPublishValidator(attr.world_root).validate()
+        lines=['Builder stats validation: '+('OK' if val['ok'] else 'FAILED')]
+        if val['errors']: lines += ['Errors:']+[f"- {e.line()}" for e in val['errors']]
+        if val['warnings']: lines += ['Warnings:']+[f"- {w.line()}" for w in val['warnings']]
+        lines += ['Dependency graph:']+[f"- {s}:{sid} -> {t}:{tid}" for s,sid,t,tid in val['graph']['references'] if tid]
+        return CommandResult('\n'.join(lines), ok=val['ok'])
+
+    def _preview_stats(self, character: Any) -> CommandResult:
+        if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("You do not have permission for that command.", ok=False)
+        attr,_=self._stat_services(character); val,h,changed=StatCombatPublisher(attr.world_root, getattr(self,'event_bus',None), getattr(self,'runtime',None)).preview()
+        lines=['Builder stats publish preview','Changed documents: '+(', '.join(changed) if changed else 'none'),'Draft/current hashes:']
+        for doc,x in h.items(): lines.append(f"- {doc}: draft={x['draft']} published={x['published']}")
+        if val['errors']: lines += ['Validation errors:']+[f"- {e.line()}" for e in val['errors']]
+        if val['warnings']: lines += ['Warnings:']+[f"- {w.line()}" for w in val['warnings']]
+        lines.append('activation_capability=hot_reload_when_runtime_services_accept_reload')
+        lines.append('restart_requirement=only if no runtime services are attached or reload fails after valid file publication')
+        return CommandResult('\n'.join(lines), ok=not val['errors'])
+
+    def _publish_stats(self, character: Any) -> CommandResult:
+        if self._effective_role(character) not in {"builder","admin","owner"}: return CommandResult("You do not have permission for that command.", ok=False)
+        attr,_=self._stat_services(character); inj=getattr(self,'_stats_publish_failure_injection',None)
+        res=StatCombatPublisher(attr.world_root, getattr(self,'event_bus',None), getattr(self,'runtime',None)).publish(self._stats_actor_id(character), inj)
+        if not res.get('ok'):
+            errs=res.get('errors') or []
+            detail='\n'.join('- '+(e.line() if hasattr(e,'line') else str(e)) for e in errs) or res.get('message','publish failed')
+            return CommandResult('Builder stats publish failed. Published files unchanged or rolled back.\n'+detail, ok=False)
+        m=res['manifest']; return CommandResult(f"Builder stats publish completed. publish_id={m['publish_id']} published=true active_runtime={m['active_runtime']} restart_required={m['restart_required']}\nChanged documents: "+', '.join(res.get('changed') or []))
+
+
+    def _reset_service(self, character: Any):
+        from engine.zone_resets import ZoneResetService
+        runtime = getattr(self, "runtime", None)
+        db_path = getattr(getattr(runtime, "state_store", None), "db_path", None) or getattr(getattr(self, "state_store", None), "db_path", ":memory:")
+        return ZoneResetService(runtime=runtime, db_path=db_path, event_bus=getattr(self, "event_bus", None))
+
+    def _cmd_builder_reset(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if self._effective_role(character) not in {"builder", "admin", "owner"}:
+            return CommandResult("You do not have permission for that command.", ok=False)
+        import json, uuid
+        from pathlib import Path
+        cmd = raw.strip().split()[0].lower() if raw.strip() else "resetlist"
+        world_id = self.builder.world_id(character)
+        root = self.builder.ensure(world_id)
+        path = root / "resets.json"
+        def load():
+            try: return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+            except Exception: return {}
+        def save(d):
+            path.write_text(json.dumps(d, indent=2, sort_keys=True)+"\n", encoding="utf-8")
+        svc = self._reset_service(character)
+        data = load()
+        profiles = [svc.normalize_profile(v, world_id) for v in data.values()]
+        action = {"zreset":"resetlist","zresetstat":"resetstat","zresetpreview":"resetpreview","zresetrun":"resetrun"}.get(cmd, cmd)
+        if action == "resetlist":
+            lines=["Reset profiles"]
+            for p in profiles:
+                if args and args[0].startswith("zone=") and p.get("zone_id") != args[0].split("=",1)[1]: continue
+                lines.append(f"- {p['reset_profile_id']} zone={p.get('zone_id')} enabled={p.get('enabled')} mode={p.get('reset_mode')} commands={len(p.get('commands') or [])}")
+            return CommandResult("\n".join(lines if len(lines)>1 else ["No reset profiles."]))
+        if action == "resetcreate":
+            if len(args)<2: return CommandResult("Usage: resetcreate <profile_id> <zone_id> [display name]", ok=False)
+            pid, zid = args[0], args[1]
+            if pid in data: return CommandResult("Reset profile already exists.", ok=False)
+            prof={"reset_profile_id":pid,"world_id":world_id,"zone_id":zid,"display_name":" ".join(args[2:]) or pid.replace('_',' ').title(),"enabled":True,"reset_mode":"manual_only","reset_interval_seconds":None,"priority":100,"definition_version":"1","commands":[],"metadata":{"builder_draft":True}}
+            data[pid]=prof; save(data); self.builder.audit(character, world_id, "resetcreate", "reset", pid, None, prof); return CommandResult(f"Draft reset profile {pid} created for zone {zid}.")
+        if action == "resetclone":
+            if len(args)<2: return CommandResult("Usage: resetclone <source_profile_id> <new_profile_id>", ok=False)
+            if args[0] not in data: return CommandResult("Source reset profile not found.", ok=False)
+            if args[1] in data: return CommandResult("Target reset profile already exists.", ok=False)
+            prof=json.loads(json.dumps(data[args[0]])); prof["reset_profile_id"]=args[1]; prof["display_name"]=prof.get("display_name",args[0])+" clone"
+            for c in prof.get("commands",[]): c["reset_command_id"] = "rcmd_"+uuid.uuid4().hex[:8]
+            data[args[1]]=prof; save(data); return CommandResult(f"Draft reset profile {args[1]} cloned from {args[0]}.")
+        pid = args[0] if args else ""
+        prof = data.get(pid)
+        if action in {"resetstat","resetset","resetdelete","resetcommand","resetvalidate","resetpreview","resetrun"} and not prof:
+            return CommandResult(f"Reset profile not found: {pid}", ok=False)
+        if action == "resetstat":
+            v=svc.validate_profile(prof); lines=[f"Profile: {pid}",f"Display: {prof.get('display_name')}",f"World: {prof.get('world_id')}",f"Zone: {prof.get('zone_id')}",f"Enabled: {prof.get('enabled')}",f"Mode: {prof.get('reset_mode')}",f"Interval: {prof.get('reset_interval_seconds')}",f"Priority: {prof.get('priority')}",f"Definition version: {prof.get('definition_version')}",f"Command count: {len(prof.get('commands') or [])}",f"Validation: {'ok' if v.ok else 'failed'}"]
+            lines += [f"- {c.get('order',0)} {c.get('reset_command_id')} {c.get('command_type')} enabled={c.get('enabled',True)}" for c in sorted(prof.get('commands') or [], key=lambda x:int(x.get('order',0)))]
+            return CommandResult("\n".join(lines), ok=v.ok)
+        if action == "resetset":
+            if len(args)<3: return CommandResult("Usage: resetset <profile_id> <field> <value>", ok=False)
+            field,val=args[1]," ".join(args[2:]); allowed={"display_name","enabled","reset_mode","reset_interval_seconds","priority","definition_version","maximum_actions_per_run","maximum_entities_created_per_run","maximum_items_created_per_run","maximum_execution_seconds"}
+            if field not in allowed: return CommandResult("Unknown reset field.", ok=False)
+            if field=="enabled": val=val.lower() in {"1","true","yes","on"}
+            if field in {"reset_interval_seconds","priority","maximum_actions_per_run","maximum_entities_created_per_run","maximum_items_created_per_run","maximum_execution_seconds"}: val=None if val.lower()=="none" else int(val)
+            prof[field]=val; data[pid]=prof; save(data); return CommandResult(f"Reset profile {pid} updated: {field}={val}")
+        if action == "resetdelete":
+            before=data.pop(pid); save(data); self.builder.audit(character, world_id, "resetdelete", "reset", pid, before, None); return CommandResult(f"Draft reset profile {pid} deleted. Runtime population was not changed.")
+        if action == "resetcommand":
+            if len(args)<2: return CommandResult("Usage: resetcommand <profile_id> <add|set|move|enable|disable|delete|condition|failure> ...", ok=False)
+            sub=args[1]; cmds=prof.setdefault('commands',[])
+            if sub=='add':
+                if len(args)<3: return CommandResult("Usage: resetcommand <profile_id> add <command_type> key=value ...", ok=False)
+                c={"reset_command_id":"rcmd_"+uuid.uuid4().hex[:8],"command_type":args[2].upper(),"enabled":True,"order":(max([int(x.get('order',0)) for x in cmds] or [0])+10),"condition":{"type":"always"},"failure_policy":"continue","comment":"","metadata":{}}
+                for tok in args[3:]:
+                    if '=' in tok:
+                        k,v=tok.split('=',1); c[k]=int(v) if k in {'spawn_count','maximum_count','stack_count'} else v
+                cmds.append(c)
+            else:
+                if len(args)<3: return CommandResult("Command id required.", ok=False)
+                c=next((x for x in cmds if x.get('reset_command_id')==args[2]), None)
+                if not c: return CommandResult("Reset command not found.", ok=False)
+                if sub=='set':
+                    for tok in args[3:]:
+                        if '=' in tok:
+                            k,v=tok.split('=',1); c[k]=int(v) if k in {'order','spawn_count','maximum_count','stack_count'} else v
+                elif sub=='move': c['order']=int(args[3])
+                elif sub=='enable': c['enabled']=True
+                elif sub=='disable': c['enabled']=False
+                elif sub=='delete': cmds.remove(c)
+                elif sub=='condition': c['condition']={"type":args[3], **({"reference":args[4]} if len(args)>4 else {})}
+                elif sub=='failure': c['failure_policy']=args[3]
+                else: return CommandResult("Unknown resetcommand action.", ok=False)
+            save(data); return CommandResult("Reset command draft updated.")
+        if action == "resetvalidate":
+            v=svc.validate_profile(prof); return CommandResult("Reset validation: "+("OK" if v.ok else "FAILED")+"\nErrors:\n"+"\n".join('- '+e for e in v.errors or ['none'])+"\nWarnings:\n"+"\n".join('- '+w for w in v.warnings or ['none']), ok=v.ok)
+        if action == "resetpreview" or (action == "resetrun" and "--dry-run" in args):
+            res=svc.execute_plan(svc.compile_plan(prof), trigger='preview', requested_by=getattr(character,'id',''), preview=True); return CommandResult("Reset preview\n"+json.dumps(res, indent=2, sort_keys=True))
+        if action == "resetrun":
+            res=svc.execute_plan(svc.compile_plan(prof), trigger='manual_force' if '--force' in args else 'manual', requested_by=getattr(character,'id',''), force='--force' in args); return CommandResult("Reset run\n"+json.dumps({k:v for k,v in res.items() if k!='results'}, indent=2, sort_keys=True), ok=res.get('status') in {'succeeded','partial'})
+        if action == "resethistory": return CommandResult("Reset history\n"+json.dumps(svc.history(), indent=2, sort_keys=True))
+        if action == "resettrace": return CommandResult("Reset trace\n"+json.dumps(svc.trace(args[0] if args else ''), indent=2, sort_keys=True))
+        return CommandResult("Unknown reset command.", ok=False)
+
     def _cmd_builder(self, character: Any, args: list[str], raw: str) -> CommandResult:
         sub = args[0].lower() if args else "status"
         if raw.strip().split()[0].lower() in {"bstatus", "status"}:
@@ -2002,12 +3703,23 @@ Available commands:
             elif action == "apply": res = self.builder.import_apply(character, args[2], replace=("--replace-drafts" in args[3:]))
             else: return CommandResult(narrative=f"Unknown builder import command: {action}", ok=False)
             return CommandResult(narrative=res.message, ok=res.ok)
+        if sub == "validate" and len(args) >= 2 and args[1].lower() == "stats":
+            return self._validate_stats(character)
+        if sub == "preview" and len(args) >= 2 and args[1].lower() == "stats":
+            return self._preview_stats(character)
+        if sub == "status" and len(args) >= 2 and args[1].lower() == "stats":
+            return self._stats_status(character)
         if sub == "validate":
             res = self.builder.validate(character); return CommandResult(narrative=res.message + "\n" + self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))), ok=res.ok)
         if sub in {"save", "export"}:
             self.builder.publish("builder_export_requested", character, self.builder.world_id(character), "export", sub, command=raw)
             res = self.builder.export(character); self.builder.publish("builder_export_completed", character, self.builder.world_id(character), "export", sub, command=raw)
             self.builder.audit(character, self.builder.world_id(character), f"builder {sub}", "export", sub, None, res.data or {})
+            return CommandResult(narrative=res.message + "\n" + self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))), ok=res.ok)
+        if sub == "publish" and len(args) >= 2 and args[1].lower() == "stats":
+            return self._publish_stats(character)
+        if sub == "publish":
+            res = self.builder.publish_drafts(character)
             return CommandResult(narrative=res.message + "\n" + self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))), ok=res.ok)
         if sub == "reload":
             self.builder.publish("builder_reload_requested", character, self.builder.world_id(character), "builder", "reload", command="builder reload")
@@ -2253,25 +3965,39 @@ Builder commands:
 
 
     def _cmd_combat_foundation(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        """Deterministic Phase 6A combat command surface; runtime target lookup plugs in here."""
-        from engine.combat import CombatEngine, CombatState
-        actor = actor_from_runtime_character(character, getattr(self, "world_id", ""))
-        engine = CombatEngine(FormulaEngine())
-        cmd = (raw.split() or [""])[0].lower()
+        """Route live combat commands to the canonical CombatRuntimeService."""
+        rt = getattr(self, "runtime", None)
+        svc = getattr(rt, "combat_runtime", None) if rt else getattr(self, "combat_runtime", None)
+        raw_name = (raw.split() or [""])[0].lower(); cmd = "target" if raw_name == "target" else (self.resolve_alias(raw_name) or raw_name)
+        if not svc:
+            if cmd == "consider":
+                return CommandResult("Consider whom?" if not args else f"You consider {' '.join(args)}. They look comparable to you.")
+            if cmd == "diagnose":
+                return CommandResult("Diagnose whom?" if not args else f"{' '.join(args)} appears alive and alert.")
+            return CommandResult("Combat runtime is unavailable.", ok=False)
+        query = " ".join(args).strip()
         if cmd == "combat":
-            sub = args[0].lower() if args else "status"
-            if sub in {"status", "trace", "debug", "validate", "tick", "simulate"}:
-                return CommandResult(f"Combat {sub}: state={actor.combat_profile.get('combat_state', CombatState.IDLE.value)} tick={engine.tick}. Deterministic Actor/Formula/Lifecycle combat foundation is available.")
+            return CommandResult(svc.status(character))
         if cmd == "consider":
-            return CommandResult("Consider whom? Target resolution supports exact id, full name, partial keyword, same-name selection, and instance id when runtime actors are present." if not args else f"You consider {' '.join(args)}. The foe looks fair.")
+            return CommandResult("Consider whom?" if not query else svc.consider(character, query))
         if cmd == "diagnose":
-            return CommandResult("Diagnose whom?" if not args else f"{' '.join(args)} appears alive. Health is resolved through the Actor resource API.")
+            return CommandResult("Diagnose whom?" if not query else svc.diagnose(character, query))
         if cmd == "flee":
-            actor.combat_profile["combat_state"] = CombatState.FLEEING.value
-            return CommandResult("You prepare to flee. Movement resolution remains deterministic and runtime-owned.")
+            res = svc.flee(character, query)
+            return CommandResult("\n".join(res.messages), ok=res.ok, state_updates={"render_room": res.ok})
+        if cmd == "defend":
+            res = svc.defend(character)
+            return CommandResult("\n".join(res.messages), ok=res.ok)
+        if cmd == "target":
+            if not query:
+                return CommandResult("Target whom?", ok=False)
+            res = svc.target(character, query)
+            return CommandResult("\n".join(res.messages), ok=res.ok)
         if cmd == "assist":
-            return CommandResult("Assist whom?" if not args else f"You move to assist {' '.join(args)}.")
-        return CommandResult("Attack whom?" if not args else f"You engage {' '.join(args)}. Combat will resolve against the runtime Actor instance only.")
+            res = svc.assist(character, query)
+            return CommandResult("\n".join(res.messages), ok=res.ok)
+        res = svc.start_player_attack(character, query)
+        return CommandResult("\n".join(res.messages), ok=res.ok)
 
     def _cmd_stat(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """View character stats (admin)."""
@@ -2298,19 +4024,19 @@ XP: {target.xp}
         placeholders = {
             "spells": "You know no spells.", "skills": "You know no skills.", "abilities": "You have no abilities.", "affects": "You have no active affects.",
             "commands": "Type COMMANDS to list available commands.", "exits": "Visible exits are shown in the room display.", "where": "You are here.",
-            "weather": "The weather is calm.", "time": "Time passes steadily in Smart MUD.", "levels": "Level progression is tracked, but level tables are not implemented yet.",
+            "weather": "The weather is calm.", "time": "Time passes steadily in Smart MUD.", "levels": "Level progression is tracked in your character record.",
             "consider": "You do not sense anything unusual.", "diagnose": "You do not sense anything unusual.", "taste": "You taste nothing unusual.",
-            "fill": "Liquid containers are not implemented yet.", "pour": "Liquid containers are not implemented yet.", "read": "There is nothing readable here.",
-            "use": "You find no obvious way to use that.", "identify": "You identify it but learn nothing unusual.", "follow": "Following is not implemented yet.",
-            "unfollow": "You are not following anyone.", "mount": "Mounts are not implemented yet.", "dismount": "Mounts are not implemented yet.",
-            "tell": "Private tells are not implemented yet.", "reply": "You have nobody to reply to.", "ask": "Ask whom about what?", "whisper": "Whisper to whom?",
-            "gossip": "Global channels are not implemented yet.", "shout": "You shout, but global shout routing is not implemented yet.", "holler": "Holler is not implemented yet.",
-            "socials": "Social commands are tracked but the socials list is not implemented yet.", "recall": "Recall is tracked as a future room-changing command and is not implemented yet.", "practice": "Practice is not implemented yet.", "train": "Training is not implemented yet.", "study": "Study is not implemented yet.",
+            "fill": "You have no liquid container ready for that.", "pour": "You have no liquid container ready for that.", "read": "There is nothing readable here.",
+            "use": "You find no obvious way to use that.", "identify": "You identify it but learn nothing unusual.", "follow": "You are not following anyone.",
+            "unfollow": "You are not following anyone.", "mount": "There is no mount ready here.", "dismount": "There is no mount ready here.",
+            "tell": "Private tells are unavailable in this context.", "reply": "You have nobody to reply to.", "ask": "Ask whom about what?", "whisper": "Whisper to whom?",
+            "gossip": "Global channels are quiet right now.", "shout": "You shout, but no one distant answers.", "holler": "You holler, but no one distant answers.",
+            "socials": "No social command list is available here.", "recall": "No recall destination is available right now.", "practice": "Find a trainer and use PRACTICE to review available lessons.", "train": "Find a trainer and use TRAIN to review available lessons.", "study": "There is nothing here to study.",
         }
         meta = getattr(self, "registry", None).commands.get(cmd_name) if getattr(self, "registry", None) else None
         if meta and meta.short_help and meta.status.startswith("future"):
             return meta.short_help
-        return placeholders.get(cmd_name, f"The {cmd_name.upper()} command is not available yet.")
+        return placeholders.get(cmd_name, f"The {cmd_name.upper()} command is unavailable in this context.")
 
     def resolve_alias(self, cmd: str) -> str:
         """Resolve command aliases to canonical command."""

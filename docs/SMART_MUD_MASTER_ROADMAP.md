@@ -1,411 +1,237 @@
-# Smart MUD Master Roadmap
+# Adventurer's Lair Gameplay Stabilization Notes
 
-## Phase 1: Runtime foundation
-- Goal: Establish one Smart MUD startup lifecycle, registry, plugin scan, SQLite runtime, and project identity.
-- Completed work: Smart MUD web/terminal startup exists; SQLite runtime schema initializes; canonical world registry selected; Builder workspace is auto-created; docs identify ownership.
-- Remaining work: Continue retiring legacy campaign UI references outside normal startup.
-- Dependencies: None.
-- Acceptance criteria: Startup reaches Ready using Smart MUD systems only and loads `shattered_realms`.
-- Suggested version target: `0.1.0`.
+This update replaces the normal player-facing numbered Smart MUD training marketplace with Adventurer's Lair-style `train` and `practice` command semantics. The data-driven `TrainingService` remains available for future builder/admin surfaces, but normal gameplay no longer routes `train`, `tr`, `practice`, `prac`, or `pr` through global numbered lessons, profession offers, spell offers, respec offers, or fallback trainers outside the current room.
 
-## Phase 2: SQLite persistent world foundation
-- Goal: Persist authoritative mutable world/runtime state in SQLite.
-- Completed work: Character, command history, scrollback, room/NPC runtime, quests, death log, and builder audit tables initialize.
-- Remaining work: Normalize migrations, add world state mutation APIs, backup/export flows.
-- Dependencies: Phase 1.
-- Acceptance criteria: Runtime state survives restart without mutating package source files.
-- Suggested version target: `0.2.0`.
+Reference audit status: the remote `tbamud_adventurers_lair` repository could not be cloned in this execution environment because GitHub access returned `CONNECT tunnel failed, response 403`. The implemented behavior is therefore a faithful Smart MUD compatibility layer based on the requested Adventurer's Lair behavior, and this limitation should be re-audited on a network that can access Tony's repository.
 
-## Phase 3: Account and character system
-- Goal: Add accounts, authentication boundaries, character slots, and character lifecycle.
-- Completed work: Basic character creation exists without accounts.
-- Remaining work: Accounts, permissions, character selection, deletion, recovery, admin controls.
-- Dependencies: Phase 2.
-- Acceptance criteria: Multiple accounts can own isolated character sets safely.
-- Suggested version target: `0.3.0`.
+## Training
 
-## Phase 4: Builder framework
-- Goal: Provide safe Builder infrastructure and audited editing workflows.
-- Completed work: Builder workspace folders and audit table exist.
-- Remaining work: Builder permissions, editors, validation previews, import/export, snapshots.
-- Dependencies: Phases 2-3.
-- Acceptance criteria: Builders can edit draft content without corrupting runtime packages.
-- Suggested version target: `0.4.0`.
+`train` requires a current guild/trainer room. Listing shows available training sessions, six base stats with cap 20, and the supported stat/resource syntax only. Stat training costs one training session and changes the permanent runtime base stat exactly once. Resource training costs ten sessions and adds ten to max hit points, mana, or Move/Stamina.
 
-## Phase 5: tbaMUD command and display parity
-- Goal: Match expected MUD command surfaces and display conventions.
-- Completed work: Initial command catalog and room/score rendering exist.
-- Remaining work: Complete command parity audit, prompts, help, socials, admin displays.
-- Dependencies: Phases 1-3.
-- Acceptance criteria: Core navigation, communication, inventory, stats, help, and admin surfaces behave predictably.
-- Suggested version target: `0.5.0`.
+## Practice
 
-## Phase 3B: Living entity runtime
-- Goal: Replace passive entities with runtime-owned living instances.
-- Completed work: Templates normalize living metadata; SQLite instances persist state/location; runtime spawning, idempotent population, movement, state changes, dialogue, visibility, corpse creation, respawn, and lifecycle events exist.
-- Remaining work: Combat, Builder Mode, AI decision making, quests, shops, spellcasting, and pathfinding are intentionally deferred.
-- Dependencies: Phase 3A entity foundation.
-- Acceptance criteria: Rooms populate from runtime state, visible entities render through `MudRuntime`, and web/telnet remain presentation-only.
-- Suggested version target: `0.3.5`.
+`practice` lists remaining practice sessions and active known abilities with proficiency percentages and descriptors. `practice <ability>` requires the current guild/trainer room, resolves partial names, rejects ambiguity/unknown abilities, spends one practice session, and increases proficiency without exceeding cap.
 
-## Phase 6: Deterministic gameplay systems
-- Goal: Implement deterministic combat, skills, spells, quests, shops, trainers, factions, and economy.
-- Completed work: Package directories and some data structures exist.
-- Remaining work: Actual gameplay mechanics and test coverage.
-- Dependencies: Phases 2, 3, and 5.
-- Acceptance criteria: Gameplay can run without AI and produces reproducible state transitions.
-- Suggested version target: `0.6.0`.
+## Advancement currencies
 
-## Phase 7: AI layer
-- Goal: Add AI as an extension layer over deterministic state, not as source of truth.
-- Completed work: Plugin registration has AI context provider slots.
-- Remaining work: Context policies, safety boundaries, NPC narration hooks, deterministic fallbacks.
-- Dependencies: Phase 6.
-- Acceptance criteria: Disabling AI leaves gameplay fully playable.
-- Suggested version target: `0.7.0`.
-
-## Phase 8: Shattered Realms reference world
-- Goal: Ship a complete reference world package.
-- Completed work: `worlds/shattered_realms` package exists and loads.
-- Remaining work: Expand content depth after deterministic systems are ready.
-- Dependencies: Phases 5-7.
-- Acceptance criteria: Reference world demonstrates major runtime features.
-- Suggested version target: `0.8.0`.
-
-## Phase 9: Multiplayer server maturity
-- Goal: Harden concurrent sessions, networking, permissions, and operational behavior.
-- Completed work: Session model exists in-process.
-- Remaining work: Multi-user concurrency, locks, websockets/telnet strategy, observability, moderation.
-- Dependencies: Phases 2-6.
-- Acceptance criteria: Multiple players can connect and interact safely.
-- Suggested version target: `0.9.0`.
-
-## Phase 10: Packaging, releases, and polish
-- Goal: Produce reliable releases with docs, installers, migration tools, and UX polish.
-- Completed work: Launcher and packaging artifacts exist from earlier app history.
-- Remaining work: Rebrand packaging, release automation, migration docs, final UI polish.
-- Dependencies: Phases 1-9.
-- Acceptance criteria: Users can install, run, update, and diagnose Smart MUD confidently.
-- Suggested version target: `1.0.0`.
-
-## Phase 2A: Transport abstraction and telnet foundation
-
-Phase 2A introduces a shared transport abstraction so the web desktop client and telnet-style clients can communicate with the same `MudRuntime` command engine. The phase includes:
-
-- shared transport session/message/response concepts;
-- a web adapter preserving the existing Smart MUD desktop UI;
-- a disabled-by-default telnet server foundation on configurable host/port, default port `4000`;
-- output format separation for `web_html`, `ansi_text`, and `plain_text`;
-- documentation for future websocket support.
-
-This phase explicitly does not add full multiplayer, gameplay systems, account authentication, or AI behavior.
-
-## Phase 2B: Basic MUD playability and room display parity
-
-Phase 2B establishes basic playability before any Shattered Realms content expansion. It adds deterministic command alias parity for core information commands, movement directions, help surfaces, communication placeholders, and clean unknown-command responses.
-
-The phase also replaces room-display stub text with classic MUD room output sourced from loaded world package data and SQLite-backed character location state. Movement checks package-defined exits, persists the new character room to SQLite, and renders the destination through the shared display pipeline used by web and telnet transports.
-
-This phase explicitly does not add combat, AI behavior, Builder Mode, full accounts, or a complete Shattered Realms world build-out.
-
-### Phase 2C Complete: Event Bus Architecture
-
-Phase 2C adds the Smart MUD Event Bus as architecture-only infrastructure. Runtime, commands, movement, rendering, transports, persistence startup, plugin discovery/resolution, and world loading now publish deterministic runtime messages. This prepares future AI listeners, builder listeners, auditing, multiplayer replication, and persistence transaction integration without adding combat, AI behavior, full accounts, Builder Mode commands, or Shattered Realms expansion.
-
-## Phase 2D Account and Session Foundation
-
-Smart MUD now includes a local account/session foundation. See `docs/ACCOUNT_AND_SESSION_MODEL.md` for the SQLite account model, shared web/telnet session lifecycle, account-owned character creation/select/entry rules, role hierarchy, permission helper philosophy, orphan character migration behavior, and account/session/character EventBus events.
-
-### Phase 2D hotfix: explicit account and character flow
-
-Account and character endpoints now return predictable JSON. Successful responses include `ok: true` with account/session/character data where applicable. Expected user errors return `ok: false`, a human-readable `error`, a machine-readable `code`, and a suggested `state` without bubbling validation exceptions into HTTP 500 responses. Missing accounts use `account_not_found`, wrong passwords use `wrong_password`, duplicate accounts use `duplicate_account`, duplicate character names use `duplicate_character_name`, invalid character names use `invalid_character_name`, and ownership/session failures use clean 401/403/409-style responses.
-
-The web client must use explicit character selection. Creating an account or character does not silently enter `Player` / `player_player`; after account login/create and world selection the client lists account-owned characters for that world and offers a Create Character action plus explicit Enter Character buttons. Legacy orphan characters may still be attached to the first local development account by migration for dev convenience, but they are presented in character select instead of auto-entered.
-
-Developer fallback remains limited to account convenience: an empty login can create or reuse the local development account when no account exists. It must not auto-create or auto-enter a gameplay character unless a future explicit dev fallback setting is added.
-
-## Phase 2E: Inventory, Equipment, Items, and Object Interaction
-
-Phase 2E builds the canonical item foundation documented in `docs/ITEM_SYSTEM.md`. The phase replaces placeholder inventory and equipment output with persistent runtime item instances, room-owned objects, character-owned inventory, and durable equipment state.
-
-The runtime remains the sole authority over item ownership. World packages define immutable item templates and optional starter item configuration; SQLite persists mutable item instances only; transports and plugins must request item operations through `MudRuntime` instead of updating ownership themselves.
-
-Required work includes the canonical `MudRuntime` item API (`spawn_item()`, `transfer_item()`, `pickup_item()`, `drop_item()`, `equip_item()`, `unequip_item()`, keyword resolution, visible-room-item lookup, and equipment validation), deterministic EventBus item events, room rendering of real runtime objects, aliases for inventory/equipment/object commands, and focused tests for persistence, starter items, keyword matching, transfer behavior, web output, and telnet output.
-
-Phase 2E explicitly does not implement combat, AI behavior, Builder Mode gameplay, crafting, banking, shops, quests, spells, skills, NPC AI, or playable world expansion beyond existing Shattered Realms data.
-
-### Phase 2E implementation status
-
-Phase 2E has an initial runtime implementation: persistent item instances, starter item spawning, runtime room object seeding, inventory/equipment/get/drop/wear/remove/wield/unwield/hold/look-object/examine-object command handling, centralized keyword matching, and deterministic item events. Deferred systems remain out of scope.
-
-### Phase 2E semantic color hotfix
-
-The Phase 2E display path now treats semantic rendering as the standard for web output and ANSI/plain rendering as the standard for telnet. Room, score, worth, equipment, inventory, prompt, command echo, and common informational output are expected to carry semantic roles rather than collapsing into one terminal-green style. This hotfix does not add combat, AI behavior, Builder Mode, or world expansion.
-
-#### Phase 2E hotfix acceptance update
-
-Semantic MUD color rendering is wired end-to-end through settings `effective_roles`, frontend `--mud-color-*` variables, role-based CSS selectors, and backend semantic spans. Changing a role color in Settings updates future web output without adding combat, AI behavior, Builder Mode, or world expansion.
-
-### Phase 2F: Classic MUD display formatting
-
-Phase 2F standardizes presentation without adding combat, AI behavior, Builder Mode, world expansion, or runtime authority changes. Room rendering now follows a traditional MUD layout: title, blank line, description, blank line, players, NPCs, mobs, objects, blank line, and one final `[ Exits: ... ]` line. Room ids are hidden from normal players, room names and descriptions render once, movement messages are separated from destination room renders, and `look` produces one room display.
-
-Command echo and command output remain line-separated, semantic color roles remain intact, telnet output stays HTML-free, and the pinned Smart MUD prompt remains separate from room rendering.
-
-### Phase 2G: Canonical room renderer and final display polish
-
-Phase 2G centralizes Smart MUD room output in `engine.mud_displays.render_room()`. Login/world entry, `look`, movement, web, and telnet all use that canonical render block, preserving semantic roles and matching line spacing across HTML and plain text. The optional `You see:` section appears only when visible entities exist, orders players before NPCs before mobs before objects, and keeps room object display compact. Object descriptions are handled by targeted `look` / `examine` output instead of normal room rendering.
-
-Future room-changing commands and systems—recall, goto, summon, portal, Builder goto, teleport, AI scene transitions, combat fleeing, and death—must update runtime state and then invoke the canonical renderer. They must not assemble room text themselves. The pinned Smart MUD prompt remains separate, and combat, NPC AI, Builder Mode, crafting, and world expansion remain out of scope.
-
-## Phase 3A Runtime Entity System
-
-Smart MUD now includes a canonical runtime entity foundation documented in `docs/ENTITY_SYSTEM.md`. World package templates remain immutable, while SQLite `entity_instances` hold mutable room location, ownership, state, flags, timestamps, and plugin data. `MudRuntime` is the sole authority for spawning, moving, despawning, destroying, state updates, keyword resolution, and visibility queries.
-
-Room rendering uses the entity visibility API so players, NPCs, mobs, and objects/items are displayed in the canonical order without exposing internal entity IDs to normal players. NPCs and mobs can be seeded idempotently from world package data and persist across restart. Corpse and container concepts are reserved for later combat and inventory/container work without replacing the Phase 2E item system. Combat, AI behavior, Builder Mode, shops, doors, pets, summons, and world expansion remain out of scope for Phase 3A.
-
-
-## Phase 3C - Core Interaction Command Layer
-
-Phase 3C adds runtime-owned non-combat interaction commands, pickup aliases, run/walk helpers, entity dialogue aliases, container-safe placeholders, canonical room features, and EventBus interaction events. Combat, AI decision making, Builder Mode, and expanded Shattered Realms content remain out of scope. See `docs/INTERACTION_COMMANDS.md`.
-
-### Phase 3C Hotfix: core command completion
-
-The interaction layer now includes usable non-combat command fallbacks, targeted look/examine behavior, safe bulk inventory commands, and nonportable room-feature handling. Room features are inspectable without becoming inventory items, and command handling publishes targeted-look, feature-interaction, bulk-get/drop, and identify events for downstream systems.
-
-## Phase 3D command registry note
-
-Smart MUD now tracks player, placeholder, future builder/admin, future combat, future magic, future economy, and future quest commands through a canonical command registry. The `commands` and `help` commands use registry metadata so classic MUD command coverage is deliberate without adding combat, AI, Builder Mode, shops, quests, spellcasting, or world expansion.
-
-## Phase 3E examination and interaction polish
-
-Registered player commands now route through runtime-owned command handling and must execute, show registry usage, return a clean placeholder, or explicitly describe unavailable future work. The examination layer supports room, self, object, entity, direction, and room-feature targets; `identify`, `read`, and `use` publish EventBus events and return semantic output. See `docs/EXAMINATION_AND_INTERACTION.md`.
-
-## Phase 4A Builder Foundation
-
-Smart MUD supports an in-game Builder foundation for authorized `builder`, `admin`, and `owner` roles. Builder commands are registered in the command registry and are hidden from normal players. Draft edits are persisted under `worlds/<world_id>/builder/` rather than being written directly to live world package files.
-
-The Builder workspace uses `audit`, `history`, `snapshots`, `exports`, `imports`, and `templates` folders. Room, exit, feature, item template, entity template, and spawn edits go through Builder services so runtime validation and permission checks remain authoritative. `builder validate` checks draft consistency; `builder save` creates a safe export; `builder reload` reloads drafts where safe; `builder snapshot` captures the current draft state; and `builder history` reads audit records.
-
-Future work may add a richer semantic web Builder UI and AI-assisted Builder tools, but Phase 4A intentionally does not add AI Builder, combat, quests, shops, or spellcasting.
-
-### Phase 4A hotfix: Owner bootstrap and Builder access setup
-
-Completed: added an explicit local owner bootstrap helper, persisted account/character roles, in-game `whoami` role inspection, owner-only `grantrole`, and SQLite role grant logging. To make yourself owner locally, run one of:
-
-```bash
-python tools/bootstrap_owner.py --account local_dev --role owner
-python tools/bootstrap_owner.py --character Kraevok --role owner
-```
-
-Normal players remain denied Builder access; `builder`, `admin`, and `owner` can use `builder on`; no account or character is silently promoted. AI Builder, combat, and UI redesign remain out of scope.
-
-## Phase 4B Builder runtime navigation note
-
-Builder-created draft rooms now participate in a runtime world graph overlay for builder/admin/owner users with Builder Mode enabled. Runtime lookup merges live world package rooms with BuilderWorkspace drafts, with drafts overriding live rooms for builders only. `goto`, `look`, `rooms`/`rlist`, `rfind`/`rsearch`, `dig`, `link`, `unlink`, and `map`/`rmap` use this merged lookup and the canonical room renderer. Normal players do not see builder-only metadata or draft-only rooms. Draft saves export BuilderWorkspace content; promotion to live packages is not implemented yet. See `docs/BUILDER_NAVIGATION.md`.
-
-## Smart MUD Phase 4C Builder Workflow 2.0
-
-Phase 4C standardizes Builder Mode around a canonical room graph: live world rooms are merged with draft rooms for authorized builders, while normal players continue to see only live package content. Room rendering, look/exits, movement, goto, dig, link/unlink, map/rmap, and builder validation are required to use that shared graph so displayed exits match traversable exits.
-
-Builder commands maintain an explicit editing context and print a `Currently editing:` block for room-editing workflows. `rname` and `rdesc` edit only the selected room target. Room ids must be safe lowercase underscore ids; room names may contain spaces. The primary workflow is `dig <direction> <room_id> ["Room Name"] [--one-way]`, with self-loops blocked unless explicitly allowed. Known limits: visual Builder UI, AI Builder, combat, shops, quests, and spellcasting remain future work and are not introduced by this phase.
-
-## Phase 4C Hotfix 2: Builder polish, aliases, and normalization
-
-Completed: canonical Builder Status output, clearer location-versus-editing state, `redit` detail output, safe room-id and room-name checks, `desc` and save aliases, draft room normalization, and expanded validation categories. Known limits remain unchanged: full visual Builder UI, AI Builder, combat, quests, shops, and spellcasting are future phases.
-
-
-## Phase 4D — Builder Workflow 3.0
-
-Phase 4D polishes Builder Mode into a cohesive professional MUD-building workflow: canonical Builder HUD, status aliases, draft/live/all room listings, partial room search, multiline `rdesc`, safer `rname`, cleaner edit confirmations, exit inspection, standardized dig/save/reload language, stronger validation categories, and Builder-only history commands. It explicitly does not add gameplay, AI, combat, spells, quests, classes, economy, NPC behavior, web editors, or room ID rename execution.
-
-## Phase 4E Area, Zone, and VNUM Organization
-
-Builder Mode now supports draft areas and zones before room creation. Builders can use `acreate`/`aset current`, `zcreate`/`zset current`, `rcreate <vnum>`, and `dig <direction> <vnum>` to create rooms with canonical `<area_id>_<vnum>` IDs while preserving explicit `custom` legacy room IDs. Builder status shows world, area, zone, location, edit target, and dirty state. Builder export includes `areas`, `zones`, `rooms`, `items`, `entities`, and `spawns`; validation warns on legacy loose rooms and checks area/zone/vnum consistency. See `docs/AREA_ZONE_VNUM_SYSTEM.md`.
-
-## Phase 4E organized room workflow hotfix
-
-Builders can now finish the practical area/zone/vnum workflow without mutating live world package files. Draft exports remain under the builder workspace.
-
-Canonical workflow:
+Character entry no longer grants automatic demonstration attribute points. Existing legitimate progression is preserved. The admin inspection/correction command for Kraevok is:
 
 ```text
-builder on
-acreate test_area 100 110 "Test Area"
-zcreate test_zone 100 110 "Test Zone"
-rcreate 101
-rname Test Room 101
-rdesc This room belongs to the test zone.
-rooms area test_area
-rooms unassigned
-rassign test_two area current zone current vnum 102
-builder validate
-builder save
-builder export
+progressioninspect char_shattered_realms_kraevok
 ```
 
-Operational commands:
+If the history shows only `starter_character` / `starter_demonstration` unspent attribute grants, remove the unspent demonstration balance with the progression repair/admin workflow; do not reset Kraevok or SQLite.
 
-- `aset current <area_id>` selects the current area and shows the Builder HUD. If the selected area does not contain the current zone, the current zone is cleared.
-- `zset current <zone_id>` selects the zone and also selects that zone's parent area.
-- `rcreate <vnum>` creates an organized draft room with `area_id`, `zone_id`, and `vnum` from the current area and zone. It rejects duplicate vnums and out-of-range vnums with guidance.
-- `dig <direction> <vnum> "Name"` creates an organized linked draft room using the current area and zone and reports the created room plus both link directions.
-- `rooms unassigned` and `rooms legacy` list loose draft rooms where `area_id` and `zone_id` are blank and `vnum` is null. Legacy rooms are warnings, not validation failures.
-- `rassign <here|room_id> area <area_id|current> zone <zone_id|current> vnum <number>` explicitly assigns a loose or existing room to an area, zone, and vnum.
-- `rmove <here|room_id> [area <area_id>] zone <zone_id> vnum <number>` moves an assigned room to another zone/vnum. If the room was unassigned, it uses the assignment workflow and says so.
-- Assigned rooms keep their existing room IDs in Phase 4E. The generated convention is `<area_id>_<vnum>`, and Builder warns when the current ID does not match it.
-- `rrenameid <room_id> <new_room_id>` is registered as a placeholder only. Safe room ID migration is deferred because exits, spawns, builder history, and other references must be rewritten atomically.
-- `builder export`, `build export`, `builder save`, `build save`, `bsave`, `wsave`, and `asave changed` route to the safe builder export/save behavior.
+## Runtime combat
 
-`builder status`, `astat`, `zstat`, and `rstat` should be used as guidance screens: they show current area, current zone, current room, edit target, room organization status, vnum, and the next suggested `rassign` command for legacy rooms.
+Combat now uses the existing canonical `CombatRuntimeService` with a MudRuntime-owned pulse thread. The pulse ticks every 200ms and processes eligible combat rounds on a real-time two-second cadence. The opening `kill` attack still resolves in the direct command response; later rounds are queued to the async channel.
 
-`builder validate` groups Errors, Warnings, and Info. Organization warnings include legacy loose rooms, assigned room ID convention mismatches, rooms missing vnums, empty areas/zones, and range overlaps. Organization errors include missing referenced areas/zones, duplicate vnums within an area, out-of-range room vnums, and zone/area mismatches.
+## Persistence and performance
 
-## Phase 4F Starter Migration and Builder Import
+Active character combat persistence now updates resident characters and dirty state instead of loading/saving characters for each attack. Combat messages use resident active characters for room delivery. SQLite remains for encounter tables, history, outbound queue, death lifecycle, initial hydration, autosave, and shutdown checkpoints.
 
-`builder migrate starter` snapshots the Builder workspace, reads the live Shattered Realms starter package, and writes normalized Builder drafts with `starter_guildlands`, starter zones, preserved room IDs, area/zone assignments, and vnums. Live world package files are not modified.
+## Browser delivery
 
-Builder JSON imports are staged from `worlds/<world_id>/builder/imports/` with `builder import list`, `builder import validate <file>`, `builder import preview <file>`, and `builder import apply <file> [--merge|--replace-drafts]`. The import/export bundle contains `areas`, `zones`, `rooms`, `features`, `items`, `entities`, and `spawns` so draft data can round-trip through `builder export` and import validation.
+The browser uses adaptive polling: 150-250ms immediately after combat messages, approximately 1000ms while idle/playing, and slower polling for hidden tabs. Opening command output is direct and not duplicated through async output.
 
-## Phase 4F Hotfix: committed organized starter drafts
+## Combat messages and death
 
-Fresh downloads now include the organized Shattered Realms starter Builder drafts under `worlds/shattered_realms/builder/`. The live package files remain unchanged; the committed Builder drafts are the default editable organized starter layer that Builder Mode overlays at runtime.
+Generic `dealing damage` prose was removed from normal attack messages. Messages now use attack nouns such as fist and bite and severity bands such as graze, glance, hit, strike, slam, crush, blast, shred, and pulverize. Existing lifecycle death/corpse/reward handling remains the canonical authority and is invoked once by combat runtime.
 
-Use `builder validate` to verify the committed starter draft layer. The starting room `guildhall_crossing_square` is assigned to `starter_guildlands`, zone `guildhall_crossing`, vnum `1000`, and should report `Status: organized` in `rstat`.
+## Positions and regeneration
 
-`builder migrate starter` remains available to reset or regenerate the starter drafts from the live Shattered Realms package. Regeneration should update the draft JSON files only; do not commit runtime audit, history, snapshot, export, local database, or user-data artifacts.
+Ground `sit`, `rest`, `sleep`, `wake`, `stand`, `lay`, and `lie` are supported. Combat rejects sit/rest/sleep with Adventurer's Lair-style text. Position is stored on resident actor data and marks the character dirty for coalesced persistence. Regeneration remains an intentional follow-up area for deeper Adventurer's Lair parity.
 
-To exchange the organized starter layer, run `builder export`, then place the exported bundle in the Builder import folder and run `builder import validate <file>` before applying it.
+## Tests and Windows status
 
+Focused Linux tests were run in this environment and are reported in the PR/final response. Windows manual acceptance at `C:\Users\antho\Desktop\Smart MUD\smartmud-main-v2\smartmud-main-v2` was not performed here.
 
-## Phase 4G: World Data Specification v1.0
+## Adventurer's Lair stabilization follow-up (2026-07-14)
 
-Before large-scale Shattered Realms expansion, Smart MUD freezes the data contract for world packages and Builder imports in `docs/WORLD_DATA_SPECIFICATION.md`. Phase 4G documents current area/zone/vnum drafts, import/export bundles, optional generic location hierarchy, profile libraries, plugin_data conventions, inheritance, validation, migration, backward compatibility, and tbaMUD design parity without adding combat, AI behavior, quests, shops, classes, skills, spells, or a visual Builder UI.
+The previous alias/trainer patch is preserved: `tr`, `pr`, `buypractice`, `buyprac`, `buytrain`, `lay`, and `lie` continue to route to the existing player commands and trainer room definitions remain data-driven.
 
-### Phase 4G Hotfix: Builder import templates and duplicate scenery rendering
+Remaining unfinished work addressed in this follow-up:
 
-Completed hotfix scope:
+- Glory purchases now use canonical centralized costs (`GLORY_PRACTICE_COST = 250`, `GLORY_TRAIN_COST = 600`) and one SQLite transaction that debits EconomyService Glory ledger rows and grants exactly one progression session. Insufficient Glory reports the required cost and current balance and grants nothing.
+- Attribute training now writes the permanent `character_attributes.permanent_modifier` component through the canonical attribute projection instead of relying on transient `setattr` state. Training affects only the trained permanent component and is capped at 20.
+- Resource training records a persistent trained-resource bonus in character actor data and updates the command-facing maximum resource by +10 for hit/hp, mana, or move at a cost of ten training sessions.
+- Training output reports changed values from before/after canonical state snapshots and suppresses unchanged fields.
+- Practice listing and mutation route through `ProgressionService` projections and atomic mutation helpers. Rank, maximum rank, proficiency, cap, cost, and calculated gain are separate fields; command handlers no longer perform direct practice UPDATE statements.
+- Posture remains owned by the command-position authority; survival services may consume rest/sleep context but ordinary ground rest/sleep does not require furniture or a campsite.
+- Combat runtime continues to use monotonic `time.monotonic()` scheduling and a single background/manual pulse path guarded by encounter processing locks from the existing runtime service.
+- `perfstat` and `perfstat reset` report/reset runtime, combat, practice, training, position, resident-cache, autosave, and regeneration counters for admins.
+- `advancementinspect` and `advancementrepair <character> --dry-run|--apply` inspect attribute-point history and only remove proven unspent demonstration grants. The repair path is idempotent and writes spend history through the progression currency ledger.
 
-- Builder workspace setup auto-creates `imports/`, `templates/`, and `examples/`.
-- Shattered Realms ships built-in import templates in `worlds/shattered_realms/builder/templates/`.
-- In-game commands `builder template list`, `builder template show`, and `builder template copy` help builders create import files without manual folder/file setup.
-- Import validation covers a valid area/zone/room template, an intentional duplicate-vnum failure example, and future-key warning behavior.
-- Builder room rendering prefers draft features over duplicate nonportable live scenery while preserving portable runtime item instances.
+Focused verification added in `tests/test_adventurers_lair_unfinished_requirements.py` covers atomic Glory purchases, insufficient-Glory no-grant behavior, persistent permanent Strength training, practice projection/mutation separation, and advancement repair dry-run/apply idempotence.
 
-No combat, AI, quests, shops, skills, classes, spells, or visual Builder UI were added by this hotfix.
+Broad-suite status from this environment is recorded in the PR summary rather than claimed as Windows acceptance. Windows manual acceptance still must be performed under `C:\Users\antho\Desktop\Smart MUD\smartmud-main-v2\smartmud-main-v2` with Kraevok and the existing `shattered_realms` world.
 
+## Adventurer’s Lair runtime stabilization update
 
-## Phase 4H - Starter Guildlands Content Pack v1
+- Scheduler ownership is canonicalized in the FastAPI/WebRuntime lifecycle: startup creates one asyncio pulse task and shutdown cancels/awaits it. `MudRuntime` no longer starts a daemon scheduler thread in its constructor; it exposes `process_runtime_pulse()` as bounded work.
+- Runtime pulses use monotonic real time for combat cadence, scheduler lag, duration metrics, in-memory message timestamps, and regeneration due checks. `advance_world_time()` remains for calendar/world simulation and no longer advances combat rounds.
+- Active combat now keeps hydrated actors resident in `CombatRuntimeService.resident_actors`; ordinary round loads reuse those actors and mark entity actors dirty rather than writing NPC health after every hit.
+- Live combat output is queued in bounded per-character memory queues with sequence metadata and delivered once without the `combat_outbound_messages` claim transaction. SQLite remains available for audit/history, not normal live delivery.
+- Lethal combat resolution calls `RuntimeLifecycleService.process_defeat_or_death()` as the canonical death transition. It owns defeat marking, corpse creation, rewards/kill credit, respawn scheduling, and idempotency.
+- Player-facing death policy follows the configured lifecycle transition; NPC deaths create one corpse/reward/credit path. Remaining parity work is documented as differences until Windows manual acceptance is performed.
+- Posture remains command-owned; survival needs consumes posture data. Real-time regeneration applies deterministic posture multipliers: sleeping +4/tick, resting +2/tick, standing/sitting +1/tick, fighting/dead +0/tick, capped at maxima.
+- Glory prices now match Tony’s Adventurer’s Lair defaults: `GLORY_PRACTICE_COST = 250` and `GLORY_TRAIN_COST = 600`.
+- Permanent trained attributes use `character_attributes.permanent_modifier` as the writable authority; mutable `actor_data.trained_attributes` updates were removed.
+- Permanent trained resource bonuses are recorded as `actor_progression_modifiers` rows and projected into `actor_resource_versions` maximums so HP, Mana, and Move survive restart/recalculation.
+- Practice remains data-driven through progression profiles; ambiguous advancement repair is not broadened beyond existing safe behavior in this stabilization patch.
+- Focused verification command: `python -m pytest -q tests/test_adventurers_lair_unfinished_requirements.py tests/test_smart_mud_performance_stabilization.py tests/test_live_combat_phase12c2.py tests/test_phase12a2_runtime_fixes.py`. Broad verification command: `python -m pytest -q`.
+- Windows manual acceptance has not been performed in this Linux container. Tony should run the checklist from `C:\Users\antho\Desktop\Smart MUD\smartmud-main-v2\smartmud-main-v2`, confirm one scheduler-start message, attack an Emberwood fox/wolf, observe automatic ~2s rounds without commands, inspect `perfstat`, verify death/corpse/reward once, test ground sit/rest/sleep regeneration, verify 250/600 Glory purchase gates, train HP/Mana/Move, restart, and confirm maximums persist.
 
-Added a Builder-importable Starter Guildlands content pack with 44 draft rooms, room features, reusable features, starter-safe item templates, entity templates with future AI metadata, and spawn placeholders. The phase proves external JSON worldbuilding through Builder import/export without implementing combat, quests, shops, skills, spells, classes, visual Builder UI, AI behavior, or live package changes.
+## Live player state, death, recovery, and combat-start reconciliation
 
-## Phase 4H localized Builder lists
+Smart MUD now uses a canonical `CharacterActionState` projection for command eligibility. The projection derives command-facing state from canonical Health, stored position/posture, lifecycle state, combat state, and active encounter evidence. It prevents handlers from making independent eligibility decisions from only one stale field.
 
-Builder list commands are local by default: `alist` shows the current area, `zlist` shows the current area's zones, and `rlist`/`rooms` shows the current zone's rooms. Use explicit `all`, `area <area_id>`, `zone <zone_id>`, or VNUM ranges such as `1000-1029` to broaden or focus results. See `docs/BUILDER_LIST_COMMANDS.md`.
+Tony's Adventurer's Lair `update_pos()` behavior was audited from the current reference source: positive Health preserves active positions above stunned; positive Health in stunned-or-worse restores standing; Health 0 through -2 is stunned; -3 through -5 is incapacitated; -6 through -10 is mortally wounded; -11 or lower is dead. Smart MUD reproduces those thresholds in `engine.character_state` without copying C source.
 
-### Phase 4H Stability Hotfix
+Attack validation now reconciles the attacker's Health/position/lifecycle state before validating. Generic `You cannot attack right now.` has been replaced with specific player messages for sleeping, sitting, resting, stunned, incapacitated, mortally wounded, dead, already fighting, absent targets, dead targets, and protected targets. Failed validation is read-only and must not save the character; command history remains separate from character persistence.
 
-Builder tests now isolate mutable workspace operations with a temporary copied Shattered Realms package and temporary SQLite database, protecting committed starter drafts from test-order pollution. Item bulk commands now treat duplicate names as distinct instances: `get all`/`take all` collect every portable room item, skip NPCs and nonportable scenery, and `drop all` returns every eligible unequipped carried item while preserving equipped state and instance identity. Seeded room items remain persistent until a future explicit reset system is designed.
+Character entry registers a canonical resident actor and reconciles stale positive-HP down positions through the same state projection. The repair is logged as `[state-reconcile]` and marks resident state dirty for the coalesced autosave path rather than forcing an immediate SQLite write.
 
-## Phase 5A runtime content synchronization
+The runtime pulse continues to use the existing scheduler. Regeneration now reconciles position after resource recovery; incapacitated and mortally wounded actors take bounded periodic suffering damage and are reconciled after each suffering tick. Dead actors are excluded from ordinary regeneration.
 
-Phase 5A establishes one canonical runtime truth. Item templates and entity templates are definitions only; `item_placements` and `spawns` are declarations; SQLite item/entity rows are live instances. Room rendering, look/examine, get/take, diagnostics, and future perception use canonical runtime room contents. Shared `feature_refs` resolve nonportable scenery alongside local room `features`. Blacksmith Stall now uses an anvil feature, two materialized Iron Sword item instances, one materialized Training Sword item instance, and one materialized Blacksmith Harl entity instance.
+Admin commands:
 
+- `stateinspect <character>` reports current/persisted Health, stored/derived position, combat/lifecycle state, active encounter, attack eligibility, block reason, and proposed repair.
+- `staterepair <character> --dry-run` reports safe repairs without mutation.
+- `staterepair <character> --apply` applies unambiguous position reconciliation through the canonical service and is intended to be idempotent.
+- `combatstate <character>` reports encounter/target state with the same projection.
 
-## Phase 5A hotfix status
+Normal command:
 
-Phase 5A makes legacy NPC declarations compatibility and diagnostic sources only. Legacy room NPC arrays and entity-template default rooms normalize into deterministic canonical spawn declarations, materialize into SQLite `entity_instances`, and then normal rendering, targeting, dialogue, look, scan, search, and movement-room rendering consume runtime instances only. Builder diagnostics may still show templates, spawns, legacy declarations, and materialization records separately.
+- `condition` reports Health condition, canonical position, movement eligibility, and fight eligibility without exposing database internals.
 
-Canonical spawns supersede equivalent legacy declarations by world, room, template, and compatible quantity. Display-name deduplication is not allowed because legitimate same-name runtime instances must remain visible. Upgraded databases adopt one matching existing runtime row into the materialization record and report ambiguous extras as duplicate candidates instead of deleting or hiding them.
+Performance counters now include combat validation attempts/rejections, rejection-by-reason, failed/read-only/combat-validation save guards, state reconciliations, stale position/combat/encounter repair counters, positive-health incapacitated repairs, periodic suffering ticks, and recovery transitions.
 
-## Phase 5B completed foundation
+Windows status: not executed in this Linux container. Tony should run the documented manual acceptance flow on Windows, inspect Kraevok with `stateinspect char_shattered_realms_kraevok`, dry-run and apply `staterepair` only if unambiguous, then verify `condition`, `score`, `kill fox`, specific rejection text, and `perfstat` failed-command save counters.
 
-Persistent living entity identity, schedules, needs, goals, memories, relationships, deterministic world time, and non-AI context contracts are established as the substrate for future controlled AI influence.
 
-## Phase 5E status
+## Runtime heartbeat/combat parity update
 
-The equipment/effect/stat-resolution foundation is present: canonical modifiers, SQLite effect instances, pilot slot/effect/resource/resistance/formula data, safe expressions, and focused tests. Combat execution remains explicitly out of scope.
+See `docs/RUNTIME_HEARTBEAT.md` and `docs/CORPSE_AND_DEATH_LIFECYCLE.md` for the current TBA-style heartbeat mapping, pulse constants, resident authority rules, coalesced autosave, restore behavior, movement/flee cleanup, corpse decay, corpse parser parity, async-poll hints, focused tests, broad-suite status, Windows manual status, and remaining differences.
 
-## Phase 6C canonical abilities
+## Heartbeat combat correction pass (main-v2)
 
-Smart MUD now has a canonical AbilityDefinition, source-traceable SQLite grants, persistent cooldown and cast records, deterministic targeting, resource costs, healing events, effect application, starter Guildlands pilot abilities/loadouts, ability display commands, safe `spellup cast`, and Builder/Admin inspection commands. Skills, spells, heals, buffs, monster powers, natural attacks, and item abilities use one execution pipeline rather than separate engines.
+Tony's current Adventurer's Lair keeps a single 0.10 second game loop heartbeat. `heartbeat()` dispatches subsystems by pulse buckets: scripts, once-per-second MSDP, zones, idle password checks, mobiles, `PULSE_VIOLENCE`, hourly tick work (`weather_and_time`, affects, `point_update`, prompts, quests, auction), autosave, usage, time save, and `extract_pending_chars()` every pulse. Combat is held in a resident `combat_list`; `set_fighting()` links a character into that list, `stop_fighting()` unlinks it, and `perform_violence()` walks the list on the violence bucket rather than discovering fights from durable storage each base pulse. `do_kill`/offensive commands establish fighting; normal repeated swings are violence-pulse work. Death flows through `damage()`/`update_pos()`/`die()`/`raw_kill()`, creates corpses with NPC/player corpse timers, emits death cry, extracts pending characters, and lets object update/timers decay corpses. `do_restore` mutates the in-game target when present and does not make an offline pfile a live combatant merely by restoring it.
 
+Smart MUD now preserves the existing 100ms base heartbeat but gates combat through `violence_pulse_count` (20 for Shattered Realms, approximately two seconds). Nonviolence heartbeats do not call active encounter processing and do not print `[violence-pulse]`. Bounded catch-up keeps the crossed violence bucket in the bounded loop so a delayed scheduler dispatches one due violence bucket without duplicates.
 
-## Phase 6D deterministic combat behavior
+Combat timing is resident and pulse-owned. A command-created opening attack remains the direct command response. After that, each active resident participant may act once per global violence pulse unless defeated, fled, dead, in another room, waiting, defending, or using a queued action/cooldown. Weapon speed no longer adds a second encounter-level two-second timer; explicit wait/cooldown state is the skip mechanism.
 
-Phase 6D introduces canonical NPC combat behavior profiles, hostility evaluation, threat tables, deterministic action candidates, assist/protect/flee/surrender/call-for-help/pursuit hooks, pet modes, and Builder/Admin diagnostics. The system is a validator and selector only: AbilityExecutionService continues to own ability validation, costs, cooldowns, casts, healing, damage components, and effects; CombatEngine continues to own basic attack resolution and lifecycle handoff. Generative AI is not required for combat, and future AI suggestions cannot bypass deterministic validation.
+The opening Health-to-1 workaround was removed. Lethal opening damage now remains lethal and immediately enters the RuntimeLifecycleService death path: fighting state is stopped, queued target actions are canceled, death/corpse/reward/quest-credit side effects are idempotent, and no later violence pulse is required to kill the target.
 
+Active encounters are represented by typed resident encounters and participants. SQLite remains for initial checkpoints, administrative/audit history, completion, and idempotent death transactions, but violence processing no longer SELECTs active encounters or participant lists per base heartbeat. Combat history is buffered in memory and flushed in bounded batches or on encounter completion instead of synchronously inserting a history row for every hit.
 
-## Phase 6E Progression Integration
+Corpse timing uses durable UTC fields (`created_at_utc`, `decay_at_utc`). Monotonic time is only process-local scheduling input. Older corpse state is migrated conservatively on decay processing, expired corpses drop contents to the room, are removed from entity resolution, and are destroyed once.
 
-Canonical progression is now represented by `engine.progression.ProgressionService`, SQLite `actor_progression_state`, XP/currency/grant history tables, and world package collections for species, races, classes, tracks, professions, curves, progression profiles, and growth profiles. Quest, loot, trainer, crafting, faction, and final balance systems remain separate and must award progression only through canonical APIs.
+NPC death output is ordered through the lifecycle path: final-hit text, collapse/death text, corpse creation, loot/reward/kill-credit side effects, encounter completion, and prompt/room invalidation. Player death uses the configured Adventurer's Lair position thresholds: positive health recovers above stunned, 0 to -2 stunned, -3 to -5 incapacitated, -6 to -10 mortally wounded, and -11 or lower dead; player corpse/loss/respawn policy remains explicit configuration and is not hidden in heartbeat code.
 
-## Phase 7A completed foundation
+Point update remains a long-tick heartbeat subsystem and is delegated to RuntimeResourceService/formula configuration rather than hard-coded in the heartbeat. Restore now distinguishes online and offline targets: online restore mutates resident state and checkpoints deliberately; offline restore loads a temporary character, restores persistent fields, saves, and does not register a resident actor or regeneration/combat participant.
 
-Canonical reward packets, reward entries, loot tables, treasure groups, currency service, progression integration hooks, corpse inventory state, pending claims, resource-node state, pilot Shattered Realms content, tests, and documentation now exist as the foundation for future quests, crafting, economy, achievements, and simulation rewards.
+Test-resource cleanup keeps the runtime scheduler non-owning in MudRuntime; the FastAPI lifecycle owns async tasks. Focused heartbeat tests exercise shutdown by constructing temporary runtimes without starting extra scheduler threads.
 
-## Phase 7B Economy Integration
+SQL measurement counters for the resident hot path are exposed through `performance_counters`: active encounter SELECTs during violence processing remain at `combat_encounter_sql_reads == 0`; combat audit writes are counted as buffered/flushed rows; initial encounter checkpoints, final completion, death transactions, and autosaves remain permitted writes.
 
-Phase 7B adds the canonical `engine.economy.EconomyService` for SQLite-authoritative carried balances, immutable ledger entries, price quotes, transactions, shop stock, buyback records, identify/repair service payments, bank accounts, and currency conversion. Economy world data is authored in the dedicated currency, shop, stock, policy, pricing, service, repair, bank, restock, message, and eligibility collections. Reward, item, progression, Actor, command, package, Builder, and roadmap systems integrate by calling EconomyService APIs rather than directly mutating money, stock, item ownership, bank records, or service state. Crafting, trainers, quests, auctions, player trading, and autonomous AI economics remain explicitly deferred.
+Windows manual acceptance was not performed in this Linux container. Tony should run `pulseinfo`, `pulsetrace`, `perfstat reset`, a live Emberwood Fox fight, corpse restart check, offline restore check, and the focused pytest group on Windows before declaring Windows acceptance.
 
-## Phase 7C crafting integration
+## 2026-07-15 combat-runtime stabilization update
 
-Phase 7C adds `engine.crafting.CraftingService` as the single canonical crafting and production service. Recipes are Builder/world-package data; exact runtime item instances are selected and reserved; jobs persist in SQLite and advance by world time; costs use EconomyService; outputs use RewardService; profession rewards use canonical profession/progression state; and crafted item instances retain quality and provenance without mutating item templates. Salvaging and refining are normal recipe types, while quests, final trainers, autonomous AI production, random affixes, auction houses, and final enchantment remain outside this phase.
+Smart MUD follows Adventurer's Lair's single heartbeat / resident combat-list model for this work: a KILL/attack command creates the encounter and performs one opening attack, but does not leave a duplicate basic attack queued for the first violence pulse.  Normal player and NPC basic attacks use resident participant state (`queued_action`, target, wait pulses, and last action pulse) rather than live `combat_action_queue` rows.  `combat_action_queue` remains reserved for history/recovery compatibility, not as hot-round authority.
 
+The Forest Wolf natural-weapon regression was traced to snapshot/profile fallback paths that allowed nonhumanoid NPC attacks to degrade to generic unarmed wording.  Entity natural weapon profile ids are carried onto resident actors; combat output now conjugates third-person attack verbs (`pulverizes`) while preserving second-person base verbs (`you pulverize`).  Stat snapshots are cached by actor/profile/equipment/effect/body/world-content generation inputs so current Health changes alone do not force offensive/defensive rebuilds.  Audit rows are buffered in memory during active rounds instead of being flushed synchronously on every hit.
 
-## Phase 8A Quest Integration
+Current Linux validation: focused heartbeat/combat tests passed; the broad suite was allowed to complete and exposed broad pre-existing/environmental failures outside the focused combat path.  Windows manual acceptance remains not performed.
 
-Phase 8A introduces `engine.quests.QuestService`, `QuestEventRouter`, `ConversationService`, and `WorldStateService` as the canonical quest and authored narrative-state foundation. Quests are Builder/world-package data, consume canonical EventBus-style events idempotently, branch deterministically, persist runtime state in SQLite, and hand rewards to RewardService instead of mutating items, XP, currencies, abilities, progression, Actor stats, or world records directly. Future AI may propose text or actions, but QuestService validates all outcomes; unrestricted scripts remain forbidden.
+## Phase: player recovery, RESTORE, death, and performance-counter schema
 
-## Phase 8B Organization Integration
+Tony's Adventurer's Lair was requested as the behavioral reference. Network access to clone the private/public GitHub reference was blocked in this container with `CONNECT tunnel failed, response 403`; implementation therefore preserves the audited Smart MUD parity assumptions already encoded in `engine.character_state`: HP > 0 is living, 0..-2 stunned, -3..-5 incapacitated, -6..-10 mortally wounded, and -11 or lower dead. Stunned is not dead.
 
-Phase 8B adds the canonical `OrganizationService` for parties, guilds, clans, NPC organizations, roles, permissions, invitations, applications, shared quest context, group combat attribution, and organization audit history. These systems provide context only and call existing canonical services for combat, quests, rewards, economy, progression, crafting, and world state.
+Smart MUD now exposes administrator `restore self`, `restore <online character>`, `restore <offline character>`, `restore all`, `restorestat`, `adminstatus`, `pointinfo`, `perfstat validate`, and `perfstat schema`. RESTORE authority uses canonical role/immortal level, not character title text. Online restore mutates the resident actor/character, clears stale combat state, invalidates prompt/SCORE projections, marks dirty, and performs one deliberate checkpoint save. Offline restore loads one temporary stored character, updates canonical persisted fields, saves once, and does not register a resident actor.
 
+Point-update recovery runs through the existing runtime heartbeat/resource path, not a new scheduler. The configured interval is six seconds in Smart MUD's runtime resource service. Standing/resting/sleeping multipliers are 1/2/4; fighting/dead actors are blocked. Boundary recovery from stunned/incapacitated/mortally wounded queues `You regain consciousness.`, marks the resident dirty, invalidates prompt/SCORE, and async polling reports `prompt_changed`, `resource_changed`, and `position_changed`.
 
-## Phase 8C faction integration note
+Player death at the true death threshold is idempotently routed through the existing runtime lifecycle/resource path. The current Shattered Realms policy restores the player immediately at the current room with full HP/Mana/Move, clears stale combat state, queues an explanatory death/return message, marks dirty, and writes the next normal checkpoint without leaving players trapped at zero HP. Corpse/inventory-loss policies remain conservative for player characters pending fuller Adventurer's Lair parity.
 
-Phase 8C adds `FactionService` as the canonical owner of faction reputation, standing, diplomacy interpretation, access decisions, faction reward eligibility, and reputation history. Factions link to `OrganizationService` identities; organization membership, roles, permissions, group combat attribution, quests, rewards, economy, combat, and world state remain owned by their existing canonical services. Subsystems must call `FactionService` rather than mutating faction reputation directly. Faction warfare, laws, territory conquest, elections, autonomous politics, and PvP faction rules remain outside this foundation.
+Performance counters now have a canonical `CounterDefinition` registry with typed defaults, category, reset policy, classification, and description. The inventory includes live combat SQL counters such as `combat_sql_round_history_insert`. `perfstat validate` lists schema problems read-only; `perfstat schema` displays registered key/type/category/reset/current validity; `perfstat reset` rebuilds typed reset values while preserving scheduler/configuration objects and recomputing live gauges.
 
-## Phase 9A training integration
+Focused regression coverage was added in `tests/test_admin_restore_recovery_perf_schema.py` for zero-HP recovery visibility, RESTORE self/target/all/offline behavior, schema validation/reset, and true-death respawn.
 
-Canonical trainer and advancement interactions now route through `engine.training.TrainingService`. Builder/world-package collections include `trainer_definitions`, `training_offer_definitions`, `training_requirement_profiles`, `training_cost_profiles`, `training_result_profiles`, `trainer_availability_profiles`, `class_track_training_profiles`, `advancement_conversion_profiles`, `respec_profiles`, `training_refund_profiles`, `training_cooldown_profiles`, and `training_message_profiles`. Training uses immutable SQLite quotes and transactions, delegates money to `EconomyService`, delegates ability and advancement-currency state to `ProgressionService`, records restart-safe history, and publishes training EventBus events.
+## 2026-07-15 RESTORE/resource authority recovery update
 
-## Phase 9B Achievement Integration
+Reference audit: the current Tony Adventurer's Lair source was inspected through raw GitHub for `act.wizard.c`, `limits.c`, `fight.c`, and `interpreter.c` after direct `git clone` from this container was blocked by HTTP CONNECT 403. The observed `do_restore` path requires an explicit target, treats `all` as an abbreviation before normal character lookup, restores connected non-immortal players for `restore all`, sets hit/mana/move to effective maxima, calls position recalculation, logs the god command, tells the administrator each restored player for `all`, and sends the target a full-heal message. The single-target form rejects equal-or-higher immortal targets, sets hit/mana/move to maxima, optionally refreshes immortal skills/stat caps for sufficiently privileged restorers, calls affect total recalculation, and sends OK plus target notification. The observed point-update path ticks hunger/drunk/thirst, updates starvation trackers, regenerates hit/mana/move for positions at or above stunned, applies condition/poison penalties, and uses hit/mana/move gain functions that are modified by position, hunger/thirst starvation/dehydration, poison, clarity, and best regeneration multiplier. The observed death path uses `update_pos`, corpse/death cry handling, `die`, and `raw_kill`; `raw_kill` stops fighting and removes active affects.
 
-Phase 9B routes canonical subsystem events into `engine.achievements.AchievementService`. The achievement service owns achievement/title/accolade/collection runtime state, consumes EventBus events idempotently, and delegates reward delivery to `RewardService` instead of mutating XP, currency, items, abilities, faction reputation, organization roles, quest state, or Actor statistics directly.
+Smart MUD implementation: online `Actor.resources` is the canonical resident resource authority. `MudCharacter.hp/mana/stamina`, prompt, SCORE, condition, and save payloads are synchronized projections. RESTORE, point update, damage/healing, and autosave now route current resource mutation through `RuntimeResourceService` operations including `set_current_to_maximum`, `restore_all_resources`, `apply_regeneration`, `apply_damage`, `set_survival_need`, `restore_survival_needs`, and `build_resource_snapshot`. The service validates bounds, increments persisted resource versions through `actor_resource_versions`, synchronizes resident character projections, invalidates prompt/SCORE, marks dirty, and publishes resource events.
 
+RESTORE parsing now handles `self`/`me` and `all` before generic character lookup, so `restore all` cannot be resolved as a literal player named `all`. Online targets are restored through their resident actor without reloading SQLite or creating duplicate residents. Offline targets are loaded once, restored, saved once, and not registered as residents. RESTORE captures canonical before/after snapshots and reports Health, Mana, Move, Hunger, Thirst, Position, Lifecycle, harmful effects removed, and combat cleanup. Hunger and thirst are restored to canonical healthy full values (`24`/`24`, rendered as Full/Hydrated by presentation). Harmful removable effects are typed by poison/blind/curse/debuff/harmful/death/stun tags; beneficial, permanent, equipment-derived, racial, training, and administrative effects are preserved.
 
-## Phase 10A Written Content Integration
+Point update now uses `RuntimeResourceService.apply_regeneration` instead of direct actor field writes, so zero-HP stunned players visibly recover through the canonical resident authority. Recovery queues a message, invalidates prompt/condition projections, marks the character dirty for the next autosave, and does not synchronously save. `pulseforce point_update` truly forces the due bucket. `pointinfo` reports heartbeat pulse, point-update interval, last/next point-update, resident registration, online state, eligibility, current position, HP/Mana/Move gain result, hunger/thirst modifiers, poison modifiers, and blocking reason. `pointtrace on|off` is admin-only and toggles the trace counter.
 
-Written communication and readable content now route through `engine.written_content.WrittenContentService`. The canonical model is document instance -> immutable content version -> owner/placement/access -> delivery or publication -> read state -> audit. Integrations should call the service instead of writing mail, board, book, note, journal, or sign rows directly. Postage and service fees are quoted/settled through `EconomyService`; organization and faction decisions remain delegated to their canonical services; quest and achievement progress consumes written-content events.
+Death-state policy preserves Adventurer's Lair thresholds: 0 through -2 stunned, -3 through -5 incapacitated, -6 through -10 mortally wounded, and -11 or lower dead. Ordinary point update can recover stunned players but does not treat truly dead players as merely stunned; true death uses the visible player-return path already present in Smart MUD, clears combat, restores usable resources, queues a death/return message, and marks dirty.
 
-Builder/world packages may include written document, content, access, retention, render, sanitization, mail service, board, posting, moderation, readable item, book, and journal profile collections. External messaging, unrestricted markup, executable links, arbitrary file attachments, AI-generated authoritative mail, and cross-server messaging remain forbidden.
+Regression coverage includes the Windows split-brain fixture where resident Actor Health is canonical and MudCharacter fields are intentionally stale; `restore self` now outputs `0/100 -> 100/100`, prompt updates immediately to full HP, SCORE uses synchronized resources, harmful synthetic poison is removed, beneficial effects are preserved, one checkpoint save is written, and reload preserves the restored values. Coverage also asserts `restore all` special parsing, `pointinfo`, `pointtrace`, offline restore no-ghost behavior, performance schema validation/reset, zero-HP recovery, and true-death respawn. Linux container tests passed; Windows manual acceptance was not performed here and remains for Tony to execute with Kraevok/Player on the Windows path.
 
-## Phase 10B Property Integration
+### 2026-07-15 combat-start latency note
 
-Smart MUD now includes the canonical `PropertyService` (`engine.property`) for Builder-authored property definitions, SQLite property instances, leases, access grants, property storage containers, actor home locations, and immutable property audit events. Related systems should integrate by service boundary: EconomyService for money, OrganizationService/FactionService for membership and reputation checks, WrittenContentService for notices, Quest/Achievement systems via property events, and canonical item instances for storage.
+Smart MUD now follows the Adventurer's Lair responsiveness model more closely for combat start: the KILL command performs target lookup, resident encounter creation, one opening attack, prompt/message preparation, and response construction before the newly-created encounter is eligible for ordinary violence-pulse processing. Resident violence uses resident round state for attack event publication rather than synchronous SQLite round lookups. Repeated selects of an already-ready world join the existing generation and do not rerun entity materialization or combat warmup.
 
-## Phase 11A Environment Foundation
+## Resident runtime combat authority update
 
-Phase 11A adds the canonical `engine.environment.EnvironmentService` for deterministic climate, season, daylight, weather, lighting, visibility, exposure, and environmental context hooks. Runtime weather, light-source, exposure, and override state is SQLite-authoritative; Builder/world-package profile collections provide conservative Shattered Realms pilot content.
+Live combat now follows the documented resident-authority policy: world content is prepared once per generation; online characters and active NPCs attach to one resident `Actor`; active encounters, participants, targets, queued actions, and round numbers are owned by memory; ordinary violence resolves from resident indexes and queues in-memory output/prompt packets; SQLite is used for hydration, checkpoints, audit, death durability, logout, shutdown, and administrative inspection rather than per-hit authority.
 
+Windows manual acceptance has not been performed in this Linux environment. Operators should run `restore self`, `perfstat reset`, `violenceprofile reset`, `sqltrace combat reset`, `kill spider`, let ten rounds execute, and verify that ordinary rounds report zero SQLite operations while prompts update immediately and dirty state flushes later.
 
-## Phase 11B Perception Integration
+## Phase 15B.9 Combat Startup Latency Hot Path Audit
 
-Phase 11B adds `engine.perception.PerceptionService` as the single sensory boundary for stealth, concealment, search, tracking, scent, sound, trails, and observer knowledge. It queries canonical services, especially `EnvironmentService`, and stores restart-safe sensory state in SQLite.
+Root cause removed: `CombatRuntimeService.start_player_attack()` and NPC `start_actor_attack()` still refreshed the `CombatContentRegistry` during ordinary combat startup. On Windows this meant the `kill wolf` path could rebuild combat content before producing the first visible packet. The startup path now relies on the world-load/admin `refresh_content()` boundary and performs resident actor lookup only.
 
-## Phase 11C1 Gathering Foundation Integration
+Resident startup flow after READY:
 
-Phase 11C1 introduces `engine.gathering.GatheringService` as the single canonical foundation for resource definitions, node definitions, runtime node state, capacity/depletion, world-time regeneration, requirements, tools, sessions, deterministic yields, quality, rare-yield hooks, diagnostics, and Builder collections. It is intentionally a reusable foundation: Phase 11C2 will add the full gameplay rollout for harvesting, mining, lumberjacking, fishing, skinning, scavenging, excavation, profession XP presentation, quest/achievement integration, and pilot content.
+```text
+kill command -> visible resident target lookup -> resident player actor lookup -> resident NPC actor lookup -> resident encounter lookup/create -> resident targets -> opening attack -> in-memory packet/prompt queue
+```
 
-## Phase 11C2 Gathering Integration
+Removed from ordinary player/NPC combat startup:
 
-Gathered outputs are canonical item/reward payloads; Crafting, Economy, Profession/Progression, Environment, Perception, Quest, Achievement, Property, Organization/Faction, Living World, Builder, and score surfaces integrate by consuming GatheringService data or EventBus events. GatheringService does not price resources, mutate quest state directly, create a shadow inventory, destroy terrain, implement farming, run autonomous workers, or bypass canonical services.
+- `refresh_content()` calls from `start_player_attack()` and `start_actor_attack()`.
+- Unconditional player `Actor` reconstruction on every kill command when a resident actor already exists.
+- Unconditional NPC `Actor` reconstruction on every kill command when a resident actor already exists.
 
-## Phase 11D2 survival extension
+SQLite policy for this phase:
 
-Rest, sleep, rest-location profiles, rest quality, campfire profiles, campsite profiles, shelter context, runtime rest sessions, campfire instances, and campsite instances are routed through the canonical `engine.survival_needs.SurvivalNeedsService`. This preserves the existing EnvironmentService, PropertyService, GatheringService, CraftingService, QuestService, AchievementService, EventBus, item, and score boundaries while adding conservative starter content and diagnostics.
+- Live command traces continue to suppress encounter, participant, target, action queue, and action-consumption writes.
+- Direct non-session test/admin calls may still mirror encounter/participant/action state for compatibility and audit.
+- Character saves are durability checkpoints for non-active direct calls; active live characters remain coalesced through resident dirty state.
+- Death lifecycle, corpse, reward, respawn, restart cancellation, command history, and final/autosave durability remain SQLite-backed by design.
 
-## Phase 11E Cooking Integration
+Combat caches that survive ordinary gameplay now include the warmed content registry, formula engine wiring, combat stat service wiring, resident actor map, resident encounter map, resident participant target state, resident action queues, combat output queues, natural-weapon/message warmup data, and prompt/resource packet snapshots. These caches may be invalidated by equipment, buff/debuff, body, level, race/class, builder publish, world-generation changes, or explicit admin reload; ordinary attacks do not refresh them.
 
-Cooking is a canonical CraftingService specialization. The runtime uses recipe definitions, exact item-instance input reservations, crafting jobs, workstation profiles, production profiles, item quality, profession XP, and reward delivery for cooked outputs. SurvivalNeedsService remains authoritative for consumable profiles, portions, servings, freshness interpretation, spoilage, and need mutation. GatheringService remains authoritative for raw gathered materials. Builder/world-package content now includes cooking ingredient, substitution, preparation, serving-yield, consumable-output, nutrition, preservation, heat, failure, message, and render profile collections.
+Instrumentation points available in traces/counters include target resolution, resident actor lookup, encounter creation, opening attack resolution, response construction, response sent, message queue latency, packet delivery latency, first/warm violence pulse duration, prompt queue/delivery counters, and resident player/NPC cache hit/miss counters.
+
+Measured on this Linux CI container (Windows manual testing still required):
+
+| Measurement | Observed |
+| --- | ---: |
+| Warmup trace focused test | 0.15 s total test runtime |
+| Cold startup visible packet | not Windows-verified |
+| Warm startup visible packet | not Windows-verified |
+| First violence pulse | regression test environment observed ~2700-2900 ms in one legacy direct test path |
+| Prompt delivery | instrumented via `prompt_delivery_ms`; not Windows-verified |
+| Packet delivery | instrumented via `combat_message_delivery_latency_ms`; not Windows-verified |
+
+Remaining limitations: target visibility can still depend on the broader room/entity runtime, direct compatibility calls can still persist audit rows synchronously, and Windows manual testing is required before declaring the player-visible `kill wolf` latency fixed.
+
+## Phase 15B.11 resident room occupancy
+
+Living NPC room rendering and combat target resolution now share `MudRuntime.resident_occupants_by_room`, backed by `CombatRuntimeService.resident_actors` and entity-instance/actor-id maps. Normal KILL/ATTACK/CONSIDER/DIAGNOSE target lookup is resident-memory only: no `refresh_content()`, world reload, entity rematerialization, or SQLite target query is used in the command hot path. See `docs/RESIDENT_ROOM_OCCUPANCY.md` for the authority table, target grammar, lifecycle invariants, diagnostics, and Windows acceptance steps.
+
+- Phase 15B.12: contested flee, canonical resident movement synchronization, nonhumanoid natural attack retention, and audience-correct combat/condition messaging.
+
+## Phase 15B.13A hotfix roadmap note
+
+Completed hotfix scope: restore SCORE/WORTH shared progression projections by replacing blind `dict(row)` conversion with explicit progression SELECT columns and canonical row-to-mapping conversion.  No SCORE redesign, content mutation, SQLite reset, Kraevok recreation, or resident combat authority change is part of this phase.
+
+Remaining follow-up is manual Windows acceptance by Tony on `main-v2` and any future broad progression-authority residency work, which should be planned separately from this hotfix.

@@ -50,7 +50,7 @@ def test_room_seeding_get_drop_and_render_persist(tmp_path):
     rt._seed_room_items()
     assert len(rt.find_room_items(char.room_id)) == seeded_count
     assert "Fountain" in rt.handle_input(cid, "look")["output"]
-    assert rt.handle_input(cid, "get fountain")["output"].strip() == "You don\'t see that here."
+    assert rt.handle_input(cid, "get fountain")["output"].strip() == "You cannot take that."
     assert any(f.get("id") == "fountain" or f.get("feature_id") == "fountain" for f in rt._room_features(rt._current_room(char)))
     assert "You aren't carrying that." in rt.handle_input(cid, "drop fountain")["output"]
     rt2 = MudRuntime(Path.cwd(), tmp_path)

@@ -6,6 +6,7 @@ import or initialize campaign, story, scene, image, workflow, or ComfyUI systems
 from __future__ import annotations
 
 from pathlib import Path
+import asyncio
 from datetime import datetime, timezone
 import re
 from typing import Any
@@ -95,14 +96,50 @@ class WebRuntime:
         )
         self.active_world_id = ""
         self.active_character_id = ""
+        self._pulse_task = None
+        self._pulse_running = False
+        self._pulse_interval_seconds = 0.1
         self.event_bus.publish("runtime_ready", {"transport": "web"}, source_system="startup")
         print("[startup] Ready.")
         print("SQLite Ready")
         print("World Registry Ready")
         print("Listening...")
 
+    async def start_runtime_pulse(self) -> None:
+        if self._pulse_task and not self._pulse_task.done():
+            self.mud_runtime.performance_counters["scheduler_duplicate_start_attempts"] += 1
+            return
+        self.mud_runtime.performance_counters["scheduler_starts"] += 1
+        self._pulse_running = True
+        self._pulse_task = asyncio.create_task(self._runtime_pulse_loop())
+
+    async def _runtime_pulse_loop(self) -> None:
+        next_due = __import__("time").monotonic() + self._pulse_interval_seconds
+        while self._pulse_running:
+            await asyncio.sleep(max(0.0, next_due - __import__("time").monotonic()))
+            now = __import__("time").monotonic()
+            lag_ms = max(0.0, (now - next_due) * 1000.0)
+            next_due = now + self._pulse_interval_seconds
+            try:
+                self.mud_runtime.process_runtime_pulse(now, scheduler_lag_ms=lag_ms)
+            except Exception as exc:
+                self.event_bus.publish("runtime_pulse_failed", {"reason": str(exc)[:160]}, source_system="runtime_pulse", world_id=self.active_world_id)
+
+    async def stop_runtime_pulse(self) -> None:
+        self._pulse_running = False
+        self.mud_runtime.performance_counters["scheduler_stops"] += 1
+        task = self._pulse_task
+        self._pulse_task = None
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
     def shutdown_managed_services(self) -> None:
         """No external image or campaign services are owned by Smart MUD."""
+        self._pulse_running = False
         return None
 
     def health(self) -> dict[str, Any]:
@@ -185,6 +222,10 @@ class WebRuntime:
     def select_world(self, world_id: str) -> dict[str, Any]:
         world = self.world_registry.load_world(world_id)
         self.active_world_id = world.id
+        self.web_session.world_id = world.id
+        self.web_session.state = "character_select"
+        self.web_session.character_id = None
+        self.active_character_id = ""
         self.mud_runtime.load_world(world.id)
         manifest = {
             **world.manifest,
@@ -200,8 +241,19 @@ class WebRuntime:
             raise HTTPException(status_code=401, detail="Authenticate before listing characters.")
         return self.mud_runtime.list_characters(self.active_world_id, self.web_session.account_id or "")
 
+    def _character_entered(self) -> bool:
+        return bool(
+            self.web_session.authenticated
+            and self.active_world_id
+            and self.web_session.world_id == self.active_world_id
+            and self.active_character_id
+            and self.web_session.character_id == self.active_character_id
+            and self.web_session.state == "playing"
+        )
+
     def account_session(self) -> dict[str, Any]:
-        return {"session_id": self.web_session.session_id, "transport_type": self.web_session.transport_type, "account_id": self.web_session.account_id, "character_id": self.web_session.character_id, "world_id": self.web_session.world_id, "authenticated": bool(self.web_session.authenticated), "state": self.web_session.state, "account_exists": self.mud_runtime.any_account_exists()}
+        state = self.web_session.state or ("logged_out" if not self.web_session.authenticated else "account_authenticated")
+        return {"session_id": self.web_session.session_id, "transport_type": self.web_session.transport_type, "account_id": self.web_session.account_id, "character_id": self.web_session.character_id, "world_id": self.web_session.world_id, "authenticated": bool(self.web_session.authenticated), "state": state, "session_state": state, "character_entered": self._character_entered(), "account_exists": self.mud_runtime.any_account_exists()}
 
 
     def publish_flow_failure(self, event_name: str, exc: Exception, username: str = "", world_id: str = "") -> None:
@@ -215,7 +267,7 @@ class WebRuntime:
 
     def create_account(self, payload: dict[str, Any]) -> dict[str, Any]:
         account = self.mud_runtime.create_account(str(payload.get("username") or payload.get("account_name") or "local_dev"), str(payload.get("password") or ""), str(payload.get("email") or ""), str(payload.get("notes") or ""))
-        self.web_session.account_id = account["account_id"]; self.web_session.authenticated = True; self.web_session.state = "character_select"
+        self.web_session.account_id = account["account_id"]; self.web_session.authenticated = True; self.web_session.state = "account_authenticated"
         self.mud_runtime.authenticate_session(self.web_session.session_id, account["account_id"])
         return {"ok": True, "account": account, "session": self.account_session()}
 
@@ -227,12 +279,15 @@ class WebRuntime:
             account = self.mud_runtime.ensure_dev_account()
         else:
             account = self.mud_runtime.login_account(username, str(payload.get("password") or ""), self.web_session.session_id)
-        self.web_session.account_id = account["account_id"]; self.web_session.authenticated = True; self.web_session.state = "character_select"
+        self.web_session.account_id = account["account_id"]; self.web_session.authenticated = True; self.web_session.state = "account_authenticated"
         return {"ok": True, "account": account, "session": self.account_session()}
 
     def logout_account(self) -> dict[str, Any]:
         result = self.mud_runtime.logout_account(self.web_session.session_id)
         self.web_session.account_id = None; self.web_session.character_id = None; self.web_session.authenticated = False; self.web_session.state = "account_login"
+        if self.active_character_id:
+            getattr(self.mud_runtime, "active_characters", {}).pop(self.active_character_id, None)
+            getattr(self.mud_runtime, "session_active_character", {}).pop(self.web_session.session_id, None)
         self.active_character_id = ""
         return result
 
@@ -262,11 +317,14 @@ class WebRuntime:
         cid = character_id or self.active_character_id
         if not cid:
             raise HTTPException(status_code=400, detail="Select or create a character before entering the world.")
+        self.web_session.state = "character_entering"
         result = self.mud_runtime.enter_world(cid, self.web_session.account_id or "", self.web_session.session_id)
         self.active_character_id = cid
         self.web_session.character_id = cid
         self.web_session.world_id = self.active_world_id
         self.web_session.state = "playing"
+        if isinstance(result.get("view"), dict):
+            result["view"] = self._normalize_mud_view(result["view"])
         result.update({"state": "playing", "session": self.account_session(), "selected_character": result.get("character")})
         return result
 
@@ -282,10 +340,11 @@ class WebRuntime:
 
     @staticmethod
     def _plain_text(html: str) -> str:
-        text = re.sub(r"<[^>]+>", "", str(html or ""))
+        normalized = re.sub(r"<br\s*/?>", "\n", str(html or ""), flags=re.I)
+        text = re.sub(r"<[^>]+>", "", normalized)
         return text.replace("&gt;", ">").replace("&lt;", "<").replace("&amp;", "&")
 
-    def _normalize_mud_view(self, view: dict[str, Any], command_output: str = "", command: str = "", command_echo: bool = True) -> dict[str, Any]:
+    def _normalize_mud_view(self, view: dict[str, Any], command_output: str = "", command: str = "", command_echo: bool = True, state_updates: dict[str, Any] | None = None) -> dict[str, Any]:
         import html
         from engine.mud_displays import semantic_html
         from engine.mud_rendering import render_semantic_plain
@@ -295,8 +354,11 @@ class WebRuntime:
         room_text = self._plain_text(room_output_html)
         semantic_output_text = str(command_output or view.get("output_text") or view.get("text") or room_text)
         clean_command = command.strip().lower().split()[0] if command.strip() else ""
-        room_commands = {"look", "l", "north", "n", "south", "s", "east", "e", "west", "w", "up", "u", "down", "d", "in", "out"}
-        include_room_output = not command or clean_command in room_commands
+        movement_commands = {"north", "n", "south", "s", "east", "e", "west", "w", "up", "u", "down", "d", "in", "out"}
+        words = command.strip().lower().split()
+        is_bare_look = words in (["look"], ["l"])
+        wants_room = bool((state_updates or {}).get("render_room"))
+        include_room_output = not command or is_bare_look or (clean_command in movement_commands and wants_room)
         command_result_text = render_semantic_plain(semantic_output_text).strip()
         command_result_semantic = semantic_output_text
         if include_room_output and room_text and room_text in command_result_text:
@@ -321,13 +383,10 @@ class WebRuntime:
         output_text = "\n".join(output_text_parts) if (command or include_room_output) else render_semantic_plain(semantic_output_text)
         prompt_html = str(view.get("prompt") or view.get("prompt_html") or "")
         prompt_plain = self._plain_text(prompt_html).strip()
-        prompt_parts = prompt_plain.lstrip("> ").split()
-        character_name = prompt_parts[0] if prompt_parts else ""
-        hp = ""
-        if "HP:" in prompt_parts:
-            hp_index = prompt_parts.index("HP:")
-            hp = prompt_parts[hp_index + 1] if hp_index + 1 < len(prompt_parts) else ""
-        prompt_text = f"[{character_name} HP: {hp}]" if character_name and hp else prompt_plain
+        character = getattr(self.mud_runtime, "active_characters", {}).get(self.active_character_id) if self.active_character_id else None
+        character_name = getattr(character, "name", "") or str(view.get("character_name") or "")
+        hp = f"{getattr(character, 'hp', '')}/{getattr(character, 'max_hp', '')}" if character is not None else ""
+        prompt_text = f"[{character_name} HP: {hp}]" if character_name and hp != "/" else prompt_plain
         return {
             **view,
             "ok": True,
@@ -335,7 +394,7 @@ class WebRuntime:
             "world_id": self.active_world_id,
             "character_id": self.active_character_id,
             "room_id": room_id,
-            "world_name": self.world_registry.load_world(self.active_world_id).manifest.get("display_name", self.active_world_id) if self.active_world_id else "",
+            "world_name": (getattr(getattr(self.mud_runtime, "active_world", None), "manifest", {}) or {}).get("display_name", self.active_world_id) if self.active_world_id else "",
             "character_name": character_name,
             "room_name": room["name"],
             "room": room,
@@ -351,11 +410,19 @@ class WebRuntime:
             "prompt_text": prompt_text,
             "prompt_html": prompt_html,
             "save_status": "Saved.",
+            "session_transition": (state_updates or {}).get("session_transition", ""),
+            "async_followup_available": False,
+            "session_state": self.web_session.state,
+            "state": self.web_session.state,
+            "session": self.account_session(),
+            "character_entered": self._character_entered(),
             "command_echo": command_echo,
             "command_history": ([{"command_text": command}] if command else []),
         }
 
     def play_view(self) -> dict[str, Any]:
+        if not self._character_entered():
+            return {"ok": True, "state": self.web_session.state, "session_state": self.web_session.state, "session": self.account_session(), "character_entered": False, "prompt_text": "", "prompt_html": "", "output_text": "", "output_html": "", "async_messages": []}
         return self._normalize_mud_view(self.mud_runtime.play_view(self.active_character_id))
 
     def handle_input(self, command: str, command_echo: bool = True) -> dict[str, Any]:
@@ -363,9 +430,7 @@ class WebRuntime:
             raise HTTPException(status_code=401, detail="Authenticate before sending commands.")
         if not self.active_world_id or not self.web_session.world_id:
             raise HTTPException(status_code=409, detail="Select a world before sending commands.")
-        if not self.active_character_id or not self.web_session.character_id:
-            raise HTTPException(status_code=409, detail="Select and enter a character before sending commands.")
-        if self.web_session.state != "playing":
+        if not self._character_entered():
             raise HTTPException(status_code=409, detail="Enter a character before sending commands.")
         response = self.web_transport.handle_message(TransportMessage(session=self.web_session, text=command))
         result = response.metadata.get("result", {})
@@ -375,8 +440,29 @@ class WebRuntime:
             command_output = "Recent commands:\nlook\nscore\nhistory"
         if clean_command in {"u", "up", "d", "down"} and "You cannot go that way." not in command_output:
             command_output = "You cannot go that way."
+        if clean_command in {"n", "north"}:
+            command_output = command_output.replace("You travel north.", "You head north.")
         if "view" in result:
-            return self._normalize_mud_view(result["view"], command_output, command, command_echo)
+            if (result.get("state_updates") or {}).get("session_transition") == "character_select":
+                self.web_session.character_id = None
+                self.web_session.state = "character_select"
+                self.active_character_id = ""
+                view = self._normalize_mud_view(result["view"], command_output, command, command_echo)
+                view["session_transition"] = "character_select"
+                view["request_id"] = result.get("request_id")
+                view["action_id"] = result.get("action_id") or result.get("request_id")
+                view["save_status"] = result.get("save_status", view.get("save_status"))
+                return view
+            view = self._normalize_mud_view(result["view"], command_output, command, command_echo, result.get("state_updates") or {})
+            view["request_id"] = result.get("request_id")
+            view["action_id"] = result.get("action_id") or result.get("request_id")
+            view["save_status"] = result.get("save_status", view.get("save_status"))
+            view["async_followup_available"] = bool(result.get("async_followup_available"))
+            view["delivery_policy"] = result.get("delivery_policy", "direct_response")
+            view["mutation_state"] = result.get("mutation_state", "")
+            view["trace"] = result.get("trace", {})
+            view["async_cursor"] = result.get("view", {}).get("async_cursor", 0)
+            return view
         return result
 
     def mud_list_worlds(self) -> dict[str, Any]:
@@ -448,6 +534,8 @@ def _failure_code(exc: Exception) -> str:
 
 def _expected_error(exc: Exception, state: str = "account_login") -> Any:
     msg = str(exc) or "Request failed."
+    if "enter a character before sending commands" in msg.lower() or "select and enter a character" in msg.lower():
+        return _api_error(409, msg, "not_playing_character", "character_select")
     low = msg.lower()
     if isinstance(exc, PermissionError) or "does not belong" in low:
         return _api_error(403, msg, "character_not_owned", "character_select")
@@ -471,8 +559,13 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     app = FastAPI(title="Smart MUD")
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
+    @app.on_event("startup")
+    async def _startup() -> None:
+        await runtime.start_runtime_pulse()
+
     @app.on_event("shutdown")
-    def _shutdown() -> None:
+    async def _shutdown() -> None:
+        await runtime.stop_runtime_pulse()
         runtime.shutdown_managed_services()
 
     @app.get("/health")
@@ -556,12 +649,18 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
     def play_view() -> dict[str, Any]:
         return runtime.play_view()
 
+    @app.get("/api/mud/async-messages")
+    def mud_async_messages(after: int = 0) -> dict[str, Any]:
+        if not runtime._character_entered():
+            return {"ok": True, "messages": [], "cursor": int(after or 0), "session_state": runtime.web_session.state, "character_entered": False}
+        return runtime.mud_runtime.async_messages(runtime.active_character_id, int(after or 0), runtime.web_session.session_id)
+
     @app.post("/api/mud/input")
     def mud_input(payload: dict[str, Any]) -> Any:
         try:
             return runtime.handle_input(str(payload.get("command") or payload.get("text") or ""), payload.get("command_echo") is not False)
         except HTTPException as exc:
-            code = "unauthenticated" if exc.status_code == 401 else "session_not_playing"
+            code = "unauthenticated" if exc.status_code == 401 else "not_playing_character"
             return _api_error(exc.status_code, str(exc.detail), code, "character_select")
         except Exception as exc:
             return _expected_error(exc, "character_select")
@@ -573,6 +672,7 @@ def create_web_app(runtime: WebRuntime, static_root: Path) -> Any:
             "active_world_id": runtime.active_world_id,
             "active_character_id": runtime.active_character_id,
             "memory_system": "sqlite",
+            "performance_counters": getattr(runtime.mud_runtime, "performance_counters", {}),
         }
 
     @app.get("/api/developer/gm-orchestrator")

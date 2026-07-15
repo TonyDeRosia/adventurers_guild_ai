@@ -1,1 +1,1423 @@
-{}
+{
+  "forest_wolf": {
+    "id": "forest_wolf",
+    "name": "Forest Wolf",
+    "kind": "creature",
+    "description": "A cautious starter wolf prowling the Emberwood hunting trail.",
+    "faction_id": "wildlife",
+    "default_room_id": "",
+    "occupation": "starter hunting threat",
+    "personality": [
+      "territorial",
+      "hungry",
+      "wary"
+    ],
+    "speech_style": "animal cues only",
+    "goals": [
+      "guard the trail",
+      "avoid larger threats"
+    ],
+    "fears": [
+      "fire",
+      "loud steel"
+    ],
+    "likes": [
+      "quiet woods"
+    ],
+    "dislikes": [
+      "intruders"
+    ],
+    "knowledge": [
+      "nearby trails"
+    ],
+    "relationship_defaults": {
+      "friendly": -50,
+      "wary": -20,
+      "annoyed": -30,
+      "hostile": -75,
+      "afraid": -20,
+      "impressed": 0,
+      "dismissive": 0,
+      "suspicious": -20
+    },
+    "hostility_threshold": -50,
+    "affection_threshold": 30,
+    "memory_policy": "wildlife does not hold dialogue memories",
+    "dialogue_seed": "The Forest Wolf communicates through posture and growls, not speech.",
+    "tags": [
+      "attackable",
+      "hostile",
+      "phase11f",
+      "starter",
+      "wildlife",
+      "wolf"
+    ],
+    "spawn_id": "spawn_emberwood_forest_wolf",
+    "npc_id": "forest_wolf",
+    "mob_id": "forest_wolf",
+    "room_id": "",
+    "max_alive": 0,
+    "respawn_enabled": false,
+    "respawn_delay_seconds": 60,
+    "respawn_mode": "zone_reset",
+    "corpse_decay_seconds": 1800,
+    "corpse_profile_id": "standard_mob_corpse",
+    "death_loot_profile_id": "starter_wolf_death_loot",
+    "loot_table_id": "wolf_common_loot",
+    "treasure_group_id": "starter_wolf_treasure",
+    "combat_behavior_profile_id": "wolf_pack",
+    "behavior_profile_id": "wolf_pack",
+    "ability_loadout_id": "wolf_basic",
+    "natural_weapon_profile_id": "wolf_bite",
+    "aggro_profile_id": "territorial_wildlife",
+    "perception_profile_id": "nearby_hostile_wildlife",
+    "environment_profile_id": "guildlands_temperate",
+    "level_range": [
+      1,
+      1
+    ],
+    "stats": {
+      "level": 1,
+      "max_health": 18,
+      "attack_power": 4,
+      "defense": 1
+    },
+    "builder": {
+      "authored": true,
+      "editable_collections": [
+        "npcs",
+        "combat_behavior_profiles",
+        "loot_tables",
+        "death_loot_profiles",
+        "corpse_decay_profiles"
+      ]
+    },
+    "combat_policy": {
+      "attackable": true
+    },
+    "keywords": [
+      "wolf",
+      "forest wolf",
+      "canine"
+    ],
+    "look_description": "A lean gray-brown wolf watches the trail with bright, wary eyes.",
+    "examine_description": "Its ribs shift under a rough winter coat. The wolf keeps low, ready either to spring or flee.",
+    "room_description": "A forest wolf prowls near the brush.",
+    "respawn_message": "A forest wolf emerges cautiously from the trees.",
+    "combat_profile": {
+      "modifiers": [
+        {
+          "modifier_id": "forest_wolf_hp",
+          "source_type": "template",
+          "source_id": "forest_wolf",
+          "target_stat": "max_health",
+          "operation": "add",
+          "value": -92,
+          "priority": 100,
+          "stacking_group": "forest_wolf_hp",
+          "stacking_rule": "stack"
+        }
+      ],
+      "natural_weapons": [
+        {
+          "id": "wolf_bite",
+          "name": "bite",
+          "minimum_damage": 2,
+          "maximum_damage": 5,
+          "damage_type": "piercing"
+        }
+      ]
+    },
+    "body_profile_id": "wolf",
+    "natural_weapons": [
+      {
+        "id": "wolf_bite",
+        "name": "bite",
+        "minimum_damage": 2,
+        "maximum_damage": 5,
+        "damage_type": "piercing"
+      }
+    ],
+    "level": 1,
+    "attributes": {
+      "strength": 11,
+      "dexterity": 12,
+      "constitution": 11,
+      "intelligence": 6,
+      "wisdom": 8,
+      "charisma": 6
+    }
+  },
+  "emberwood_fox": {
+    "id": "emberwood_fox",
+    "name": "Emberwood Fox",
+    "kind": "creature",
+    "description": "Emberwood Fox of Emberwood Forest.",
+    "faction_id": "wildlife",
+    "default_room_id": "",
+    "occupation": "starter hunting threat",
+    "personality": [
+      "territorial",
+      "hungry",
+      "wary"
+    ],
+    "speech_style": "animal cues only",
+    "goals": [
+      "guard the trail",
+      "avoid larger threats"
+    ],
+    "fears": [
+      "fire",
+      "loud steel"
+    ],
+    "likes": [
+      "quiet woods"
+    ],
+    "dislikes": [
+      "intruders"
+    ],
+    "knowledge": [
+      "nearby trails"
+    ],
+    "relationship_defaults": {
+      "friendly": -50,
+      "wary": -20,
+      "annoyed": -30,
+      "hostile": -75,
+      "afraid": -20,
+      "impressed": 0,
+      "dismissive": 0,
+      "suspicious": -20
+    },
+    "hostility_threshold": -50,
+    "affection_threshold": 30,
+    "memory_policy": "wildlife does not hold dialogue memories",
+    "dialogue_seed": "The Forest Wolf communicates through posture and growls, not speech.",
+    "tags": [
+      "attackable",
+      "wildlife",
+      "emberwood_forest",
+      "neutral"
+    ],
+    "spawn_id": "",
+    "npc_id": "emberwood_fox",
+    "mob_id": "emberwood_fox",
+    "room_id": "",
+    "max_alive": 0,
+    "respawn_enabled": false,
+    "respawn_delay_seconds": 60,
+    "respawn_mode": "zone_reset",
+    "corpse_decay_seconds": 1800,
+    "corpse_profile_id": "standard_mob_corpse",
+    "death_loot_profile_id": "generic_mob_loot",
+    "loot_table_id": "rat_common_loot",
+    "treasure_group_id": "",
+    "combat_behavior_profile_id": "civilian_safe",
+    "behavior_profile_id": "civilian_safe",
+    "ability_loadout_id": "wolf_basic",
+    "natural_weapon_profile_id": "",
+    "aggro_profile_id": "non_aggressive_wildlife",
+    "perception_profile_id": "nearby_hostile_wildlife",
+    "environment_profile_id": "guildlands_temperate",
+    "level_range": [
+      1,
+      1
+    ],
+    "stats": {
+      "level": 1,
+      "max_health": 30
+    },
+    "builder": {
+      "authored": true,
+      "editable_collections": [
+        "npcs",
+        "combat_behavior_profiles",
+        "loot_tables",
+        "death_loot_profiles",
+        "corpse_decay_profiles"
+      ]
+    },
+    "combat_policy": {
+      "attackable": true
+    },
+    "keywords": [
+      "emberwood",
+      "fox",
+      "emberwood fox"
+    ],
+    "look_description": "Emberwood Fox watches the forest with wary attention.",
+    "examine_description": "Its ribs shift under a rough winter coat. The wolf keeps low, ready either to spring or flee.",
+    "room_description": "Emberwood Fox is here among the trees.",
+    "respawn_message": "A forest wolf emerges cautiously from the trees.",
+    "combat_profile": {
+      "modifiers": [
+        {
+          "modifier_id": "emberwood_fox_hp",
+          "source_type": "template",
+          "source_id": "emberwood_fox",
+          "target_stat": "max_health",
+          "operation": "add",
+          "value": -80,
+          "priority": 100,
+          "stacking_group": "emberwood_fox_hp",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "emberwood_fox_armor",
+          "source_type": "template",
+          "source_id": "emberwood_fox",
+          "target_stat": "armor",
+          "operation": "add",
+          "value": 0,
+          "priority": 100,
+          "stacking_group": "emberwood_fox_armor",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "emberwood_fox_evasion",
+          "source_type": "template",
+          "source_id": "emberwood_fox",
+          "target_stat": "evasion",
+          "operation": "add",
+          "value": 8,
+          "priority": 100,
+          "stacking_group": "emberwood_fox_evasion",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "emberwood_fox_hit",
+          "source_type": "template",
+          "source_id": "emberwood_fox",
+          "target_stat": "hit_bonus",
+          "operation": "add",
+          "value": 0,
+          "priority": 100,
+          "stacking_group": "emberwood_fox_hit",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "emberwood_fox_dam",
+          "source_type": "template",
+          "source_id": "emberwood_fox",
+          "target_stat": "damage_bonus",
+          "operation": "add",
+          "value": 0,
+          "priority": 100,
+          "stacking_group": "emberwood_fox_dam",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "emberwood_fox_crit",
+          "source_type": "template",
+          "source_id": "emberwood_fox",
+          "target_stat": "critical_melee",
+          "operation": "add",
+          "value": 0,
+          "priority": 100,
+          "stacking_group": "emberwood_fox_crit",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "emberwood_fox_save",
+          "source_type": "template",
+          "source_id": "emberwood_fox",
+          "target_stat": "physical_save",
+          "operation": "add",
+          "value": 1,
+          "priority": 100,
+          "stacking_group": "emberwood_fox_save",
+          "stacking_rule": "stack"
+        }
+      ],
+      "natural_weapons": [
+        {
+          "id": "emberwood_fox_attack",
+          "name": "natural attack",
+          "minimum_damage": 1,
+          "maximum_damage": 2,
+          "damage_type": "piercing"
+        }
+      ]
+    },
+    "body_profile_id": "wolf",
+    "natural_weapons": [
+      {
+        "id": "emberwood_fox_attack",
+        "name": "natural attack",
+        "minimum_damage": 1,
+        "maximum_damage": 2,
+        "damage_type": "piercing"
+      }
+    ],
+    "level": 1,
+    "attributes": {
+      "strength": 11,
+      "dexterity": 11,
+      "constitution": 11,
+      "intelligence": 8,
+      "wisdom": 9,
+      "charisma": 8
+    },
+    "combat_role": "skirmisher"
+  },
+  "wild_boar": {
+    "id": "wild_boar",
+    "name": "Wild Boar",
+    "kind": "creature",
+    "description": "Wild Boar of Emberwood Forest.",
+    "faction_id": "wildlife",
+    "default_room_id": "",
+    "occupation": "starter hunting threat",
+    "personality": [
+      "territorial",
+      "hungry",
+      "wary"
+    ],
+    "speech_style": "animal cues only",
+    "goals": [
+      "guard the trail",
+      "avoid larger threats"
+    ],
+    "fears": [
+      "fire",
+      "loud steel"
+    ],
+    "likes": [
+      "quiet woods"
+    ],
+    "dislikes": [
+      "intruders"
+    ],
+    "knowledge": [
+      "nearby trails"
+    ],
+    "relationship_defaults": {
+      "friendly": -50,
+      "wary": -20,
+      "annoyed": -30,
+      "hostile": -75,
+      "afraid": -20,
+      "impressed": 0,
+      "dismissive": 0,
+      "suspicious": -20
+    },
+    "hostility_threshold": -50,
+    "affection_threshold": 30,
+    "memory_policy": "wildlife does not hold dialogue memories",
+    "dialogue_seed": "The Forest Wolf communicates through posture and growls, not speech.",
+    "tags": [
+      "attackable",
+      "wildlife",
+      "emberwood_forest"
+    ],
+    "spawn_id": "",
+    "npc_id": "wild_boar",
+    "mob_id": "wild_boar",
+    "room_id": "",
+    "max_alive": 0,
+    "respawn_enabled": false,
+    "respawn_delay_seconds": 60,
+    "respawn_mode": "zone_reset",
+    "corpse_decay_seconds": 1800,
+    "corpse_profile_id": "standard_mob_corpse",
+    "death_loot_profile_id": "generic_mob_loot",
+    "loot_table_id": "rat_common_loot",
+    "treasure_group_id": "",
+    "combat_behavior_profile_id": "wolf_pack",
+    "behavior_profile_id": "wolf_pack",
+    "ability_loadout_id": "wolf_basic",
+    "natural_weapon_profile_id": "",
+    "aggro_profile_id": "territorial_wildlife",
+    "perception_profile_id": "nearby_hostile_wildlife",
+    "environment_profile_id": "guildlands_temperate",
+    "level_range": [
+      2,
+      2
+    ],
+    "stats": {
+      "level": 2,
+      "max_health": 55
+    },
+    "builder": {
+      "authored": true,
+      "editable_collections": [
+        "npcs",
+        "combat_behavior_profiles",
+        "loot_tables",
+        "death_loot_profiles",
+        "corpse_decay_profiles"
+      ]
+    },
+    "combat_policy": {
+      "attackable": true
+    },
+    "keywords": [
+      "wild",
+      "boar",
+      "wild boar"
+    ],
+    "look_description": "Wild Boar watches the forest with wary attention.",
+    "examine_description": "Its ribs shift under a rough winter coat. The wolf keeps low, ready either to spring or flee.",
+    "room_description": "Wild Boar is here among the trees.",
+    "respawn_message": "A forest wolf emerges cautiously from the trees.",
+    "combat_profile": {
+      "modifiers": [
+        {
+          "modifier_id": "wild_boar_hp",
+          "source_type": "template",
+          "source_id": "wild_boar",
+          "target_stat": "max_health",
+          "operation": "add",
+          "value": -65,
+          "priority": 100,
+          "stacking_group": "wild_boar_hp",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "wild_boar_armor",
+          "source_type": "template",
+          "source_id": "wild_boar",
+          "target_stat": "armor",
+          "operation": "add",
+          "value": 3,
+          "priority": 100,
+          "stacking_group": "wild_boar_armor",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "wild_boar_evasion",
+          "source_type": "template",
+          "source_id": "wild_boar",
+          "target_stat": "evasion",
+          "operation": "add",
+          "value": -6,
+          "priority": 100,
+          "stacking_group": "wild_boar_evasion",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "wild_boar_hit",
+          "source_type": "template",
+          "source_id": "wild_boar",
+          "target_stat": "hit_bonus",
+          "operation": "add",
+          "value": 1,
+          "priority": 100,
+          "stacking_group": "wild_boar_hit",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "wild_boar_dam",
+          "source_type": "template",
+          "source_id": "wild_boar",
+          "target_stat": "damage_bonus",
+          "operation": "add",
+          "value": 1,
+          "priority": 100,
+          "stacking_group": "wild_boar_dam",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "wild_boar_crit",
+          "source_type": "template",
+          "source_id": "wild_boar",
+          "target_stat": "critical_melee",
+          "operation": "add",
+          "value": 0,
+          "priority": 100,
+          "stacking_group": "wild_boar_crit",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "wild_boar_save",
+          "source_type": "template",
+          "source_id": "wild_boar",
+          "target_stat": "physical_save",
+          "operation": "add",
+          "value": 2,
+          "priority": 100,
+          "stacking_group": "wild_boar_save",
+          "stacking_rule": "stack"
+        }
+      ],
+      "natural_weapons": [
+        {
+          "id": "wild_boar_attack",
+          "name": "natural attack",
+          "minimum_damage": 2,
+          "maximum_damage": 5,
+          "damage_type": "physical"
+        }
+      ]
+    },
+    "body_profile_id": "wolf",
+    "natural_weapons": [
+      {
+        "id": "wild_boar_attack",
+        "name": "natural attack",
+        "minimum_damage": 2,
+        "maximum_damage": 5,
+        "damage_type": "physical"
+      }
+    ],
+    "level": 2,
+    "attributes": {
+      "strength": 12,
+      "dexterity": 12,
+      "constitution": 12,
+      "intelligence": 8,
+      "wisdom": 9,
+      "charisma": 8
+    },
+    "combat_role": "brute"
+  },
+  "giant_wood_spider": {
+    "id": "giant_wood_spider",
+    "name": "Giant Wood Spider",
+    "kind": "creature",
+    "description": "Giant Wood Spider of Emberwood Forest.",
+    "faction_id": "wildlife",
+    "default_room_id": "",
+    "occupation": "starter hunting threat",
+    "personality": [
+      "territorial",
+      "hungry",
+      "wary"
+    ],
+    "speech_style": "animal cues only",
+    "goals": [
+      "guard the trail",
+      "avoid larger threats"
+    ],
+    "fears": [
+      "fire",
+      "loud steel"
+    ],
+    "likes": [
+      "quiet woods"
+    ],
+    "dislikes": [
+      "intruders"
+    ],
+    "knowledge": [
+      "nearby trails"
+    ],
+    "relationship_defaults": {
+      "friendly": -50,
+      "wary": -20,
+      "annoyed": -30,
+      "hostile": -75,
+      "afraid": -20,
+      "impressed": 0,
+      "dismissive": 0,
+      "suspicious": -20
+    },
+    "hostility_threshold": -50,
+    "affection_threshold": 30,
+    "memory_policy": "wildlife does not hold dialogue memories",
+    "dialogue_seed": "The Forest Wolf communicates through posture and growls, not speech.",
+    "tags": [
+      "attackable",
+      "wildlife",
+      "emberwood_forest"
+    ],
+    "spawn_id": "",
+    "npc_id": "giant_wood_spider",
+    "mob_id": "giant_wood_spider",
+    "room_id": "",
+    "max_alive": 0,
+    "respawn_enabled": false,
+    "respawn_delay_seconds": 60,
+    "respawn_mode": "zone_reset",
+    "corpse_decay_seconds": 1800,
+    "corpse_profile_id": "standard_mob_corpse",
+    "death_loot_profile_id": "generic_mob_loot",
+    "loot_table_id": "rat_common_loot",
+    "treasure_group_id": "",
+    "combat_behavior_profile_id": "wolf_pack",
+    "behavior_profile_id": "wolf_pack",
+    "ability_loadout_id": "wolf_basic",
+    "natural_weapon_profile_id": "",
+    "aggro_profile_id": "aggressive_wildlife",
+    "perception_profile_id": "nearby_hostile_wildlife",
+    "environment_profile_id": "guildlands_temperate",
+    "level_range": [
+      3,
+      3
+    ],
+    "stats": {
+      "level": 3,
+      "max_health": 45
+    },
+    "builder": {
+      "authored": true,
+      "editable_collections": [
+        "npcs",
+        "combat_behavior_profiles",
+        "loot_tables",
+        "death_loot_profiles",
+        "corpse_decay_profiles"
+      ]
+    },
+    "combat_policy": {
+      "attackable": true
+    },
+    "keywords": [
+      "giant",
+      "wood",
+      "spider",
+      "giant wood spider"
+    ],
+    "look_description": "Giant Wood Spider watches the forest with wary attention.",
+    "examine_description": "Its ribs shift under a rough winter coat. The wolf keeps low, ready either to spring or flee.",
+    "room_description": "Giant Wood Spider is here among the trees.",
+    "respawn_message": "A forest wolf emerges cautiously from the trees.",
+    "combat_profile": {
+      "modifiers": [
+        {
+          "modifier_id": "giant_wood_spider_hp",
+          "source_type": "template",
+          "source_id": "giant_wood_spider",
+          "target_stat": "max_health",
+          "operation": "add",
+          "value": -85,
+          "priority": 100,
+          "stacking_group": "giant_wood_spider_hp",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "giant_wood_spider_armor",
+          "source_type": "template",
+          "source_id": "giant_wood_spider",
+          "target_stat": "armor",
+          "operation": "add",
+          "value": 1,
+          "priority": 100,
+          "stacking_group": "giant_wood_spider_armor",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "giant_wood_spider_evasion",
+          "source_type": "template",
+          "source_id": "giant_wood_spider",
+          "target_stat": "evasion",
+          "operation": "add",
+          "value": -2,
+          "priority": 100,
+          "stacking_group": "giant_wood_spider_evasion",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "giant_wood_spider_hit",
+          "source_type": "template",
+          "source_id": "giant_wood_spider",
+          "target_stat": "hit_bonus",
+          "operation": "add",
+          "value": 2,
+          "priority": 100,
+          "stacking_group": "giant_wood_spider_hit",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "giant_wood_spider_dam",
+          "source_type": "template",
+          "source_id": "giant_wood_spider",
+          "target_stat": "damage_bonus",
+          "operation": "add",
+          "value": 1,
+          "priority": 100,
+          "stacking_group": "giant_wood_spider_dam",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "giant_wood_spider_crit",
+          "source_type": "template",
+          "source_id": "giant_wood_spider",
+          "target_stat": "critical_melee",
+          "operation": "add",
+          "value": 1,
+          "priority": 100,
+          "stacking_group": "giant_wood_spider_crit",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "giant_wood_spider_save",
+          "source_type": "template",
+          "source_id": "giant_wood_spider",
+          "target_stat": "physical_save",
+          "operation": "add",
+          "value": 3,
+          "priority": 100,
+          "stacking_group": "giant_wood_spider_save",
+          "stacking_rule": "stack"
+        }
+      ],
+      "natural_weapons": [
+        {
+          "id": "giant_wood_spider_attack",
+          "name": "natural attack",
+          "minimum_damage": 2,
+          "maximum_damage": 6,
+          "damage_type": "piercing"
+        }
+      ]
+    },
+    "body_profile_id": "spider",
+    "natural_weapons": [
+      {
+        "id": "giant_wood_spider_attack",
+        "name": "natural attack",
+        "minimum_damage": 2,
+        "maximum_damage": 6,
+        "damage_type": "piercing"
+      }
+    ],
+    "level": 3,
+    "attributes": {
+      "strength": 13,
+      "dexterity": 13,
+      "constitution": 13,
+      "intelligence": 8,
+      "wisdom": 9,
+      "charisma": 8
+    },
+    "combat_role": "skirmisher"
+  },
+  "dire_forest_wolf": {
+    "id": "dire_forest_wolf",
+    "name": "Dire Forest Wolf",
+    "kind": "creature",
+    "description": "Dire Forest Wolf of Emberwood Forest.",
+    "faction_id": "wildlife",
+    "default_room_id": "",
+    "occupation": "starter hunting threat",
+    "personality": [
+      "territorial",
+      "hungry",
+      "wary"
+    ],
+    "speech_style": "animal cues only",
+    "goals": [
+      "guard the trail",
+      "avoid larger threats"
+    ],
+    "fears": [
+      "fire",
+      "loud steel"
+    ],
+    "likes": [
+      "quiet woods"
+    ],
+    "dislikes": [
+      "intruders"
+    ],
+    "knowledge": [
+      "nearby trails"
+    ],
+    "relationship_defaults": {
+      "friendly": -50,
+      "wary": -20,
+      "annoyed": -30,
+      "hostile": -75,
+      "afraid": -20,
+      "impressed": 0,
+      "dismissive": 0,
+      "suspicious": -20
+    },
+    "hostility_threshold": -50,
+    "affection_threshold": 30,
+    "memory_policy": "wildlife does not hold dialogue memories",
+    "dialogue_seed": "The Forest Wolf communicates through posture and growls, not speech.",
+    "tags": [
+      "attackable",
+      "wildlife",
+      "emberwood_forest",
+      "hostile",
+      "wolf"
+    ],
+    "spawn_id": "",
+    "npc_id": "dire_forest_wolf",
+    "mob_id": "dire_forest_wolf",
+    "room_id": "",
+    "max_alive": 0,
+    "respawn_enabled": false,
+    "respawn_delay_seconds": 60,
+    "respawn_mode": "zone_reset",
+    "corpse_decay_seconds": 1800,
+    "corpse_profile_id": "standard_mob_corpse",
+    "death_loot_profile_id": "starter_wolf_death_loot",
+    "loot_table_id": "wolf_common_loot",
+    "treasure_group_id": "",
+    "combat_behavior_profile_id": "wolf_pack",
+    "behavior_profile_id": "wolf_pack",
+    "ability_loadout_id": "wolf_basic",
+    "natural_weapon_profile_id": "",
+    "aggro_profile_id": "aggressive_wildlife",
+    "perception_profile_id": "nearby_hostile_wildlife",
+    "environment_profile_id": "guildlands_temperate",
+    "level_range": [
+      4,
+      4
+    ],
+    "stats": {
+      "level": 4,
+      "max_health": 75
+    },
+    "builder": {
+      "authored": true,
+      "editable_collections": [
+        "npcs",
+        "combat_behavior_profiles",
+        "loot_tables",
+        "death_loot_profiles",
+        "corpse_decay_profiles"
+      ]
+    },
+    "combat_policy": {
+      "attackable": true
+    },
+    "keywords": [
+      "dire",
+      "forest",
+      "wolf",
+      "dire forest wolf"
+    ],
+    "look_description": "Dire Forest Wolf watches the forest with wary attention.",
+    "examine_description": "Its ribs shift under a rough winter coat. The wolf keeps low, ready either to spring or flee.",
+    "room_description": "Dire Forest Wolf is here among the trees.",
+    "respawn_message": "A forest wolf emerges cautiously from the trees.",
+    "combat_profile": {
+      "modifiers": [
+        {
+          "modifier_id": "dire_forest_wolf_hp",
+          "source_type": "template",
+          "source_id": "dire_forest_wolf",
+          "target_stat": "max_health",
+          "operation": "add",
+          "value": -65,
+          "priority": 100,
+          "stacking_group": "dire_forest_wolf_hp",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "dire_forest_wolf_armor",
+          "source_type": "template",
+          "source_id": "dire_forest_wolf",
+          "target_stat": "armor",
+          "operation": "add",
+          "value": 2,
+          "priority": 100,
+          "stacking_group": "dire_forest_wolf_armor",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "dire_forest_wolf_evasion",
+          "source_type": "template",
+          "source_id": "dire_forest_wolf",
+          "target_stat": "evasion",
+          "operation": "add",
+          "value": -2,
+          "priority": 100,
+          "stacking_group": "dire_forest_wolf_evasion",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "dire_forest_wolf_hit",
+          "source_type": "template",
+          "source_id": "dire_forest_wolf",
+          "target_stat": "hit_bonus",
+          "operation": "add",
+          "value": 4,
+          "priority": 100,
+          "stacking_group": "dire_forest_wolf_hit",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "dire_forest_wolf_dam",
+          "source_type": "template",
+          "source_id": "dire_forest_wolf",
+          "target_stat": "damage_bonus",
+          "operation": "add",
+          "value": 3,
+          "priority": 100,
+          "stacking_group": "dire_forest_wolf_dam",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "dire_forest_wolf_crit",
+          "source_type": "template",
+          "source_id": "dire_forest_wolf",
+          "target_stat": "critical_melee",
+          "operation": "add",
+          "value": 3,
+          "priority": 100,
+          "stacking_group": "dire_forest_wolf_crit",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "dire_forest_wolf_save",
+          "source_type": "template",
+          "source_id": "dire_forest_wolf",
+          "target_stat": "physical_save",
+          "operation": "add",
+          "value": 4,
+          "priority": 100,
+          "stacking_group": "dire_forest_wolf_save",
+          "stacking_rule": "stack"
+        }
+      ],
+      "natural_weapons": [
+        {
+          "id": "dire_forest_wolf_attack",
+          "name": "natural attack",
+          "minimum_damage": 4,
+          "maximum_damage": 8,
+          "damage_type": "piercing"
+        }
+      ]
+    },
+    "body_profile_id": "wolf",
+    "natural_weapons": [
+      {
+        "id": "dire_forest_wolf_attack",
+        "name": "natural attack",
+        "minimum_damage": 4,
+        "maximum_damage": 8,
+        "damage_type": "piercing"
+      }
+    ],
+    "level": 4,
+    "attributes": {
+      "strength": 14,
+      "dexterity": 14,
+      "constitution": 14,
+      "intelligence": 8,
+      "wisdom": 9,
+      "charisma": 8
+    },
+    "combat_role": "skirmisher"
+  },
+  "emberwood_stag": {
+    "id": "emberwood_stag",
+    "name": "Emberwood Stag",
+    "kind": "creature",
+    "description": "Emberwood Stag of Emberwood Forest.",
+    "faction_id": "wildlife",
+    "default_room_id": "",
+    "occupation": "starter hunting threat",
+    "personality": [
+      "territorial",
+      "hungry",
+      "wary"
+    ],
+    "speech_style": "animal cues only",
+    "goals": [
+      "guard the trail",
+      "avoid larger threats"
+    ],
+    "fears": [
+      "fire",
+      "loud steel"
+    ],
+    "likes": [
+      "quiet woods"
+    ],
+    "dislikes": [
+      "intruders"
+    ],
+    "knowledge": [
+      "nearby trails"
+    ],
+    "relationship_defaults": {
+      "friendly": -50,
+      "wary": -20,
+      "annoyed": -30,
+      "hostile": -75,
+      "afraid": -20,
+      "impressed": 0,
+      "dismissive": 0,
+      "suspicious": -20
+    },
+    "hostility_threshold": -50,
+    "affection_threshold": 30,
+    "memory_policy": "wildlife does not hold dialogue memories",
+    "dialogue_seed": "The Forest Wolf communicates through posture and growls, not speech.",
+    "tags": [
+      "attackable",
+      "wildlife",
+      "emberwood_forest",
+      "neutral"
+    ],
+    "spawn_id": "",
+    "npc_id": "emberwood_stag",
+    "mob_id": "emberwood_stag",
+    "room_id": "",
+    "max_alive": 0,
+    "respawn_enabled": false,
+    "respawn_delay_seconds": 60,
+    "respawn_mode": "zone_reset",
+    "corpse_decay_seconds": 1800,
+    "corpse_profile_id": "standard_mob_corpse",
+    "death_loot_profile_id": "generic_mob_loot",
+    "loot_table_id": "rat_common_loot",
+    "treasure_group_id": "",
+    "combat_behavior_profile_id": "civilian_safe",
+    "behavior_profile_id": "civilian_safe",
+    "ability_loadout_id": "wolf_basic",
+    "natural_weapon_profile_id": "",
+    "aggro_profile_id": "non_aggressive_wildlife",
+    "perception_profile_id": "nearby_hostile_wildlife",
+    "environment_profile_id": "guildlands_temperate",
+    "level_range": [
+      2,
+      2
+    ],
+    "stats": {
+      "level": 2,
+      "max_health": 60
+    },
+    "builder": {
+      "authored": true,
+      "editable_collections": [
+        "npcs",
+        "combat_behavior_profiles",
+        "loot_tables",
+        "death_loot_profiles",
+        "corpse_decay_profiles"
+      ]
+    },
+    "combat_policy": {
+      "attackable": true
+    },
+    "keywords": [
+      "emberwood",
+      "stag",
+      "emberwood stag"
+    ],
+    "look_description": "Emberwood Stag watches the forest with wary attention.",
+    "examine_description": "Its ribs shift under a rough winter coat. The wolf keeps low, ready either to spring or flee.",
+    "room_description": "Emberwood Stag is here among the trees.",
+    "respawn_message": "A forest wolf emerges cautiously from the trees.",
+    "combat_profile": {
+      "modifiers": [
+        {
+          "modifier_id": "emberwood_stag_hp",
+          "source_type": "template",
+          "source_id": "emberwood_stag",
+          "target_stat": "max_health",
+          "operation": "add",
+          "value": -60,
+          "priority": 100,
+          "stacking_group": "emberwood_stag_hp",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "emberwood_stag_armor",
+          "source_type": "template",
+          "source_id": "emberwood_stag",
+          "target_stat": "armor",
+          "operation": "add",
+          "value": 1,
+          "priority": 100,
+          "stacking_group": "emberwood_stag_armor",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "emberwood_stag_evasion",
+          "source_type": "template",
+          "source_id": "emberwood_stag",
+          "target_stat": "evasion",
+          "operation": "add",
+          "value": -2,
+          "priority": 100,
+          "stacking_group": "emberwood_stag_evasion",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "emberwood_stag_hit",
+          "source_type": "template",
+          "source_id": "emberwood_stag",
+          "target_stat": "hit_bonus",
+          "operation": "add",
+          "value": 0,
+          "priority": 100,
+          "stacking_group": "emberwood_stag_hit",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "emberwood_stag_dam",
+          "source_type": "template",
+          "source_id": "emberwood_stag",
+          "target_stat": "damage_bonus",
+          "operation": "add",
+          "value": 0,
+          "priority": 100,
+          "stacking_group": "emberwood_stag_dam",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "emberwood_stag_crit",
+          "source_type": "template",
+          "source_id": "emberwood_stag",
+          "target_stat": "critical_melee",
+          "operation": "add",
+          "value": 0,
+          "priority": 100,
+          "stacking_group": "emberwood_stag_crit",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "emberwood_stag_save",
+          "source_type": "template",
+          "source_id": "emberwood_stag",
+          "target_stat": "physical_save",
+          "operation": "add",
+          "value": 2,
+          "priority": 100,
+          "stacking_group": "emberwood_stag_save",
+          "stacking_rule": "stack"
+        }
+      ],
+      "natural_weapons": [
+        {
+          "id": "emberwood_stag_attack",
+          "name": "natural attack",
+          "minimum_damage": 1,
+          "maximum_damage": 3,
+          "damage_type": "piercing"
+        }
+      ]
+    },
+    "body_profile_id": "wolf",
+    "natural_weapons": [
+      {
+        "id": "emberwood_stag_attack",
+        "name": "natural attack",
+        "minimum_damage": 1,
+        "maximum_damage": 3,
+        "damage_type": "piercing"
+      }
+    ],
+    "level": 2,
+    "attributes": {
+      "strength": 12,
+      "dexterity": 12,
+      "constitution": 12,
+      "intelligence": 8,
+      "wisdom": 9,
+      "charisma": 8
+    },
+    "combat_role": "skirmisher"
+  },
+  "ashback_bear": {
+    "id": "ashback_bear",
+    "name": "Ashback Bear",
+    "kind": "creature",
+    "description": "Ashback Bear of Emberwood Forest.",
+    "faction_id": "wildlife",
+    "default_room_id": "",
+    "occupation": "starter hunting threat",
+    "personality": [
+      "territorial",
+      "hungry",
+      "wary"
+    ],
+    "speech_style": "animal cues only",
+    "goals": [
+      "guard the trail",
+      "avoid larger threats"
+    ],
+    "fears": [
+      "fire",
+      "loud steel"
+    ],
+    "likes": [
+      "quiet woods"
+    ],
+    "dislikes": [
+      "intruders"
+    ],
+    "knowledge": [
+      "nearby trails"
+    ],
+    "relationship_defaults": {
+      "friendly": -50,
+      "wary": -20,
+      "annoyed": -30,
+      "hostile": -75,
+      "afraid": -20,
+      "impressed": 0,
+      "dismissive": 0,
+      "suspicious": -20
+    },
+    "hostility_threshold": -50,
+    "affection_threshold": 30,
+    "memory_policy": "wildlife does not hold dialogue memories",
+    "dialogue_seed": "The Forest Wolf communicates through posture and growls, not speech.",
+    "tags": [
+      "attackable",
+      "wildlife",
+      "emberwood_forest"
+    ],
+    "spawn_id": "",
+    "npc_id": "ashback_bear",
+    "mob_id": "ashback_bear",
+    "room_id": "",
+    "max_alive": 0,
+    "respawn_enabled": false,
+    "respawn_delay_seconds": 60,
+    "respawn_mode": "zone_reset",
+    "corpse_decay_seconds": 1800,
+    "corpse_profile_id": "standard_mob_corpse",
+    "death_loot_profile_id": "generic_mob_loot",
+    "loot_table_id": "rat_common_loot",
+    "treasure_group_id": "",
+    "combat_behavior_profile_id": "wolf_pack",
+    "behavior_profile_id": "wolf_pack",
+    "ability_loadout_id": "wolf_basic",
+    "natural_weapon_profile_id": "",
+    "aggro_profile_id": "aggressive_wildlife",
+    "perception_profile_id": "nearby_hostile_wildlife",
+    "environment_profile_id": "guildlands_temperate",
+    "level_range": [
+      5,
+      5
+    ],
+    "stats": {
+      "level": 5,
+      "max_health": 120
+    },
+    "builder": {
+      "authored": true,
+      "editable_collections": [
+        "npcs",
+        "combat_behavior_profiles",
+        "loot_tables",
+        "death_loot_profiles",
+        "corpse_decay_profiles"
+      ]
+    },
+    "combat_policy": {
+      "attackable": true
+    },
+    "keywords": [
+      "ashback",
+      "bear",
+      "ashback bear"
+    ],
+    "look_description": "Ashback Bear watches the forest with wary attention.",
+    "examine_description": "Its ribs shift under a rough winter coat. The wolf keeps low, ready either to spring or flee.",
+    "room_description": "Ashback Bear is here among the trees.",
+    "respawn_message": "A forest wolf emerges cautiously from the trees.",
+    "combat_profile": {
+      "modifiers": [
+        {
+          "modifier_id": "ashback_bear_hp",
+          "source_type": "template",
+          "source_id": "ashback_bear",
+          "target_stat": "max_health",
+          "operation": "add",
+          "value": -30,
+          "priority": 100,
+          "stacking_group": "ashback_bear_hp",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "ashback_bear_armor",
+          "source_type": "template",
+          "source_id": "ashback_bear",
+          "target_stat": "armor",
+          "operation": "add",
+          "value": 6,
+          "priority": 100,
+          "stacking_group": "ashback_bear_armor",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "ashback_bear_evasion",
+          "source_type": "template",
+          "source_id": "ashback_bear",
+          "target_stat": "evasion",
+          "operation": "add",
+          "value": -12,
+          "priority": 100,
+          "stacking_group": "ashback_bear_evasion",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "ashback_bear_hit",
+          "source_type": "template",
+          "source_id": "ashback_bear",
+          "target_stat": "hit_bonus",
+          "operation": "add",
+          "value": 3,
+          "priority": 100,
+          "stacking_group": "ashback_bear_hit",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "ashback_bear_dam",
+          "source_type": "template",
+          "source_id": "ashback_bear",
+          "target_stat": "damage_bonus",
+          "operation": "add",
+          "value": 4,
+          "priority": 100,
+          "stacking_group": "ashback_bear_dam",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "ashback_bear_crit",
+          "source_type": "template",
+          "source_id": "ashback_bear",
+          "target_stat": "critical_melee",
+          "operation": "add",
+          "value": 1,
+          "priority": 100,
+          "stacking_group": "ashback_bear_crit",
+          "stacking_rule": "stack"
+        },
+        {
+          "modifier_id": "ashback_bear_save",
+          "source_type": "template",
+          "source_id": "ashback_bear",
+          "target_stat": "physical_save",
+          "operation": "add",
+          "value": 5,
+          "priority": 100,
+          "stacking_group": "ashback_bear_save",
+          "stacking_rule": "stack"
+        }
+      ],
+      "natural_weapons": [
+        {
+          "id": "ashback_bear_attack",
+          "name": "natural attack",
+          "minimum_damage": 5,
+          "maximum_damage": 10,
+          "damage_type": "physical"
+        }
+      ]
+    },
+    "body_profile_id": "wolf",
+    "natural_weapons": [
+      {
+        "id": "ashback_bear_attack",
+        "name": "natural attack",
+        "minimum_damage": 5,
+        "maximum_damage": 10,
+        "damage_type": "physical"
+      }
+    ],
+    "level": 5,
+    "attributes": {
+      "strength": 15,
+      "dexterity": 15,
+      "constitution": 15,
+      "intelligence": 8,
+      "wisdom": 9,
+      "charisma": 8
+    },
+    "combat_role": "brute"
+  }
+}

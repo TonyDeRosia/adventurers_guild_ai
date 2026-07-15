@@ -40,10 +40,7 @@ def test_canonical_room_layout_empty_and_populated_visibility_order() -> None:
     assert "You see:\nAlice\nShopkeeper\nRat\nOld Gate\n\n[ Exits: east ]" in text
     assert text.index("Alice") < text.index("Shopkeeper") < text.index("Rat") < text.index("Old Gate")
     assert "old gate" not in text
-    assert 'role="player"' in render_room(populated, {})
-    assert 'role="npc"' in render_room(populated, {})
-    assert 'role="mob"' in render_room(populated, {})
-    assert 'role="object"' in render_room(populated, {})
+    assert 'role="content"' in render_room(populated, {})
     assert 'role="exit"' in render_room(populated, {})
 
 
@@ -66,7 +63,7 @@ def test_login_look_and_movement_use_canonical_room_renderer(tmp_path: Path, mon
     runtime, _cid, entered = _entered_runtime(tmp_path, monkeypatch)
     login_text = runtime._plain_text(entered["view"]["html"])
     assert login_text.count("Guildhall Crossing Square") == 1
-    assert login_text.endswith("[ Exits: north east west in ]")
+    assert login_text.endswith("[ Exits: north west east in ]")
 
     look = runtime.mud_input({"text": "look", "command_echo": False})
     assert look["command_result_text"] == ""
@@ -74,7 +71,38 @@ def test_login_look_and_movement_use_canonical_room_renderer(tmp_path: Path, mon
     assert "Fountain -" not in look["room_output_text"]
 
     moved = runtime.mud_input({"text": "north", "command_echo": False})
-    assert moved["command_result_text"] == "You head north."
+    assert moved["command_result_text"].startswith("You travel north.")
+    assert moved["command_result_text"].count("Old Gate Road") == 0
     assert moved["room_output_text"].count("Old Gate Road") == 1
-    assert moved["output_text"].startswith("You head north.\nOld Gate Road")
+    assert moved["output_text"].startswith("You travel north.\nOld Gate Road")
     assert "\n\n" in moved["output_text"]
+
+
+def test_target_look_uses_command_document_without_room_append(tmp_path: Path, monkeypatch) -> None:
+    runtime, _cid, _entered = _entered_runtime(tmp_path, monkeypatch)
+    runtime.mud_input({"text": "west", "command_echo": False})
+    target = runtime.mud_input({"text": "look borik", "command_echo": False})
+    assert "Training Master Borik" in target["command_result_text"]
+    assert "broad-shouldered veteran" in target["command_result_text"]
+    assert "Training Yard" not in target["command_result_text"]
+    assert "[ Exits:" not in target["command_result_text"]
+    assert target["room_output_text"] == ""
+    assert "Training Yard" not in target["output_text"]
+
+
+def test_room_renderer_roles_do_not_bleed_from_exits_to_contents() -> None:
+    room = SimpleNamespace(
+        title="Training Yard",
+        description="The packed earth repeats Training Yard safely.",
+        exits=[{"direction": "north"}, {"direction": "east"}],
+        players=[],
+        npcs=[{"entity_type": "npc", "name": "Training Master Borik", "room_description": "Training Master Borik watches the yard with his arms folded."}],
+        mobs=[],
+        objects=[{"entity_type": "object", "name": "Old Gate Shard", "room_description": "An old gate shard rests near the edge of the yard."}],
+    )
+    html = render_room(room, {})
+    assert html.count('role="room_name"') == 1
+    assert html.count('role="room_description"') == 1
+    assert 'role="contents_heading">You see:</span><br><span role="content">Training Master Borik watches' in html
+    assert '<span role="exit">[ Exits: north east ]</span>' in html
+    assert html.count('<span') == html.count('</span>')

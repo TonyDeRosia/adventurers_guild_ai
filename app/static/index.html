@@ -8,11 +8,18 @@
   </head>
   <body class="smart-mud-mode">
     <div class="smart-mud-shell app-shell">
+      <aside id="mud-account-panel" class="mud-account-panel" aria-label="Account and navigation">
+        <h1>Smart MUD</h1>
+        <p id="mud-account-summary">Not signed in</p>
+        <p id="mud-world-summary">No world selected</p>
+        <p id="mud-character-summary">No character active</p>
+        <div class="mud-account-actions">
+          <button id="mud-menu-settings" type="button">Settings</button>
+          <button id="mud-account-back" type="button" class="hidden">Back</button>
+          <button id="mud-account-logout" type="button" class="hidden">Logout</button>
+        </div>
+      </aside>
       <main class="smart-mud-main chat-main">
-        <header class="chat-header smart-mud-header">
-          <div class="chat-header-title"><h1>Smart MUD</h1><p id="campaign-meta">Loading Smart MUD...</p><p id="campaign-display-mode-indicator">Smart MUD</p></div>
-          <nav class="mud-top-menu"><button id="mud-menu-settings" type="button">Settings</button></nav>
-        </header>
         <section id="scene-context-panel" class="scene-context-panel campaign-status-strip" aria-label="Smart MUD status">
           <div class="status-pill"><span>World</span><strong id="status-campaign-name">World Select</strong></div>
           <div class="status-pill"><span>Room</span><strong id="status-world-location">Unknown</strong></div>
@@ -30,7 +37,7 @@
           <input id="chat-input" type="text" placeholder="look" autocomplete="off" />
           <button id="send-btn" class="btn-primary">Send</button>
         </footer>
-        <div class="status-stack"><div id="status-line">Ready.</div></div>
+        <div id="mud-notification" class="mud-notification hidden" role="status" aria-live="polite"></div>
       </main>
     </div>
 

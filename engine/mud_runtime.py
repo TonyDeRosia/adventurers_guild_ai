@@ -7,24 +7,103 @@ import sqlite3
 import re
 import uuid
 import hashlib
+import logging
+import time
 from types import MappingProxyType
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Any, Optional
-from datetime import datetime, timezone
+from collections import OrderedDict
+from contextlib import contextmanager
+from datetime import datetime, timezone, timedelta
 
 from engine.mud_commands import MudCommandEngine
-from engine.mud_displays import render_object, render_prompt, render_room, semantic
+from engine.performance_counters import make_initial_counters
+from engine.mud_displays import render_object, render_prompt, render_room, semantic, build_inventory_document, build_equipment_document, render_display_mud, render_display_plain
+from engine.player_preferences import PlayerPresentationPreferenceService
+from engine.display_services import CharacterDisplaySnapshotService
+from engine.conditions import condition_label
 from engine.mud_rendering import render_semantic_plain
 from smart_mud.world_registry import WorldRegistry
 from smart_mud.builder import BuilderWorkspace
 from smart_mud.event_bus import EventBus
 from engine.plugin_system import HookRegistry, PluginRegistry
 from engine.living_world import LivingWorldService, init_living_schema
+
+
+class _SQLBoundaryCursor:
+    def __init__(self, cursor: Any, recorder: dict[str, Any]):
+        self._cursor = cursor
+        self._recorder = recorder
+    def execute(self, sql: Any, params: Any = None):
+        self._recorder["count"] = int(self._recorder.get("count", 0)) + 1
+        self._recorder.setdefault("statements", []).append(str(sql).splitlines()[0][:160])
+        return self._cursor.execute(sql, params or ())
+    def executemany(self, sql: Any, seq: Any):
+        self._recorder["count"] = int(self._recorder.get("count", 0)) + 1
+        self._recorder.setdefault("statements", []).append(str(sql).splitlines()[0][:160])
+        return self._cursor.executemany(sql, seq)
+    def executescript(self, sql: Any):
+        self._recorder["count"] = int(self._recorder.get("count", 0)) + 1
+        self._recorder.setdefault("statements", []).append("SCRIPT " + str(sql).splitlines()[0][:153])
+        return self._cursor.executescript(sql)
+    def __iter__(self):
+        return iter(self._cursor)
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._cursor, name)
+
+
+class _SQLBoundaryConnection:
+    def __init__(self, conn: Any, recorder: dict[str, Any]):
+        self._conn = conn
+        self._recorder = recorder
+    def execute(self, sql: Any, params: Any = None):
+        self._recorder["count"] = int(self._recorder.get("count", 0)) + 1
+        self._recorder.setdefault("statements", []).append(str(sql).splitlines()[0][:160])
+        return self._conn.execute(sql, params or ())
+    def executemany(self, sql: Any, seq: Any):
+        self._recorder["count"] = int(self._recorder.get("count", 0)) + 1
+        self._recorder.setdefault("statements", []).append(str(sql).splitlines()[0][:160])
+        return self._conn.executemany(sql, seq)
+    def executescript(self, sql: Any):
+        self._recorder["count"] = int(self._recorder.get("count", 0)) + 1
+        self._recorder.setdefault("statements", []).append("SCRIPT " + str(sql).splitlines()[0][:153])
+        return self._conn.executescript(sql)
+    def cursor(self, *args: Any, **kwargs: Any):
+        return _SQLBoundaryCursor(self._conn.cursor(*args, **kwargs), self._recorder)
+    def __enter__(self):
+        self._conn.__enter__(); return self
+    def __exit__(self, *args: Any):
+        return self._conn.__exit__(*args)
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._conn, name)
+
+
+@contextmanager
+def trace_sqlite_boundary(recorder: dict[str, Any]):
+    original = sqlite3.connect
+    def traced_connect(*args: Any, **kwargs: Any):
+        return _SQLBoundaryConnection(original(*args, **kwargs), recorder)
+    sqlite3.connect = traced_connect
+    try:
+        yield recorder
+    finally:
+        sqlite3.connect = original
 from engine.abilities import AbilityExecutionService, init_ability_schema
+from engine.actors import ActorRegistry, actor_from_runtime_character
+from engine.character_state import reconcile_actor_position
 from engine.crafting import init_crafting_schema
 from engine.environment import EnvironmentService, init_environment_schema
 from engine.survival_needs import SurvivalNeedsService, init_survival_schema
+from engine.schedules import ScheduleService
+from engine.combat_runtime import CombatRuntimeService, init_combat_runtime_schema
+from engine.combat_warmup import CombatWarmupService
+from engine.agent_runtime import AgentRuntimeGateway, DeterministicControllerEvaluator, init_agent_runtime_schema
+from engine.character_stats import CharacterAttributeService, CombatStatService
+from engine.runtime_resources import RuntimeResourceService
+from engine.projection_cache import CharacterEntryContext, ProjectionCacheRegistry, ProjectionWarmupService, ActiveCharacterAutosaveService
+
+logger = logging.getLogger(__name__)
 
 VALID_ROLES = {"player", "helper", "builder", "admin", "owner"}
 BUILDER_ROLES = {"builder", "admin", "owner"}
@@ -150,6 +229,11 @@ class MudStateStore:
         self._init_schema()
         if self.event_bus:
             self.event_bus.publish("database_migrated", {"db_path": str(db_path)}, source_system="persistence")
+
+    def connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
 
     def _init_schema(self) -> None:
         """Initialize SQLite schema for MUD persistence."""
@@ -452,10 +536,17 @@ class MudStateStore:
             init_living_schema(self.db_path)
             init_ability_schema(self.db_path)
             init_crafting_schema(self.db_path)
+            init_combat_runtime_schema(self.db_path)
             conn.commit()
 
     def save_character(self, char: MudCharacter, world_id: str) -> None:
         """Save character to SQLite."""
+        # Generic character persistence owns identity, location, progression,
+        # preferences, builder state, inventory/equipment compatibility data,
+        # and non-resource JSON.  RuntimeResourceService owns canonical current
+        # resource values.  If canonical rows exist, overlay them before writing
+        # JSON and do not let an older command object restore health/mana/stamina.
+        char = self._overlay_canonical_resources(char)
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """INSERT OR REPLACE INTO characters 
@@ -468,11 +559,33 @@ class MudStateStore:
                 """INSERT OR REPLACE INTO character_stats
                    (character_id, hp, max_hp, mana, max_mana, stamina, max_stamina, xp, level, gold, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)""",
-                (char.id, char.hp, char.max_hp, char.mana, char.max_mana, 
-                 char.stamina, char.max_stamina, char.xp, char.level, char.gold)
+                (char.id, char.hp, char.max_hp, char.mana, char.max_mana, char.stamina, char.max_stamina, char.xp, char.level, char.gold)
             )
             conn.commit()
         print(f"[mud-persistence] Saved character {char.name} ({char.id})")
+
+    def _overlay_canonical_resources(self, char: MudCharacter) -> MudCharacter:
+        ids = [char.id, "character:" + char.id]
+        with sqlite3.connect(self.db_path) as conn:
+            try:
+                rows = conn.execute(
+                    f"SELECT resource,value,maximum,version FROM actor_resource_versions WHERE actor_id IN ({','.join('?' for _ in ids)})",
+                    ids,
+                ).fetchall()
+            except sqlite3.OperationalError:
+                rows = []
+        versions = getattr(char, "actor_data", {}) if isinstance(getattr(char, "actor_data", {}), dict) else {}
+        rv = versions.setdefault("resource_versions", {})
+        for resource, value, maximum, version in rows:
+            if resource == "health":
+                char.hp, char.max_hp = int(value or 0), int(maximum or value or 0)
+            elif resource == "mana":
+                char.mana, char.max_mana = int(value or 0), int(maximum or value or 0)
+            elif resource == "stamina":
+                char.stamina, char.max_stamina = int(value or 0), int(maximum or value or 0)
+            rv[str(resource)] = int(version or 0)
+        char.actor_data = versions
+        return char
 
     def load_character(self, char_id: str) -> Optional[MudCharacter]:
         """Load character from SQLite."""
@@ -495,7 +608,11 @@ class MudStateStore:
                             if role_rank(data["account_role"]) > role_rank(data["role"]):
                                 data["role"] = data["account_role"]
                 print(f"[mud-persistence] Loaded character {data.get('name')} ({char_id})")
-                return MudCharacter(**{k: v for k, v in data.items() if k in MudCharacter.__dataclass_fields__})
+                ch = MudCharacter(**{k: v for k, v in data.items() if k in MudCharacter.__dataclass_fields__})
+                ch = self._overlay_canonical_resources(ch)
+                if hasattr(self, "presentation_preferences"):
+                    self.presentation_preferences.apply_to_character(ch)
+                return ch
         return None
 
     def save_command(self, char_id: str, world_id: str, turn: int, command: str, account_id: str = "", session_id: str = "") -> None:
@@ -581,11 +698,58 @@ class MudRuntime:
         self.item_templates: dict[str, MappingProxyType] = {}
         self.entity_templates: dict[str, MappingProxyType] = {}
         self.sessions: dict[str, MudSession] = {}
+        self.active_characters: dict[str, MudCharacter] = {}
+        self.resident_occupants_by_room: dict[str, OrderedDict[str, None]] = {}
+        self.entity_instance_to_actor_id: dict[str, str] = {}
+        self.actor_id_to_entity_instance_id: dict[str, str] = {}
+        self.resident_entities_by_actor_id: dict[str, dict[str, Any]] = {}
+        self._recent_combat_actor_ids: set[str] = set()
+        self.session_active_character: dict[str, str] = {}
+        self.character_session_ids: dict[str, str] = {}
+        self.performance_counters = make_initial_counters(["play_view_requests","async_message_requests","character_sql_loads","character_sql_saves","world_package_loads","room_renders","prompt_renders","display_snapshot_builds","commands_processed","messages_delivered","overlapping_requests_prevented","command_requests","direct_command_responses","command_outputs_enqueued_async","duplicate_command_outputs_filtered","async_messages_delivered","character_saves","save_coalesced","save_skipped_clean","quit_final_saves","character_entry_total_ms","inventory_load_ms","equipment_load_ms","effect_load_ms","ability_load_ms","actor_registration_ms","essential_snapshot_ms","initial_room_render_ms","prompt_render_ms","warmup_queue_ms","warmup_build_ms","warmup_cache_hits","warmup_cancelled","stale_task_rejected","projection_cache_hits","projection_cache_misses","projection_invalidations","autosave_attempts","autosave_successes","autosave_skipped_clean","autosave_failures","scheduler_starts","scheduler_duplicate_start_attempts","scheduler_stops","runtime_pulses","runtime_pulse_duration_ms","runtime_pulse_max_duration_ms","scheduler_lag_ms","scheduler_max_lag_ms","combat_encounters_active","combat_rounds_processed","combat_round_duration_ms","combat_backlog","combat_character_sql_loads","combat_character_sql_saves","combat_entity_sql_reads","combat_entity_sql_writes","combat_encounter_sql_reads","combat_encounter_sql_writes","combat_output_sqlite_writes","combat_output_in_memory_queued","combat_messages_queued","combat_messages_delivered","combat_message_delivery_latency_ms","combat_scheduler_lag_ms","practice_command_duration_ms","train_command_duration_ms","position_command_duration_ms","autosave_coalesced","coalesced_autosaves","resident_actor_cache_hits","resident_actor_cache_misses","resident_entity_cache_hits","resident_entity_cache_misses","regeneration_pulses","regeneration_actors_processed","regeneration_resource_changes","combat_validation_attempts","combat_validation_rejections","failed_command_saves","read_only_command_saves","combat_validation_saves","state_reconciliations","stale_position_repairs","stale_combat_state_repairs","stale_encounter_repairs","positive_health_incapacitated_repairs","periodic_suffering_ticks","recovery_transitions", "combat_resident_actions_queued", "combat_resident_actions_consumed", "combat_initial_checkpoint_writes", "combat_audit_buffered", "combat_audit_flushes", "combat_audit_rows_flushed", "combat_sql_action_queue_insert", "combat_sql_action_queue_update", "combat_sql_round_history_insert", "last_violence_pulse", "runtime_missed_pulses", "violence_dispatches", "autosave_batches", "corpse_decays", "combat_stat_cache_hits", "combat_stat_cache_misses", "combat_completion_writes", "command_blocked_on_save_ms","kill_request_total_ms","kill_target_resolution_ms","kill_encounter_creation_ms","kill_opening_resolution_ms","kill_response_build_ms","kill_response_send_ms","heartbeat_event_loop_block_ms","first_violence_pulse_ms","warm_violence_pulse_ms","prompt_queue_ms","prompt_delivery_ms","prompt_updates_queued","prompt_updates_delivered","combat_packets_queued","combat_packets_delivered","natural_weapon_cache_hits","natural_weapon_cache_misses","runtime_gameplay_sql_statements","runtime_gameplay_sql_violations"] )
+        self._dirty_characters: dict[str, set[str]] = {}
+        self._save_locks: dict[str, Any] = {}
+        self._quit_final_saved: set[str] = set()
+        self.character_dirty_state: dict[str, dict[str, Any]] = {}
+        self.projection_cache = ProjectionCacheRegistry(self)
+        self.projection_warmup = ProjectionWarmupService(self, self.projection_cache)
+        self.autosave_service = ActiveCharacterAutosaveService(self)
+        self._async_sequences: dict[str, int] = {}
+        self._async_messages: dict[str, list[dict[str, Any]]] = {}
+        self._play_view_inflight: set[str] = set()
+        self.command_traces: dict[str, dict[str, Any]] = {}
         self.command_engine = MudCommandEngine(self.state_store, event_bus=self.event_bus)
+        self.actor_registry = ActorRegistry()
         self.abilities = None
         self.builder = BuilderWorkspace(event_bus=self.event_bus)
         self.command_engine.runtime = self
+        self.presentation_preferences = PlayerPresentationPreferenceService(self.state_store.db_path)
+        self._progression_service_singleton = None
+        self._progression_service_key = None
+        self._economy_service_singleton = None
+        self._economy_service_key = None
+        self.character_display_snapshots = CharacterDisplaySnapshotService(self)
+        self.attribute_service = CharacterAttributeService(self.state_store, 'shattered_realms', event_bus=self.event_bus)
+        self.attribute_service.runtime = self
+        self.combat_stat_service = CombatStatService(self.attribute_service)
+        self.runtime_resources = RuntimeResourceService(self, world_id="shattered_realms")
+        self.command_engine.presentation_preferences = self.presentation_preferences
+        self.command_engine.character_display_snapshots = self.character_display_snapshots
+        init_agent_runtime_schema(self.state_store.db_path)
+        self.combat_runtime = CombatRuntimeService(self)
+        self._last_pulse_due_monotonic: float | None = None
+        self.pulse_config = {"base_pulse_ms": 100, "violence_pulse_count": 20, "mobile_pulse_count": 100, "point_update_pulse_count": 750, "zone_pulse_count": 600, "autosave_pulse_count": 300, "world_hour_pulse_count": 750, "corpse_decay_pulse_count": 50, "maximum_catchup_pulses": 5}
+        self._runtime_pulse_counter = 0
+        self._last_violence_bucket = -1
+        self._last_point_bucket = -1
+        self._last_autosave_bucket = -1
+        self._last_world_hour_bucket = -1
+        self._last_corpse_decay_bucket = -1
+        self.agent_gateway = AgentRuntimeGateway(self)
+        self.deterministic_controller_evaluator = DeterministicControllerEvaluator(self.agent_gateway)
+        self.command_engine.combat_runtime = self.combat_runtime
         self.living_world = LivingWorldService(self)
+        self.schedule_service = ScheduleService(self)
         init_survival_schema(self.state_store.db_path)
         self.survival_needs = SurvivalNeedsService(self.state_store.db_path, root / "worlds" / "shattered_realms", "shattered_realms", self.event_bus, self)
         init_environment_schema(self.state_store.db_path)
@@ -594,20 +758,244 @@ class MudRuntime:
         self.event_bus.publish("runtime_ready", {"sqlite_ready": self.sqlite_ready}, source_system="runtime")
         print("[mud-runtime] Smart MUD runtime initialized")
 
+    def start_runtime_scheduler(self) -> None:
+        self.performance_counters["scheduler_duplicate_start_attempts"] += 1
+        return None
+
+    def stop_runtime_scheduler(self) -> None:
+        return None
+
+    def process_runtime_pulse(self, now_monotonic: float | None = None, *, scheduler_lag_ms: float = 0.0) -> dict[str, Any]:
+        """Run one bounded TBA-style base heartbeat pulse.
+
+        The FastAPI lifecycle owns the single asyncio task. This method is only
+        the canonical bounded work unit: it increments a 100ms base pulse and
+        dispatches longer subsystems by validated pulse counts, so commands and
+        browser polling never advance combat or world time.
+        """
+        real_started = time.monotonic()
+        started = real_started if now_monotonic is None else float(now_monotonic)
+        cfg = getattr(self, "pulse_config", {}) or {}
+        base_ms = max(10, int(cfg.get("base_pulse_ms", 100) or 100))
+        max_catchup = max(1, int(cfg.get("maximum_catchup_pulses", 5) or 5))
+        if self._last_pulse_due_monotonic is None:
+            anchor = float(getattr(getattr(self, "combat_runtime", None), "_real_start", started))
+            elapsed = max(0.0, started - anchor)
+        else:
+            elapsed = max(0.0, started - self._last_pulse_due_monotonic)
+        due = max(1, int(elapsed / (base_ms / 1000.0)))
+        missed = max(0, due - 1)
+        catchup = min(due, max_catchup)
+        if due > max_catchup:
+            old_counter = self._runtime_pulse_counter
+            target_counter = old_counter + due
+            violence_count = max(1, int(cfg.get("violence_pulse_count", 1) or 1))
+            next_violence = ((old_counter // violence_count) + 1) * violence_count
+            missed_extra = due - max_catchup
+            if old_counter < next_violence <= target_counter:
+                # Keep the next crossed violence bucket inside the bounded loop;
+                # never skip the final due violence pulse while catching up.
+                missed_extra = min(missed_extra, max(0, next_violence - old_counter - 1))
+            self.performance_counters["runtime_missed_pulses"] = self.performance_counters.get("runtime_missed_pulses", 0) + max(0, due - max_catchup)
+            self._runtime_pulse_counter += missed_extra
+        self._last_pulse_due_monotonic = started
+        attempted: list[str] = []
+        processed: list[str] = []
+        errors: dict[str, str] = {}
+        self.performance_counters["scheduler_lag_ms"] = int(max(0, scheduler_lag_ms))
+        self.performance_counters["scheduler_max_lag_ms"] = max(self.performance_counters.get("scheduler_max_lag_ms", 0), int(max(0, scheduler_lag_ms)))
+        def due_once(name: str, count_key: str, last_attr: str) -> bool:
+            count = max(1, int(cfg.get(count_key, 1) or 1))
+            bucket = self._runtime_pulse_counter // count
+            if self._runtime_pulse_counter % count == 0 and getattr(self, last_attr, -1) != bucket:
+                setattr(self, last_attr, bucket)
+                return True
+            return False
+        for _ in range(catchup):
+            self._runtime_pulse_counter += 1
+            self.performance_counters["runtime_pulses"] += 1
+            if due_once("violence", "violence_pulse_count", "_last_violence_bucket"):
+                try:
+                    if getattr(self, "combat_runtime", None):
+                        attempted.append("combat")
+                        before = self.performance_counters.get("combat_rounds_processed", 0)
+                        self.performance_counters["violence_dispatches"] = self.performance_counters.get("violence_dispatches", 0) + 1
+                        rounds = self.combat_runtime.process_due_rounds(self.combat_runtime.world_time() + int(max(0.0, started - real_started) * 1000), violence_pulse=self._runtime_pulse_counter)
+                        if rounds or self.performance_counters.get("combat_rounds_processed", 0) != before:
+                            processed.append("combat")
+                except Exception as exc:
+                    errors["combat"] = str(exc)[:160]; logger.exception("combat runtime pulse failed")
+            if due_once("point_update", "point_update_pulse_count", "_last_point_bucket"):
+                try:
+                    if getattr(self, "runtime_resources", None) and hasattr(self.runtime_resources, "process_due_regeneration"):
+                        attempted.append("point_update")
+                        count = self.runtime_resources.process_due_regeneration(started)
+                        if count: processed.append("point_update")
+                except Exception as exc:
+                    errors["point_update"] = str(exc)[:160]; logger.exception("point update pulse failed")
+            if due_once("autosave", "autosave_pulse_count", "_last_autosave_bucket"):
+                try:
+                    attempted.append("autosave")
+                    saved = self.autosave_dirty_characters()
+                    if saved: processed.append("autosave")
+                except Exception as exc:
+                    errors["autosave"] = str(exc)[:160]; logger.exception("autosave pulse failed")
+            if due_once("corpse_decay", "corpse_decay_pulse_count", "_last_corpse_decay_bucket"):
+                try:
+                    attempted.append("corpse_decay")
+                    decayed = self.process_corpse_decay(started)
+                    if decayed: processed.append("corpse_decay")
+                except Exception as exc:
+                    errors["corpse_decay"] = str(exc)[:160]; logger.exception("corpse decay pulse failed")
+            if due_once("world_hour", "world_hour_pulse_count", "_last_world_hour_bucket"):
+                try:
+                    attempted.append("world_hour")
+                    if self.active_world_id:
+                        self.advance_world_time(self.active_world_id, 1)
+                        processed.append("world_hour")
+                except Exception as exc:
+                    errors["world_hour"] = str(exc)[:160]; logger.exception("world hour pulse failed")
+        completed = time.monotonic(); duration_ms = int(max(0, (completed - started) * 1000))
+        self.performance_counters["runtime_pulse_duration_ms"] = duration_ms
+        self.performance_counters["runtime_pulse_max_duration_ms"] = max(self.performance_counters.get("runtime_pulse_max_duration_ms", 0), duration_ms)
+        return {"started_at": started, "completed_at": completed, "duration_ms": duration_ms, "scheduler_lag_ms": int(max(0, scheduler_lag_ms)), "pulse": self._runtime_pulse_counter, "missed_pulses": missed, "catchup_pulses": catchup, "subsystems_attempted": attempted, "subsystems_processed": processed, "subsystem_errors": errors, "backlog_counts": {"combat": self.performance_counters.get("combat_backlog", 0)}}
+
+    def autosave_dirty_characters(self) -> int:
+        self.performance_counters["autosave_attempts"] = self.performance_counters.get("autosave_attempts", 0) + 1
+        saved = 0
+        for cid in list(getattr(self, "_dirty_characters", {}).keys()):
+            char = self.active_characters.get(cid)
+            if not char:
+                continue
+            status = self.save_character_if_dirty(char, "autosave", force=False)
+            if status.get("saved"):
+                saved += 1
+        if saved:
+            self.performance_counters["autosave_successes"] = self.performance_counters.get("autosave_successes", 0) + saved
+            self.performance_counters["autosave_batches"] = self.performance_counters.get("autosave_batches", 0) + 1
+        else:
+            self.performance_counters["autosave_skipped_clean"] = self.performance_counters.get("autosave_skipped_clean", 0) + 1
+        return saved
+
+    def process_corpse_decay(self, now_monotonic: float | None = None) -> int:
+        now_utc = datetime.now(timezone.utc)
+        decayed = 0
+        for corpse in list(self.find_entities(entity_type="corpse")):
+            st = corpse.get("state") or {}
+            cid = str(corpse.get("entity_id") or corpse.get("instance_id") or "")
+            decay_at_raw = st.get("decay_at_utc")
+            if not decay_at_raw:
+                seconds = float(st.get("decay_seconds") or 180.0)
+                created_raw = st.get("created_at_utc") or datetime.now(timezone.utc).isoformat()
+                try: created = datetime.fromisoformat(str(created_raw).replace('Z','+00:00'))
+                except Exception: created = now_utc
+                st["created_at_utc"] = created.isoformat(); st["decay_at_utc"] = (created + __import__("datetime").timedelta(seconds=seconds)).isoformat()
+                st.pop("created_monotonic", None)
+                self.update_entity_state(cid, st, source_system="corpse_decay_migration")
+                decay_at_raw = st["decay_at_utc"]
+            try: decay_at = datetime.fromisoformat(str(decay_at_raw).replace('Z','+00:00'))
+            except Exception: decay_at = now_utc
+            if decay_at > now_utc:
+                continue
+            for item in self.find_container_items(cid):
+                self.move_item(item["instance_id"], "room", str(corpse.get("room_id") or ""))
+            self.destroy_entity(cid, reason="corpse_decay", source_system="corpse_decay")
+            decayed += 1
+        self.performance_counters["corpse_decays"] = self.performance_counters.get("corpse_decays", 0) + decayed
+        return decayed
+
+
 
     # Phase 5B living-world facade APIs.
     def get_world_time(self, world_id: str | None = None) -> dict[str, Any]: return self.living_world.ensure_world_time(world_id or self.active_world_id or "")
     def set_world_time(self, world_id: str, day: int, hhmm: str | None = None, hour: int | None = None, minute: int | None = None) -> dict[str, Any]: return self.living_world.set_world_time(world_id, day, hhmm, hour, minute)
     def advance_world_time(self, world_id: str, minutes: int) -> dict[str, Any]:
         wt = self.living_world.advance_world_time(world_id, minutes)
-        if getattr(self, "survival_needs", None): self.survival_needs.process_world_needs(world_id, wt)
+        if getattr(self, "survival_needs", None):
+            self.survival_needs.process_world_needs(world_id, wt)
+            self.survival_needs.process_due_runtime_objects(wt)
         return wt
+    def runtime_pulse(self, minutes: int = 1) -> dict[str, Any]:
+        world_id=self.active_world_id or ''
+        wt=self.advance_world_time(world_id, max(1, int(minutes))) if world_id else {'total_minutes':0}
+        if getattr(self, 'abilities', None):
+            try: self.abilities.process_ability_casts(world_id, int(wt.get('total_minutes') or 0))
+            except Exception: pass
+        self.process_runtime_pulse(time.monotonic())
+        self.process_due_agent_controllers(int(wt.get('total_minutes') or 0))
+        return wt
+
+    def process_due_agent_controllers(self, world_time: int, limit: int = 10) -> int:
+        token = "agentclaim_" + uuid.uuid4().hex; now = datetime.now(timezone.utc).isoformat(); claimed: list[tuple[str, str]] = []
+        with sqlite3.connect(self.state_store.db_path, timeout=30) as con:
+            con.execute("BEGIN IMMEDIATE")
+            rows = con.execute("SELECT controller_id,actor_id FROM agent_controllers WHERE controller_type='deterministic' AND enabled=1 AND COALESCE(next_decision_world_time,0)<=? ORDER BY priority DESC,controller_id LIMIT ?", (world_time, int(limit))).fetchall()
+            for cid, aid in rows:
+                if con.execute("UPDATE agent_controllers SET claim_token=?,claim_expires_at=? WHERE controller_id=? AND (claim_token='' OR claim_token IS NULL OR claim_expires_at<?)", (token, now, cid, now)).rowcount:
+                    claimed.append((cid, aid))
+            con.commit()
+        for cid, aid in claimed:
+            try: self.deterministic_controller_evaluator.step(aid, cid)
+            except Exception: pass
+            with sqlite3.connect(self.state_store.db_path) as con:
+                prof = con.execute("SELECT p.decision_interval_world_minutes FROM agent_controller_profiles p JOIN agent_controllers c ON c.controller_profile_id=p.profile_id WHERE c.controller_id=?", (cid,)).fetchone()
+                interval = int((prof[0] if prof else 5) or 5)
+                con.execute("UPDATE agent_controllers SET claim_token='',claim_expires_at='',last_decision_world_time=?,next_decision_world_time=? WHERE controller_id=? AND claim_token=?", (world_time, world_time + max(1, interval), cid, token))
+        return len(claimed)
+
+    def drain_session_output(self, character_id: str) -> list[str]:
+        if getattr(self, 'combat_runtime', None):
+            return self.combat_runtime.drain_output(character_id)
+        return []
+
+    def _active_character_ids_in_room(self, room_id: str, *, exclude: set[str] | None = None) -> list[str]:
+        exclude = exclude or set()
+        ids: list[str] = []
+        for cid, ch in getattr(self, "active_characters", {}).items():
+            if cid in exclude or cid in ids:
+                continue
+            sid = getattr(self, "character_session_ids", {}).get(cid, "")
+            sess = getattr(self, "sessions", {}).get(sid)
+            if sess is not None and getattr(sess, "state", "playing") == "disconnected":
+                continue
+            if getattr(ch, "room_id", "") == room_id:
+                ids.append(cid)
+        return ids
+
+    def _enqueue_room_output(self, character_id: str, message: str, *, room_id: str = "", category: str = "room_action", origin_request_id: str = "", delivery_mode: str = "async_only") -> None:
+        self.performance_counters["command_outputs_enqueued_async"] += 1
+        if getattr(self, "combat_runtime", None):
+            self.combat_runtime.enqueue_output(character_id, message, room_id=room_id, category=category)
+
+    def deliver_room_action(self, room_id: str, message: str, *, actor_id: str = "", category: str = "room_action") -> None:
+        for cid in self._active_character_ids_in_room(room_id, exclude={actor_id} if actor_id else set()):
+            self._enqueue_room_output(cid, message, room_id=room_id, category=category)
+        self.event_bus.publish("room_action_observed", {"room_id": room_id, "actor_id": actor_id, "message_kind": category}, source_system="runtime", world_id=self.active_world_id or "", room_id=room_id)
+
+
+    def deliver_perspective_action(self, actor: MudCharacter, target: Any, room_id: str, actor_message: str, target_message: str | None, observer_message: str | None, *, semantic_role: str = "system", intent: str = "SYSTEM", exclusions: set[str] | None = None, visibility_policy: Any = None):
+        """Deliver actor/target/observer output through one runtime queue path."""
+        from engine.mud_commands import CommandResult
+        actor_id = getattr(actor, "id", "")
+        excluded = set(exclusions or set()) | ({actor_id} if actor_id else set())
+        target_id = ""
+        if target is not None:
+            target_id = str(target.get("character_id") or target.get("id") or target.get("actor_id") or "") if isinstance(target, dict) else str(getattr(target, "id", ""))
+            if target_message and target_id and target_id != actor_id:
+                self._enqueue_room_output(target_id, semantic(semantic_role, target_message), room_id=room_id, category=str(intent).lower())
+                excluded.add(target_id)
+        if observer_message:
+            for cid in self._active_character_ids_in_room(room_id, exclude=excluded):
+                self._enqueue_room_output(cid, semantic(semantic_role, observer_message), room_id=room_id, category=str(intent).lower())
+        self.event_bus.publish("perspective_action_delivered", {"room_id": room_id, "actor_id": actor_id, "target_id": target_id, "intent": intent}, source_system="runtime", world_id=self.active_world_id or "", character_id=actor_id, room_id=room_id)
+        return CommandResult(narrative=semantic(semantic_role, actor_message), display_intent=intent, semantic_role=semantic_role)
+
     def pause_world_time(self, world_id: str) -> dict[str, Any]: return self.living_world.pause_world_time(world_id)
     def resume_world_time(self, world_id: str) -> dict[str, Any]: return self.living_world.resume_world_time(world_id)
     def get_entity_profile(self, instance_id: str) -> dict[str, Any]: return self.living_world.get_entity_profile(instance_id)
     def get_entity_context(self, instance_id: str) -> dict[str, Any]: return self.living_world.get_context(instance_id)
     def evaluate_entity_schedule(self, instance_id: str, world_time: dict[str, Any] | None = None) -> dict[str, Any]: return self.living_world.evaluate_schedule(instance_id, world_time)
-    def apply_entity_schedule(self, instance_id: str, world_time: dict[str, Any] | None = None) -> dict[str, Any]: return self.living_world.apply_schedule(instance_id, world_time)
+    def apply_entity_schedule(self, instance_id: str, world_time: dict[str, Any] | None = None) -> dict[str, Any]: return self.schedule_service.apply(instance_id, world_time)
     def find_room_path(self, start_room_id: str, target_room_id: str, max_depth: int = 20) -> dict[str, Any]: return self.living_world.find_room_path(start_room_id, target_room_id, max_depth)
     def move_entity_along_path(self, instance_id: str, path: list[str], steps: int = 1) -> dict[str, Any]: return self.move_entity(instance_id, path[min(steps, len(path)-1)]) if path else {}
     def simulate_world(self, world_id: str, minutes: int) -> dict[str, Any]: return self.living_world.simulate_world(world_id, minutes)
@@ -619,6 +1007,62 @@ class MudRuntime:
     def query_entity_memories(self, instance_id: str, **kwargs: Any) -> list[dict[str, Any]]: return self.living_world.query_memories(instance_id, **kwargs)
     def get_recent_memories(self, instance_id: str, limit: int = 10) -> list[dict[str, Any]]: return self.living_world.query_memories(instance_id, limit=limit)
     def get_memories_about(self, instance_id: str, subject_type: str, subject_id: str) -> list[dict[str, Any]]: return self.living_world.query_memories(instance_id, subject_type, subject_id)
+
+
+    def _progression_service(self):
+        from engine.progression import ProgressionService
+        store = self.state_store
+        if not hasattr(store, "world_id"): store.world_id = self.active_world_id or "shattered_realms"  # type: ignore[attr-defined]
+        if not hasattr(store, "campaign_id"): store.campaign_id = self.active_world_id or "shattered_realms"  # type: ignore[attr-defined]
+        if not hasattr(store, "initialize"):
+            def _init_progression_tables():
+                with store.connect() as con:
+                    con.execute("""CREATE TABLE IF NOT EXISTS actor_progression_state(progression_state_id TEXT PRIMARY KEY,world_id TEXT,actor_type TEXT,actor_id TEXT,species_id TEXT,race_id TEXT,primary_class_id TEXT,primary_class_track_id TEXT,profession_ids_json TEXT,level INTEGER,experience INTEGER,experience_to_next INTEGER,total_experience INTEGER,practice_sessions INTEGER,training_sessions INTEGER,skill_points INTEGER,attribute_points INTEGER,talent_points_placeholder INTEGER,remort_count INTEGER,prestige_rank INTEGER,advancement_flags_json TEXT,last_level_at TEXT,created_at TEXT,updated_at TEXT,metadata_json TEXT,UNIQUE(actor_type,actor_id))""")
+                    con.execute("""CREATE TABLE IF NOT EXISTS actor_advancement_currency_events(event_id TEXT PRIMARY KEY,actor_id TEXT,currency_id TEXT,event_type TEXT,amount INTEGER,source_type TEXT,source_id TEXT,reason TEXT,balance_after INTEGER,created_at TEXT,metadata_json TEXT)""")
+                    con.execute("""CREATE TABLE IF NOT EXISTS actor_ability_progression(actor_id TEXT,ability_id TEXT,rank INTEGER,maximum_rank INTEGER,proficiency INTEGER,learned_at_level INTEGER,source_class_id TEXT,source_race_id TEXT,source_profession_id TEXT,source_track_id TEXT,practice_cost INTEGER,training_cost INTEGER,skill_point_cost INTEGER,requirements_json TEXT,active INTEGER,learned_at TEXT,metadata_json TEXT,PRIMARY KEY(actor_id,ability_id))""")
+                    con.execute("""CREATE TABLE IF NOT EXISTS actor_progression_modifiers(modifier_id TEXT PRIMARY KEY,actor_id TEXT,source_type TEXT,source_id TEXT,modifier_domain TEXT,modifier_key TEXT,operation TEXT,value INTEGER,level INTEGER,active INTEGER,metadata_json TEXT)""")
+                    con.execute("""CREATE TABLE IF NOT EXISTS actor_experience_events(event_id TEXT PRIMARY KEY,world_id TEXT,actor_type TEXT,actor_id TEXT,source_type TEXT,source_id TEXT,base_amount INTEGER,final_amount INTEGER,level_delta INTEGER,total_after INTEGER,reason TEXT,applied_formula_id TEXT,created_at TEXT,metadata_json TEXT)""")
+            store.initialize = _init_progression_tables  # type: ignore[attr-defined]
+        key = (getattr(store, "db_path", None), self.active_world_id or "shattered_realms")
+        if self._progression_service_singleton is None or self._progression_service_key != key:
+            self._progression_service_singleton = ProgressionService(store)
+            self._progression_service_key = key
+        return self._progression_service_singleton
+
+    def _economy_service(self):
+        from engine.economy import EconomyService
+        key = (self.state_store.db_path, self.active_world_id or "shattered_realms")
+        if self._economy_service_singleton is None or self._economy_service_key != key:
+            self._economy_service_singleton = EconomyService(self.state_store.db_path, world_id=self.active_world_id or "shattered_realms", world_root=getattr(getattr(self, "active_world", None), "root", None), event_bus=getattr(self, "event_bus", None), runtime=self)
+            self._economy_service_key = key
+        return self._economy_service_singleton
+
+    def _ensure_starter_progression(self, char: MudCharacter) -> None:
+        ps = self._progression_service()
+        repair = ps.repair_legacy_progression_identity(char, apply=True)
+        state = repair.get("state") or ps.initialize_actor_progression(char, defaults={})
+        try:
+            ident = ps.progression_identity_snapshot(char.id, "player", state=state)
+            setattr(char, "race_id", ident.get("race_id")); setattr(char, "race_name", ident.get("race_name"))
+            setattr(char, "primary_class_id", ident.get("primary_class_id")); setattr(char, "class_name", ident.get("display_class_name")); setattr(char, "primary_class_track_id", ident.get("primary_class_track_id"))
+            data = getattr(char, "actor_data", {}) if isinstance(getattr(char, "actor_data", {}), dict) else {}
+            versions = data.setdefault("source_versions", {})
+            versions["progression"] = ident.get("source_version") or state.get("updated_at") or state.get("created_at")
+            versions["progression_identity"] = (ident.get("race_id"), ident.get("primary_class_id"), ident.get("primary_class_track_id"), ident.get("source_version"))
+            versions.setdefault("birth_state", "legacy-age-default-v1")
+            char.actor_data = data
+        except Exception:
+            logging.getLogger(__name__).exception("character_entry_progression_identity_hydration_failed", extra={"character_id": getattr(char,"id","")})
+        if not getattr(char, "age", None): setattr(char, "age", 18)
+        if not getattr(char, "played_seconds", None): setattr(char, "played_seconds", 0)
+        if not getattr(char, "hunger", None): setattr(char, "hunger", "Full")
+        if not getattr(char, "thirst", None): setattr(char, "thirst", "Hydrated")
+        if repair.get("applied") and hasattr(self, "projection_cache"):
+            self.invalidate_character_projections(char.id, "progression_identity")
+        for aid in ("set_camp", "build_campfire", "recall"):
+            ps.learn_ability(char.id, aid, {"source_type":"starter_character","source_id":"starter_demonstration","default_proficiency":1,"maximum_proficiency":100,"maximum_rank":100})
+        if self.abilities:
+            self.abilities.actor_from_character(char)
 
     def create_runtime_session(self, transport_type: str, remote_address: str = "") -> MudSession:
         now = datetime.now(timezone.utc).isoformat()
@@ -688,20 +1132,54 @@ class MudRuntime:
         self.event_bus.publish("session_authenticated", {"session_id": session_id, "account_id": account_id, "transport_type": session.transport_type}, source_system="session", account_id=account_id, session_id=session_id, transport_type=session.transport_type)
 
     def load_world(self, world_id: str) -> Any:
-        """Load a read-only world template package for gameplay."""
+        """Load a read-only world template package for gameplay.
+
+        Repeated browser select/list/restore requests attach to the resident
+        generation instead of rematerializing content and rerunning combat
+        warmup.
+        """
+        self.performance_counters["world_load_requests"] = self.performance_counters.get("world_load_requests", 0) + 1
+        if self.active_world_id == world_id and getattr(self, "active_world", None) is not None and getattr(self, "combat_ready", False):
+            self.performance_counters["world_load_joined_existing"] = self.performance_counters.get("world_load_joined_existing", 0) + 1
+            self.performance_counters["duplicate_world_loads_prevented"] = self.performance_counters.get("duplicate_world_loads_prevented", 0) + 1
+            return self.active_world
+        self.performance_counters["world_load_actual"] = self.performance_counters.get("world_load_actual", 0) + 1
+        self.performance_counters["world_package_loads"] += 1
         self.active_world = self.world_registry.load_world(world_id)
         self.plugin_registry.resolve_required([str(p) for p in self.active_world.manifest.get("required_plugins", [])])
         self.event_bus.publish("plugins_resolved", {"world_id": world_id}, source_system="plugin", world_id=world_id)
         self.active_world_id = world_id
+        self.attribute_service = CharacterAttributeService(self.state_store, world_id, self.active_world.root, self.event_bus)
+        self.attribute_service.runtime = self
+        self.combat_stat_service = CombatStatService(self.attribute_service)
         self._load_item_templates()
         self._load_entity_templates()
+        self.performance_counters["entity_materialization_runs"] = self.performance_counters.get("entity_materialization_runs", 0) + 1
         self.materialize_world_content(world_id)
+        self.rebuild_room_occupancy_admin_only()
+        try:
+            from engine.zone_resets import ZoneResetService
+            ZoneResetService(runtime=self, db_path=self.state_store.db_path).tick(world_id)
+        except Exception as exc:
+            print(f"[zone-reset] startup tick skipped: {exc}")
         self.living_world.ensure_world_time(world_id)
-        self.abilities = AbilityExecutionService(self.state_store.db_path, self.active_world, self.event_bus, world_id)
+        self.actor_registry = getattr(self, "actor_registry", ActorRegistry())
+        self.abilities = AbilityExecutionService(self.state_store.db_path, self.active_world, self.event_bus, world_id, actor_registry=self.actor_registry, combat_runtime=self.combat_runtime, combat_stat_service=self.combat_stat_service, resource_service=getattr(self, 'resource_service', None), effect_service=getattr(self, 'effect_service', None), lifecycle_service=getattr(self, 'lifecycle_service', None), item_service=getattr(self, 'inventory_service', None), world_registry=self.world_registry, room_service=getattr(self, 'environment', None), formula_engine=getattr(self, 'formula_engine', None), state_store=self.state_store)
+        self.abilities.runtime = self
+        if self.abilities.actor_registry is not self.actor_registry:
+            raise RuntimeError("AbilityExecutionService registry wiring failed during world load")
+        self.abilities.assert_runtime_combat_authority()
         self.command_engine.ability_service = self.abilities
         self.command_engine.world_id = world_id
         self.environment = EnvironmentService(self.state_store.db_path, self.active_world.root, world_id, self.event_bus)
         self.command_engine.environment_service = self.environment
+        self.combat_runtime.refresh_content()
+        self.performance_counters["combat_warmup_runs"] = self.performance_counters.get("combat_warmup_runs", 0) + 1
+        self.combat_warmup = CombatWarmupService(self)
+        self.combat_warmup.warm()
+        self.combat_ready = self.combat_warmup.report.status in {"ready", "warning"}
+        if not (self.combat_runtime.engine.combat_stats is self.combat_stat_service and self.combat_runtime.engine.resolution.combat_stats is self.combat_stat_service and self.combat_runtime.engine.resolution.runtime is self):
+            raise RuntimeError('Combat startup invariant failed: canonical combat services are not wired to MudRuntime')
         self.hooks.emit("world_loaded", world_id=world_id, world=self.active_world)
         self.event_bus.publish("world_loaded", {"world_id": world_id}, source_system="runtime", world_id=world_id)
         return self.active_world
@@ -750,15 +1228,144 @@ class MudRuntime:
             role="player",
             room_id=start_room,
             abilities=[value for value in (race_id, class_id) if value],
+            actor_data={"race_id": race_id, "class_id": class_id, "primary_class_id": class_id},
         )
         self.state_store.save_character(char, world_id)
         if account_id:
             with sqlite3.connect(self.state_store.db_path) as conn:
                 conn.execute("UPDATE characters SET account_id=? WHERE id=?", (account_id, char.id))
         self._spawn_starter_items(char.id)
+        self._ensure_starter_progression(char)
         self.hooks.emit("character_creation", world_id=world_id, character=char)
         self.event_bus.publish("character_created", {"account_id": account_id, "character_id": char.id, "character_name": char.name}, source_system="runtime", account_id=account_id, world_id=world_id, character_id=char.id)
         return self._character_payload(char, world_id)
+
+    def register_live_character(self, character: MudCharacter) -> None:
+        """Refresh the canonical live Actor for a loaded character.
+
+        MudRuntime owns command-time character loading from persistence. Every
+        freshly loaded character object is immediately converted into the one
+        shared ActorRegistry entry used by AbilityExecutionService and other
+        runtime services, preventing stale per-service actor dictionaries.
+        """
+        if not hasattr(self, "actor_registry"):
+            self.actor_registry = ActorRegistry()
+        actor = actor_from_runtime_character(character, self.active_world_id or getattr(character, "world_id", ""))
+        actor.actor_id = f"character:{character.id}"
+        reconcile_actor_position(actor, self, reason="character_entry", persist_dirty=True)
+        if getattr(self, "combat_runtime", None):
+            self.combat_runtime.resident_actors[actor.actor_id] = actor
+        registry_actor = actor_from_runtime_character(character, self.active_world_id or getattr(character, "world_id", ""))
+        reconcile_actor_position(registry_actor, self, reason="character_entry", persist_dirty=False)
+        self.actor_registry.register(registry_actor)
+        data = character.actor_data if isinstance(getattr(character, "actor_data", {}), dict) else {}
+        data["hydration_generation"] = int(data.get("hydration_generation", 0) or 0) + 1
+        data.update({"position": actor.combat_profile.get("position", "standing"), "posture": actor.combat_profile.get("position", "standing"), "actor_projection": actor.to_dict()})
+        character.actor_data = data
+        if getattr(self, "abilities", None):
+            self.abilities.actor_registry = self.actor_registry
+            self.abilities.actors = self.actor_registry.actors
+            if hasattr(self.abilities, "runtime"):
+                self.abilities.runtime = self
+        registered = self.actor_registry.get(character.id)
+        if registered is None or registered.actor_id != character.id:
+            raise RuntimeError(f"Canonical actor registration failed for {character.id}")
+        if getattr(self, "abilities", None) and self.abilities.actor_registry is not self.actor_registry:
+            raise RuntimeError("AbilityExecutionService is not using MudRuntime.actor_registry")
+
+    def unregister_live_character(self, character_id: str) -> None:
+        actor_id = character_id if str(character_id).startswith("character:") else f"character:{character_id}"
+        if getattr(self, "combat_runtime", None):
+            try:
+                self.combat_runtime.remove_resident_actor(actor_id)
+            except Exception:
+                self.combat_runtime.resident_actors.pop(actor_id, None)
+        if getattr(self, "actor_registry", None):
+            self.actor_registry.unregister(character_id)
+            self.actor_registry.unregister(actor_id)
+        if getattr(self, "abilities", None):
+            self.abilities.unregister_actor(character_id)
+            self.abilities.unregister_actor(actor_id)
+
+
+    def _source_versions_for_character(self, character: MudCharacter) -> dict[str, Any]:
+        data = getattr(character, "actor_data", {}) or {}
+        versions = data.get("source_versions", {}) if isinstance(data, dict) else {}
+        return {
+            "character": versions.get("character", getattr(character, "updated_at", "runtime")),
+            "attributes": versions.get("attributes", "attributes-runtime"),
+            "progression": versions.get("progression", getattr(character, "xp", 0)),
+            "progression_identity": versions.get("progression_identity", (getattr(character, "race_id", ""), getattr(character, "primary_class_id", ""), getattr(character, "primary_class_track_id", ""))),
+            "birth_state": versions.get("birth_state", getattr(character, "birthday", getattr(character, "age", ""))),
+            "currency": versions.get("currency", getattr(character, "gold", 0)),
+            "inventory": versions.get("inventory", len(getattr(character, "inventory", []) or [])),
+            "equipment": versions.get("equipment", len(getattr(character, "equipment", []) or [])),
+            "effects": versions.get("effects", len(getattr(character, "effects", getattr(character, "affects", [])) or [])),
+            "cooldowns": versions.get("cooldowns", "cooldowns-runtime"),
+            "ability_grants": versions.get("ability_grants", tuple(getattr(character, "abilities", []) or [])),
+            "resource_maxima": versions.get("resource_maxima", (getattr(character, "max_hp", 0), getattr(character, "max_mp", 0), getattr(character, "max_stamina", 0))),
+            "location": versions.get("location", getattr(character, "room_id", "")),
+            "world_definitions": getattr(getattr(self, "active_world", None), "content_hash", getattr(self, "active_world_id", "")),
+        }
+
+    def build_projection(self, character: MudCharacter, projection_type: str, *, origin: str = "sync") -> Any:
+        projection_type = {"score_compact": "score", "effects_display": "effects", "equipment_display": "equipment"}.get(projection_type, projection_type)
+        deps = {
+            "score": ("character", "attributes", "progression", "progression_identity", "birth_state", "currency", "inventory", "equipment", "effects", "location", "world_definitions"),
+            "worth": ("progression", "currency", "world_definitions"),
+            "equipment": ("equipment", "world_definitions"),
+            "inventory": ("inventory", "world_definitions"),
+            "effects": ("effects", "world_definitions"),
+            "abilities": ("ability_grants", "cooldowns", "world_definitions"),
+            "combatstats": ("attributes", "equipment", "effects", "resource_maxima", "world_definitions"),
+            "attributes": ("attributes", "world_definitions"),
+            "prompt": ("resource_maxima", "location"),
+            "room_render": ("location", "world_definitions"),
+            "location": ("location", "world_definitions"),
+            "primary_stats": ("attributes", "effects"),
+            "combat_stats": ("attributes", "equipment", "effects", "resource_maxima", "world_definitions"),
+            "ability_availability": ("ability_grants", "cooldowns", "equipment", "effects", "world_definitions"),
+        }.get(projection_type, (projection_type,))
+        key = self.projection_cache.source_key(character, projection_type, deps)
+        cached = self.projection_cache.get(character, projection_type, key)
+        if cached is not None:
+            if origin == "background": self.performance_counters["warmup_cache_hits"] += 1
+            return cached
+        started = time.monotonic()
+        if projection_type in {"score", "primary_stats", "combat_stats"}:
+            value = self.character_display_snapshots.build_snapshot(character)
+        elif projection_type == "worth":
+            value = self.character_display_snapshots.build_worth_snapshot(character)
+        elif projection_type == "equipment":
+            value = list((getattr(character, "equipment", {}) or {}).values()) if isinstance(getattr(character, "equipment", None), dict) else list(getattr(character, "equipment", []) or [])
+        elif projection_type == "inventory":
+            value = list(getattr(character, "inventory", []) or [])
+        elif projection_type == "effects":
+            value = getattr(character, "affects", {}) or getattr(character, "effects", {}) or {}
+        elif projection_type == "abilities":
+            svc = getattr(self.command_engine, "ability_service", None) or getattr(self, "abilities", None)
+            value = svc.get_actor_abilities(character.id) if svc and hasattr(svc, "get_actor_abilities") else list(getattr(character, "abilities", []) or [])
+        elif projection_type in {"combatstats", "attributes"}:
+            value = self.character_display_snapshots.build_snapshot(character)
+        elif projection_type == "prompt":
+            colors = self.get_effective_mud_colors(); value = {"prompt_html": render_prompt(character, colors), "prompt_text": render_semantic_plain(render_prompt(character, colors))}
+        elif projection_type == "room_render":
+            room = self._current_room(character); colors = self.get_effective_mud_colors(); value = {"html": render_room(room, colors, character), "text": self._room_text(room), "room_id": character.room_id}
+        elif projection_type == "location":
+            room = self._current_room(character); value = {"room_id": character.room_id, "room_name": getattr(room, "title", "")}
+        else:
+            value = None
+        self.projection_cache.put(character, projection_type, key, value, origin=origin)
+        if origin == "background": self.performance_counters["warmup_build_ms"] += int((time.monotonic()-started)*1000)
+        return value
+
+    def invalidate_character_projections(self, character_id: str, reason: str) -> None:
+        affected = self.projection_cache.invalidate(character_id, reason)
+        self.performance_counters["projection_invalidations"] += len(affected)
+        if hasattr(self, "character_display_snapshots") and ({"*", "score", "worth", "combat_stats", "primary_stats"} & affected):
+            self.character_display_snapshots.invalidate(character_id)
+        if hasattr(self, "projection_warmup"):
+            self.projection_warmup.cancel(character_id)
 
     def enter_world(self, character_id: str, account_id: str = "", session_id: str = "") -> dict[str, Any]:
         """Enter the loaded world as a SQLite-backed character."""
@@ -769,7 +1376,7 @@ class MudRuntime:
                     raise PermissionError("Character does not belong to this account.")
                 if row and not row[0]:
                     conn.execute("UPDATE characters SET account_id=? WHERE id=?", (account_id, character_id))
-        char = self.state_store.load_character(character_id)
+        char = self._resident_character(character_id)
         if char is None:
             raise ValueError(f"Character not found: {character_id}")
         if not self.active_world_id:
@@ -777,6 +1384,33 @@ class MudRuntime:
                 row = conn.execute("SELECT world_id FROM characters WHERE id = ?", (character_id,)).fetchone()
             if row and row[0]:
                 self.load_world(str(row[0]))
+        entry_started = time.monotonic()
+        entry_id = "entry_" + uuid.uuid4().hex
+        if getattr(self, "runtime_resources", None):
+            self.runtime_resources.world_id = self.active_world_id or self.runtime_resources.world_id
+            self.runtime_resources.hydrate_character(char)
+        self._ensure_starter_progression(char)
+        actor_start = time.monotonic()
+        self.register_live_character(char)
+        self.performance_counters["actor_registration_ms"] += int((time.monotonic() - actor_start) * 1000)
+        self.active_characters[character_id] = char
+        if session_id:
+            self.session_active_character[session_id] = character_id
+            self.character_session_ids[character_id] = session_id
+        ctx = CharacterEntryContext(
+            entry_id=entry_id, session_id=session_id, account_id=account_id, character_id=character_id, world_id=self.active_world_id or "",
+            character=char, actor=self.actor_registry.get(character_id) if getattr(self, "actor_registry", None) else None, room=self._current_room(char),
+            progression_snapshot=self._progression_service().get_actor_progression(character_id) if hasattr(self, "_progression_service") else {},
+            economy_snapshot={}, inventory_snapshot=tuple(getattr(char, "inventory", []) or ()),
+            equipment_snapshot=tuple((getattr(char, "equipment", {}) or {}).values()) if isinstance(getattr(char, "equipment", None), dict) else tuple(getattr(char, "equipment", []) or ()),
+            effect_snapshot=tuple((getattr(char, "effects", {}) or {}).values()) if isinstance(getattr(char, "effects", None), dict) else tuple(getattr(char, "effects", []) or ()),
+            cooldown_snapshot=(), ability_grants=tuple(getattr(char, "abilities", []) or ()), source_versions=self._source_versions_for_character(char),
+        )
+        setattr(char, "entry_context", ctx)
+        essential_start = time.monotonic()
+        for projection in ("primary_stats", "combat_stats", "ability_availability", "equipment", "effects", "room_render", "prompt", "location"):
+            self.build_projection(char, projection)
+        self.performance_counters["essential_snapshot_ms"] += int((time.monotonic() - essential_start) * 1000)
         self.hooks.emit("player_login", world_id=self.active_world_id or "", character=char)
         self.event_bus.publish("character_loaded", {"character_id": char.id, "character_name": char.name}, source_system="runtime", world_id=self.active_world_id or "", character_id=char.id)
         self.sessions[character_id] = MudSession(
@@ -791,21 +1425,74 @@ class MudRuntime:
         with sqlite3.connect(self.state_store.db_path) as conn:
             conn.execute("UPDATE characters SET last_played_at=CURRENT_TIMESTAMP WHERE id=?", (character_id,))
         self.event_bus.publish("character_selected", {"account_id": account_id, "character_id": char.id, "session_id": session_id}, source_system="runtime", account_id=account_id, world_id=self.active_world_id or "", character_id=char.id, session_id=session_id)
-        self.event_bus.publish("character_entered_world", {"account_id": account_id, "character_id": char.id, "character_name": char.name, "room_id": char.room_id, "session_id": session_id}, source_system="runtime", account_id=account_id, world_id=self.active_world_id or "", character_id=char.id, session_id=session_id)
-        return {"ok": True, "character": self._character_payload(char, self.active_world_id or ""), "view": self.play_view(character_id)}
+        self.event_bus.publish("character_entered_world", {"account_id": account_id, "character_id": char.id, "character_name": char.name, "room_id": char.room_id, "session_id": session_id, "entry_id": entry_id}, source_system="runtime", account_id=account_id, world_id=self.active_world_id or "", character_id=char.id, session_id=session_id)
+        view_start = time.monotonic(); view = self.play_view(character_id); self.performance_counters["initial_room_render_ms"] += int((time.monotonic() - view_start) * 1000)
+        self.performance_counters["character_entry_total_ms"] += int((time.monotonic() - entry_started) * 1000)
+        self.projection_warmup.schedule(char, session_id)
+        return {"ok": True, "entry_id": entry_id, "character": self._character_payload(char, self.active_world_id or ""), "view": view, "async_cursor": self._async_sequences.get(character_id, 0)}
+
+    def _resident_character(self, character_id: str) -> MudCharacter | None:
+        if not character_id:
+            return None
+        char = self.active_characters.get(character_id)
+        if char is not None:
+            return char
+        self.performance_counters["character_sql_loads"] += 1
+        char = self.state_store.load_character(character_id)
+        if char is not None:
+            if getattr(self, "runtime_resources", None):
+                self.runtime_resources.hydrate_character(char)
+            self.active_characters[character_id] = char
+        return char
+
+    def prompt_snapshot(self, character_id: str) -> dict[str, Any]:
+        char = self._resident_character(character_id)
+        if char is None:
+            return {"prompt_html": "", "prompt_text": ""}
+        cached = self.build_projection(char, "prompt")
+        self.performance_counters["prompt_renders"] += 1
+        return dict(cached or {"prompt_html": "", "prompt_text": ""})
 
     def play_view(self, character_id: str) -> dict[str, Any]:
-        """Render the current room through the single MUD display pipeline."""
-        char = self.state_store.load_character(character_id) if character_id else None
-        if char is None:
-            return {"html": "", "text": "Create a character to enter the world.", "prompt": ">"}
-        room = self._current_room(char)
-        colors = self.get_effective_mud_colors()
-        html = render_room(room, colors, char)
-        self.event_bus.publish("room_rendered", {"world_id": self.active_world_id or "", "character_id": char.id, "room_id": char.room_id, "output_format": "web_html", "render_kind": "room"}, source_system="render", world_id=self.active_world_id or "", character_id=char.id)
-        prompt = render_prompt(char, colors)
-        self.event_bus.publish("prompt_rendered", {"world_id": self.active_world_id or "", "character_id": char.id, "room_id": char.room_id, "output_format": "web_html", "render_kind": "prompt"}, source_system="render", world_id=self.active_world_id or "", character_id=char.id)
-        return {"html": html, "text": self._room_text(room), "prompt": prompt, "room_id": char.room_id}
+        """Render the current room using the resident active character when available."""
+        self.performance_counters["play_view_requests"] += 1
+        if character_id in self._play_view_inflight:
+            self.performance_counters["overlapping_requests_prevented"] += 1
+            return {"html": "", "text": "", "prompt": "", "room_id": "", "async_messages": [], "not_modified": True}
+        self._play_view_inflight.add(character_id)
+        try:
+            char = self._resident_character(character_id)
+            if char is None:
+                return {"html": "", "text": "Create a character to enter the world.", "prompt": ">"}
+            rendered = self.build_projection(char, "room_render") or {}
+            prompt_data = self.build_projection(char, "prompt") or {}
+            self.performance_counters["room_renders"] += 1
+            self.event_bus.publish("room_rendered", {"world_id": self.active_world_id or "", "character_id": char.id, "room_id": char.room_id, "output_format": "web_html", "render_kind": "room"}, source_system="render", world_id=self.active_world_id or "", character_id=char.id)
+            self.performance_counters["prompt_renders"] += 1
+            self.event_bus.publish("prompt_rendered", {"world_id": self.active_world_id or "", "character_id": char.id, "room_id": char.room_id, "output_format": "web_html", "render_kind": "prompt"}, source_system="render", world_id=self.active_world_id or "", character_id=char.id)
+            async_messages = self.drain_session_output(character_id)
+            return {"html": rendered.get("html", ""), "text": rendered.get("text", ""), "prompt": prompt_data.get("prompt_html", ""), "room_id": char.room_id, "async_messages": async_messages, "async_cursor": self._async_sequences.get(character_id, 0)}
+        finally:
+            self._play_view_inflight.discard(character_id)
+
+    def async_messages(self, character_id: str, after: int = 0, session_id: str = "") -> dict[str, Any]:
+        self.performance_counters["async_message_requests"] += 1
+        packets = self.combat_runtime.drain_output_packets(character_id) if getattr(self, "combat_runtime", None) else []
+        for pkt in packets:
+            seq = self._async_sequences.get(character_id, 0) + 1
+            self._async_sequences[character_id] = seq
+            row = dict(pkt)
+            row.update({"message_id": seq, "sequence_id": seq, "session_id": session_id or self.character_session_ids.get(character_id, ""), "event_type": "async_output", "session_state": "playing", "created_at": datetime.now(timezone.utc).isoformat()})
+            self._async_messages.setdefault(character_id, []).append(row)
+        new = [m for m in self._async_messages.get(character_id, []) if int(m.get("message_id") or 0) > int(after or 0)]
+        self.performance_counters["messages_delivered"] += len(new)
+        self.performance_counters["async_messages_delivered"] += len(new)
+        prompt_changed = any(bool(m.get("prompt_changed") or m.get("prompt_invalidated")) for m in new)
+        resource_changed = any(bool(m.get("resource_changed")) for m in new)
+        position_changed = any(bool(m.get("position_changed")) for m in new)
+        condition_changed = any(bool(m.get("condition_changed")) for m in new)
+        prompt = next((m for m in reversed(new) if m.get("prompt_html") or m.get("prompt_text")), {})
+        return {"ok": True, "messages": new, "cursor": self._async_sequences.get(character_id, max(int(after or 0), 0)), "prompt_invalidated": prompt_changed, "prompt_changed": prompt_changed, "resource_changed": resource_changed, "position_changed": position_changed, "condition_changed": condition_changed, "prompt_html": prompt.get("prompt_html", ""), "prompt_text": prompt.get("prompt_text", "")}
 
 
     def _builder_visible(self, char: MudCharacter) -> bool:
@@ -834,6 +1521,15 @@ class MudRuntime:
         if live is not None:
             return live, "live"
         return None, "missing"
+
+    def room_from_id(self, room_id: str, viewer: Any = None) -> MudRoom:
+        data, _source = self.runtime_room_data(viewer if isinstance(viewer, MudCharacter) else MudCharacter(id="_entity_viewer", name="Entity", role="player", room_id=str(room_id or "")), room_id)
+        if data is None:
+            return MudRoom(id=str(room_id or "void"), area_id="", title="Missing Room", description=f"Current room '{room_id}' is invalid.", exits=[])
+        rid = str(data.get("id", room_id))
+        visible = self.find_visible_entities(rid, viewer)
+        self._annotate_combat_presence(rid, visible)
+        return MudRoom(id=rid, area_id=str(data.get("area_id", "")), title=str(data.get("title") or data.get("name") or rid), description=str(data.get("description") or ""), exits=list(self.canonical_exits(viewer, rid).values()), npcs=visible.get("npcs", []), mobs=visible.get("mobs", []), objects=visible.get("objects", []))
 
     def canonical_exits(self, char: MudCharacter, room_id: str) -> dict[str, dict[str, Any]]:
         data, _source = self.runtime_room_data(char, room_id)
@@ -1001,12 +1697,21 @@ class MudRuntime:
         return None
 
     def handle_input(self, character_id: str, command: str) -> dict[str, Any]:
-        """Execute a command and persist command/output scrollback to SQLite."""
-        char = self.state_store.load_character(character_id)
+        """Execute a command and return canonical immediate response data."""
+        import time, uuid
+        request_id = uuid.uuid4().hex
+        perf_debug = bool(getattr(self, "performance_debug", False))
+        self._current_command_trace = None
+        trace = {"request_id": request_id, "trace_id": request_id, "command": command, "browser_command_submission": time.monotonic(), "request_received": time.monotonic(), "request_started": time.monotonic(), "awaits": []}
+        self.performance_counters["command_requests"] += 1
+        self.process_due_entity_respawns()
+        char = self._resident_character(character_id)
         if char is None:
             raise ValueError(f"Character not found: {character_id}")
+        self.active_characters[character_id] = char
+        trace["session_lookup"] = time.monotonic(); trace["resident_character_lookup"] = trace["session_lookup"]; trace["routing_started"] = time.monotonic(); trace["command_routing_started"] = trace["routing_started"]; self._current_command_trace = trace
+        from engine.mud_commands import CommandResult
         if getattr(char, "builder_desc_editor_room_id", ""):
-            from engine.mud_commands import CommandResult
             line = command.rstrip("\n")
             if line.strip() == ".cancel":
                 setattr(char, "builder_desc_editor_room_id", ""); setattr(char, "builder_desc_editor_lines", [])
@@ -1016,29 +1721,148 @@ class MudRuntime:
                 text = "\n".join(getattr(char, "builder_desc_editor_lines", []) or [])
                 self.builder.create_or_update(char, "rooms", rid, {"description": text}, "rdesc", "room")
                 setattr(char, "builder_desc_editor_room_id", ""); setattr(char, "builder_desc_editor_lines", [])
-                data = self.builder.load(self.active_world_id or "").get("rooms",{}).get(rid,{})
-                result = CommandResult("\n".join(["Updated room:", "", "ID:", rid, "", "Name:", data.get("name") or "(unnamed)", "", "Dirty:", "yes"]) + "\n" + self.command_engine._builder_room_status(char, rid, self.builder.load(self.active_world_id or "")))
+                result = CommandResult("Updated room:")
+                self.mark_character_dirty(character_id, "builder")
             else:
                 lines = list(getattr(char, "builder_desc_editor_lines", []) or []); lines.append(line); setattr(char, "builder_desc_editor_lines", lines)
                 result = CommandResult("")
+        elif command.strip() in {".end", ".cancel"}:
+            result = CommandResult("No active editor session.", ok=False)
         else:
-            if command.strip() in {".end", ".cancel"}:
-                from engine.mud_commands import CommandResult
-                result = CommandResult("No active editor session.", ok=False)
-            else:
-                result = self._handle_runtime_command(char, command)
-        self.state_store.save_character(char, self.active_world_id or "")
+            sql_trace = {"count": 0, "statements": []}
+            try:
+                with trace_sqlite_boundary(sql_trace):
+                    result = self._handle_runtime_command(char, command)
+            except Exception:
+                import traceback
+                trace_id = "cmd_" + uuid.uuid4().hex[:12]
+                print(f"[command-exception] trace_id={trace_id} character_id={character_id} command={command!r}")
+                traceback.print_exc()
+                result = CommandResult(f"Something went wrong while processing that command. Trace ID: {trace_id}", ok=False)
+            trace["gameplay_sql_before_response"] = int(sql_trace.get("count", 0))
+            trace["gameplay_sql_statements"] = list(sql_trace.get("statements", []))
+        trace["command_execution_completed"] = time.monotonic(); trace.setdefault("response_returned_from_command_engine", trace["command_execution_completed"])
+        if getattr(result, "display_document", None) is not None:
+            color_enabled = not bool(getattr(char, "preferences", {}).get("no_color"))
+            result.narrative = render_display_mud(result.display_document, color_enabled=color_enabled)
+        mutation = self.classify_command_mutation(command, result)
+        if mutation != "read_only":
+            reason = mutation.replace("_mutation", "").replace("location", "movement")
+            self.mark_character_dirty(character_id, reason)
+        if mutation == "session_transition":
+            save_status = self.save_character_if_dirty(char, "quit", force=True, final=True)
+        elif mutation != "read_only":
+            save_status = {"saved": False, "status": "dirty_awaiting_autosave", "dirty": True, "reasons": sorted(self._dirty_characters.get(character_id, set()))}
+            self.performance_counters["command_blocked_on_save_ms"] = self.performance_counters.get("command_blocked_on_save_ms", 0)
+            # Targeted projection invalidation is owned by mark_character_dirty(); heartbeat autosave persists later.
+        else:
+            save_status = {"saved": False, "status": "read_only", "dirty": bool(self._dirty_characters.get(character_id)), "reasons": sorted(self._dirty_characters.get(character_id, set()))}
+            self.performance_counters["read_only_command_saves"] = self.performance_counters.get("read_only_command_saves", 0)
         session = self.sessions.get(character_id)
         turn = (session.command_count + 1) if session else 1
-        self.state_store.save_command(character_id, self.active_world_id or "", turn, command, session.account_id if session else "", session.session_id if session else "")
-        self.state_store.save_scrollback(character_id, self.active_world_id or "", turn, result.narrative)
+        history_start = time.monotonic()
+        cmd_token = command.strip().lower().split()[0] if command.strip() else ""
+        if cmd_token not in {"kill", "attack"}:
+            self.state_store.save_command(character_id, self.active_world_id or "", turn, command, session.account_id if session else "", session.session_id if session else "")
+            self.state_store.save_scrollback(character_id, self.active_world_id or "", turn, result.narrative)
+            trace["awaits"].append({"operation":"command_history_persistence","ms":(time.monotonic()-history_start)*1000.0})
+        trace["command_history_persistence_ms"] = (time.monotonic() - history_start) * 1000.0
         if session:
             session.command_count = turn
             session.last_activity = datetime.now(timezone.utc).isoformat()
-        return {"ok": result.ok, "output": render_semantic_plain(result.narrative), "semantic_output": result.narrative, "view": self.play_view(character_id)}
+        updates = result.state_updates or {}
+        self.performance_counters["commands_processed"] += 1
+        self.performance_counters["direct_command_responses"] += 1
+        view_sql_trace = {"count": 0, "statements": []}
+        if updates.get("render_room") or (command.strip().lower().split()[0] if command.strip() else "") in {"look","l","north","n","south","s","east","e","west","w","up","u","down","d","in","out"}:
+            with trace_sqlite_boundary(view_sql_trace):
+                view = self.play_view(character_id)
+        else:
+            with trace_sqlite_boundary(view_sql_trace):
+                view = {**self.prompt_snapshot(character_id), "html": "", "text": "", "room_id": getattr(char, "room_id", ""), "async_cursor": self._async_sequences.get(character_id, 0)}
+        trace["gameplay_sql_response_render"] = int(view_sql_trace.get("count", 0))
+        trace["gameplay_sql_response_statements"] = list(view_sql_trace.get("statements", []))
+        trace["gameplay_sql_total"] = int(trace.get("gameplay_sql_before_response", 0)) + int(trace.get("gameplay_sql_response_render", 0))
+        self.performance_counters["runtime_gameplay_sql_statements"] = self.performance_counters.get("runtime_gameplay_sql_statements", 0) + int(trace.get("gameplay_sql_total", 0))
+        if trace.get("gameplay_sql_total", 0):
+            self.performance_counters["runtime_gameplay_sql_violations"] = self.performance_counters.get("runtime_gameplay_sql_violations", 0) + 1
+        if updates.get("session_transition") == "character_select":
+            sid = self.character_session_ids.pop(character_id, "")
+            if sid: self.session_active_character.pop(sid, None)
+            if hasattr(self, "projection_warmup"): self.projection_warmup.cancel(character_id)
+            if hasattr(self, "projection_cache"): self.projection_cache.evict_character(character_id)
+            self.active_characters.pop(character_id, None)
+            self.unregister_live_character(character_id)
+            view = {"html": "", "text": result.narrative, "prompt": ">"}
+        trace["response_object_construction"] = time.monotonic(); trace["response_ready"] = trace["response_object_construction"]; trace["response_serialization_completed"] = time.monotonic(); trace["response_sent"] = trace["response_serialization_completed"]; trace["total_server_ms"] = (trace["response_sent"] - trace["request_received"]) * 1000.0
+        self.command_traces[request_id] = trace
+        self._current_command_trace = None
+        if perf_debug:
+            total_ms = (trace["response_serialization_completed"] - trace["request_started"]) * 1000.0
+            print(f"[mud-latency] command={command.strip().split()[0] if command.strip() else ''} total_ms={total_ms:.3f}")
+            print(f"[mud-latency] history_ms={trace.get('command_history_persistence_ms', 0.0):.3f}")
+            print(f"[mud-latency] queries=0 formulas=0 cache_hit={getattr(getattr(self, 'character_display_snapshots', None), 'last_cache_hit', False)}")
+        if cmd_token in {"kill", "attack"}:
+            self.performance_counters["kill_request_total_ms"] = int(trace.get("total_server_ms", 0))
+            self.performance_counters["kill_response_build_ms"] = int((trace["response_ready"] - trace["command_execution_completed"]) * 1000)
+            self.performance_counters["kill_response_send_ms"] = 0
+        return {"ok": result.ok, "request_id": request_id, "action_id": request_id, "output": render_semantic_plain(result.narrative), "semantic_output": result.narrative, "state_updates": updates, "view": view, "command_response": {"command": command, "semantic_text": result.narrative, "plain_text": render_semantic_plain(result.narrative), "html": "", "room_render": view, "prompt_snapshot": self.prompt_snapshot(character_id) if character_id in self.active_characters else {}, "state_updates": updates, "session_transition": updates.get("session_transition", ""), "mutation_state": mutation, "async_events": [], "delivery_policy": "direct_response"}, "delivery_policy": "direct_response", "mutation_state": mutation, "save_status": save_status, "async_followup_available": False, "trace": trace}
 
 
-    ROOM_FEATURE_NAMES = {"gate", "door", "fountain", "altar", "statue", "portal", "stairs", "bridge", "campfire", "lever", "button", "switch", "sign", "window", "windows", "tree", "water", "chest", "lock"}
+
+    READ_ONLY_COMMANDS = {"look","l","score","sc","worth","equipment","eq","inventory","inv","i","affects","effects","skills","spells","abilities","help","who","history","combatstats","attributes"}
+    MOVEMENT_COMMANDS = {"north","n","south","s","east","e","west","w","up","u","down","d","in","out"}
+    EQUIPMENT_MUTATION_COMMANDS = {"wear","wield","hold","mainhand","offhand","dual","remove","rem","unwield","unequip"}
+    INVENTORY_MUTATION_COMMANDS = {"get","drop","put","give","take"}
+
+    def classify_command_mutation(self, command: str, result: Any = None) -> str:
+        text = (command or "").strip().lower()
+        if text in {"score compact", "score full"}:
+            return "read_only"
+        cmd = text.split()[0] if text else ""
+        updates = getattr(result, "state_updates", None) or {}
+        if updates.get("session_transition") == "character_select" or cmd in {"quit","logout","disconnect"}:
+            return "session_transition"
+        if cmd in self.READ_ONLY_COMMANDS:
+            return "read_only"
+        if cmd in {"kill", "attack", "assist", "flee", "target", "defend", "combat", "diagnose", "consider", "stateinspect", "combatstate", "condition"}:
+            return "world_mutation" if getattr(result, "ok", False) and cmd in {"kill", "attack", "assist", "flee", "target", "defend"} else "read_only"
+        if cmd in self.MOVEMENT_COMMANDS:
+            return "location_mutation" if getattr(result, "ok", False) and updates.get("render_room") else "read_only"
+        if cmd in self.EQUIPMENT_MUTATION_COMMANDS:
+            return "equipment_mutation" if getattr(result, "ok", True) else "read_only"
+        if cmd in self.INVENTORY_MUTATION_COMMANDS:
+            return "inventory_mutation" if getattr(result, "ok", True) else "read_only"
+        return "world_mutation"
+
+    def mark_character_dirty(self, character_id: str, reason: str) -> None:
+        self._dirty_characters.setdefault(character_id, set()).add(reason)
+        now = datetime.now(timezone.utc).isoformat()
+        state = self.character_dirty_state.setdefault(character_id, {"dirty_generation": 0, "dirty_reasons": set(), "last_saved_generation": 0, "save_in_flight": False, "save_error": ""})
+        state["is_dirty"] = True; state["dirty_generation"] = int(state.get("dirty_generation", 0)) + 1; state.setdefault("dirty_reasons", set()).add(reason); state["last_mutation_at"] = now
+        self.invalidate_character_projections(character_id, reason)
+
+    def save_character_if_dirty(self, char: MudCharacter, reason: str = "command", *, force: bool = False, final: bool = False) -> dict[str, Any]:
+        cid = char.id
+        if final and cid in self._quit_final_saved:
+            self.performance_counters["save_coalesced"] += 1
+            return {"saved": False, "status": "coalesced", "dirty": False, "reasons": []}
+        reasons = sorted(self._dirty_characters.get(cid, set()))
+        if not force and not reasons:
+            self.performance_counters["save_skipped_clean"] += 1
+            return {"saved": False, "status": "clean", "dirty": False, "reasons": []}
+        self.performance_counters["character_sql_saves"] += 1
+        self.performance_counters["character_saves"] += 1
+        if final:
+            self.performance_counters["quit_final_saves"] += 1
+            self._quit_final_saved.add(cid)
+        self.state_store.save_character(char, self.active_world_id or "")
+        self._dirty_characters.pop(cid, None)
+        state = self.character_dirty_state.setdefault(cid, {})
+        state.update({"is_dirty": False, "dirty_reasons": set(), "last_saved_at": datetime.now(timezone.utc).isoformat(), "last_saved_generation": state.get("dirty_generation", 0), "save_in_flight": False, "save_error": ""})
+        return {"saved": True, "status": "saved", "dirty": False, "reasons": reasons or [reason]}
+
+    ROOM_FEATURE_NAMES = {"gate", "door", "fountain", "altar", "statue", "portal", "stairs", "bridge", "campfire", "lever", "button", "switch", "sign", "notice board", "board", "stall", "provisioner stall", "window", "windows", "tree", "water", "chest", "lock"}
     FILLER_BY_COMMAND = {"look": {"at"}, "examine": {"at"}, "drink": {"from"}, "get": {"from"}, "put": {"in", "into", "on"}}
 
     def _parse_interaction_command(self, command: str) -> dict[str, Any]:
@@ -1047,6 +1871,13 @@ class MudRuntime:
         if not words:
             return {"tokens": [], "raw_cmd": "", "cmd": "", "args": []}
         lower = [w.lower() for w in words]
+        # Player command parsing is longest-valid-match first.  This prevents
+        # multiword abilities such as "set camp" and "build campfire" from
+        # being reduced to builder/admin verbs or falling through to CAST.
+        ability_cmd = self._match_player_ability_command(words)
+        if ability_cmd:
+            logger.debug("mud parser raw=%r normalized=%r entry=%r args=%r", command, text.lower(), ability_cmd["cmd"], ability_cmd["args"])
+            return ability_cmd
         raw = lower[0]
         alias_note = ""
         if raw in {"in", "out"}:
@@ -1060,12 +1891,57 @@ class MudRuntime:
             cmd = self.command_engine.resolve_alias(raw); args = words[1:]
             if kind.startswith("ambiguous"):
                 return {"tokens": words, "raw_cmd": raw, "cmd": "", "args": args, "alias_note": kind}
+        if raw in {"inspect"}:
+            cmd = "examine"
         if cmd in {"look", "examine"} and args and args[0].lower() in {"at", "in", "inside"}:
             if args[0].lower() in {"in", "inside"}: alias_note = "look in"
             args = args[1:]
         elif cmd in self.FILLER_BY_COMMAND and args and args[0].lower() in self.FILLER_BY_COMMAND[cmd]:
             args = args[1:]
-        return {"tokens": words, "raw_cmd": raw, "cmd": cmd, "args": args, "alias_note": alias_note}
+        parsed = {"tokens": words, "raw_cmd": raw, "cmd": cmd, "args": args, "alias_note": alias_note}
+        logger.debug("mud parser raw=%r normalized=%r entry=%r args=%r", command, text.lower(), cmd, args)
+        return parsed
+
+    def _match_player_ability_command(self, words: list[str]) -> dict[str, Any] | None:
+        phrase = " ".join(words).lower().strip()
+        if words:
+            first = words[0].lower()
+            resolved, kind = self.command_engine.registry.resolve(first)
+            if kind in {"exact", "alias", "abbreviation"} and resolved in self.command_engine.command_handlers:
+                return None
+        ability_phrases = self._player_ability_phrases()
+        if phrase in ability_phrases:
+            return {"tokens": words, "raw_cmd": phrase, "cmd": "use", "args": phrase.split(), "alias_note": "ability command"}
+        return None
+
+    def _player_ability_phrases(self) -> dict[str, str]:
+        phrases: dict[str, str] = {}
+        svc = getattr(self, "abilities", None)
+        registry = getattr(svc, "registry", None)
+        for ab in getattr(registry, "abilities", {}).values() if registry is not None else []:
+            pdata = getattr(ab, "plugin_data", {}) or {}
+            canonical = str(pdata.get("command") or pdata.get("usage") or getattr(ab, "short_name", "") or getattr(ab, "name", "") or getattr(ab, "id", "")).lower().strip()
+            canonical = re.sub(r"^(use|cast|perform|invoke)\s+", "", canonical)
+            candidates = [canonical, str(getattr(ab, "name", "") or "").lower(), str(getattr(ab, "short_name", "") or "").lower(), str(getattr(ab, "id", "") or "").replace("_", " ").lower()]
+            aliases = pdata.get("aliases") or []
+            if isinstance(aliases, str):
+                aliases = [aliases]
+            candidates.extend(str(a).lower() for a in aliases)
+            for item in candidates:
+                item = re.sub(r"\s+", " ", item).strip()
+                if item:
+                    phrases[item] = canonical or item
+        return phrases
+
+    def _suggest_player_ability_command(self, phrase: str) -> str:
+        import difflib
+        normalized = re.sub(r"\s+", " ", str(phrase or "").lower()).strip()
+        phrases = self._player_ability_phrases()
+        public = sorted(set(phrases.values()))
+        if normalized == "set campfire" and "build campfire" in public:
+            return "build campfire"
+        matches = difflib.get_close_matches(normalized, public, n=1, cutoff=0.62)
+        return matches[0] if matches else ""
 
     def _publish_interaction_event(self, name: str, char: MudCharacter, cmd: str, raw: str, extra: dict[str, Any] | None = None) -> None:
         payload = {"world_id": self.active_world_id or "", "character_id": char.id, "character_name": char.name, "room_id": char.room_id, "canonical_command": cmd, "raw_input": raw, **(extra or {})}
@@ -1122,17 +1998,19 @@ class MudRuntime:
             if p.get("room_id") == char.room_id and p.get("character_id") != char.id
         ]
         groups = [
-            ("equipped", self.find_equipped_items(char.id)),
-            ("inventory", self.find_inventory_items(char.id)),
-            ("room_object", [i for i in self.get_visible_room_items(char.room_id) if (i.get("template") or {}).get("portable", True)]),
             ("player", player_candidates),
             ("npc", self.find_visible_entities(char.room_id, char).get("npcs", [])),
             ("mob", self.find_visible_entities(char.room_id, char).get("mobs", [])),
+            ("corpse", self.find_visible_entities(char.room_id, char).get("corpses", [])),
+            ("equipped", self.find_equipped_items(char.id)),
+            ("inventory", self.find_inventory_items(char.id)),
+            ("room_object", self.get_visible_room_items(char.room_id)),
             ("exit", [{"name": str(e.get("direction") or e.get("dir")), "keywords": [str(e.get("direction") or e.get("dir"))], "entity_type": "exit", "exit": e, "long_description": e.get("description", "")} for e in self._current_room(char).exits if isinstance(e, dict)]),
+            ("world_object", self._runtime_world_objects(char.room_id)),
             ("feature", features),
         ]
         for kind, candidates in groups:
-            res = self.resolve_entity_keywords(query, candidates) if kind in {"player", "npc", "mob", "exit", "feature"} else self.resolve_item_keywords(query, candidates)
+            res = self.resolve_entity_keywords(query, candidates) if kind in {"player", "npc", "mob", "corpse", "exit", "feature", "world_object"} else self.resolve_item_keywords(query, candidates)
             if res.get("status") == "ok": return {"status": "ok", "kind": kind, "target": res.get("entity") or res.get("item")}
             if res.get("status") == "ambiguous": return {"status": "ambiguous", "matches": res.get("matches", [])}
         return {"status": "missing", "matches": []}
@@ -1158,9 +2036,11 @@ class MudRuntime:
             self._publish_interaction_event("self_examined", char, cmd, raw, {"result_summary": msg[:120]})
             return CommandResult(msg)
         if cmd in {"look", "examine"} and re.match(r"^\s*(look|l|examine|exa)\s+(in|inside)\b", raw, re.I):
-            msg = semantic("placeholder", "You see nothing unusual.")
-            self._publish_interaction_event("command_placeholder", char, cmd, raw, {"target_query": q, "result_summary": "You see nothing unusual."})
-            return CommandResult(msg)
+            resolved_container = self._resolve_interaction_target(char, q)
+            self._log_inspection_route(raw, cmd, q, resolved_container, "look_inside")
+            if resolved_container.get("status") != "ok":
+                return CommandResult(self._resolve_message(resolved_container, "You don't see that."), ok=False)
+            return CommandResult(self._look_in_container(char, resolved_container.get("target", {})))
         if cmd in {"search", "listen", "smell"} and not q:
             messages = {"search": "You see nothing unusual.", "listen": "You do not hear anything unusual.", "smell": "You smell nothing unusual."}
             self._publish_interaction_event("environment_inspected", char, cmd, raw, {"result_summary": messages[cmd]})
@@ -1174,6 +2054,8 @@ class MudRuntime:
             self._publish_interaction_event("command_usage", char, cmd, raw, {"usage": self.command_engine.registry.commands.get(cmd).usage if cmd in self.command_engine.registry.commands else cmd, "message": msg})
             return CommandResult(semantic("usage", msg), ok=False)
         resolved = self._resolve_interaction_target(char, q)
+        mode = "identify" if cmd == "identify" else "read" if cmd == "read" else "look" if cmd == "look" else "examine" if cmd == "examine" else cmd
+        self._log_inspection_route(raw, cmd, q, resolved, f"inspection_dispatcher:{mode}")
         if resolved["status"] == "ambiguous":
             msg = self._resolve_message(resolved, "You don't see that.")
             self._publish_interaction_event("interaction_failed", char, cmd, raw, {"reason": "ambiguous"})
@@ -1192,11 +2074,15 @@ class MudRuntime:
             "enter": "You cannot enter that.", "leave": "You cannot leave that.", "drink": "You cannot drink from that.", "eat": "You cannot eat that.",
             "open": f"You cannot open {lname}.", "close": f"You cannot close {lname}.", "lock": "You cannot lock that.", "unlock": "You cannot unlock that.", "pick": "You cannot pick that.",
             "search": "You see nothing unusual.", "listen": "You do not hear anything unusual.", "smell": "You smell nothing unusual.", "put": "You cannot put that there.",
-            "taste": "You taste nothing unusual.", "fill": "Liquid containers are not implemented yet.", "pour": "Liquid containers are not implemented yet.",
+            "taste": "You taste nothing unusual.", "fill": "You have no liquid container ready for that.", "pour": "You have no liquid container ready for that.",
             "sit": "You sit down.", "stand": "You stand up.", "rest": "You rest for a moment.", "sleep": "You cannot sleep here.", "wake": "You are awake.",
         }
+        if resolved["status"] == "missing":
+            msg = f"You do not see {q} here." if cmd in {"look", "examine", "read"} else messages.get(cmd, f"You do not see {q} here.")
+            self._publish_interaction_event("interaction_failed", char, cmd, raw, {"reason": "missing", "target_query": q})
+            return CommandResult(semantic("warning", msg), ok=False)
         if cmd in {"look", "examine"}:
-            msg = self._render_examination(target, kind, q)
+            msg = self.inspect_target(char, resolved, "LOOK" if cmd == "look" else "EXAMINE")
             if msg:
                 event_name = "feature_examined" if kind in {"feature", "exit"} else "entity_examined" if kind in {"player", "npc", "mob"} else "object_examined"
                 self._publish_interaction_event(event_name, char, cmd, raw, {"target_kind": kind, "target_name": target.get("name", q), "result_summary": msg[:120]})
@@ -1204,7 +2090,11 @@ class MudRuntime:
             else: return None
             self._publish_interaction_event("target_looked", char, cmd, raw, {"target_kind": kind, "target_name": target.get("name", q), "result_summary": msg[:120]})
         elif cmd == "identify":
-            msg = self._render_identify(target, kind, q)
+            msg = self.inspect_target(char, resolved, "IDENTIFY")
+        elif cmd == "read":
+            msg = self.inspect_target(char, resolved, "READ")
+        elif cmd == "drink":
+            msg = self._drink_from_target(char, target, kind, q)
         else:
             msg = str(interactions.get(cmd) or ("You drink from the fountain." if cmd == "drink" and target.get("drinkable") else messages.get(cmd, "You see nothing unusual.")))
         if msg in {"Nothing happens.", "Nothing happens. You find no obvious way to use that.", "There is nothing written there.", "There is nothing readable here. There is nothing written there.", "You see nothing unusual."}:
@@ -1220,6 +2110,9 @@ class MudRuntime:
         return CommandResult(msg, ok=not failed)
 
     def _handle_runtime_command(self, char: MudCharacter, command: str):
+        normalized_command = re.sub(r"\s+", " ", str(command or "").strip()).lower()
+        if normalized_command in getattr(self.command_engine, "SOCIAL_DEFINITIONS", {}):
+            return self.command_engine.handle_command(char, command)
         parsed = self._parse_interaction_command(command)
         tokens = parsed["tokens"]
         if not tokens:
@@ -1227,6 +2120,18 @@ class MudRuntime:
         raw_cmd = parsed["raw_cmd"]
         cmd_name = parsed["cmd"]
         args = parsed["args"]
+        ability_suggestion = self._suggest_player_ability_command(normalized_command)
+        if ability_suggestion and raw_cmd in {"set", "build", "campfire"} and normalized_command not in self._player_ability_phrases():
+            from engine.mud_commands import CommandResult
+            return CommandResult(f"Unknown command “{normalized_command}.”\nDid you mean {ability_suggestion.upper()}?", ok=False)
+        if raw_cmd == "target" and not self._builder_visible(char):
+            cmd_name = "target"
+        if raw_cmd == "inspect":
+            cmd_name = "examine"
+        if raw_cmd == "set" and " ".join(args).lower() == "camp":
+            cmd_name = "cast"; args = ["set", "camp"]
+        if raw_cmd == "build" and " ".join(args).lower() == "campfire":
+            cmd_name = "cast"; args = ["build", "campfire"]
         if not cmd_name and str(parsed.get("alias_note", "")).startswith("ambiguous"):
             from engine.mud_commands import CommandResult
             choices = parsed["alias_note"].split(":", 1)[1].strip()
@@ -1270,8 +2175,10 @@ class MudRuntime:
             if entity_result is not None:
                 from engine.mud_commands import CommandResult
                 return CommandResult(entity_result)
-        if cmd_name in {"use", "cast", "invoke", "perform", "ability", "abilities", "skills", "spells", "cancel", "cooldowns", "abilitylist", "abilitystat", "abilitycreate", "abilityclone", "abilityset", "abilitydelete", "abilityvalidate", "abilitypreview", "abilitytrace", "loadoutlist", "loadoutstat", "loadoutcreate", "loadoutclone", "loadoutset", "loadoutability", "loadoutdelete", "loadoutvalidate", "abilitygrant", "abilityrevoke", "actorabilities", "abilitycooldowns", "abilitycasts"}:
+        if cmd_name in {"cast", "invoke", "perform", "ability", "abilities", "skills", "spells", "cancel", "cooldowns", "abilitylist", "abilitystat", "abilitycreate", "abilityclone", "abilityset", "abilitydelete", "abilityvalidate", "abilitypreview", "abilitytrace", "loadoutlist", "loadoutstat", "loadoutcreate", "loadoutclone", "loadoutset", "loadoutability", "loadoutdelete", "loadoutvalidate", "abilitygrant", "abilityrevoke", "actorabilities", "abilitycooldowns", "abilitycasts"}:
             return self.command_engine.handle_command(char, command)
+        if cmd_name == "use" and " ".join(args).lower() in self._player_ability_phrases():
+            return self.command_engine.handle_command(char, "use " + " ".join(args))
         item_result = self._handle_item_command(char, command, cmd_name, args)
         if item_result is not None:
             self.event_bus.publish("command_executed", {"raw_input": command, "canonical_command": cmd_name, "arguments": args, "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id, "result_summary": item_result.narrative[:120]}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
@@ -1290,21 +2197,97 @@ class MudRuntime:
             result.narrative = f"{result.narrative}\n\n{room_text}" if result.narrative else room_text
         return result
 
-    def _move_character(self, char: MudCharacter, direction: str):
+    def move_resident_actor(self, actor_id: str, destination_room_id: str, source: str, *, bypass_combat: bool = False, movement_context: dict[str, Any] | None = None):
+        """Canonical in-memory movement operation for resident actors.
+
+        Synchronizes the runtime character, resident Actor, and room occupancy index without
+        rematerializing content or querying SQLite on the command hot path.
+        """
         from engine.mud_commands import CommandResult
-        room_id = char.room_id
+        movement_context = movement_context or {}
+        destination = self.canonical_room_id(destination_room_id)
+        actor = getattr(self, "combat_runtime", None).resident_actors.get(actor_id) if getattr(self, "combat_runtime", None) else None
+        char = None
+        ent = None
+        name = "Someone"
+        old_room = ""
+        if actor_id.startswith("character:"):
+            cid = actor_id.split(":", 1)[1]
+            char = self.active_characters.get(cid) or self._resident_character(cid)
+            name = getattr(char, "name", "Someone") if char else (actor.identity.name if actor else "Someone")
+            old_room = self.canonical_room_id((actor.identity.current_location if actor else "") or getattr(char, "room_id", ""))
+        elif actor_id.startswith("entity:"):
+            ent = self._entity_for_resident_actor(actor_id)
+            name = str((ent or {}).get("name") or (actor.identity.name if actor else "Someone"))
+            old_room = self.canonical_room_id((actor.identity.current_location if actor else "") or (ent or {}).get("room_id") or (ent or {}).get("current_room_id"))
+        if not destination:
+            return CommandResult(narrative="You cannot go that way.", ok=False)
+        if not bypass_combat and getattr(self, "combat_runtime", None) and self.combat_runtime.is_actor_in_active_combat(actor_id):
+            return CommandResult(narrative="You are fighting! Use FLEE to escape." if char else "The actor is fighting and cannot move normally.", ok=False)
+        self.remove_occupant(old_room, actor_id)
+        if actor:
+            actor.identity.current_location = destination
+            if hasattr(self.combat_runtime, "dirty_resident_entities") and actor_id.startswith("entity:"):
+                self.combat_runtime.dirty_resident_entities.add(actor_id.split(":", 1)[1])
+        if char:
+            char.last_room_id = old_room; char.room_id = destination
+            self.mark_character_dirty(char.id, source or "movement")
+        if ent is not None:
+            ent["room_id"] = destination; ent["current_room_id"] = destination
+            self.resident_entities_by_actor_id[actor_id] = dict(ent)
+            if hasattr(self.combat_runtime, "dirty_resident_entities"):
+                self.combat_runtime.dirty_resident_entities.add(actor_id.split(":", 1)[1])
+        self.add_occupant(destination, actor_id)
+        if old_room and old_room != destination:
+            direction = str(movement_context.get("direction") or source or "away")
+            reverse = {"north":"south","south":"north","east":"west","west":"east","up":"down","down":"up","in":"out","out":"in"}.get(direction, direction)
+            self.deliver_room_action(old_room, f"{name} leaves {direction}.", actor_id=actor_id, category="actor_departed")
+            self.deliver_room_action(destination, f"{name} arrives from the {reverse}.", actor_id=actor_id, category="actor_arrived")
+        self.event_bus.publish("movement_succeeded", {"actor_id": actor_id, "current_room_id": old_room, "target_room_id": destination, "source": source, "result_summary": "moved"}, source_system="movement", world_id=self.active_world_id or "")
+        return CommandResult(narrative=f"You head {movement_context.get('direction', source)}." if char else f"{name} moves.", state_updates={"render_room": True, "room_id": destination}, display_intent="MOVEMENT", semantic_role="success")
+
+    def _move_character(self, char: MudCharacter, direction: str, bypass_combat: bool = False):
+        from engine.mud_commands import CommandResult
+        room_id = self.canonical_room_id(char.room_id)
+        aid = self.combat_runtime.actor_id_for_character(char) if getattr(self, 'combat_runtime', None) else f"character:{char.id}"
+        if getattr(self, 'combat_runtime', None):
+            actor = self.combat_runtime._resident_character_actor(char)
+            self.add_occupant(room_id, aid)
+        if not bypass_combat and getattr(self, 'combat_runtime', None) and self.combat_runtime.is_actor_in_active_combat(aid):
+            return CommandResult(narrative='You are fighting! Use FLEE to escape.', ok=False)
         self.event_bus.publish("movement_attempted", {"canonical_command": direction, "character_id": char.id, "character_name": char.name, "current_room_id": room_id}, source_system="movement", world_id=self.active_world_id or "", character_id=char.id, command=direction)
         exit_data, reason = self.resolve_exit(char, room_id, direction)
         if exit_data and reason == "ok":
-            char.room_id = str(exit_data["target_room_id"])
-            self.state_store.save_character(char, self.active_world_id or "")
-            self.event_bus.publish("movement_succeeded", {"canonical_command": direction, "character_id": char.id, "character_name": char.name, "current_room_id": room_id, "target_room_id": char.room_id, "result_summary": "moved"}, source_system="movement", world_id=self.active_world_id or "", character_id=char.id, command=direction)
-            return CommandResult(narrative=f"You head {direction}.", state_updates={"render_room": True})
+            return self.move_resident_actor(aid, str(exit_data["target_room_id"]), "movement", bypass_combat=bypass_combat, movement_context={"direction": direction})
         summary = reason if exit_data else "no_exit"
-        if exit_data:
-            self.event_bus.publish("builder_exit_graph_mismatch_detected", {"character_id": char.id, "room_id": room_id, "direction": direction, "reason": summary}, source_system="builder", world_id=self.active_world_id or "", character_id=char.id, room_id=room_id)
         self.event_bus.publish("movement_failed", {"canonical_command": direction, "character_id": char.id, "character_name": char.name, "current_room_id": room_id, "result_summary": summary}, source_system="movement", world_id=self.active_world_id or "", character_id=char.id, command=direction)
         return CommandResult(narrative="You cannot go that way." if summary == "no_exit" else f"You cannot go that way: {summary}.", ok=False)
+
+    def update_entity_state(self, entity_id: str, updates: dict[str, Any], **_ctx: Any) -> dict[str, Any] | None:
+        ent = self.find_entity(entity_id)
+        if not ent: return None
+        state = dict(ent.get("state") or {}); state.update(updates or {})
+        with sqlite3.connect(self.state_store.db_path) as conn:
+            conn.execute("UPDATE entity_instances SET state=?,updated_at=? WHERE entity_id=? AND destroyed_at IS NULL", (json.dumps(state), datetime.now(timezone.utc).isoformat(), entity_id))
+        return self.find_entity(entity_id)
+
+    def move_entity_actor(self, ent: dict[str, Any], direction: str, bypass_combat: bool = False):
+        from engine.mud_commands import CommandResult
+        eid = str(ent.get("instance_id") or ent.get("entity_id") or "")
+        actor_id = "entity:" + eid
+        room_id = self.canonical_room_id(ent.get("room_id") or ent.get("current_room_id") or "")
+        if getattr(self, "combat_runtime", None):
+            actor = self.combat_runtime._resident_entity_actor(ent)
+            self.add_occupant(room_id, actor_id)
+        if not bypass_combat and getattr(self, "combat_runtime", None) and self.combat_runtime.is_actor_in_active_combat(actor_id):
+            return CommandResult(narrative="The actor is fighting and cannot move normally.", ok=False)
+        self.event_bus.publish("movement_attempted", {"canonical_command": direction, "actor_id": actor_id, "entity_id": eid, "current_room_id": room_id}, source_system="movement", world_id=self.active_world_id or "", command=direction)
+        exit_data, reason = self.resolve_exit(ent, room_id, direction)
+        if exit_data and reason == "ok":
+            return self.move_resident_actor(actor_id, str(exit_data["target_room_id"]), "movement", bypass_combat=bypass_combat, movement_context={"direction": direction})
+        summary = reason if exit_data else "no_exit"
+        self.event_bus.publish("movement_failed", {"canonical_command": direction, "actor_id": actor_id, "entity_id": eid, "current_room_id": room_id, "result_summary": summary}, source_system="movement", world_id=self.active_world_id or "", command=direction)
+        return CommandResult(narrative="Cannot go that way." if summary == "no_exit" else f"Cannot go that way: {summary}.", ok=False)
 
     def _room_text(self, room: MudRoom) -> str:
         from smart_mud.transport import html_to_plain_text
@@ -1347,12 +2330,36 @@ class MudRuntime:
         decl = (self._live_entity_spawns().get(q) if cmd == 'sstat' else self._live_item_placements().get(q)) or {}
         return "\n".join([f"Declaration: {q}", f"Data: {json.dumps(decl, sort_keys=True)}", f"Materialization: {json.dumps(row or {}, sort_keys=True)}"])
 
+    def _annotate_combat_presence(self, room_id: str, visible: dict[str, list[dict[str, Any]]]) -> None:
+        cr = getattr(self, 'combat_runtime', None)
+        if not cr:
+            return
+        actor_names = {'entity:' + str(ent.get('instance_id') or ent.get('entity_id')): str(ent.get('name') or 'Someone') for ent in (visible.get('npcs', []) + visible.get('mobs', []))}
+        for actor in self.occupants_in_room(room_id):
+            actor_names.setdefault(actor.actor_id, getattr(actor.identity, 'name', 'Someone'))
+        targets: dict[str, str] = {}
+        for enc in getattr(cr, 'resident_encounters', {}).values():
+            if getattr(enc, 'status', '') != 'active' or self.canonical_room_id(getattr(enc, 'room_id', '')) != self.canonical_room_id(room_id):
+                continue
+            for aid, part in getattr(enc, 'participants', {}).items():
+                target_id = getattr(part, 'target_actor_id', '')
+                if target_id:
+                    targets[aid] = actor_names.get(target_id) or cr.actor_display_name(target_id)
+        for ent in (visible.get('npcs', []) + visible.get('mobs', [])):
+            aid = 'entity:' + str(ent.get('instance_id') or ent.get('entity_id'))
+            if targets.get(aid):
+                ent['combat_target_name'] = targets[aid]
+                st = dict(ent.get('state') or {})
+                st['combat_target_name'] = targets[aid]
+                ent['state'] = st
+
     def _current_room(self, char: MudCharacter) -> MudRoom:
         room_data, source = self.runtime_room_data(char, char.room_id)
         if room_data is None:
             return MudRoom(id=char.room_id or "void", area_id="", title="Missing Room", description=f"Current room '{char.room_id}' is invalid. Use goto home or contact a builder.", exits=[])
         rid = str(room_data.get("id", char.room_id))
         visible = self.find_visible_entities(rid, char)
+        self._annotate_combat_presence(rid, visible)
         exits = list(self.canonical_exits(char, rid).values())
         features = {f.get("id") or f.get("feature_id"): f for f in self._resolved_room_features(rid, char)}
         feature_keys: set[tuple[str, str]] = set()
@@ -1371,6 +2378,7 @@ class MudRuntime:
             if portable or not duplicate_feature:
                 objects.append(obj)
         objects.extend(visible.get("corpses", []))
+        objects.extend(self._runtime_world_objects(rid))
         seen_features: set[tuple[str, str]] = set()
         for fid, feat in features.items() if isinstance(features, dict) else []:
             if isinstance(feat, dict):
@@ -1427,6 +2435,9 @@ class MudRuntime:
                 "keywords": [str(k).lower() for k in keywords if str(k).strip()],
                 "short_description": str(raw.get("short_description") or raw.get("description") or raw.get("name") or tid),
                 "long_description": str(raw.get("long_description") or raw.get("description") or raw.get("short_description") or raw.get("name") or tid),
+                "room_description": str(raw.get("room_description") or raw.get("description") or raw.get("short_description") or raw.get("name") or tid),
+                "look_description": str(raw.get("look_description") or raw.get("description") or raw.get("long_description") or raw.get("short_description") or raw.get("name") or tid),
+                "examine_description": str(raw.get("examine_description") or raw.get("look_description") or raw.get("long_description") or raw.get("description") or raw.get("short_description") or raw.get("name") or tid),
                 "item_type": str(raw.get("item_type") or raw.get("type") or "misc"),
                 "weight": raw.get("weight", 0), "value": raw.get("value", 0),
                 "wear_slots": [str(v) for v in (raw.get("occupies_slots") or raw.get("equipment_slots") or wear_slots) if str(v) in self.EQUIPMENT_SLOTS],
@@ -1443,10 +2454,12 @@ class MudRuntime:
                 "starter": bool(raw.get("starter") or ("starter" in (raw.get("tags") or []))),
                 "starter_quantity": int(raw.get("starter_quantity", 1) or 1),
                 "starter_equipped_slot": raw.get("starter_equipped_slot"),
-                "portable": bool(raw.get("portable", False if str(raw.get("id") or "").lower().replace("_", " ") in self.ROOM_FEATURE_NAMES or str(raw.get("name") or "").lower() in self.ROOM_FEATURE_NAMES or any(part in str(raw.get("id") or "").lower() for part in ["fountain", "gate", "door", "altar", "statue", "campfire", "stairs", "portal"]) else True)),
+                "portable": bool(raw.get("portable", False if str(raw.get("id") or "").lower().replace("_", " ") in self.ROOM_FEATURE_NAMES or str(raw.get("name") or "").lower() in self.ROOM_FEATURE_NAMES or any(part in str(raw.get("id") or "").lower() for part in ["fountain", "gate", "door", "altar", "statue", "campfire", "stairs", "portal", "notice_board", "stall"]) else True)),
                 "drinkable": bool(raw.get("drinkable", False)),
                 "enterable": bool(raw.get("enterable", False)),
                 "readable": bool(raw.get("readable", False)),
+                "readable_text": str(raw.get("readable_text") or raw.get("text") or raw.get("writing") or ""),
+                "interaction_hints": raw.get("interaction_hints") or [],
                 "usable": bool(raw.get("usable", False)),
                 "openable": bool(raw.get("openable", False)),
                 "locked": bool(raw.get("locked", False)),
@@ -1500,18 +2513,27 @@ class MudRuntime:
     def get_visible_room_items(self, room_id: str) -> list[dict[str, Any]]: return self.find_room_items(room_id)
 
     def resolve_item_keywords(self, query: str, candidate_items: list[dict[str, Any]]) -> dict[str, Any]:
+        numbered = re.match(r"^\s*(\d+)\.([^\s].*)$", str(query or ""), re.I)
+        ordinal = int(numbered.group(1)) if numbered else 0
+        query = numbered.group(2) if numbered else query
         words = [w for w in re.findall(r"[a-z0-9_']+", query.lower()) if w not in self.ARTICLES]
         q = " ".join(words)
         if not q: return {"status":"missing", "matches": []}
         def name(i): return str(i.get("name") or i.get("template",{}).get("name") or "").lower()
+        def choose(matches):
+            if ordinal:
+                return {"status":"ok","item":matches[ordinal-1],"matches":matches} if len(matches) >= ordinal else {"status":"missing_ordinal","matches":matches,"ordinal":ordinal,"query":q}
+            return {"status":"ok","item":matches[0],"matches":matches} if matches else None
         exact = [i for i in candidate_items if name(i) == q]
-        if exact: return {"status":"ok", "item": exact[0], "matches": exact}
+        if exact: return choose(exact)
         kw = [i for i in candidate_items if q in [str(k).lower() for k in i.get("keywords", [])]]
-        if kw: return {"status":"ok", "item": kw[0], "matches": kw}
+        if kw: return choose(kw)
+        multi = [i for i in candidate_items if q in [" ".join(re.findall(r"[a-z0-9_']+", str(k).lower())) for k in i.get("keywords", [])]]
+        if multi: return choose(multi)
         allwords = [i for i in candidate_items if all(w in set(re.findall(r"[a-z0-9_']+", name(i)) + [str(k).lower() for k in i.get("keywords", [])]) for w in words)]
-        if allwords: return {"status":"ok", "item": allwords[0], "matches": allwords}
-        partial = [i for i in candidate_items if all(any(w in token for token in re.findall(r"[a-z0-9_']+", name(i)) + [str(k).lower() for k in i.get("keywords", [])]) for w in words)]
-        if len(partial) == 1: return {"status":"ok", "item": partial[0], "matches": partial}
+        if allwords: return choose(allwords)
+        partial = [i for i in candidate_items if all(any(token.startswith(w) for token in re.findall(r"[a-z0-9_']+", name(i)) + [str(k).lower() for k in i.get("keywords", [])]) for w in words)]
+        if partial and (len(partial) == 1 or ordinal): return choose(partial)
         return {"status":"ambiguous" if partial else "missing", "matches": partial}
 
     def _normalize_equipment_slot(self, slot: str | None) -> str:
@@ -1534,7 +2556,13 @@ class MudRuntime:
 
     def pickup_item(self, character_id: str, room_id: str, query: str) -> str:
         res = self.resolve_item_keywords(query, self.get_visible_room_items(room_id))
-        if res["status"] != "ok": return self._resolve_message(res, "You don't see that here.")
+        if res["status"] != "ok":
+            q = str(query or "").strip().lower().replace("_", " ")
+            for feat in self._resolved_room_features(room_id, self.state_store.load_character(character_id)):
+                keys = [feat.get("id"), feat.get("name"), *(feat.get("keywords") or [])]
+                if q and q in {str(k or "").strip().lower().replace("_", " ") for k in keys}:
+                    return "You cannot take that."
+            return self._resolve_message(res, "You don't see that here.")
         item = res["item"]
         if not (item.get("template") or {}).get("portable", True):
             return "You cannot take that."
@@ -1571,9 +2599,17 @@ class MudRuntime:
     def _handle_item_command(self, char: MudCharacter, command: str, cmd: str, args: list[str]):
         from engine.mud_commands import CommandResult
         q=" ".join(args).strip()
+        if cmd == "loot":
+            return CommandResult(self.loot_container(char, q or "corpse"))
         if cmd in {"inventory"}: return CommandResult(self._render_inventory(char.id))
         if cmd in {"equipment"}: return CommandResult(self._render_equipment(char.id))
         if cmd in {"get","take"}:
+            if len(args) >= 2 and args[-1].lower().startswith(("corp", "cor", "body")):
+                return CommandResult(self.get_from_container(char, " ".join(args[:-1]) or "all", args[-1]))
+            if len(args) >= 3 and args[-2].lower() in {"from", "in"}:
+                return CommandResult(self.get_from_container(char, " ".join(args[:-2]), args[-1]))
+            if len(args) >= 3 and args[0].lower() in {"all", "everything"} and args[1].lower() in {"from", "in"}:
+                return CommandResult(self.get_from_container(char, "all", " ".join(args[2:])))
             if q in {"all", "everything"}: return CommandResult(self.bulk_get(char, q))
             return CommandResult(self.pickup_item(char.id, char.room_id, q) if q else "Get what?")
         if cmd=="drop":
@@ -1601,6 +2637,82 @@ class MudRuntime:
         if mode == "wield": return "main_hand"
         if mode == "hold": return "light"
         return None
+
+
+    def _look_in_container(self, char: MudCharacter, container: dict[str, Any]) -> str:
+        if container.get("entity_type") not in {"corpse", "container"}:
+            if "chest" in str(container.get("name") or container.get("id") or "").lower():
+                return "You see nothing unusual."
+            return "That is not a container."
+        st = container.get("state") or {}
+        if st.get("container_open") is False:
+            return "It is closed."
+        items = self.find_container_items(container.get("entity_id") or container.get("instance_id") or "")
+        if not items:
+            return "The corpse is empty." if container.get("entity_type") == "corpse" else "It is empty."
+        head = "Inside the corpse you find:" if container.get("entity_type") == "corpse" else "Inside you find:"
+        return head + "\n" + "\n".join(i["name"] + (f" x{i.get('stack_count')}" if int(i.get('stack_count') or 1) > 1 else "") for i in items)
+
+    def _drink_from_target(self, char: MudCharacter, target: dict[str, Any], kind: str, query: str) -> str:
+        if kind in {"inventory", "equipped", "room_object"}:
+            item = target
+            tmpl = item.get("template") or {}
+            if not (tmpl.get("drinkable") or tmpl.get("item_type") == "consumable" or tmpl.get("type") == "consumable"):
+                return "You cannot drink from that."
+            svc_factory = getattr(self.command_engine, "_survival_service", None)
+            svc = svc_factory(char) if callable(svc_factory) else None
+            if svc:
+                res = svc.consume_item(char.id, item.get("instance_id"), 1)
+                if res.get("ok"):
+                    liquid = "clean water" if "water" in str(tmpl.get("name") or item.get("name") or "").lower() else "from it"
+                    return f"You drink {liquid} from {item.get('name') or tmpl.get('name') or query}."
+                if str(res.get("reason") or "") == "no_servings_remaining":
+                    return "The flask is empty."
+            return f"You drink from {item.get('name') or tmpl.get('name') or query}."
+        if target.get("drinkable") or "drink" in (target.get("interaction_capabilities") or []) or target.get("drink_profile_id"):
+            return str((target.get("default_interactions") or {}).get("drink") or f"You drink from {target.get('name') or query}.")
+        return "You cannot drink from that."
+
+    def get_from_container(self, char: MudCharacter, item_query: str, container_query: str) -> str:
+        if str(container_query or "").lower().startswith(("cor", "corp", "corpse")):
+            corpses = [e for e in self.find_room_entities(char.room_id) if e.get("entity_type") == "corpse"]
+            if len(corpses) == 1:
+                res = {"status": "ok", "target": corpses[0]}
+            else:
+                res = self.resolve_entity_keywords(container_query, corpses)
+                if res.get("status") == "ok":
+                    res = {"status": "ok", "target": res.get("entity")}
+        else:
+            res = self._resolve_interaction_target(char, container_query)
+        if res.get("status") != "ok":
+            cands = [e for e in self.find_room_entities(char.room_id) if e.get("entity_type") == "corpse"]
+            cres = self.resolve_entity_keywords(container_query, cands)
+            if cres.get("status") == "ok":
+                res = {"status": "ok", "target": cres.get("entity")}
+            elif cres.get("status") == "ambiguous":
+                return self._resolve_message(cres, "Which do you mean?")
+            else:
+                return self._resolve_message(res, "You don't see that.")
+        container = res.get("target", {})
+        items = self.find_container_items(container.get("entity_id") or container.get("instance_id") or "")
+        if not items:
+            return "The corpse is empty." if container.get("entity_type") == "corpse" else "It is empty."
+        if item_query.lower() in {"all", "everything"}:
+            selected = items
+        else:
+            found = self.resolve_item_keywords(item_query, items)
+            if found.get("status") != "ok":
+                return self._resolve_message(found, "You don't see that in the corpse.")
+            selected = [found["item"]]
+        names=[]
+        for item in selected:
+            moved = self.transfer_item(item["instance_id"], to_owner=("character", char.id))
+            names.append(moved["name"])
+        self.event_bus.publish("corpse_looted", {"corpse_entity_id":container.get("entity_id"),"character_id":char.id,"item_count":len(names)}, source_system="runtime", world_id=self.active_world_id or "", character_id=char.id, room_id=char.room_id)
+        return "You take:\n  " + "\n  ".join(names)
+
+    def loot_container(self, char: MudCharacter, container_query: str) -> str:
+        return self.get_from_container(char, "all", container_query)
 
     def bulk_get(self, char: MudCharacter, selector: str = "all") -> str:
         items = [i for i in self.get_visible_room_items(char.room_id) if (i.get("template") or {}).get("portable", True)]
@@ -1655,26 +2767,22 @@ class MudRuntime:
         return " ".join(messages)
 
     def _render_inventory(self, character_id: str) -> str:
-        items=self.find_inventory_items(character_id)
-        return semantic("system", "You are not carrying anything.") if not items else semantic("system", "You are carrying:") + "\n" + "\n".join(f"  {semantic('item_' + str(i.get('rarity', 'common')), i['name'])}" + (f" x{i['stack_count']}" if i.get('stack_count',1)>1 else "") for i in items)
+        items = self.find_inventory_items(character_id)
+        total_weight = sum(float((i.get("template") or {}).get("weight") or i.get("weight") or 0) * int(i.get("stack_count") or 1) for i in items)
+        carrying = f"{int(total_weight) if total_weight.is_integer() else total_weight} weight" if items else ""
+        return render_display_mud(build_inventory_document(items, carrying=carrying))
 
     def _render_equipment(self, character_id: str) -> str:
-        equipped = self.find_equipped_items(character_id)
-        by={}
-        for i in equipped:
-            slots=str(i.get("equipped_slot") or "").split(",")
-            if "both_hands" in slots: slots += ["main_hand", "off_hand"]
-            for slot in slots:
-                if slot: by[slot]=i
-        prefix = "" if equipped else semantic("system", "You are not wearing anything.") + "\n"
-        return prefix + semantic("system", "Equipment:") + "\n" + "\n".join(f"  {semantic('equipment_slot', s.replace('_',' ').title())}: {semantic('equipment_item' if s in by else 'system', by[s]['name'] if s in by else 'nothing')}" for s in self.EQUIPMENT_SLOTS)
+        return render_display_mud(build_equipment_document(self.find_equipped_items(character_id), list(self.EQUIPMENT_SLOTS)))
 
     def _look_item(self, character_id: str, room_id: str, query: str) -> str:
         res=self.resolve_item_keywords(query, self.get_visible_room_items(room_id)+self.find_inventory_items(character_id)+self.find_equipped_items(character_id))
         if res["status"] != "ok": return self._resolve_message(res, "You don't see that.")
         item = res["item"]
         t = item.get("template", {})
-        render_payload = {**item, "description": str(t.get("long_description") or t.get("short_description") or item.get("description") or item.get("name") or "")}
+        flags = item.get("custom_flags") or {}
+        suffix = f"\nServings remaining: {flags.get('servings_remaining')}." if "servings_remaining" in flags else ""
+        render_payload = {**item, "description": str(t.get("examine_description") or t.get("long_description") or t.get("short_description") or item.get("description") or item.get("name") or "") + suffix}
         from smart_mud.transport import html_to_plain_text
         return html_to_plain_text(render_object(render_payload))
 
@@ -1687,16 +2795,122 @@ class MudRuntime:
         from smart_mud.transport import html_to_plain_text
         return html_to_plain_text(render_object({"name": ent.get("name"), "description": ent.get("long_description") or ent.get("short_description"), "long_description": ent.get("long_description")}))
 
-    def _render_examination(self, target: dict[str, Any], kind: str, query: str) -> str:
+
+    def _runtime_world_objects(self, room_id: str) -> list[dict[str, Any]]:
+        """Return persisted service-backed room objects for canonical rendering and inspection."""
+        out: list[dict[str, Any]] = []
+        db = getattr(self.state_store, "db_path", "")
+        if not db:
+            return out
+        try:
+            with sqlite3.connect(db) as conn:
+                conn.row_factory = sqlite3.Row
+                for r in conn.execute("SELECT * FROM campsite_instances WHERE room_id=? AND status IN ('active','occupied','abandoned') AND (expires_world_time IS NULL OR expires_world_time>(SELECT ((current_day-1)*1440+current_hour*60+current_minute) FROM world_time WHERE world_id=campsite_instances.world_id))", (room_id,)):
+                    out.append({"id": r["campsite_instance_id"], "name": "a small campsite", "keywords": ["campsite", "camp", "small campsite"], "entity_type": "campsite", "short_description": "A small campsite has been established here.", "long_description": "Bedroll space and a cleared patch of ground mark this as a simple campsite."})
+                for r in conn.execute("SELECT * FROM campfire_instances WHERE room_id=? AND status IN ('unlit','lit','extinguished','low_fuel') AND (expires_world_time IS NULL OR expires_world_time>(SELECT ((current_day-1)*1440+current_hour*60+current_minute) FROM world_time WHERE world_id=campfire_instances.world_id))", (room_id,)):
+                    status = str(r["status"] or "unlit")
+                    label = "a lit campfire" if status == "lit" else "a bed of cold ashes" if status == "extinguished" else "an unlit campfire"
+                    desc = "Warm flames crackle from a small ring of stones." if status == "lit" else "Cold ash and charred wood sit within a small ring of stones." if status == "extinguished" else "Kindling and stacked wood wait within a small ring of stones."
+                    out.append({"id": r["campfire_instance_id"], "name": label, "keywords": ["campfire", "fire", label], "entity_type": "campfire", "status": status, "short_description": label, "long_description": desc})
+        except sqlite3.Error:
+            return out
+        return out
+
+    def _log_inspection_route(self, raw: str, cmd: str, argument: str, resolved: dict[str, Any], renderer: str) -> None:
+        target = resolved.get("target") or {}
+        logger.debug(
+            "inspection_route raw_input=%r selected_command=%s remaining_argument=%r resolved_target_category=%s resolved_target_id=%s selected_renderer=%s",
+            raw,
+            cmd,
+            argument,
+            resolved.get("kind") or resolved.get("status"),
+            target.get("entity_id") or target.get("instance_id") or target.get("id") or target.get("feature_id") or target.get("name") or "",
+            renderer,
+        )
+
+    def inspect_target(self, viewer: MudCharacter, resolved_target: dict[str, Any], inspection_mode: str) -> str:
+        """Canonical target inspection dispatcher for player rendering.
+
+        Parser code resolves a target once; this dispatcher owns mode/category
+        presentation so targeted LOOK never falls back to room rendering after a
+        successful resolution.
+        """
+        if resolved_target.get("status") != "ok":
+            return self._resolve_message(resolved_target, "You don't see that.")
+        target = resolved_target.get("target") or {}
+        kind = str(resolved_target.get("kind") or target.get("entity_type") or "object")
+        mode = inspection_mode.upper()
+        if mode == "LOOK_INSIDE":
+            return self._look_in_container(viewer, target)
+        if mode == "LOOK_DIRECTION":
+            return self._render_examination(target, "exit", str(target.get("name") or "exit"), mode="LOOK")
+        if mode == "IDENTIFY":
+            if kind == "corpse":
+                return "You cannot identify that without a suitable skill."
+            return self._render_identify(target, kind, str(target.get("name") or "target"))
+        if mode == "READ":
+            template = target.get("template") or {}
+            msg = str(target.get("readable_text") or target.get("text") or target.get("writing") or target.get("message") or template.get("readable_text") or "")
+            return msg or "There is nothing readable here. There is nothing written there."
+        return self._render_examination(target, kind, str(target.get("name") or "target"), mode=mode)
+
+    def _description_for_mode(self, target: dict[str, Any], template: dict[str, Any], mode: str) -> str:
+        mode = mode.upper()
+        keys = (
+            ("examine_description", "examine_text", "extended_description", "look_description", "long_description", "description", "short_description")
+            if mode in {"EXAMINE", "INSPECT"}
+            else ("look_description", "description", "long_description", "short_description")
+        )
+        for key in keys:
+            if key in {"look_description", "examine_description", "examine_text"}:
+                val = template.get(key)
+                if val:
+                    return str(val).strip()
+            val = target.get(key)
+            if val:
+                return str(val).strip()
+            val = template.get(key)
+            if val:
+                return str(val).strip()
+        return ""
+
+    def _state_lines_for_target(self, target: dict[str, Any], kind: str, mode: str) -> list[str]:
         template = target.get("template") or {}
+        state = target.get("state") or {}
+        flags = target.get("custom_flags") or state or {}
+        lines: list[str] = []
+        servings = flags.get("servings_remaining")
+        if servings is not None or template.get("drinkable"):
+            try:
+                count = int(servings)
+                lines.append("It is empty." if count <= 0 else "It feels partly full." if count <= 1 else "It feels mostly full.")
+            except Exception:
+                pass
+        status = str(target.get("status") or state.get("status") or "").lower()
+        if kind in {"campfire", "world_object"} or "campfire" in str(target.get("name", "")).lower():
+            if status == "lit":
+                lines.append("It is lit and burning steadily.")
+            elif status == "extinguished":
+                lines.append("It has burned down to cold ash.")
+            elif status:
+                lines.append("It is not lit.")
+        if kind == "corpse":
+            lines.append(f"It is {state.get('decay_state', 'fresh')}.")
+            lines += ["It has been skinned." if state.get("skinned") else "It has not been skinned."]
+            if mode.upper() != "LOOK":
+                lines += ["It has been butchered." if state.get("butchered") else "It has not been butchered.", "It is open." if state.get("container_open", True) else "It is closed."]
+        return lines
+
+    def _render_examination(self, target: dict[str, Any], kind: str, query: str, mode: str = "EXAMINE") -> str:
+        template = target.get("template") or {}
+        if not template and target.get("template_id"):
+            template = dict(self.entity_templates.get(str(target.get("template_id") or ""), {}))
         name = str(target.get("name") or template.get("name") or query).strip()
-        long_desc = str(target.get("long_description") or template.get("long_description") or target.get("description") or template.get("description") or target.get("short_description") or template.get("short_description") or "").strip()
-        extended = str(target.get("extended_description") or template.get("extended_description") or "").strip()
+        long_desc = self._description_for_mode(target, template, mode)
+        extended = str(target.get("extended_description") or template.get("extended_description") or "").strip() if mode.upper() != "LOOK" else ""
         if kind == "exit" and not long_desc:
             return semantic("direction", name) + "\n" + semantic("placeholder", "You see nothing unusual.")
         interactions = target.get("interactions") or target.get("default_interactions") or template.get("default_interactions") or {}
-        if not interactions and kind in {"feature", "exit"}:
-            interactions = {"look": True, "use": True}
         title_role = "entity_title" if kind in {"player", "npc", "mob"} else "feature" if kind in {"feature", "exit"} else "object_title"
         desc_role = "entity_description" if kind in {"player", "npc", "mob"} else "object_description"
         lines = [semantic(title_role, name)]
@@ -1706,8 +2920,21 @@ class MudRuntime:
             lines.append(semantic(desc_role, long_desc))
         if extended:
             lines.append(semantic(desc_role, extended))
-        if interactions:
-            lines.append(semantic("object_interaction", "You may:"))
+        if not long_desc and kind not in {"player", "npc", "mob"}:
+            lines.append(semantic(desc_role, f"You see nothing unusual about {name}."))
+        lines.extend(self._state_lines_for_target(target, kind, mode))
+        if kind in {"npc", "mob", "player"}:
+            lines += ["", "Condition:", condition_label(target).capitalize() + "."]
+            st = str(target.get("current_state") or (target.get("state") or {}).get("current_state") or "standing")
+            target_name = (target.get("state") or {}).get("combat_target_name")
+            lines += ["", "Status:", (f"Fighting {target_name}." if target_name else st.replace('_',' ').capitalize() + ".")]
+            lines += ["", "Equipment:", "None visible."]
+        hints = target.get("interaction_hints") or template.get("interaction_hints") or []
+        if mode.upper() != "LOOK" and hints:
+            lines.append("Possible interactions:")
+            lines.extend(str(h) for h in hints)
+        elif mode.upper() != "LOOK" and interactions:
+            lines.append(semantic("object_interaction", "Possible interactions:"))
             for verb in sorted(interactions.keys() if isinstance(interactions, dict) else interactions):
                 lines.append(semantic("object_interaction", str(verb)))
         return "\n".join(lines) if len(lines) > 1 else ""
@@ -1750,7 +2977,15 @@ class MudRuntime:
         ])
 
     def _resolve_message(self, res: dict[str, Any], missing: str) -> str:
-        if res.get("status") == "ambiguous": return "Which do you mean: " + ", ".join(i["name"] for i in res.get("matches", [])) + "?"
+        if res.get("status") == "missing_ordinal":
+            return f"There is no {int(res.get('ordinal') or 0)}.{res.get('query') or 'target'} here."
+        if res.get("status") == "ambiguous":
+            choices = []
+            for idx, item in enumerate(res.get("matches", []), start=1):
+                name = str(item.get("name") or item.get("template", {}).get("name") or "target").lower()
+                word = next((w for w in re.findall(r"[a-z0-9_']+", name) if w not in self.ARTICLES), name)
+                choices.append(f"{idx}.{word}")
+            return "Which do you mean: " + " or ".join(choices) + "?"
         return missing
 
     def _publish_item_event(self, name: str, item: dict[str, Any] | None, **extra: Any) -> None:
@@ -1865,6 +3100,16 @@ class MudRuntime:
                 "keywords": [str(k).lower() for k in keywords if str(k).strip()],
                 "short_description": str(raw.get("short_description") or raw.get("description") or raw.get("name") or tid),
                 "long_description": str(raw.get("long_description") or raw.get("description") or raw.get("short_description") or raw.get("name") or tid),
+                "room_description": str(raw.get("room_description") or raw.get("description") or raw.get("short_description") or raw.get("name") or tid),
+                "look_description": str(raw.get("look_description") or raw.get("description") or raw.get("long_description") or raw.get("short_description") or raw.get("name") or tid),
+                "examine_description": str(raw.get("examine_description") or raw.get("look_description") or raw.get("long_description") or raw.get("description") or raw.get("short_description") or raw.get("name") or tid),
+                "readable_text": str(raw.get("readable_text") or ""),
+                "interaction_hints": raw.get("interaction_hints") or [],
+                "respawn_enabled": bool(raw.get("respawn_enabled")),
+                "respawn_delay_seconds": int(raw.get("respawn_delay_seconds") or 0),
+                "respawn_mode": str(raw.get("respawn_mode") or "normal"),
+                "respawn_message": str(raw.get("respawn_message") or ""),
+                "spawn_id": str(raw.get("spawn_id") or raw.get("spawn_group") or tid),
                 "default_room_id": str(raw.get("default_room_id") or raw.get("room_id") or ""),
                 "faction_id": str(raw.get("faction_id") or ""), "level": level,
                 "id": tid,
@@ -1875,13 +3120,53 @@ class MudRuntime:
                 "wander_rules": raw.get("wander_rules") or {"allowed_exits": raw.get("allowed_exits") or [], "wander_probability": float(raw.get("wander_probability") or 0), "wander_delay": int(raw.get("wander_delay") or 0), "restricted_rooms": raw.get("restricted_rooms") or [], "sentinel": bool(raw.get("sentinel") or "sentinel" in (raw.get("flags") or []))},
                 "dialogue_package": raw.get("dialogue_package") or {"greeting": raw.get("greeting") or f"{str(raw.get('name') or tid).title()} greets you.", "farewell": raw.get("farewell") or "Farewell.", "idle_speech": raw.get("idle_speech") or [], "talk_responses": raw.get("talk_responses") or [raw.get("dialogue_seed") or raw.get("description") or "They have nothing more to say."], "keyword_responses": raw.get("keyword_responses") or {}},
                 "behavior_flags": raw.get("behavior_flags") or raw.get("flags") or raw.get("tags") or [],
+                "tags": raw.get("tags") or [], "combat_policy": raw.get("combat_policy") or {}, "stats": raw.get("stats") or {},
+                "combat_behavior_profile_id": raw.get("combat_behavior_profile_id") or raw.get("behavior_profile_id") or "", "behavior_profile_id": raw.get("behavior_profile_id") or "",
+                "ability_loadout_id": raw.get("ability_loadout_id") or "", "natural_weapon_profile_id": raw.get("natural_weapon_profile_id") or "", "body_profile_id": raw.get("body_profile_id") or ("wolf" if "wolf" in tid else "humanoid"),
                 "visibility_flags": raw.get("visibility_flags") or [],
                 "loot_table": raw.get("loot_table") or raw.get("loot_table_id") or "", "merchant_profile": raw.get("merchant_profile") or {},
                 "trainer_profile": raw.get("trainer_profile") or {}, "banker_profile": raw.get("banker_profile") or {}, "healer_profile": raw.get("healer_profile") or {},
                 "quest_profile": raw.get("quest_profile") or {}, "script_hooks": raw.get("script_hooks") or {},
-                "state": raw.get("state") or {"current_state": "idle"}, "flags": raw.get("flags") or raw.get("behavior_flags") or [], "plugin_data": raw.get("plugin_data") or {},
+                "state": raw.get("state") or {"current_state": "idle", "current_health": (raw.get("stats") or {}).get("max_health", 100), "maximum_health": (raw.get("stats") or {}).get("max_health", 100)}, "flags": raw.get("flags") or raw.get("behavior_flags") or raw.get("tags") or [], "plugin_data": raw.get("plugin_data") or {},
             })
         self.entity_templates = templates
+
+
+    PRESENTATION_TEMPLATE_FIELDS = ("name", "keywords", "room_description", "look_description", "examine_description", "readable_text", "interaction_hints", "respawn_message")
+
+    def _template_presentation_hash(self, tmpl: dict[str, Any]) -> str:
+        payload = {k: tmpl.get(k) for k in self.PRESENTATION_TEMPLATE_FIELDS if k in tmpl}
+        return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+    def _reconcile_entity_presentation(self, row: Any) -> tuple[Any, ...]:
+        data = list(row)
+        tmpl = dict(self.entity_templates.get(str(data[3] or ""), {}))
+        if not tmpl or str(data[2] or "") == "corpse":
+            return tuple(row)
+        try:
+            plugin = json.loads(data[17] or "{}")
+        except Exception:
+            plugin = {}
+        new_hash = self._template_presentation_hash(tmpl)
+        if plugin.get("template_presentation_hash") == new_hash:
+            return tuple(row)
+        plugin.update({
+            "template_presentation_hash": new_hash,
+            "look_description": tmpl.get("look_description", data[7]),
+            "examine_description": tmpl.get("examine_description", tmpl.get("look_description", data[7])),
+            "readable_text": tmpl.get("readable_text", ""),
+            "interaction_hints": tmpl.get("interaction_hints", []),
+            "respawn_message": tmpl.get("respawn_message", ""),
+        })
+        data[4] = tmpl.get("name", data[4])
+        data[5] = json.dumps(tmpl.get("keywords", []))
+        data[6] = tmpl.get("room_description", tmpl.get("short_description", data[6]))
+        data[7] = tmpl.get("look_description", tmpl.get("long_description", data[7]))
+        now = datetime.now(timezone.utc).isoformat(); data[16] = now; data[17] = json.dumps(plugin)
+        with sqlite3.connect(self.state_store.db_path) as conn:
+            conn.execute("UPDATE entity_instances SET name=?,keywords=?,short_description=?,long_description=?,updated_at=?,plugin_data=? WHERE entity_id=?", (data[4], data[5], data[6], data[7], data[16], data[17], data[0]))
+        logger.info("entity presentation reconciled template=%s entity=%s", data[3], data[0])
+        return tuple(data)
 
     def _entity_payload(self, row: Any) -> dict[str, Any]:
         keys = ["entity_id","world_id","entity_type","template_id","name","keywords","short_description","long_description","current_room_id","owner_type","owner_id","faction_id","level","state","flags","created_at","updated_at","plugin_data"]
@@ -1899,35 +3184,158 @@ class MudRuntime:
         data["spawn_time"] = data.get("created_at"); data["last_update"] = data.get("updated_at"); data["last_reset"] = state.get("last_reset", "")
         data["spawn_origin"] = state.get("spawn_origin") or tmpl.get("default_room_id") or data.get("current_room_id", "")
         data["is_alive"] = bool(state.get("is_alive", data.get("entity_type") != "corpse" and data["current_state"] not in {"dead", "corpse", "despawned"}))
+        if data.get("entity_type") in {"npc", "mob"} and (data["current_health"] <= 0 or data["current_state"] in {"dead", "corpse", "despawned"}):
+            data["current_health"] = 0
+            data["is_alive"] = False
+            data["current_state"] = "dead" if data["current_state"] != "despawned" else data["current_state"]
+            state.update({"current_health": 0, "is_alive": False, "current_state": data["current_state"]})
+            data["state"] = state
         data["is_visible"] = bool(state.get("is_visible", not self._entity_hidden(data)))
         data["movement_state"] = state.get("movement_state", "standing"); data["dialogue_state"] = state.get("dialogue_state", {})
         data["custom_state"] = state.get("custom_state", {})
         data["behavior_flags"] = list(tmpl.get("behavior_flags") or data.get("flags") or [])
         data["visibility_flags"] = list(tmpl.get("visibility_flags") or []) + list(state.get("visibility_flags") or [])
-        data["description"] = data.get("long_description") or data.get("short_description") or data.get("name")
+        pdata = data.get("plugin_data") if isinstance(data.get("plugin_data"), dict) else {}
+        data["room_description"] = data.get("short_description") or tmpl.get("room_description") or data.get("name")
+        data["look_description"] = pdata.get("look_description") or data.get("long_description") or tmpl.get("look_description") or data.get("room_description")
+        data["examine_description"] = pdata.get("examine_description") or tmpl.get("examine_description") or data.get("look_description")
+        data["description"] = data.get("look_description") or data.get("long_description") or data.get("short_description") or data.get("name")
         return data
 
     def _fetch_entities(self, where: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
         with sqlite3.connect(self.state_store.db_path) as conn:
             rows = conn.execute(f"SELECT entity_id,world_id,entity_type,template_id,name,keywords,short_description,long_description,current_room_id,owner_type,owner_id,faction_id,level,state,flags,created_at,updated_at,plugin_data FROM entity_instances WHERE destroyed_at IS NULL AND {where} ORDER BY entity_type, created_at, entity_id", params).fetchall()
-        return [self._entity_payload(r) for r in rows]
+        return [self._entity_payload(self._reconcile_entity_presentation(r)) for r in rows]
 
     def spawn_entity(self, template_id: str, entity_type: str | None = None, room_id: str | None = None, owner_type: str = "room", owner_id: str = "", state: dict[str, Any] | None = None, flags: list[str] | None = None, source_system: str = "runtime", **ctx: Any) -> dict[str, Any]:
         tmpl = dict(self.entity_templates.get(template_id, {}))
         etype = entity_type or tmpl.get("entity_type") or "object"
         if etype not in self.ENTITY_TYPES: raise ValueError(f"Unsupported entity type: {etype}")
         now = datetime.now(timezone.utc).isoformat(); eid = f"ent_{uuid.uuid4().hex}"
-        payload = (eid, self.active_world_id or tmpl.get("world_id", ""), etype, template_id, tmpl.get("name", template_id), json.dumps(tmpl.get("keywords", [template_id])), tmpl.get("short_description", tmpl.get("name", template_id)), tmpl.get("long_description", tmpl.get("short_description", tmpl.get("name", template_id))), room_id or tmpl.get("default_room_id", ""), owner_type, owner_id, tmpl.get("faction_id", ""), int(tmpl.get("level", 1) or 1), json.dumps(state if state is not None else tmpl.get("state", {})), json.dumps(flags if flags is not None else tmpl.get("flags", [])), now, now, json.dumps(tmpl.get("plugin_data", {})))
+        if etype in {"npc", "mob"} and (state is None or not dict(state).get("lifecycle_id")):
+            state = dict(state or tmpl.get("state", {}) or {})
+            state["lifecycle_id"] = f"life_{uuid.uuid4().hex}"
+        plugin_data = dict(tmpl.get("plugin_data", {})); plugin_data.update({"template_presentation_hash": self._template_presentation_hash(tmpl), "look_description": tmpl.get("look_description", tmpl.get("long_description", "")), "examine_description": tmpl.get("examine_description", tmpl.get("look_description", "")), "readable_text": tmpl.get("readable_text", ""), "interaction_hints": tmpl.get("interaction_hints", []), "respawn_message": tmpl.get("respawn_message", "")})
+        payload = (eid, self.active_world_id or tmpl.get("world_id", ""), etype, template_id, tmpl.get("name", template_id), json.dumps(tmpl.get("keywords", [template_id])), tmpl.get("room_description", tmpl.get("short_description", tmpl.get("name", template_id))), tmpl.get("look_description", tmpl.get("long_description", tmpl.get("short_description", tmpl.get("name", template_id)))), room_id or tmpl.get("default_room_id", ""), owner_type, owner_id, tmpl.get("faction_id", ""), int(tmpl.get("level", 1) or 1), json.dumps(state if state is not None else tmpl.get("state", {})), json.dumps(flags if flags is not None else tmpl.get("flags", [])), now, now, json.dumps(plugin_data))
         with sqlite3.connect(self.state_store.db_path) as conn:
             conn.execute("INSERT INTO entity_instances(entity_id,world_id,entity_type,template_id,name,keywords,short_description,long_description,current_room_id,owner_type,owner_id,faction_id,level,state,flags,created_at,updated_at,plugin_data) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", payload)
         ent = self.find_entity(eid) or {}
+        if etype in {"npc", "mob"} and ent.get("is_alive"):
+            self.register_resident_entity_actor(ent)
         self._publish_entity_event("entity_spawned", ent, source_system=source_system, **ctx)
         if etype in {"npc", "mob", "corpse"}: self._publish_entity_event(f"{etype}_spawned", ent, source_system=source_system, **ctx)
         self._publish_entity_event("room_entities_changed", ent, source_system=source_system, **ctx)
         return ent
 
+    def canonical_room_id(self, value: Any) -> str:
+        """Normalize runtime room identifiers for resident occupancy comparisons."""
+        text = str(value or "").strip()
+        if ":" in text:
+            text = text.rsplit(":", 1)[-1]
+        if text.startswith("room_") and text[5:] in {str(r.get("id")) for r in getattr(self.active_world, "rooms", []) or [] if isinstance(r, dict)}:
+            text = text[5:]
+        return text
+
+    def actor_id_for_entity_instance(self, ent: dict[str, Any]) -> str:
+        return "entity:" + str(ent.get("instance_id") or ent.get("entity_id") or "")
+
+    def register_resident_entity_actor(self, ent: dict[str, Any]) -> Any:
+        actor = self.combat_runtime._resident_entity_actor(ent)
+        room_id = self.canonical_room_id(ent.get("room_id") or ent.get("current_room_id"))
+        actor.identity.current_location = room_id
+        iid = str(ent.get("instance_id") or ent.get("entity_id") or "")
+        self.entity_instance_to_actor_id[iid] = actor.actor_id
+        self.actor_id_to_entity_instance_id[actor.actor_id] = iid
+        self.resident_entities_by_actor_id[actor.actor_id] = dict(ent)
+        self.add_occupant(room_id, actor.actor_id)
+        return actor
+
+    def add_occupant(self, room_id: Any, actor_id: str) -> None:
+        rid = self.canonical_room_id(room_id)
+        if rid and actor_id:
+            self.resident_occupants_by_room.setdefault(rid, OrderedDict())[actor_id] = None
+
+    def remove_occupant(self, room_id: Any, actor_id: str) -> None:
+        occupants = self.resident_occupants_by_room.get(self.canonical_room_id(room_id))
+        if occupants is not None:
+            occupants.pop(actor_id, None)
+
+    def move_occupant(self, actor_id: str, old_room_id: Any, new_room_id: Any) -> None:
+        old = self.canonical_room_id(old_room_id); new = self.canonical_room_id(new_room_id)
+        self.remove_occupant(old, actor_id)
+        actor = self.combat_runtime.resident_actors.get(actor_id)
+        if actor:
+            actor.identity.current_location = new
+        self.add_occupant(new, actor_id)
+
+    def occupants_in_room(self, room_id: Any) -> list[Any]:
+        rid = self.canonical_room_id(room_id)
+        return [self.combat_runtime.resident_actors[aid] for aid in self.resident_occupants_by_room.get(rid, OrderedDict()) if aid in self.combat_runtime.resident_actors]
+
+    def _entity_for_resident_actor(self, actor_id: str) -> dict[str, Any] | None:
+        iid = self.actor_id_to_entity_instance_id.get(actor_id) or (actor_id.split(":", 1)[1] if actor_id.startswith("entity:") else "")
+        return self.resident_entities_by_actor_id.get(actor_id) or (self.find_entity(iid) if iid else None)
+
+    def find_occupant(self, room_id: Any, query: str, filters: dict[str, Any] | None = None) -> dict[str, Any]:
+        filters = filters or {}
+        cands: list[dict[str, Any]] = []
+        for actor in self.occupants_in_room(room_id):
+            ent = self._entity_for_resident_actor(actor.actor_id)
+            if not ent:
+                continue
+            if filters.get("living") and (actor.resources.health <= 0 or actor.lifecycle_state == "dead" or not ent.get("is_alive")):
+                continue
+            if filters.get("attackable") and not self._resident_entity_attackable(ent):
+                continue
+            if filters.get("visible_to") is not None and not self.is_entity_visible(ent, filters.get("visible_to")):
+                continue
+            cands.append(ent)
+        resolved = self.resolve_entity_keywords(query, cands)
+        ent = resolved.get("entity")
+        return {"status": resolved.get("status", "missing"), "entity": ent, "matches": resolved.get("matches", []), "actor": self.combat_runtime.resident_actors.get(self.actor_id_for_entity_instance(ent or {})) if ent else None}
+
+    def _resident_entity_attackable(self, ent: dict[str, Any]) -> bool:
+        tmpl = dict(self.entity_templates.get(str(ent.get("template_id") or ""), {}))
+        flags = set(tmpl.get("flags") or []) | set(ent.get("flags") or []) | set(tmpl.get("tags") or [])
+        policy = tmpl.get("combat_policy") or {}
+        if policy.get("protected") or policy.get("no_kill") or "protected" in flags or "trainer_protected" in flags or tmpl.get("kind") == "trainer":
+            return False
+        return policy.get("attackable") is True or "hostile" in flags or "attackable" in flags
+
+    def validate_room_occupancy(self) -> list[str]:
+        problems: list[str] = []
+        seen: dict[str, str] = {}
+        for room_id, occupants in self.resident_occupants_by_room.items():
+            if self.canonical_room_id(room_id) != room_id:
+                problems.append(f"noncanonical room index key {room_id}")
+            for actor_id in occupants:
+                actor = self.combat_runtime.resident_actors.get(actor_id)
+                if actor is None:
+                    problems.append(f"room {room_id} lists missing actor {actor_id}")
+                    continue
+                if actor_id in seen and seen[actor_id] != room_id:
+                    problems.append(f"actor {actor_id} listed in multiple rooms: {seen[actor_id]} and {room_id}")
+                seen[actor_id] = room_id
+                if self.canonical_room_id(actor.identity.current_location) != room_id:
+                    problems.append(f"actor {actor_id} location {actor.identity.current_location} missing from room index {room_id}")
+                if actor_id.startswith("entity:") and not self.actor_id_to_entity_instance_id.get(actor_id):
+                    problems.append(f"actor {actor_id} missing entity instance mapping")
+        return problems
+
+    def rebuild_room_occupancy_admin_only(self) -> dict[str, int]:
+        self.resident_occupants_by_room.clear()
+        self.entity_instance_to_actor_id.clear()
+        self.actor_id_to_entity_instance_id.clear()
+        self.resident_entities_by_actor_id.clear()
+        count = 0
+        for ent in self._fetch_entities("owner_type='room' AND entity_type IN ('npc','mob')", ()):
+            if ent.get("is_alive") and ent.get("current_state") not in {"dead", "corpse", "despawned"}:
+                self.register_resident_entity_actor(ent)
+                count += 1
+        return {"resident_actors": len(self.combat_runtime.resident_actors), "resident_occupants": count}
+
     def find_entity(self, entity_id: str) -> dict[str, Any] | None: return next(iter(self._fetch_entities("entity_id=?", (entity_id,))), None)
-    def find_room_entities(self, room_id: str) -> list[dict[str, Any]]: return self._fetch_entities("owner_type='room' AND current_room_id=?", (room_id,))
+    def find_room_entities(self, room_id: str) -> list[dict[str, Any]]: return self._fetch_entities("owner_type='room' AND current_room_id=?", (self.canonical_room_id(room_id),))
     def get_room_contents(self, room_id: str, viewer: Any = None, include_builder_metadata: bool = False) -> dict[str, Any]:
         groups = {"features": self._resolved_room_features(room_id, viewer), "item_instances": self.get_visible_room_items(room_id), "entity_instances": [], "players": [], "exits": []}
         seen_instance_ids: set[str] = set()
@@ -1946,40 +3354,90 @@ class MudRuntime:
         return groups
 
     def find_visible_entities(self, room_id: str, viewer: Any = None) -> dict[str, list[dict[str, Any]]]:
-        contents = self.get_room_contents(room_id, viewer)
-        groups = {"players": [], "npcs": [], "mobs": [], "objects": list(contents["item_instances"]), "corpses": []}
-        for ent in contents["entity_instances"]:
-            groups[{"npc":"npcs", "mob":"mobs", "corpse":"corpses"}.get(ent.get("entity_type"), "objects")].append(ent)
+        groups = {"players": [], "npcs": [], "mobs": [], "objects": list(self.get_visible_room_items(room_id)), "corpses": []}
+        for actor in self.occupants_in_room(room_id):
+            ent = self._entity_for_resident_actor(actor.actor_id)
+            if not ent or not self.is_entity_visible(ent, viewer):
+                continue
+            groups[{"npc":"npcs", "mob":"mobs"}.get(ent.get("entity_type"), "objects")].append(ent)
+        # Corpses and non-living objects remain durable-room content; living targetable
+        # occupants are exclusively from the resident room index above.
+        for ent in self._fetch_entities("owner_type='room' AND entity_type='corpse' AND current_room_id=?", (self.canonical_room_id(room_id),)):
+            if self.is_entity_visible(ent, viewer):
+                groups["corpses"].append(ent)
         return groups
 
     def resolve_entity_keywords(self, query: str, candidate_entities: list[dict[str, Any]]) -> dict[str, Any]:
+        numbered = re.match(r"^\s*(\d+)\.([^\s].*)$", str(query or ""), re.I)
+        ordinal = int(numbered.group(1)) if numbered else 0
+        query = numbered.group(2) if numbered else query
         words = [w for w in re.findall(r"[a-z0-9_']+", query.lower()) if w not in self.ARTICLES]; q = " ".join(words)
         if not q: return {"status":"missing", "matches": []}
-        def tokens(e): return set(re.findall(r"[a-z0-9_']+", str(e.get("name","")).lower()) + [str(k).lower() for k in e.get("keywords", [])])
-        matches = [e for e in candidate_entities if str(e.get("name","")).lower() == q] or [e for e in candidate_entities if q in [str(k).lower() for k in e.get("keywords", [])]] or [e for e in candidate_entities if all(w in tokens(e) for w in words)]
-        return {"status": "ok" if len(matches)==1 else "ambiguous" if matches else "missing", "entity": matches[0] if len(matches)==1 else None, "matches": matches}
+        def toks(e): return re.findall(r"[a-z0-9_']+", str(e.get("name","")).lower()) + [str(k).lower() for k in e.get("keywords", []) if str(k).strip()]
+        def choose(matches):
+            if ordinal:
+                return {"status":"ok","entity":matches[ordinal-1],"matches":matches} if len(matches) >= ordinal else {"status":"missing_ordinal","matches":matches,"ordinal":ordinal,"query":q}
+            return {"status":"ok","entity":matches[0],"matches":matches} if matches else None
+        matches = [e for e in candidate_entities if str(e.get("name","")).lower() == q]
+        if matches: return choose(matches)
+        matches = [e for e in candidate_entities if q in [str(k).lower() for k in e.get("keywords", [])]]
+        if matches: return choose(matches)
+        matches = [e for e in candidate_entities if q in [" ".join(re.findall(r"[a-z0-9_']+", str(k).lower())) for k in e.get("keywords", [])]]
+        if matches: return choose(matches)
+        matches = [e for e in candidate_entities if all(w in set(toks(e)) for w in words)]
+        if matches: return choose(matches)
+        partial = [e for e in candidate_entities if all(any(token.startswith(w) for token in toks(e)) for w in words)]
+        if partial and (len(partial) == 1 or ordinal): return choose(partial)
+        return {"status": "ambiguous" if partial else "missing", "entity": None, "matches": partial}
 
     def move_entity(self, entity_id: str, room_id: str, source_system: str = "runtime", **ctx: Any) -> dict[str, Any]:
         old = self.find_entity(entity_id); now = datetime.now(timezone.utc).isoformat()
-        with sqlite3.connect(self.state_store.db_path) as conn: conn.execute("UPDATE entity_instances SET current_room_id=?, owner_type='room', updated_at=? WHERE entity_id=? AND destroyed_at IS NULL", (room_id, now, entity_id))
+        new_room = self.canonical_room_id(room_id)
+        with sqlite3.connect(self.state_store.db_path) as conn: conn.execute("UPDATE entity_instances SET current_room_id=?, owner_type='room', updated_at=? WHERE entity_id=? AND destroyed_at IS NULL", (new_room, now, entity_id))
         ent = self.find_entity(entity_id) or {}
+        if ent.get("entity_type") in {"npc", "mob"}:
+            aid = self.actor_id_for_entity_instance(ent)
+            self.resident_entities_by_actor_id[aid] = dict(ent)
+            self.move_occupant(aid, (old or {}).get("room_id") or (old or {}).get("current_room_id"), new_room)
         self._publish_entity_event("entity_moved", ent, source_system=source_system, previous_room_id=(old or {}).get("current_room_id"), **ctx); self._publish_entity_event("room_entities_changed", ent, source_system=source_system, **ctx)
         return ent
 
     def update_entity_state(self, entity_id: str, state: dict[str, Any], source_system: str = "runtime", **ctx: Any) -> dict[str, Any]:
         now = datetime.now(timezone.utc).isoformat()
         with sqlite3.connect(self.state_store.db_path) as conn: conn.execute("UPDATE entity_instances SET state=?, updated_at=? WHERE entity_id=? AND destroyed_at IS NULL", (json.dumps(state), now, entity_id))
-        ent = self.find_entity(entity_id) or {}; self._publish_entity_event("entity_state_changed", ent, source_system=source_system, **ctx); return ent
+        ent = self.find_entity(entity_id) or {}
+        if ent.get("entity_type") in {"npc", "mob"}:
+            aid = self.actor_id_for_entity_instance(ent)
+            if not ent.get("is_alive") or ent.get("current_state") in {"dead", "corpse", "despawned"}:
+                self.remove_occupant(ent.get("room_id") or ent.get("current_room_id"), aid)
+                self.resident_entities_by_actor_id.pop(aid, None)
+            else:
+                self.resident_entities_by_actor_id[aid] = dict(ent)
+        self._publish_entity_event("entity_state_changed", ent, source_system=source_system, **ctx); return ent
 
     def despawn_entity(self, entity_id: str, source_system: str = "runtime", **ctx: Any) -> bool:
         ent = self.find_entity(entity_id)
         with sqlite3.connect(self.state_store.db_path) as conn: conn.execute("UPDATE entity_instances SET destroyed_at=?, destroy_reason='despawned', updated_at=? WHERE entity_id=?", (datetime.now(timezone.utc).isoformat(), datetime.now(timezone.utc).isoformat(), entity_id))
+        if ent:
+            actor_id = self.actor_id_for_entity_instance(ent)
+            self.remove_occupant(ent.get("room_id") or ent.get("current_room_id"), actor_id)
+            self.combat_runtime.remove_resident_actor(actor_id)
+            self.entity_instance_to_actor_id.pop(str(ent.get("entity_id") or ""), None)
+            self.actor_id_to_entity_instance_id.pop(actor_id, None)
+            self.resident_entities_by_actor_id.pop(actor_id, None)
         if ent: self._publish_entity_event("entity_despawned", ent, source_system=source_system, **ctx); self._publish_entity_event("room_entities_changed", ent, source_system=source_system, **ctx)
         return bool(ent)
 
     def destroy_entity(self, entity_id: str, reason: str = "destroyed", source_system: str = "runtime", **ctx: Any) -> bool:
         ent = self.find_entity(entity_id)
         with sqlite3.connect(self.state_store.db_path) as conn: conn.execute("UPDATE entity_instances SET destroyed_at=?, destroy_reason=?, updated_at=? WHERE entity_id=?", (datetime.now(timezone.utc).isoformat(), reason, datetime.now(timezone.utc).isoformat(), entity_id))
+        if ent:
+            actor_id = self.actor_id_for_entity_instance(ent)
+            self.remove_occupant(ent.get("room_id") or ent.get("current_room_id"), actor_id)
+            self.combat_runtime.remove_resident_actor(actor_id)
+            self.entity_instance_to_actor_id.pop(str(ent.get("entity_id") or ""), None)
+            self.actor_id_to_entity_instance_id.pop(actor_id, None)
+            self.resident_entities_by_actor_id.pop(actor_id, None)
         if ent: self._publish_entity_event("entity_destroyed", ent, source_system=source_system, **ctx); self._publish_entity_event("room_entities_changed", ent, source_system=source_system, **ctx)
         return bool(ent)
 
@@ -2048,7 +3506,7 @@ class MudRuntime:
         for ent in existing[:qty]:
             ids.append(ent.get("entity_id") or ent.get("instance_id"))
         for _ in range(max(0, qty - len(ids))):
-            ent=self.spawn_entity(tid, room_id=rid, state={"current_state":"idle", "spawn_origin": rid, "source_spawn_id": spawn_id, "custom_state": {}}, source_system="materializer"); ids.append(ent.get("entity_id") or ent.get("instance_id"))
+            ent=self.spawn_entity(tid, room_id=rid, state={"current_state":"idle", "spawn_origin": rid, "source_spawn_id": spawn_id, "custom_state": {}, "lifecycle_id": f"life_{uuid.uuid4().hex}"}, source_system="materializer"); ids.append(ent.get("entity_id") or ent.get("instance_id"))
         with sqlite3.connect(self.state_store.db_path) as conn: conn.execute("INSERT INTO content_materializations(world_id,declaration_kind,declaration_id,materialized_at,instance_ids_json,status,metadata_json) VALUES(?,?,?,?,?,?,?)", (self.active_world_id or "","entity_spawn",spawn_id,now,json.dumps(ids),"materialized",json.dumps({"template_id": tid, "room_id": rid, "quantity": qty, "adopted_existing": len(existing[:qty]), "duplicate_candidates": [e.get("instance_id") for e in existing[qty:]]})))
         self.event_bus.publish("entity_spawn_materialized", {"world_id": self.active_world_id or "", "declaration_id": spawn_id, "template_id": tid, "room_id": rid, "instance_ids": ids, "quantity": qty, "policy": sp.get("spawn_policy", "once")}, source_system="runtime", world_id=self.active_world_id or "", room_id=rid)
         return {"instance_ids": ids, "status":"materialized", "materialized_at": now}
@@ -2115,6 +3573,8 @@ class MudRuntime:
             for tid, tmpl in self.entity_templates.items():
                 rid = str(tmpl.get("default_room_id") or "")
                 if not rid: continue
+                if conn.execute("SELECT 1 FROM entity_instances WHERE world_id=? AND current_room_id=? AND template_id=? AND destroyed_at IS NULL LIMIT 1", (self.active_world_id, rid, tid)).fetchone():
+                    continue
                 seed = f"{tid}:{rid}:0"
                 try: conn.execute("INSERT INTO room_entity_seeds(world_id,room_id,template_id,seed_key,created_at) VALUES(?,?,?,?,?)", (self.active_world_id, rid, tid, seed, now))
                 except sqlite3.IntegrityError: continue
@@ -2142,6 +3602,8 @@ class MudRuntime:
         return bool(flags & self.HIDDEN_VISIBILITY_FLAGS) or current in {"despawned"} or state.get("is_visible") is False
 
     def is_entity_visible(self, ent: dict[str, Any], viewer: Any = None) -> bool:
+        if ent.get("entity_type") in {"npc", "mob"} and (not ent.get("is_alive") or ent.get("current_state") in {"dead", "corpse", "despawned"}):
+            return False
         return not self._entity_hidden(ent)
 
     def change_entity_state(self, entity_id: str, current_state: str, source_system: str = "runtime", **ctx: Any) -> dict[str, Any]:
@@ -2164,10 +3626,110 @@ class MudRuntime:
         return self.find_entity(entity_id) or {}
 
     def respawn_entity(self, template_id: str, room_id: str | None = None, **ctx: Any) -> dict[str, Any]:
-        return self.spawn_entity(template_id, room_id=room_id, state={"current_state":"idle", "spawn_origin": room_id or ""}, **ctx)
+        tmpl = self.entity_templates.get(template_id, {})
+        max_hp = int(((tmpl.get("state") or {}).get("maximum_health") or (tmpl.get("stats") or {}).get("max_health") or 100) or 100)
+        return self.spawn_entity(template_id, room_id=room_id, state={"current_state":"idle", "spawn_origin": room_id or "", "current_health": max_hp, "maximum_health": max_hp, "is_alive": True, "lifecycle_id": f"life_{uuid.uuid4().hex}", "source_spawn_id": ctx.get("spawn_id", "")}, **ctx)
+
+    def _ensure_entity_respawn_schema(self) -> None:
+        with sqlite3.connect(self.state_store.db_path) as conn:
+            conn.execute("""CREATE TABLE IF NOT EXISTS entity_respawn_queue(
+                respawn_id TEXT PRIMARY KEY,
+                world_id TEXT,
+                template_id TEXT,
+                spawn_id TEXT,
+                room_id TEXT,
+                old_entity_id TEXT,
+                old_lifecycle_id TEXT,
+                due_at TEXT,
+                state TEXT,
+                new_entity_id TEXT,
+                created_at TEXT,
+                updated_at TEXT,
+                metadata_json TEXT
+            )""")
+
+    def schedule_entity_respawn(self, ent: dict[str, Any], *, death_id: str = "") -> None:
+        tmpl = self.entity_templates.get(str(ent.get("template_id") or ""), {})
+        if not tmpl.get("respawn_enabled") or str(tmpl.get("respawn_mode") or "normal") == "story_permanent":
+            return
+        delay = int(tmpl.get("respawn_delay_seconds") or (tmpl.get("spawn_rules") or {}).get("respawn_delay") or 0)
+        if delay <= 0:
+            return
+        self._ensure_entity_respawn_schema()
+        state = ent.get("state") or {}
+        spawn_id = str(tmpl.get("spawn_id") or tmpl.get("id") or ent.get("template_id") or "")
+        old_lifecycle = str(state.get("lifecycle_id") or ent.get("entity_id") or "")
+        respawn_id = "respawn_" + uuid.uuid5(uuid.NAMESPACE_URL, f"{self.active_world_id}:{death_id or ent.get('entity_id')}:{old_lifecycle}").hex
+        now = datetime.now(timezone.utc)
+        due = (now + timedelta(seconds=delay)).isoformat()
+        with sqlite3.connect(self.state_store.db_path) as conn:
+            conn.execute("""INSERT OR IGNORE INTO entity_respawn_queue(respawn_id,world_id,template_id,spawn_id,room_id,old_entity_id,old_lifecycle_id,due_at,state,new_entity_id,created_at,updated_at,metadata_json)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""", (respawn_id, self.active_world_id or "", ent.get("template_id"), spawn_id, ent.get("room_id") or ent.get("current_room_id"), ent.get("entity_id"), old_lifecycle, due, "WAITING_TO_RESPAWN", "", now.isoformat(), now.isoformat(), json.dumps({"death_id": death_id, "delay_seconds": delay})))
+        logger.info("entity respawn scheduled template=%s old_entity=%s due_at=%s state=WAITING_TO_RESPAWN", ent.get("template_id"), ent.get("entity_id"), due)
+
+    def process_due_entity_respawns(self, now: str | None = None) -> list[dict[str, Any]]:
+        self._ensure_entity_respawn_schema()
+        now = now or datetime.now(timezone.utc).isoformat()
+        made: list[dict[str, Any]] = []
+        with sqlite3.connect(self.state_store.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = [dict(r) for r in conn.execute("SELECT * FROM entity_respawn_queue WHERE world_id=? AND state IN ('WAITING_TO_RESPAWN','READY_TO_RESPAWN') AND due_at<=? ORDER BY due_at,respawn_id", (self.active_world_id or "", now))]
+        for row in rows:
+            alive = [e for e in self.find_entities(template_id=row["template_id"], room_id=row["room_id"]) if e.get("entity_type") in {"npc","mob"} and e.get("is_alive")]
+            if alive:
+                with sqlite3.connect(self.state_store.db_path) as conn:
+                    conn.execute("UPDATE entity_respawn_queue SET state='ACTIVE_NEW_LIFECYCLE',new_entity_id=?,updated_at=? WHERE respawn_id=?", (alive[0].get("entity_id"), now, row["respawn_id"]))
+                continue
+            ent = self.respawn_entity(row["template_id"], row["room_id"], source_system="respawn", spawn_id=row.get("spawn_id",""))
+            made.append(ent)
+            with sqlite3.connect(self.state_store.db_path) as conn:
+                conn.execute("UPDATE entity_respawn_queue SET state='ACTIVE_NEW_LIFECYCLE',new_entity_id=?,updated_at=? WHERE respawn_id=?", (ent.get("entity_id",""), now, row["respawn_id"]))
+            msg = str(self.entity_templates.get(row["template_id"], {}).get("respawn_message") or f"{ent.get('name','Someone')} arrives.")
+            combat_rt = getattr(self, "combat_runtime", None)
+            if combat_rt and hasattr(combat_rt, "active_character_ids_in_room") and hasattr(combat_rt, "enqueue_output"):
+                for cid in combat_rt.active_character_ids_in_room(row["room_id"]):
+                    combat_rt.enqueue_output(cid, msg, room_id=row["room_id"], category="respawn")
+        return made
 
     def create_corpse(self, entity_id: str, **ctx: Any) -> dict[str, Any]:
-        ent = self.find_entity(entity_id) or {}; corpse = self.spawn_entity(ent.get("template_id", "corpse"), entity_type="corpse", room_id=ent.get("room_id"), state={"current_state":"corpse", "source_entity_id": entity_id, "is_alive": False}, flags=["corpse"], **ctx); return corpse
+        ent = self.find_entity(entity_id) or {}
+        if not ent:
+            return {}
+        death_id = str(ctx.get("death_id") or "")
+        source_lifecycle_id = str((ent.get("state") or {}).get("lifecycle_id") or entity_id)
+        existing = [c for c in self.find_entities(entity_type="corpse", room_id=ent.get("room_id")) if (death_id and (c.get("state") or {}).get("death_id") == death_id) or ((not death_id) and (c.get("state") or {}).get("source_entity_id") == entity_id and (c.get("state") or {}).get("source_lifecycle_id") == source_lifecycle_id)]
+        if existing:
+            return existing[0]
+        name = str(ent.get("name") or "creature")
+        state = dict(ent.get("state") or {})
+        state.update({"current_state":"dead", "is_alive": False, "current_health": 0})
+        self.update_entity_state(entity_id, state, source_system=ctx.get("source_system", "runtime"))
+        corpse_state={"current_state":"corpse", "source_entity_id": entity_id, "source_template_id": ent.get("template_id"), "source_actor_name": name, "source_lifecycle_id": source_lifecycle_id, "death_id": death_id, "killer_actor_id": str(ctx.get("killer_actor_id") or ""), "is_alive": False, "container_open": True, "decay_state": "fresh", "created_world_time": self.get_world_time(self.active_world_id or '').get('total_minutes', 0), "created_at_utc": datetime.now(timezone.utc).isoformat(), "decay_at_utc": (datetime.now(timezone.utc) + __import__("datetime").timedelta(seconds=float((self.entity_templates.get(str(ent.get("template_id") or ""), {}) or {}).get("corpse_decay_seconds") or 180.0))).isoformat(), "decay_seconds": float((self.entity_templates.get(str(ent.get("template_id") or ""), {}) or {}).get("corpse_decay_seconds") or 180.0), "skinned": False, "butchered": False}
+        corpse = self.spawn_entity(ent.get("template_id", "corpse"), entity_type="corpse", room_id=ent.get("room_id"), state=corpse_state, flags=["corpse"], **ctx)
+        corpse_name = f"The corpse of {name.lower()}"
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.state_store.db_path) as conn:
+            conn.execute("UPDATE entity_instances SET name=?,keywords=?,short_description=?,long_description=?,updated_at=? WHERE entity_id=?", (corpse_name, json.dumps(["corpse", "body", *str(name).lower().split()]), f"The corpse of {name.lower()} is lying here.", f"{corpse_name}. It was recently slain. Blood darkens the fur and flesh around several wounds.", now, corpse.get("entity_id")))
+        corpse = self.find_entity(corpse.get("entity_id")) or corpse
+        self._generate_corpse_contents(corpse, ent, ctx)
+        self.schedule_entity_respawn(ent, death_id=death_id)
+        self._publish_entity_event("corpse_created", corpse, source_system=ctx.get("source_system", "runtime"), source_entity_id=entity_id)
+        return corpse
+
+    def _generate_corpse_contents(self, corpse: dict[str, Any], source_ent: dict[str, Any], ctx: dict[str, Any] | None = None) -> None:
+        ctx = ctx or {}; corpse_id = corpse.get("entity_id", "")
+        tmpl = dict(self.entity_templates.get(str(source_ent.get("template_id") or ""), {}))
+        loot_table = tmpl.get("loot_table") or ""
+        if not loot_table:
+            return
+        from engine.rewards import RewardService
+        svc = RewardService(runtime=self, world_id=self.active_world_id or "shattered_realms", event_bus=self.event_bus)
+        pkt = svc.resolve_loot_table(loot_table, {"source_type":"combat","source_id":str(source_ent.get("template_id")),"source_instance_id":str(ctx.get("death_id") or source_ent.get("entity_id")),"world_id":self.active_world_id or "","world_time":self.get_world_time(self.active_world_id or '').get('total_minutes',0)}, {"recipient_type":"corpse","recipient_id":corpse_id}, seed=str(ctx.get('death_id') or corpse_id))
+        svc.deliver_reward_packet(pkt["reward_packet_id"])
+        self.event_bus.publish("corpse_contents_generated", {"corpse_entity_id":corpse_id,"source_entity_id":source_ent.get("entity_id"),"loot_table_id":loot_table,"reward_packet_id":pkt["reward_packet_id"]}, source_system="runtime", world_id=self.active_world_id or "", room_id=corpse.get("room_id"))
+
+    def find_container_items(self, owner_id: str) -> list[dict[str, Any]]:
+        return self._fetch_items("owner_type IN ('corpse','container') AND owner_id=?", (owner_id,))
 
     def get_dialogue(self, template_id: str) -> dict[str, Any]:
         return dict((self.entity_templates.get(template_id) or {}).get("dialogue_package") or {})
@@ -2179,14 +3741,33 @@ class MudRuntime:
         ent = res["entity"]; pkg = self.get_dialogue(ent.get("template_id", "")); text = ""
         if keyword:
             text = str((pkg.get("keyword_responses") or {}).get(keyword.lower(), ""))
+        semantic_kind = "dialogue"
         if not text:
-            responses = pkg.get("talk_responses") or []; text = str(responses[0] if responses else pkg.get("greeting") or "They nod silently.")
-        self._publish_entity_event("entity_dialogue", ent, character_id=character_id, dialogue_keyword=keyword, dialogue_text=text)
+            responses = pkg.get("talk_responses") or []
+            text = str(responses[0] if responses else pkg.get("greeting") or "What can I help you with?")
+        blocked = ("speaks from their role", "personality", "invented world facts", "instruction", "prompt", "metadata")
+        lower_text = text.lower().strip()
+        if any(b in lower_text for b in blocked):
+            text = "What can I help you with?"
+            semantic_kind = "dialogue"
+        elif lower_text.startswith(("they ", "he ", "she ", "it ")) or " acknowledge" in lower_text or " nod" in lower_text:
+            semantic_kind = "action"
+            if lower_text.startswith("they acknowledge"):
+                text = "acknowledges your greeting"
+        self._publish_entity_event("entity_dialogue", ent, character_id=character_id, dialogue_keyword=keyword, dialogue_text=text, semantic_kind=semantic_kind)
         char_for_event = self.state_store.load_character(character_id)
         if char_for_event:
             self._publish_interaction_event("entity_interaction", char_for_event, "talk", f"talk {query}", {"target_kind": ent.get("entity_type"), "target_name": ent.get("name"), "result_summary": text})
             self._publish_interaction_event("interaction_succeeded", char_for_event, "talk", f"talk {query}", {"target_kind": ent.get("entity_type"), "target_name": ent.get("name"), "result_summary": text})
-        return f'{ent.get("name")} says, "{text}"'
+        name = ent.get("name")
+        if semantic_kind == "action":
+            action_text = text
+            if action_text[:1].isupper() and str(action_text).split()[0] in {"They", "He", "She", "It"}:
+                action_text = "acknowledges your greeting"
+            if not str(action_text).lower().startswith(str(name).lower()):
+                action_text = f"{name} {action_text}"
+            return semantic("emote", action_text.rstrip("." ) + ".")
+        return semantic("dialogue", f'{name} says, "{text}"')
 
     def _handle_dialogue_command(self, char: MudCharacter, cmd: str, args: list[str]):
         from engine.mud_commands import CommandResult
@@ -2257,7 +3838,7 @@ class MudRuntime:
             "score_value": "#ffffff",
             "equipment_slot": "#00ffff",
             "equipment_item": "#ffffff",
-            "dialogue": "#ffff00",
+            "dialogue": "#ffffff",
             "prompt_marker": "#00ff00",
             "prompt_hp": "#ff0000",
             "prompt_mana": "#0088ff",

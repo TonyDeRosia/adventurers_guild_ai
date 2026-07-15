@@ -42,7 +42,7 @@ def test_npc_mob_rendering_lookup_movement_persistence_and_ids_hidden(tmp_path):
     assert rt2.find_entity(npc["entity_id"])["current_room_id"] == "guildhall_crossing_square"
     mob = rt.spawn_entity("cellar_rats", room_id="guildhall_registrar_office")
     assert "Cellar Rats" in rt.handle_input(cid, "look")["output"]
-    assert "Cellar Rats is a memorable resident" in rt.handle_input(cid, "examine rats")["output"]
+    assert "yellow teeth" in rt.handle_input(cid, "examine rats")["output"]
     assert rt.despawn_entity(mob["entity_id"])
 
 

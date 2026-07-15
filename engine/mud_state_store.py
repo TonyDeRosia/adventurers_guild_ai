@@ -423,6 +423,7 @@ SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS campaign_meta(key TEXT PRIMARY KEY,value TEXT);
 CREATE TABLE IF NOT EXISTS characters(character_id TEXT PRIMARY KEY,campaign_id TEXT,world_id TEXT,name TEXT,race_id TEXT,class_id TEXT,appearance TEXT,level INTEGER,xp INTEGER,current_room_id TEXT,hp_current INTEGER,mana_current INTEGER,stamina_current INTEGER,gold INTEGER,created_at TEXT,updated_at TEXT,role TEXT DEFAULT 'player',immortal_level INTEGER DEFAULT 0,builder_enabled INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS character_stats(character_id TEXT,stat_name TEXT,stat_value INTEGER,PRIMARY KEY(character_id,stat_name));
+CREATE TABLE IF NOT EXISTS character_attributes(character_id TEXT,attribute_id TEXT,base_value INTEGER,permanent_modifier INTEGER DEFAULT 0,created_at TEXT,updated_at TEXT,source TEXT,metadata_json TEXT,PRIMARY KEY(character_id,attribute_id));
 CREATE TABLE IF NOT EXISTS character_abilities(character_id TEXT,ability_id TEXT,source TEXT,learned_at TEXT,PRIMARY KEY(character_id,ability_id));
 CREATE TABLE IF NOT EXISTS character_inventory(id INTEGER PRIMARY KEY AUTOINCREMENT,character_id TEXT,item_id TEXT,quantity INTEGER,equipped_slot TEXT,state_json TEXT);
 CREATE TABLE IF NOT EXISTS command_history(id INTEGER PRIMARY KEY AUTOINCREMENT,character_id TEXT,command_text TEXT,room_id TEXT,created_at TEXT);

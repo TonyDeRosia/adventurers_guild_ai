@@ -104,6 +104,296 @@
       "terminal": true,
       "text": "Thank you.",
       "version": 1
+    },
+    {
+      "id": "maren_emberleaf_greeting",
+      "conversation_id": "maren_emberleaf_errand",
+      "text": "Guild Registrar Maren checks your guild token and nods. \"Welcome to Guildhall Crossing. I have a first field errand if you are ready.\"",
+      "terminal": false,
+      "choice_ids": [],
+      "entry_conditions": [],
+      "on_enter_actions": [],
+      "speaker_ref": {
+        "type": "actor_template",
+        "id": "guild_registrar_maren"
+      },
+      "journal_note": "",
+      "tags": [
+        "phase11f"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "maren_emberleaf_offer",
+      "conversation_id": "maren_emberleaf_errand",
+      "text": "\"Bring me one emberleaf from the crossing patch. The task is simple, but the guild records every step.\"",
+      "terminal": false,
+      "choice_ids": [],
+      "entry_conditions": [],
+      "on_enter_actions": [],
+      "speaker_ref": {
+        "type": "actor_template",
+        "id": "guild_registrar_maren"
+      },
+      "journal_note": "",
+      "tags": [
+        "phase11f"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "maren_emberleaf_accept",
+      "conversation_id": "maren_emberleaf_errand",
+      "text": "\"Good. Gather the emberleaf and return when your journal says the errand is ready.\"",
+      "terminal": false,
+      "choice_ids": [],
+      "entry_conditions": [],
+      "on_enter_actions": [],
+      "speaker_ref": {
+        "type": "actor_template",
+        "id": "guild_registrar_maren"
+      },
+      "journal_note": "",
+      "tags": [
+        "phase11f"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "maren_emberleaf_decline",
+      "conversation_id": "maren_emberleaf_errand",
+      "text": "\"Then look around the crossing and return when you are ready.\"",
+      "terminal": true,
+      "choice_ids": [],
+      "entry_conditions": [],
+      "on_enter_actions": [],
+      "speaker_ref": {
+        "type": "actor_template",
+        "id": "guild_registrar_maren"
+      },
+      "journal_note": "",
+      "tags": [
+        "phase11f"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "maren_emberleaf_progress",
+      "conversation_id": "maren_emberleaf_errand",
+      "text": "\"Your journal will show the emberleaf count. The patch is here at Guildhall Crossing.\"",
+      "terminal": false,
+      "choice_ids": [],
+      "entry_conditions": [],
+      "on_enter_actions": [],
+      "speaker_ref": {
+        "type": "actor_template",
+        "id": "guild_registrar_maren"
+      },
+      "journal_note": "",
+      "tags": [
+        "phase11f"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "maren_emberleaf_insufficient",
+      "conversation_id": "maren_emberleaf_errand",
+      "text": "\"Not yet. Gather one emberleaf before turning this in.\"",
+      "terminal": true,
+      "choice_ids": [],
+      "entry_conditions": [],
+      "on_enter_actions": [],
+      "speaker_ref": {
+        "type": "actor_template",
+        "id": "guild_registrar_maren"
+      },
+      "journal_note": "",
+      "tags": [
+        "phase11f"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "maren_emberleaf_complete",
+      "conversation_id": "maren_emberleaf_errand",
+      "text": "\"Well done. The guild records your first field task as complete.\"",
+      "terminal": false,
+      "choice_ids": [],
+      "entry_conditions": [],
+      "on_enter_actions": [],
+      "speaker_ref": {
+        "type": "actor_template",
+        "id": "guild_registrar_maren"
+      },
+      "journal_note": "",
+      "tags": [
+        "phase11f"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "maren_emberleaf_done",
+      "conversation_id": "maren_emberleaf_errand",
+      "text": "\"You have completed the emberleaf errand. Your next assignment is a controlled hunt on the Emberwood trail.\"",
+      "terminal": false,
+      "choice_ids": [],
+      "entry_conditions": [],
+      "on_enter_actions": [],
+      "speaker_ref": {
+        "type": "actor_template",
+        "id": "guild_registrar_maren"
+      },
+      "journal_note": "",
+      "tags": [
+        "phase11f"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "maren_emberleaf_followup_locked",
+      "conversation_id": "maren_emberleaf_errand",
+      "text": "\"First complete the emberleaf errand; then I will unlock your next assignment.\"",
+      "terminal": true,
+      "choice_ids": [],
+      "entry_conditions": [],
+      "on_enter_actions": [],
+      "speaker_ref": {
+        "type": "actor_template",
+        "id": "guild_registrar_maren"
+      },
+      "journal_note": "",
+      "tags": [
+        "phase11f"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "maren_emberleaf_farewell",
+      "conversation_id": "maren_emberleaf_errand",
+      "text": "\"Safe paths, recruit.\"",
+      "terminal": true,
+      "choice_ids": [],
+      "entry_conditions": [],
+      "on_enter_actions": [],
+      "speaker_ref": {
+        "type": "actor_template",
+        "id": "guild_registrar_maren"
+      },
+      "journal_note": "",
+      "tags": [
+        "phase11f"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "maren_wolf_offer",
+      "conversation_id": "maren_emberleaf_errand",
+      "text": "\"You handled the emberleaf. Now prove you can survive a controlled fight: take the north road to the Emberwood hunting trail, defeat one forest wolf, and bring back a pelt from its corpse.\"",
+      "terminal": false,
+      "choice_ids": [],
+      "entry_conditions": [],
+      "on_enter_actions": [],
+      "speaker_ref": {
+        "type": "actor_template",
+        "id": "guild_registrar_maren"
+      },
+      "journal_note": "Maren offers the first combat patrol.",
+      "tags": [
+        "phase11f",
+        "combat"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "maren_wolf_accept",
+      "conversation_id": "maren_emberleaf_errand",
+      "text": "\"Good. Use consider before you strike, then kill or attack the wolf. Loot the corpse and return with the pelt.\"",
+      "terminal": false,
+      "choice_ids": [],
+      "entry_conditions": [],
+      "on_enter_actions": [],
+      "speaker_ref": {
+        "type": "actor_template",
+        "id": "guild_registrar_maren"
+      },
+      "journal_note": "Travel north to the hunting trail.",
+      "tags": [
+        "phase11f",
+        "combat"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "maren_wolf_progress",
+      "conversation_id": "maren_emberleaf_errand",
+      "text": "\"Your journal will update when the wolf dies and when the pelt is obtained through corpse loot.\"",
+      "terminal": false,
+      "choice_ids": [],
+      "entry_conditions": [],
+      "on_enter_actions": [],
+      "speaker_ref": {
+        "type": "actor_template",
+        "id": "guild_registrar_maren"
+      },
+      "journal_note": "Combat progress is EventBus-driven.",
+      "tags": [
+        "phase11f",
+        "combat"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "maren_wolf_complete",
+      "conversation_id": "maren_emberleaf_errand",
+      "text": "\"The pelt is recorded and the patrol is complete. You have proven the first combat loop.\"",
+      "terminal": false,
+      "choice_ids": [],
+      "entry_conditions": [],
+      "on_enter_actions": [],
+      "speaker_ref": {
+        "type": "actor_template",
+        "id": "guild_registrar_maren"
+      },
+      "journal_note": "First Hunt complete.",
+      "tags": [
+        "phase11f",
+        "combat"
+      ],
+      "plugin_data": {},
+      "version": 1
+    },
+    {
+      "id": "maren_wolf_future",
+      "conversation_id": "maren_emberleaf_errand",
+      "text": "\"Next we will expand your assignments beyond the crossing. For now, keep your gear ready.\"",
+      "terminal": true,
+      "choice_ids": [],
+      "entry_conditions": [],
+      "on_enter_actions": [],
+      "speaker_ref": {
+        "type": "actor_template",
+        "id": "guild_registrar_maren"
+      },
+      "journal_note": "Future Guildlands work placeholder.",
+      "tags": [
+        "phase11f",
+        "future_placeholder"
+      ],
+      "plugin_data": {},
+      "version": 1
     }
   ]
 }

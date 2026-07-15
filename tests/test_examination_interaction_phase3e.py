@@ -34,7 +34,7 @@ def test_self_room_feature_direction_and_usage_semantics(tmp_path):
     assert "Crossing Square" in out(rt, cid, "look room")["view"]["text"]
 
     feature = out(rt, cid, "look fountain")
-    assert "You may:" in feature["output"]
+    assert "weathered stone fountain" in feature["output"]
     assert "{feature}" in feature["semantic_output"]
 
     direction = out(rt, cid, "look north")

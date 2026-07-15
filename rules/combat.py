@@ -1,4 +1,9 @@
-"""Combat and damage resolution logic.
+"""Legacy/compatibility-only campaign combat helpers.
+
+Live Smart MUD runtime combat must use engine.combat.CombatEngine via
+engine.combat_runtime.CombatRuntimeService, not this module.
+
+Combat and damage resolution logic.
 
 Rules are isolated from narration so they can be swapped independently.
 """
