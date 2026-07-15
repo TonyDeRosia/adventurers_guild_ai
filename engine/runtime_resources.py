@@ -70,6 +70,8 @@ class RuntimeResourceService:
         self.world_id = world_id or getattr(runtime, "active_world_id", "") or ""
         if self.db_path: self.initialize()
         self._next_regeneration_monotonic = time.monotonic() + 6.0
+        self.last_point_update_monotonic = 0.0
+        self.point_update_interval_seconds = 6.0
 
     def initialize(self) -> None:
         if not self.db_path: return
@@ -202,7 +204,8 @@ class RuntimeResourceService:
         now = time.monotonic() if now_monotonic is None else float(now_monotonic)
         if now < self._next_regeneration_monotonic:
             return 0
-        self._next_regeneration_monotonic = now + 6.0
+        self.last_point_update_monotonic = now
+        self._next_regeneration_monotonic = now + self.point_update_interval_seconds
         rt = self.runtime
         if rt is None:
             return 0
@@ -214,6 +217,8 @@ class RuntimeResourceService:
         for actor in actors:
             if getattr(actor, "lifecycle_state", "alive") == "dead":
                 continue
+            if getattr(getattr(rt, "combat_runtime", None), "find_actor_encounter", lambda _aid: "")(getattr(actor, "actor_id", "")):
+                continue
             processed += 1
             reconcile_actor_position(actor, rt, reason="periodic_state_update")
             state = normalize_position(actor.combat_profile.get("position") or actor.combat_profile.get("combat_state") or "standing")
@@ -222,7 +227,9 @@ class RuntimeResourceService:
                 actor.resources.health = before - (2 if state == "mortally_wounded" else 1)
                 counters["periodic_suffering_ticks"] = counters.get("periodic_suffering_ticks", 0) + 1
                 changes += 1
-                reconcile_actor_position(actor, rt, reason="periodic_suffering")
+                _old, new_state, transitioned = reconcile_actor_position(actor, rt, reason="periodic_suffering")
+                if actor.resources.health <= -11:
+                    self._respawn_player(actor, rt, reason="death_threshold")
             elif state == "dead":
                 continue
             else:
@@ -231,6 +238,7 @@ class RuntimeResourceService:
                     mult = 0
                 if mult <= 0:
                     continue
+                old_state = state
                 for resource in ("health", "mana", "stamina"):
                     before = _num(getattr(actor.resources, resource, 0))
                     maximum = _num(getattr(actor.resources, f"maximum_{resource}", before), before)
@@ -238,7 +246,14 @@ class RuntimeResourceService:
                     if after != before:
                         setattr(actor.resources, resource, after)
                         changes += 1
-                reconcile_actor_position(actor, rt, reason="regeneration")
+                _stored, new_state, transitioned = reconcile_actor_position(actor, rt, reason="regeneration")
+                if transitioned and old_state in {"stunned", "incapacitated", "mortally_wounded"} and new_state not in {"stunned", "incapacitated", "mortally_wounded", "dead"} and actor.actor_id.startswith("character:"):
+                    cid_msg = actor.actor_id.split(":", 1)[1]
+                    if hasattr(rt, "_enqueue_room_output"):
+                        rt._enqueue_room_output(cid_msg, "You regain consciousness.", room_id=getattr(actor.identity, "current_location", ""), category="recovery")
+                    if hasattr(rt, "invalidate_character_projections"):
+                        rt.invalidate_character_projections(cid_msg, "resource_current")
+                    counters["recovery_transitions"] = counters.get("recovery_transitions", 0) + 1
             if changes and actor.actor_id.startswith("character:"):
                 cid = actor.actor_id.split(":", 1)[1]
                 ch = getattr(rt, "active_characters", {}).get(cid)
@@ -251,6 +266,30 @@ class RuntimeResourceService:
         counters["regeneration_actors_processed"] = counters.get("regeneration_actors_processed", 0) + processed
         counters["regeneration_resource_changes"] = counters.get("regeneration_resource_changes", 0) + changes
         return processed
+
+    def _respawn_player(self, actor: Actor, rt: Any, *, reason: str = "death") -> None:
+        if not actor.actor_id.startswith("character:"):
+            return
+        cid = actor.actor_id.split(":", 1)[1]
+        ch = getattr(rt, "active_characters", {}).get(cid)
+        if not ch:
+            return
+        maxh = _num(actor.resources.maximum_health, 1); maxm = _num(actor.resources.maximum_mana, 0); maxs = _num(actor.resources.maximum_stamina, 0)
+        actor.resources.health = max(1, maxh)
+        actor.resources.mana = maxm
+        actor.resources.stamina = maxs
+        actor.lifecycle_state = "alive"
+        actor.combat_profile["position"] = "standing"; actor.combat_profile["combat_state"] = "idle"
+        ch.hp = actor.resources.health; ch.mana = actor.resources.mana; ch.stamina = actor.resources.stamina
+        data = ch.actor_data if isinstance(ch.actor_data, dict) else {}; data["position"] = "standing"; data["posture"] = "standing"; data["last_death_checkpoint"] = _now(); ch.actor_data = data
+        if getattr(rt, "combat_runtime", None):
+            rt.combat_runtime.clear_actor_combat_state(actor.actor_id, reason, status="dead")
+        if hasattr(rt, "_enqueue_room_output"):
+            rt._enqueue_room_output(cid, "You have died, but the powers of this realm return you to life.", room_id=getattr(ch, "room_id", ""), category="death")
+        if hasattr(rt, "invalidate_character_projections"):
+            rt.invalidate_character_projections(cid, "resource_current")
+        if hasattr(rt, "mark_character_dirty"):
+            rt.mark_character_dirty(cid, "death_respawn")
 
     def evaluate_zero_health(self, actor: Actor, *, trigger_action_id: str = "") -> LifecycleTransitionResult:
         previous = str(getattr(actor, "lifecycle_state", "alive") or "alive")
