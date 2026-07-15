@@ -663,6 +663,14 @@ class CombatRuntimeService:
         with sqlite3.connect(self.db_path) as con: con.execute("UPDATE combat_participants SET current_target_actor_id=? WHERE encounter_id=? AND actor_id=?",(target_id,eid,actor_id))
         self._publish('combat_target_set',{'encounter_id':eid,'actor_id':actor_id,'target_actor_id':target_id,'world_time':self.world_time()})
 
+    def remove_resident_actor(self, actor_id: str) -> None:
+        self.resident_actors.pop(actor_id, None)
+        with sqlite3.connect(self.db_path) as con:
+            con.execute("UPDATE combat_participants SET participation_status='logged_out',current_target_actor_id='' WHERE actor_id=? AND participation_status='active'", (actor_id,))
+            con.execute("UPDATE combat_action_queue SET status='cancelled',resolved_at=? WHERE actor_id=? AND status='queued'", (datetime.now(timezone.utc).isoformat(), actor_id))
+        for eid in list({r[0] for r in sqlite3.connect(self.db_path).execute("SELECT encounter_id FROM combat_participants WHERE actor_id=?", (actor_id,))}):
+            self.end_if_finished(eid)
+
     def find_actor_encounter(self, actor_id: str) -> str:
         with sqlite3.connect(self.db_path) as con:
             r=con.execute("SELECT p.encounter_id FROM combat_participants p JOIN combat_encounters e ON e.encounter_id=p.encounter_id WHERE p.actor_id=? AND e.status='active' AND p.participation_status='active'",(actor_id,)).fetchone()
@@ -733,14 +741,13 @@ class CombatRuntimeService:
             else: attacker.combat_profile['natural_weapons']=old_weapons
         self.last_resolution={'attacker_id':attacker.actor_id,'defender_id':defender.actor_id,'hit':res.hit,'damage':res.damage_event.final_damage if res.damage_event else 0,'source_type':request.source_type,'source_id':request.source_id,'attack_kind':request.attack_kind,'trace':res.trace,'messages':res.messages}; self.persist_actor(attacker); self.persist_actor(defender)
         dmg=res.damage_event.final_damage if res.damage_event else 0; outcome='hit' if res.hit else 'miss'
-        if dmg <= 0 and request.source_type == 'opening' and defender.resources.health <= 1:
-            from engine.runtime_resources import RuntimeResourceService
-            rr = RuntimeResourceService(self.runtime, db_path=self.db_path, event_bus=self.event_bus, world_id=self.runtime.active_world_id or '').apply_damage(defender, 1, action_id=request.action_id, metadata={'source':request.source_type,'encounter_id':eid,'room_id':request.room_id})
-            self.persist_actor(defender); dmg = int(rr.applied_amount or 0); outcome = 'hit' if dmg else outcome
-            try:
-                res.messages['attacker'] = f"You strike {defender.identity.name} with a killing blow!"
-            except Exception:
-                pass
+        # Opening attacks are a single immediate attack; they must not add an
+        # extra forced damage packet or complete a death transition before the
+        # first normal violence pulse in the live web loop.
+        if request.source_type == 'opening' and defender.resources.health <= 0:
+            defender.resources.health = 1
+            self.persist_actor(defender)
+            outcome = 'hit' if dmg else outcome
         with sqlite3.connect(self.db_path) as con:
             con.execute("INSERT INTO combat_round_history VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",('hist_'+uuid.uuid4().hex,eid,self._round(eid),attacker.actor_id,defender.actor_id,request.attack_kind,request.ability_id,outcome,dmg,0,json.dumps({'action_id':request.action_id,'hit':res.hit,'damage':dmg,'trace':res.trace,'messages':res.messages,'source_type':request.source_type,'source_id':request.source_id,'attack_kind':request.attack_kind,'lifecycle_result':getattr(self,'last_resolution',{}).get('lifecycle_result')}),wt,datetime.now(timezone.utc).isoformat()))
             con.execute("UPDATE combat_participants SET last_action_round=?,next_action_world_time=?,contribution_damage=contribution_damage+? WHERE encounter_id=? AND actor_id=?",(self._round(eid),wt+max(1,int(self.engine.attack_profile(attacker).speed*1000)),dmg,eid,attacker.actor_id))
@@ -759,7 +766,10 @@ class CombatRuntimeService:
         if defender.resources.health<=0:
             life = self.lifecycle.process_defeat_or_death(encounter_id=eid, attacker=attacker, defender=defender, trigger_action_id=request.action_id)
             self.last_resolution['lifecycle_result'] = life.__dict__
+            msgs.append(f'Your attack defeats {defender.identity.name}.')
             msgs.append(f'{defender.identity.name} collapses and dies.')
+            if attacker.actor_id.startswith('character:'):
+                self.enqueue_output(attacker.actor_id.split(':',1)[1], f'Your attack defeats {defender.identity.name}.', encounter_id=eid, room_id=attacker.identity.current_location, category='death')
         return CombatRuntimeResult(True,msgs,eid)
 
     def _execute_attack(self,eid:str,attacker:Actor,defender:Actor,opening:bool=False)->CombatRuntimeResult:
@@ -770,18 +780,26 @@ class CombatRuntimeService:
 
     def process_due_rounds(self, world_time:int|None=None)->list[str]:
         wt=self.world_time() if world_time is None else int(world_time); out=[]
-        with sqlite3.connect(self.db_path) as con: eids=[r[0] for r in con.execute("SELECT encounter_id FROM combat_encounters WHERE status='active' AND next_round_world_time<=?",(wt,))]
+        trace_id = "violence_" + uuid.uuid4().hex[:12]
+        with sqlite3.connect(self.db_path) as con:
+            active_rows = list(con.execute("SELECT encounter_id,next_round_world_time FROM combat_encounters WHERE status='active'"))
+            eids=[r[0] for r in active_rows if int(r[1] or 0) <= wt]
         self.runtime.performance_counters["combat_encounter_sql_reads"] = self.runtime.performance_counters.get("combat_encounter_sql_reads", 0) + 1
-        self.runtime.performance_counters["combat_encounters_active"] = len(eids)
-        processed=0
+        self.runtime.performance_counters["combat_encounters_active"] = len(active_rows)
+        self.runtime.performance_counters["combat_encounters_due"] = len(eids)
+        processed=0; started = time.monotonic(); action_count = 0
         for eid in eids:
             if processed >= self.MAX_ACTIONS_PER_PULSE:
                 self.runtime.performance_counters["combat_backlog"] = len(eids)-processed
                 self._publish('combat_pulse_backlog', {'world_id':self.runtime.active_world_id or '', 'remaining':len(eids)-processed, 'world_time':wt})
                 break
+            before_hist = len(out)
             out += self.process_encounter_round(eid, wt); processed += 1
+            action_count += max(0, len(out) - before_hist)
+        duration_ms = int((time.monotonic() - started) * 1000)
         self.runtime.performance_counters["combat_rounds_processed"] = self.runtime.performance_counters.get("combat_rounds_processed", 0) + processed
-        self._publish('combat_pulse_processed', {'world_id':self.runtime.active_world_id or '', 'encounters':processed, 'world_time':wt})
+        print(f"[violence-pulse] trace_id={trace_id} pulse={getattr(self.runtime, '_runtime_pulse_counter', 0)} now={wt} active_encounters={len(active_rows)} due_encounters={len(eids)} processed_encounters={processed} actions={action_count} messages={len(out)} duration_ms={duration_ms}")
+        self._publish('combat_pulse_processed', {'trace_id': trace_id, 'world_id':self.runtime.active_world_id or '', 'active_encounters': len(active_rows), 'due_encounters': len(eids), 'processed_encounters': processed, 'actions': action_count, 'messages': len(out), 'duration_ms': duration_ms, 'world_time':wt})
         return out
 
     def process_due_respawns(self, world_time: int | None = None) -> list[RespawnScheduleResult]:

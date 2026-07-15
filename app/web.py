@@ -98,7 +98,7 @@ class WebRuntime:
         self.active_character_id = ""
         self._pulse_task = None
         self._pulse_running = False
-        self._pulse_interval_seconds = 0.2
+        self._pulse_interval_seconds = 0.1
         self.event_bus.publish("runtime_ready", {"transport": "web"}, source_system="startup")
         print("[startup] Ready.")
         print("SQLite Ready")

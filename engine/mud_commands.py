@@ -346,6 +346,15 @@ class MudCommandEngine:
             "rangeedit": self._cmd_rangeedit,
             "combatmessage": self._cmd_combatmessage,
             "perfstat": self._cmd_perfstat,
+            "pulseinfo": self._cmd_runtime_admin,
+            "pulsetrace": self._cmd_runtime_admin,
+            "pulseforce": self._cmd_runtime_admin,
+            "residentlist": self._cmd_runtime_admin,
+            "residentstat": self._cmd_runtime_admin,
+            "latencystat": self._cmd_runtime_admin,
+            "commandtrace": self._cmd_runtime_admin,
+            "restore": self._cmd_restore,
+            "restorestat": self._cmd_restore,
             "stateinspect": self._cmd_stateinspect,
             "staterepair": self._cmd_stateinspect,
             "combatstate": self._cmd_stateinspect,
@@ -701,6 +710,97 @@ class MudCommandEngine:
             return CommandResult("Performance counters reset.")
         keys = [k for k in sorted(counters) if k.startswith(("runtime_", "combat_", "practice_", "train_", "position_", "autosave_", "resident_", "regeneration_"))]
         return CommandResult("Performance counters:\n" + "\n".join(f"{k}: {counters.get(k,0)}" for k in keys))
+
+    def _is_admin(self, character: Any) -> bool:
+        return str(getattr(character, "role", "player")).lower() in {"admin", "owner", "builder"} or int(getattr(character, "immortal_level", 0) or 0) > 0
+
+    def _cmd_runtime_admin(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if not self._is_admin(character):
+            return CommandResult("You do not have permission for that command.", ok=False)
+        rt = getattr(self, "runtime", None)
+        cmd = (raw.split() or [""])[0].lower()
+        if not rt:
+            return CommandResult("Runtime is unavailable.", ok=False)
+        if cmd == "pulseinfo":
+            cfg = getattr(rt, "pulse_config", {})
+            return CommandResult("Pulse configuration:\n" + "\n".join(f"{k}: {v}" for k, v in sorted(cfg.items())) + f"\ncurrent_pulse: {getattr(rt, '_runtime_pulse_counter', 0)}")
+        if cmd == "pulsetrace":
+            keys = [k for k in sorted(getattr(rt, "performance_counters", {})) if k.startswith(("runtime_", "scheduler_", "combat_", "autosave_", "corpse_"))]
+            return CommandResult("Pulse trace:\n" + "\n".join(f"{k}: {rt.performance_counters.get(k,0)}" for k in keys))
+        if cmd == "pulseforce":
+            subsystem = (args[0].lower() if args else "")
+            if subsystem in {"combat", "violence"}:
+                n = rt.combat_runtime.process_due_rounds(rt.combat_runtime.world_time()) if getattr(rt, "combat_runtime", None) else []
+                return CommandResult(f"Forced combat violence pulse; messages={len(n)}.")
+            if subsystem in {"point", "point_update", "regeneration"}:
+                n = rt.runtime_resources.process_due_regeneration(0) if getattr(rt, "runtime_resources", None) else 0
+                return CommandResult(f"Forced point update; actors={n}.")
+            if subsystem == "autosave":
+                return CommandResult(f"Forced autosave; characters_saved={rt.autosave_dirty_characters()}.")
+            if subsystem in {"corpse", "corpse_decay"}:
+                return CommandResult(f"Forced corpse decay; corpses_decayed={rt.process_corpse_decay(10**12)}.")
+            return CommandResult("Usage: pulseforce combat|point_update|autosave|corpse_decay", ok=False)
+        if cmd == "residentlist":
+            ids = sorted(getattr(rt, "active_characters", {}).keys())
+            return CommandResult("Residents:\n" + ("\n".join(ids) if ids else "none"))
+        if cmd == "residentstat":
+            cid = args[0] if args else getattr(character, "id", "")
+            cid = cid.removeprefix("character:")
+            ch = getattr(rt, "active_characters", {}).get(cid)
+            aid = f"character:{cid}"
+            dirty = sorted(getattr(rt, "_dirty_characters", {}).get(cid, set()))
+            attached = getattr(rt, "character_session_ids", {}).get(cid, "")
+            combat = rt.combat_runtime.find_actor_encounter(aid) if getattr(rt, "combat_runtime", None) else ""
+            generation = ((getattr(ch, "actor_data", {}) or {}).get("hydration_generation") if ch else "absent")
+            text = (
+                f"Resident {cid}:\n"
+                f"session_attached: {attached or 'no'}\n"
+                f"online: {'yes' if ch else 'no'}\n"
+                "reconnect_grace: no\n"
+                f"resident_actor_generation: {generation}\n"
+                f"dirty: {', '.join(dirty) if dirty else 'no'}\n"
+                f"combat_active: {combat or 'no'}\n"
+                f"regeneration_active: {'yes' if aid in getattr(getattr(rt, 'combat_runtime', None), 'resident_actors', {}) else 'no'}\n"
+                f"last_autosave: {(getattr(rt, 'character_dirty_state', {}).get(cid, {}) or {}).get('last_saved_at', '')}\n"
+                "planned_eviction_time: none"
+            )
+            return CommandResult(text)
+        if cmd == "latencystat":
+            if args and args[0].lower() == "reset":
+                rt.performance_counters["command_blocked_on_save_ms"] = 0
+                return CommandResult("Latency counters reset.")
+            return CommandResult("Latency statistics:\ncommand_blocked_on_save_ms: " + str(rt.performance_counters.get("command_blocked_on_save_ms", 0)) + "\ncombat_message_delivery_latency_ms: " + str(rt.performance_counters.get("combat_message_delivery_latency_ms", 0)))
+        if cmd == "commandtrace":
+            return CommandResult("Command traces are returned per command response in development diagnostics.")
+        return CommandResult("Unknown runtime admin command.", ok=False)
+
+    def _cmd_restore(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if not self._is_admin(character):
+            return CommandResult("You do not have permission for that command.", ok=False)
+        rt = getattr(self, "runtime", None)
+        target_name = args[0] if args else "self"
+        targets = []
+        if target_name.lower() == "all" and rt:
+            targets = list(getattr(rt, "active_characters", {}).values())
+        elif target_name.lower() in {"self", "me"}:
+            targets = [character]
+        elif rt:
+            key = target_name.removeprefix("character:")
+            targets = [getattr(rt, "active_characters", {}).get(key) or rt.state_store.load_character(key)]
+        targets = [t for t in targets if t]
+        if not targets:
+            return CommandResult(f"Character '{target_name}' not found.", ok=False)
+        lines=[]
+        for ch in targets:
+            before=f"{getattr(ch,'hp',0)}/{getattr(ch,'max_hp',0)} {getattr(ch,'mana',0)}/{getattr(ch,'max_mana',0)} {getattr(ch,'stamina',0)}/{getattr(ch,'max_stamina',0)}"
+            ch.hp=ch.max_hp; ch.mana=ch.max_mana; ch.stamina=ch.max_stamina
+            data = ch.actor_data if isinstance(getattr(ch, "actor_data", {}), dict) else {}
+            data.update({"position":"standing", "posture":"standing"}); ch.actor_data=data
+            if rt:
+                rt.register_live_character(ch); rt.mark_character_dirty(ch.id, "admin_restore"); rt.save_character_if_dirty(ch, "admin_restore", force=True)
+            after=f"{ch.hp}/{ch.max_hp} {ch.mana}/{ch.max_mana} {ch.stamina}/{ch.max_stamina}"
+            lines.append(("Restore stat " if raw.split()[0].lower()=="restorestat" else "Restored ") + f"{ch.name}: {before} -> {after}; standing.")
+        return CommandResult("\n".join(lines))
 
     def _cmd_advancement_repair(self, character: Any, args: list[str], raw: str) -> CommandResult:
         if str(getattr(character, "role", "player")).lower() not in {"admin", "owner", "builder"} and int(getattr(character, "immortal_level", 0) or 0) <= 0:

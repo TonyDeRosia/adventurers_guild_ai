@@ -240,3 +240,8 @@ Status: **Implemented/Partial**. World packages may provide `resets/resets.json`
 ## Emberwood Forest package ownership example
 
 The Shattered Realms package now keeps Emberwood rooms, area, zone, NPC templates, loot links, and reset profile in live package files. Builder drafts mirror the same IDs and VNUMs. Runtime creature instances are not authored in room `npcs`; `ZoneResetService` reconciles population.
+
+
+## Runtime heartbeat/combat parity update
+
+See `docs/RUNTIME_HEARTBEAT.md` and `docs/CORPSE_AND_DEATH_LIFECYCLE.md` for the current TBA-style heartbeat mapping, pulse constants, resident authority rules, coalesced autosave, restore behavior, movement/flee cleanup, corpse decay, corpse parser parity, async-poll hints, focused tests, broad-suite status, Windows manual status, and remaining differences.

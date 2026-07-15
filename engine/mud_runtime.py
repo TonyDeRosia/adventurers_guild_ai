@@ -668,6 +668,13 @@ class MudRuntime:
         init_agent_runtime_schema(self.state_store.db_path)
         self.combat_runtime = CombatRuntimeService(self)
         self._last_pulse_due_monotonic: float | None = None
+        self.pulse_config = {"base_pulse_ms": 100, "violence_pulse_count": 20, "mobile_pulse_count": 100, "point_update_pulse_count": 750, "zone_pulse_count": 600, "autosave_pulse_count": 300, "world_hour_pulse_count": 750, "corpse_decay_pulse_count": 50, "maximum_catchup_pulses": 5}
+        self._runtime_pulse_counter = 0
+        self._last_violence_bucket = -1
+        self._last_point_bucket = -1
+        self._last_autosave_bucket = -1
+        self._last_world_hour_bucket = -1
+        self._last_corpse_decay_bucket = -1
         self.agent_gateway = AgentRuntimeGateway(self)
         self.deterministic_controller_evaluator = DeterministicControllerEvaluator(self.agent_gateway)
         self.command_engine.combat_runtime = self.combat_runtime
@@ -689,36 +696,131 @@ class MudRuntime:
         return None
 
     def process_runtime_pulse(self, now_monotonic: float | None = None, *, scheduler_lag_ms: float = 0.0) -> dict[str, Any]:
-        started = time.monotonic() if now_monotonic is None else float(now_monotonic)
+        """Run one bounded TBA-style base heartbeat pulse.
+
+        The FastAPI lifecycle owns the single asyncio task. This method is only
+        the canonical bounded work unit: it increments a 100ms base pulse and
+        dispatches longer subsystems by validated pulse counts, so commands and
+        browser polling never advance combat or world time.
+        """
+        real_started = time.monotonic()
+        started = real_started if now_monotonic is None else float(now_monotonic)
+        cfg = getattr(self, "pulse_config", {}) or {}
+        base_ms = max(10, int(cfg.get("base_pulse_ms", 100) or 100))
+        max_catchup = max(1, int(cfg.get("maximum_catchup_pulses", 5) or 5))
+        if self._last_pulse_due_monotonic is None:
+            anchor = float(getattr(getattr(self, "combat_runtime", None), "_real_start", started))
+            elapsed = max(0.0, started - anchor)
+        else:
+            elapsed = max(0.0, started - self._last_pulse_due_monotonic)
+        due = max(1, int(elapsed / (base_ms / 1000.0)))
+        missed = max(0, due - 1)
+        catchup = min(due, max_catchup)
+        if due > max_catchup:
+            missed_extra = due - max_catchup
+            self.performance_counters["runtime_missed_pulses"] = self.performance_counters.get("runtime_missed_pulses", 0) + missed_extra
+            # Advance skipped base pulses without running subsystems so the
+            # bounded catch-up loop still observes crossed violence/hour buckets
+            # exactly once.
+            self._runtime_pulse_counter += missed_extra
+        self._last_pulse_due_monotonic = started
         attempted: list[str] = []
         processed: list[str] = []
         errors: dict[str, str] = {}
-        self.performance_counters["runtime_pulses"] += 1
         self.performance_counters["scheduler_lag_ms"] = int(max(0, scheduler_lag_ms))
         self.performance_counters["scheduler_max_lag_ms"] = max(self.performance_counters.get("scheduler_max_lag_ms", 0), int(max(0, scheduler_lag_ms)))
-        try:
-            if getattr(self, "combat_runtime", None):
-                attempted.append("combat")
-                rounds = self.combat_runtime.process_due_rounds(int(started * 1000))
-                if rounds:
-                    processed.append("combat")
-        except Exception as exc:
-            errors["combat"] = str(exc)[:160]
-            logger.exception("combat runtime pulse failed")
-        try:
-            if getattr(self, "runtime_resources", None) and hasattr(self.runtime_resources, "process_due_regeneration"):
-                attempted.append("regeneration")
-                count = self.runtime_resources.process_due_regeneration(started)
-                if count:
-                    processed.append("regeneration")
-        except Exception as exc:
-            errors["regeneration"] = str(exc)[:160]
-            logger.exception("regeneration runtime pulse failed")
-        completed = time.monotonic()
-        duration_ms = int(max(0, (completed - started) * 1000))
+        def due_once(name: str, count_key: str, last_attr: str) -> bool:
+            count = max(1, int(cfg.get(count_key, 1) or 1))
+            bucket = self._runtime_pulse_counter // count
+            if self._runtime_pulse_counter % count == 0 and getattr(self, last_attr, -1) != bucket:
+                setattr(self, last_attr, bucket)
+                return True
+            return False
+        for _ in range(catchup):
+            self._runtime_pulse_counter += 1
+            self.performance_counters["runtime_pulses"] += 1
+            try:
+                if getattr(self, "combat_runtime", None):
+                    attempted.append("combat")
+                    before = self.performance_counters.get("combat_rounds_processed", 0)
+                    rounds = self.combat_runtime.process_due_rounds(self.combat_runtime.world_time() + int(max(0.0, started - real_started) * 1000))
+                    if rounds or self.performance_counters.get("combat_rounds_processed", 0) != before:
+                        processed.append("combat")
+            except Exception as exc:
+                errors["combat"] = str(exc)[:160]; logger.exception("combat runtime pulse failed")
+            if due_once("point_update", "point_update_pulse_count", "_last_point_bucket"):
+                try:
+                    if getattr(self, "runtime_resources", None) and hasattr(self.runtime_resources, "process_due_regeneration"):
+                        attempted.append("point_update")
+                        count = self.runtime_resources.process_due_regeneration(started)
+                        if count: processed.append("point_update")
+                except Exception as exc:
+                    errors["point_update"] = str(exc)[:160]; logger.exception("point update pulse failed")
+            if due_once("autosave", "autosave_pulse_count", "_last_autosave_bucket"):
+                try:
+                    attempted.append("autosave")
+                    saved = self.autosave_dirty_characters()
+                    if saved: processed.append("autosave")
+                except Exception as exc:
+                    errors["autosave"] = str(exc)[:160]; logger.exception("autosave pulse failed")
+            if due_once("corpse_decay", "corpse_decay_pulse_count", "_last_corpse_decay_bucket"):
+                try:
+                    attempted.append("corpse_decay")
+                    decayed = self.process_corpse_decay(started)
+                    if decayed: processed.append("corpse_decay")
+                except Exception as exc:
+                    errors["corpse_decay"] = str(exc)[:160]; logger.exception("corpse decay pulse failed")
+            if due_once("world_hour", "world_hour_pulse_count", "_last_world_hour_bucket"):
+                try:
+                    attempted.append("world_hour")
+                    if self.active_world_id:
+                        self.advance_world_time(self.active_world_id, 1)
+                        processed.append("world_hour")
+                except Exception as exc:
+                    errors["world_hour"] = str(exc)[:160]; logger.exception("world hour pulse failed")
+        completed = time.monotonic(); duration_ms = int(max(0, (completed - started) * 1000))
         self.performance_counters["runtime_pulse_duration_ms"] = duration_ms
         self.performance_counters["runtime_pulse_max_duration_ms"] = max(self.performance_counters.get("runtime_pulse_max_duration_ms", 0), duration_ms)
-        return {"started_at": started, "completed_at": completed, "duration_ms": duration_ms, "scheduler_lag_ms": int(max(0, scheduler_lag_ms)), "subsystems_attempted": attempted, "subsystems_processed": processed, "subsystem_errors": errors, "backlog_counts": {"combat": self.performance_counters.get("combat_backlog", 0)}}
+        return {"started_at": started, "completed_at": completed, "duration_ms": duration_ms, "scheduler_lag_ms": int(max(0, scheduler_lag_ms)), "pulse": self._runtime_pulse_counter, "missed_pulses": missed, "catchup_pulses": catchup, "subsystems_attempted": attempted, "subsystems_processed": processed, "subsystem_errors": errors, "backlog_counts": {"combat": self.performance_counters.get("combat_backlog", 0)}}
+
+    def autosave_dirty_characters(self) -> int:
+        self.performance_counters["autosave_attempts"] = self.performance_counters.get("autosave_attempts", 0) + 1
+        saved = 0
+        for cid in list(getattr(self, "_dirty_characters", {}).keys()):
+            char = self.active_characters.get(cid)
+            if not char:
+                continue
+            status = self.save_character_if_dirty(char, "autosave", force=False)
+            if status.get("saved"):
+                saved += 1
+        if saved:
+            self.performance_counters["autosave_successes"] = self.performance_counters.get("autosave_successes", 0) + saved
+            self.performance_counters["autosave_batches"] = self.performance_counters.get("autosave_batches", 0) + 1
+        else:
+            self.performance_counters["autosave_skipped_clean"] = self.performance_counters.get("autosave_skipped_clean", 0) + 1
+        return saved
+
+    def process_corpse_decay(self, now_monotonic: float | None = None) -> int:
+        now = time.monotonic() if now_monotonic is None else float(now_monotonic)
+        decayed = 0
+        for corpse in list(self.find_entities(entity_type="corpse")):
+            st = corpse.get("state") or {}
+            created = float(st.get("created_monotonic") or 0.0)
+            if not created:
+                st["created_monotonic"] = now; st.setdefault("decay_seconds", 180.0)
+                self.update_entity_state(str(corpse.get("entity_id") or corpse.get("instance_id")), st, source_system="corpse_decay")
+                continue
+            decay_seconds = float(st.get("decay_seconds") or 180.0)
+            if now - created < decay_seconds:
+                continue
+            cid = str(corpse.get("entity_id") or corpse.get("instance_id") or "")
+            for item in self.find_container_items(cid):
+                self.move_item(item["instance_id"], "room", str(corpse.get("room_id") or ""))
+            self.destroy_entity(cid, reason="corpse_decay", source_system="corpse_decay")
+            decayed += 1
+        self.performance_counters["corpse_decays"] = self.performance_counters.get("corpse_decays", 0) + decayed
+        return decayed
+
 
 
     # Phase 5B living-world facade APIs.
@@ -1057,6 +1159,7 @@ class MudRuntime:
         reconcile_actor_position(registry_actor, self, reason="character_entry", persist_dirty=False)
         self.actor_registry.register(registry_actor)
         data = character.actor_data if isinstance(getattr(character, "actor_data", {}), dict) else {}
+        data["hydration_generation"] = int(data.get("hydration_generation", 0) or 0) + 1
         data.update({"position": actor.combat_profile.get("position", "standing"), "posture": actor.combat_profile.get("position", "standing"), "actor_projection": actor.to_dict()})
         character.actor_data = data
         if getattr(self, "abilities", None):
@@ -1071,10 +1174,18 @@ class MudRuntime:
             raise RuntimeError("AbilityExecutionService is not using MudRuntime.actor_registry")
 
     def unregister_live_character(self, character_id: str) -> None:
+        actor_id = character_id if str(character_id).startswith("character:") else f"character:{character_id}"
+        if getattr(self, "combat_runtime", None):
+            try:
+                self.combat_runtime.remove_resident_actor(actor_id)
+            except Exception:
+                self.combat_runtime.resident_actors.pop(actor_id, None)
         if getattr(self, "actor_registry", None):
             self.actor_registry.unregister(character_id)
+            self.actor_registry.unregister(actor_id)
         if getattr(self, "abilities", None):
             self.abilities.unregister_actor(character_id)
+            self.abilities.unregister_actor(actor_id)
 
 
     def _source_versions_for_character(self, character: MudCharacter) -> dict[str, Any]:
@@ -1229,8 +1340,9 @@ class MudRuntime:
         self.performance_counters["character_sql_loads"] += 1
         char = self.state_store.load_character(character_id)
         if char is not None:
+            if getattr(self, "runtime_resources", None):
+                self.runtime_resources.hydrate_character(char)
             self.active_characters[character_id] = char
-            self.register_live_character(char)
         return char
 
     def prompt_snapshot(self, character_id: str) -> dict[str, Any]:
@@ -1489,10 +1601,6 @@ class MudRuntime:
         char = self._resident_character(character_id)
         if char is None:
             raise ValueError(f"Character not found: {character_id}")
-        if getattr(self, "runtime_resources", None):
-            self.runtime_resources.world_id = self.active_world_id or self.runtime_resources.world_id
-            self.runtime_resources.hydrate_character(char)
-        self.register_live_character(char)
         self.active_characters[character_id] = char
         trace["command_routing_started"] = time.monotonic()
         from engine.mud_commands import CommandResult
@@ -1526,10 +1634,9 @@ class MudRuntime:
         if mutation == "session_transition":
             save_status = self.save_character_if_dirty(char, "quit", force=True, final=True)
         elif mutation != "read_only":
-            save_status = self.save_character_if_dirty(char, mutation)
-            if not save_status.get("saved") and not getattr(result, "ok", True):
-                self.performance_counters["failed_command_saves"] = self.performance_counters.get("failed_command_saves", 0)
-            # Targeted projection invalidation is owned by mark_character_dirty().
+            save_status = {"saved": False, "status": "dirty_awaiting_autosave", "dirty": True, "reasons": sorted(self._dirty_characters.get(character_id, set()))}
+            self.performance_counters["command_blocked_on_save_ms"] = self.performance_counters.get("command_blocked_on_save_ms", 0)
+            # Targeted projection invalidation is owned by mark_character_dirty(); heartbeat autosave persists later.
         else:
             save_status = {"saved": False, "status": "read_only", "dirty": bool(self._dirty_characters.get(character_id)), "reasons": sorted(self._dirty_characters.get(character_id, set()))}
             self.performance_counters["read_only_command_saves"] = self.performance_counters.get("read_only_command_saves", 0)
@@ -2325,10 +2432,12 @@ class MudRuntime:
         if cmd in {"inventory"}: return CommandResult(self._render_inventory(char.id))
         if cmd in {"equipment"}: return CommandResult(self._render_equipment(char.id))
         if cmd in {"get","take"}:
-            if len(args) >= 2 and args[-1].lower() in {"corpse", "body"}:
+            if len(args) >= 2 and args[-1].lower().startswith(("corp", "cor", "body")):
                 return CommandResult(self.get_from_container(char, " ".join(args[:-1]) or "all", args[-1]))
             if len(args) >= 3 and args[-2].lower() in {"from", "in"}:
                 return CommandResult(self.get_from_container(char, " ".join(args[:-2]), args[-1]))
+            if len(args) >= 3 and args[0].lower() in {"all", "everything"} and args[1].lower() in {"from", "in"}:
+                return CommandResult(self.get_from_container(char, "all", " ".join(args[2:])))
             if q in {"all", "everything"}: return CommandResult(self.bulk_get(char, q))
             return CommandResult(self.pickup_item(char.id, char.room_id, q) if q else "Get what?")
         if cmd=="drop":
@@ -2393,9 +2502,25 @@ class MudRuntime:
         return "You cannot drink from that."
 
     def get_from_container(self, char: MudCharacter, item_query: str, container_query: str) -> str:
-        res = self._resolve_interaction_target(char, container_query)
+        if str(container_query or "").lower().startswith(("cor", "corp", "corpse")):
+            corpses = [e for e in self.find_room_entities(char.room_id) if e.get("entity_type") == "corpse"]
+            if len(corpses) == 1:
+                res = {"status": "ok", "target": corpses[0]}
+            else:
+                res = self.resolve_entity_keywords(container_query, corpses)
+                if res.get("status") == "ok":
+                    res = {"status": "ok", "target": res.get("entity")}
+        else:
+            res = self._resolve_interaction_target(char, container_query)
         if res.get("status") != "ok":
-            return self._resolve_message(res, "You don't see that.")
+            cands = [e for e in self.find_room_entities(char.room_id) if e.get("entity_type") == "corpse"]
+            cres = self.resolve_entity_keywords(container_query, cands)
+            if cres.get("status") == "ok":
+                res = {"status": "ok", "target": cres.get("entity")}
+            elif cres.get("status") == "ambiguous":
+                return self._resolve_message(cres, "Which do you mean?")
+            else:
+                return self._resolve_message(res, "You don't see that.")
         container = res.get("target", {})
         items = self.find_container_items(container.get("entity_id") or container.get("instance_id") or "")
         if not items:
@@ -3264,7 +3389,7 @@ class MudRuntime:
         state = dict(ent.get("state") or {})
         state.update({"current_state":"dead", "is_alive": False, "current_health": 0})
         self.update_entity_state(entity_id, state, source_system=ctx.get("source_system", "runtime"))
-        corpse_state={"current_state":"corpse", "source_entity_id": entity_id, "source_template_id": ent.get("template_id"), "source_actor_name": name, "source_lifecycle_id": source_lifecycle_id, "death_id": death_id, "killer_actor_id": str(ctx.get("killer_actor_id") or ""), "is_alive": False, "container_open": True, "decay_state": "fresh", "created_world_time": self.get_world_time(self.active_world_id or '').get('total_minutes', 0), "skinned": False, "butchered": False}
+        corpse_state={"current_state":"corpse", "source_entity_id": entity_id, "source_template_id": ent.get("template_id"), "source_actor_name": name, "source_lifecycle_id": source_lifecycle_id, "death_id": death_id, "killer_actor_id": str(ctx.get("killer_actor_id") or ""), "is_alive": False, "container_open": True, "decay_state": "fresh", "created_world_time": self.get_world_time(self.active_world_id or '').get('total_minutes', 0), "created_monotonic": time.monotonic(), "decay_seconds": float((self.entity_templates.get(str(ent.get("template_id") or ""), {}) or {}).get("corpse_decay_seconds") or 180.0), "skinned": False, "butchered": False}
         corpse = self.spawn_entity(ent.get("template_id", "corpse"), entity_type="corpse", room_id=ent.get("room_id"), state=corpse_state, flags=["corpse"], **ctx)
         corpse_name = f"The corpse of {name.lower()}"
         now = datetime.now(timezone.utc).isoformat()
