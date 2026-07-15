@@ -223,3 +223,9 @@ Measured on this Linux CI container (Windows manual testing still required):
 | Packet delivery | instrumented via `combat_message_delivery_latency_ms`; not Windows-verified |
 
 Remaining limitations: target visibility can still depend on the broader room/entity runtime, direct compatibility calls can still persist audit rows synchronously, and Windows manual testing is required before declaring the player-visible `kill wolf` latency fixed.
+
+## Phase 15B.13A progression projection performance note
+
+The SCORE/WORTH hotfix is intentionally outside resident combat.  It adds no progression reads to KILL, opening attack, target resolution, or violence pulses.  Focused regression testing in the current checkout reported `gameplay_sql_before_response == 8` for the resident KILL target-resolution hot path; this appears outside the progression row-decoding change and is recorded as an unresolved combat-boundary warning for follow-up.
+
+Local focused SCORE/progression checks completed in 4.11 seconds for 13 tests.  The tuple-row display regression completed in 1.34 seconds.  Broad suite execution completed in 588.44 seconds with the repository's existing broad failures; the new focused progression tests passed.

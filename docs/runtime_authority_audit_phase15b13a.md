@@ -42,3 +42,9 @@ SQLite is permitted for loading, saving, autosave, shutdown/crash recovery, buil
 ## Remaining limitations
 
 Non-living room content (items and corpses) is still read from durable runtime tables during room rendering. Living NPC/mob LOOK and KILL authority no longer comes from those SQL room scans. Full zero-SQL room rendering requires resident item and corpse indexes in a follow-up phase.
+
+## Phase 15B.13A progression display hotfix
+
+Progression remains durable SQLite authority for SCORE/WORTH projection data and is read only by display/progression commands or explicit progression events.  Resident combat authority is unchanged: KILL, target lookup, opening attack, ordinary violence pulses, flee calculations, natural attack selection, and combat messaging do not gain progression reads.
+
+The row-factory invariant is now explicit: `ProgressionService` must not depend on an undocumented global SQLite `row_factory`.  Its actor progression query declares the exact selected columns and converts rows through `row_to_mapping()` using the cursor description when positional rows are returned.

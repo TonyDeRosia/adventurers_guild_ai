@@ -85,3 +85,9 @@ Living NPC room rendering and combat target resolution now share `MudRuntime.res
 ## Phase 15B.12 performance note
 
 The flee correction stays on the resident hot path: no content refresh and no SQLite target lookup are introduced for ordinary flee, movement, attack selection, or combat messaging.
+
+## Phase 15B.13A SCORE/WORTH hotfix combat boundary
+
+This hotfix repairs progression row decoding for display commands only.  It does not restore SQLite target resolution, `refresh_content()` in KILL, living-entity rebuilds from SQLite, progression reads in combat rounds, or resident combat invalidation.  The focused zero-SQL KILL boundary test currently reports `gameplay_sql_before_response == 8`; this hotfix does not add progression reads to combat, but the zero-SQL boundary remains an unresolved warning in this checkout.
+
+Tony's Windows combat timings (combat start before first pulse, ordinary pulses around 31 ms with an observed 110 ms pulse) remain the acceptance benchmark.  Windows acceptance has not been claimed until Tony reruns the manual checks on the updated branch.
