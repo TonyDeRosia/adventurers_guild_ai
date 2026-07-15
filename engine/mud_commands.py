@@ -34,7 +34,7 @@ from engine.builder_content_editor import BuilderContentEditor
 from engine.builder_stat_content import (AttributeDocumentAdapter, FormulaDocumentAdapter, StatDefinitionDocumentAdapter, ResistanceDocumentAdapter, EncumbranceDocumentAdapter, PostureDocumentAdapter, RangeRulesDocumentAdapter, CombatMessageDocumentAdapter, StatCombatPublishValidator, StatCombatPublisher, parse_bool, parse_num, safe_id, norm_hash, now)
 from engine.score_renderer import ActorScoreRenderer
 from engine.command_registry import CommandRegistry
-from smart_mud.builder import BuilderWorkspace
+from smart_mud.builder import BuilderWorkspace, BuilderService
 from engine.abilities import AbilityExecutionService
 from engine.help_service import HelpService, HelpEntry, normalize_help_query
 from engine.display_services import CharacterDisplaySnapshotService, AbilityDisplaySnapshotService, ability_snapshots_as_rows
@@ -252,6 +252,7 @@ class MudCommandEngine:
         self.event_bus = event_bus
         self.registry = CommandRegistry(event_bus=event_bus)
         self.builder = BuilderWorkspace(event_bus=event_bus)
+        self.builder_service = BuilderService(self.builder)
         self.command_handlers: dict[str, Callable] = {
             # Info commands
             "score": self._cmd_score,
@@ -543,7 +544,7 @@ class MudCommandEngine:
 
         for _name in "senseprofilelist senseprofilestat senseprofilecreate senseprofileclone senseprofileset senseprofiledelete senseprofilevalidate perceptionprofilelist perceptionprofilestat perceptionprofilecreate perceptionprofileset perceptionprofiledelete perceptionprofilevalidate concealmentlist concealmentstat concealmentcreate concealmentset concealmentdelete concealmentvalidate searchprofilelist searchprofilestat searchprofilecreate searchprofileset searchprofiledelete searchprofilevalidate trackingprofilelist trackingprofilestat trackingprofilecreate trackingprofileset trackingprofiledelete trackingprofilevalidate soundprofilelist soundprofilestat soundprofilecreate soundprofileset soundprofiledelete soundprofilevalidate".split():
             self.command_handlers[_name] = self._cmd_perception
-        for _name in " rsave redit rstat rcreate rset rdesc rname rexits rfeature rdelete exedit excreate exset exdelete fedit fcreate fset fdesc fdelete oedit ocreate oset odesc odelete ostat medit mcreate mset mdesc mdelete mstat spawnedit spawncreate spawnset spawndelete spawnstat zstat astat wstat btarget rtarget target asave bsave wsave".split():
+        for _name in " undo redo find mclone oclone rclone rsave redit rstat rcreate rset rdesc rname rexits rfeature rdelete exedit excreate exset exdelete fedit fcreate fset fdesc fdelete oedit ocreate oset odesc odelete ostat medit mcreate mset mdesc mdelete mstat spawnedit spawncreate spawnset spawndelete spawnstat zstat astat wstat btarget rtarget target asave bsave wsave".split():
             if _name:
                 self.command_handlers[_name] = self._cmd_builder_edit
         for _name in ("rassign", "rmove", "rrenameid"):
@@ -3716,8 +3717,16 @@ class MudCommandEngine:
             res = self.builder.export(character); self.builder.publish("builder_export_completed", character, self.builder.world_id(character), "export", sub, command=raw)
             self.builder.audit(character, self.builder.world_id(character), f"builder {sub}", "export", sub, None, res.data or {})
             return CommandResult(narrative=res.message + "\n" + self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))), ok=res.ok)
+        if sub == "testspawn":
+            if len(args) < 2:
+                return CommandResult(narrative="Usage: builder testspawn <mob_id>", ok=False)
+            res = self.builder_service.testspawn(character, args[1])
+            return CommandResult(narrative=res.message, ok=res.ok)
         if sub == "publish" and len(args) >= 2 and args[1].lower() == "stats":
             return self._publish_stats(character)
+        if sub == "publish" and len(args) >= 2 and args[1].lower() == "generation":
+            res = self.builder_service.publish(character)
+            return CommandResult(narrative=res.message, ok=res.ok)
         if sub == "publish":
             res = self.builder.publish_drafts(character)
             return CommandResult(narrative=res.message + "\n" + self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))), ok=res.ok)
@@ -3794,6 +3803,27 @@ class MudCommandEngine:
                 self.builder.publish("builder_edit_target_changed", character, world_id, "room", args[1], command=raw)
                 return CommandResult("Builder target set.\n" + self._builder_room_status(character, args[1], drafts))
             return CommandResult('Usage: btarget [room <room_id>|clear]', ok=False)
+        if cmd in {"medit", "oedit", "aedit", "zedit"}:
+            coll = {"medit":"entities", "oedit":"items", "aedit":"areas", "zedit":"zones"}[cmd]
+            target = args[0] if args else room_id
+            if not target:
+                return CommandResult(f"Usage: {cmd} <id>", ok=False)
+            lock = self.builder_service.acquire_lock(character, coll, target)
+            if not lock.ok:
+                return CommandResult(lock.message, ok=False)
+            drafts = self.builder.load(world_id)
+            title = (drafts.get(coll, {}).get(target, {}) or {}).get("name") or target.replace("_", " ").title()
+            return CommandResult(self.builder_service.menu(cmd, str(title)))
+        if cmd in {"mclone", "oclone", "rclone"}:
+            if len(args) < 2: return CommandResult(f"Usage: {cmd} <source_id> <new_id>", ok=False)
+            coll = {"mclone":"entities", "oclone":"items", "rclone":"rooms"}[cmd]
+            res = self.builder_service.clone(character, coll, args[0], args[1]); return CommandResult(res.message, ok=res.ok)
+        if cmd in {"undo", "redo"}:
+            res = getattr(self.builder_service, cmd)(character); return CommandResult(res.message, ok=res.ok)
+        if cmd == "find":
+            res = self.builder_service.search(character, " ".join(args)); return CommandResult(res.message, ok=res.ok)
+        if cmd == "builder" and args and args[0].lower() == "testspawn" and len(args) > 1:
+            res = self.builder_service.testspawn(character, args[1]); return CommandResult(res.message, ok=res.ok)
         if cmd == "redit":
             if args:
                 ordered = sorted(drafts.get("rooms", {}).keys())
