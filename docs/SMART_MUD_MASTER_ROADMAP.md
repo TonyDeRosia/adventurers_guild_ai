@@ -229,3 +229,9 @@ Remaining limitations: target visibility can still depend on the broader room/en
 Living NPC room rendering and combat target resolution now share `MudRuntime.resident_occupants_by_room`, backed by `CombatRuntimeService.resident_actors` and entity-instance/actor-id maps. Normal KILL/ATTACK/CONSIDER/DIAGNOSE target lookup is resident-memory only: no `refresh_content()`, world reload, entity rematerialization, or SQLite target query is used in the command hot path. See `docs/RESIDENT_ROOM_OCCUPANCY.md` for the authority table, target grammar, lifecycle invariants, diagnostics, and Windows acceptance steps.
 
 - Phase 15B.12: contested flee, canonical resident movement synchronization, nonhumanoid natural attack retention, and audience-correct combat/condition messaging.
+
+## Phase 15B.13A hotfix roadmap note
+
+Completed hotfix scope: restore SCORE/WORTH shared progression projections by replacing blind `dict(row)` conversion with explicit progression SELECT columns and canonical row-to-mapping conversion.  No SCORE redesign, content mutation, SQLite reset, Kraevok recreation, or resident combat authority change is part of this phase.
+
+Remaining follow-up is manual Windows acceptance by Tony on `main-v2` and any future broad progression-authority residency work, which should be planned separately from this hotfix.

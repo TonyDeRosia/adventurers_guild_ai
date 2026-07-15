@@ -36,6 +36,37 @@ def _loads(v: Any, default: Any) -> Any:
     try: return json.loads(v) if v else default
     except Exception: return default
 
+
+def row_to_mapping(row: Any, cursor_description: Any = None) -> dict[str, Any] | None:
+    """Convert database rows to dictionaries without relying on sqlite row_factory.
+
+    Positional rows are only accepted when the executing cursor supplies a
+    description, so column names come from the actual SELECT contract rather
+    than a guessed schema.
+    """
+    if row is None:
+        return None
+    if isinstance(row, Mapping):
+        return dict(row)
+    if isinstance(row, sqlite3.Row):
+        return {key: row[key] for key in row.keys()}
+    asdict = getattr(row, "_asdict", None)
+    if callable(asdict):
+        return dict(asdict())
+    if isinstance(row, (tuple, list)):
+        if cursor_description is None:
+            raise TypeError("positional database row requires cursor_description")
+        columns = [str(col[0]) for col in cursor_description]
+        if len(columns) != len(row):
+            raise ValueError(f"row/description length mismatch columns={len(columns)} values={len(row)}")
+        return dict(zip(columns, row))
+    if isinstance(row, (str, bytes, bytearray)):
+        raise TypeError(f"unsupported scalar database row type {type(row).__name__}")
+    try:
+        return dict(row)
+    except Exception as exc:
+        raise TypeError(f"unsupported database row type {type(row).__name__}") from exc
+
 def safe_id(value: str) -> bool: return bool(value and SAFE_ID_RE.match(str(value)))
 
 
@@ -133,14 +164,37 @@ class ProgressionService:
         self.content = self.content or ProgressionContent(Path("worlds")/(self.store.world_id or "shattered_realms"))
         self.store.initialize()
     def _state_id(self, actor_id: str, actor_type: str) -> str: return f"prog:{self.store.campaign_id}:{actor_type}:{actor_id}"
+    PROGRESSION_COLUMNS = (
+        "progression_state_id", "world_id", "actor_type", "actor_id", "species_id",
+        "race_id", "primary_class_id", "primary_class_track_id", "profession_ids_json",
+        "level", "experience", "experience_to_next", "total_experience",
+        "practice_sessions", "training_sessions", "skill_points", "attribute_points",
+        "talent_points_placeholder", "remort_count", "prestige_rank",
+        "advancement_flags_json", "last_level_at", "created_at", "updated_at",
+        "metadata_json",
+    )
+
     def get_actor_progression(self, actor_id: str, actor_type: str="player") -> dict[str, Any] | None:
+        columns = ",".join(self.PROGRESSION_COLUMNS)
         with self.store.connect() as con:
-            row=con.execute("SELECT * FROM actor_progression_state WHERE actor_id=? AND actor_type=?",(actor_id,actor_type)).fetchone()
-            return self._row(row) if row else None
-    def _row(self,row):
-        d=dict(row)
-        for k in ("profession_ids_json","advancement_flags_json","metadata_json"):
-            d[k[:-5] if k.endswith("_json") else k]=_loads(d.get(k), [] if k=="profession_ids_json" else {})
+            if hasattr(con, "row_factory") and con.row_factory is None:
+                # Progression reads accept tuple rows too, but prefer sqlite3.Row
+                # for connections owned by this service.  This assignment happens
+                # before cursor creation and does not affect combat hot paths.
+                con.row_factory = sqlite3.Row
+            cur = con.execute(f"SELECT {columns} FROM actor_progression_state WHERE actor_id=? AND actor_type=?", (actor_id, actor_type))
+            row = cur.fetchone()
+            return self._row(row, cur.description) if row else None
+
+    def _row(self, row, cursor_description=None):
+        d = row_to_mapping(row, cursor_description)
+        if d is None:
+            return None
+        missing_required = [k for k in ("progression_state_id", "world_id", "actor_type", "actor_id") if not d.get(k)]
+        if missing_required:
+            raise ProgressionIdentityError(f"progression_row_missing_required fields={','.join(missing_required)}")
+        for k in ("profession_ids_json", "advancement_flags_json", "metadata_json"):
+            d[k[:-5] if k.endswith("_json") else k] = _loads(d.get(k), [] if k == "profession_ids_json" else {})
         return d
     def initialize_actor_progression(self, actor_id: str, profile_id: str|None=None, actor_type: str="player", defaults: dict[str,Any]|None=None) -> dict[str,Any]:
         character_record = actor_id if not isinstance(actor_id, str) else None
