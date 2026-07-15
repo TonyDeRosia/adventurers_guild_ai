@@ -758,3 +758,153 @@ class BuilderWorkspace:
 
     def stamp(self) -> str:
         return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+
+
+BODY_PROFILE_ATTACKS = {
+    "wolf": [{"family":"bite","verb":"bites","noun":"fangs","weight":70,"damage_type":"piercing","damage_dice":"1d6"},{"family":"claw","verb":"rakes","noun":"claws","weight":30,"damage_type":"slashing","damage_dice":"1d4"}],
+    "bear": [{"family":"claw","verb":"claws","noun":"claws","weight":50,"damage_type":"slashing","damage_dice":"1d8"},{"family":"maul","verb":"mauls","noun":"paws","weight":25,"damage_type":"bludgeoning","damage_dice":"2d6"},{"family":"bite","verb":"bites","noun":"teeth","weight":25,"damage_type":"piercing","damage_dice":"1d8"}],
+    "spider": [{"family":"bite","verb":"bites","noun":"mandibles","weight":70,"damage_type":"piercing","damage_dice":"1d4"}],
+    "dragon": [{"family":"bite","verb":"bites","noun":"jaws","weight":35,"damage_type":"piercing","damage_dice":"2d8"},{"family":"claw","verb":"slashes","noun":"talons","weight":35,"damage_type":"slashing","damage_dice":"2d6"},{"family":"breath","verb":"breathes","noun":"breath","weight":30,"damage_type":"elemental","damage_dice":"3d6"}],
+    "snake": [{"family":"bite","verb":"strikes","noun":"fangs","weight":100,"damage_type":"piercing","damage_dice":"1d6"}],
+    "humanoid": [{"family":"punch","verb":"punches","noun":"fist","weight":100,"damage_type":"bludgeoning","damage_dice":"1d3"}],
+    "elemental": [{"family":"slam","verb":"slams","noun":"body","weight":100,"damage_type":"elemental","damage_dice":"1d8"}],
+    "construct": [{"family":"slam","verb":"slams","noun":"frame","weight":100,"damage_type":"bludgeoning","damage_dice":"1d8"}],
+}
+
+class BuilderService:
+    """Canonical draft-first builder facade used by commands, OLC, importers, and future UI."""
+    def __init__(self, workspace: BuilderWorkspace | None = None) -> None:
+        self.workspace = workspace or BuilderWorkspace()
+
+    def _actor_id(self, actor: Any) -> str:
+        return str(getattr(actor, "name", "") or getattr(actor, "id", "builder"))
+
+    def _state_path(self, world_id: str, name: str) -> Path:
+        root = self.workspace.ensure(world_id) / "sessions"
+        root.mkdir(parents=True, exist_ok=True)
+        return root / name
+
+    def _history_path(self, actor: Any) -> Path:
+        return self._state_path(self.workspace.world_id(actor), f"{getattr(actor,'id','builder')}_history.json")
+
+    def _push_history(self, actor: Any, drafts: dict[str, Any]) -> None:
+        path = self._history_path(actor); data = self.workspace._read(path, {"undo": [], "redo": []})
+        data.setdefault("undo", []).append(deepcopy(drafts)); data["undo"] = data["undo"][-25:]; data["redo"] = []
+        self.workspace._atomic_json_write(path, data)
+
+    def mutate(self, actor: Any, collection: str, object_id: str, updates: dict[str, Any], action: str = "builder mutate") -> BuilderResult:
+        world_id = self.workspace.world_id(actor); drafts = self.workspace.load(world_id); self._push_history(actor, drafts)
+        bucket = drafts.setdefault(collection, {}); before = deepcopy(bucket.get(object_id)); rec = deepcopy(before) if isinstance(before, dict) else {"id": object_id}
+        rec.update(updates); bucket[object_id] = rec; self.workspace.save_drafts(world_id, drafts)
+        self.workspace.audit(actor, world_id, action, collection, object_id, before, rec)
+        return BuilderResult(True, f"Draft {collection} {object_id} updated.", rec)
+
+    def clone(self, actor: Any, collection: str, source_id: str, new_id: str) -> BuilderResult:
+        world_id=self.workspace.world_id(actor); drafts=self.workspace.load(world_id); src=drafts.get(collection,{}).get(source_id)
+        if not isinstance(src, dict): return BuilderResult(False, f"Cannot clone missing {collection} {source_id}.")
+        rec=deepcopy(src); rec["id"]=new_id; rec["name"]=rec.get("name", source_id).replace(source_id, new_id) if isinstance(rec.get("name"), str) else new_id
+        return self.mutate(actor, collection, new_id, rec, "clone")
+
+    def undo(self, actor: Any) -> BuilderResult:
+        world_id=self.workspace.world_id(actor); path=self._history_path(actor); data=self.workspace._read(path,{"undo":[],"redo":[]})
+        if not data.get("undo"): return BuilderResult(False,"Nothing to undo.")
+        cur=self.workspace.load(world_id); prev=data["undo"].pop(); data.setdefault("redo",[]).append(cur); self.workspace._atomic_json_write(path,data); self.workspace.save_drafts(world_id, prev)
+        return BuilderResult(True,"Undo applied to builder drafts.")
+
+    def redo(self, actor: Any) -> BuilderResult:
+        world_id=self.workspace.world_id(actor); path=self._history_path(actor); data=self.workspace._read(path,{"undo":[],"redo":[]})
+        if not data.get("redo"): return BuilderResult(False,"Nothing to redo.")
+        cur=self.workspace.load(world_id); nxt=data["redo"].pop(); data.setdefault("undo",[]).append(cur); self.workspace._atomic_json_write(path,data); self.workspace.save_drafts(world_id, nxt)
+        return BuilderResult(True,"Redo applied to builder drafts.")
+
+    def acquire_lock(self, actor: Any, collection: str, object_id: str, admin: bool = False) -> BuilderResult:
+        world_id=self.workspace.world_id(actor); path=self._state_path(world_id,"locks.json"); locks=self.workspace._read(path,{})
+        key=f"{collection}:{object_id}"; owner=locks.get(key,{}).get("builder")
+        if owner and owner != self._actor_id(actor) and not admin: return BuilderResult(False, f"{object_id} currently being edited by {owner}.")
+        locks[key]={"builder": self._actor_id(actor), "timestamp": self.workspace.stamp()}; self.workspace._atomic_json_write(path, locks); return BuilderResult(True, f"Edit lock acquired for {object_id}.")
+
+    def admin_unlock(self, actor: Any, collection: str, object_id: str) -> BuilderResult:
+        world_id=self.workspace.world_id(actor); path=self._state_path(world_id,"locks.json"); locks=self.workspace._read(path,{})
+        locks.pop(f"{collection}:{object_id}", None); self.workspace._atomic_json_write(path, locks); return BuilderResult(True, f"Edit lock cleared for {object_id}.")
+
+    def validate_object(self, actor: Any, collection: str, object_id: str) -> BuilderResult:
+        full = self.workspace.validate(actor)
+        issues = (full.data or {}) if full.data else {}
+        text: list[str] = []
+        for kind in ("errors", "warnings"):
+            for msg in issues.get(kind, []):
+                if object_id in msg or collection.rstrip("s") in msg:
+                    text.append(f"{kind[:-1]}: {msg} -- fix in {collection} editor then validate again.")
+        message = "Validation for %s:\n%s" % (object_id, "\n".join(text) if text else "- no focused issues")
+        return BuilderResult(not any(t.startswith("error:") for t in text), message, {"issues": text})
+
+    def preview(self, actor: Any, collection: str, object_id: str) -> BuilderResult:
+        rec = self.workspace.load(self.workspace.world_id(actor)).get(collection, {}).get(object_id, {})
+        if not rec:
+            return BuilderResult(False, f"No draft {collection} {object_id}.")
+        name = rec.get("name") or rec.get("title") or object_id
+        desc = rec.get("description") or rec.get("long_description") or "(no description)"
+        lines = ["LOOK", str(name), str(desc)]
+        if collection == "entities":
+            lines += [""] + ["COMBAT MESSAGES"] + [f"- {a.get('verb','hits')} with {a.get('noun', a.get('family','attack'))} ({a.get('damage_dice','1d1')})" for a in rec.get("natural_attacks", [])]
+        if collection == "items":
+            lines += ["", "EXAMINE", str(rec.get("short_description") or desc), "Loot: " + str(rec.get("loot_profile_id", "none"))]
+        if collection == "rooms":
+            lines += ["", "EXITS", ", ".join(sorted((rec.get("exits") or {}).keys())) or "none", "SPAWNS", ", ".join(str(x) for x in rec.get("spawn_list", [])) or "none"]
+        return BuilderResult(True, "\n".join(lines), {"record": rec})
+
+    def publish(self, actor: Any) -> BuilderResult:
+        world_id=self.workspace.world_id(actor); gen=f"generation-{self.workspace.stamp()}"; root=self.workspace.ensure(world_id); gens=root/"generations"/gen; gens.mkdir(parents=True, exist_ok=True)
+        drafts=self.workspace.load(world_id)
+        for key, filename in DRAFT_FILES.items(): self.workspace._atomic_json_write(gens/filename, drafts.get(key, {}))
+        self.workspace._atomic_json_write(root/"generations"/"active.json", {"active_generation": gen, "published_at": self.workspace.stamp()})
+        self.workspace.audit(actor, world_id, "publish generation", "generation", gen, None, {"collections": sorted(drafts)})
+        return BuilderResult(True, f"Published builder drafts as {gen}; runtime may atomically swap to this generation.", {"generation": gen})
+
+    def body_profiles(self) -> list[str]: return sorted(BODY_PROFILE_ATTACKS)
+    def apply_body_profile(self, actor: Any, mob_id: str, profile: str) -> BuilderResult:
+        prof=profile.lower();
+        if prof not in BODY_PROFILE_ATTACKS: return BuilderResult(False, "Unknown body profile. Choose: " + ", ".join(self.body_profiles()))
+        return self.mutate(actor, "entities", mob_id, {"body_profile_id": prof, "natural_attacks": deepcopy(BODY_PROFILE_ATTACKS[prof])}, "body profile")
+
+    def search(self, actor: Any, query: str) -> BuilderResult:
+        q = query.lower()
+        drafts = self.workspace.load(self.workspace.world_id(actor))
+        lines: list[str] = []
+        for coll in ("areas", "zones", "rooms", "items", "entities", "spawns"):
+            for oid, rec in drafts.get(coll, {}).items():
+                hay = (str(oid) + " " + str((rec or {}).get("name", "")) + " " + str((rec or {}).get("description", ""))).lower()
+                if q in hay:
+                    lines.append(f"{coll[:-1]} {oid}: {(rec or {}).get('name','')}")
+        return BuilderResult(True, "Search results:\n" + ("\n".join(lines) if lines else "- none"), {"matches": lines})
+
+    def autocomplete(self, actor: Any, collection: str, query: str) -> BuilderResult:
+        drafts = self.workspace.load(self.workspace.world_id(actor))
+        q = query.lower()
+        rows = []
+        for oid, rec in drafts.get(collection, {}).items():
+            label = str((rec or {}).get("name") or oid)
+            if q in oid.lower() or q in label.lower():
+                rows.append({"id": oid, "label": label})
+        body = "\n".join(f"{i+1}. {r['label']} [{r['id']}]" for i, r in enumerate(rows)) if rows else "- none"
+        return BuilderResult(True, "Picker choices:\n" + body, {"choices": rows})
+
+    def testspawn(self, actor: Any, mob_id: str) -> BuilderResult:
+        rec = self.workspace.load(self.workspace.world_id(actor)).get("entities", {}).get(mob_id)
+        if not rec:
+            return BuilderResult(False, f"No draft mob {mob_id}.")
+        setattr(actor, "builder_test_room_id", f"builder_test_{getattr(actor,'id','builder')}")
+        setattr(actor, "builder_testspawn", deepcopy(rec))
+        return BuilderResult(True, f"Spawned draft {mob_id} in private Builder testing room {getattr(actor,'builder_test_room_id')}.", {"mob": rec})
+
+    def menu(self, editor: str, title: str) -> str:
+        sections = {
+            "medit": ["Identity", "Keywords", "Descriptions", "Stats", "Resources", "Combat", "Natural Attacks", "Equipment", "Inventory", "Loot", "Flags", "AI", "Scripts", "Spawn Data", "Preview", "Validate"],
+            "redit": ["Title", "Description", "Exits", "Sector", "Flags", "Extra Descriptions", "Ambient Effects", "Spawn List", "Preview", "Validate", "Publish"],
+            "oedit": ["Identity", "Keywords", "Type", "Wear Flags", "Extra Flags", "Stats", "Affects", "Values", "Container Data", "Weapon Data", "Armor Data", "Scripts", "Preview", "Validate", "Publish"],
+            "aedit": ["Identity", "Zones", "Rooms", "Templates", "Spawns", "Preview", "Validate", "Publish"],
+            "zedit": ["Identity", "Area", "Rooms", "Resets", "Spawns", "Preview", "Validate", "Publish"],
+        }.get(editor, [])
+        header = {"medit": "Mobile Editor", "redit": "Room Editor", "oedit": "Object Editor", "aedit": "Area Editor", "zedit": "Zone Editor"}.get(editor, "Builder Editor")
+        body = "\n".join(f"{i} {section}" for i, section in enumerate(sections, 1))
+        return f"--------------------------------------\n{header}\n{title}\n--------------------------------------\n\n{body}\n\nS Save Draft\nP Publish\nQ Quit"
