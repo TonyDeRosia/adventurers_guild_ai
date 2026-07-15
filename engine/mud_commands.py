@@ -797,7 +797,12 @@ class MudCommandEngine:
             data = ch.actor_data if isinstance(getattr(ch, "actor_data", {}), dict) else {}
             data.update({"position":"standing", "posture":"standing"}); ch.actor_data=data
             if rt:
-                rt.register_live_character(ch); rt.mark_character_dirty(ch.id, "admin_restore"); rt.save_character_if_dirty(ch, "admin_restore", force=True)
+                online = ch.id in getattr(rt, 'active_characters', {})
+                if online:
+                    rt.register_live_character(ch); rt.mark_character_dirty(ch.id, "admin_restore"); rt.save_character_if_dirty(ch, "admin_restore", force=True)
+                    if getattr(rt, 'combat_runtime', None): rt.combat_runtime.resident_actors.pop(f'character:{ch.id}', None)
+                else:
+                    rt.state_store.save_character(ch, rt.active_world_id or '')
             after=f"{ch.hp}/{ch.max_hp} {ch.mana}/{ch.max_mana} {ch.stamina}/{ch.max_stamina}"
             lines.append(("Restore stat " if raw.split()[0].lower()=="restorestat" else "Restored ") + f"{ch.name}: {before} -> {after}; standing.")
         return CommandResult("\n".join(lines))

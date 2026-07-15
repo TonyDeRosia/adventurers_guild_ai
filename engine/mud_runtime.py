@@ -635,6 +635,7 @@ class MudRuntime:
         self.entity_templates: dict[str, MappingProxyType] = {}
         self.sessions: dict[str, MudSession] = {}
         self.active_characters: dict[str, MudCharacter] = {}
+        self._recent_combat_actor_ids: set[str] = set()
         self.session_active_character: dict[str, str] = {}
         self.character_session_ids: dict[str, str] = {}
         self.performance_counters = {k: 0 for k in ["play_view_requests","async_message_requests","character_sql_loads","character_sql_saves","world_package_loads","room_renders","prompt_renders","display_snapshot_builds","commands_processed","messages_delivered","overlapping_requests_prevented","command_requests","direct_command_responses","command_outputs_enqueued_async","duplicate_command_outputs_filtered","async_messages_delivered","character_saves","save_coalesced","save_skipped_clean","quit_final_saves","character_entry_total_ms","inventory_load_ms","equipment_load_ms","effect_load_ms","ability_load_ms","actor_registration_ms","essential_snapshot_ms","initial_room_render_ms","prompt_render_ms","warmup_queue_ms","warmup_build_ms","warmup_cache_hits","warmup_cancelled","stale_task_rejected","projection_cache_hits","projection_cache_misses","projection_invalidations","autosave_attempts","autosave_successes","autosave_skipped_clean","autosave_failures","scheduler_starts","scheduler_duplicate_start_attempts","scheduler_stops","runtime_pulses","runtime_pulse_duration_ms","runtime_pulse_max_duration_ms","scheduler_lag_ms","scheduler_max_lag_ms","combat_encounters_active","combat_rounds_processed","combat_round_duration_ms","combat_backlog","combat_character_sql_loads","combat_character_sql_saves","combat_entity_sql_reads","combat_entity_sql_writes","combat_encounter_sql_reads","combat_encounter_sql_writes","combat_output_sqlite_writes","combat_output_in_memory_queued","combat_messages_queued","combat_messages_delivered","combat_message_delivery_latency_ms","combat_scheduler_lag_ms","practice_command_duration_ms","train_command_duration_ms","position_command_duration_ms","autosave_coalesced","coalesced_autosaves","resident_actor_cache_hits","resident_actor_cache_misses","resident_entity_cache_hits","resident_entity_cache_misses","regeneration_pulses","regeneration_actors_processed","regeneration_resource_changes","combat_validation_attempts","combat_validation_rejections","failed_command_saves","read_only_command_saves","combat_validation_saves","state_reconciliations","stale_position_repairs","stale_combat_state_repairs","stale_encounter_repairs","positive_health_incapacitated_repairs","periodic_suffering_ticks","recovery_transitions"]}
@@ -717,11 +718,16 @@ class MudRuntime:
         missed = max(0, due - 1)
         catchup = min(due, max_catchup)
         if due > max_catchup:
+            old_counter = self._runtime_pulse_counter
+            target_counter = old_counter + due
+            violence_count = max(1, int(cfg.get("violence_pulse_count", 1) or 1))
+            next_violence = ((old_counter // violence_count) + 1) * violence_count
             missed_extra = due - max_catchup
-            self.performance_counters["runtime_missed_pulses"] = self.performance_counters.get("runtime_missed_pulses", 0) + missed_extra
-            # Advance skipped base pulses without running subsystems so the
-            # bounded catch-up loop still observes crossed violence/hour buckets
-            # exactly once.
+            if old_counter < next_violence <= target_counter:
+                # Keep the next crossed violence bucket inside the bounded loop;
+                # never skip the final due violence pulse while catching up.
+                missed_extra = min(missed_extra, max(0, next_violence - old_counter - 1))
+            self.performance_counters["runtime_missed_pulses"] = self.performance_counters.get("runtime_missed_pulses", 0) + max(0, due - max_catchup)
             self._runtime_pulse_counter += missed_extra
         self._last_pulse_due_monotonic = started
         attempted: list[str] = []
@@ -739,15 +745,17 @@ class MudRuntime:
         for _ in range(catchup):
             self._runtime_pulse_counter += 1
             self.performance_counters["runtime_pulses"] += 1
-            try:
-                if getattr(self, "combat_runtime", None):
-                    attempted.append("combat")
-                    before = self.performance_counters.get("combat_rounds_processed", 0)
-                    rounds = self.combat_runtime.process_due_rounds(self.combat_runtime.world_time() + int(max(0.0, started - real_started) * 1000))
-                    if rounds or self.performance_counters.get("combat_rounds_processed", 0) != before:
-                        processed.append("combat")
-            except Exception as exc:
-                errors["combat"] = str(exc)[:160]; logger.exception("combat runtime pulse failed")
+            if due_once("violence", "violence_pulse_count", "_last_violence_bucket"):
+                try:
+                    if getattr(self, "combat_runtime", None):
+                        attempted.append("combat")
+                        before = self.performance_counters.get("combat_rounds_processed", 0)
+                        self.performance_counters["violence_dispatches"] = self.performance_counters.get("violence_dispatches", 0) + 1
+                        rounds = self.combat_runtime.process_due_rounds(self.combat_runtime.world_time() + int(max(0.0, started - real_started) * 1000), violence_pulse=self._runtime_pulse_counter)
+                        if rounds or self.performance_counters.get("combat_rounds_processed", 0) != before:
+                            processed.append("combat")
+                except Exception as exc:
+                    errors["combat"] = str(exc)[:160]; logger.exception("combat runtime pulse failed")
             if due_once("point_update", "point_update_pulse_count", "_last_point_bucket"):
                 try:
                     if getattr(self, "runtime_resources", None) and hasattr(self.runtime_resources, "process_due_regeneration"):
@@ -801,19 +809,25 @@ class MudRuntime:
         return saved
 
     def process_corpse_decay(self, now_monotonic: float | None = None) -> int:
-        now = time.monotonic() if now_monotonic is None else float(now_monotonic)
+        now_utc = datetime.now(timezone.utc)
         decayed = 0
         for corpse in list(self.find_entities(entity_type="corpse")):
             st = corpse.get("state") or {}
-            created = float(st.get("created_monotonic") or 0.0)
-            if not created:
-                st["created_monotonic"] = now; st.setdefault("decay_seconds", 180.0)
-                self.update_entity_state(str(corpse.get("entity_id") or corpse.get("instance_id")), st, source_system="corpse_decay")
-                continue
-            decay_seconds = float(st.get("decay_seconds") or 180.0)
-            if now - created < decay_seconds:
-                continue
             cid = str(corpse.get("entity_id") or corpse.get("instance_id") or "")
+            decay_at_raw = st.get("decay_at_utc")
+            if not decay_at_raw:
+                seconds = float(st.get("decay_seconds") or 180.0)
+                created_raw = st.get("created_at_utc") or datetime.now(timezone.utc).isoformat()
+                try: created = datetime.fromisoformat(str(created_raw).replace('Z','+00:00'))
+                except Exception: created = now_utc
+                st["created_at_utc"] = created.isoformat(); st["decay_at_utc"] = (created + __import__("datetime").timedelta(seconds=seconds)).isoformat()
+                st.pop("created_monotonic", None)
+                self.update_entity_state(cid, st, source_system="corpse_decay_migration")
+                decay_at_raw = st["decay_at_utc"]
+            try: decay_at = datetime.fromisoformat(str(decay_at_raw).replace('Z','+00:00'))
+            except Exception: decay_at = now_utc
+            if decay_at > now_utc:
+                continue
             for item in self.find_container_items(cid):
                 self.move_item(item["instance_id"], "room", str(corpse.get("room_id") or ""))
             self.destroy_entity(cid, reason="corpse_decay", source_system="corpse_decay")
@@ -2065,7 +2079,8 @@ class MudRuntime:
             _aid = self.combat_runtime.actor_id_for_character(char)
             _ra = getattr(self.combat_runtime, 'resident_actors', {}).get(_aid)
             _cs = str((getattr(_ra, 'combat_profile', {}) or {}).get('combat_state', '')).lower() if _ra else ''
-            if self.combat_runtime.is_actor_in_active_combat(_aid) or _cs in {'in_combat', 'fighting'}:
+            _char_cs = str((getattr(char, 'actor_data', {}) or {}).get('combat_state', '')).lower()
+            if self.combat_runtime.is_actor_in_active_combat(_aid) or _aid in getattr(self, '_recent_combat_actor_ids', set()) or _cs in {'in_combat', 'fighting'} or _char_cs in {'in_combat', 'fighting'}:
                 return CommandResult(narrative='You are fighting! Use FLEE to escape.', ok=False)
         self.event_bus.publish("movement_attempted", {"canonical_command": direction, "character_id": char.id, "character_name": char.name, "current_room_id": room_id}, source_system="movement", world_id=self.active_world_id or "", character_id=char.id, command=direction)
         exit_data, reason = self.resolve_exit(char, room_id, direction)
@@ -3389,7 +3404,7 @@ class MudRuntime:
         state = dict(ent.get("state") or {})
         state.update({"current_state":"dead", "is_alive": False, "current_health": 0})
         self.update_entity_state(entity_id, state, source_system=ctx.get("source_system", "runtime"))
-        corpse_state={"current_state":"corpse", "source_entity_id": entity_id, "source_template_id": ent.get("template_id"), "source_actor_name": name, "source_lifecycle_id": source_lifecycle_id, "death_id": death_id, "killer_actor_id": str(ctx.get("killer_actor_id") or ""), "is_alive": False, "container_open": True, "decay_state": "fresh", "created_world_time": self.get_world_time(self.active_world_id or '').get('total_minutes', 0), "created_monotonic": time.monotonic(), "decay_seconds": float((self.entity_templates.get(str(ent.get("template_id") or ""), {}) or {}).get("corpse_decay_seconds") or 180.0), "skinned": False, "butchered": False}
+        corpse_state={"current_state":"corpse", "source_entity_id": entity_id, "source_template_id": ent.get("template_id"), "source_actor_name": name, "source_lifecycle_id": source_lifecycle_id, "death_id": death_id, "killer_actor_id": str(ctx.get("killer_actor_id") or ""), "is_alive": False, "container_open": True, "decay_state": "fresh", "created_world_time": self.get_world_time(self.active_world_id or '').get('total_minutes', 0), "created_at_utc": datetime.now(timezone.utc).isoformat(), "decay_at_utc": (datetime.now(timezone.utc) + __import__("datetime").timedelta(seconds=float((self.entity_templates.get(str(ent.get("template_id") or ""), {}) or {}).get("corpse_decay_seconds") or 180.0))).isoformat(), "decay_seconds": float((self.entity_templates.get(str(ent.get("template_id") or ""), {}) or {}).get("corpse_decay_seconds") or 180.0), "skinned": False, "butchered": False}
         corpse = self.spawn_entity(ent.get("template_id", "corpse"), entity_type="corpse", room_id=ent.get("room_id"), state=corpse_state, flags=["corpse"], **ctx)
         corpse_name = f"The corpse of {name.lower()}"
         now = datetime.now(timezone.utc).isoformat()
