@@ -62,3 +62,33 @@ def test_duplicate_numbered_targets_are_stable_and_renumber_after_death(tmp_path
     rt.update_entity_state(second['entity_id'], {**second['state'], 'current_health': 0, 'is_alive': False, 'current_state': 'dead'})
     renumbered = rt.find_occupant(room, '2.wolf', {'living': True, 'visible_to': ch})['entity']
     assert renumbered['entity_id'] == third['entity_id']
+
+
+def test_living_visible_entities_do_not_fall_back_to_sql_entity_scan(tmp_path, monkeypatch):
+    rt, ch = make_runtime(tmp_path)
+    calls = {"find_entity": 0, "fetch_entities": 0}
+    original_find_entity = rt.find_entity
+    original_fetch = rt._fetch_entities
+
+    def counted_find_entity(entity_id):
+        calls["find_entity"] += 1
+        return original_find_entity(entity_id)
+
+    def counted_fetch(where, params):
+        if "entity_type='corpse'" not in where:
+            calls["fetch_entities"] += 1
+        return original_fetch(where, params)
+
+    monkeypatch.setattr(rt, "find_entity", counted_find_entity)
+    monkeypatch.setattr(rt, "_fetch_entities", counted_fetch)
+    visible = rt.find_visible_entities(ch.room_id, ch)
+    assert any(ent["name"] == "Ashback Bear" for ent in visible["mobs"])
+    assert calls == {"find_entity": 0, "fetch_entities": 0}
+
+
+def test_kill_target_resolution_sql_boundary_is_traced(tmp_path):
+    rt, ch = make_runtime(tmp_path)
+    result = rt.handle_input(ch.id, "kill bear")
+    assert result["ok"], result["output"]
+    assert result["trace"]["gameplay_sql_before_response"] == 0
+    assert "gameplay_sql_response_render" in result["trace"]

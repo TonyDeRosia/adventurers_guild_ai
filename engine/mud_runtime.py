@@ -14,6 +14,7 @@ from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Any, Optional
 from collections import OrderedDict
+from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 
 from engine.mud_commands import MudCommandEngine
@@ -28,6 +29,66 @@ from smart_mud.builder import BuilderWorkspace
 from smart_mud.event_bus import EventBus
 from engine.plugin_system import HookRegistry, PluginRegistry
 from engine.living_world import LivingWorldService, init_living_schema
+
+
+class _SQLBoundaryCursor:
+    def __init__(self, cursor: Any, recorder: dict[str, Any]):
+        self._cursor = cursor
+        self._recorder = recorder
+    def execute(self, sql: Any, params: Any = None):
+        self._recorder["count"] = int(self._recorder.get("count", 0)) + 1
+        self._recorder.setdefault("statements", []).append(str(sql).splitlines()[0][:160])
+        return self._cursor.execute(sql, params or ())
+    def executemany(self, sql: Any, seq: Any):
+        self._recorder["count"] = int(self._recorder.get("count", 0)) + 1
+        self._recorder.setdefault("statements", []).append(str(sql).splitlines()[0][:160])
+        return self._cursor.executemany(sql, seq)
+    def executescript(self, sql: Any):
+        self._recorder["count"] = int(self._recorder.get("count", 0)) + 1
+        self._recorder.setdefault("statements", []).append("SCRIPT " + str(sql).splitlines()[0][:153])
+        return self._cursor.executescript(sql)
+    def __iter__(self):
+        return iter(self._cursor)
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._cursor, name)
+
+
+class _SQLBoundaryConnection:
+    def __init__(self, conn: Any, recorder: dict[str, Any]):
+        self._conn = conn
+        self._recorder = recorder
+    def execute(self, sql: Any, params: Any = None):
+        self._recorder["count"] = int(self._recorder.get("count", 0)) + 1
+        self._recorder.setdefault("statements", []).append(str(sql).splitlines()[0][:160])
+        return self._conn.execute(sql, params or ())
+    def executemany(self, sql: Any, seq: Any):
+        self._recorder["count"] = int(self._recorder.get("count", 0)) + 1
+        self._recorder.setdefault("statements", []).append(str(sql).splitlines()[0][:160])
+        return self._conn.executemany(sql, seq)
+    def executescript(self, sql: Any):
+        self._recorder["count"] = int(self._recorder.get("count", 0)) + 1
+        self._recorder.setdefault("statements", []).append("SCRIPT " + str(sql).splitlines()[0][:153])
+        return self._conn.executescript(sql)
+    def cursor(self, *args: Any, **kwargs: Any):
+        return _SQLBoundaryCursor(self._conn.cursor(*args, **kwargs), self._recorder)
+    def __enter__(self):
+        self._conn.__enter__(); return self
+    def __exit__(self, *args: Any):
+        return self._conn.__exit__(*args)
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._conn, name)
+
+
+@contextmanager
+def trace_sqlite_boundary(recorder: dict[str, Any]):
+    original = sqlite3.connect
+    def traced_connect(*args: Any, **kwargs: Any):
+        return _SQLBoundaryConnection(original(*args, **kwargs), recorder)
+    sqlite3.connect = traced_connect
+    try:
+        yield recorder
+    finally:
+        sqlite3.connect = original
 from engine.abilities import AbilityExecutionService, init_ability_schema
 from engine.actors import ActorRegistry, actor_from_runtime_character
 from engine.character_state import reconcile_actor_position
@@ -641,10 +702,11 @@ class MudRuntime:
         self.resident_occupants_by_room: dict[str, OrderedDict[str, None]] = {}
         self.entity_instance_to_actor_id: dict[str, str] = {}
         self.actor_id_to_entity_instance_id: dict[str, str] = {}
+        self.resident_entities_by_actor_id: dict[str, dict[str, Any]] = {}
         self._recent_combat_actor_ids: set[str] = set()
         self.session_active_character: dict[str, str] = {}
         self.character_session_ids: dict[str, str] = {}
-        self.performance_counters = make_initial_counters(["play_view_requests","async_message_requests","character_sql_loads","character_sql_saves","world_package_loads","room_renders","prompt_renders","display_snapshot_builds","commands_processed","messages_delivered","overlapping_requests_prevented","command_requests","direct_command_responses","command_outputs_enqueued_async","duplicate_command_outputs_filtered","async_messages_delivered","character_saves","save_coalesced","save_skipped_clean","quit_final_saves","character_entry_total_ms","inventory_load_ms","equipment_load_ms","effect_load_ms","ability_load_ms","actor_registration_ms","essential_snapshot_ms","initial_room_render_ms","prompt_render_ms","warmup_queue_ms","warmup_build_ms","warmup_cache_hits","warmup_cancelled","stale_task_rejected","projection_cache_hits","projection_cache_misses","projection_invalidations","autosave_attempts","autosave_successes","autosave_skipped_clean","autosave_failures","scheduler_starts","scheduler_duplicate_start_attempts","scheduler_stops","runtime_pulses","runtime_pulse_duration_ms","runtime_pulse_max_duration_ms","scheduler_lag_ms","scheduler_max_lag_ms","combat_encounters_active","combat_rounds_processed","combat_round_duration_ms","combat_backlog","combat_character_sql_loads","combat_character_sql_saves","combat_entity_sql_reads","combat_entity_sql_writes","combat_encounter_sql_reads","combat_encounter_sql_writes","combat_output_sqlite_writes","combat_output_in_memory_queued","combat_messages_queued","combat_messages_delivered","combat_message_delivery_latency_ms","combat_scheduler_lag_ms","practice_command_duration_ms","train_command_duration_ms","position_command_duration_ms","autosave_coalesced","coalesced_autosaves","resident_actor_cache_hits","resident_actor_cache_misses","resident_entity_cache_hits","resident_entity_cache_misses","regeneration_pulses","regeneration_actors_processed","regeneration_resource_changes","combat_validation_attempts","combat_validation_rejections","failed_command_saves","read_only_command_saves","combat_validation_saves","state_reconciliations","stale_position_repairs","stale_combat_state_repairs","stale_encounter_repairs","positive_health_incapacitated_repairs","periodic_suffering_ticks","recovery_transitions", "combat_resident_actions_queued", "combat_resident_actions_consumed", "combat_initial_checkpoint_writes", "combat_audit_buffered", "combat_audit_flushes", "combat_audit_rows_flushed", "combat_sql_action_queue_insert", "combat_sql_action_queue_update", "combat_sql_round_history_insert", "last_violence_pulse", "runtime_missed_pulses", "violence_dispatches", "autosave_batches", "corpse_decays", "combat_stat_cache_hits", "combat_stat_cache_misses", "combat_completion_writes", "command_blocked_on_save_ms","kill_request_total_ms","kill_target_resolution_ms","kill_encounter_creation_ms","kill_opening_resolution_ms","kill_response_build_ms","kill_response_send_ms","heartbeat_event_loop_block_ms","first_violence_pulse_ms","warm_violence_pulse_ms","prompt_queue_ms","prompt_delivery_ms","prompt_updates_queued","prompt_updates_delivered","combat_packets_queued","combat_packets_delivered","natural_weapon_cache_hits","natural_weapon_cache_misses"] )
+        self.performance_counters = make_initial_counters(["play_view_requests","async_message_requests","character_sql_loads","character_sql_saves","world_package_loads","room_renders","prompt_renders","display_snapshot_builds","commands_processed","messages_delivered","overlapping_requests_prevented","command_requests","direct_command_responses","command_outputs_enqueued_async","duplicate_command_outputs_filtered","async_messages_delivered","character_saves","save_coalesced","save_skipped_clean","quit_final_saves","character_entry_total_ms","inventory_load_ms","equipment_load_ms","effect_load_ms","ability_load_ms","actor_registration_ms","essential_snapshot_ms","initial_room_render_ms","prompt_render_ms","warmup_queue_ms","warmup_build_ms","warmup_cache_hits","warmup_cancelled","stale_task_rejected","projection_cache_hits","projection_cache_misses","projection_invalidations","autosave_attempts","autosave_successes","autosave_skipped_clean","autosave_failures","scheduler_starts","scheduler_duplicate_start_attempts","scheduler_stops","runtime_pulses","runtime_pulse_duration_ms","runtime_pulse_max_duration_ms","scheduler_lag_ms","scheduler_max_lag_ms","combat_encounters_active","combat_rounds_processed","combat_round_duration_ms","combat_backlog","combat_character_sql_loads","combat_character_sql_saves","combat_entity_sql_reads","combat_entity_sql_writes","combat_encounter_sql_reads","combat_encounter_sql_writes","combat_output_sqlite_writes","combat_output_in_memory_queued","combat_messages_queued","combat_messages_delivered","combat_message_delivery_latency_ms","combat_scheduler_lag_ms","practice_command_duration_ms","train_command_duration_ms","position_command_duration_ms","autosave_coalesced","coalesced_autosaves","resident_actor_cache_hits","resident_actor_cache_misses","resident_entity_cache_hits","resident_entity_cache_misses","regeneration_pulses","regeneration_actors_processed","regeneration_resource_changes","combat_validation_attempts","combat_validation_rejections","failed_command_saves","read_only_command_saves","combat_validation_saves","state_reconciliations","stale_position_repairs","stale_combat_state_repairs","stale_encounter_repairs","positive_health_incapacitated_repairs","periodic_suffering_ticks","recovery_transitions", "combat_resident_actions_queued", "combat_resident_actions_consumed", "combat_initial_checkpoint_writes", "combat_audit_buffered", "combat_audit_flushes", "combat_audit_rows_flushed", "combat_sql_action_queue_insert", "combat_sql_action_queue_update", "combat_sql_round_history_insert", "last_violence_pulse", "runtime_missed_pulses", "violence_dispatches", "autosave_batches", "corpse_decays", "combat_stat_cache_hits", "combat_stat_cache_misses", "combat_completion_writes", "command_blocked_on_save_ms","kill_request_total_ms","kill_target_resolution_ms","kill_encounter_creation_ms","kill_opening_resolution_ms","kill_response_build_ms","kill_response_send_ms","heartbeat_event_loop_block_ms","first_violence_pulse_ms","warm_violence_pulse_ms","prompt_queue_ms","prompt_delivery_ms","prompt_updates_queued","prompt_updates_delivered","combat_packets_queued","combat_packets_delivered","natural_weapon_cache_hits","natural_weapon_cache_misses","runtime_gameplay_sql_statements","runtime_gameplay_sql_violations"] )
         self._dirty_characters: dict[str, set[str]] = {}
         self._save_locks: dict[str, Any] = {}
         self._quit_final_saved: set[str] = set()
@@ -1667,14 +1729,18 @@ class MudRuntime:
         elif command.strip() in {".end", ".cancel"}:
             result = CommandResult("No active editor session.", ok=False)
         else:
+            sql_trace = {"count": 0, "statements": []}
             try:
-                result = self._handle_runtime_command(char, command)
+                with trace_sqlite_boundary(sql_trace):
+                    result = self._handle_runtime_command(char, command)
             except Exception:
                 import traceback
                 trace_id = "cmd_" + uuid.uuid4().hex[:12]
                 print(f"[command-exception] trace_id={trace_id} character_id={character_id} command={command!r}")
                 traceback.print_exc()
                 result = CommandResult(f"Something went wrong while processing that command. Trace ID: {trace_id}", ok=False)
+            trace["gameplay_sql_before_response"] = int(sql_trace.get("count", 0))
+            trace["gameplay_sql_statements"] = list(sql_trace.get("statements", []))
         trace["command_execution_completed"] = time.monotonic(); trace.setdefault("response_returned_from_command_engine", trace["command_execution_completed"])
         if getattr(result, "display_document", None) is not None:
             color_enabled = not bool(getattr(char, "preferences", {}).get("no_color"))
@@ -1707,7 +1773,19 @@ class MudRuntime:
         updates = result.state_updates or {}
         self.performance_counters["commands_processed"] += 1
         self.performance_counters["direct_command_responses"] += 1
-        view = self.play_view(character_id) if updates.get("render_room") or (command.strip().lower().split()[0] if command.strip() else "") in {"look","l","north","n","south","s","east","e","west","w","up","u","down","d","in","out"} else {**self.prompt_snapshot(character_id), "html": "", "text": "", "room_id": getattr(char, "room_id", ""), "async_cursor": self._async_sequences.get(character_id, 0)}
+        view_sql_trace = {"count": 0, "statements": []}
+        if updates.get("render_room") or (command.strip().lower().split()[0] if command.strip() else "") in {"look","l","north","n","south","s","east","e","west","w","up","u","down","d","in","out"}:
+            with trace_sqlite_boundary(view_sql_trace):
+                view = self.play_view(character_id)
+        else:
+            with trace_sqlite_boundary(view_sql_trace):
+                view = {**self.prompt_snapshot(character_id), "html": "", "text": "", "room_id": getattr(char, "room_id", ""), "async_cursor": self._async_sequences.get(character_id, 0)}
+        trace["gameplay_sql_response_render"] = int(view_sql_trace.get("count", 0))
+        trace["gameplay_sql_response_statements"] = list(view_sql_trace.get("statements", []))
+        trace["gameplay_sql_total"] = int(trace.get("gameplay_sql_before_response", 0)) + int(trace.get("gameplay_sql_response_render", 0))
+        self.performance_counters["runtime_gameplay_sql_statements"] = self.performance_counters.get("runtime_gameplay_sql_statements", 0) + int(trace.get("gameplay_sql_total", 0))
+        if trace.get("gameplay_sql_total", 0):
+            self.performance_counters["runtime_gameplay_sql_violations"] = self.performance_counters.get("runtime_gameplay_sql_violations", 0) + 1
         if updates.get("session_transition") == "character_select":
             sid = self.character_session_ids.pop(character_id, "")
             if sid: self.session_active_character.pop(sid, None)
@@ -2156,6 +2234,7 @@ class MudRuntime:
             self.mark_character_dirty(char.id, source or "movement")
         if ent is not None:
             ent["room_id"] = destination; ent["current_room_id"] = destination
+            self.resident_entities_by_actor_id[actor_id] = dict(ent)
             if hasattr(self.combat_runtime, "dirty_resident_entities"):
                 self.combat_runtime.dirty_resident_entities.add(actor_id.split(":", 1)[1])
         self.add_occupant(destination, actor_id)
@@ -2255,26 +2334,24 @@ class MudRuntime:
         cr = getattr(self, 'combat_runtime', None)
         if not cr:
             return
-        try:
-            import sqlite3
-            actor_names: dict[str, str] = {}
-            for ent in (visible.get('npcs', []) + visible.get('mobs', [])):
-                actor_names['entity:' + str(ent.get('instance_id') or ent.get('entity_id'))] = str(ent.get('name') or 'Someone')
-            for ch in self.list_characters(self.active_world_id or ''):
-                if ch.get('room_id') == room_id:
-                    actor_names['character:' + str(ch.get('character_id'))] = str(ch.get('name') or 'Someone')
-            with sqlite3.connect(self.state_store.db_path) as con:
-                rows = con.execute("""SELECT p.actor_id,p.current_target_actor_id FROM combat_participants p JOIN combat_encounters e ON e.encounter_id=p.encounter_id WHERE e.room_id=? AND e.status='active' AND p.participation_status='active' AND p.defeated=0 AND p.fled=0""", (room_id,)).fetchall()
-            targets = {aid: actor_names.get(tid) or cr.actor_display_name(tid) for aid, tid in rows if tid}
-            for ent in (visible.get('npcs', []) + visible.get('mobs', [])):
-                aid = 'entity:' + str(ent.get('instance_id') or ent.get('entity_id'))
-                if targets.get(aid):
-                    ent['combat_target_name'] = targets[aid]
-                    st = dict(ent.get('state') or {})
-                    st['combat_target_name'] = targets[aid]
-                    ent['state'] = st
-        except Exception:
-            return
+        actor_names = {'entity:' + str(ent.get('instance_id') or ent.get('entity_id')): str(ent.get('name') or 'Someone') for ent in (visible.get('npcs', []) + visible.get('mobs', []))}
+        for actor in self.occupants_in_room(room_id):
+            actor_names.setdefault(actor.actor_id, getattr(actor.identity, 'name', 'Someone'))
+        targets: dict[str, str] = {}
+        for enc in getattr(cr, 'resident_encounters', {}).values():
+            if getattr(enc, 'status', '') != 'active' or self.canonical_room_id(getattr(enc, 'room_id', '')) != self.canonical_room_id(room_id):
+                continue
+            for aid, part in getattr(enc, 'participants', {}).items():
+                target_id = getattr(part, 'target_actor_id', '')
+                if target_id:
+                    targets[aid] = actor_names.get(target_id) or cr.actor_display_name(target_id)
+        for ent in (visible.get('npcs', []) + visible.get('mobs', [])):
+            aid = 'entity:' + str(ent.get('instance_id') or ent.get('entity_id'))
+            if targets.get(aid):
+                ent['combat_target_name'] = targets[aid]
+                st = dict(ent.get('state') or {})
+                st['combat_target_name'] = targets[aid]
+                ent['state'] = st
 
     def _current_room(self, char: MudCharacter) -> MudRoom:
         room_data, source = self.runtime_room_data(char, char.room_id)
@@ -3169,6 +3246,7 @@ class MudRuntime:
         iid = str(ent.get("instance_id") or ent.get("entity_id") or "")
         self.entity_instance_to_actor_id[iid] = actor.actor_id
         self.actor_id_to_entity_instance_id[actor.actor_id] = iid
+        self.resident_entities_by_actor_id[actor.actor_id] = dict(ent)
         self.add_occupant(room_id, actor.actor_id)
         return actor
 
@@ -3196,7 +3274,7 @@ class MudRuntime:
 
     def _entity_for_resident_actor(self, actor_id: str) -> dict[str, Any] | None:
         iid = self.actor_id_to_entity_instance_id.get(actor_id) or (actor_id.split(":", 1)[1] if actor_id.startswith("entity:") else "")
-        return self.find_entity(iid) if iid else None
+        return self.resident_entities_by_actor_id.get(actor_id) or (self.find_entity(iid) if iid else None)
 
     def find_occupant(self, room_id: Any, query: str, filters: dict[str, Any] | None = None) -> dict[str, Any]:
         filters = filters or {}
@@ -3248,6 +3326,7 @@ class MudRuntime:
         self.resident_occupants_by_room.clear()
         self.entity_instance_to_actor_id.clear()
         self.actor_id_to_entity_instance_id.clear()
+        self.resident_entities_by_actor_id.clear()
         count = 0
         for ent in self._fetch_entities("owner_type='room' AND entity_type IN ('npc','mob')", ()):
             if ent.get("is_alive") and ent.get("current_state") not in {"dead", "corpse", "despawned"}:
@@ -3275,19 +3354,17 @@ class MudRuntime:
         return groups
 
     def find_visible_entities(self, room_id: str, viewer: Any = None) -> dict[str, list[dict[str, Any]]]:
-        contents = self.get_room_contents(room_id, viewer)
-        groups = {"players": [], "npcs": [], "mobs": [], "objects": list(contents["item_instances"]), "corpses": []}
-        resident_ids = set()
+        groups = {"players": [], "npcs": [], "mobs": [], "objects": list(self.get_visible_room_items(room_id)), "corpses": []}
         for actor in self.occupants_in_room(room_id):
             ent = self._entity_for_resident_actor(actor.actor_id)
             if not ent or not self.is_entity_visible(ent, viewer):
                 continue
-            resident_ids.add(str(ent.get("entity_id") or ""))
             groups[{"npc":"npcs", "mob":"mobs"}.get(ent.get("entity_type"), "objects")].append(ent)
-        for ent in contents["entity_instances"]:
-            if str(ent.get("entity_id") or "") in resident_ids:
-                continue
-            groups[{"npc":"npcs", "mob":"mobs", "corpse":"corpses"}.get(ent.get("entity_type"), "objects")].append(ent)
+        # Corpses and non-living objects remain durable-room content; living targetable
+        # occupants are exclusively from the resident room index above.
+        for ent in self._fetch_entities("owner_type='room' AND entity_type='corpse' AND current_room_id=?", (self.canonical_room_id(room_id),)):
+            if self.is_entity_visible(ent, viewer):
+                groups["corpses"].append(ent)
         return groups
 
     def resolve_entity_keywords(self, query: str, candidate_entities: list[dict[str, Any]]) -> dict[str, Any]:
@@ -3319,7 +3396,9 @@ class MudRuntime:
         with sqlite3.connect(self.state_store.db_path) as conn: conn.execute("UPDATE entity_instances SET current_room_id=?, owner_type='room', updated_at=? WHERE entity_id=? AND destroyed_at IS NULL", (new_room, now, entity_id))
         ent = self.find_entity(entity_id) or {}
         if ent.get("entity_type") in {"npc", "mob"}:
-            self.move_occupant(self.actor_id_for_entity_instance(ent), (old or {}).get("room_id") or (old or {}).get("current_room_id"), new_room)
+            aid = self.actor_id_for_entity_instance(ent)
+            self.resident_entities_by_actor_id[aid] = dict(ent)
+            self.move_occupant(aid, (old or {}).get("room_id") or (old or {}).get("current_room_id"), new_room)
         self._publish_entity_event("entity_moved", ent, source_system=source_system, previous_room_id=(old or {}).get("current_room_id"), **ctx); self._publish_entity_event("room_entities_changed", ent, source_system=source_system, **ctx)
         return ent
 
@@ -3327,8 +3406,13 @@ class MudRuntime:
         now = datetime.now(timezone.utc).isoformat()
         with sqlite3.connect(self.state_store.db_path) as conn: conn.execute("UPDATE entity_instances SET state=?, updated_at=? WHERE entity_id=? AND destroyed_at IS NULL", (json.dumps(state), now, entity_id))
         ent = self.find_entity(entity_id) or {}
-        if ent.get("entity_type") in {"npc", "mob"} and (not ent.get("is_alive") or ent.get("current_state") in {"dead", "corpse", "despawned"}):
-            self.remove_occupant(ent.get("room_id") or ent.get("current_room_id"), self.actor_id_for_entity_instance(ent))
+        if ent.get("entity_type") in {"npc", "mob"}:
+            aid = self.actor_id_for_entity_instance(ent)
+            if not ent.get("is_alive") or ent.get("current_state") in {"dead", "corpse", "despawned"}:
+                self.remove_occupant(ent.get("room_id") or ent.get("current_room_id"), aid)
+                self.resident_entities_by_actor_id.pop(aid, None)
+            else:
+                self.resident_entities_by_actor_id[aid] = dict(ent)
         self._publish_entity_event("entity_state_changed", ent, source_system=source_system, **ctx); return ent
 
     def despawn_entity(self, entity_id: str, source_system: str = "runtime", **ctx: Any) -> bool:
@@ -3340,6 +3424,7 @@ class MudRuntime:
             self.combat_runtime.remove_resident_actor(actor_id)
             self.entity_instance_to_actor_id.pop(str(ent.get("entity_id") or ""), None)
             self.actor_id_to_entity_instance_id.pop(actor_id, None)
+            self.resident_entities_by_actor_id.pop(actor_id, None)
         if ent: self._publish_entity_event("entity_despawned", ent, source_system=source_system, **ctx); self._publish_entity_event("room_entities_changed", ent, source_system=source_system, **ctx)
         return bool(ent)
 
@@ -3352,6 +3437,7 @@ class MudRuntime:
             self.combat_runtime.remove_resident_actor(actor_id)
             self.entity_instance_to_actor_id.pop(str(ent.get("entity_id") or ""), None)
             self.actor_id_to_entity_instance_id.pop(actor_id, None)
+            self.resident_entities_by_actor_id.pop(actor_id, None)
         if ent: self._publish_entity_event("entity_destroyed", ent, source_system=source_system, **ctx); self._publish_entity_event("room_entities_changed", ent, source_system=source_system, **ctx)
         return bool(ent)
 

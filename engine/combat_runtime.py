@@ -509,18 +509,11 @@ class CombatRuntimeService:
 
     def resolve_target_detail(self, character: Any, query: str) -> dict[str, Any]:
         room_id = self.runtime.canonical_room_id(getattr(character, "room_id", ""))
-        visible = self.runtime.find_visible_entities(room_id, character)
-        visible_entities = visible.get("npcs", []) + visible.get("mobs", [])
-        visible_match = self.runtime.resolve_entity_keywords(query, visible_entities)
         resolved = self.runtime.find_occupant(room_id, query, {"living": True, "visible_to": character})
         if resolved.get("status") == "ok":
             return resolved
-        if visible_match.get("status") == "ok":
-            ent = visible_match.get("entity") or {}
-            print(f"[target-resolution-integrity] query={query} player_actor={self.actor_id_for_character(character)} player_room={getattr(character,'room_id','')} canonical_room={room_id} visible_matches=1 resident_matches=0 actor_ids={[self.runtime.actor_id_for_entity_instance(e) for e in visible_entities]} visible_names={[e.get('name') for e in visible_entities]} instance_ids={[e.get('entity_id') for e in visible_entities]} template_ids={[e.get('template_id') for e in visible_entities]} actor_locations={[getattr(a.identity,'current_location','') for a in self.runtime.occupants_in_room(room_id)]} room_index={list(getattr(self.runtime, 'resident_occupants_by_room', {}).get(room_id, {}))}")
-            return {"entity": None, "status": "visible_unresolved", "message": f"There is no living {ent.get('name') or query} here." if not ent.get("is_alive") else "You cannot attack that."}
-        if visible_match.get("status") in {"missing_ordinal", "ambiguous"}:
-            return {"entity": None, "status": visible_match.get("status"), "message": self.runtime._resolve_message(visible_match, "They are not here.")}
+        if resolved.get("status") in {"missing_ordinal", "ambiguous"}:
+            return {"entity": None, "status": resolved.get("status"), "message": self.runtime._resolve_message(resolved, "They are not here.")}
         return {"entity": None, "status": "not_visible", "message": "You do not see them here."}
 
     def resolve_target(self, character: Any, query: str) -> dict[str, Any] | None:
