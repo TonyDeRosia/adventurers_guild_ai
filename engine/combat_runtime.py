@@ -391,6 +391,7 @@ class ResidentCombatEncounter:
     dirty: bool = True
     audit_buffer: list[dict[str, Any]] = field(default_factory=list)
     source_generation: int = 0
+    eligible_violence_pulse: int = 0
 
 @dataclass
 class CombatRuntimeResult:
@@ -694,6 +695,9 @@ class CombatRuntimeService:
             self.enqueue_output(character.id, f"The attack is over.", encounter_id=enc, room_id=character.room_id, category='combat_end')
         for cid in self.active_character_ids_in_room(character.room_id):
             if cid != character.id: self.enqueue_output(cid, f'{character.name} attacks {defender.identity.name}.', encounter_id=enc, room_id=character.room_id, category='combat_start')
+        resident = self.resident_encounters.get(enc)
+        if resident:
+            resident.eligible_violence_pulse = max(int(getattr(resident, 'eligible_violence_pulse', 0) or 0), getattr(self.runtime, '_runtime_pulse_counter', 0) + 1)
         return rr
 
     def start_actor_attack(self, attacker_source: Any, target_ent: dict[str, Any]) -> CombatRuntimeResult:
@@ -792,7 +796,9 @@ class CombatRuntimeService:
     def start_encounter(self, room_id: str) -> str:
         eid='enc_'+uuid.uuid4().hex; now=datetime.now(timezone.utc).isoformat(); wt=self.world_time()
         with sqlite3.connect(self.db_path) as con: con.execute("INSERT INTO combat_encounters VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(eid,self.runtime.active_world_id or '',room_id,'active',wt,0,0,now,now,None,None,'{}'))
-        self.resident_encounters[eid] = ResidentCombatEncounter(eid, self.runtime.active_world_id or '', room_id)
+        enc = ResidentCombatEncounter(eid, self.runtime.active_world_id or '', room_id)
+        enc.eligible_violence_pulse = getattr(self.runtime, '_runtime_pulse_counter', 0) + 1
+        self.resident_encounters[eid] = enc
         self.runtime.performance_counters['combat_initial_checkpoint_writes'] = self.runtime.performance_counters.get('combat_initial_checkpoint_writes', 0) + 1
         self._publish('combat_encounter_started', {'encounter_id':eid,'world_id':self.runtime.active_world_id or '', 'room_id':room_id,'round':0,'world_time':wt}); return eid
 
@@ -896,8 +902,8 @@ class CombatRuntimeService:
         enc = self.resident_encounters.get(eid)
         if enc and attacker.actor_id in enc.participants:
             part = enc.participants[attacker.actor_id]; part.contribution_damage += dmg; part.last_action_pulse = getattr(self.runtime, '_runtime_pulse_counter', 0); enc.dirty = True
-        self._publish('combat_attack_resolved',{'encounter_id':eid,'actor_id':attacker.actor_id,'target_actor_id':defender.actor_id,'result':outcome,'damage':dmg,'round':self._round(eid),'world_time':wt})
-        if dmg: self._publish('combat_damage_applied',{'encounter_id':eid,'actor_id':attacker.actor_id,'target_actor_id':defender.actor_id,'damage':dmg,'round':self._round(eid),'world_time':wt})
+        self._publish('combat_attack_resolved',{'encounter_id':eid,'actor_id':attacker.actor_id,'target_actor_id':defender.actor_id,'result':outcome,'damage':dmg,'round':self._resident_round(eid),'world_time':wt})
+        if dmg: self._publish('combat_damage_applied',{'encounter_id':eid,'actor_id':attacker.actor_id,'target_actor_id':defender.actor_id,'damage':dmg,'round':self._resident_round(eid),'world_time':wt})
         self._publish('combat_action_completed',{'encounter_id':eid,'actor_id':attacker.actor_id,'target_actor_id':defender.actor_id,'result':outcome,'world_time':wt})
         self._deliver_combat_messages(eid, attacker, defender, res, 'critical_hit' if (res.damage_event and res.damage_event.critical) else ('attack_hit' if res.hit else 'attack_miss'), skip_attacker=bool(request.metadata.get('opening')))
         msgs=[res.messages.get('attacker','')]
@@ -957,7 +963,8 @@ class CombatRuntimeService:
     def process_due_rounds(self, world_time:int|None=None, *, violence_pulse: int | None = None)->list[str]:
         wt=self.world_time() if world_time is None else int(world_time); out=[]
         trace_id = "violence_" + uuid.uuid4().hex[:12]
-        active = [e for e in self.resident_encounters.values() if e.status == 'active']
+        pulse_no = getattr(self.runtime, '_runtime_pulse_counter', 0) if violence_pulse is None else int(violence_pulse)
+        active = [e for e in self.resident_encounters.values() if e.status == 'active' and int(getattr(e, 'eligible_violence_pulse', 0) or 0) <= pulse_no]
         # Hot-path SQL profile: normal resident violence must not consult SQLite action authority.
         sql_zero_keys = (
             "combat_sql_encounter_select", "combat_sql_participant_select", "combat_sql_action_queue_select",
@@ -970,7 +977,6 @@ class CombatRuntimeService:
         self.runtime.performance_counters["combat_encounter_sql_reads"] = self.runtime.performance_counters.get("combat_encounter_sql_reads", 0)
         self.runtime.performance_counters["combat_encounters_active"] = len(active)
         processed=0; started = time.monotonic(); started_ns = self.violence_profiler.clock(); action_count = 0
-        pulse_no = getattr(self.runtime, '_runtime_pulse_counter', 0) if violence_pulse is None else int(violence_pulse)
         for enc in active:
             if enc.last_violence_pulse == pulse_no:
                 continue
@@ -980,10 +986,11 @@ class CombatRuntimeService:
             msgs = self.process_encounter_round(enc.encounter_id, wt, violence_pulse=pulse_no)
             out += msgs
             processed += 1; action_count += int(getattr(enc, "last_actions_executed", 0))
-        duration_ms = int((time.monotonic() - started) * 1000); self.violence_profiler.last_pulse_ns = max(1, self.violence_profiler.clock() - started_ns)
+        duration_ms_f = (time.monotonic() - started) * 1000.0; duration_ms = int(duration_ms_f); self.violence_profiler.last_pulse_ns = max(1, self.violence_profiler.clock() - started_ns)
         self.runtime.performance_counters["combat_rounds_processed"] = self.runtime.performance_counters.get("combat_rounds_processed", 0) + processed
         self.runtime.performance_counters["last_violence_pulse"] = pulse_no
-        print(f"[violence-pulse] trace_id={trace_id} pulse={pulse_no} now={wt} active_encounters={len(active)} processed_encounters={processed} actions={action_count} messages={len(out)} duration_ms={duration_ms}")
+        if processed or action_count or duration_ms_f >= 50.0:
+            print(f"[violence-pulse] trace_id={trace_id} pulse={pulse_no} now={wt} active_encounters={len(active)} processed_encounters={processed} actions={action_count} messages={len(out)} duration_ms={duration_ms_f:.3f}")
         self._publish('combat_pulse_processed', {'trace_id': trace_id, 'world_id':self.runtime.active_world_id or '', 'active_encounters': len(active), 'due_encounters': len(active), 'processed_encounters': processed, 'actions': action_count, 'messages': len(out), 'duration_ms': duration_ms, 'world_time':wt})
         return out
 
