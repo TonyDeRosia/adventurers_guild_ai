@@ -266,8 +266,10 @@ class CombatEngine:
     def _messages(self, a: Actor, d: Actor, outcome: str, e: DamageEvent | None) -> dict[str, str]:
         verb = str(((e.attack_profile if e else {}) or {}).get("name") or "strike")
         weapon = str(((e.weapon if e else {}) or {}).get("name") or verb).lower()
-        if weapon in {"unarmed", "unarmed strike", "strike", "attack", "natural attack"}:
+        if weapon in {"unarmed", "unarmed strike", "strike", "attack"} or (weapon == "natural attack" and not getattr(a, "body_profile_id", "")):
             weapon = "fist"
+        elif weapon == "natural attack":
+            weapon = "bite" if str(getattr(a, "body_profile_id", "")).lower() in {"wolf", "fox", "canine"} else "natural attack"
         dname = d.identity.name; aname = a.identity.name
         if outcome == "miss":
             return {"attacker":f"You narrowly miss {dname}.","victim":f"{aname} narrowly misses you.","observers":f"{aname} narrowly misses {dname}."}
@@ -427,8 +429,10 @@ class CombatResolutionService:
         self.engine.set_state(attacker, CombatState.ATTACKING); self.engine.set_state(defender, CombatState.IN_COMBAT)
         a=self._snapshot(attacker, ctx); d=self._snapshot(defender, ctx)
         if not a or not d: return CombatResolutionResult(False,'missing_combat_stat_service',attacker.actor_id,defender.actor_id,ctx.attack_kind or AttackKind.UNARMED.value,diagnostics={"trace":trace})
-        prof=a.weapon_profile or (a.natural_weapon_profiles[0] if getattr(a,'natural_weapon_profiles',None) else a.unarmed_profile)
-        source='weapon' if a.weapon_profile else ('natural' if getattr(a,'natural_weapon_profiles',None) else 'unarmed')
+        has_natural = bool(getattr(a,'natural_weapon_profiles',None))
+        use_natural = has_natural and str(getattr(a, 'actor_type', '')).lower() in {'mob','npc','entity','creature'}
+        prof=(a.natural_weapon_profiles[0] if use_natural else (a.weapon_profile or (a.natural_weapon_profiles[0] if has_natural else a.unarmed_profile)))
+        source='natural' if (use_natural or (has_natural and not a.weapon_profile)) else ('weapon' if a.weapon_profile else 'unarmed')
         atk=AttackProfile(id=getattr(prof,'profile_id',source), name=getattr(prof,'name',getattr(prof,'source',source)), damage_type=getattr(prof,'damage_type','physical'), base_damage=int((getattr(prof,'minimum_damage',1)+getattr(prof,'maximum_damage',1))/2), speed=max(1,int(getattr(prof,'attack_speed',100) or 100)), reach=int(getattr(prof,'reach',1) or 1), critical_multiplier=float(a.criticals.get('critical_damage',1.5) or 1.5), source=source, metadata={'snapshot_authority':True})
         attack_kind=ctx.attack_kind or (AttackKind.MELEE_WEAPON.value if source=='weapon' else AttackKind.UNARMED.value)
         if attack_kind == AttackKind.HEALING.value and not bool(ctx.safe_metadata().get('requires_hit_roll')):

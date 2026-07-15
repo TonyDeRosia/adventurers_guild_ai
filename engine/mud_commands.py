@@ -759,6 +759,26 @@ class MudCommandEngine:
             if args and args[0].lower() == "reset":
                 cr.violence_profiler.reset(); return CommandResult("Violence profile reset.")
             return CommandResult(cr.violence_profiler.render())
+        if cmd == "commandtrace":
+            tid = args[0] if args else ""
+            traces = getattr(rt, "command_traces", {})
+            if not tid:
+                recent = list(traces.keys())[-10:]
+                return CommandResult("Command traces:\n" + ("\n".join(recent) if recent else "none"))
+            tr = traces.get(tid)
+            if not tr:
+                return CommandResult(f"Command trace not found: {tid}", ok=False)
+            base = float(tr.get("request_received") or tr.get("request_started") or 0.0)
+            keys = ["request_received","routing_started","target_resolved","encounter_created","opening_attack_started","opening_attack_completed","response_ready","response_sent"]
+            lines = [f"Command trace {tid}:"]
+            for k in keys:
+                if k in tr:
+                    lines.append(f"{k}: {(float(tr[k])-base)*1000.0:.3f} ms")
+            lines.append(f"total_server_ms: {float(tr.get('total_server_ms', 0.0)):.3f}")
+            waits = tr.get("awaits") or []
+            lines.append("awaited_operations:")
+            lines.extend([f"- {w.get('operation','unknown')}: {float(w.get('ms',0.0)):.3f} ms" for w in waits] or ["- none"])
+            return CommandResult("\n".join(lines))
         if cmd == "pointtrace":
             mode = args[0].lower() if args else ""
             if mode in {"on", "off"}:

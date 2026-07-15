@@ -639,7 +639,7 @@ class MudRuntime:
         self._recent_combat_actor_ids: set[str] = set()
         self.session_active_character: dict[str, str] = {}
         self.character_session_ids: dict[str, str] = {}
-        self.performance_counters = make_initial_counters(["play_view_requests","async_message_requests","character_sql_loads","character_sql_saves","world_package_loads","room_renders","prompt_renders","display_snapshot_builds","commands_processed","messages_delivered","overlapping_requests_prevented","command_requests","direct_command_responses","command_outputs_enqueued_async","duplicate_command_outputs_filtered","async_messages_delivered","character_saves","save_coalesced","save_skipped_clean","quit_final_saves","character_entry_total_ms","inventory_load_ms","equipment_load_ms","effect_load_ms","ability_load_ms","actor_registration_ms","essential_snapshot_ms","initial_room_render_ms","prompt_render_ms","warmup_queue_ms","warmup_build_ms","warmup_cache_hits","warmup_cancelled","stale_task_rejected","projection_cache_hits","projection_cache_misses","projection_invalidations","autosave_attempts","autosave_successes","autosave_skipped_clean","autosave_failures","scheduler_starts","scheduler_duplicate_start_attempts","scheduler_stops","runtime_pulses","runtime_pulse_duration_ms","runtime_pulse_max_duration_ms","scheduler_lag_ms","scheduler_max_lag_ms","combat_encounters_active","combat_rounds_processed","combat_round_duration_ms","combat_backlog","combat_character_sql_loads","combat_character_sql_saves","combat_entity_sql_reads","combat_entity_sql_writes","combat_encounter_sql_reads","combat_encounter_sql_writes","combat_output_sqlite_writes","combat_output_in_memory_queued","combat_messages_queued","combat_messages_delivered","combat_message_delivery_latency_ms","combat_scheduler_lag_ms","practice_command_duration_ms","train_command_duration_ms","position_command_duration_ms","autosave_coalesced","coalesced_autosaves","resident_actor_cache_hits","resident_actor_cache_misses","resident_entity_cache_hits","resident_entity_cache_misses","regeneration_pulses","regeneration_actors_processed","regeneration_resource_changes","combat_validation_attempts","combat_validation_rejections","failed_command_saves","read_only_command_saves","combat_validation_saves","state_reconciliations","stale_position_repairs","stale_combat_state_repairs","stale_encounter_repairs","positive_health_incapacitated_repairs","periodic_suffering_ticks","recovery_transitions", "combat_resident_actions_queued", "combat_resident_actions_consumed", "combat_initial_checkpoint_writes", "combat_audit_buffered", "combat_audit_flushes", "combat_audit_rows_flushed", "combat_sql_action_queue_insert", "combat_sql_action_queue_update", "combat_sql_round_history_insert", "last_violence_pulse", "runtime_missed_pulses", "violence_dispatches", "autosave_batches", "corpse_decays", "combat_stat_cache_hits", "combat_stat_cache_misses", "combat_completion_writes", "command_blocked_on_save_ms"] )
+        self.performance_counters = make_initial_counters(["play_view_requests","async_message_requests","character_sql_loads","character_sql_saves","world_package_loads","room_renders","prompt_renders","display_snapshot_builds","commands_processed","messages_delivered","overlapping_requests_prevented","command_requests","direct_command_responses","command_outputs_enqueued_async","duplicate_command_outputs_filtered","async_messages_delivered","character_saves","save_coalesced","save_skipped_clean","quit_final_saves","character_entry_total_ms","inventory_load_ms","equipment_load_ms","effect_load_ms","ability_load_ms","actor_registration_ms","essential_snapshot_ms","initial_room_render_ms","prompt_render_ms","warmup_queue_ms","warmup_build_ms","warmup_cache_hits","warmup_cancelled","stale_task_rejected","projection_cache_hits","projection_cache_misses","projection_invalidations","autosave_attempts","autosave_successes","autosave_skipped_clean","autosave_failures","scheduler_starts","scheduler_duplicate_start_attempts","scheduler_stops","runtime_pulses","runtime_pulse_duration_ms","runtime_pulse_max_duration_ms","scheduler_lag_ms","scheduler_max_lag_ms","combat_encounters_active","combat_rounds_processed","combat_round_duration_ms","combat_backlog","combat_character_sql_loads","combat_character_sql_saves","combat_entity_sql_reads","combat_entity_sql_writes","combat_encounter_sql_reads","combat_encounter_sql_writes","combat_output_sqlite_writes","combat_output_in_memory_queued","combat_messages_queued","combat_messages_delivered","combat_message_delivery_latency_ms","combat_scheduler_lag_ms","practice_command_duration_ms","train_command_duration_ms","position_command_duration_ms","autosave_coalesced","coalesced_autosaves","resident_actor_cache_hits","resident_actor_cache_misses","resident_entity_cache_hits","resident_entity_cache_misses","regeneration_pulses","regeneration_actors_processed","regeneration_resource_changes","combat_validation_attempts","combat_validation_rejections","failed_command_saves","read_only_command_saves","combat_validation_saves","state_reconciliations","stale_position_repairs","stale_combat_state_repairs","stale_encounter_repairs","positive_health_incapacitated_repairs","periodic_suffering_ticks","recovery_transitions", "combat_resident_actions_queued", "combat_resident_actions_consumed", "combat_initial_checkpoint_writes", "combat_audit_buffered", "combat_audit_flushes", "combat_audit_rows_flushed", "combat_sql_action_queue_insert", "combat_sql_action_queue_update", "combat_sql_round_history_insert", "last_violence_pulse", "runtime_missed_pulses", "violence_dispatches", "autosave_batches", "corpse_decays", "combat_stat_cache_hits", "combat_stat_cache_misses", "combat_completion_writes", "command_blocked_on_save_ms","kill_request_total_ms","kill_target_resolution_ms","kill_encounter_creation_ms","kill_opening_resolution_ms","kill_response_build_ms","kill_response_send_ms","heartbeat_event_loop_block_ms","first_violence_pulse_ms","warm_violence_pulse_ms","prompt_queue_ms","prompt_delivery_ms","prompt_updates_queued","prompt_updates_delivered","combat_packets_queued","combat_packets_delivered","natural_weapon_cache_hits","natural_weapon_cache_misses"] )
         self._dirty_characters: dict[str, set[str]] = {}
         self._save_locks: dict[str, Any] = {}
         self._quit_final_saved: set[str] = set()
@@ -650,6 +650,7 @@ class MudRuntime:
         self._async_sequences: dict[str, int] = {}
         self._async_messages: dict[str, list[dict[str, Any]]] = {}
         self._play_view_inflight: set[str] = set()
+        self.command_traces: dict[str, dict[str, Any]] = {}
         self.command_engine = MudCommandEngine(self.state_store, event_bus=self.event_bus)
         self.actor_registry = ActorRegistry()
         self.abilities = None
@@ -1392,20 +1393,22 @@ class MudRuntime:
 
     def async_messages(self, character_id: str, after: int = 0, session_id: str = "") -> dict[str, Any]:
         self.performance_counters["async_message_requests"] += 1
-        messages = self.drain_session_output(character_id)
-        for text in messages:
+        packets = self.combat_runtime.drain_output_packets(character_id) if getattr(self, "combat_runtime", None) else []
+        for pkt in packets:
             seq = self._async_sequences.get(character_id, 0) + 1
             self._async_sequences[character_id] = seq
-            char = self.active_characters.get(character_id)
-            changed = any(token in str(text).lower() for token in ("regain consciousness", "fully healed", "return you to life"))
-            self._async_messages.setdefault(character_id, []).append({"message_id": seq, "session_id": session_id or self.character_session_ids.get(character_id, ""), "character_id": character_id, "world_id": self.active_world_id or "", "event_type": "async_output", "output_text": text, "output_html": "", "prompt_invalidated": changed, "room_invalidated": False, "resource_changed": changed, "position_changed": changed, "session_state": "playing", "created_at": datetime.now(timezone.utc).isoformat()})
+            row = dict(pkt)
+            row.update({"message_id": seq, "sequence_id": seq, "session_id": session_id or self.character_session_ids.get(character_id, ""), "event_type": "async_output", "session_state": "playing", "created_at": datetime.now(timezone.utc).isoformat()})
+            self._async_messages.setdefault(character_id, []).append(row)
         new = [m for m in self._async_messages.get(character_id, []) if int(m.get("message_id") or 0) > int(after or 0)]
         self.performance_counters["messages_delivered"] += len(new)
         self.performance_counters["async_messages_delivered"] += len(new)
-        prompt_changed = any(bool(m.get("prompt_invalidated")) for m in new)
+        prompt_changed = any(bool(m.get("prompt_changed") or m.get("prompt_invalidated")) for m in new)
         resource_changed = any(bool(m.get("resource_changed")) for m in new)
         position_changed = any(bool(m.get("position_changed")) for m in new)
-        return {"ok": True, "messages": new, "cursor": self._async_sequences.get(character_id, max(int(after or 0), 0)), "prompt_invalidated": prompt_changed, "prompt_changed": prompt_changed, "resource_changed": resource_changed, "position_changed": position_changed}
+        condition_changed = any(bool(m.get("condition_changed")) for m in new)
+        prompt = next((m for m in reversed(new) if m.get("prompt_html") or m.get("prompt_text")), {})
+        return {"ok": True, "messages": new, "cursor": self._async_sequences.get(character_id, max(int(after or 0), 0)), "prompt_invalidated": prompt_changed, "prompt_changed": prompt_changed, "resource_changed": resource_changed, "position_changed": position_changed, "condition_changed": condition_changed, "prompt_html": prompt.get("prompt_html", ""), "prompt_text": prompt.get("prompt_text", "")}
 
 
     def _builder_visible(self, char: MudCharacter) -> bool:
@@ -1614,14 +1617,15 @@ class MudRuntime:
         import time, uuid
         request_id = uuid.uuid4().hex
         perf_debug = bool(getattr(self, "performance_debug", False))
-        trace = {"request_id": request_id, "command": command, "input_key_accepted": time.monotonic(), "request_started": time.monotonic()}
+        self._current_command_trace = None
+        trace = {"request_id": request_id, "trace_id": request_id, "command": command, "browser_command_submission": time.monotonic(), "request_received": time.monotonic(), "request_started": time.monotonic(), "awaits": []}
         self.performance_counters["command_requests"] += 1
         self.process_due_entity_respawns()
         char = self._resident_character(character_id)
         if char is None:
             raise ValueError(f"Character not found: {character_id}")
         self.active_characters[character_id] = char
-        trace["command_routing_started"] = time.monotonic()
+        trace["session_lookup"] = time.monotonic(); trace["resident_character_lookup"] = trace["session_lookup"]; trace["routing_started"] = time.monotonic(); trace["command_routing_started"] = trace["routing_started"]; self._current_command_trace = trace
         from engine.mud_commands import CommandResult
         if getattr(char, "builder_desc_editor_room_id", ""):
             line = command.rstrip("\n")
@@ -1649,7 +1653,7 @@ class MudRuntime:
                 print(f"[command-exception] trace_id={trace_id} character_id={character_id} command={command!r}")
                 traceback.print_exc()
                 result = CommandResult(f"Something went wrong while processing that command. Trace ID: {trace_id}", ok=False)
-        trace["command_execution_completed"] = time.monotonic()
+        trace["command_execution_completed"] = time.monotonic(); trace.setdefault("response_returned_from_command_engine", trace["command_execution_completed"])
         if getattr(result, "display_document", None) is not None:
             color_enabled = not bool(getattr(char, "preferences", {}).get("no_color"))
             result.narrative = render_display_mud(result.display_document, color_enabled=color_enabled)
@@ -1669,8 +1673,11 @@ class MudRuntime:
         session = self.sessions.get(character_id)
         turn = (session.command_count + 1) if session else 1
         history_start = time.monotonic()
-        self.state_store.save_command(character_id, self.active_world_id or "", turn, command, session.account_id if session else "", session.session_id if session else "")
-        self.state_store.save_scrollback(character_id, self.active_world_id or "", turn, result.narrative)
+        cmd_token = command.strip().lower().split()[0] if command.strip() else ""
+        if cmd_token not in {"kill", "attack"}:
+            self.state_store.save_command(character_id, self.active_world_id or "", turn, command, session.account_id if session else "", session.session_id if session else "")
+            self.state_store.save_scrollback(character_id, self.active_world_id or "", turn, result.narrative)
+            trace["awaits"].append({"operation":"command_history_persistence","ms":(time.monotonic()-history_start)*1000.0})
         trace["command_history_persistence_ms"] = (time.monotonic() - history_start) * 1000.0
         if session:
             session.command_count = turn
@@ -1687,12 +1694,18 @@ class MudRuntime:
             self.active_characters.pop(character_id, None)
             self.unregister_live_character(character_id)
             view = {"html": "", "text": result.narrative, "prompt": ">"}
-        trace["response_serialization_completed"] = time.monotonic()
+        trace["response_object_construction"] = time.monotonic(); trace["response_ready"] = trace["response_object_construction"]; trace["response_serialization_completed"] = time.monotonic(); trace["response_sent"] = trace["response_serialization_completed"]; trace["total_server_ms"] = (trace["response_sent"] - trace["request_received"]) * 1000.0
+        self.command_traces[request_id] = trace
+        self._current_command_trace = None
         if perf_debug:
             total_ms = (trace["response_serialization_completed"] - trace["request_started"]) * 1000.0
             print(f"[mud-latency] command={command.strip().split()[0] if command.strip() else ''} total_ms={total_ms:.3f}")
             print(f"[mud-latency] history_ms={trace.get('command_history_persistence_ms', 0.0):.3f}")
             print(f"[mud-latency] queries=0 formulas=0 cache_hit={getattr(getattr(self, 'character_display_snapshots', None), 'last_cache_hit', False)}")
+        if cmd_token in {"kill", "attack"}:
+            self.performance_counters["kill_request_total_ms"] = int(trace.get("total_server_ms", 0))
+            self.performance_counters["kill_response_build_ms"] = int((trace["response_ready"] - trace["command_execution_completed"]) * 1000)
+            self.performance_counters["kill_response_send_ms"] = 0
         return {"ok": result.ok, "request_id": request_id, "action_id": request_id, "output": render_semantic_plain(result.narrative), "semantic_output": result.narrative, "state_updates": updates, "view": view, "command_response": {"command": command, "semantic_text": result.narrative, "plain_text": render_semantic_plain(result.narrative), "html": "", "room_render": view, "prompt_snapshot": self.prompt_snapshot(character_id) if character_id in self.active_characters else {}, "state_updates": updates, "session_transition": updates.get("session_transition", ""), "mutation_state": mutation, "async_events": [], "delivery_policy": "direct_response"}, "delivery_policy": "direct_response", "mutation_state": mutation, "save_status": save_status, "async_followup_available": False, "trace": trace}
 
 

@@ -535,12 +535,27 @@ class CombatRuntimeService:
         self._output_seq += 1
         now = time.monotonic()
         sess = getattr(self.runtime, "character_session_ids", {}).get(character_id, "")
-        self._output_queues.setdefault(character_id, []).append({"sequence_id": self._output_seq, "character_id": character_id, "session_id": sess, "world_id": self.runtime.active_world_id or "", "room_id": room_id, "encounter_id": encounter_id, "category": category, "message": str(message).strip(), "prompt_invalidated": category.startswith("attack") or category in {"death","combat_end","condition_changed","resource_changed","recovery"}, "room_invalidated": category in {"death","combat_end"}, "resource_changed": category in {"resource_changed","recovery"}, "position_changed": category in {"condition_changed","recovery","death"}, "created_monotonic": now, "delivery_monotonic": 0.0})
+        prompt_changed = category.startswith("attack") or category in {"death","combat_end","condition_changed","resource_changed","recovery","actor_died"}
+        resource_changed = prompt_changed or category in {"resource_changed","recovery"}
+        position_changed = category in {"condition_changed","recovery","death","actor_died","combat_end"}
+        prompt = self.runtime.prompt_snapshot(character_id) if prompt_changed and hasattr(self.runtime, "prompt_snapshot") else {"prompt_html":"", "prompt_text":""}
+        actor = self.resident_actors.get(f"character:{character_id}")
+        resources = {}
+        position = condition = ""
+        combat_active = False
+        if actor:
+            resources = {"health": int(actor.resources.health), "maximum_health": int(actor.resources.maximum_health), "mana": int(actor.resources.mana), "maximum_mana": int(actor.resources.maximum_mana), "stamina": int(actor.resources.stamina), "maximum_stamina": int(actor.resources.maximum_stamina)}
+            position = str(actor.combat_profile.get("position") or actor.combat_profile.get("combat_state") or "standing")
+            condition = __import__("engine.conditions", fromlist=["condition_key"]).condition_key(actor)
+            combat_active = self.is_actor_in_active_combat(actor.actor_id)
+        self._output_queues.setdefault(character_id, []).append({"sequence_id": self._output_seq, "message_id": self._output_seq, "character_id": character_id, "session_id": sess, "world_id": self.runtime.active_world_id or "", "room_id": room_id, "encounter_id": encounter_id, "round_id": self._resident_round(encounter_id) if encounter_id else 0, "pulse_id": getattr(self.runtime, "_runtime_pulse_counter", 0), "category": category, "message": str(message).strip(), "output_text": str(message).strip(), "output_html": "", "prompt_invalidated": prompt_changed, "prompt_changed": prompt_changed, "prompt_html": prompt.get("prompt_html", ""), "prompt_text": prompt.get("prompt_text", ""), "room_invalidated": category in {"death","combat_end","actor_died"}, "resource_changed": resource_changed, "position_changed": position_changed, "condition_changed": position_changed or category == "condition_changed", "combat_changed": prompt_changed, "resources": resources, "position": position, "condition": condition, "combat_active": combat_active, "created_monotonic": now, "delivery_monotonic": 0.0})
         self._output_queues[character_id] = self._output_queues[character_id][-200:]
         self.runtime.performance_counters["combat_messages_queued"] = self.runtime.performance_counters.get("combat_messages_queued", 0) + 1
         self.runtime.performance_counters["combat_output_in_memory_queued"] = self.runtime.performance_counters.get("combat_output_in_memory_queued", 0) + 1
+        self.runtime.performance_counters["combat_packets_queued"] = self.runtime.performance_counters.get("combat_packets_queued", 0) + 1
+        if prompt_changed: self.runtime.performance_counters["prompt_updates_queued"] = self.runtime.performance_counters.get("prompt_updates_queued", 0) + 1
 
-    def drain_output(self, character_id: str, limit: int = 50) -> list[str]:
+    def drain_output_packets(self, character_id: str, limit: int = 50) -> list[dict[str, Any]]:
         queue = self._output_queues.get(character_id, [])
         rows = queue[: int(limit)]
         self._output_queues[character_id] = queue[int(limit):]
@@ -548,8 +563,14 @@ class CombatRuntimeService:
         if rows:
             latency = max(0, int((now - min(float(r.get("created_monotonic") or now) for r in rows)) * 1000))
             self.runtime.performance_counters["combat_message_delivery_latency_ms"] = latency
+            self.runtime.performance_counters["prompt_delivery_ms"] = latency
         self.runtime.performance_counters["combat_messages_delivered"] = self.runtime.performance_counters.get("combat_messages_delivered", 0) + len(rows)
-        return [str(r.get("message") or "") for r in rows]
+        self.runtime.performance_counters["combat_packets_delivered"] = self.runtime.performance_counters.get("combat_packets_delivered", 0) + len(rows)
+        self.runtime.performance_counters["prompt_updates_delivered"] = self.runtime.performance_counters.get("prompt_updates_delivered", 0) + sum(1 for r in rows if r.get("prompt_changed") or r.get("prompt_invalidated"))
+        return rows
+
+    def drain_output(self, character_id: str, limit: int = 50) -> list[str]:
+        return [str(r.get("message") or r.get("output_text") or "") for r in self.drain_output_packets(character_id, limit)]
 
     def _deliver_combat_messages(self, eid: str, attacker: Actor, defender: Actor, result: Any, category: str = "attack_hit", skip_attacker: bool = False) -> None:
         room_id = attacker.identity.current_location
@@ -628,15 +649,22 @@ class CombatRuntimeService:
                 self.queue_action(eid, self.actor_id_for_character(character), 'basic_attack', row[0] if row else '', source='player')
                 return CombatRuntimeResult(True, ['You focus on your current opponent.'], eid)
             return CombatRuntimeResult(False, ['Attack whom?'])
+        _trace = getattr(self.runtime, "_current_command_trace", None)
+        _t0 = time.monotonic()
         ent=self.resolve_target(character, query)
+        if _trace is not None: _trace["target_resolved"] = time.monotonic()
+        self.runtime.performance_counters["kill_target_resolution_ms"] = int((time.monotonic() - _t0) * 1000)
         if not ent: return CombatRuntimeResult(False, ['They are not here.'])
         self.refresh_content(); attacker=actor_from_runtime_character(character,self.runtime.active_world_id or ''); attacker.actor_id=self.actor_id_for_character(character); defender=self.actor_from_entity(ent)
         err=self.validate_attack(attacker,defender,ent)
         if err:
             return CombatRuntimeResult(False,[err])
+        _t1 = time.monotonic()
         enc=self.find_actor_encounter(attacker.actor_id) or self.start_encounter(character.room_id)
         already=bool(self.find_actor_encounter(attacker.actor_id))
         self.join_encounter(enc, attacker, 'side_1'); self.join_encounter(enc, defender, 'side_2'); self.set_target(enc, attacker.actor_id, defender.actor_id); self.set_target(enc, defender.actor_id, attacker.actor_id)
+        if _trace is not None: _trace["encounter_created"] = time.monotonic()
+        self.runtime.performance_counters["kill_encounter_creation_ms"] = int((time.monotonic() - _t1) * 1000)
         try:
             character.actor_data = character.actor_data if isinstance(getattr(character, 'actor_data', {}), dict) else {}
             character.actor_data['combat_state'] = 'in_combat'
@@ -646,7 +674,11 @@ class CombatRuntimeService:
         if already:
             return CombatRuntimeResult(True, [f'You keep fighting {defender.identity.name}.'], enc)
         print(f'[combat-start] actor={attacker.identity.name} target={defender.identity.name} encounter={enc} opening_ms=0')
+        if _trace is not None: _trace["opening_attack_started"] = time.monotonic()
+        _t2 = time.monotonic()
         rr=self._execute_attack(enc, attacker, defender, opening=True)
+        if _trace is not None: _trace["opening_attack_completed"] = time.monotonic()
+        self.runtime.performance_counters["kill_opening_resolution_ms"] = int((time.monotonic() - _t2) * 1000)
         if rr.ok and not self.find_actor_encounter(attacker.actor_id):
             self.enqueue_output(character.id, f"The attack is over.", encounter_id=enc, room_id=character.room_id, category='combat_end')
         for cid in self.active_character_ids_in_room(character.room_id):
