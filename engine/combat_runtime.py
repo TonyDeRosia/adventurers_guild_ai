@@ -708,7 +708,7 @@ class CombatRuntimeService:
 
     def actor_flee(self, actor_source: Any, direction: str = "") -> CombatRuntimeResult:
         aid = self._actor_id_from_source(actor_source); eid = self.find_actor_encounter(aid)
-        if not eid and aid not in getattr(self.runtime, '_recent_combat_actor_ids', set()): return CombatRuntimeResult(False, ["You are not currently fighting anyone."])
+        if not eid: return CombatRuntimeResult(False, ["You are not currently fighting anyone."])
         actor = self._actor_from_source(actor_source)
         if not direction:
             exits = self.runtime.canonical_exits(actor_source, actor.identity.current_location) if hasattr(self.runtime, "canonical_exits") else {}
@@ -719,9 +719,7 @@ class CombatRuntimeService:
         if not move.ok:
             self._publish("combat_flee_failed", {"encounter_id": eid, "actor_id": aid, "direction": direction, "world_time": self.world_time()})
             return CombatRuntimeResult(False, [f"You try to flee {direction}, but cannot escape that way."])
-        with sqlite3.connect(self.db_path) as con:
-            con.execute("UPDATE combat_participants SET participation_status='fled',fled=1 WHERE encounter_id=? AND actor_id=?", (eid, aid))
-            con.execute("UPDATE combat_action_queue SET status='cancelled',resolved_at=? WHERE encounter_id=? AND actor_id=? AND status='queued'", (datetime.now(timezone.utc).isoformat(), eid, aid))
+        self._stop_actor_fighting(eid, aid, status='fled', reason='flee_success')
         self._publish("combat_participant_fled", {"encounter_id": eid, "actor_id": aid, "direction": direction, "world_time": self.world_time()}); self.end_if_finished(eid)
         return CombatRuntimeResult(True, [f"You break away and flee {direction}!" if hasattr(actor_source, "id") else f"{actor.identity.name} flees {direction}."], eid)
 
@@ -1003,7 +1001,15 @@ class CombatRuntimeService:
                 part.wait_pulses -= 1; waiting += 1; continue
             with self.violence_profiler.section('actor_lookup'):
                 a=self._load_actor(aid); d=self._load_actor(tid)
-            if not a or not d or a.resources.health<=0 or d.resources.health<=0 or a.identity.current_location!=d.identity.current_location:
+            if not a or a.resources.health<=0:
+                self._stop_actor_fighting(eid, aid, status='defeated' if a and a.resources.health<=0 else 'stopped', reason='attacker_unavailable')
+                invalid += 1; continue
+            if not d or d.resources.health<=0:
+                self._stop_actor_fighting(eid, tid, status='defeated' if d and d.resources.health<=0 else 'stopped', reason='target_unavailable')
+                self._stop_actor_fighting(eid, aid, status='ended', reason='target_unavailable')
+                invalid += 1; continue
+            if a.identity.current_location!=d.identity.current_location:
+                self._stop_actor_fighting(eid, aid, status='separated', reason='room_separation')
                 invalid += 1; continue
             with self.violence_profiler.section('queued_action_resolution'):
                 act=self.consume_resident_action(eid, aid)
@@ -1042,12 +1048,60 @@ class CombatRuntimeService:
         life = self.lifecycle.process_defeat_or_death(encounter_id=eid, attacker=attacker, defender=defender, trigger_action_id='')
         msg = 'You collapse and die.' if defender.actor_id.startswith('character:') else f"{defender.identity.name} collapses and dies."
         self._broadcast_room(eid, defender.identity.current_location, msg, category='actor_died')
+        self._stop_actor_fighting(eid, defender.actor_id, status='defeated', reason='target_death')
+        self._stop_actor_fighting(eid, attacker.actor_id, status='ended', reason='target_death')
         if attacker.actor_id.startswith('character:'):
             self.enqueue_output(attacker.actor_id.split(':',1)[1], "Your opponent is dead. Combat ends.", encounter_id=eid, room_id=defender.identity.current_location, category='combat_end')
         return {'lifecycle_transition_id': life.transition_id, 'corpse_id': life.corpse_id, 'messages': [msg]}
 
+    def _standing_after_combat(self, actor: Actor | None, *, reason: str) -> None:
+        if not actor or actor.resources.health <= 0 or actor.lifecycle_state == 'dead':
+            return
+        actor.combat_profile['combat_state'] = 'idle'
+        actor.combat_profile['position'] = 'standing'
+        try:
+            self.persist_actor(actor)
+        except Exception:
+            pass
+        if actor.actor_id.startswith('character:'):
+            cid = actor.actor_id.split(':', 1)[1]
+            ch = getattr(self.runtime, 'active_characters', {}).get(cid)
+            if ch is not None:
+                data = getattr(ch, 'actor_data', {}) if isinstance(getattr(ch, 'actor_data', {}), dict) else {}
+                data['combat_state'] = 'idle'; data['position'] = 'standing'; data['posture'] = 'standing'
+                ch.actor_data = data
+                if hasattr(self.runtime, 'mark_character_dirty'):
+                    self.runtime.mark_character_dirty(cid, reason)
+
+    def _stop_actor_fighting(self, eid: str, actor_id: str, *, status: str = 'stopped', reason: str = 'stop_fighting') -> None:
+        """Clear Smart MUD's FIGHTING() equivalent for one participant.
+
+        Mirrors the Adventurer's Lair lifecycle: remove the actor from the
+        active combat list, cancel queued violence, clear everyone targeting the
+        actor, and restore a living actor to standing/idle.
+        """
+        enc = self.resident_encounters.get(eid)
+        actor = self._load_actor(actor_id)
+        if enc and actor_id in enc.participants:
+            part = enc.participants[actor_id]
+            part.participation_status = status
+            part.target_actor_id = ''
+            part.queued_action = None
+            part.fled = status == 'fled'
+            part.defeated = status == 'defeated'
+            for other in enc.participants.values():
+                if other.target_actor_id == actor_id:
+                    other.target_actor_id = ''
+            enc.dirty = True
+        with sqlite3.connect(self.db_path) as con:
+            con.execute("UPDATE combat_participants SET participation_status=?,current_target_actor_id='',fled=CASE WHEN ?='fled' THEN 1 ELSE fled END,defeated=CASE WHEN ?='defeated' THEN 1 ELSE defeated END WHERE encounter_id=? AND actor_id=?", (status, status, status, eid, actor_id))
+            con.execute("UPDATE combat_participants SET current_target_actor_id='' WHERE encounter_id=? AND current_target_actor_id=?", (eid, actor_id))
+            con.execute("UPDATE combat_action_queue SET status='cancelled',resolved_at=? WHERE encounter_id=? AND actor_id=? AND status='queued'", (datetime.now(timezone.utc).isoformat(), eid, actor_id))
+        self._standing_after_combat(actor, reason=reason)
+        self._publish('combat_participant_stopped_fighting', {'encounter_id': eid, 'actor_id': actor_id, 'status': status, 'reason': reason, 'world_time': self.world_time()})
+
     def end_if_finished(self,eid):
-        with sqlite3.connect(self.db_path) as con: rows=con.execute("SELECT side_id FROM combat_participants WHERE encounter_id=? AND participation_status='active' AND defeated=0 AND fled=0",(eid,)).fetchall()
+        with sqlite3.connect(self.db_path) as con: rows=con.execute("SELECT side_id FROM combat_participants WHERE encounter_id=? AND participation_status='active' AND defeated=0 AND fled=0 AND current_target_actor_id<>''",(eid,)).fetchall()
         if len(set(r[0] for r in rows)) < 2: self.end_encounter(eid,'victory')
 
     def end_encounter(self,eid,reason):
@@ -1055,11 +1109,19 @@ class CombatRuntimeService:
         enc = self.resident_encounters.get(eid)
         if enc:
             enc.status='ended'; enc.end_reason=reason; enc.dirty=True
-            for aid in enc.participants:
-                if hasattr(self.runtime, '_recent_combat_actor_ids') and aid.startswith('entity:'):
+            for aid, part in enc.participants.items():
+                part.target_actor_id = ''
+                part.queued_action = None
+                if part.participation_status == 'active':
+                    part.participation_status = 'ended'
+                self._standing_after_combat(self._load_actor(aid), reason='combat_end')
+                if hasattr(self.runtime, '_recent_combat_actor_ids'):
                     self.runtime._recent_combat_actor_ids.discard(aid)
         self.flush_combat_audit(eid)
-        with sqlite3.connect(self.db_path) as con: con.execute("UPDATE combat_encounters SET status='ended',ended_at=?,updated_at=?,end_reason=?,current_round=? WHERE encounter_id=? AND status='active'",(now,now,reason,enc.round_number if enc else self._round(eid),eid))
+        with sqlite3.connect(self.db_path) as con:
+            con.execute("UPDATE combat_participants SET participation_status=CASE WHEN participation_status='active' THEN 'ended' ELSE participation_status END,current_target_actor_id='' WHERE encounter_id=?", (eid,))
+            con.execute("UPDATE combat_action_queue SET status='cancelled',resolved_at=? WHERE encounter_id=? AND status='queued'", (now, eid))
+            con.execute("UPDATE combat_encounters SET status='ended',ended_at=?,updated_at=?,end_reason=?,current_round=? WHERE encounter_id=? AND status='active'",(now,now,reason,enc.round_number if enc else self._round(eid),eid))
         self.runtime.performance_counters['combat_completion_writes'] = self.runtime.performance_counters.get('combat_completion_writes', 0) + 1
         self._publish('combat_encounter_ended',{'encounter_id':eid,'end_reason':reason,'world_time':self.world_time()})
 
