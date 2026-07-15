@@ -131,9 +131,21 @@ class CharacterAttributeService:
                 out.append(StatModifier(str(d.get('modifier_id') or d.get('id') or f"{item.get('instance_id')}:{target}"), source_type, str(item.get('instance_id') or item.get('template_id')), str(target), op, float(d.get('value',0)), int(d.get('priority',100)), str(d.get('stacking_group','')), str(d.get('stacking_rule') or d.get('stacking_policy','stack')), condition=d.get('condition') or d.get('condition_data') or {}, tags=list(d.get('tags') or []), metadata={'item_name':item.get('name'), 'slot':item.get('equipped_slot')}) )
         return out
     def equipment_snapshot(self, character, context=None):
-        cid=_cid(character); rt=self._runtime(context); weapon_map, armor_map, item_map=self._template_maps(); items=[]
-        if rt and hasattr(rt,'find_equipped_items'): items=list(rt.find_equipped_items(cid))
-        elif self.state_store:
+        cid=_cid(character); resident_eq=getattr(character,'resident_equipment_snapshot',None) or getattr(character,'equipment_stat_snapshot',None)
+        if isinstance(resident_eq, EquipmentStatSnapshot): return resident_eq
+        eq_profile=getattr(character,'equipment',None) or getattr(character,'equipment_profile',None) or {}
+        items=[]
+        if isinstance(eq_profile,dict):
+            vals=list(eq_profile.values()) if all(isinstance(v,dict) for v in eq_profile.values()) else []
+            for slot,item in zip(eq_profile.keys(), vals):
+                rec=dict(item); rec.setdefault('equipped_slot', slot); items.append(rec)
+        elif isinstance(eq_profile,(list,tuple)): items=[dict(i) for i in eq_profile if isinstance(i,dict)]
+        rt=self._runtime(context); weapon_map, armor_map, item_map=self._template_maps()
+        if not items and rt and (getattr(rt,'active_combat_sql_fallback_allowed',False) or not hasattr(rt,'performance_counters')) and hasattr(rt,'find_equipped_items'):
+            items=list(rt.find_equipped_items(cid))
+        elif not items and rt and not getattr(rt,'active_combat_sql_fallback_allowed',False):
+            items=[]
+        elif not items and self.state_store:
             with self.state_store.connect() as con:
                 con.row_factory=sqlite3.Row
 
@@ -141,6 +153,7 @@ class CharacterAttributeService:
                 if {'owner_type','owner_id','destroyed_at'}.issubset(cols):
                     rows=con.execute("SELECT * FROM item_instances WHERE owner_type='equipment' AND owner_id=? AND destroyed_at IS NULL",(cid,)).fetchall()
                     for r in rows: items.append(dict(r))
+        if hasattr(self,'runtime') and getattr(self.runtime,'performance_counters',None) is not None: self.runtime.performance_counters['combat_equipment_snapshot_builds']=self.runtime.performance_counters.get('combat_equipment_snapshot_builds',0)+1
         slots={}; inst={}; templates={}; armor=[]; total=0.0; weapon=None; mods=[]
         for item in items:
             tid=str(item.get('template_id') or ''); tmpl=dict(item.get('template') or item_map.get(tid) or weapon_map.get(tid) or armor_map.get(tid) or {'id':tid,'name':tid})
@@ -252,8 +265,14 @@ class CharacterAttributeService:
 class PlayerStatInputAdapter:
     def __init__(self, service): self.service=service
     def build(self, actor, context=None):
-        attrs=self.service.attribute_service.get_all_attributes(actor,context)
-        return ActorStatInput(_cid(actor),'player',self.service.attribute_service.world_id,None,None,None,_cid(actor),int(getattr(actor,'level',1) or 1),{k:v.base_value for k,v in attrs.items()},equipment_snapshot=self.service.equipment_snapshot(actor,context),resistance_profile=getattr(actor,'resistance_profile',None) or getattr(actor,'resistances',None) or {},effect_snapshot=[m if isinstance(m,StatModifier) else StatModifier(**m) for m in ((context or {}).get('modifiers') or [])],resource_projection={'health':getattr(actor,'hp',getattr(actor,'hp_current',0)),'mana':getattr(actor,'mana',0),'stamina':getattr(actor,'stamina',0),'weight_snapshot':self.service._inventory_weight_snapshot(actor,context)},source_versions={'adapter':'player','equipment':getattr(self.service.equipment_snapshot(actor,context),'version','')})
+        context=context or {}
+        equipment=self.service.equipment_snapshot(actor,context)
+        attrs=getattr(actor,'attributes',None) if isinstance(getattr(actor,'attributes',None),dict) else None
+        if attrs is None:
+            attrs={k:v.base_value for k,v in self.service.attribute_service.get_all_attributes(actor,context).items()}
+        inventory_weight=self.service._inventory_weight_snapshot(actor,{**context,'equipment_snapshot':equipment})
+        effects=[m if isinstance(m,StatModifier) else StatModifier(**m) for m in (context.get('modifiers') or [])]
+        return ActorStatInput(_cid(actor),'player',self.service.attribute_service.world_id,None,None,None,_cid(actor),int(getattr(actor,'level',1) or 1),{k:int(v) for k,v in attrs.items()},equipment_snapshot=equipment,resistance_profile=getattr(actor,'resistance_profile',None) or getattr(actor,'resistances',None) or {},effect_snapshot=effects,resource_projection={'health':getattr(actor,'hp',getattr(actor,'hp_current',0)),'mana':getattr(actor,'mana',0),'stamina':getattr(actor,'stamina',0),'weight_snapshot':inventory_weight},source_versions={'adapter':'player','equipment':getattr(equipment,'version',''),'attributes':hashlib.sha1(json.dumps(attrs,sort_keys=True,default=str).encode()).hexdigest(),'effects':hashlib.sha1(json.dumps([asdict(m) if isinstance(m,StatModifier) else m for m in effects],sort_keys=True,default=str).encode()).hexdigest()})
 class EntityTemplateStatInputAdapter:
     def __init__(self, service): self.service=service
     def build(self, template, context=None):
@@ -278,7 +297,8 @@ class CombatStatService:
     inactive_speed_reason='Combat rounds do not currently use initiative ordering or speed-based timing.'
     semantic_roles={'physical_power':'strength','agility':'dexterity','endurance':'constitution','intellect':'intelligence','willpower':'wisdom','presence':'charisma'}
     active_secondary={'accuracy','hit_bonus','attack_power','damage_bonus','spell_power','healing_power','armor','evasion','critical_avoidance','critical_melee','critical_spell','critical_heal','critical_damage','physical_save','mental_save','magic_save','max_health','max_mana','max_stamina','maximum_health','maximum_mana','maximum_stamina','carry_capacity','current_carry_weight','encumbrance_percent'}
-    def __init__(self, attribute_service:CharacterAttributeService): self.attribute_service=attribute_service; self.world_root=attribute_service.world_root; self.formula_engine=FormulaEngine(); self.reload_definitions()
+    def __init__(self, attribute_service:CharacterAttributeService):
+        self.attribute_service=attribute_service; self.world_root=attribute_service.world_root; self.formula_engine=FormulaEngine(); self._input_cache={}; self._snapshot_cache={}; self.diagnostics={'input_builds':0,'snapshot_builds':0,'snapshot_cache_hits':0,'snapshot_cache_misses':0,'equipment_snapshot_builds':0,'inventory_scans':0,'attribute_loads':0}; self.reload_definitions()
     def reload_definitions(self):
         raw=_load_json(self.world_root/'formulas/derived_stats.json',{}); self.stat_defs={d['stat_id']:d for d in raw.get('derived_stats',[])}; self.formulas={f['formula_id']:f['expression'] for f in _load_json(self.world_root/'formulas/stat_formulas.json',{}).get('formulas',[])}; self.thresholds=raw.get('encumbrance_thresholds',{}); self.resistance_defs={str(r.get('id')):r for r in _load_json(self.world_root/'resistance_profiles/resistance_profiles.json',[])}; self.validate_semantic_roles()
     def validate_semantic_roles(self):
@@ -292,11 +312,29 @@ class CombatStatService:
         if missing: raise ValueError(f'missing semantic roles: {missing}')
         self.semantic_roles=seen
     def equipment_snapshot(self,ch,context=None): return self.attribute_service.equipment_snapshot(ch,context)
+    def _input_cache_key(self, actor_or_character, context=None):
+        context=context or {}; aid=str((actor_or_character.get('id') or actor_or_character.get('template_id')) if isinstance(actor_or_character,dict) else _cid(actor_or_character))
+        rt=context.get('runtime') or getattr(self.attribute_service,'runtime',None)
+        attrs=getattr(actor_or_character,'attributes',None)
+        attrs_sig=hashlib.sha1(json.dumps(attrs,sort_keys=True,default=str).encode()).hexdigest() if isinstance(attrs,dict) else ''
+        eq_sig=''
+        if rt and not hasattr(rt,'performance_counters') and hasattr(rt,'find_equipped_items'):
+            try: eq_sig=hashlib.sha1(json.dumps(rt.find_equipped_items(aid),sort_keys=True,default=str).encode()).hexdigest()
+            except Exception: eq_sig=''
+        mods_sig=hashlib.sha1(json.dumps([asdict(m) if isinstance(m,StatModifier) else m for m in context.get('modifiers',[])],sort_keys=True,default=str).encode()).hexdigest()
+        gens=(getattr(actor_or_character,'actor_generation',0),getattr(actor_or_character,'attribute_generation',0),getattr(actor_or_character,'equipment_generation',0),getattr(actor_or_character,'effect_generation',0),getattr(actor_or_character,'body_generation',0),getattr(actor_or_character,'ability_generation',0),getattr(actor_or_character,'level_generation',0),getattr(actor_or_character,'stance_generation',0),getattr(actor_or_character,'template_generation',0),getattr(rt,'world_content_generation',0) if rt else 0,attrs_sig,eq_sig,mods_sig)
+        return (aid,)+gens
     def build_actor_stat_input(self, actor_or_character, context=None):
         if isinstance(actor_or_character,ActorStatInput): return actor_or_character
-        if isinstance(actor_or_character,dict) and ('template_id' in actor_or_character or 'combat_profile' in actor_or_character or 'natural_weapons' in actor_or_character or 'natural_attacks' in actor_or_character or 'combat_role' in actor_or_character): return EntityTemplateStatInputAdapter(self).build(actor_or_character,context)
-        if getattr(actor_or_character,'template',None) or getattr(actor_or_character,'actor_type',None) in {'npc','mob','summon','pet','follower','temporary','environment'}: return ActorRuntimeStatInputAdapter(self).build(actor_or_character,context)
-        return PlayerStatInputAdapter(self).build(actor_or_character,context)
+        key=self._input_cache_key(actor_or_character,context); cached=self._input_cache.get(key)
+        if cached is not None: return cached
+        self.diagnostics['input_builds']=self.diagnostics.get('input_builds',0)+1
+        if isinstance(actor_or_character,dict) and ('template_id' in actor_or_character or 'combat_profile' in actor_or_character or 'natural_weapons' in actor_or_character or 'natural_attacks' in actor_or_character or 'combat_role' in actor_or_character): ai=EntityTemplateStatInputAdapter(self).build(actor_or_character,context)
+        elif getattr(actor_or_character,'template',None) or getattr(actor_or_character,'actor_type',None) in {'npc','mob','summon','pet','follower','temporary','environment'}: ai=ActorRuntimeStatInputAdapter(self).build(actor_or_character,context)
+        else: ai=PlayerStatInputAdapter(self).build(actor_or_character,context)
+        self._input_cache[key]=ai
+        if len(self._input_cache)>1024: self._input_cache.pop(next(iter(self._input_cache)))
+        return ai
     def project_legacy_template_attributes(self, tid, level, role, template):
         base=10+min(10,max(0,level//3)); vals={aid:base for aid in self.attribute_service.definitions}
         def aid(role_id): return self.semantic_roles.get(role_id, role_id)
@@ -340,11 +378,12 @@ class CombatStatService:
         cid=_cid(ch)
         if rt and hasattr(rt,'inventory_projection_service') and hasattr(rt.inventory_projection_service,'get_weight_snapshot'):
             return rt.inventory_projection_service.get_weight_snapshot(cid)
-        eq=self.equipment_snapshot(ch,context); inv=0.0
+        eq=(context or {}).get('equipment_snapshot') or (ch.equipment_snapshot if isinstance(ch,ActorStatInput) and ch.equipment_snapshot is not None else self.equipment_snapshot(ch,context)); inv=0.0
         # Compatibility fallback for tests without canonical item services.
         for i in (getattr(ch,'inventory',[]) or []):
             if isinstance(i,dict) and not i.get('destroyed') and not i.get('equipped_slot'):
                 inv += float(i.get('weight',0) or 0)*int(i.get('quantity',i.get('stack_count',1)) or 1)
+        if inv: self.diagnostics['inventory_scans']=self.diagnostics.get('inventory_scans',0)+1
         return {'current_inventory_weight':inv,'current_equipped_weight':getattr(eq,'total_weight',0.0),'total_carried_weight':inv+getattr(eq,'total_weight',0.0),'container_adjusted_weight':inv+getattr(eq,'total_weight',0.0),'source_version':getattr(eq,'version','')}
     def _weight(self,ch,context=None):
         return float(self._inventory_weight_snapshot(ch,context).get('total_carried_weight',0) or 0)
@@ -386,7 +425,7 @@ class CombatStatService:
             if pct>=thr: state=name
         return {'current_carry_weight':weight,'carry_capacity':cap,'encumbrance_percent':pct,'encumbrance_state':state}
     def get_damage_profile(self,ch,context=None):
-        eq=self.equipment_snapshot(ch,context); mn=self.get_stat(ch,'weapon_damage_min',context); mx=self.get_stat(ch,'weapon_damage_max',context); return None if not getattr(eq,'weapon_instance',None) or mx<=0 else DamageProfile(mn,mx,eq.weapon_instance.damage_type,eq.weapon_instance.attack_speed,eq.weapon_instance.reach,eq.weapon_instance.range,eq.weapon_instance.name)
+        ai=self.build_actor_stat_input(ch,context); eq=ai.equipment_snapshot; mn=self.get_stat(ai,'weapon_damage_min',context); mx=self.get_stat(ai,'weapon_damage_max',context); return None if not getattr(eq,'weapon_instance',None) or mx<=0 else DamageProfile(mn,mx,eq.weapon_instance.damage_type,eq.weapon_instance.attack_speed,eq.weapon_instance.reach,eq.weapon_instance.range,eq.weapon_instance.name)
     def _source_version(self,ch,context=None):
         return self._source_versions(ch,context).get('overall_snapshot','')
     def _source_versions(self,ch,context=None):
@@ -405,18 +444,33 @@ class CombatStatService:
             if cur>maxv: setattr(ch,attr,maxv); events.append(('resource_current_clamped',{'reason':reason,'resource':key,'old_current':cur,'new_current':maxv}))
         return events
     def get_combat_snapshot(self,ch,context=None):
-        ai=self.build_actor_stat_input(ch,context); primary=self.attribute_service.get_primary_stats(ai,context); sv=self._source_version(ai,context); source_versions=self._source_versions(ai,context)
-        offense={k:self._combat_value(ch,k,context) for k in ['accuracy','hit_bonus','attack_power','damage_bonus','spell_power','healing_power']}
-        defense={k:self._combat_value(ch,k,context) for k in ['armor','evasion','critical_avoidance']}
-        crit={k:self._combat_value(ch,k,context) for k in ['critical_melee','critical_spell','critical_heal','critical_avoidance','critical_damage']}
-        saves={k:self._combat_value(ch,k,context) for k in ['physical_save','mental_save','magic_save']}
-        speed={k:self._combat_value(ch,k,context,active=False,reason=self.inactive_speed_reason) for k in ['initiative','attack_speed','casting_speed','recovery_speed','movement_speed']}
-        maxima={k:self._combat_value(ch,k,context) for k in ['max_health','max_mana','max_stamina']}
-        enc=self.get_encumbrance(ch,context); carrying={k:self._combat_value(ch,k,context,value=v) for k,v in enc.items() if k!='encumbrance_state'}; encvals={**carrying,'encumbrance_state':self._combat_value(ch,'encumbrance_state',context,value=enc['encumbrance_state'],active=True)}
-        raw_health=int((ai.resource_projection or {}).get('health',getattr(ch,'hp',getattr(ch,'hp_current',0))) or 0)
-        resources={**maxima,'health':self._combat_value(ch,'health',context,value=raw_health,active=True),'mana':self._combat_value(ch,'mana',context,value=int((ai.resource_projection or {}).get('mana',getattr(ch,'mana',0)) or 0),active=True),'stamina':self._combat_value(ch,'stamina',context,value=int((ai.resource_projection or {}).get('stamina',getattr(ch,'stamina',0)) or 0),active=True)}
-        unarmed=DamageProfile(self.get_stat(ch,'unarmed_damage_min',context),self.get_stat(ch,'unarmed_damage_max',context),'physical',100,1,0,'unarmed')
+        ai=self.build_actor_stat_input(ch,context); source_versions=self._source_versions(ai,context); key=(ai.actor_id,source_versions.get('overall_snapshot'))
+        cached=self._snapshot_cache.get(key)
+        if cached is not None:
+            self.diagnostics['snapshot_cache_hits']=self.diagnostics.get('snapshot_cache_hits',0)+1; return cached
+        self.diagnostics['snapshot_cache_misses']=self.diagnostics.get('snapshot_cache_misses',0)+1; self.diagnostics['snapshot_builds']=self.diagnostics.get('snapshot_builds',0)+1
+        primary=self.attribute_service.get_primary_stats(ai,context); sv=source_versions.get('overall_snapshot','')
+        def cv(stat_id, *, value=None, active=None, reason=''):
+            return self._combat_value(ai,stat_id,context,value=value,active=active,reason=reason)
+        offense={k:cv(k) for k in ['accuracy','hit_bonus','attack_power','damage_bonus','spell_power','healing_power']}
+        defense={k:cv(k) for k in ['armor','evasion','critical_avoidance']}
+        crit={k:cv(k) for k in ['critical_melee','critical_spell','critical_heal','critical_avoidance','critical_damage']}
+        saves={k:cv(k) for k in ['physical_save','mental_save','magic_save']}
+        speed={k:cv(k,active=False,reason=self.inactive_speed_reason) for k in ['initiative','attack_speed','casting_speed','recovery_speed','movement_speed']}
+        maxima={k:cv(k) for k in ['max_health','max_mana','max_stamina']}
+        enc=self.get_encumbrance(ai,context); carrying={k:cv(k,value=v) for k,v in enc.items() if k!='encumbrance_state'}; encvals={**carrying,'encumbrance_state':cv('encumbrance_state',value=enc['encumbrance_state'],active=True)}
+        raw_health=int((ai.resource_projection or {}).get('health',0) or 0)
+        max_health=int(maxima.get('max_health',0) or 0)
+        if max_health and raw_health>max_health:
+            raw_health=max_health
+            try: setattr(ch,'hp',max_health)
+            except Exception: pass
+        resources={**maxima,'health':cv('health',value=raw_health,active=True),'mana':cv('mana',value=int((ai.resource_projection or {}).get('mana',0) or 0),active=True),'stamina':cv('stamina',value=int((ai.resource_projection or {}).get('stamina',0) or 0),active=True)}
+        unarmed=DamageProfile(self.get_stat(ai,'unarmed_damage_min',context),self.get_stat(ai,'unarmed_damage_max',context),'physical',100,1,0,'unarmed')
         nw=getattr(ai,'natural_weapon_profiles',[])
-        weapon=self.get_damage_profile(ch,context)
+        weapon=self.get_damage_profile(ai,context)
         if not weapon and nw: weapon=DamageProfile(nw[0].minimum_damage,nw[0].maximum_damage,nw[0].damage_type,nw[0].attack_speed,nw[0].reach,nw[0].maximum_range,nw[0].name)
-        return CombatStatSnapshot(self.schema_version,hashlib.sha1((sv+utc_now()).encode()).hexdigest(),ai.actor_id,ai.actor_type,self.attribute_service.world_id,ai.template_id,ai.instance_id,ai.level,primary,offense,defense,crit,saves,self.get_resistance_values(ch,context),speed,weapon,unarmed,nw,resources,carrying,encvals,{'presence':{'active_attribute':True,'combat_consumed':False,'current_consumers':[]}}, source_versions, utc_now())
+        snap=CombatStatSnapshot(self.schema_version,hashlib.sha1((sv+str(ai.actor_id)).encode()).hexdigest(),ai.actor_id,ai.actor_type,self.attribute_service.world_id,ai.template_id,ai.instance_id,ai.level,primary,offense,defense,crit,saves,self.get_resistance_values(ai,context),speed,weapon,unarmed,nw,resources,carrying,encvals,{'presence':{'active_attribute':True,'combat_consumed':False,'current_consumers':[]}}, source_versions, utc_now())
+        self._snapshot_cache[key]=snap
+        if len(self._snapshot_cache)>1024: self._snapshot_cache.pop(next(iter(self._snapshot_cache)))
+        return snap

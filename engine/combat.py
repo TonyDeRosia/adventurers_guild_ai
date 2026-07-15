@@ -307,7 +307,7 @@ class CombatResolutionService:
 
     def _snapshot_cache_key(self, actor: Actor, context: CombatResolutionContext) -> tuple[Any, ...]:
         cp = actor.combat_profile or {}; eq = actor.equipment_profile or {}; eff = actor.effect_container or {}
-        return (actor.actor_id, getattr(actor, "body_profile_id", ""), cp.get("combat_state", ""), tuple(cp.get("natural_weapon_profile_ids") or ()), json.dumps(eq, sort_keys=True, default=str), json.dumps(eff, sort_keys=True, default=str), getattr(self.runtime, "world_content_generation", 0) if self.runtime else 0)
+        return (actor.actor_id, getattr(actor, "body_profile_id", ""), cp.get("combat_state", ""), tuple(cp.get("natural_weapon_profile_ids") or ()), json.dumps(getattr(actor,"attributes",{}), sort_keys=True, default=str), json.dumps(eq, sort_keys=True, default=str), json.dumps(eff, sort_keys=True, default=str), getattr(self.runtime, "world_content_generation", 0) if self.runtime else 0)
 
     def _snapshot(self, actor: Actor, context: CombatResolutionContext):
         if not self.combat_stats: return None
