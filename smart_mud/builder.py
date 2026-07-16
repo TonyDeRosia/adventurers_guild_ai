@@ -892,7 +892,9 @@ class BuilderSessionManager:
     def start(self, actor: Any, editor: str, collection: str, object_id: str) -> BuilderResult:
         lock = self.service.acquire_lock(actor, collection, object_id)
         if not lock.ok: return lock
-        world_id = self.service.workspace.world_id(actor); now = self.service.workspace.stamp(); rec = self.service._record(world_id, collection, object_id) or {"id": object_id}
+        world_id = self.service.workspace.world_id(actor); now = self.service.workspace.stamp(); rec = self.service._record(world_id, collection, object_id)
+        if rec is None:
+            rec = self.service.resolve_collection_records(actor, collection).get(object_id) or {"id": object_id}
         sess = BuilderEditSession(f"{self.actor_key(actor)}-{now}", str(getattr(actor,'account_id','')), self.actor_key(actor), world_id, editor, collection, object_id, f"{collection}:{object_id}", draft_revision=int(rec.get('_builder_revision') or 0), started_at=now, last_activity_at=now, original_record=deepcopy(rec), working_record=deepcopy(rec), savepoint=deepcopy(rec))
         self.active[self.actor_key(actor)] = sess
         return BuilderResult(True, self.service.render_session(sess))
@@ -924,6 +926,66 @@ class BuilderService:
         rec = self.workspace.load(world_id).get(collection, {}).get(object_id)
         return rec if isinstance(rec, dict) else None
 
+    def resolve_collection_records(self, actor: Any | None, collection: str, *, include_drafts: bool = True, include_active_generation: bool = True, include_live: bool = True, scratch: dict[str, Any] | None = None) -> dict[str, dict[str, Any]]:
+        """Merged Builder reference resolver: scratch > drafts > active generation > live > bootstrap seeds."""
+        world_id = self.workspace.world_id(actor) if actor is not None else (getattr(self.runtime, "active_world_id", "") or "shattered_realms")
+        merged: dict[str, dict[str, Any]] = {}
+        if include_live:
+            for rec in _records(self.workspace.worlds_dir / world_id, DRAFT_FILES.get(collection, f"{collection}.json")[:-5] if collection in DRAFT_FILES else collection):
+                if isinstance(rec, dict) and rec.get("id"):
+                    r = deepcopy(rec); r.setdefault("id", str(rec.get("id"))); r["_builder_reference_source"] = "live"; merged[str(r["id"])] = r
+            if collection == "entities":
+                for rec in _records(self.workspace.worlds_dir / world_id, "npcs"):
+                    if isinstance(rec, dict) and rec.get("id"):
+                        r = MobileTemplate.from_generation(rec).to_canonical_dict(); r["_builder_reference_source"] = "live"; merged[str(r["id"])] = r
+        if include_active_generation and self.runtime is not None:
+            gen = getattr(self.runtime, "active_content_generation", None) or getattr(self, "active_content_generation", None) or {}
+            for oid, rec in (gen.get(collection) or {}).items() if isinstance(gen, dict) else []:
+                if isinstance(rec, dict):
+                    r = deepcopy(rec); r.setdefault("id", str(oid)); r["_builder_reference_source"] = "generation"; merged[str(r["id"])] = r
+        if include_drafts:
+            for oid, rec in (self.workspace.load(world_id).get(collection) or {}).items():
+                if isinstance(rec, dict):
+                    r = deepcopy(rec); r.setdefault("id", str(oid)); r["_builder_reference_source"] = "draft"; merged[str(r["id"])] = r
+        if scratch and scratch.get("id"):
+            r = deepcopy(scratch); r["_builder_reference_source"] = "scratch"; merged[str(r["id"])] = r
+
+        if collection == "body_profiles":
+            seeds = {"wolf": {"id":"wolf", "capabilities":["fangs","claws"], "suggested_natural_weapon_ids":["wolf_fangs","wolf_claws"]}, "bear": {"id":"bear", "capabilities":["teeth","claws","paws"], "suggested_natural_weapon_ids":["bear_claw","bear_bite","bear_maul"]}, "humanoid": {"id":"humanoid", "capabilities":["fists"], "suggested_natural_weapon_ids":["humanoid_fist"]}}
+            for oid, rec in seeds.items():
+                if oid not in merged:
+                    r = deepcopy(rec); r["_builder_reference_source"] = "bootstrap"; merged[oid] = r
+        if collection == "natural_weapon_profiles":
+            seeds = {"wolf_fangs": _canonical_weapon({"id":"wolf_fangs","family":"bite","noun":"fangs","verb":"bites","damage_type":"piercing","damage_dice":"1d6","weight":100}, "wolf"), "wolf_claws": _canonical_weapon({"id":"wolf_claws","family":"claw","noun":"claws","verb":"rakes","damage_type":"slashing","damage_dice":"1d4","weight":30}, "wolf"), "bear_claw": _canonical_weapon({"id":"bear_claw","family":"claw","noun":"claws","verb":"claws","damage_type":"slashing","damage_dice":"1d8","weight":50}, "bear"), "bear_bite": _canonical_weapon({"id":"bear_bite","family":"bite","noun":"teeth","verb":"bites","damage_type":"piercing","damage_dice":"1d8","weight":25}, "bear"), "bear_maul": _canonical_weapon({"id":"bear_maul","family":"maul","noun":"paws","verb":"mauls","damage_type":"bludgeoning","damage_dice":"2d6","weight":25}, "bear")}
+            for oid, rec in seeds.items():
+                if oid not in merged:
+                    r = deepcopy(rec); r["_builder_reference_source"] = "bootstrap"; merged[oid] = r
+        return merged
+
+    def resolve_reference(self, actor: Any | None, collection: str, query: str, *, scratch: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        q = str(query or "").lower().strip()
+        records = self.resolve_collection_records(actor, collection, scratch=scratch)
+        if q in records:
+            return records[q]
+        exact = [r for oid, r in records.items() if str(r.get("name") or r.get("display_name") or oid).lower() == q]
+        if len(exact) == 1:
+            return exact[0]
+        partial = [r for oid, r in records.items() if q and (q in oid.lower() or q in str(r.get("name") or r.get("display_name") or "").lower() or q in " ".join(map(str, r.get("keywords") or [])).lower())]
+        return partial[0] if len(partial) == 1 else None
+
+    def _body_profile_result(self, actor: Any, profile: str, scratch: dict[str, Any] | None = None) -> tuple[str, dict[str, Any] | None, list[dict[str, Any]]]:
+        bp = self.resolve_reference(actor, "body_profiles", profile, scratch=scratch)
+        if not bp:
+            return str(profile).lower(), None, []
+        prof = str(bp.get("id") or profile).lower()
+        natural_profiles = self.resolve_collection_records(actor, "natural_weapon_profiles")
+        weapons = []
+        for wid in bp.get("suggested_natural_weapon_ids", []) or bp.get("natural_weapon_profile_ids", []) or []:
+            rec = natural_profiles.get(str(wid))
+            if isinstance(rec, dict):
+                weapons.append(_canonical_weapon(deepcopy(rec), prof))
+        return prof, bp, weapons
+
     def _can_admin(self, actor: Any) -> bool:
         return str(getattr(actor, "role", "")).lower() in {"admin", "owner"} or str(getattr(actor, "account_role", "")).lower() in {"admin", "owner"}
 
@@ -933,10 +995,17 @@ class BuilderService:
         if action in {"publish", "activate", "force_unlock"} and not self._can_admin(actor):
             return BuilderResult(False, f"You do not have permission to {action}.")
         if collection == "entities" and action in {"mutate", "edit", "delete"} and not self._can_admin(actor):
+            existing = self._record(self.workspace.world_id(actor), "entities", object_id)
             zone_id = self._entity_zone_id(actor, object_id)
             assigned = self._assigned_zones(actor)
-            if zone_id and assigned and zone_id not in assigned:
-                return BuilderResult(False, f"Zone ownership denied: mobile {object_id} belongs to zone {zone_id}; your assigned zones are {', '.join(sorted(assigned))}.")
+            if not zone_id:
+                if existing is None and action == "mutate":
+                    return None
+                return BuilderResult(False, "This mobile is not assigned to a valid zone. An administrator must repair its ownership before normal Builder editing.")
+            if assigned and zone_id not in assigned:
+                return BuilderResult(False, f"Zone ownership denied: You are not assigned to zone {zone_id} and cannot edit mobile {object_id}.")
+            if not assigned and existing is not None:
+                return BuilderResult(False, f"Zone ownership denied: You are not assigned to zone {zone_id} and cannot edit mobile {object_id}.")
         return None
 
     def _assigned_zones(self, actor: Any) -> set[str]:
@@ -946,8 +1015,14 @@ class BuilderService:
         return {str(v) for v in vals if str(v)}
 
     def _entity_zone_id(self, actor: Any, object_id: str) -> str:
-        rec = self._record(self.workspace.world_id(actor), "entities", object_id) or {}
-        return str(rec.get("zone_id") or getattr(actor, "current_zone_id", "") or getattr(actor, "zone_id", ""))
+        world_id = self.workspace.world_id(actor)
+        rec = self._record(world_id, "entities", object_id) or {}
+        zone_id = str(rec.get("zone_id") or getattr(actor, "current_zone_id", "") or getattr(actor, "zone_id", ""))
+        if zone_id:
+            return zone_id
+        room_id = str(getattr(actor, "edit_room_id", "") or getattr(actor, "room_id", ""))
+        room = (self.workspace.load(world_id).get("rooms") or {}).get(room_id) or {}
+        return str(room.get("zone_id") or "")
 
     def _lock_record(self, world_id: str, collection: str, object_id: str) -> dict[str, Any] | None:
         self._cleanup_stale_locks(world_id)
@@ -1067,21 +1142,27 @@ class BuilderService:
         if denied: return denied
         lock = self.acquire_lock(actor, "entities", object_id)
         if not lock.ok: return lock
-        world_id = self.workspace.world_id(actor); drafts = self.workspace.load(world_id); before = deepcopy(drafts.get("entities", {}).get(object_id))
-        if before is None: return BuilderResult(False, f"Draft entities {object_id} not found.")
-        drafts.setdefault("entities", {}).pop(object_id, None); self.workspace.save_drafts(world_id, drafts)
-        self._push_history(actor, "entities", object_id, before, None, "mdelete"); self.workspace.audit(actor, world_id, "mdelete", "entities", object_id, before, None)
-        self.release_lock(actor, "entities", object_id)
-        return BuilderResult(True, f"Draft entity_template {object_id} deleted.")
+        try:
+            world_id = self.workspace.world_id(actor); drafts = self.workspace.load(world_id); before = deepcopy(drafts.get("entities", {}).get(object_id))
+            if before is None: return BuilderResult(False, f"Draft entities {object_id} not found.")
+            drafts.setdefault("entities", {}).pop(object_id, None); self.workspace.save_drafts(world_id, drafts)
+            self._push_history(actor, "entities", object_id, before, None, "mdelete"); self.workspace.audit(actor, world_id, "mdelete", "entities", object_id, before, None)
+            return BuilderResult(True, f"Draft entity_template {object_id} deleted.")
+        finally:
+            self.release_lock(actor, "entities", object_id)
 
     def clone(self, actor: Any, collection: str, source_id: str, new_id: str, display_name: str | None = None, keywords: list[str] | None = None) -> BuilderResult:
         denied = self._check_permission(actor, collection, source_id, "mutate")
         if denied: return denied
         world_id=self.workspace.world_id(actor); drafts=self.workspace.load(world_id); src=drafts.get(collection,{}).get(source_id)
         if not isinstance(src, dict): return BuilderResult(False, f"Cannot clone missing {collection} {source_id}.")
-        self.acquire_lock(actor, collection, new_id, admin=True)
-        rec=deepcopy(src); rec["id"]=new_id; rec["name"]=display_name or new_id.replace("_", " ").title(); rec["keywords"]=keywords or new_id.replace("_", " ").split(); rec["builder_status"]="incomplete"; rec.pop("_builder_revision", None)
-        return self.mutate(actor, collection, new_id, rec, "clone", admin_override=True)
+        lock = self.acquire_lock(actor, collection, new_id, admin=True)
+        if not lock.ok: return lock
+        try:
+            rec=deepcopy(src); rec["id"]=new_id; rec["name"]=display_name or new_id.replace("_", " ").title(); rec["keywords"]=keywords or new_id.replace("_", " ").split(); rec["builder_status"]="incomplete"; rec.pop("_builder_revision", None)
+            return self.mutate(actor, collection, new_id, rec, "clone", admin_override=True)
+        finally:
+            self.release_lock(actor, collection, new_id)
 
     def undo(self, actor: Any) -> BuilderResult:
         world_id=self.workspace.world_id(actor); path=self._history_path(actor); data=self.workspace._read(path,{"undo":[],"redo":[]})
@@ -1248,13 +1329,10 @@ class BuilderService:
         return self.activate_generation(actor, prev)
 
     def body_profiles(self, actor: Any | None = None) -> list[str]:
-        world_id = self.workspace.world_id(actor) if actor is not None else (getattr(self.runtime, "active_world_id", "") or "shattered_realms")
-        return sorted((self.workspace.load(world_id).get("body_profiles") or {}).keys())
+        return sorted(self.resolve_collection_records(actor, "body_profiles").keys())
     def apply_body_profile(self, actor: Any, mob_id: str, profile: str) -> BuilderResult:
-        world_id=self.workspace.world_id(actor); drafts=self.workspace.load(world_id); prof=profile.lower(); bp=(drafts.get("body_profiles") or {}).get(prof)
-        if not bp: return BuilderResult(False, "Unknown body profile. Choose: " + ", ".join(sorted(drafts.get("body_profiles",{}))))
-        weapons=[deepcopy((drafts.get("natural_weapon_profiles") or {}).get(wid)) for wid in bp.get("suggested_natural_weapon_ids", [])]
-        weapons=[w for w in weapons if isinstance(w, dict)]
+        prof, bp, weapons = self._body_profile_result(actor, profile)
+        if not bp: return BuilderResult(False, "Unknown body profile. Choose: " + ", ".join(self.body_profiles(actor)))
         return self.mutate(actor, "entities", mob_id, {"body_profile_id": prof, "combat_profile": {"body_profile": prof, "natural_weapons": weapons}}, "body profile")
 
     def start_editor(self, actor: Any, editor: str, collection: str, object_id: str) -> BuilderResult:
@@ -1342,17 +1420,14 @@ class BuilderService:
             sess.working_record["name"] = text[len(parts[0]):].strip(); sess.dirty = True; sess.saved = False
             return BuilderResult(True, "Updated session scratch.\n" + self.render_session(sess))
         if parts and parts[0].lower() == "body" and len(parts) > 1:
-            drafts = self.workspace.load(sess.world_id); profile = parts[1].lower(); bp = (drafts.get("body_profiles") or {}).get(profile)
-            if bp:
-                weapons = [deepcopy((drafts.get("natural_weapon_profiles") or {}).get(wid)) for wid in bp.get("suggested_natural_weapon_ids", [])]
-                weapons = [_canonical_weapon(w, sess.object_id) for w in weapons if isinstance(w, dict)]
-            else:
-                return BuilderResult(False, "Unknown body profile. Choose: " + ", ".join(sorted(drafts.get("body_profiles", {}))))
+            prof, bp, weapons = self._body_profile_result(actor, parts[1], scratch=sess.working_record)
+            if not bp:
+                return BuilderResult(False, "Unknown body profile. Choose: " + ", ".join(self.body_profiles(actor)))
             self._session_checkpoint(sess)
             sess.working_record.pop("natural_weapons", None)
             sess.working_record.pop("natural_attacks", None)
-            sess.working_record["body_profile_id"] = profile
-            sess.working_record.setdefault("combat_profile", {})["body_profile"] = profile
+            sess.working_record["body_profile_id"] = prof
+            sess.working_record.setdefault("combat_profile", {})["body_profile"] = prof
             sess.working_record.setdefault("combat_profile", {})["natural_weapons"] = weapons
             sess.dirty = True; sess.saved = False
             return BuilderResult(True, "Updated session scratch.\n" + self.render_session(sess))
@@ -1412,10 +1487,9 @@ class BuilderService:
             elif cmd == "resource" and len(parts) > 2 and parts[2].lstrip('-').isdigit():
                 rec.setdefault("resources", {})[parts[1].lower()] = int(parts[2])
             elif cmd == "body" and len(parts) > 1:
-                drafts = self.workspace.load(sess.world_id); profile = parts[1].lower(); bp = (drafts.get("body_profiles") or {}).get(profile)
-                if not bp: return BuilderResult(False, "Unknown body profile. Choose: " + ", ".join(sorted(drafts.get("body_profiles", {}))))
-                weapons = [_canonical_weapon(deepcopy((drafts.get("natural_weapon_profiles") or {}).get(wid)), sess.object_id) for wid in bp.get("suggested_natural_weapon_ids", []) if isinstance((drafts.get("natural_weapon_profiles") or {}).get(wid), dict)]
-                rec["body_profile_id"] = profile; rec.setdefault("combat_profile", {})["body_profile"] = profile; rec.setdefault("combat_profile", {})["natural_weapons"] = weapons
+                prof, bp, weapons = self._body_profile_result(actor, parts[1], scratch=rec)
+                if not bp: return BuilderResult(False, "Unknown body profile. Choose: " + ", ".join(self.body_profiles(actor)))
+                rec["body_profile_id"] = prof; rec.setdefault("combat_profile", {})["body_profile"] = prof; rec.setdefault("combat_profile", {})["natural_weapons"] = weapons
             elif cmd == "set" and len(parts) > 2:
                 val = " ".join(parts[2:]); set_path(parts[1], int(val) if val.lstrip('-').isdigit() else val)
             elif cmd == "add" and len(parts) > 2:
