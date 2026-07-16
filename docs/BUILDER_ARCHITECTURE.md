@@ -1,40 +1,35 @@
-# BUILDER ARCHITECTURE
+# Builder architecture status
 
-Phase 15B.14 modernizes Smart MUD Builder around a single canonical BuilderService. Tony's Adventurer's Lair/TBA Oasis OLC remains the behavioral reference: builders choose an editor command, work in a temporary menu/session, preview, validate, save, and publish. Smart MUD deliberately does not copy C implementation; all mutations flow through draft JSON collections in the existing builder workspace.
+Phase 15B.14B converts the previous menu renderer into a canonical BuilderService-centered path for mobile editing.
 
-## TBA/Oasis audit summary
+## Current architecture before the fix
 
-TBA medit, redit, oedit, zedit, sedit, aedit, hedit, and tedit create temporary edit structures, lock the target descriptor, present numbered menus, validate obvious references, and require an explicit save path. Zone editing centers on reset commands. Prototype saves update disk prototypes; live mobs may require explicit refresh or reset behavior depending on subsystem. DG scripts attach by trigger references. Builders preview by stat/show commands, moving through rooms, resets, and test loads.
+The repository had a `BuilderWorkspace` storage layer, a `BuilderService` facade, and command handlers in `engine/mud_commands.py`. The service rendered menus, wrote whole draft collections, tracked advisory locks, and exported generation files. Older builder commands still called workspace helpers directly.
 
-## Smart MUD gap analysis
+## Implemented architecture
 
-Before Phase 15B.14, Smart MUD had draft files and command-level BuilderWorkspace helpers, but editor behavior was fragmented, JSON-oriented, and lacked one facade for OLC, future GUI, import/export, locks, undo/redo, picker UX, draft testspawn, and generation publishing. This document family defines the canonical path.
+* `BuilderService` is the mutation authority for the new interactive mobile editor, direct natural-weapon edits, clone, publish, activation, testspawn, undo, and redo.
+* `BuilderSessionManager` keeps active `BuilderEditSession` instances in memory and routes subsequent input before normal command dispatch.
+* `medit` is the completed first editor slice for natural weapons, preview, validation, testspawn, save, undo, redo, and quit.
+* Natural weapons are canonical at `combat_profile.natural_weapons`; legacy `natural_attacks` is migrated on load and not persisted as a competing schema.
+* Attack families, body profiles, and natural weapon profiles are editable builder collections rather than Python-only combat suggestions.
+* Mutations require builder permission plus an owned lock unless an admin override is explicit.
+* History records are object-level before/after records instead of whole-world snapshots.
+* Draft records carry `_builder_revision`, and session writes pass an expected revision.
+* Validation returns structured issue records with severity, code, collection, object ID, field path, message, and fix hint.
+* Preview reads the canonical runtime-shaped natural weapon data used by combat adapters.
+* Testspawn materializes an ephemeral resident-like draft mob payload in a private builder room on the actor for runtime command adapters to inspect and clear.
+* Publish writes an immutable generation package with manifest, hashes, schema versions, validation report, migration report hooks, and rollback metadata. Activation is explicit and updates `active.json` only after manifest verification.
+* Live mob update policy: new spawns use the newly activated generation; existing live mobs retain old combat state until death/despawn.
 
-## Architecture
+## TBA behavioral audit
 
-* BuilderService is the canonical mutation facade.
-* BuilderWorkspace remains persistence/audit/event infrastructure.
-* Interactive editors show TBA-like menus but write only drafts.
-* Publish creates immutable generation output under builder/generations and records the active generation pointer for atomic runtime swap.
-* Validation and preview are service methods and are therefore shared by commands, future GUI, web editor, batch importers, and JSON import/export.
+The referenced tbaMUD repository is a C codebase with traditional OLC concepts such as descriptor/editor state, scratch copies, menu sections, save confirmation, zone-oriented building, and attack type menus. Smart MUD copies those behaviors at the workflow level while improving with searchable string IDs, typed validation, object history, generation packaging, rollback, private test rooms, and GUI-compatible service APIs. No C code was copied.
 
-## Workflows
+## Remaining limitations
 
-1. Open an editor such as medit forest_wolf.
-2. BuilderService acquires an edit lock.
-3. The editor presents numbered sections, preview, validate, save draft, publish, and quit.
-4. Section mutations push undo history before draft writes.
-5. Preview renders player-facing look/examine/combat/spawn output from drafts.
-6. Publish validates and writes a new generation.
+This pass makes `medit` real for the natural-weapon/runtime-combat path. `redit`, `oedit`, `aedit`, and `zedit` still need the same full typed section coverage. Some legacy command handlers still use older `BuilderWorkspace` helpers and should be incrementally migrated behind `BuilderService` wrappers.
 
-## Validation
+## Windows manual acceptance
 
-Validation reports errors and warnings with fix guidance for missing descriptions, missing attacks, invalid exits, broken references, missing templates, duplicate IDs, missing body profiles, bad spawns, missing scripts, and missing combat profiles.
-
-## Preview
-
-Preview shows LOOK/EXAMINE-style output, exits/spawns for rooms, combat messages for mobiles, and loot/equipment summaries for objects without touching live runtime objects.
-
-## Locks and recovery
-
-Edit locks are keyed by collection and id, store builder name and timestamp, and can be overridden through admin unlock flows. Stale lock policy is documented as administrative recovery to avoid silent concurrent edits.
+Do not mark Windows acceptance complete until Tony manually runs the requested tests A-E on Windows.

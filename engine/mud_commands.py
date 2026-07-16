@@ -1807,6 +1807,9 @@ class MudCommandEngine:
             choices = self.registry.resolve(raw_cmd_name)[1].split(":",1)[1].strip()
             return CommandResult(narrative=f"Which command did you mean? {choices}", ok=False)
         args = cmd_tokens[1:]
+        if getattr(self, "builder_service", None) and self.builder_service.sessions.has(character) and raw_cmd_name not in {"say", "tell"}:
+            res = self.builder_service.sessions.handle(character, command_text)
+            return CommandResult(narrative=res.message, ok=res.ok)
         self._publish("command_received", character, command_text, raw_input=command_text, canonical_command=raw_cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""))
         
         print(f"[mud-command] Routing {raw_cmd_name} as {cmd_name} for {character.name}")
@@ -3717,11 +3720,24 @@ class MudCommandEngine:
             res = self.builder.export(character); self.builder.publish("builder_export_completed", character, self.builder.world_id(character), "export", sub, command=raw)
             self.builder.audit(character, self.builder.world_id(character), f"builder {sub}", "export", sub, None, res.data or {})
             return CommandResult(narrative=res.message + "\n" + self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))), ok=res.ok)
+        if sub == "testroom":
+            setattr(character, "builder_test_room_id", f"builder_test_{getattr(character,'id','builder')}")
+            return CommandResult(narrative=f"Entered private Builder test room {getattr(character,'builder_test_room_id')}.")
+        if sub == "testclear":
+            res = self.builder_service.testclear(character); return CommandResult(narrative=res.message, ok=res.ok)
         if sub == "testspawn":
             if len(args) < 2:
                 return CommandResult(narrative="Usage: builder testspawn <mob_id>", ok=False)
             res = self.builder_service.testspawn(character, args[1])
             return CommandResult(narrative=res.message, ok=res.ok)
+        if sub == "generation" and len(args) >= 2:
+            action=args[1].lower()
+            if action == "activate":
+                res=self.builder_service.activate_generation(character, args[2] if len(args)>2 else "latest"); return CommandResult(narrative=res.message, ok=res.ok)
+            if action == "rollback":
+                res=self.builder_service.rollback_generation(character); return CommandResult(narrative=res.message, ok=res.ok)
+            if action in {"status", "list", "diff"}:
+                return CommandResult(narrative="Builder generation command available: activate <id>, rollback. Generation packages are under worlds/<world>/builder/generations/.")
         if sub == "publish" and len(args) >= 2 and args[1].lower() == "stats":
             return self._publish_stats(character)
         if sub == "publish" and len(args) >= 2 and args[1].lower() == "generation":
@@ -3808,12 +3824,8 @@ class MudCommandEngine:
             target = args[0] if args else room_id
             if not target:
                 return CommandResult(f"Usage: {cmd} <id>", ok=False)
-            lock = self.builder_service.acquire_lock(character, coll, target)
-            if not lock.ok:
-                return CommandResult(lock.message, ok=False)
-            drafts = self.builder.load(world_id)
-            title = (drafts.get(coll, {}).get(target, {}) or {}).get("name") or target.replace("_", " ").title()
-            return CommandResult(self.builder_service.menu(cmd, str(title)))
+            res = self.builder_service.start_editor(character, cmd, coll, target)
+            return CommandResult(res.message, ok=res.ok)
         if cmd in {"mclone", "oclone", "rclone"}:
             if len(args) < 2: return CommandResult(f"Usage: {cmd} <source_id> <new_id>", ok=False)
             coll = {"mclone":"entities", "oclone":"items", "rclone":"rooms"}[cmd]
