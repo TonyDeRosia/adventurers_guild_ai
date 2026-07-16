@@ -1,0 +1,335 @@
+F..FF.FFFF.F.F...                                                        [100%]
+=================================== FAILURES ===================================
+___________ test_builder_content_query_lists_drafts_without_json_ids ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_builder_content_query_lis0')
+
+    def test_builder_content_query_lists_drafts_without_json_ids(tmp_path):
+        ws = BuilderWorkspace(worlds_dir=tmp_path / "worlds")
+        svc = BuilderService(ws)
+        a = actor()
+        drafts = ws.load("shattered_realms")
+        drafts.setdefault("entities", {})["dire_forest_wolf"] = {"id": "dire_forest_wolf", "name": "Dire Forest Wolf", "vnum": 1501, "level": 8, "race": "wolf", "area_id": "starter_guildlands", "zone_id": "guildhall_crossing", "keywords": ["wolf", "dire"]}
+        drafts.setdefault("items", {})["iron_sword"] = {"id": "iron_sword", "name": "Iron Sword", "vnum": 1301, "item_type": "weapon", "wear_slots": ["main_hand"], "area_id": "starter_guildlands", "zone_id": "guildhall_crossing"}
+        drafts.setdefault("rooms", {})["wolf_den"] = {"id": "wolf_den", "name": "Wolf Den", "vnum": 1002, "area_id": "starter_guildlands", "zone_id": "guildhall_crossing", "exits": {"south": {"target_room_id": "guildhall_crossing_square"}}}
+        ws.save_drafts("shattered_realms", drafts)
+    
+>       mlist = svc.list_content(a, "mob", ["wolf"])
+                ^^^^^^^^^^^^^^^^
+E       AttributeError: 'BuilderService' object has no attribute 'list_content'
+
+tests/test_phase15b20_builder_discovery.py:20: AttributeError
+__________________ test_alist_defaults_current_and_all_and_id __________________
+
+isolated_builder_world = IsolatedBuilderWorld(world_root=PosixPath('/tmp/pytest-of-root/pytest-0/test_alist_defaults_current_an0/worlds'), worl...8f620>, database_path=PosixPath('/tmp/pytest-of-root/pytest-0/test_alist_defaults_current_an0/user_data/mud_state.db'))
+
+    def test_alist_defaults_current_and_all_and_id(isolated_builder_world):
+        engine, a = engine_with_pack(isolated_builder_world)
+        default = text(engine, a, "alist")
+>       assert "starter_guildlands" in default
+E       AssertionError: assert 'starter_guildlands' in 'Something went wrong while handling that command. Please try again or use HELP for syntax.'
+
+tests/test_builder_list_filters_phase4h_hotfix.py:64: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+----------------------------- Captured stdout call -----------------------------
+[mud-command] Routing alist as alist for Builder
+[mud-command] Deterministic: alist
+------------------------------ Captured log call -------------------------------
+ERROR    engine.mud_commands:mud_commands.py:1884 Unexpected command exception
+Traceback (most recent call last):
+  File "/workspace/smartmud/engine/mud_commands.py", line 1873, in handle_command
+    raw_result = self.command_handlers[cmd_name](character, args, command_text)
+  File "/workspace/smartmud/engine/mud_commands.py", line 3398, in _cmd_builder_nav
+    res = self.builder_service.list_content(character, "area", args)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'BuilderService' object has no attribute 'list_content'
+___________________ test_zlist_local_all_area_zone_and_range ___________________
+
+isolated_builder_world = IsolatedBuilderWorld(world_root=PosixPath('/tmp/pytest-of-root/pytest-0/test_zlist_local_all_area_zone0/worlds'), worl...e3770>, database_path=PosixPath('/tmp/pytest-of-root/pytest-0/test_zlist_local_all_area_zone0/user_data/mud_state.db'))
+
+    def test_zlist_local_all_area_zone_and_range(isolated_builder_world):
+        engine, a = engine_with_pack(isolated_builder_world)
+        default = text(engine, a, "zlist")
+>       assert "guildhall_crossing" in default
+E       AssertionError: assert 'guildhall_crossing' in 'Something went wrong while handling that command. Please try again or use HELP for syntax.'
+
+tests/test_builder_list_filters_phase4h_hotfix.py:76: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+----------------------------- Captured stdout call -----------------------------
+[mud-command] Routing zlist as zlist for Builder
+[mud-command] Deterministic: zlist
+------------------------------ Captured log call -------------------------------
+ERROR    engine.mud_commands:mud_commands.py:1884 Unexpected command exception
+Traceback (most recent call last):
+  File "/workspace/smartmud/engine/mud_commands.py", line 1873, in handle_command
+    raw_result = self.command_handlers[cmd_name](character, args, command_text)
+  File "/workspace/smartmud/engine/mud_commands.py", line 3402, in _cmd_builder_nav
+    res = self.builder_service.list_content(character, "zone", args)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'BuilderService' object has no attribute 'list_content'
+_____ test_runtime_rlist_and_rooms_filters_use_active_drafts_after_import ______
+
+isolated_builder_world = IsolatedBuilderWorld(world_root=PosixPath('/tmp/pytest-of-root/pytest-0/test_runtime_rlist_and_rooms_f0/worlds'), worl...e3620>, database_path=PosixPath('/tmp/pytest-of-root/pytest-0/test_runtime_rlist_and_rooms_f0/user_data/mud_state.db'))
+
+    def test_runtime_rlist_and_rooms_filters_use_active_drafts_after_import(isolated_builder_world):
+        rt, cid = runtime_with_pack(isolated_builder_world)
+    
+        alist = runtime_text(rt, cid, "alist all")
+>       assert "starter_guildlands" in alist
+E       AssertionError: assert 'starter_guildlands' in 'Something went wrong while handling that command. Please try again or use HELP for syntax.'
+
+tests/test_builder_list_filters_phase4h_hotfix.py:111: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+----------------------------- Captured stdout call -----------------------------
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.907 status=ready
+[mud-persistence] Saved character Runtime Builder (char_shattered_realms_runtime_builder)
+[mud-persistence] Loaded character Runtime Builder (char_shattered_realms_runtime_builder)
+[mud-command] Routing builder as builder for Runtime Builder
+[mud-command] Deterministic: builder
+[mud-persistence] Command history: builder on
+[mud-persistence] Loaded character Runtime Builder (char_shattered_realms_runtime_builder)
+[mud-command] Routing alist as alist for Runtime Builder
+[mud-command] Deterministic: alist
+[mud-persistence] Command history: alist all
+------------------------------ Captured log call -------------------------------
+ERROR    engine.mud_commands:mud_commands.py:1884 Unexpected command exception
+Traceback (most recent call last):
+  File "/workspace/smartmud/engine/mud_commands.py", line 1873, in handle_command
+    raw_result = self.command_handlers[cmd_name](character, args, command_text)
+  File "/workspace/smartmud/engine/mud_commands.py", line 3398, in _cmd_builder_nav
+    res = self.builder_service.list_content(character, "area", args)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'BuilderService' object has no attribute 'list_content'
+_______________ test_rooms_legacy_large_warning_and_placeholders _______________
+
+isolated_builder_world = IsolatedBuilderWorld(world_root=PosixPath('/tmp/pytest-of-root/pytest-0/test_rooms_legacy_large_warnin0/worlds'), worl...74440>, database_path=PosixPath('/tmp/pytest-of-root/pytest-0/test_rooms_legacy_large_warnin0/user_data/mud_state.db'))
+
+    def test_rooms_legacy_large_warning_and_placeholders(isolated_builder_world):
+        engine, a = engine_with_pack(isolated_builder_world)
+        drafts = engine.builder.load("shattered_realms")
+        drafts["rooms"]["legacy_room"] = {"id": "legacy_room", "name": "Legacy", "exits": {}, "area_id": "", "zone_id": "", "vnum": None}
+        engine.builder.save_drafts("shattered_realms", drafts)
+        assert "legacy_room" in text(engine, a, "rooms unassigned")
+        assert "Large listing:" in text(engine, a, "rlist all")
+        mlist = text(engine, a, "mlist")
+>       assert "Current zone: guildhall_crossing" in mlist and "mlist 1500-1599" in mlist
+E       AssertionError: assert ('Current zone: guildhall_crossing' in 'Something went wrong while handling that command. Please try again or use HELP for syntax.')
+
+tests/test_builder_list_filters_phase4h_hotfix.py:143: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+----------------------------- Captured stdout call -----------------------------
+[mud-command] Routing rooms as rooms for Builder
+[mud-command] Deterministic: rooms
+[mud-command] Routing rlist as rlist for Builder
+[mud-command] Deterministic: rlist
+[mud-command] Routing mlist as mlist for Builder
+[mud-command] Deterministic: mlist
+------------------------------ Captured log call -------------------------------
+ERROR    engine.mud_commands:mud_commands.py:1884 Unexpected command exception
+Traceback (most recent call last):
+  File "/workspace/smartmud/engine/mud_commands.py", line 1873, in handle_command
+    raw_result = self.command_handlers[cmd_name](character, args, command_text)
+  File "/workspace/smartmud/engine/mud_commands.py", line 3637, in _cmd_builder_discovery
+    res = svc.list_content(character, kind, args)
+          ^^^^^^^^^^^^^^^^
+AttributeError: 'BuilderService' object has no attribute 'list_content'
+__________ test_phase15b22_mlist_olist_aligned_and_location_from_room __________
+
+isolated_builder_world = IsolatedBuilderWorld(world_root=PosixPath('/tmp/pytest-of-root/pytest-0/test_phase15b22_mlist_olist_al0/worlds'), worl...74590>, database_path=PosixPath('/tmp/pytest-of-root/pytest-0/test_phase15b22_mlist_olist_al0/user_data/mud_state.db'))
+
+    def test_phase15b22_mlist_olist_aligned_and_location_from_room(isolated_builder_world):
+        e, a = setup_engine(isolated_builder_world)
+>       text = out(e, a, "mlist")
+               ^^^^^^^^^^^^^^^^^^
+
+tests/test_phase15b22_builder_usability.py:31: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+e = <engine.mud_commands.MudCommandEngine object at 0x7fabc0f872f0>
+a = namespace(id='builder', account_id='acct', role='builder', account_role='builder', world_id='shattered_realms', room_i...rt', edit_room_id='start', current_area_id='', current_zone_id='', name='Builder', builder_zone_ids=['emberwood_edge'])
+cmd = 'mlist'
+
+    def out(e, a, cmd):
+        res = e.handle_command(a, cmd)
+>       assert res.ok, res.narrative
+E       AssertionError: Something went wrong while handling that command. Please try again or use HELP for syntax.
+E       assert False
+E        +  where False = CommandResult(narrative='Something went wrong while handling that command. Please try again or use HELP for syntax.', ...tate_updates=None, should_exit=False, ok=False, display_document=None, display_intent='SYSTEM', semantic_role='system').ok
+
+tests/test_phase15b22_builder_usability.py:25: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+----------------------------- Captured stdout call -----------------------------
+[mud-command] Routing mlist as mlist for Builder
+[mud-command] Deterministic: mlist
+------------------------------ Captured log call -------------------------------
+ERROR    engine.mud_commands:mud_commands.py:1884 Unexpected command exception
+Traceback (most recent call last):
+  File "/workspace/smartmud/engine/mud_commands.py", line 1873, in handle_command
+    raw_result = self.command_handlers[cmd_name](character, args, command_text)
+  File "/workspace/smartmud/engine/mud_commands.py", line 3637, in _cmd_builder_discovery
+    res = svc.list_content(character, kind, args)
+          ^^^^^^^^^^^^^^^^
+AttributeError: 'BuilderService' object has no attribute 'list_content'
+__________________ test_phase15b22_alist_zlist_service_format __________________
+
+isolated_builder_world = IsolatedBuilderWorld(world_root=PosixPath('/tmp/pytest-of-root/pytest-0/test_phase15b22_alist_zlist_se0/worlds'), worl...76270>, database_path=PosixPath('/tmp/pytest-of-root/pytest-0/test_phase15b22_alist_zlist_se0/user_data/mud_state.db'))
+
+    def test_phase15b22_alist_zlist_service_format(isolated_builder_world):
+        e, a = setup_engine(isolated_builder_world)
+>       alist = out(e, a, "alist")
+                ^^^^^^^^^^^^^^^^^^
+
+tests/test_phase15b22_builder_usability.py:44: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+e = <engine.mud_commands.MudCommandEngine object at 0x7fabc18b3af0>
+a = namespace(id='builder', account_id='acct', role='builder', account_role='builder', world_id='shattered_realms', room_i...rt', edit_room_id='start', current_area_id='', current_zone_id='', name='Builder', builder_zone_ids=['emberwood_edge'])
+cmd = 'alist'
+
+    def out(e, a, cmd):
+        res = e.handle_command(a, cmd)
+>       assert res.ok, res.narrative
+E       AssertionError: Something went wrong while handling that command. Please try again or use HELP for syntax.
+E       assert False
+E        +  where False = CommandResult(narrative='Something went wrong while handling that command. Please try again or use HELP for syntax.', ...tate_updates=None, should_exit=False, ok=False, display_document=None, display_intent='SYSTEM', semantic_role='system').ok
+
+tests/test_phase15b22_builder_usability.py:25: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+----------------------------- Captured stdout call -----------------------------
+[mud-command] Routing alist as alist for Builder
+[mud-command] Deterministic: alist
+------------------------------ Captured log call -------------------------------
+ERROR    engine.mud_commands:mud_commands.py:1884 Unexpected command exception
+Traceback (most recent call last):
+  File "/workspace/smartmud/engine/mud_commands.py", line 1873, in handle_command
+    raw_result = self.command_handlers[cmd_name](character, args, command_text)
+  File "/workspace/smartmud/engine/mud_commands.py", line 3398, in _cmd_builder_nav
+    res = self.builder_service.list_content(character, "area", args)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'BuilderService' object has no attribute 'list_content'
+_________ test_perfstat_reset_keeps_typed_maps_and_rejected_kill_safe __________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_perfstat_reset_keeps_type0')
+
+    def test_perfstat_reset_keeps_typed_maps_and_rejected_kill_safe(tmp_path):
+        rt, cid, ch = _runtime(tmp_path)
+        before_scheduler = rt.performance_counters.get("scheduler_starts")
+        out = rt.command_engine.handle_command(ch, "perfstat reset")
+        assert out.ok, out.narrative
+        assert isinstance(rt.performance_counters["combat_validation_rejection_by_reason"], dict)
+        assert isinstance(rt.combat_runtime.violence_profiler.rows, dict)
+        assert rt.performance_counters.get("scheduler_starts") == before_scheduler
+        assert rt.performance_counters["combat_encounters_active"] == 0
+        assert validate_performance_counter_schema(rt.performance_counters) == (True, "")
+    
+        before_saves = rt.performance_counters.get("character_saves", 0)
+        ch.room_id = "training_yard"
+        rejected = rt.handle_input(cid, "kill borik")
+        assert "Trace ID" not in rejected["output"]
+        assert not rejected["ok"]
+>       assert "protected" in rejected["output"].lower()
+E       AssertionError: assert 'protected' in 'they are not here.'
+E        +  where 'they are not here.' = <built-in method lower of str object at 0x7fabc1c4c4f0>()
+E        +    where <built-in method lower of str object at 0x7fabc1c4c4f0> = 'They are not here.'.lower
+
+tests/test_stale_combat_perf_reset_regression.py:44: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.363 status=ready
+[mud-persistence] Saved character Stale Combat Tester (char_shattered_realms_stale_combat_tester)
+[mud-persistence] Loaded character Stale Combat Tester (char_shattered_realms_stale_combat_tester)
+[mud-persistence] Saved character Stale Combat Tester (char_shattered_realms_stale_combat_tester)
+[mud-persistence] Loaded character Stale Combat Tester (char_shattered_realms_stale_combat_tester)
+[mud-command] Routing perfstat as perfstat for Stale Combat Tester
+[mud-command] Deterministic: perfstat
+[mud-command] Routing kill as kill for Stale Combat Tester
+[mud-command] Deterministic: kill
+____________ test_windows_flee_sequence_projection_and_second_flee _____________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_windows_flee_sequence_pro0')
+
+    def test_windows_flee_sequence_projection_and_second_flee(tmp_path):
+        rt, cid, ch = _runtime(tmp_path)
+        _durable_wolf(rt, ch)
+        assert not rt.combat_runtime.is_actor_in_active_combat(rt.combat_runtime.actor_id_for_character(ch))
+>       assert rt.handle_input(cid, "attack forest wolf")["ok"]
+E       assert False
+
+tests/test_stale_combat_perf_reset_regression.py:89: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.416 status=ready
+[mud-persistence] Saved character Stale Combat Tester (char_shattered_realms_stale_combat_tester)
+[mud-persistence] Loaded character Stale Combat Tester (char_shattered_realms_stale_combat_tester)
+[mud-persistence] Saved character Stale Combat Tester (char_shattered_realms_stale_combat_tester)
+[mud-persistence] Loaded character Stale Combat Tester (char_shattered_realms_stale_combat_tester)
+[mud-command] Routing attack as attack for Stale Combat Tester
+[mud-command] Deterministic: attack
+[combat-start] actor=Stale Combat Tester target=Forest Wolf encounter=enc_98cff2b0723647ad9689fa5b0995514c opening_ms=0
+------------------------------ Captured log call -------------------------------
+ERROR    engine.mud_commands:mud_commands.py:1884 Unexpected command exception
+Traceback (most recent call last):
+  File "/workspace/smartmud/engine/mud_commands.py", line 1873, in handle_command
+    raw_result = self.command_handlers[cmd_name](character, args, command_text)
+  File "/workspace/smartmud/engine/mud_commands.py", line 4223, in _cmd_combat_foundation
+    res = svc.start_player_attack(character, query)
+  File "/workspace/smartmud/engine/combat_runtime.py", line 742, in start_player_attack
+    rr=self._execute_attack(enc, attacker, defender, opening=True)
+  File "/workspace/smartmud/engine/combat_runtime.py", line 1095, in _execute_attack
+    return self._execute_attack_direct(request, attacker, defender)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/smartmud/engine/combat_runtime.py", line 1080, in _execute_attack_direct
+    life = self.lifecycle.process_defeat_or_death(encounter_id=eid, attacker=attacker, defender=defender, trigger_action_id=request.action_id)
+  File "/workspace/smartmud/engine/combat_runtime.py", line 337, in process_defeat_or_death
+    corpse_res = self.create_corpse(transition_id, defender, attacker.actor_id)
+  File "/workspace/smartmud/engine/combat_runtime.py", line 244, in create_corpse
+    corpse = self.runtime.create_corpse(entity_id, death_id=transition_id, killer_actor_id=killer_actor_id, source_system="runtime_lifecycle")
+  File "/workspace/smartmud/engine/mud_runtime.py", line 3850, in create_corpse
+    self._generate_corpse_contents(corpse, ent, ctx)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/workspace/smartmud/engine/mud_runtime.py", line 3863, in _generate_corpse_contents
+    pkt = svc.resolve_loot_table(loot_table, {"source_type":"combat","source_id":str(source_ent.get("template_id")),"source_instance_id":str(ctx.get("death_id") or source_ent.get("entity_id")),"world_id":self.active_world_id or "","world_time":self.get_world_time(self.active_world_id or '').get('total_minutes',0)}, {"recipient_type":"corpse","recipient_id":corpse_id}, seed=str(ctx.get('death_id') or corpse_id))
+  File "/workspace/smartmud/engine/rewards.py", line 161, in resolve_loot_table
+    self.publish("loot_table_resolved", {"loot_table_id":loot_table_id,"reward_packet_id":pid}); return self.get_reward_packet(pid)
+                                                                                                        ~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "/workspace/smartmud/engine/rewards.py", line 284, in get_reward_packet
+    pkt=dict(r); pkt["metadata"]=_loads(pkt.pop("metadata_json"),{}); pkt["eligibility_result"]=pkt["metadata"].get("eligibility_result",{})
+ValueError: dictionary update sequence element #0 has length 35; 2 is required
+=========================== short test summary info ============================
+FAILED tests/test_phase15b20_builder_discovery.py::test_builder_content_query_lists_drafts_without_json_ids
+FAILED tests/test_builder_list_filters_phase4h_hotfix.py::test_alist_defaults_current_and_all_and_id
+FAILED tests/test_builder_list_filters_phase4h_hotfix.py::test_zlist_local_all_area_zone_and_range
+FAILED tests/test_builder_list_filters_phase4h_hotfix.py::test_runtime_rlist_and_rooms_filters_use_active_drafts_after_import
+FAILED tests/test_builder_list_filters_phase4h_hotfix.py::test_rooms_legacy_large_warning_and_placeholders
+FAILED tests/test_phase15b22_builder_usability.py::test_phase15b22_mlist_olist_aligned_and_location_from_room
+FAILED tests/test_phase15b22_builder_usability.py::test_phase15b22_alist_zlist_service_format
+FAILED tests/test_stale_combat_perf_reset_regression.py::test_perfstat_reset_keeps_typed_maps_and_rejected_kill_safe
+FAILED tests/test_stale_combat_perf_reset_regression.py::test_windows_flee_sequence_projection_and_second_flee
+9 failed, 8 passed in 33.21s

@@ -1353,28 +1353,55 @@ def _exit_names(exits: Any) -> list[str]:
     return names
 
 
+def _vnum_tag(obj: Any) -> str:
+    if isinstance(obj, dict):
+        v = obj.get("vnum") or obj.get("legacy_vnum") or obj.get("builder_vnum")
+    else:
+        v = getattr(obj, "vnum", None) or getattr(obj, "legacy_vnum", None) or getattr(obj, "builder_vnum", None)
+    return f"[{v}]" if v not in (None, "") else ""
+
+def _with_vnum(text: str, obj: Any, enabled: bool, *, count_prefix: str = "") -> str:
+    if not enabled:
+        return text
+    tag = _vnum_tag(obj)
+    if not tag:
+        return text
+    return f"{count_prefix}{tag} {text}"
+
 def build_room_document(room: Any, viewer: Any = None) -> DisplayDocument:
+    show_vnums = bool(getattr(viewer, "preferences", {}).get("show_vnums")) if viewer is not None else False
     title = _display_name(getattr(room, "title", "Unknown Room"))
+    room_tag = _vnum_tag(room) if show_vnums else ""
+    if room_tag and room_tag not in title:
+        title = f"{title} {room_tag}"
     doc = DisplayDocument(DisplayIntent.ROOM, title=title, semantic_role="system", title_role="room_name")
     doc.paragraphs.extend(_room_description_paragraphs(room, title))
     visible_entries: list[DisplayEntry] = []
     for player in getattr(room, "players", []) or []:
         text, _ = _entity_text(player)
         if text and (viewer is None or text != getattr(viewer, "name", "")):
-            visible_entries.append(DisplayEntry(text, role="content"))
+            visible_entries.append(DisplayEntry(_with_vnum(text, player, show_vnums), role="content"))
     grouped: "OrderedDict[tuple[Any, ...], list[str]]" = OrderedDict()
-    unique: list[str] = []
+    unique: list[tuple[str, Any]] = []
     for _role_name, seq in (("npc", getattr(room, "npcs", []) or []), ("mob", getattr(room, "mobs", []) or []), ("object", getattr(room, "objects", []) or [])):
         for ent in seq:
             text, _ = _entity_text(ent)
             if not text: continue
             key = presence_group_key(ent)
-            if key is None: unique.append(text)
+            if key is None: unique.append((text, ent))
             else: grouped.setdefault(key, []).append(text)
     for entries in grouped.values():
         text=entries[0]
-        visible_entries.append(DisplayEntry(text, role="content", quantity=len(entries), metadata={"grouped_count": len(entries), "room_group": True}))
-    for text in unique: visible_entries.append(DisplayEntry(text, role="content"))
+        # All entries in the group share the grouping key/template, so use the first
+        # matching room entity as the vnum authority for the presence line.
+        sample = None
+        for _role_name, seq in (("npc", getattr(room, "npcs", []) or []), ("mob", getattr(room, "mobs", []) or []), ("object", getattr(room, "objects", []) or [])):
+            for ent in seq:
+                if _entity_text(ent)[0] == text:
+                    sample = ent; break
+            if sample is not None: break
+        visible_entries.append(DisplayEntry(_with_vnum(text, sample or {}, show_vnums), role="content", quantity=len(entries), metadata={"grouped_count": len(entries), "room_group": True}))
+    for text, ent in unique: visible_entries.append(DisplayEntry(_with_vnum(text, ent, show_vnums), role="content"))
     if visible_entries:
         doc.sections.append(DisplaySection(title="You see:", entries=visible_entries, role="content", title_role="contents_heading"))
     exits = _exit_names(getattr(room, "exits", []) or [])

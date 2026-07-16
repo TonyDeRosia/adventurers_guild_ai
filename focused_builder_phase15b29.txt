@@ -1,0 +1,106 @@
+F.....FFF..                                                              [100%]
+=================================== FAILURES ===================================
+___________ test_builder_content_query_lists_drafts_without_json_ids ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-1/test_builder_content_query_lis0')
+
+    def test_builder_content_query_lists_drafts_without_json_ids(tmp_path):
+        ws = BuilderWorkspace(worlds_dir=tmp_path / "worlds")
+        svc = BuilderService(ws)
+        a = actor()
+        drafts = ws.load("shattered_realms")
+        drafts.setdefault("entities", {})["dire_forest_wolf"] = {"id": "dire_forest_wolf", "name": "Dire Forest Wolf", "vnum": 1501, "level": 8, "race": "wolf", "area_id": "starter_guildlands", "zone_id": "guildhall_crossing", "keywords": ["wolf", "dire"]}
+        drafts.setdefault("items", {})["iron_sword"] = {"id": "iron_sword", "name": "Iron Sword", "vnum": 1301, "item_type": "weapon", "wear_slots": ["main_hand"], "area_id": "starter_guildlands", "zone_id": "guildhall_crossing"}
+        drafts.setdefault("rooms", {})["wolf_den"] = {"id": "wolf_den", "name": "Wolf Den", "vnum": 1002, "area_id": "starter_guildlands", "zone_id": "guildhall_crossing", "exits": {"south": {"target_room_id": "guildhall_crossing_square"}}}
+        ws.save_drafts("shattered_realms", drafts)
+    
+        mlist = svc.list_content(a, "mob", ["wolf"])
+        assert mlist.ok
+>       assert "1501 | dire_forest_wolf | Dire Forest Wolf | 8 | wolf" in mlist.message
+E       AssertionError: assert '1501 | dire_forest_wolf | Dire Forest Wolf | 8 | wolf' in '--------------------------------------------------------\nMob List - Mobiles in Shattered Realms (1 record)\nWorld: s...starter_guildlands  guildhall_crossing  draft   WARN      \n\n--------------------------------------------------------'
+E        +  where '--------------------------------------------------------\nMob List - Mobiles in Shattered Realms (1 record)\nWorld: s...starter_guildlands  guildhall_crossing  draft   WARN      \n\n--------------------------------------------------------' = BuilderResult(ok=True, message='--------------------------------------------------------\nMob List - Mobiles in Shatte... Forest Wolf', 'race': 'wolf', 'vnum': 1501, 'zone_id': 'guildhall_crossing', '_builder_reference_source': 'draft'}}]}).message
+
+tests/test_phase15b20_builder_discovery.py:22: AssertionError
+_____ test_runtime_rlist_and_rooms_filters_use_active_drafts_after_import ______
+
+isolated_builder_world = IsolatedBuilderWorld(world_root=PosixPath('/tmp/pytest-of-root/pytest-1/test_runtime_rlist_and_rooms_f0/worlds'), worl...1a7b0>, database_path=PosixPath('/tmp/pytest-of-root/pytest-1/test_runtime_rlist_and_rooms_f0/user_data/mud_state.db'))
+
+    def test_runtime_rlist_and_rooms_filters_use_active_drafts_after_import(isolated_builder_world):
+        rt, cid = runtime_with_pack(isolated_builder_world)
+    
+        alist = runtime_text(rt, cid, "alist all")
+        assert "starter_guildlands" in alist
+>       assert " | 70 | " in alist
+E       AssertionError: assert ' | 70 | ' in '--------------------------------------------------------\nArea List (11 records)\nWorld: shattered_realms\nArea : non...farers_mug        0      0     0        0       Valid     \n\n--------------------------------------------------------'
+
+tests/test_builder_list_filters_phase4h_hotfix.py:112: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+----------------------------- Captured stdout call -----------------------------
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.762 status=ready
+[mud-persistence] Saved character Runtime Builder (char_shattered_realms_runtime_builder)
+[mud-persistence] Loaded character Runtime Builder (char_shattered_realms_runtime_builder)
+[mud-command] Routing builder as builder for Runtime Builder
+[mud-command] Deterministic: builder
+[mud-persistence] Command history: builder on
+[mud-persistence] Loaded character Runtime Builder (char_shattered_realms_runtime_builder)
+[mud-command] Routing alist as alist for Runtime Builder
+[mud-command] Deterministic: alist
+[mud-persistence] Command history: alist all
+_______________ test_rooms_legacy_large_warning_and_placeholders _______________
+
+isolated_builder_world = IsolatedBuilderWorld(world_root=PosixPath('/tmp/pytest-of-root/pytest-1/test_rooms_legacy_large_warnin0/worlds'), worl...1b620>, database_path=PosixPath('/tmp/pytest-of-root/pytest-1/test_rooms_legacy_large_warnin0/user_data/mud_state.db'))
+
+    def test_rooms_legacy_large_warning_and_placeholders(isolated_builder_world):
+        engine, a = engine_with_pack(isolated_builder_world)
+        drafts = engine.builder.load("shattered_realms")
+        drafts["rooms"]["legacy_room"] = {"id": "legacy_room", "name": "Legacy", "exits": {}, "area_id": "", "zone_id": "", "vnum": None}
+        engine.builder.save_drafts("shattered_realms", drafts)
+        assert "legacy_room" in text(engine, a, "rooms unassigned")
+        assert "Large listing:" in text(engine, a, "rlist all")
+        mlist = text(engine, a, "mlist")
+>       assert "Current zone: guildhall_crossing" in mlist and "mlist 1500-1599" in mlist
+E       AssertionError: assert ('Current zone: guildhall_crossing' in '--------------------------------------------------------\nMob List - Mobiles in Shattered Realms (0 records)\nWorld: ...----------------------------------------------\n\n  (none)\n\n--------------------------------------------------------')
+
+tests/test_builder_list_filters_phase4h_hotfix.py:143: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+----------------------------- Captured stdout call -----------------------------
+[mud-command] Routing rooms as rooms for Builder
+[mud-command] Deterministic: rooms
+[mud-command] Routing rlist as rlist for Builder
+[mud-command] Deterministic: rlist
+[mud-command] Routing mlist as mlist for Builder
+[mud-command] Deterministic: mlist
+__________ test_phase15b22_mlist_olist_aligned_and_location_from_room __________
+
+isolated_builder_world = IsolatedBuilderWorld(world_root=PosixPath('/tmp/pytest-of-root/pytest-1/test_phase15b22_mlist_olist_al0/worlds'), worl...1bcb0>, database_path=PosixPath('/tmp/pytest-of-root/pytest-1/test_phase15b22_mlist_olist_al0/user_data/mud_state.db'))
+
+    def test_phase15b22_mlist_olist_aligned_and_location_from_room(isolated_builder_world):
+        e, a = setup_engine(isolated_builder_world)
+        text = out(e, a, "mlist")
+        assert "Mob List" in text
+        assert "Area : Emberwood" in text
+        assert "Zone : Emberwood Edge" in text
+>       assert "VNUM" in text and "ID" in text and "Lvl" in text
+E       AssertionError: assert ('VNUM' in '--------------------------------------------------------\nMob List - Mobiles in Shattered Realms (2 records)\nWorld: ...[1505] Young Forest Wolf                            [   2]\n\n--------------------------------------------------------')
+
+tests/test_phase15b22_builder_usability.py:35: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+----------------------------- Captured stdout call -----------------------------
+[mud-command] Routing mlist as mlist for Builder
+[mud-command] Deterministic: mlist
+=========================== short test summary info ============================
+FAILED tests/test_phase15b20_builder_discovery.py::test_builder_content_query_lists_drafts_without_json_ids
+FAILED tests/test_builder_list_filters_phase4h_hotfix.py::test_runtime_rlist_and_rooms_filters_use_active_drafts_after_import
+FAILED tests/test_builder_list_filters_phase4h_hotfix.py::test_rooms_legacy_large_warning_and_placeholders
+FAILED tests/test_phase15b22_builder_usability.py::test_phase15b22_mlist_olist_aligned_and_location_from_room
+4 failed, 7 passed in 25.52s

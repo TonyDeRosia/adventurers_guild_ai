@@ -938,18 +938,7 @@ class BuilderContentQueryService:
         records = self.service.resolve_collection_records(actor, collection, scratch=scratch)
         aux = {k: self.service.resolve_collection_records(actor, k) for k in ("spawns", "resets", "quest_definitions")}
         rows = [self._record(collection, oid, rec, aux) for oid, rec in records.items() if isinstance(rec, dict)]
-        rows = sorted(rows, key=lambda r: (r.legacy_vnum is None, r.legacy_vnum or 999999999, r.canonical_id))
-        ranges = {"rooms": (1000, 1299), "items": (1300, 1499), "entities": (1500, 1699), "spawns": (1700, 1799), "resets": (1700, 1799)}
-        if collection in ranges:
-            used = {int(r.legacy_vnum) for r in rows if r.legacy_vnum is not None}
-            nxt = ranges[collection][0]
-            for r in rows:
-                if r.legacy_vnum is None:
-                    while nxt in used and nxt <= ranges[collection][1]:
-                        nxt += 1
-                    if nxt <= ranges[collection][1]:
-                        r.legacy_vnum = nxt; used.add(nxt); nxt += 1
-        return rows
+        return sorted(rows, key=lambda r: (r.legacy_vnum is None, r.legacy_vnum or 999999999, r.canonical_id))
 
     def _record(self, collection: str, oid: str, rec: dict[str, Any], aux: dict[str, dict[str, dict[str, Any]]]) -> BuilderContentRecord:
         cid = str(rec.get("id") or oid)
@@ -963,7 +952,13 @@ class BuilderContentQueryService:
         spawns = sum(1 for s in aux.get("spawns", {}).values() if self._links(s, cid, collection))
         resets = sum(1 for r in aux.get("resets", {}).values() if self._links(r, cid, collection))
         quests = sum(1 for q in aux.get("quest_definitions", {}).values() if cid in json.dumps(q, sort_keys=True, default=str))
-        return BuilderContentRecord(cid, vnum, str(rec.get("name") or rec.get("title") or cid), collection, str(rec.get("area_id") or rec.get("area") or ""), str(rec.get("zone_id") or rec.get("zone") or ""), status, validation, source, str(rec.get("generation") or rec.get("generation_id") or ""), spawns, resets, len(scripts) if isinstance(scripts, list) else 1, len(rec.get("shop_ids") or []), quests, rec)
+        if collection == "items":
+            display = rec.get("short_description") or rec.get("short_desc") or rec.get("display_name") or rec.get("name") or rec.get("title") or cid
+        elif collection == "entities":
+            display = rec.get("short_description") or rec.get("display_name") or rec.get("name") or rec.get("title") or cid
+        else:
+            display = rec.get("title") or rec.get("name") or rec.get("display_name") or cid
+        return BuilderContentRecord(cid, vnum, str(display), collection, str(rec.get("area_id") or rec.get("area") or ""), str(rec.get("zone_id") or rec.get("zone") or ""), status, validation, source, str(rec.get("generation") or rec.get("generation_id") or ""), spawns, resets, len(scripts) if isinstance(scripts, list) else 1, len(rec.get("shop_ids") or []), quests, rec)
 
     def _links(self, rec: dict[str, Any], cid: str, collection: str) -> bool:
         keys = {"entities": ("mobile_id","mob_id","entity_id","template_id"), "items": ("object_id","item_id","item_template_id"), "rooms": ("room_id","target_room_id")}.get(collection, ())
@@ -1566,6 +1561,37 @@ class BuilderService:
         fmt = "  ".join("{:<" + str(w) + "}" for w in widths)
         return "\n".join([fmt.format(*headers), "  ".join("-" * w for w in widths)] + [fmt.format(*[str(c) for c in row]) for row in rows])
 
+    def _vnum_cell(self, vnum: int | None) -> str:
+        return f"[{int(vnum):4d}]" if vnum is not None else "[-----]"
+
+    def _oasis_brief_table(self, kind: str, rows: list[BuilderContentRecord], start_index: int) -> str:
+        if not rows:
+            return "  (none)"
+        if kind == "mob":
+            lines = ["Index VNum    Mobile Name                                  Level", "----- ------- -------------------------------------------- -----"]
+            for n, r in enumerate(rows, start_index):
+                lvl = r.record.get("level", "")
+                meta = f"[{int(lvl):4d}]" if str(lvl).isdigit() else "[    ]"
+                lines.append(f"{n:4d}) {self._vnum_cell(r.legacy_vnum)} {r.display_name:<44.44} {meta}")
+            return "\n".join(lines)
+        if kind == "object":
+            lines = ["Index VNum    Object Name                                  Object Type", "----- ------- -------------------------------------------- ----------------"]
+            for n, r in enumerate(rows, start_index):
+                typ = r.record.get("item_type") or r.record.get("type") or ""
+                lines.append(f"{n:4d}) {self._vnum_cell(r.legacy_vnum)} {r.display_name:<44.44} [{typ}]")
+            return "\n".join(lines)
+        if kind == "room":
+            lines = ["Index VNum    Room Name                                    Exits", "----- ------- -------------------------------------------- -----"]
+            order = ["north", "south", "west", "east", "up", "down", "in", "out"]
+            abbr = {"north":"n","south":"s","west":"w","east":"e","up":"u","down":"d","in":"i","out":"o"}
+            for n, r in enumerate(rows, start_index):
+                exits = r.record.get("exits") or {}
+                keys = list(exits.keys()) if isinstance(exits, dict) else [str((x or {}).get("direction") or x) for x in exits] if isinstance(exits, list) else []
+                exit_text = "".join(abbr[k] for k in order if k in keys)
+                lines.append(f"{n:4d}) {self._vnum_cell(r.legacy_vnum)} {r.display_name:<44.44} {exit_text}")
+            return "\n".join(lines)
+        return ""
+
     def _builder_list_header(self, title: str, total: int, world_id: str, area_id: str, zone_id: str, room_id: str, page: int, pages: int) -> list[str]:
         rule = "-" * 56
         areas = self.workspace.load(world_id).get("areas", {})
@@ -1612,22 +1638,25 @@ class BuilderService:
         table_rows: list[list[str]] = []
         if kind == "mob":
             if detail_mode == "brief":
-                headers = ["Num","VNUM","Name","Lvl"]
-                for n, r in enumerate(shown, (page-1)*per+1): table_rows.append([n, r.legacy_vnum if r.legacy_vnum is not None else "----", r.display_name, r.record.get("level", "")])
+                headers = []
+                table_text = self._oasis_brief_table(kind, shown, (page-1)*per+1)
             else:
                 headers = ["VNUM","ID","Name","Lvl","Area","Zone","Source","Validation"]
-                for r in shown: table_rows.append([r.legacy_vnum if r.legacy_vnum is not None else "----", r.canonical_id, r.display_name, r.record.get("level", ""), r.area, r.zone, r.content_source, self._validation_text(r) if detail_mode == "verbose" else self._status_code(r)])
+                for r in shown: table_rows.append([self._vnum_cell(r.legacy_vnum), r.canonical_id, r.display_name, r.record.get("level", ""), r.area, r.zone, r.content_source, self._validation_text(r) if detail_mode == "verbose" else self._status_code(r)])
         elif kind == "object":
             if detail_mode == "brief":
-                headers = ["Num","VNUM","Name","Type"]
-                for n, r in enumerate(shown, (page-1)*per+1): table_rows.append([n, r.legacy_vnum if r.legacy_vnum is not None else "----", r.display_name, r.record.get("item_type") or r.record.get("type", "")])
+                headers = []
+                table_text = self._oasis_brief_table(kind, shown, (page-1)*per+1)
             else:
                 headers = ["VNUM","ID","Name","Type","Wear","Area","Zone","Status"]
-                for r in shown: table_rows.append([r.legacy_vnum if r.legacy_vnum is not None else "----", r.canonical_id, r.display_name, r.record.get("item_type") or r.record.get("type", ""), ",".join(r.record.get("wear_slots") or r.record.get("wear_flags") or []), r.area, r.zone, self._validation_text(r) if detail_mode == "verbose" else self._status_code(r)])
+                for r in shown: table_rows.append([self._vnum_cell(r.legacy_vnum), r.canonical_id, r.display_name, r.record.get("item_type") or r.record.get("type", ""), ",".join(r.record.get("wear_slots") or r.record.get("wear_flags") or []), r.area, r.zone, self._validation_text(r) if detail_mode == "verbose" else self._status_code(r)])
         elif kind == "room":
-            headers = ["VNUM","ID","Title","Area","Zone","Flags","Exits"]
-            for r in shown: table_rows.append([r.legacy_vnum if r.legacy_vnum is not None else "----", r.canonical_id, r.display_name, r.area, r.zone, ",".join(r.record.get("flags") or []), len(r.record.get("exits") or {})])
-            room_legacy = [f"{r.legacy_vnum if r.legacy_vnum is not None else '----'} | {r.canonical_id} | {r.display_name} | {r.area} | {r.zone} | {len(r.record.get('exits') or {})}" for r in shown]
+            if detail_mode == "brief":
+                headers = []
+                table_text = self._oasis_brief_table(kind, shown, (page-1)*per+1)
+            else:
+                headers = ["VNUM","ID","Title","Area","Zone","Flags","Exits"]
+                for r in shown: table_rows.append([self._vnum_cell(r.legacy_vnum), r.canonical_id, r.display_name, r.area, r.zone, ",".join(r.record.get("flags") or []), len(r.record.get("exits") or {})])
         elif kind == "area":
             headers = ["Area name","ID","Rooms","Mobs","Objects","Resets","Validation"]
             all_rooms = self.resolve_collection_records(actor, "rooms")
@@ -1651,7 +1680,7 @@ class BuilderService:
                 table_rows.append([zid, f"{rec.get('vnum_start','')}-{rec.get('vnum_end','')}", sum(1 for x in all_rooms.values() if x.get("zone_id") == zid), sum(1 for x in all_mobs.values() if x.get("zone_id") == zid), sum(1 for x in all_objs.values() if x.get("zone_id") == zid), sum(1 for x in all_spawns.values() if x.get("zone_id") == zid or zid in json.dumps(x, default=str)), sum(1 for x in all_resets.values() if x.get("zone_id") == zid or zid in json.dumps(x, default=str))])
         else:
             headers = ["VNUM","ID","Name","Type","Area","Zone","Source","Status"]
-            for r in shown: table_rows.append([r.legacy_vnum if r.legacy_vnum is not None else "----", r.canonical_id, r.display_name, r.type, r.area, r.zone, r.content_source, self._validation_text(r) if detail_mode == "verbose" else self._status_code(r)])
+            for r in shown: table_rows.append([self._vnum_cell(r.legacy_vnum), r.canonical_id, r.display_name, r.type, r.area, r.zone, r.content_source, self._validation_text(r) if detail_mode == "verbose" else self._status_code(r)])
         # Hide columns that are entirely blank/dash except for identity essentials.
         keep=[]
         for i,h in enumerate(headers):
@@ -1673,24 +1702,8 @@ class BuilderService:
             lines += ["Zone detail:", f"room_ids count: {len(shown[0].record.get('room_ids') or [])}"]
         if kind == "area" and mode == "current":
             lines.append('Use "alist all" to list all areas.')
-        if kind in {"mob", "object"} and detail_mode == "brief":
-            title_line = " Mobiles (Mob List)" if kind == "mob" else " Objects (Object List)"
-            header = self._builder_list_header("Mob List" if kind == "mob" else "Object List", total, world_id, cur_area, cur_zone, cur_room, page, pages)
-            legacy = []
-            if kind == "mob":
-                legacy = [f"{r.legacy_vnum if r.legacy_vnum is not None else '----'} | {r.canonical_id} | {r.display_name} | {r.record.get('level','')} | {r.record.get('race') or r.record.get('type','')}" for r in shown]
-            elif kind == "object":
-                legacy = [f"{r.legacy_vnum if r.legacy_vnum is not None else '----'} | {r.canonical_id} | {r.display_name} | {r.record.get('item_type') or r.record.get('type','')} | {','.join(r.record.get('wear_slots') or r.record.get('wear_flags') or [])}" for r in shown]
-            lines = header + ["ID: use detail mode for canonical IDs", "", title_line, "", self._table(headers, table_rows)] + legacy + ["", f" {total} {'mobiles' if kind == 'mob' else 'objects'} found."]
-        elif kind == "room" and 'room_legacy' in locals():
-            lines += ["", self._table(headers, table_rows)] + room_legacy + ["", "-" * 56]
-        elif kind in {"mob", "object"} and detail_mode != "brief":
-            legacy = []
-            if kind == "mob":
-                legacy = [f"{r.legacy_vnum if r.legacy_vnum is not None else '----'} | {r.canonical_id} | {r.display_name} | {r.record.get('level','')} | {r.record.get('race') or r.record.get('type','')}" for r in shown]
-            elif kind == "object":
-                legacy = [f"{r.legacy_vnum if r.legacy_vnum is not None else '----'} | {r.canonical_id} | {r.display_name} | {r.record.get('item_type') or r.record.get('type','')} | {','.join(r.record.get('wear_slots') or r.record.get('wear_flags') or [])}" for r in shown]
-            lines += ["", self._table(headers, table_rows)] + legacy + ["", "-" * 56]
+        if kind in {"mob", "object", "room"} and detail_mode == "brief":
+            lines += ["", table_text, "", "-" * 56]
         else:
             lines += ["", self._table(headers, table_rows), "", "-" * 56]
         return BuilderResult(True, "\n".join(lines), {"total": total, "rows": [r.__dict__ for r in shown]})

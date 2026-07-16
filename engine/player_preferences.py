@@ -16,6 +16,7 @@ class PlayerPresentationPreferences:
     prompt_template: str | None = None
     display_theme: str | None = None
     display_width: int | None = None
+    show_vnums: bool | None = None
 
 class PlayerPresentationPreferenceService:
     def __init__(self, db_path: str | Path):
@@ -30,6 +31,7 @@ class PlayerPresentationPreferenceService:
                 prompt_template TEXT,
                 display_theme TEXT,
                 display_width INTEGER,
+                show_vnums INTEGER,
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP
             )""")
 
@@ -44,19 +46,25 @@ class PlayerPresentationPreferenceService:
         if theme and not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", theme): theme = None
         template = raw.get("prompt_template")
         template = str(template) if template not in (None, "") else None
-        return {"prompt_preset": preset, "prompt_template": template, "display_theme": theme, "display_width": width}
+        show_vnums = raw.get("show_vnums")
+        if show_vnums is not None: show_vnums = bool(show_vnums)
+        return {"prompt_preset": preset, "prompt_template": template, "display_theme": theme, "display_width": width, "show_vnums": show_vnums}
 
     def load(self, character_id: str) -> PlayerPresentationPreferences:
         with sqlite3.connect(self.db_path) as con:
-            row = con.execute("SELECT prompt_preset,prompt_template,display_theme,display_width FROM character_presentation_preferences WHERE character_id=?", (character_id,)).fetchone()
-        repaired = self._repair(dict(zip(("prompt_preset","prompt_template","display_theme","display_width"), row)) if row else {})
+            try:
+                con.execute("ALTER TABLE character_presentation_preferences ADD COLUMN show_vnums INTEGER")
+            except sqlite3.OperationalError:
+                pass
+            row = con.execute("SELECT prompt_preset,prompt_template,display_theme,display_width,show_vnums FROM character_presentation_preferences WHERE character_id=?", (character_id,)).fetchone()
+        repaired = self._repair(dict(zip(("prompt_preset","prompt_template","display_theme","display_width","show_vnums"), row)) if row else {})
         return PlayerPresentationPreferences(character_id, **repaired)
 
     def apply_to_character(self, character: Any) -> PlayerPresentationPreferences:
         cid = str(getattr(character, "id", getattr(character, "character_id", "")))
         prefs = self.load(cid)
         store = getattr(character, "preferences", None) or {}
-        for k in ("prompt_preset", "prompt_template", "display_theme", "display_width"):
+        for k in ("prompt_preset", "prompt_template", "display_theme", "display_width", "show_vnums"):
             v = getattr(prefs, k)
             if v is not None: store[k] = v; setattr(character, k, v)
             elif k in store: store.pop(k, None); setattr(character, k, None)
@@ -65,14 +73,18 @@ class PlayerPresentationPreferenceService:
 
     def save(self, character_id: str, **values: Any) -> PlayerPresentationPreferences:
         current = self.load(character_id)
-        raw = {"prompt_preset": current.prompt_preset, "prompt_template": current.prompt_template, "display_theme": current.display_theme, "display_width": current.display_width}
+        raw = {"prompt_preset": current.prompt_preset, "prompt_template": current.prompt_template, "display_theme": current.display_theme, "display_width": current.display_width, "show_vnums": current.show_vnums}
         raw.update(values)
         repaired = self._repair(raw)
         with sqlite3.connect(self.db_path) as con:
-            con.execute("""INSERT INTO character_presentation_preferences(character_id,prompt_preset,prompt_template,display_theme,display_width,updated_at)
-                           VALUES(?,?,?,?,?,CURRENT_TIMESTAMP)
-                           ON CONFLICT(character_id) DO UPDATE SET prompt_preset=excluded.prompt_preset,prompt_template=excluded.prompt_template,display_theme=excluded.display_theme,display_width=excluded.display_width,updated_at=CURRENT_TIMESTAMP""",
-                        (character_id, repaired["prompt_preset"], repaired["prompt_template"], repaired["display_theme"], repaired["display_width"]))
+            try:
+                con.execute("ALTER TABLE character_presentation_preferences ADD COLUMN show_vnums INTEGER")
+            except sqlite3.OperationalError:
+                pass
+            con.execute("""INSERT INTO character_presentation_preferences(character_id,prompt_preset,prompt_template,display_theme,display_width,show_vnums,updated_at)
+                           VALUES(?,?,?,?,?,?,CURRENT_TIMESTAMP)
+                           ON CONFLICT(character_id) DO UPDATE SET prompt_preset=excluded.prompt_preset,prompt_template=excluded.prompt_template,display_theme=excluded.display_theme,display_width=excluded.display_width,show_vnums=excluded.show_vnums,updated_at=CURRENT_TIMESTAMP""",
+                        (character_id, repaired["prompt_preset"], repaired["prompt_template"], repaired["display_theme"], repaired["display_width"], 1 if repaired.get("show_vnums") else 0 if repaired.get("show_vnums") is not None else None))
         return PlayerPresentationPreferences(character_id, **repaired)
 
     def reset_prompt(self, character_id: str) -> PlayerPresentationPreferences:
