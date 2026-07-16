@@ -2249,8 +2249,12 @@ class MudRuntime:
         if ent is not None:
             ent["room_id"] = destination; ent["current_room_id"] = destination
             self.resident_entities_by_actor_id[actor_id] = dict(ent)
+            eid = actor_id.split(":", 1)[1]
+            if getattr(self, "state_store", None) is not None and getattr(self.state_store, "db_path", None):
+                with sqlite3.connect(self.state_store.db_path) as conn:
+                    conn.execute("UPDATE entity_instances SET current_room_id=?, owner_type='room', updated_at=? WHERE entity_id=? AND destroyed_at IS NULL", (destination, datetime.now(timezone.utc).isoformat(), eid))
             if hasattr(self.combat_runtime, "dirty_resident_entities"):
-                self.combat_runtime.dirty_resident_entities.add(actor_id.split(":", 1)[1])
+                self.combat_runtime.dirty_resident_entities.add(eid)
         self.add_occupant(destination, actor_id)
         if old_room and old_room != destination:
             direction = str(movement_context.get("direction") or source or "away")
