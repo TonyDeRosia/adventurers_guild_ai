@@ -1807,7 +1807,8 @@ class MudCommandEngine:
             choices = self.registry.resolve(raw_cmd_name)[1].split(":",1)[1].strip()
             return CommandResult(narrative=f"Which command did you mean? {choices}", ok=False)
         args = cmd_tokens[1:]
-        if getattr(self, "builder_service", None) and self.builder_service.sessions.has(character) and raw_cmd_name not in {"say", "tell"}:
+        builder_passthrough = {"look", "l", "examine", "exa", "consider", "con", "diagnose", "target", "kill", "attack", "builder"}
+        if getattr(self, "builder_service", None) and self.builder_service.sessions.has(character) and raw_cmd_name not in {"say", "tell"} and raw_cmd_name not in builder_passthrough:
             res = self.builder_service.sessions.handle(character, command_text)
             return CommandResult(narrative=res.message, ok=res.ok)
         self._publish("command_received", character, command_text, raw_input=command_text, canonical_command=raw_cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""))
@@ -3720,9 +3721,14 @@ class MudCommandEngine:
             res = self.builder.export(character); self.builder.publish("builder_export_completed", character, self.builder.world_id(character), "export", sub, command=raw)
             self.builder.audit(character, self.builder.world_id(character), f"builder {sub}", "export", sub, None, res.data or {})
             return CommandResult(narrative=res.message + "\n" + self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))), ok=res.ok)
-        if sub == "testroom":
-            setattr(character, "builder_test_room_id", f"builder_test_{getattr(character,'id','builder')}")
-            return CommandResult(narrative=f"Entered private Builder test room {getattr(character,'builder_test_room_id')}.")
+        if sub in {"testroom", "testenter"}:
+            res = self.builder_service.testroom(character); return CommandResult(narrative=res.message, ok=res.ok)
+        if sub == "testexit":
+            res = self.builder_service.testexit(character); return CommandResult(narrative=res.message, ok=res.ok)
+        if sub == "testreset":
+            res = self.builder_service.testreset(character); return CommandResult(narrative=res.message, ok=res.ok)
+        if sub == "teststatus":
+            res = self.builder_service.teststatus(character); return CommandResult(narrative=res.message, ok=res.ok)
         if sub == "testclear":
             res = self.builder_service.testclear(character); return CommandResult(narrative=res.message, ok=res.ok)
         if sub == "testspawn":

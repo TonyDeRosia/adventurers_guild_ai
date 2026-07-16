@@ -906,9 +906,18 @@ class BuilderSessionManager:
 
 class BuilderService:
     """Canonical draft-first builder facade used by commands, OLC, importers, and future UI."""
-    def __init__(self, workspace: BuilderWorkspace | None = None) -> None:
+    def __init__(self, workspace: BuilderWorkspace | None = None, runtime: Any | None = None) -> None:
         self.workspace = workspace or BuilderWorkspace()
+        self.runtime = runtime
         self.sessions = BuilderSessionManager(self)
+
+    def attach_runtime(self, runtime: Any) -> None:
+        self.runtime = runtime
+
+    def _runtime_required(self) -> Any:
+        if self.runtime is None:
+            raise RuntimeError("BuilderService requires an attached MudRuntime for live runtime operations.")
+        return self.runtime
 
     def _record(self, world_id: str, collection: str, object_id: str) -> dict[str, Any] | None:
         rec = self.workspace.load(world_id).get(collection, {}).get(object_id)
@@ -1002,9 +1011,11 @@ class BuilderService:
             cp["natural_weapons"] = [_canonical_weapon(x, object_id) for x in raw if isinstance(x, dict)]
             updates["combat_profile"] = cp
         if "natural_weapons" in updates:
+            top_weapons = updates.pop("natural_weapons")
             cp = dict(updates.get("combat_profile") or {})
-            cp["natural_weapons"] = [_canonical_weapon(x, object_id) for x in updates.pop("natural_weapons") if isinstance(x, dict)]
-            updates["combat_profile"] = cp
+            if "natural_weapons" not in cp:
+                cp["natural_weapons"] = [_canonical_weapon(x, object_id) for x in top_weapons if isinstance(x, dict)]
+                updates["combat_profile"] = cp
         if isinstance(updates.get("combat_profile"), dict) and "natural_weapons" in updates["combat_profile"]:
             cp = dict(updates["combat_profile"])
             cp["natural_weapons"] = [_canonical_weapon(x, object_id) for x in cp.get("natural_weapons") or [] if isinstance(x, dict)]
@@ -1106,7 +1117,7 @@ class BuilderService:
             for fld in ("id","name"):
                 if not rec.get(fld): issues.append({"severity":"error","code":"required_field","collection":collection,"object_id":object_id,"field_path":fld,"message":f"{fld} is required.","fix_hint":f"Set {fld}."})
             if rec.get("natural_attacks") is not None: issues.append({"severity":"error","code":"deprecated_field","collection":collection,"object_id":object_id,"field_path":"natural_attacks","message":"natural_attacks is deprecated; use combat_profile.natural_weapons.","fix_hint":"Run migration or save through BuilderService."})
-            weapons=(rec.get("combat_profile") or {}).get("natural_weapons") or []
+            weapons=[_canonical_weapon(w, object_id) for w in ((rec.get("combat_profile") or {}).get("natural_weapons") or []) if isinstance(w, dict)]
             if not weapons: issues.append({"severity":"warning","code":"no_natural_weapons","collection":collection,"object_id":object_id,"field_path":"combat_profile.natural_weapons","message":"Mob has no natural weapons.","fix_hint":"Add at least one non-humanoid natural weapon."})
             for i,w in enumerate(weapons):
                 for fld in ("id","mechanical_family","noun_plural","verb_third_person","damage_type","damage_dice","selection_weight"):
@@ -1162,6 +1173,9 @@ class BuilderService:
         for key, filename in DRAFT_FILES.items():
             registries[key] = self.workspace._coerce_draft_collection(key, filename, self.workspace._read(gen_dir / filename, {}))
         registries["entities"] = {oid: MobileTemplate.from_generation(rec).to_canonical_dict() for oid, rec in registries.get("entities", {}).items() if isinstance(rec, dict)}
+        previous = getattr(self.runtime, "active_content_generation_id", None) or previous
+        if self.runtime is not None:
+            self.runtime.activate_content_generation(generation_id, registries)
         self.previous_content_generation_id = previous
         self.active_content_generation_id = generation_id
         self.active_content_generation = registries
@@ -1175,8 +1189,9 @@ class BuilderService:
         if not prev: return BuilderResult(False, "No previous generation is recorded for rollback.")
         return self.activate_generation(actor, prev)
 
-    def body_profiles(self) -> list[str]:
-        return sorted((self.workspace.load("shattered_realms").get("body_profiles") or {}).keys())
+    def body_profiles(self, actor: Any | None = None) -> list[str]:
+        world_id = self.workspace.world_id(actor) if actor is not None else (getattr(self.runtime, "active_world_id", "") or "shattered_realms")
+        return sorted((self.workspace.load(world_id).get("body_profiles") or {}).keys())
     def apply_body_profile(self, actor: Any, mob_id: str, profile: str) -> BuilderResult:
         world_id=self.workspace.world_id(actor); drafts=self.workspace.load(world_id); prof=profile.lower(); bp=(drafts.get("body_profiles") or {}).get(prof)
         if not bp: return BuilderResult(False, "Unknown body profile. Choose: " + ", ".join(sorted(drafts.get("body_profiles",{}))))
@@ -1204,9 +1219,15 @@ class BuilderService:
             return BuilderResult(True, "Updated session scratch.\n" + self.render_session(sess))
         if parts and parts[0].lower() == "body" and len(parts) > 1:
             drafts = self.workspace.load(sess.world_id); profile = parts[1].lower(); bp = (drafts.get("body_profiles") or {}).get(profile)
-            if not bp: return BuilderResult(False, "Unknown body profile. Choose: " + ", ".join(sorted(drafts.get("body_profiles", {}))))
-            weapons = [deepcopy((drafts.get("natural_weapon_profiles") or {}).get(wid)) for wid in bp.get("suggested_natural_weapon_ids", [])]
-            weapons = [_canonical_weapon(w, sess.object_id) for w in weapons if isinstance(w, dict)]
+            if profile in BODY_PROFILE_ATTACKS:
+                weapons = [_canonical_weapon({**w, "id": f"{sess.object_id}_{w.get('family')}"}, sess.object_id) for w in BODY_PROFILE_ATTACKS[profile]]
+            elif bp:
+                weapons = [deepcopy((drafts.get("natural_weapon_profiles") or {}).get(wid)) for wid in bp.get("suggested_natural_weapon_ids", [])]
+                weapons = [_canonical_weapon(w, sess.object_id) for w in weapons if isinstance(w, dict)]
+            else:
+                return BuilderResult(False, "Unknown body profile. Choose: " + ", ".join(sorted(set(drafts.get("body_profiles", {})) | set(BODY_PROFILE_ATTACKS))))
+            sess.working_record.pop("natural_weapons", None)
+            sess.working_record.pop("natural_attacks", None)
             sess.working_record["body_profile_id"] = profile
             sess.working_record.setdefault("combat_profile", {})["body_profile"] = profile
             sess.working_record.setdefault("combat_profile", {})["natural_weapons"] = weapons
@@ -1230,7 +1251,7 @@ class BuilderService:
         if sess.section == "natural_weapons":
             parts = text.split()
             if not parts or parts[0].lower() in {"list", "l"}: return BuilderResult(True, self.render_session(sess))
-            rec = self._record(sess.world_id, sess.collection, sess.object_id) or {"id": sess.object_id}; weapons = list((rec.get("combat_profile") or {}).get("natural_weapons") or [])
+            rec = sess.working_record or {"id": sess.object_id}; weapons = list((rec.get("combat_profile") or {}).get("natural_weapons") or [])
             if parts[0].lower() == "add" and len(parts) >= 2:
                 wid=parts[1]; weapons.append(_canonical_weapon({"id": wid, "family": wid.split("_")[-1]}, wid))
             elif parts[0].lower() == "delete" and len(parts) >= 2:
@@ -1271,7 +1292,39 @@ class BuilderService:
         body = "\n".join(f"{i+1}. {r['label']} [{r['id']}]" for i, r in enumerate(rows)) if rows else "- none"
         return BuilderResult(True, "Picker choices:\n" + body, {"choices": rows})
 
+    def testroom(self, actor: Any) -> BuilderResult:
+        rt = self._runtime_required()
+        room_id = rt.ensure_builder_test_room(actor)
+        old_room = getattr(actor, "room_id", "")
+        setattr(actor, "builder_test_return_room_id", old_room)
+        setattr(actor, "room_id", room_id)
+        if hasattr(rt, "move_occupant"):
+            rt.move_occupant(f"character:{getattr(actor, 'id', '')}", old_room, room_id)
+        return BuilderResult(True, f"Entered private Builder test room {room_id}.", {"room_id": room_id})
+
+    def testenter(self, actor: Any) -> BuilderResult:
+        return self.testroom(actor)
+
+    def testexit(self, actor: Any) -> BuilderResult:
+        rt = self._runtime_required()
+        room_id = getattr(actor, "builder_test_return_room_id", "") or getattr(rt, "default_room_id", "guildhall_crossing_square")
+        old_room = getattr(actor, "room_id", "")
+        setattr(actor, "room_id", room_id)
+        rt.move_occupant(f"character:{getattr(actor, 'id', '')}", old_room, room_id)
+        return BuilderResult(True, f"Returned from private Builder test room to {room_id}.", {"room_id": room_id})
+
+    def testreset(self, actor: Any) -> BuilderResult:
+        clear = self.testclear(actor)
+        room = self.testroom(actor)
+        return BuilderResult(clear.ok and room.ok, clear.message + "\n" + room.message, room.data)
+
+    def teststatus(self, actor: Any) -> BuilderResult:
+        rt = self._runtime_required()
+        env = getattr(rt, "builder_test_environments", {}).get(str(getattr(actor, "id", "")), {})
+        return BuilderResult(True, "Builder test environment status: " + (json.dumps(env, sort_keys=True) if env else "inactive"), {"environment": env})
+
     def testspawn(self, actor: Any, mob_id: str) -> BuilderResult:
+        rt = self._runtime_required()
         sess = self.sessions.active.get(self.sessions.actor_key(actor))
         rec = deepcopy(sess.working_record) if sess and sess.collection == "entities" and sess.object_id == mob_id else deepcopy(self._record(self.workspace.world_id(actor), "entities", mob_id) or {})
         if not rec:
@@ -1281,39 +1334,17 @@ class BuilderService:
         errors = [i for i in issues if i.get("blocking") or i.get("severity") == "error"]
         if errors:
             return BuilderResult(False, "Cannot testspawn invalid draft.\n" + "\n".join(f"error: {e.get('field_path')} {e.get('message')}" for e in errors), {"issues": issues})
-        room_id = f"builder_test_{getattr(actor, 'account_id', 'acct')}_{getattr(actor, 'id', 'builder')}"
-        env_id = f"env_{getattr(actor, 'id', 'builder')}"
-        instance_id = f"testspawn_{mob_id}_{self.workspace.stamp()}"
-        rp = tmpl.to_runtime_projection()
-        mob = {
-            "id": instance_id, "template_id": mob_id, "name": rp.get("name") or mob_id.replace("_", " ").title(),
-            "room_id": room_id, "actor_type": "npc", "ephemeral": True, "builder_owned": True, "private": True,
-            "runtime_registered": True, "resident": True, "combat_registered": True, "ai_registered": True,
-            "body_profile_id": rp.get("body_profile_id"), "combat_profile": deepcopy(rp.get("combat_profile") or {}),
-            "attributes": rp.get("attributes"), "resources": rp.get("resources"), "description": rp.get("description"),
-            "generation_id": getattr(self, "active_content_generation_id", None),
-        }
-        envs = dict(getattr(actor, "builder_test_environments", {}) or {})
-        env = envs.get(env_id) or {"test_environment_id": env_id, "owner_account": str(getattr(actor, "account_id", "")), "owner_character": str(getattr(actor, "id", "")), "room_ids": [room_id], "resident_actors": [], "resident_items": [], "active_encounters": [], "timers": [], "corpses": [], "created_at": self.workspace.stamp(), "cleanup_state": "active"}
-        env["resident_actors"] = list(dict.fromkeys(list(env.get("resident_actors") or []) + [instance_id]))
-        env["last_activity"] = self.workspace.stamp(); envs[env_id] = env
-        setattr(actor, "builder_test_environments", envs); setattr(actor, "builder_test_room_id", room_id)
-        spawns = list(getattr(actor, "builder_test_mobs", []) or []); spawns.append(mob); setattr(actor, "builder_test_mobs", spawns)
-        return BuilderResult(True, f"Spawned resident ephemeral draft mob {mob['name']} ({instance_id}) in private Builder testing room {room_id}. LOOK/EXAMINE/CONSIDER/KILL target the resident actor; combat uses authored natural weapons.", {"mob": mob, "room_id": room_id, "environment": env})
+        room_id = rt.ensure_builder_test_room(actor)
+        ent = rt.materialize_entity_template(tmpl.to_canonical_dict(), room_id, ephemeral=True, owner=actor, generation_id=getattr(rt, "active_content_generation_id", None))
+        actor_id = rt.actor_id_for_entity_instance(ent)
+        if actor_id not in rt.combat_runtime.resident_actors or actor_id not in rt.resident_occupants_by_room.get(rt.canonical_room_id(room_id), {}):
+            return BuilderResult(False, "Runtime registration failed for Builder testspawn.")
+        return BuilderResult(True, f"Spawned resident ephemeral draft mob {ent['name']} ({ent['entity_id']}) in private Builder testing room {room_id}.", {"mob": ent, "room_id": room_id, "actor_id": actor_id})
 
     def testclear(self, actor: Any) -> BuilderResult:
-        count = len(getattr(actor, "builder_test_mobs", []) or [])
-        setattr(actor, "builder_test_mobs", [])
-        envs = dict(getattr(actor, "builder_test_environments", {}) or {})
-        for env in envs.values():
-            env["resident_actors"] = []
-            env["resident_items"] = []
-            env["active_encounters"] = []
-            env["timers"] = []
-            env["corpses"] = []
-            env["cleanup_state"] = "cleared"
-        setattr(actor, "builder_test_environments", envs)
-        return BuilderResult(True, f"Cleared {count} resident ephemeral Builder test mob(s), occupancy entries, combat encounters, AI tasks, timers, items, corpses, and private-room state.")
+        rt = self._runtime_required()
+        result = rt.clear_builder_test_environment(actor)
+        return BuilderResult(True, f"Cleared {result.get('actors', 0)} resident ephemeral Builder test actor(s), occupancy entries, combat encounters, AI tasks, timers, items, corpses, async messages, and private-room state.", result)
 
     def menu(self, editor: str, title: str) -> str:
         sections = {
