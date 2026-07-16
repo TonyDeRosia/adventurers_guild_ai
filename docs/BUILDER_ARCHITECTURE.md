@@ -1,35 +1,22 @@
-# Builder architecture status
+# Phase 15B.14C Builder Behavior
 
-Phase 15B.14B converts the previous menu renderer into a canonical BuilderService-centered path for mobile editing.
+This document records the implemented mobile Builder slice for Phase 15B.14C.
 
-## Current architecture before the fix
+## Implemented behavior
 
-The repository had a `BuilderWorkspace` storage layer, a `BuilderService` facade, and command handlers in `engine/mud_commands.py`. The service rendered menus, wrote whole draft collections, tracked advisory locks, and exported generation files. Older builder commands still called workspace helpers directly.
-
-## Implemented architecture
-
-* `BuilderService` is the mutation authority for the new interactive mobile editor, direct natural-weapon edits, clone, publish, activation, testspawn, undo, and redo.
-* `BuilderSessionManager` keeps active `BuilderEditSession` instances in memory and routes subsequent input before normal command dispatch.
-* `medit` is the completed first editor slice for natural weapons, preview, validation, testspawn, save, undo, redo, and quit.
-* Natural weapons are canonical at `combat_profile.natural_weapons`; legacy `natural_attacks` is migrated on load and not persisted as a competing schema.
-* Attack families, body profiles, and natural weapon profiles are editable builder collections rather than Python-only combat suggestions.
-* Mutations require builder permission plus an owned lock unless an admin override is explicit.
-* History records are object-level before/after records instead of whole-world snapshots.
-* Draft records carry `_builder_revision`, and session writes pass an expected revision.
-* Validation returns structured issue records with severity, code, collection, object ID, field path, message, and fix hint.
-* Preview reads the canonical runtime-shaped natural weapon data used by combat adapters.
-* Testspawn materializes an ephemeral resident-like draft mob payload in a private builder room on the actor for runtime command adapters to inspect and clear.
-* Publish writes an immutable generation package with manifest, hashes, schema versions, validation report, migration report hooks, and rollback metadata. Activation is explicit and updates `active.json` only after manifest verification.
-* Live mob update policy: new spawns use the newly activated generation; existing live mobs retain old combat state until death/despawn.
-
-## TBA behavioral audit
-
-The referenced tbaMUD repository is a C codebase with traditional OLC concepts such as descriptor/editor state, scratch copies, menu sections, save confirmation, zone-oriented building, and attack type menus. Smart MUD copies those behaviors at the workflow level while improving with searchable string IDs, typed validation, object history, generation packaging, rollback, private test rooms, and GUI-compatible service APIs. No C code was copied.
+* Mobile editing uses a TBA-style session scratch copy: drafts are loaded into `BuilderEditSession.working_record`, field commands mutate only that scratch record, and `save` validates and persists the object.
+* Dirty quit prompts for save, discard, or cancel. `discard` restores the session savepoint. Session recovery metadata is written under the Builder session state directory.
+* Mobile fields are edited with typed commands for name, keywords, descriptions, level, attributes, resources, body profile, combat references, loot/corpse data, behavior, flags, equipment/loadout references, inventory references, spawn/reset references, and scripts/triggers. Natural weapons keep a richer subsection with add, clone, set, delete, enable/disable, reorder, preview, and validation.
+* `MobileTemplate` is the canonical mobile adapter. It imports legacy `natural_attacks`/top-level `natural_weapons` aliases, persists canonical `combat_profile.natural_weapons`, validates records, emits runtime projections, and computes diffs.
+* Body-profile application uses the active world, not a hard-coded world id. It deep-merges body data into `combat_profile` and appends missing suggested natural weapons without shallow-replacing unrelated combat fields.
+* Locks use an OS-file-lock protected compare-and-set update over `locks.json`. Lock ownership records account id, character id, session id, revision, timestamps, recoverable state, and disconnect state.
+* Saves perform one service-level object transaction: draft update, revision increment, validation result, history entry, audit entry, and session savepoint update are committed through `BuilderService`.
+* Preview uses the same canonical mobile adapter and runtime projection as testspawn, including LOOK, EXAMINE, CONSIDER, combat snapshot, natural weapon list, and sample combat messages.
+* `builder testspawn` creates resident ephemeral actor records in an isolated private test environment structure on the character, including private room id, resident actor registration, occupancy metadata, combat registration flag, AI registration flag, natural weapons, attributes, resources, and cleanup state. `builder testclear` clears resident actors, occupancy, encounters, tasks, timers, corpses, and private-room metadata.
+* Publish builds immutable generation packages with content hashes and a manifest. Activation verifies hashes, normalizes content, builds immutable registries, exposes an in-memory active content generation pointer, records the previous generation, and preserves the existing-live-mob policy that existing actors retain their template projection until death/despawn while new spawns use the active generation.
+* Rollback runs through the same activation path as forward activation.
 
 ## Remaining limitations
 
-This pass makes `medit` real for the natural-weapon/runtime-combat path. `redit`, `oedit`, `aedit`, and `zedit` still need the same full typed section coverage. Some legacy command handlers still use older `BuilderWorkspace` helpers and should be incrementally migrated behind `BuilderService` wrappers.
-
-## Windows manual acceptance
-
-Do not mark Windows acceptance complete until Tony manually runs the requested tests A-E on Windows.
+* The production runtime still needs deeper direct integration points for every live movement/combat registry; this phase exposes the Builder-side resident/runtime projections and generation pointer without changing the combat latency architecture.
+* Windows manual acceptance is not claimed until Tony performs the documented manual tests.
