@@ -1806,6 +1806,18 @@ class MudCommandEngine:
             raw_cmd_name = "combatstats"
         if raw_cmd_name in {".end", ".cancel"}:
             return CommandResult(narrative="No active editor session.", ok=False)
+        if raw_cmd_name == "confirm" and len(cmd_tokens) >= 2 and cmd_tokens[1].lower() == "normalize" and getattr(self, "builder_service", None):
+            self.builder_service.workspace = self.builder
+            res = self.builder_service.normalize_command(character, ["confirm"] + cmd_tokens[2:])
+            return CommandResult(narrative=res.message, ok=res.ok)
+        if raw_cmd_name == "confirm" and len(cmd_tokens) >= 2 and cmd_tokens[1].lower() == "rollback" and getattr(self, "builder_service", None):
+            self.builder_service.workspace = self.builder
+            res = self.builder_service.normalize_command(character, ["rollback"] + cmd_tokens[2:])
+            return CommandResult(narrative=res.message, ok=res.ok)
+        if raw_cmd_name == "q" and getattr(self, "builder_service", None):
+            res = self.builder_service.normalize_command(character, ["q"])
+            if res.ok:
+                return CommandResult(narrative=res.message, ok=res.ok)
         if getattr(self, "builder_service", None) and hasattr(self.builder_service, "continue_picker"):
             pick = self.builder_service.continue_picker(character, command_text)
             if pick is not None:

@@ -1,7 +1,7 @@
 """Safe in-game Builder workspace services for Smart MUD."""
 from __future__ import annotations
 
-import json, shutil, re, os, hashlib, sqlite3
+import json, shutil, re, os, hashlib, sqlite3, time
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
@@ -998,8 +998,15 @@ class BuilderVnumRangeService:
                 continue
         return ""
 
+    def namespace_for(self, kind: str) -> str:
+        return {"rooms": "rooms", "entities": "entities", "items": "items", "spawns": "spawn_reset", "resets": "spawn_reset"}.get(kind, kind)
+
     def range_for(self, kind: str) -> tuple[int, int]:
         return {"rooms": self.ROOM_RANGE, "entities": self.MOBILE_RANGE, "items": self.OBJECT_RANGE, "spawns": self.SPAWN_RESET_RANGE, "resets": self.SPAWN_RESET_RANGE}.get(kind, self.AREA_RANGE)
+
+    def validate_range(self, kind: str) -> tuple[bool, str]:
+        lo, hi = self.range_for(kind)
+        return (lo <= hi, f"{lo}-{hi}")
 
     def in_range(self, kind: str, vnum: int | None) -> bool:
         if vnum is None:
@@ -1655,13 +1662,6 @@ class BuilderService:
         if kind == "area" and mode == "current":
             lines.append('Use "alist all" to list all areas.')
         lines += ["", self._table(headers, table_rows), "", "-" * 56]
-        if detail_mode == "brief" and kind in {"mob", "object", "room"}:
-            legacy = []
-            for r in shown:
-                if kind == "mob": legacy.append(f"{r.legacy_vnum if r.legacy_vnum is not None else '----'} | {r.canonical_id} | {r.display_name} | {r.record.get('level', '')} | {r.record.get('race', '')}")
-                elif kind == "object": legacy.append(f"{r.legacy_vnum if r.legacy_vnum is not None else '----'} | {r.canonical_id} | {r.display_name} | {r.record.get('item_type') or r.record.get('type', '')} | {','.join(r.record.get('wear_slots') or r.record.get('wear_flags') or [])}")
-                elif kind == "room": legacy.append(f"{r.legacy_vnum if r.legacy_vnum is not None else '----'} | {r.canonical_id} | {r.display_name} | {r.area} | {r.zone} | {len(r.record.get('exits') or {})}")
-            if legacy: lines += ["Legacy pipe view:", "VNUM | ID | Name | Lvl/Type | Extra"] + legacy
         return BuilderResult(True, "\n".join(lines), {"total": total, "rows": [r.__dict__ for r in shown]})
 
     def vnum_report(self, actor: Any, args: list[str] | None = None) -> BuilderResult:
@@ -1717,81 +1717,228 @@ class BuilderService:
         records = {k: self.resolve_collection_records(actor, k) for k in ("areas", "zones", "rooms", "entities", "items", "spawns", "resets")}
         return records, drafts
 
-    def _infer_area_zone(self, kind: str, rec: dict[str, Any], records: dict[str, dict[str, dict[str, Any]]]) -> tuple[str, str, str]:
+    def _room_owner(self, room_id: str, records: dict[str, dict[str, dict[str, Any]]]) -> tuple[str, str]:
+        room = (records.get("rooms") or {}).get(str(room_id)) or {}
+        return str(room.get("area_id") or ""), str(room.get("zone_id") or "")
+
+    def _infer_area_zone(self, kind: str, rec: dict[str, Any], records: dict[str, dict[str, dict[str, Any]]]) -> tuple[str, str, str, list[str], list[str]]:
         aid = str(rec.get("area_id") or rec.get("area") or "")
         zid = str(rec.get("zone_id") or rec.get("zone") or "")
-        rooms = records.get("rooms", {})
         zones = records.get("zones", {})
-        room_ref = str(rec.get("room_id") or rec.get("spawn_room_id") or rec.get("reset_room_id") or rec.get("default_room_id") or "")
-        if room_ref and room_ref in rooms:
-            room = rooms[room_ref]; aid = aid or str(room.get("area_id") or ""); zid = zid or str(room.get("zone_id") or "")
+        evidence: list[str] = []
+        conflicts: list[str] = []
+        if aid and zid:
+            if zid in zones and str(zones[zid].get("area_id") or "") not in {"", aid}:
+                conflicts.append(f"zone {zid} belongs to area {zones[zid].get('area_id')}, not {aid}")
+            evidence.append("explicit area_id and zone_id")
+            return aid, zid, "CONFIRMED" if not conflicts else "BLOCKED", evidence, conflicts
+        room_keys = ("room_id", "spawn_room_id", "reset_room_id", "default_room_id", "keeper_room_id", "trainer_room_id", "quest_room_id")
+        owners=[]
+        for key in room_keys:
+            ref = str(rec.get(key) or "")
+            ra, rz = self._room_owner(ref, records) if ref else ("", "")
+            if ra and rz:
+                owners.append((ra, rz, key, ref)); evidence.append(f"{key} references room {ref} with area {ra} and zone {rz}")
+        # scan canonical placements / reset command payloads for room refs
+        for key, val in rec.items():
+            if "room" in str(key).lower() and isinstance(val, str):
+                ra, rz = self._room_owner(val, records)
+                if ra and rz and (ra, rz, key, val) not in owners:
+                    owners.append((ra, rz, key, val)); evidence.append(f"{key} references room {val} with area {ra} and zone {rz}")
+        if owners:
+            zones_seen={(ra,rz) for ra,rz,_,_ in owners}
+            if len(zones_seen)==1:
+                ra, rz, _, _ = owners[0]
+                return aid or ra, zid or rz, "CONFIRMED", evidence, conflicts
+            conflicts += [f"conflicting room ownership {ra}/{rz} from {key}={ref}" for ra,rz,key,ref in owners]
+            return aid, zid, "BLOCKED", evidence, conflicts
         if kind == "rooms":
             v = rec.get("vnum")
             try: v = int(v) if v not in (None, "") else None
             except Exception: v = None
-            zid = zid or self.vnum_ranges.zone_for_room_vnum(zones, v)
-            if zid and zid in zones: aid = aid or str(zones[zid].get("area_id") or self.vnum_ranges.AREA_ID)
-        if zid and not aid and zid in zones: aid = str(zones[zid].get("area_id") or "")
-        if not aid and (kind in {"entities", "items", "spawns", "resets"}): aid = self.vnum_ranges.AREA_ID
-        return aid, zid, "explicit/reference/range" if (aid or zid) else "manual_review"
+            rz = self.vnum_ranges.zone_for_room_vnum(zones, v)
+            if rz and rz in zones:
+                za = str(zones[rz].get("area_id") or "")
+                evidence.append(f"room VNUM {v} falls inside configured zone range {rz}")
+                return aid or za, zid or rz, "CONFIRMED", evidence, conflicts
+        hints=[]
+        txt=" ".join(str(x) for x in (rec.get("id"), rec.get("name"), rec.get("tags")))
+        if txt.strip(): hints.append(f"weak name/tag hint: {txt[:80]}")
+        return aid, zid, "MANUAL_REVIEW", evidence + hints, conflicts
 
     def normalization_plan(self, actor: Any) -> list[dict[str, Any]]:
         records, _drafts = self._normalization_records(actor)
-        used = {k: {int(r.get("vnum", r.get("spawn_vnum"))) for r in records.get(k, {}).values() if str(r.get("vnum", r.get("spawn_vnum", ""))).isdigit()} for k in ("rooms", "entities", "items", "spawns", "resets")}
-        plan = []
+        used_by_ns: dict[str, set[int]] = {}
+        for k in ("rooms", "entities", "items", "spawns", "resets"):
+            ns = self.vnum_ranges.namespace_for(k); used_by_ns.setdefault(ns, set())
+            for r in records.get(k, {}).values():
+                raw = r.get("vnum", r.get("spawn_vnum"))
+                if str(raw).isdigit(): used_by_ns[ns].add(int(raw))
+        plan=[]
         for kind in ("rooms", "items", "entities", "spawns", "resets"):
+            ns=self.vnum_ranges.namespace_for(kind)
             for oid, rec in sorted(records.get(kind, {}).items(), key=lambda kv: (str(kv[1].get("zone_id") or ""), str(kv[0]))):
-                old_v = rec.get("vnum", rec.get("spawn_vnum"))
-                try: old_v_int = int(old_v) if old_v not in (None, "") else None
-                except Exception: old_v_int = None
-                aid, zid, evidence = self._infer_area_zone(kind, rec, records)
-                new_v = old_v_int if self.vnum_ranges.in_range(kind, old_v_int) else self.vnum_ranges.first_free(kind, used[kind])
-                changes = {}
-                if old_v_int != new_v: changes["vnum"] = [old_v_int, new_v]
-                if str(rec.get("area_id") or "") != aid: changes["area_id"] = [rec.get("area_id"), aid]
-                if str(rec.get("zone_id") or "") != zid: changes["zone_id"] = [rec.get("zone_id"), zid]
+                old_v=rec.get("vnum", rec.get("spawn_vnum"))
+                try: old_v_int=int(old_v) if old_v not in (None, "") else None
+                except Exception: old_v_int=None
+                aid,zid,state,evidence,conflicts=self._infer_area_zone(kind, rec, records)
+                valid_range, range_text = self.vnum_ranges.validate_range(kind)
+                if not valid_range:
+                    state="BLOCKED"; conflicts.append(f"invalid configured range {range_text}")
+                if old_v_int is not None and not self.vnum_ranges.in_range(kind, old_v_int):
+                    conflicts.append(f"existing VNUM {old_v_int} is outside configured range {range_text}")
+                new_v = old_v_int if self.vnum_ranges.in_range(kind, old_v_int) else self.vnum_ranges.first_free(kind, used_by_ns[ns])
+                if new_v is None:
+                    state="BLOCKED"; conflicts.append(f"exhausted VNUM range {range_text}; occupied {len(used_by_ns[ns])}")
+                changes={}
+                if old_v_int != new_v: changes["vnum"]=[old_v_int,new_v]
+                if str(rec.get("area_id") or "") != aid: changes["area_id"]=[rec.get("area_id"), aid]
+                if str(rec.get("zone_id") or "") != zid: changes["zone_id"]=[rec.get("zone_id"), zid]
                 if changes:
-                    plan.append({"kind": kind, "id": oid, "name": rec.get("name") or rec.get("title") or oid, "old_vnum": old_v_int, "new_vnum": new_v, "old_area": rec.get("area_id"), "new_area": aid, "old_zone": rec.get("zone_id"), "new_zone": zid, "changes": changes, "reason": evidence, "confidence": "high" if aid and (zid or kind in {"items","entities"}) else "manual_review"})
+                    confidence = state if state in {"CONFIRMED","INFERRED","MANUAL_REVIEW","BLOCKED"} else "MANUAL_REVIEW"
+                    blocking = confidence in {"MANUAL_REVIEW","BLOCKED"}
+                    plan.append({"kind":kind,"id":oid,"name":rec.get("name") or rec.get("title") or oid,"old_vnum":old_v_int,"new_vnum":new_v,"old_area":rec.get("area_id"),"new_area":aid,"old_zone":rec.get("zone_id"),"new_zone":zid,"changes":changes,"reason":"; ".join(evidence) or confidence,"confidence":confidence,"evidence":evidence,"conflicting_evidence":conflicts,"incoming_references":{},"outgoing_references":{},"blocking":blocking,"namespace":ns})
         return plan
 
+    def _plan_hash(self, plan: list[dict[str, Any]]) -> str:
+        import hashlib
+        stable=[{k:v for k,v in p.items() if k not in {"evidence"}} for p in plan]
+        return hashlib.sha256(json.dumps(stable, sort_keys=True, default=str).encode()).hexdigest()
+
+    def _pending_key(self, actor: Any) -> str:
+        return f"{getattr(actor,'account_id','')}:{getattr(actor,'id','')}:{getattr(actor,'session_id','')}:{self.workspace.world_id(actor)}"
+
+    def _snapshot_root(self, world_id: str) -> Path:
+        p=self.workspace.ensure(world_id)/"builder"/"normalization_snapshots"; p.mkdir(parents=True, exist_ok=True); return p
+
+    def _create_normalization_snapshot(self, actor: Any, plan: list[dict[str, Any]], command: str) -> str:
+        world_id=self.workspace.world_id(actor); sid="normalize_"+datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+        root=self._snapshot_root(world_id)/sid; root.mkdir(parents=True, exist_ok=False)
+        drafts=self.workspace.load(world_id); files=[]
+        for coll, fname in DRAFT_FILES.items():
+            if coll in drafts:
+                self.workspace._atomic_json_write(root/fname, drafts.get(coll, {})); files.append(fname)
+        verify=self._verify_issues(actor)
+        manifest={"snapshot_id":sid,"timestamp":datetime.now(timezone.utc).isoformat(),"world_id":world_id,"account_id":str(getattr(actor,'account_id','')),"character_id":str(getattr(actor,'id','')),"command":command,"plan_hash":self._plan_hash(plan),"source_revision_information":{"draft_collections":sorted(drafts)},"files_captured":files,"record_counts":{k:len(v) for k,v in drafts.items() if isinstance(v,dict)},"before_verification_result":{"errors":sum(1 for i in verify if i['blocking']),"issues":verify},"builder_schema_version":"15B.24"}
+        self.workspace._atomic_json_write(root/"manifest.json", manifest)
+        self.workspace._atomic_json_write(root/"reference_indexes.json", {"plan_ids":[p['id'] for p in plan]})
+        self.workspace._atomic_json_write(root/"verification_before.json", manifest["before_verification_result"])
+        return sid
+
+    def _verify_issues(self, actor: Any) -> list[dict[str, Any]]:
+        records,_=self._normalization_records(actor); issues=[]; seen={}
+        def issue(code, coll, oid, path, msg, hint="", blocking=True): issues.append({"code":code,"collection":coll,"id":oid,"field_path":path,"message":msg,"fix_hint":hint,"blocking":blocking})
+        for coll in ("areas","zones","rooms","entities","items","spawns","resets"):
+            ids=set()
+            for oid, rec in records.get(coll,{}).items():
+                if oid in ids: issue("DUPLICATE_ID",coll,oid,"id","Duplicate canonical ID")
+                ids.add(oid)
+                if coll in {"rooms","entities","items","spawns","resets"}:
+                    raw=rec.get("vnum",rec.get("spawn_vnum"))
+                    if not str(raw).isdigit(): issue("MISSING_VNUM",coll,oid,"vnum","Missing numeric VNUM","Run builder normalize plan")
+                    else:
+                        v=int(raw); ns=self.vnum_ranges.namespace_for(coll); seen.setdefault(ns,{}).setdefault(v,[]).append((coll,oid))
+                        if not self.vnum_ranges.in_range(coll,v): issue("OUT_OF_RANGE_VNUM",coll,oid,"vnum",f"VNUM {v} outside configured range {self.vnum_ranges.range_for(coll)}")
+                    if not rec.get("area_id"): issue("MISSING_AREA",coll,oid,"area_id","Missing area ownership")
+                    if coll != "items" and not rec.get("zone_id"): issue("MISSING_ZONE",coll,oid,"zone_id","Missing zone ownership")
+                    zid=str(rec.get("zone_id") or ""); aid=str(rec.get("area_id") or "")
+                    if zid and zid not in records.get("zones",{}): issue("BROKEN_ZONE",coll,oid,"zone_id",f"Zone {zid} does not exist")
+                    if aid and aid not in records.get("areas",{}): issue("BROKEN_AREA",coll,oid,"area_id",f"Area {aid} does not exist")
+                    if zid in records.get("zones",{}) and aid and str(records["zones"][zid].get("area_id") or "") not in {"",aid}: issue("ZONE_AREA_MISMATCH",coll,oid,"zone_id",f"Zone {zid} does not belong to area {aid}")
+        for ns, vals in seen.items():
+            for v, owners in vals.items():
+                if len(owners)>1:
+                    for coll,oid in owners: issue("DUPLICATE_VNUM",coll,oid,"vnum",f"VNUM {v} duplicates in namespace {ns}: {owners}")
+        for sid,s in records.get("spawns",{}).items():
+            for key, coll in (("room_id","rooms"),("mobile_id","entities"),("entity_id","entities"),("object_id","items"),("item_id","items")):
+                val=str(s.get(key) or "")
+                if val and val not in records.get(coll,{}): issue("BROKEN_REFERENCE","spawns",sid,key,f"Referenced {coll} {val} does not exist")
+        return issues
+
     def normalize_command(self, actor: Any, args: list[str] | None = None) -> BuilderResult:
-        action = (args or ["audit"])[0].lower()
-        plan = self.normalization_plan(actor)
-        records, drafts = self._normalization_records(actor)
-        missing_v = sum(1 for k in ("rooms","entities","items") for r in records[k].values() if not str(r.get("vnum", "")).isdigit())
-        missing_own = sum(1 for k in ("rooms","entities","items") for r in records[k].values() if not r.get("area_id") or not r.get("zone_id"))
-        dups = 0
-        for k in ("rooms","entities","items","spawns","resets"):
-            vals = [int(r.get("vnum", r.get("spawn_vnum"))) for r in records[k].values() if str(r.get("vnum", r.get("spawn_vnum", ""))).isdigit()]
-            dups += len(vals) - len(set(vals))
+        args=list(args or ["audit"]); action=args[0].lower(); world_id=self.workspace.world_id(actor)
+        if action in {"confirm","confirm_normalize"} or (action=="confirm" and len(args)>1): action="confirm"
+        plan=self.normalization_plan(actor); records,drafts=self._normalization_records(actor)
+        manual=sum(1 for p in plan if p.get("confidence")=="MANUAL_REVIEW"); blocked=sum(1 for p in plan if p.get("confidence")=="BLOCKED")
+        confirmed=sum(1 for p in plan if p.get("confidence")=="CONFIRMED"); inferred=sum(1 for p in plan if p.get("confidence")=="INFERRED")
+        issues=self._verify_issues(actor); missing_v=sum(1 for i in issues if i['code']=='MISSING_VNUM'); missing_own=sum(1 for i in issues if i['code'] in {'MISSING_AREA','MISSING_ZONE'}); dups=sum(1 for i in issues if i['code']=='DUPLICATE_VNUM')
         if action == "audit":
             return BuilderResult(True, f"Builder normalization audit\nMissing ownership: {missing_own}\nMissing VNUMs: {missing_v}\nDuplicate VNUM conflicts: {dups}\nPlanned changes: {len(plan)}")
         if action == "plan":
-            lines = ["Builder normalization plan", "Type | ID | Old VNUM | New VNUM | Old Area | New Area | Old Zone | New Zone | Confidence | Reason"]
+            verbose="verbose" in [a.lower() for a in args[1:]]
+            if verbose:
+                lines=["Builder normalization plan"]
+                for p in plan:
+                    lines += ["", f"{p['kind'].upper()}: {p['id']}", "Current:", f"  VNUM: {p['old_vnum'] if p['old_vnum'] is not None else '----'}", f"  Area: {p['old_area'] or '----'}", f"  Zone: {p['old_zone'] or '----'}", "Proposed:", f"  VNUM: {p['new_vnum'] if p['new_vnum'] is not None else '----'}", f"  Area: {p['new_area'] or '----'}", f"  Zone: {p['new_zone'] or '----'}", "Confidence:", f"  {p['confidence']}", "Evidence:"]
+                    lines += [f"  - {e}" for e in (p.get('evidence') or ['none'])]
+                    lines += ["Conflicting evidence:"] + [f"  - {e}" for e in (p.get('conflicting_evidence') or ['none'])]
+                    lines += ["References:", f"  Incoming: {p.get('incoming_references') or {}}", f"  Outgoing: {p.get('outgoing_references') or {}}", f"Reason: {p.get('reason')}", f"Blocking: {p.get('blocking')}"]
+                return BuilderResult(True,"\n".join(lines) if len(lines)>1 else "Builder normalization plan\nNo changes required.",{"plan":plan})
+            lines=["Builder normalization plan","Type | ID | Old VNUM | New VNUM | Old Area | New Area | Old Zone | New Zone | Confidence | Reason"]
             lines += [f"{p['kind']} | {p['id']} | {p['old_vnum'] if p['old_vnum'] is not None else '----'} | {p['new_vnum'] if p['new_vnum'] is not None else '----'} | {p['old_area'] or ''} | {p['new_area'] or ''} | {p['old_zone'] or ''} | {p['new_zone'] or ''} | {p['confidence']} | {p['reason']}" for p in plan]
-            return BuilderResult(True, "\n".join(lines) if len(lines) > 2 else "Builder normalization plan\nNo changes required.", {"plan": plan})
+            return BuilderResult(True,"\n".join(lines) if len(lines)>2 else "Builder normalization plan\nNo changes required.",{"plan":plan})
         if action == "verify":
-            ok = missing_v == 0 and missing_own == 0 and dups == 0
-            return BuilderResult(ok, f"Builder normalization verification: {'OK' if ok else 'FAILED'}\nMissing ownership: {missing_own}\nMissing VNUMs: {missing_v}\nDuplicate VNUM conflicts: {dups}")
+            errors=sum(1 for i in issues if i['blocking']); warnings=sum(1 for i in issues if not i['blocking']); info=0
+            lines=[f"Builder normalization verification: {'OK' if errors==0 else 'FAILED'}", f"Errors: {errors}", f"Warnings: {warnings}", f"Information: {info}"]
+            for i in issues[:200]: lines.append(f"- {i['code']} | {i['collection']} | {i['id']} | {i['field_path']} | {i['message']} | Fix: {i['fix_hint']} | Blocking: {i['blocking']}")
+            return BuilderResult(errors==0,"\n".join(lines),{"issues":issues})
+        if action == "snapshots":
+            root=self._snapshot_root(world_id); snaps=sorted([p.name for p in root.iterdir() if p.is_dir()])
+            return BuilderResult(True,"Normalization snapshots\n"+("\n".join(f"- {s}" for s in snaps) if snaps else "- none"),{"snapshots":snaps})
+        if action == "snapshot":
+            sid=args[1] if len(args)>1 else ""; man=self._snapshot_root(world_id)/sid/"manifest.json"
+            if not man.exists(): return BuilderResult(False,f"Normalization snapshot not found: {sid}")
+            return BuilderResult(True,"Normalization snapshot\n"+json.dumps(self.workspace._read(man,{}),indent=2,sort_keys=True))
         if action == "rollback":
-            snap = self._state_path(self.workspace.world_id(actor), "normalization_backup.json")
-            if not snap.exists(): return BuilderResult(False, "No normalization rollback snapshot exists.")
-            self.workspace.save_drafts(self.workspace.world_id(actor), self.workspace._read(snap, {}))
-            return BuilderResult(True, "Normalization rollback restored the pre-apply Builder draft snapshot.")
+            if not self._can_admin(actor): return BuilderResult(False,"You do not have permission to apply Builder normalization.")
+            root=self._snapshot_root(world_id); sid=args[1] if len(args)>1 else ""
+            if not sid:
+                dirs=sorted([p.name for p in root.iterdir() if p.is_dir()]); sid=dirs[-1] if dirs else ""
+            if not sid: return BuilderResult(False,"No normalization rollback snapshot exists.")
+            pend=getattr(self,"_pending_normalize",{})
+            key=self._pending_key(actor); token=f"CONFIRM ROLLBACK {sid}"
+            if not (pend.get(key,{}).get("type")=="rollback" and pend[key].get("snapshot_id")==sid):
+                pend[key]={"type":"rollback","snapshot_id":sid,"expires":time.time()+120}; self._pending_normalize=pend
+                return BuilderResult(False,f"Rollback snapshot {sid} is ready.\nType:\n{token}\nto restore, or Q to cancel.")
+            snap=root/sid; target=self.workspace.load(world_id)
+            for coll,fname in DRAFT_FILES.items():
+                fp=snap/fname
+                if fp.exists(): target[coll]=self.workspace._read(fp,{})
+            self.workspace.save_drafts(world_id,target); pend.pop(key,None)
+            return BuilderResult(True,f"Normalization rollback restored snapshot {sid}.")
         if action == "apply":
-            snap = self._state_path(self.workspace.world_id(actor), "normalization_backup.json")
-            self.workspace._atomic_json_write(snap, drafts)
-            target = deepcopy(drafts)
+            if not self._can_admin(actor): return BuilderResult(False,"You do not have permission to apply Builder normalization.")
+            if manual or blocked:
+                lines=[f"Normalization cannot be applied because {manual} records require manual review and {blocked} records are blocked.","Run `builder normalize plan verbose` to inspect unresolved records."]
+                lines += [f"- {p['kind']} {p['id']}: {p['confidence']} {p.get('reason','')}" for p in plan if p.get('confidence') in {'MANUAL_REVIEW','BLOCKED'}]
+                return BuilderResult(False,"\n".join(lines))
+            sid="normalize_"+datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ"); h=self._plan_hash(plan); key=self._pending_key(actor); pend=getattr(self,"_pending_normalize",{})
+            pend[key]={"type":"apply","count":len(plan),"hash":h,"expires":time.time()+120,"snapshot_id":sid}; self._pending_normalize=pend
+            return BuilderResult(False,f"Normalization plan is ready.\n\nRecords to update: {len(plan)}\nConfirmed: {confirmed}\nInferred: {inferred}\nManual review: {manual}\nBlocked: {blocked}\n\nSnapshot to create:\n{sid}\n\nType:\n\nCONFIRM NORMALIZE {len(plan)}\n\nto apply, or Q to cancel.",{"plan_hash":h,"count":len(plan)})
+        if action == "confirm":
+            key=self._pending_key(actor); pend=getattr(self,"_pending_normalize",{}); pending=pend.get(key)
+            if not pending or pending.get("type")!="apply" or pending.get("expires",0)<time.time(): return BuilderResult(False,"No pending Builder normalization confirmation.")
+            count = next((int(a) for a in args if str(a).isdigit()), -1)
+            if count != int(pending.get('count')): return BuilderResult(False,f"Confirmation count does not match pending plan ({pending.get('count')}).")
+            if self._plan_hash(plan) != pending.get("hash"): return BuilderResult(False,"Normalization plan changed after confirmation was requested; rerun builder normalize apply.")
+            if manual or blocked: return BuilderResult(False,f"Normalization cannot be applied because {manual} records require manual review and {blocked} records are blocked.\nRun `builder normalize plan verbose` to inspect unresolved records.")
+            sid=self._create_normalization_snapshot(actor, plan, "builder normalize apply")
+            target=deepcopy(drafts)
             for p in plan:
-                bucket = target.setdefault(p["kind"], {})
-                rec = deepcopy(bucket.get(p["id"]) or records[p["kind"]].get(p["id"]) or {"id": p["id"]})
-                if p.get("new_vnum") is not None: rec["vnum"] = p["new_vnum"]
-                if p.get("new_area"): rec["area_id"] = p["new_area"]
-                if p.get("new_zone"): rec["zone_id"] = p["new_zone"]
-                rec.setdefault("world_id", self.workspace.world_id(actor)); rec["_builder_normalized"] = self.workspace.stamp(); bucket[p["id"]] = rec
-            self.workspace.save_drafts(self.workspace.world_id(actor), target)
-            return BuilderResult(True, f"Normalization apply complete. Snapshot: {snap.name}. Records changed: {len(plan)}", {"changed": len(plan)})
-        return BuilderResult(False, "Usage: builder normalize <audit|plan|apply|verify|rollback>")
+                bucket=target.setdefault(p['kind'],{}); rec=deepcopy(bucket.get(p['id']) or records[p['kind']].get(p['id']) or {'id':p['id']})
+                if p.get('new_vnum') is not None: rec['vnum']=p['new_vnum']
+                if p.get('new_area'): rec['area_id']=p['new_area']
+                if p.get('new_zone'): rec['zone_id']=p['new_zone']
+                rec.setdefault('world_id',world_id); rec['_builder_normalized']=self.workspace.stamp(); bucket[p['id']]=rec
+            self.workspace.save_drafts(world_id,target)
+            pend.pop(key,None)
+            post=self._verify_issues(actor)
+            if any(i['blocking'] for i in post):
+                self.normalize_command(actor,["rollback",sid]); return BuilderResult(False,f"Post-apply verification failed; restored snapshot {sid}.")
+            return BuilderResult(True,f"Normalization apply complete. Snapshot: {sid}. Records changed: {len(plan)}",{"changed":len(plan),"snapshot_id":sid})
+        if action == "q":
+            getattr(self,"_pending_normalize",{}).pop(self._pending_key(actor),None); return BuilderResult(True,"Normalization confirmation cancelled.")
+        return BuilderResult(False,"Usage: builder normalize <audit|plan|apply|verify|snapshots|snapshot|rollback>")
 
     def render_session(self, sess: BuilderEditSession) -> str:
         rec = sess.working_record or {}
