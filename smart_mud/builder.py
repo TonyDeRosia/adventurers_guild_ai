@@ -1,7 +1,7 @@
 """Safe in-game Builder workspace services for Smart MUD."""
 from __future__ import annotations
 
-import json, shutil, re, os, fcntl, hashlib
+import json, shutil, re, os, hashlib, sqlite3
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
@@ -838,7 +838,7 @@ class MobileTemplate:
         cp = dict(rec.get("combat_profile") or {})
         cp["natural_weapons"] = [_canonical_weapon(x, str(rec.get("id") or "mobile")) for x in (cp.get("natural_weapons") or []) if isinstance(x, dict)]
         rec["combat_profile"] = cp
-        return cls(rec, "legacy-proxy")
+        return cls(rec, "legacy")
 
     def validate(self) -> list[dict[str, Any]]:
         rec = self.record; oid = str(rec.get("id") or "")
@@ -892,7 +892,7 @@ class BuilderSessionManager:
         lock = self.service.acquire_lock(actor, collection, object_id)
         if not lock.ok: return lock
         world_id = self.service.workspace.world_id(actor); now = self.service.workspace.stamp(); rec = self.service._record(world_id, collection, object_id) or {"id": object_id}
-        sess = BuilderEditSession(f"{self.actor_key(actor)}-{now}", str(getattr(actor,'account_id','')), self.actor_key(actor), world_id, editor, collection, object_id, f"{collection}:{object_id}", draft_revision=int(rec.get('_builder_revision') or 0), started_at=now, last_activity_at=now)
+        sess = BuilderEditSession(f"{self.actor_key(actor)}-{now}", str(getattr(actor,'account_id','')), self.actor_key(actor), world_id, editor, collection, object_id, f"{collection}:{object_id}", draft_revision=int(rec.get('_builder_revision') or 0), started_at=now, last_activity_at=now, original_record=deepcopy(rec), working_record=deepcopy(rec), savepoint=deepcopy(rec))
         self.active[self.actor_key(actor)] = sess
         return BuilderResult(True, self.service.render_session(sess))
     def has(self, actor: Any) -> bool: return self.actor_key(actor) in self.active
@@ -925,19 +925,49 @@ class BuilderService:
         return None
 
     def _lock_record(self, world_id: str, collection: str, object_id: str) -> dict[str, Any] | None:
-        return self.workspace._read(self._state_path(world_id, "locks.json"), {}).get(f"{collection}:{object_id}")
+        self._cleanup_stale_locks(world_id)
+        with self._lock_db(world_id) as db:
+            row = db.execute(
+                "select world_id, collection, object_id, builder, builder_account, builder_character, session_id, acquired_at, last_activity_at, expires_at, revision from builder_locks where collection=? and object_id=?",
+                (collection, object_id),
+            ).fetchone()
+        if not row:
+            return None
+        keys = ("world_id", "collection", "object_id", "builder", "builder_account", "builder_character", "session_id", "acquired_at", "last_activity_at", "expires_at", "revision")
+        return dict(zip(keys, row))
 
     def _owns_lock(self, actor: Any, collection: str, object_id: str) -> bool:
         lock = self._lock_record(self.workspace.world_id(actor), collection, object_id) or {}
         return lock.get("builder") == self._actor_id(actor)
 
     def _actor_id(self, actor: Any) -> str:
-        return str(getattr(actor, "name", "") or getattr(actor, "id", "builder"))
+        return "%s:%s:%s" % (getattr(actor, "account_id", ""), getattr(actor, "name", "") or getattr(actor, "id", "builder"), getattr(actor, "session_id", ""))
 
     def _state_path(self, world_id: str, name: str) -> Path:
         root = self.workspace.ensure(world_id) / "sessions"
         root.mkdir(parents=True, exist_ok=True)
         return root / name
+
+    def _lock_db_path(self, world_id: str) -> Path:
+        return self._state_path(world_id, "builder_locks.sqlite3")
+
+    def _lock_db(self, world_id: str) -> sqlite3.Connection:
+        db = sqlite3.connect(self._lock_db_path(world_id), timeout=30, isolation_level=None)
+        db.execute("pragma journal_mode=wal")
+        db.execute(
+            "create table if not exists builder_locks ("
+            "world_id text not null, collection text not null, object_id text not null, "
+            "builder text not null, builder_account text, builder_character text, session_id text, "
+            "acquired_at text not null, last_activity_at text not null, expires_at text not null, revision integer not null default 0, "
+            "primary key (collection, object_id))"
+        )
+        return db
+
+    def _cleanup_stale_locks(self, world_id: str) -> int:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock_db(world_id) as db:
+            cur = db.execute("delete from builder_locks where expires_at < ?", (now,))
+            return int(cur.rowcount or 0)
 
     def _history_path(self, actor: Any) -> Path:
         return self._state_path(self.workspace.world_id(actor), f"{getattr(actor,'id','builder')}_history.json")
@@ -975,6 +1005,10 @@ class BuilderService:
             cp = dict(updates.get("combat_profile") or {})
             cp["natural_weapons"] = [_canonical_weapon(x, object_id) for x in updates.pop("natural_weapons") if isinstance(x, dict)]
             updates["combat_profile"] = cp
+        if isinstance(updates.get("combat_profile"), dict) and "natural_weapons" in updates["combat_profile"]:
+            cp = dict(updates["combat_profile"])
+            cp["natural_weapons"] = [_canonical_weapon(x, object_id) for x in cp.get("natural_weapons") or [] if isinstance(x, dict)]
+            updates["combat_profile"] = cp
         return updates
 
     def clone(self, actor: Any, collection: str, source_id: str, new_id: str, display_name: str | None = None, keywords: list[str] | None = None) -> BuilderResult:
@@ -1008,25 +1042,61 @@ class BuilderService:
 
     def acquire_lock(self, actor: Any, collection: str, object_id: str, admin: bool = False) -> BuilderResult:
         denied = self._check_permission(actor, collection, object_id, "force_unlock" if admin else "mutate")
-        if denied and not admin: return denied
-        world_id=self.workspace.world_id(actor); path=self._state_path(world_id,"locks.json"); locks=self.workspace._read(path,{})
-        key=f"{collection}:{object_id}"; now=datetime.now(timezone.utc); cur=locks.get(key,{}) ; owner=cur.get("builder")
-        try: expired = datetime.fromisoformat(str(cur.get("expires_at","1970-01-01T00:00:00+00:00")).replace("Z","+00:00")) < now
-        except Exception: expired = True
-        if owner and owner != self._actor_id(actor) and not admin and not expired: return BuilderResult(False, f"{object_id} currently being edited by {owner}.")
-        rec=self._record(world_id, collection, object_id) or {}
-        locks[key]={"world_id":world_id,"collection":collection,"object_id":object_id,"builder": self._actor_id(actor),"builder_account":str(getattr(actor,'account_id','')),"builder_character":str(getattr(actor,'id','')),"session_id":str(getattr(actor,'session_id','')),"acquired_at": self.workspace.stamp(),"last_activity_at": self.workspace.stamp(),"expires_at": (now+timedelta(hours=2)).isoformat(),"revision": int(rec.get('_builder_revision') or 0)}
-        self.workspace._atomic_json_write(path, locks); return BuilderResult(True, f"Edit lock acquired for {object_id}.")
+        if denied and not admin:
+            return denied
+        world_id = self.workspace.world_id(actor)
+        self._cleanup_stale_locks(world_id)
+        now = datetime.now(timezone.utc)
+        rec = self._record(world_id, collection, object_id) or {}
+        lock = {
+            "world_id": world_id,
+            "collection": collection,
+            "object_id": object_id,
+            "builder": self._actor_id(actor),
+            "builder_account": str(getattr(actor, "account_id", "")),
+            "builder_character": str(getattr(actor, "id", "")),
+            "session_id": str(getattr(actor, "session_id", "")),
+            "acquired_at": self.workspace.stamp(),
+            "last_activity_at": self.workspace.stamp(),
+            "expires_at": (now + timedelta(hours=2)).isoformat(),
+            "revision": int(rec.get("_builder_revision") or 0),
+        }
+        with self._lock_db(world_id) as db:
+            db.execute("begin immediate")
+            row = db.execute("select builder, expires_at from builder_locks where collection=? and object_id=?", (collection, object_id)).fetchone()
+            expired = True
+            if row:
+                try:
+                    expired = datetime.fromisoformat(str(row[1]).replace("Z", "+00:00")) < now
+                except Exception:
+                    expired = True
+                if row[0] != lock["builder"] and not admin and not expired:
+                    db.execute("rollback")
+                    return BuilderResult(False, f"{object_id} currently being edited by {row[0]}.")
+            db.execute(
+                "insert or replace into builder_locks (world_id, collection, object_id, builder, builder_account, builder_character, session_id, acquired_at, last_activity_at, expires_at, revision) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                tuple(lock[k] for k in ("world_id", "collection", "object_id", "builder", "builder_account", "builder_character", "session_id", "acquired_at", "last_activity_at", "expires_at", "revision")),
+            )
+            db.execute("commit")
+        return BuilderResult(True, f"Edit lock acquired for {object_id}.", {"lock": lock})
 
     def release_lock(self, actor: Any, collection: str, object_id: str) -> BuilderResult:
-        world_id=self.workspace.world_id(actor); path=self._state_path(world_id,"locks.json"); locks=self.workspace._read(path,{})
-        key=f"{collection}:{object_id}"
-        if locks.get(key,{}).get("builder") == self._actor_id(actor) or self._can_admin(actor): locks.pop(key, None); self.workspace._atomic_json_write(path, locks); return BuilderResult(True, f"Edit lock released for {object_id}.")
+        world_id = self.workspace.world_id(actor)
+        with self._lock_db(world_id) as db:
+            row = db.execute("select builder from builder_locks where collection=? and object_id=?", (collection, object_id)).fetchone()
+            if row and (row[0] == self._actor_id(actor) or self._can_admin(actor)):
+                db.execute("delete from builder_locks where collection=? and object_id=?", (collection, object_id))
+                return BuilderResult(True, f"Edit lock released for {object_id}.")
         return BuilderResult(False, "Cannot release a lock owned by another builder.")
 
     def admin_unlock(self, actor: Any, collection: str, object_id: str) -> BuilderResult:
-        world_id=self.workspace.world_id(actor); path=self._state_path(world_id,"locks.json"); locks=self.workspace._read(path,{})
-        locks.pop(f"{collection}:{object_id}", None); self.workspace._atomic_json_write(path, locks); return BuilderResult(True, f"Edit lock cleared for {object_id}.")
+        denied = self._check_permission(actor, collection, object_id, "force_unlock")
+        if denied:
+            return denied
+        world_id = self.workspace.world_id(actor)
+        with self._lock_db(world_id) as db:
+            db.execute("delete from builder_locks where collection=? and object_id=?", (collection, object_id))
+        return BuilderResult(True, f"Edit lock cleared for {object_id}.")
 
     def validate_object(self, actor: Any, collection: str, object_id: str) -> BuilderResult:
         rec = self._record(self.workspace.world_id(actor), collection, object_id)
@@ -1088,6 +1158,13 @@ class BuilderService:
         gen_dir=root/"generations"/generation_id; manifest=self.workspace._read(gen_dir/"manifest.json", None)
         if not manifest: return BuilderResult(False, f"Generation {generation_id} is missing manifest.json.")
         previous=(self.workspace._read(active_path,{}) or {}).get("active_generation")
+        registries = {}
+        for key, filename in DRAFT_FILES.items():
+            registries[key] = self.workspace._coerce_draft_collection(key, filename, self.workspace._read(gen_dir / filename, {}))
+        registries["entities"] = {oid: MobileTemplate.from_generation(rec).to_canonical_dict() for oid, rec in registries.get("entities", {}).items() if isinstance(rec, dict)}
+        self.previous_content_generation_id = previous
+        self.active_content_generation_id = generation_id
+        self.active_content_generation = registries
         self.workspace._atomic_json_write(active_path, {"active_generation":generation_id,"previous_generation":previous,"activated_at":self.workspace.stamp(),"activated_by":self._actor_id(actor),"world_generation":self.workspace.stamp(),"live_mob_update_policy":manifest.get("live_mob_update_policy")})
         self.workspace.audit(actor, world_id, "activate generation", "generation", generation_id, {"previous":previous}, {"active":generation_id})
         return BuilderResult(True, f"Activated generation {generation_id}. Previous generation: {previous or 'none'}.", {"active_generation":generation_id,"previous_generation":previous})
@@ -1121,6 +1198,20 @@ class BuilderService:
 
     def handle_session_input(self, actor: Any, sess: BuilderEditSession, text: str) -> BuilderResult:
         low = text.lower().strip(); sess.last_activity_at = self.workspace.stamp()
+        parts = text.split()
+        if parts and parts[0].lower() == "name" and len(parts) > 1:
+            sess.working_record["name"] = text[len(parts[0]):].strip(); sess.dirty = True; sess.saved = False
+            return BuilderResult(True, "Updated session scratch.\n" + self.render_session(sess))
+        if parts and parts[0].lower() == "body" and len(parts) > 1:
+            drafts = self.workspace.load(sess.world_id); profile = parts[1].lower(); bp = (drafts.get("body_profiles") or {}).get(profile)
+            if not bp: return BuilderResult(False, "Unknown body profile. Choose: " + ", ".join(sorted(drafts.get("body_profiles", {}))))
+            weapons = [deepcopy((drafts.get("natural_weapon_profiles") or {}).get(wid)) for wid in bp.get("suggested_natural_weapon_ids", [])]
+            weapons = [_canonical_weapon(w, sess.object_id) for w in weapons if isinstance(w, dict)]
+            sess.working_record["body_profile_id"] = profile
+            sess.working_record.setdefault("combat_profile", {})["body_profile"] = profile
+            sess.working_record.setdefault("combat_profile", {})["natural_weapons"] = weapons
+            sess.dirty = True; sess.saved = False
+            return BuilderResult(True, "Updated session scratch.\n" + self.render_session(sess))
         if low in {"q", "quit"}: self.sessions.end(actor); return BuilderResult(True, "Editor closed and lock released.")
         if low in {"back", "cancel"}: sess.section=""; sess.mode="main_menu"; return BuilderResult(True, self.render_session(sess))
         if low in {"?", "help"}: return BuilderResult(True, "Builder help: use menu numbers; Natural Weapons supports add/set/delete/list; global commands are preview, validate, testspawn, save, undo, redo, quit.")
@@ -1128,7 +1219,12 @@ class BuilderService:
         if low == "preview": return self.preview(actor, sess.collection, sess.object_id)
         if low == "validate": return self.validate_object(actor, sess.collection, sess.object_id)
         if low == "testspawn": return self.testspawn(actor, sess.object_id)
-        if low == "save": return BuilderResult(True, f"Draft {sess.object_id} saved at revision {sess.draft_revision}; lock retained.")
+        if low == "save":
+            res = self.mutate(actor, sess.collection, sess.object_id, deepcopy(sess.working_record), "session save", expected_revision=sess.draft_revision)
+            if res.ok:
+                sess.draft_revision = int((res.data or {}).get("_builder_revision") or sess.draft_revision)
+                sess.savepoint = deepcopy(res.data or sess.working_record); sess.dirty = False; sess.saved = True
+            return res
         if low == "undo": return self.undo(actor)
         if low == "redo": return self.redo(actor)
         if sess.section == "natural_weapons":
@@ -1176,18 +1272,48 @@ class BuilderService:
         return BuilderResult(True, "Picker choices:\n" + body, {"choices": rows})
 
     def testspawn(self, actor: Any, mob_id: str) -> BuilderResult:
-        rec = self._record(self.workspace.world_id(actor), "entities", mob_id)
-        if not rec: return BuilderResult(False, f"No draft mob {mob_id}.")
-        v=self.validate_object(actor, "entities", mob_id)
-        if not v.ok: return BuilderResult(False, "Cannot testspawn invalid draft.\n"+v.message, v.data)
-        room_id=f"builder_test_{getattr(actor,'id','builder')}"; instance_id=f"testspawn_{mob_id}_{self.workspace.stamp()}"
-        mob={"id":instance_id,"template_id":mob_id,"name":rec.get("name") or mob_id.replace("_"," ").title(),"room_id":room_id,"actor_type":"npc","ephemeral":True,"combat_profile":deepcopy(rec.get("combat_profile") or {}),"body_profile_id":rec.get("body_profile_id"),"description":rec.get("description","")}
-        setattr(actor, "builder_test_room_id", room_id); spawns=list(getattr(actor,"builder_test_mobs",[]) or []); spawns.append(mob); setattr(actor,"builder_test_mobs",spawns)
-        return BuilderResult(True, f"Spawned real ephemeral draft mob {mob['name']} ({instance_id}) in private Builder testing room {room_id}. LOOK/EXAMINE/CONSIDER/KILL can target it in runtime adapters.", {"mob": mob, "room_id": room_id})
+        sess = self.sessions.active.get(self.sessions.actor_key(actor))
+        rec = deepcopy(sess.working_record) if sess and sess.collection == "entities" and sess.object_id == mob_id else deepcopy(self._record(self.workspace.world_id(actor), "entities", mob_id) or {})
+        if not rec:
+            return BuilderResult(False, f"No draft mob {mob_id}.")
+        tmpl = MobileTemplate.from_legacy(rec)
+        issues = tmpl.validate()
+        errors = [i for i in issues if i.get("blocking") or i.get("severity") == "error"]
+        if errors:
+            return BuilderResult(False, "Cannot testspawn invalid draft.\n" + "\n".join(f"error: {e.get('field_path')} {e.get('message')}" for e in errors), {"issues": issues})
+        room_id = f"builder_test_{getattr(actor, 'account_id', 'acct')}_{getattr(actor, 'id', 'builder')}"
+        env_id = f"env_{getattr(actor, 'id', 'builder')}"
+        instance_id = f"testspawn_{mob_id}_{self.workspace.stamp()}"
+        rp = tmpl.to_runtime_projection()
+        mob = {
+            "id": instance_id, "template_id": mob_id, "name": rp.get("name") or mob_id.replace("_", " ").title(),
+            "room_id": room_id, "actor_type": "npc", "ephemeral": True, "builder_owned": True, "private": True,
+            "runtime_registered": True, "resident": True, "combat_registered": True, "ai_registered": True,
+            "body_profile_id": rp.get("body_profile_id"), "combat_profile": deepcopy(rp.get("combat_profile") or {}),
+            "attributes": rp.get("attributes"), "resources": rp.get("resources"), "description": rp.get("description"),
+            "generation_id": getattr(self, "active_content_generation_id", None),
+        }
+        envs = dict(getattr(actor, "builder_test_environments", {}) or {})
+        env = envs.get(env_id) or {"test_environment_id": env_id, "owner_account": str(getattr(actor, "account_id", "")), "owner_character": str(getattr(actor, "id", "")), "room_ids": [room_id], "resident_actors": [], "resident_items": [], "active_encounters": [], "timers": [], "corpses": [], "created_at": self.workspace.stamp(), "cleanup_state": "active"}
+        env["resident_actors"] = list(dict.fromkeys(list(env.get("resident_actors") or []) + [instance_id]))
+        env["last_activity"] = self.workspace.stamp(); envs[env_id] = env
+        setattr(actor, "builder_test_environments", envs); setattr(actor, "builder_test_room_id", room_id)
+        spawns = list(getattr(actor, "builder_test_mobs", []) or []); spawns.append(mob); setattr(actor, "builder_test_mobs", spawns)
+        return BuilderResult(True, f"Spawned resident ephemeral draft mob {mob['name']} ({instance_id}) in private Builder testing room {room_id}. LOOK/EXAMINE/CONSIDER/KILL target the resident actor; combat uses authored natural weapons.", {"mob": mob, "room_id": room_id, "environment": env})
 
     def testclear(self, actor: Any) -> BuilderResult:
-        count=len(getattr(actor,"builder_test_mobs",[]) or []); setattr(actor,"builder_test_mobs",[])
-        return BuilderResult(True, f"Cleared {count} ephemeral Builder test mob(s).")
+        count = len(getattr(actor, "builder_test_mobs", []) or [])
+        setattr(actor, "builder_test_mobs", [])
+        envs = dict(getattr(actor, "builder_test_environments", {}) or {})
+        for env in envs.values():
+            env["resident_actors"] = []
+            env["resident_items"] = []
+            env["active_encounters"] = []
+            env["timers"] = []
+            env["corpses"] = []
+            env["cleanup_state"] = "cleared"
+        setattr(actor, "builder_test_environments", envs)
+        return BuilderResult(True, f"Cleared {count} resident ephemeral Builder test mob(s), occupancy entries, combat encounters, AI tasks, timers, items, corpses, and private-room state.")
 
     def menu(self, editor: str, title: str) -> str:
         sections = {
@@ -1200,318 +1326,3 @@ class BuilderService:
         header = {"medit": "Mobile Editor", "redit": "Room Editor", "oedit": "Object Editor", "aedit": "Area Editor", "zedit": "Zone Editor"}.get(editor, "Builder Editor")
         body = "\n".join(f"{i} {section}" for i, section in enumerate(sections, 1))
         return f"--------------------------------------\n{header}\n{title}\n--------------------------------------\n\n{body}\n\nS Save Draft\nP Publish\nQ Quit"
-
-# ---- Phase 15B.14C mobile Builder completion overrides ----
-def _builder_lock_identity(self, actor: Any) -> str:
-    return "%s:%s:%s" % (getattr(actor, "account_id", ""), getattr(actor, "id", ""), getattr(actor, "session_id", ""))
-
-BuilderService._actor_id = _builder_lock_identity
-
-def _locked_locks_path(self, world_id: str) -> Path:
-    return self._state_path(world_id, "locks.json")
-
-BuilderService._locked_locks_path = _locked_locks_path
-
-def _acquire_lock_safe(self, actor: Any, collection: str, object_id: str, admin: bool = False) -> BuilderResult:
-    denied = self._check_permission(actor, collection, object_id, "force_unlock" if admin else "mutate")
-    if denied and not admin: return denied
-    world_id=self.workspace.world_id(actor); path=self._locked_locks_path(world_id); path.parent.mkdir(parents=True, exist_ok=True); path.touch(exist_ok=True)
-    with path.open("r+", encoding="utf-8") as fh:
-        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
-        try:
-            try: locks=json.load(fh) or {}
-            except json.JSONDecodeError: locks={}
-            key=f"{world_id}:{collection}:{object_id}"; now=datetime.now(timezone.utc); cur=locks.get(key,{}) ; owner=cur.get("owner") or cur.get("builder")
-            try: expired=datetime.fromisoformat(str(cur.get("expires_at","1970-01-01T00:00:00+00:00")).replace("Z","+00:00")) < now
-            except Exception: expired=True
-            ident=self._actor_id(actor)
-            if owner and owner != ident and not admin and not expired: return BuilderResult(False, f"{object_id} currently being edited by {owner}.")
-            rec=self._record(world_id, collection, object_id) or {}
-            locks[key]={"world_id":world_id,"collection":collection,"object_id":object_id,"owner":ident,"account_id":str(getattr(actor,'account_id','')),"character_id":str(getattr(actor,'id','')),"session_id":str(getattr(actor,'session_id','')),"acquired_at":self.workspace.stamp(),"last_activity_at":self.workspace.stamp(),"expires_at":(now+timedelta(hours=2)).isoformat(),"revision":int(rec.get('_builder_revision') or 0),"recoverable":False,"disconnect_state":"active"}
-            fh.seek(0); fh.truncate(); json.dump(locks, fh, indent=2, sort_keys=True); fh.write("\n"); fh.flush(); os.fsync(fh.fileno())
-        finally:
-            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
-    return BuilderResult(True, f"Edit lock acquired for {object_id}.")
-
-BuilderService.acquire_lock = _acquire_lock_safe
-
-def _lock_record_safe(self, world_id: str, collection: str, object_id: str) -> dict[str, Any] | None:
-    locks=self.workspace._read(self._locked_locks_path(world_id), {})
-    return locks.get(f"{world_id}:{collection}:{object_id}") or locks.get(f"{collection}:{object_id}")
-BuilderService._lock_record = _lock_record_safe
-
-def _owns_lock_safe(self, actor: Any, collection: str, object_id: str) -> bool:
-    lock=self._lock_record(self.workspace.world_id(actor), collection, object_id) or {}
-    return (lock.get("owner") or lock.get("builder")) == self._actor_id(actor)
-BuilderService._owns_lock = _owns_lock_safe
-
-def _release_lock_safe(self, actor: Any, collection: str, object_id: str) -> BuilderResult:
-    world_id=self.workspace.world_id(actor); path=self._locked_locks_path(world_id); locks=self.workspace._read(path,{})
-    for key in (f"{world_id}:{collection}:{object_id}", f"{collection}:{object_id}"):
-        if (locks.get(key,{}).get("owner") or locks.get(key,{}).get("builder")) == self._actor_id(actor) or self._can_admin(actor): locks.pop(key, None)
-    self.workspace._atomic_json_write(path, locks); return BuilderResult(True, f"Edit lock released for {object_id}.")
-BuilderService.release_lock = _release_lock_safe
-
-def _start_scratch(self, actor: Any, editor: str, collection: str, object_id: str) -> BuilderResult:
-    lock=self.service.acquire_lock(actor, collection, object_id)
-    if not lock.ok: return lock
-    world_id=self.service.workspace.world_id(actor); now=self.service.workspace.stamp(); rec=MobileTemplate.from_legacy(self.service._record(world_id, collection, object_id) or {"id":object_id,"name":object_id.replace("_"," ").title()}).to_canonical_dict()
-    rev=int(rec.get('_builder_revision') or 0)
-    sess=BuilderEditSession(f"{self.actor_key(actor)}-{now}", str(getattr(actor,'account_id','')), self.actor_key(actor), world_id, editor, collection, object_id, f"{world_id}:{collection}:{object_id}", draft_revision=rev, working_revision=rev, started_at=now, last_activity_at=now, original_record=deepcopy(rec), working_record=deepcopy(rec), savepoint=deepcopy(rec))
-    self.active[self.actor_key(actor)] = sess
-    self.service._persist_recovery(actor, sess)
-    return BuilderResult(True, self.service.render_session(sess))
-BuilderSessionManager.start = _start_scratch
-
-def _persist_recovery(self, actor: Any, sess: BuilderEditSession) -> None:
-    data={"session_id":sess.session_id,"object_id":sess.object_id,"collection":sess.collection,"editor_type":sess.editor_type,"last_activity_at":sess.last_activity_at,"dirty_fields":sess.dirty_fields,"base_revision":sess.draft_revision,"working_record":sess.working_record,"dirty":sess.dirty}
-    self.workspace._atomic_json_write(self._state_path(sess.world_id, f"recovery_{sess.builder_character_id}.json"), data)
-BuilderService._persist_recovery = _persist_recovery
-
-def _atomic_object_save(self, actor: Any, sess: BuilderEditSession) -> BuilderResult:
-    denied=self._check_permission(actor, sess.collection, sess.object_id, "mutate")
-    if denied: return denied
-    if not self._owns_lock(actor, sess.collection, sess.object_id): return BuilderResult(False, "Save requires owning the active edit lock.")
-    template=MobileTemplate.from_legacy(sess.working_record); issues=template.validate(); errors=[i for i in issues if i.get('blocking')]
-    if errors: return BuilderResult(False, "Save blocked by validation errors:\n"+"\n".join(f"- {e['field_path']}: {e['message']}" for e in errors), {"issues":issues})
-    world_id=sess.world_id; drafts=self.workspace.load(world_id); bucket=drafts.setdefault(sess.collection,{})
-    before=deepcopy(bucket.get(sess.object_id)); cur_rev=int((before or {}).get('_builder_revision') or 0)
-    if cur_rev != sess.draft_revision: return BuilderResult(False, f"Draft changed since editor opened (expected revision {sess.draft_revision}, found {cur_rev}).")
-    rec=template.to_canonical_dict(); rec['_builder_revision']=cur_rev+1; bucket[sess.object_id]=rec
-    self.workspace.save_drafts(world_id,drafts); self._push_history(actor,sess.collection,sess.object_id,before,rec,"session save"); self.workspace.audit(actor,world_id,"session save",sess.collection,sess.object_id,before,rec)
-    sess.original_record=deepcopy(rec); sess.savepoint=deepcopy(rec); sess.working_record=deepcopy(rec); sess.draft_revision=cur_rev+1; sess.working_revision=cur_rev+1; sess.dirty=False; sess.saved=True; sess.dirty_fields=[]; self._persist_recovery(actor,sess)
-    return BuilderResult(True, f"Draft {sess.object_id} saved atomically at revision {sess.draft_revision}.", rec)
-BuilderService._atomic_object_save = _atomic_object_save
-
-def _deep_merge(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
-    out=deepcopy(a or {})
-    for k,v in (b or {}).items():
-        out[k]=_deep_merge(out.get(k), v) if isinstance(out.get(k),dict) and isinstance(v,dict) else deepcopy(v)
-    return out
-
-BuilderService._deep_merge = staticmethod(_deep_merge)
-
-def _apply_body_profile2(self, actor: Any, mob_id: str, profile: str) -> BuilderResult:
-    sess=self.sessions.active.get(self.sessions.actor_key(actor)); world_id=self.workspace.world_id(actor); drafts=self.workspace.load(world_id); prof=profile.lower(); bp=(drafts.get('body_profiles') or {}).get(prof)
-    if not bp: return BuilderResult(False, "Unknown body profile. Choose: "+", ".join(sorted(drafts.get('body_profiles',{}))))
-    target=sess.working_record if sess and sess.collection=='entities' and sess.object_id==mob_id else deepcopy(self._record(world_id,'entities',mob_id) or {'id':mob_id})
-    cp=self._deep_merge(target.get('combat_profile') or {}, {"body_profile":prof, "body_capabilities":bp.get('capabilities',[]), "size":bp.get('size'), "limbs":bp.get('limbs'), "natural_armor":bp.get('natural_armor'), "movement_modes":bp.get('movement_modes',[])})
-    target['body_profile_id']=prof; target['combat_profile']=cp
-    suggested=[]
-    for wid in bp.get('suggested_natural_weapon_ids',[]):
-        w=(drafts.get('natural_weapon_profiles') or {}).get(wid)
-        if isinstance(w,dict) and wid not in {x.get('id') for x in cp.get('natural_weapons',[])}: suggested.append(_canonical_weapon(w,wid))
-    if suggested: cp['natural_weapons']=list(cp.get('natural_weapons') or [])+suggested
-    if sess and sess.collection=='entities' and sess.object_id==mob_id:
-        sess.working_record=target; sess.dirty=True; sess.saved=False; sess.dirty_fields=sorted(set(sess.dirty_fields+["body_profile_id","combat_profile"])); self._persist_recovery(actor,sess)
-        return BuilderResult(True, f"Applied body profile {prof} to session scratch copy; save to persist.")
-    return self.mutate(actor,'entities',mob_id,target,'body profile deep merge',admin_override=True)
-BuilderService.apply_body_profile = _apply_body_profile2
-
-def _render_session2(self, sess: BuilderEditSession) -> str:
-    rec=sess.working_record or {}; title=rec.get('name') or sess.object_id.replace('_',' ').title(); status='Modified' if sess.dirty else 'Clean'; weapons=((rec.get('combat_profile') or {}).get('natural_weapons') or [])
-    if sess.quit_pending:
-        return "Unsaved changes.\n1) Save and quit\n2) Discard and quit\n3) Cancel"
-    if sess.section == 'natural_weapons':
-        rows=[f"{i+1}. {w.get('id')} {w.get('mechanical_family')} {w.get('noun_plural')} weight={w.get('selection_weight')} dice={w.get('damage_dice')}" for i,w in enumerate(weapons)]
-        return "Natural Weapons (scratch)\n"+("\n".join(rows) if rows else "- none")+"\nCommands: add <id>, clone <id> <new>, set <id> <field> <value>, delete <id>, enable <id>, disable <id>, reorder <id> <pos>, preview, validate, back, save, quit"
-    attrs=rec.get('attributes') or {}; res=[]
-    res.append(f"Mobile Editor: {title}")
-    res.append(f"Draft revision: {sess.draft_revision}")
-    res.append(f"Status: {status}")
-    res.append(f"Zone: {rec.get('zone_id') or 'unassigned'}")
-    res.append(f"Dirty fields: {', '.join(sess.dirty_fields) if sess.dirty_fields else 'none'}")
-    res += ["", f"1) Name................ {rec.get('name','')}", f"2) Keywords............ {' '.join(rec.get('keywords') or [])}", f"3) Descriptions........ room/look/examine", f"4) Level................ {rec.get('level',1)}", f"5) Attributes........... STR {attrs.get('strength','')} DEX {attrs.get('dexterity','')} CON {attrs.get('constitution','')}", f"6) Resources............ HP {rec.get('max_health') or rec.get('resources',{}).get('max_health','')}", f"7) Body profile......... {rec.get('body_profile_id') or (rec.get('combat_profile') or {}).get('body_profile') or ''}", f"8) Natural weapons...... {len(weapons)}", f"9) Combat profiles...... {(rec.get('combat_profile') or {}).get('combat_behavior_profile','')}", f"10) Loot/Corpse......... {rec.get('loot_table','') or rec.get('corpse_profile','')}", "11) Equipment/Loadout", "12) Inventory", "13) Behavior/AI", f"14) Flags............... {' '.join(rec.get('flags') or [])}", "15) Abilities", "16) Spawn/Reset refs", "17) Scripts/Triggers", "", "Typed commands: name <text>; keywords add/remove/replace/list; desc <field> <text>; level <n>; attr <name> <n>; resource <name> <n>; body <profile>; combat <field> <value>; loot <field> <value>; behavior <field> <value>; flags add/remove/list; spawnref add/remove/list; script add/remove/list", "P) Preview   V) Validate   T) Testspawn   S) Save   D) Discard   Q) Quit"]
-    return "\n".join(res)
-BuilderService.render_session = _render_session2
-
-def _mark(sess: BuilderEditSession, field: str):
-    sess.dirty=True; sess.saved=False
-    if field not in sess.dirty_fields: sess.dirty_fields.append(field)
-
-def _handle_session2(self, actor: Any, sess: BuilderEditSession, text: str) -> BuilderResult:
-    low=text.lower().strip(); sess.last_activity_at=self.workspace.stamp()
-    if sess.quit_pending:
-        if low in {'1','save','save and quit'}:
-            res=self._atomic_object_save(actor,sess)
-            if res.ok: self.sessions.end(actor); return BuilderResult(True,res.message+"\nEditor closed and lock released.",res.data)
-            return res
-        if low in {'2','discard','discard and quit'}:
-            sess.working_record=deepcopy(sess.savepoint); self.sessions.end(actor); return BuilderResult(True,"Discarded scratch changes. Editor closed and lock released.")
-        if low in {'3','cancel','back'}:
-            sess.quit_pending=False; return BuilderResult(True,self.render_session(sess))
-    if low in {'q','quit'}:
-        if sess.dirty: sess.quit_pending=True; return BuilderResult(True,self.render_session(sess))
-        self.sessions.end(actor); return BuilderResult(True,"Editor closed and lock released.")
-    if low in {'back','cancel'}: sess.section=''; return BuilderResult(True,self.render_session(sess))
-    if low in {'?','help'}: return BuilderResult(True,"Typed mobile editor help: choose numbered sections or enter typed commands shown in the menu. Edits affect only the session scratch copy until save.")
-    if low in {'8','7','natural','natural weapons','natural attacks'}: sess.section='natural_weapons'; return BuilderResult(True,self.render_session(sess))
-    if low in {'p','preview'}: return self._preview_record(actor,sess.working_record)
-    if low in {'v','validate'}:
-        issues=MobileTemplate.from_legacy(sess.working_record).validate(); return BuilderResult(not any(i.get('blocking') for i in issues), "Validation for %s:\n%s"%(sess.object_id,"\n".join(f"{i['severity']}: {i['field_path']} {i['message']}" for i in issues) or "- no focused issues"), {"issues":issues})
-    if low in {'s','save'}: return self._atomic_object_save(actor,sess)
-    if low in {'d','discard'}:
-        sess.working_record=deepcopy(sess.savepoint); sess.dirty=False; sess.saved=True; sess.dirty_fields=[]; self._persist_recovery(actor,sess); return BuilderResult(True,"Discarded unsaved scratch changes.\n"+self.render_session(sess))
-    if low in {'t','testspawn'}: return self.testspawn(actor,sess.object_id)
-    if low=='undo': return self.undo(actor)
-    if low=='redo': return self.redo(actor)
-    rec=sess.working_record; parts=text.split();
-    if not parts: return BuilderResult(True,self.render_session(sess))
-    if sess.section=='natural_weapons':
-        weapons=list((rec.setdefault('combat_profile',{})).get('natural_weapons') or []); cmd=parts[0].lower()
-        if cmd in {'list','l'}: return BuilderResult(True,self.render_session(sess))
-        if cmd=='add' and len(parts)>=2: weapons.append(_canonical_weapon({'id':parts[1],'family':parts[1].split('_')[-1]},parts[1]))
-        elif cmd=='clone' and len(parts)>=3:
-            src=next((deepcopy(w) for w in weapons if w.get('id')==parts[1]),None)
-            if not src: return BuilderResult(False,f"Natural weapon {parts[1]} not found.")
-            src['id']=parts[2]; weapons.append(src)
-        elif cmd=='delete' and len(parts)>=2: weapons=[w for w in weapons if w.get('id')!=parts[1]]
-        elif cmd in {'enable','disable'} and len(parts)>=2:
-            for w in weapons:
-                if w.get('id')==parts[1]: w['enabled']=(cmd=='enable'); break
-        elif cmd=='reorder' and len(parts)>=3 and parts[2].isdigit():
-            wid=parts[1]; item=next((w for w in weapons if w.get('id')==wid),None)
-            if item: weapons=[w for w in weapons if w.get('id')!=wid]; weapons.insert(max(0,int(parts[2])-1),item)
-        elif cmd=='set' and len(parts)>=4:
-            wid,field,value=parts[1],parts[2].replace('-','_')," ".join(parts[3:]); field={'family':'mechanical_family','weight':'selection_weight','verb':'verb_third_person','noun':'noun_plural','dice':'damage_dice'}.get(field,field)
-            for w in weapons:
-                if w.get('id')==wid: w[field]=int(value) if field in {'selection_weight','minimum_damage','maximum_damage','accuracy_modifier','critical_modifier','cooldown_pulses'} and value.lstrip('-').isdigit() else value; break
-            else: return BuilderResult(False,f"Natural weapon {wid} not found.")
-        else: return BuilderResult(False,"Usage: add/clone/set/delete/enable/disable/reorder/list")
-        rec['combat_profile']['natural_weapons']=weapons; _mark(sess,'combat_profile.natural_weapons'); self._persist_recovery(actor,sess); return BuilderResult(True,"Updated natural weapons in session scratch.\n"+self.render_session(sess))
-    cmd=parts[0].lower(); rest=text[len(parts[0]):].strip()
-    if cmd=='name' and rest: rec['name']=rest; _mark(sess,'name')
-    elif cmd=='keywords' and len(parts)>=2:
-        kws=list(rec.get('keywords') or []); op=parts[1].lower(); vals=parts[2:]
-        if op=='add': kws+=vals
-        elif op=='remove': kws=[k for k in kws if k not in vals]
-        elif op=='replace': kws=vals
-        elif op=='deduplicate': pass
-        elif op=='list': return BuilderResult(True,"Keywords: "+" ".join(kws))
-        rec['keywords']=list(dict.fromkeys(kws)); _mark(sess,'keywords')
-    elif cmd=='desc' and len(parts)>=3:
-        field=parts[1].replace('-','_'); rec[field if field.endswith('description') else field+'_description']=" ".join(parts[2:]); _mark(sess,field)
-    elif cmd=='level' and len(parts)>=2 and parts[1].lstrip('-').isdigit(): rec['level']=int(parts[1]); _mark(sess,'level')
-    elif cmd=='attr' and len(parts)>=3 and parts[2].lstrip('-').isdigit(): rec.setdefault('attributes',{})[parts[1].lower()]=int(parts[2]); _mark(sess,'attributes.'+parts[1].lower())
-    elif cmd=='resource' and len(parts)>=3 and parts[2].lstrip('-').isdigit(): rec[parts[1].lower()]=int(parts[2]); _mark(sess,parts[1].lower())
-    elif cmd=='body' and len(parts)>=2: return self.apply_body_profile(actor,sess.object_id,parts[1])
-    elif cmd in {'combat','loot','behavior'} and len(parts)>=3: rec.setdefault({'combat':'combat_profile','loot':'loot_profile','behavior':'behavior_profile'}[cmd],{})[parts[1]]=" ".join(parts[2:]); _mark(sess,cmd+'.'+parts[1])
-    elif cmd=='flags' and len(parts)>=2:
-        flags=list(rec.get('flags') or []); op=parts[1].lower(); vals=parts[2:]
-        if op=='add': flags+=vals
-        elif op=='remove': flags=[f for f in flags if f not in vals]
-        elif op=='list': return BuilderResult(True,"Flags: "+" ".join(flags))
-        rec['flags']=list(dict.fromkeys(flags)); _mark(sess,'flags')
-    elif cmd in {'equipment','inventory','spawnref','script'} and len(parts)>=2: rec.setdefault(cmd+'_references',[]).extend(parts[1:]); _mark(sess,cmd+'_references')
-    else: return BuilderResult(True,self.render_session(sess))
-    self._persist_recovery(actor,sess); return BuilderResult(True,"Updated session scratch.\n"+self.render_session(sess))
-BuilderService.handle_session_input = _handle_session2
-
-def _preview_record(self, actor: Any, rec: dict[str, Any]) -> BuilderResult:
-    tmpl=MobileTemplate.from_legacy(rec); rp=tmpl.to_runtime_projection(); name=rp.get('name') or 'mobile'; desc=rp.get('description') or '(no description)'; weapons=(rp.get('combat_profile') or {}).get('natural_weapons') or []
-    lines=["LOOK",str(name),str(desc),"","EXAMINE",str(rec.get('examine_description') or desc),"","CONSIDER",f"{name} appears to be level {rp.get('level',1)}.","","COMBAT SNAPSHOT",f"natural weapons: {len(weapons)}","NATURAL ATTACK LIST"]
-    lines += [f"- {w.get('id')} {w.get('mechanical_family')} {w.get('verb_third_person')} with {w.get('noun_plural')} ({w.get('damage_dice')}, weight {w.get('selection_weight')})" for w in weapons] or ["- none"]
-    if weapons:
-        for label,w in zip(["SAMPLE MISS","SAMPLE LIGHT HIT","SAMPLE NORMAL HIT","SAMPLE CRITICAL","SAMPLE LETHAL HIT"], weapons*5): lines += ["",label,str(w.get('observer_template')).format(attacker=name,victim='you',verb_third_person=w.get('verb_third_person'),verb_base=w.get('verb_base'),noun_plural=w.get('noun_plural'))]
-    return BuilderResult(True,"\n".join(lines),{"runtime_projection":rp})
-BuilderService._preview_record = _preview_record
-BuilderService.preview = lambda self, actor, collection, object_id: self._preview_record(actor, self._record(self.workspace.world_id(actor), collection, object_id) or {})
-
-def _testspawn2(self, actor: Any, mob_id: str) -> BuilderResult:
-    sess=self.sessions.active.get(self.sessions.actor_key(actor)); rec=deepcopy(sess.working_record) if sess and sess.collection=='entities' and sess.object_id==mob_id else deepcopy(self._record(self.workspace.world_id(actor),'entities',mob_id) or {})
-    if not rec: return BuilderResult(False,f"No draft mob {mob_id}.")
-    tmpl=MobileTemplate.from_legacy(rec); issues=tmpl.validate(); errors=[i for i in issues if i.get('blocking')]
-    if errors: return BuilderResult(False,"Cannot testspawn invalid draft.\n"+"\n".join(f"error: {e['field_path']} {e['message']}" for e in errors),{"issues":issues})
-    room_id=f"builder_test_{getattr(actor,'account_id','acct')}_{getattr(actor,'id','builder')}"; env_id=f"env_{getattr(actor,'id','builder')}"; instance_id=f"testspawn_{mob_id}_{self.workspace.stamp()}"; rp=tmpl.to_runtime_projection()
-    mob={"id":instance_id,"template_id":mob_id,"name":rp.get('name') or mob_id.replace('_',' ').title(),"room_id":room_id,"actor_type":"npc","ephemeral":True,"runtime_registered":True,"resident":True,"combat_registered":True,"ai_registered":True,"body_profile_id":rp.get('body_profile_id'),"combat_profile":deepcopy(rp.get('combat_profile') or {}),"attributes":rp.get('attributes'),"resources":rp.get('resources'),"description":rp.get('description'),"generation_id":getattr(self,'active_content_generation_id',None)}
-    env={"test_environment_id":env_id,"owner_account":str(getattr(actor,'account_id','')),"owner_character":str(getattr(actor,'id','')),"world_generation":getattr(self,'active_content_generation_id',None),"room_ids":[room_id],"resident_actors":[],"resident_items":[],"active_encounters":[],"created_at":self.workspace.stamp(),"last_activity":self.workspace.stamp(),"cleanup_state":"active"}
-    envs=dict(getattr(actor,'builder_test_environments',{}) or {}); env=envs.get(env_id,env); env['resident_actors']=list(env.get('resident_actors') or [])+[instance_id]; envs[env_id]=env
-    setattr(actor,'builder_test_environments',envs); setattr(actor,'builder_test_room_id',room_id); spawns=list(getattr(actor,'builder_test_mobs',[]) or []); spawns.append(mob); setattr(actor,'builder_test_mobs',spawns)
-    return BuilderResult(True,f"Spawned resident ephemeral draft mob {mob['name']} ({instance_id}) in private Builder testing room {room_id}. LOOK/EXAMINE/CONSIDER/KILL target the resident actor; combat uses authored natural weapons.",{"mob":mob,"room_id":room_id,"environment":env})
-BuilderService.testspawn = _testspawn2
-
-def _testclear2(self, actor: Any) -> BuilderResult:
-    count=len(getattr(actor,'builder_test_mobs',[]) or []); setattr(actor,'builder_test_mobs',[]); envs=dict(getattr(actor,'builder_test_environments',{}) or {})
-    for env in envs.values(): env['resident_actors']=[]; env['active_encounters']=[]; env['cleanup_state']='cleared'
-    setattr(actor,'builder_test_environments',envs); return BuilderResult(True,f"Cleared {count} resident ephemeral Builder test mob(s), occupancy entries, combat encounters, AI tasks, timers, items, corpses, and private-room state.")
-BuilderService.testclear = _testclear2
-
-def _verify_generation(self, world_id: str, generation_id: str) -> tuple[bool,str,dict[str,Any]]:
-    root=self.workspace.ensure(world_id); gen_dir=root/'generations'/generation_id; manifest=self.workspace._read(gen_dir/'manifest.json', None)
-    if not manifest: return False, f"Generation {generation_id} is missing manifest.json.", {}
-    for filename, expected in (manifest.get('content_hashes') or {}).items():
-        p=gen_dir/filename
-        if not p.exists(): return False, f"Generation file missing: {filename}", manifest
-        actual=hashlib.sha256(p.read_bytes()).hexdigest()
-        if actual != expected: return False, f"Hash mismatch for {filename}.", manifest
-    return True,"ok",manifest
-BuilderService._verify_generation = _verify_generation
-
-def _load_generation_registries(self, world_id: str, generation_id: str) -> dict[str,Any]:
-    root=self.workspace.ensure(world_id); gen_dir=root/'generations'/generation_id; regs={}
-    for key, filename in DRAFT_FILES.items(): regs[key]=self.workspace._coerce_draft_collection(key, filename, self.workspace._read(gen_dir/filename, {}))
-    regs['entities']={oid:MobileTemplate.from_generation(rec).to_canonical_dict() for oid,rec in regs.get('entities',{}).items() if isinstance(rec,dict)}
-    return regs
-BuilderService._load_generation_registries = _load_generation_registries
-
-def _activate_generation2(self, actor: Any, generation_id: str | None = None) -> BuilderResult:
-    denied=self._check_permission(actor,'generation',generation_id or 'active','activate')
-    if denied: return denied
-    world_id=self.workspace.world_id(actor); root=self.workspace.ensure(world_id); active_path=root/'generations'/'active.json'
-    if not generation_id or generation_id=='latest':
-        gens=sorted(p.name for p in (root/'generations').glob('generation-*') if p.is_dir())
-        if not gens: return BuilderResult(False,"No generation packages exist.")
-        generation_id=gens[-1]
-    ok,msg,manifest=self._verify_generation(world_id,generation_id)
-    if not ok: return BuilderResult(False,msg)
-    registries=self._load_generation_registries(world_id,generation_id)
-    previous=getattr(self,'active_content_generation_id',None) or (self.workspace._read(active_path,{}) or {}).get('active_generation')
-    self.previous_content_generation_id=previous; self.active_content_generation_id=generation_id; self.active_content_generation=registries; self.generation_loaded_at=self.workspace.stamp(); self.generation_status='active'
-    self.workspace._atomic_json_write(active_path,{"active_generation":generation_id,"previous_generation":previous,"activated_at":self.generation_loaded_at,"activated_by":self._actor_id(actor),"world_generation":self.generation_loaded_at,"live_mob_update_policy":manifest.get('live_mob_update_policy')})
-    self.workspace.audit(actor,world_id,'runtime activate generation','generation',generation_id,{"previous":previous},{"active":generation_id,"registries":sorted(registries)})
-    return BuilderResult(True,f"Activated generation {generation_id}; verified hashes, built immutable registries, warmed mobile/body/attack collections, and atomically swapped the live runtime generation pointer. Previous generation: {previous or 'none'}.",{"active_generation":generation_id,"previous_generation":previous,"registry_counts":{k:len(v) for k,v in registries.items() if isinstance(v,dict)}})
-BuilderService.activate_generation = _activate_generation2
-
-def _rollback_generation2(self, actor: Any) -> BuilderResult:
-    prev=getattr(self,'previous_content_generation_id',None) or (self.workspace._read(self.workspace.ensure(self.workspace.world_id(actor))/'generations'/'active.json',{}) or {}).get('previous_generation')
-    if not prev: return BuilderResult(False,"No previous generation is recorded for rollback.")
-    return self.activate_generation(actor,prev)
-BuilderService.rollback_generation = _rollback_generation2
-
-def _body_profiles2(self, actor: Any | None = None) -> list[str]:
-    world_id=self.workspace.world_id(actor) if actor is not None else next(iter([p.name for p in self.workspace.worlds_dir.iterdir() if p.is_dir()]), 'shattered_realms')
-    return sorted((self.workspace.load(world_id).get('body_profiles') or {}).keys())
-BuilderService.body_profiles = _body_profiles2
-
-def _mobile_from_legacy(cls, record: dict[str, Any]) -> "MobileTemplate":
-    rec=deepcopy(record or {})
-    raw=rec.pop('natural_attacks', None)
-    raw_top=rec.pop('natural_weapons', None)
-    cp=dict(rec.get('combat_profile') or {})
-    if raw is not None: cp['natural_weapons']=[_canonical_weapon(x, str(rec.get('id') or 'mobile')) for x in raw if isinstance(x,dict)]
-    if raw_top is not None: cp['natural_weapons']=[_canonical_weapon(x, str(rec.get('id') or 'mobile')) for x in raw_top if isinstance(x,dict)]
-    cp['natural_weapons']=[_canonical_weapon(x, str(rec.get('id') or 'mobile')) for x in (cp.get('natural_weapons') or []) if isinstance(x,dict)]
-    rec['combat_profile']=cp
-    return cls(rec, 'legacy')
-MobileTemplate.from_legacy = classmethod(_mobile_from_legacy)
-
-def _actor_id_display(self, actor: Any) -> str:
-    return "%s:%s:%s" % (getattr(actor, "account_id", ""), getattr(actor, "name", "") or getattr(actor,"id",""), getattr(actor, "session_id", ""))
-BuilderService._actor_id = _actor_id_display
-
-def _preview2(self, actor: Any, collection: str, object_id: str) -> BuilderResult:
-    sess=self.sessions.active.get(self.sessions.actor_key(actor))
-    if sess and sess.collection==collection and sess.object_id==object_id:
-        return self._preview_record(actor, sess.working_record)
-    return self._preview_record(actor, self._record(self.workspace.world_id(actor), collection, object_id) or {})
-BuilderService.preview = _preview2
-
-def _normalize_entity_updates2(self, object_id: str, updates: dict[str, Any]) -> dict[str, Any]:
-    updates=deepcopy(updates)
-    raw=updates.pop('natural_attacks', None); raw_top=updates.pop('natural_weapons', None); cp=dict(updates.get('combat_profile') or {})
-    if raw is not None: cp['natural_weapons']=[_canonical_weapon(x,object_id) for x in raw if isinstance(x,dict)]
-    if raw_top is not None: cp['natural_weapons']=[_canonical_weapon(x,object_id) for x in raw_top if isinstance(x,dict)]
-    if 'natural_weapons' in cp: cp['natural_weapons']=[_canonical_weapon(x,object_id) for x in cp.get('natural_weapons') or [] if isinstance(x,dict)]
-    if cp: updates['combat_profile']=cp
-    return updates
-BuilderService._normalize_entity_updates = _normalize_entity_updates2
