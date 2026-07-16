@@ -2659,6 +2659,11 @@ class MudCommandEngine:
         setattr(character, "preferences", prefs)
         if args and args[0].lower() in {"on", "off"}:
             prefs["show_vnums"] = args[0].lower() == "on"
+            if getattr(self, "presentation_preferences", None) and getattr(character, "id", None):
+                try:
+                    self.presentation_preferences.save(character.id, show_vnums=prefs["show_vnums"])
+                except TypeError:
+                    pass
         enabled = bool(prefs.get("show_vnums"))
         return CommandResult(f"VNUM display is {'on' if enabled else 'off'}.")
 

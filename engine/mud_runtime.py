@@ -978,7 +978,10 @@ class MudRuntime:
             self.combat_runtime.enqueue_output(character_id, message, room_id=room_id, category=category)
 
     def deliver_room_action(self, room_id: str, message: str, *, actor_id: str = "", category: str = "room_action") -> None:
-        for cid in self._active_character_ids_in_room(room_id, exclude={actor_id} if actor_id else set()):
+        exclude = {actor_id} if actor_id else set()
+        if actor_id.startswith("character:"):
+            exclude.add(actor_id.split(":", 1)[1])
+        for cid in self._active_character_ids_in_room(room_id, exclude=exclude):
             self._enqueue_room_output(cid, message, room_id=room_id, category=category)
         self.event_bus.publish("room_action_observed", {"room_id": room_id, "actor_id": actor_id, "message_kind": category}, source_system="runtime", world_id=self.active_world_id or "", room_id=room_id)
 
@@ -1360,7 +1363,7 @@ class MudRuntime:
         elif projection_type == "prompt":
             colors = self.get_effective_mud_colors(); value = {"prompt_html": render_prompt(character, colors), "prompt_text": render_semantic_plain(render_prompt(character, colors))}
         elif projection_type == "room_render":
-            room = self._current_room(character); colors = self.get_effective_mud_colors(); value = {"html": render_room(room, colors, character), "text": self._room_text(room), "room_id": character.room_id}
+            room = self._current_room(character); colors = self.get_effective_mud_colors(); value = {"html": render_room(room, colors, character), "text": self._room_text(room, character), "room_id": character.room_id}
         elif projection_type == "location":
             room = self._current_room(character); value = {"room_id": character.room_id, "room_name": getattr(room, "title", "")}
         else:
@@ -2187,7 +2190,7 @@ class MudRuntime:
         if nav_result is not None:
             result = nav_result
             if result.state_updates and result.state_updates.get("render_room"):
-                room_text = self._room_text(self._current_room(char))
+                room_text = self._room_text(self._current_room(char), char)
                 result.narrative = f"{result.narrative}\n\n{room_text}" if result.narrative else room_text
             return result
         dialogue_result = self._handle_dialogue_command(char, cmd_name, args)
@@ -2225,7 +2228,7 @@ class MudRuntime:
         else:
             result = self.command_engine.handle_command(char, command)
         if result.state_updates and result.state_updates.get("render_room"):
-            room_text = self._room_text(self._current_room(char))
+            room_text = self._room_text(self._current_room(char), char)
             result.narrative = f"{result.narrative}\n\n{room_text}" if result.narrative else room_text
         return result
 
@@ -2325,9 +2328,9 @@ class MudRuntime:
         self.event_bus.publish("movement_failed", {"canonical_command": direction, "actor_id": actor_id, "entity_id": eid, "current_room_id": room_id, "result_summary": summary}, source_system="movement", world_id=self.active_world_id or "", command=direction)
         return CommandResult(narrative="Cannot go that way." if summary == "no_exit" else f"Cannot go that way: {summary}.", ok=False)
 
-    def _room_text(self, room: MudRoom) -> str:
+    def _room_text(self, room: MudRoom, character: Any = None) -> str:
         from smart_mud.transport import html_to_plain_text
-        return html_to_plain_text(render_room(room, self.get_effective_mud_colors()))
+        return html_to_plain_text(render_room(room, self.get_effective_mud_colors(), character))
 
     def _builder_content_diagnostic(self, char: MudCharacter, cmd: str, args: list[str]) -> str:
         q = " ".join(args).strip()
