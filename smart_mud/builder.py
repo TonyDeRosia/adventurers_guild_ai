@@ -907,12 +907,79 @@ class BuilderSessionManager:
         sess = self.active.pop(self.actor_key(actor), None)
         if sess and release: self.service.release_lock(actor, sess.collection, sess.object_id)
 
+@dataclass
+class BuilderContentRecord:
+    canonical_id: str
+    legacy_vnum: int | None
+    display_name: str
+    type: str
+    area: str
+    zone: str
+    builder_status: str
+    validation_status: str
+    content_source: str
+    generation: str
+    spawn_count: int = 0
+    reset_count: int = 0
+    script_count: int = 0
+    shop_count: int = 0
+    quest_count: int = 0
+    record: dict[str, Any] = field(default_factory=dict)
+
+class BuilderContentQueryService:
+    """Canonical Oasis-style discovery facade for Builder list and picker commands."""
+    COLLECTIONS = {"mob": "entities", "mobile": "entities", "object": "items", "item": "items", "room": "rooms", "spawn": "spawns", "reset": "resets", "area": "areas", "zone": "zones"}
+
+    def __init__(self, service: "BuilderService") -> None:
+        self.service = service
+
+    def list(self, actor: Any, kind: str, *, scratch: dict[str, Any] | None = None) -> list[BuilderContentRecord]:
+        collection = self.COLLECTIONS.get(kind, kind)
+        records = self.service.resolve_collection_records(actor, collection, scratch=scratch)
+        aux = {k: self.service.resolve_collection_records(actor, k) for k in ("spawns", "resets", "quest_definitions")}
+        rows = [self._record(collection, oid, rec, aux) for oid, rec in records.items() if isinstance(rec, dict)]
+        return sorted(rows, key=lambda r: (r.legacy_vnum is None, r.legacy_vnum or 999999999, r.canonical_id))
+
+    def _record(self, collection: str, oid: str, rec: dict[str, Any], aux: dict[str, dict[str, dict[str, Any]]]) -> BuilderContentRecord:
+        cid = str(rec.get("id") or oid)
+        vnum = rec.get("vnum", rec.get("spawn_vnum"))
+        try: vnum = int(vnum) if vnum not in (None, "") else None
+        except Exception: vnum = None
+        source = str(rec.get("_builder_reference_source") or "legacy")
+        status = str(rec.get("builder_status") or ("complete" if rec.get("name") or rec.get("title") else "incomplete"))
+        validation = "Valid" if (rec.get("name") or rec.get("title") or collection in {"spawns","resets"}) and (vnum is not None or collection not in {"entities","items","rooms"}) else "Incomplete"
+        scripts = rec.get("script_ids") or rec.get("scripts") or []
+        spawns = sum(1 for s in aux.get("spawns", {}).values() if self._links(s, cid, collection))
+        resets = sum(1 for r in aux.get("resets", {}).values() if self._links(r, cid, collection))
+        quests = sum(1 for q in aux.get("quest_definitions", {}).values() if cid in json.dumps(q, sort_keys=True, default=str))
+        return BuilderContentRecord(cid, vnum, str(rec.get("name") or rec.get("title") or cid), collection, str(rec.get("area_id") or rec.get("area") or ""), str(rec.get("zone_id") or rec.get("zone") or ""), status, validation, source, str(rec.get("generation") or rec.get("generation_id") or ""), spawns, resets, len(scripts) if isinstance(scripts, list) else 1, len(rec.get("shop_ids") or []), quests, rec)
+
+    def _links(self, rec: dict[str, Any], cid: str, collection: str) -> bool:
+        keys = {"entities": ("mobile_id","mob_id","entity_id","template_id"), "items": ("object_id","item_id","item_template_id"), "rooms": ("room_id","target_room_id")}.get(collection, ())
+        return any(str(rec.get(k) or "") == cid for k in keys) or cid in json.dumps(rec, sort_keys=True, default=str)
+
+    def search(self, actor: Any, kind: str, query: str) -> list[BuilderContentRecord]:
+        q = str(query or "").lower().strip()
+        rows = self.list(actor, kind)
+        if not q:
+            return rows
+        if q.isdigit():
+            return [r for r in rows if r.legacy_vnum == int(q) or q in r.canonical_id.lower()]
+        return [r for r in rows if q in " ".join([r.canonical_id, r.display_name, r.area, r.zone, " ".join(map(str, r.record.get("keywords") or r.record.get("aliases") or []))]).lower()]
+
+    def by_id_or_vnum(self, actor: Any, kind: str, token: str) -> list[BuilderContentRecord]:
+        rows = self.list(actor, kind)
+        if str(token).isdigit():
+            return [r for r in rows if r.legacy_vnum == int(token)]
+        return [r for r in rows if r.canonical_id == token] or self.search(actor, kind, token)
+
 class BuilderService:
     """Canonical draft-first builder facade used by commands, OLC, importers, and future UI."""
     def __init__(self, workspace: BuilderWorkspace | None = None, runtime: Any | None = None) -> None:
         self.workspace = workspace or BuilderWorkspace()
         self.runtime = runtime
         self.sessions = BuilderSessionManager(self)
+        self.content_query = BuilderContentQueryService(self)
 
     def attach_runtime(self, runtime: Any) -> None:
         self.runtime = runtime
@@ -1339,6 +1406,93 @@ class BuilderService:
         denied = self._check_permission(actor, collection, object_id, "edit")
         if denied: return denied
         return self.sessions.start(actor, editor, collection, object_id)
+
+    def discover_editor_target(self, actor: Any, editor: str, args: list[str]) -> BuilderResult:
+        kind = {"medit": "mob", "oedit": "object", "redit": "room", "zedit": "zone", "aedit": "area"}.get(editor, editor)
+        if not args or args[0].lower() in {"list", "all", "zone", "area"}:
+            return self.list_content(actor, kind, args or ["list"])
+        words = args[1:] if args[0].lower() in {"id", "vnum", "search"} else args
+        rows = self.content_query.by_id_or_vnum(actor, kind, " ".join(words))
+        if not rows:
+            return BuilderResult(False, f"No {kind} matches {' '.join(words)}.")
+        if len(rows) > 1:
+            return BuilderResult(False, self.render_picker(f"{editor.upper()} choices", rows))
+        coll = BuilderContentQueryService.COLLECTIONS.get(kind, kind)
+        return self.start_editor(actor, editor, coll, rows[0].canonical_id)
+
+    def render_picker(self, title: str, rows: list[BuilderContentRecord]) -> str:
+        lines = [title, "Choose one; do not guess:"]
+        for i, r in enumerate(rows[:25], 1):
+            lines.append(f"{i}. {r.legacy_vnum if r.legacy_vnum is not None else '-'} {r.canonical_id} - {r.display_name} [{r.content_source}/{r.validation_status}]")
+        if len(rows) > 25: lines.append(f"... {len(rows)-25} more. Refine your search.")
+        return "\n".join(lines)
+
+    def list_content(self, actor: Any, kind: str, args: list[str] | None = None) -> BuilderResult:
+        args = list(args or [])
+        rows = self.content_query.list(actor, kind)
+        drafts = self.workspace.load(self.workspace.world_id(actor))
+        cur_area = str(getattr(actor, "current_area_id", "") or "")
+        cur_zone = str(getattr(actor, "current_zone_id", "") or "")
+        page = 1; source = ""; mode = args[0].lower() if args else "current"; query = ""
+        if mode in {"list", "all", "world", ""}: mode = "all"
+        if mode == "page" and len(args) > 1 and args[1].isdigit(): page = int(args[1]); mode = "all"
+        elif mode == "source" and len(args) > 1: source = args[1].lower(); mode = "all"
+        elif mode in {"draft","live","active"}: source = "generation" if mode == "active" else mode; mode = "all"
+        elif re.fullmatch(r"\d+-\d+", mode):
+            a,b = [int(x) for x in mode.split("-",1)]
+            rows = [r for r in rows if r.legacy_vnum is not None and a <= r.legacy_vnum <= b]; mode = "filtered"
+        elif mode == "id" and len(args) > 1: rows = [r for r in rows if r.canonical_id == args[1]]; mode = "filtered"
+        elif mode == "vnum" and len(args) > 1 and args[1].isdigit(): rows = [r for r in rows if r.legacy_vnum == int(args[1])]; mode = "filtered"
+        elif mode not in {"all","world","zone","area","here","current","invalid","incomplete"}:
+            query = " ".join(args); rows = self.content_query.search(actor, kind, query); mode = "search"
+        if source: rows = [r for r in rows if r.content_source == source]
+        if mode == "zone":
+            z = args[1] if len(args) > 1 and args[1].lower() != "current" else cur_zone
+            rows = [r for r in rows if r.zone == z]
+        elif mode == "area":
+            a = args[1] if len(args) > 1 else cur_area
+            rows = [r for r in rows if r.area == a]
+        elif mode in {"current"} and cur_zone:
+            rows = [r for r in rows if r.zone == cur_zone]
+        elif mode == "here":
+            rid = str(getattr(actor, "room_id", "") or "")
+            rows = [r for r in rows if r.canonical_id == rid or str(r.record.get("room_id") or "") == rid or rid in json.dumps(r.record, default=str)]
+        elif mode in {"invalid","incomplete"}:
+            rows = [r for r in rows if r.validation_status.lower() != "valid" or r.builder_status.lower() == "incomplete"]
+        per = 25; total = len(rows); start = max(0, (page-1)*per); shown = rows[start:start+per]
+        headers = {"mob": "VNUM | ID | Name | Level | Race | Zone | Area | Source | Status | Validation", "object": "VNUM | ID | Name | Item Type | Wear Slots | Area | Zone | Source | Status", "room": "VNUM | ID | Name | Area | Zone | Exits | Spawns | Resets"}.get(kind, "VNUM | ID | Name | Type | Area | Zone | Source | Status")
+        lines = [f"{kind.title()} list ({total} total, page {page}/{max(1,(total+per-1)//per)})", headers]
+        if kind in {"mob", "object"}:
+            lines.insert(1, f"Current zone: {cur_zone or 'none'}")
+            lines.insert(2, f"Usage: {'mlist 1500-1599' if kind == 'mob' else 'olist 1300-1399'} | {kind}list all | zone | area | id | vnum | source draft|active|live")
+        for r in shown:
+            rec = r.record
+            if kind == "mob":
+                lines.append(f"{r.legacy_vnum if r.legacy_vnum is not None else '-'} | {r.canonical_id} | {r.display_name} | {rec.get('level','')} | {rec.get('race') or rec.get('species','')} | {r.zone} | {r.area} | {r.content_source} | {r.builder_status} | {r.validation_status}")
+            elif kind == "object":
+                lines.append(f"{r.legacy_vnum if r.legacy_vnum is not None else '-'} | {r.canonical_id} | {r.display_name} | {rec.get('item_type') or rec.get('type','')} | {', '.join(rec.get('wear_slots') or rec.get('wear_flags') or [])} | {r.area} | {r.zone} | {r.content_source} | {r.builder_status}")
+            elif kind == "room":
+                lines.append(f"{r.legacy_vnum if r.legacy_vnum is not None else '-'} | {r.canonical_id} | {r.display_name} | {r.area} | {r.zone} | {len(rec.get('exits') or {})} | {r.spawn_count} | {r.reset_count}")
+            else:
+                lines.append(f"{r.legacy_vnum if r.legacy_vnum is not None else '-'} | {r.canonical_id} | {r.display_name} | {r.type} | {r.area} | {r.zone} | {r.content_source} | {r.builder_status}")
+        return BuilderResult(True, "\n".join(lines), {"total": total, "rows": [r.__dict__ for r in shown]})
+
+    def vnum_report(self, actor: Any, args: list[str] | None = None) -> BuilderResult:
+        args=list(args or []); kinds=["mob","object","room","zone"] if not args or args[0]=="free" else [args[0]]
+        free = bool(args and args[0]=="free")
+        if free and len(args)>1: kinds=[args[1]]
+        lines=["VNUM report"]; seen={}
+        for k in kinds:
+            rows=self.content_query.list(actor,k); vals=[r.legacy_vnum for r in rows if r.legacy_vnum is not None]
+            lines.append(f"{k}: {len(vals)} assigned")
+            for v in vals: seen.setdefault(v,[]).append(k)
+            if free:
+                used=set(vals); base={"mob":1500,"object":1300,"room":1000,"zone":1000}.get(k,1)
+                first=next((n for n in range(base, base+1000) if n not in used), None)
+                lines.append(f"first free {k}: {first if first is not None else 'none'}")
+        dups={v:ks for v,ks in seen.items() if len(ks)>1}
+        lines.append("duplicate/cross-type conflicts: " + (", ".join(f"{v}({','.join(ks)})" for v,ks in sorted(dups.items())) or "none"))
+        return BuilderResult(True,"\n".join(lines))
 
     def render_session(self, sess: BuilderEditSession) -> str:
         rec = sess.working_record or {}
