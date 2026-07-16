@@ -2361,7 +2361,9 @@ class MudRuntime:
                 continue
             for aid, part in getattr(enc, 'participants', {}).items():
                 target_id = getattr(part, 'target_actor_id', '')
-                if target_id:
+                target_actor = getattr(cr, "resident_actors", {}).get(target_id)
+                source_actor = getattr(cr, "resident_actors", {}).get(aid)
+                if target_id and target_actor and source_actor and self.canonical_room_id(getattr(target_actor.identity, "current_location", "")) == self.canonical_room_id(room_id) and self.canonical_room_id(getattr(source_actor.identity, "current_location", "")) == self.canonical_room_id(room_id):
                     targets[aid] = actor_names.get(target_id) or cr.actor_display_name(target_id)
         for ent in (visible.get('npcs', []) + visible.get('mobs', [])):
             aid = 'entity:' + str(ent.get('instance_id') or ent.get('entity_id'))

@@ -1,0 +1,3422 @@
+........................................................................ [  2%]
+........................................................................ [  5%]
+........................................................................ [  8%]
+................F..............................F..FF..FFF.........FF.... [ 11%]
+................................FFFFFFFFFFFFF......FF......F............ [ 14%]
+........................................................................ [ 17%]
+....FF.........................FFFFFF....F....FFF.....F................. [ 20%]
+.................FF..........FFFF.FF.................................... [ 23%]
+....................................................F...............F... [ 25%]
+F........................F.............................................. [ 28%]
+........................................................................ [ 31%]
+........................................F............................... [ 34%]
+........................................................................ [ 37%]
+........................................................................ [ 40%]
+...................................................F.................... [ 43%]
+..........FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF..................FF...... [ 46%]
+............FFFFFFFF..............F...............FF......F...F.F....... [ 49%]
+..
+=================================== FAILURES ===================================
+_____ test_runtime_rlist_and_rooms_filters_use_active_drafts_after_import ______
+
+isolated_builder_world = IsolatedBuilderWorld(world_root=PosixPath('/tmp/pytest-of-root/pytest-7/test_runtime_rlist_and_rooms_f0/worlds'), worl...49e80>, database_path=PosixPath('/tmp/pytest-of-root/pytest-7/test_runtime_rlist_and_rooms_f0/user_data/mud_state.db'))
+
+    def test_runtime_rlist_and_rooms_filters_use_active_drafts_after_import(isolated_builder_world):
+        rt, cid = runtime_with_pack(isolated_builder_world)
+    
+        alist = runtime_text(rt, cid, "alist all")
+        assert "starter_guildlands" in alist
+>       assert " | 70 | " in alist
+E       AssertionError: assert ' | 70 | ' in '--------------------------------------------------------\nArea List (11 records)\nWorld: shattered_realms\nArea : non...e Wayfarer’s Mug   wayfarers_mug        0   0  0  0  Valid\n\n--------------------------------------------------------'
+
+tests/test_builder_list_filters_phase4h_hotfix.py:112: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+----------------------------- Captured stdout call -----------------------------
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.354 status=ready
+[mud-persistence] Saved character Runtime Builder (char_shattered_realms_runtime_builder)
+[mud-persistence] Loaded character Runtime Builder (char_shattered_realms_runtime_builder)
+[mud-command] Routing builder as builder for Runtime Builder
+[mud-command] Deterministic: builder
+[mud-persistence] Command history: builder on
+[mud-persistence] Loaded character Runtime Builder (char_shattered_realms_runtime_builder)
+[mud-command] Routing alist as alist for Runtime Builder
+[mud-command] Deterministic: alist
+[mud-persistence] Command history: alist all
+____________ test_builder_import_validate_preview_apply_round_trip _____________
+
+isolated_builder_world = IsolatedBuilderWorld(world_root=PosixPath('/tmp/pytest-of-root/pytest-7/test_builder_import_validate_p0/worlds'), worl...4be00>, database_path=PosixPath('/tmp/pytest-of-root/pytest-7/test_builder_import_validate_p0/user_data/mud_state.db'))
+
+    def test_builder_import_validate_preview_apply_round_trip(isolated_builder_world):
+        bw, root = workspace(isolated_builder_world)
+        a = actor()
+        bw.ensure("shattered_realms")
+        imp = root / "shattered_realms/builder/imports/my_area.json"
+        bundle = {
+            "areas": {"test_area": {"id":"test_area", "name":"Test Area", "world_id":"shattered_realms", "vnum_start":2000, "vnum_end":2099, "room_vnum_start":2000, "room_vnum_end":2099}},
+            "zones": {"test_zone": {"id":"test_zone", "name":"Test Zone", "world_id":"shattered_realms", "area_id":"test_area", "vnum_start":2000, "vnum_end":2099}},
+            "rooms": {"test_room": {"id":"test_room", "name":"Test Room", "description":"A test room.", "world_id":"shattered_realms", "area_id":"test_area", "zone_id":"test_zone", "vnum":2000, "exits":{}, "features":{}, "flags":[], "tags":[], "plugin_data":{}}},
+            "features": {}, "items": {}, "entities": {}, "spawns": {},
+        }
+        imp.write_text(json.dumps(bundle))
+        assert "my_area.json" in bw.import_list(a).message
+>       assert bw.import_validate(a, "my_area.json").ok
+E       AssertionError: assert False
+E        +  where False = BuilderResult(ok=False, message='Import validation failed.\n\nErrors:\n- room alias_room missing name\n- room builder_... area or zone.\n- room test_room_two missing description\n- Legacy room test_room_two has no area or zone.', data=None).ok
+E        +    where BuilderResult(ok=False, message='Import validation failed.\n\nErrors:\n- room alias_room missing name\n- room builder_... area or zone.\n- room test_room_two missing description\n- Legacy room test_room_two has no area or zone.', data=None) = import_validate(namespace(role='builder', account_role='builder', world_id='shattered_realms', id='c1', account_id='a1', room_id='guildhall_crossing_square', edit_room_id='guildhall_crossing_square', name='Tester'), 'my_area.json')
+E        +      where import_validate = <smart_mud.builder.BuilderWorkspace object at 0x7f054c4d0530>.import_validate
+
+tests/test_builder_phase4f.py:51: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+________ test_template_files_exist_and_commands_copy_without_overwrite _________
+
+isolated_builder_world = IsolatedBuilderWorld(world_root=PosixPath('/tmp/pytest-of-root/pytest-7/test_template_files_exist_and_0/worlds'), worl...4b0e0>, database_path=PosixPath('/tmp/pytest-of-root/pytest-7/test_template_files_exist_and_0/user_data/mud_state.db'))
+
+    def test_template_files_exist_and_commands_copy_without_overwrite(isolated_builder_world):
+        bw, root = workspace(isolated_builder_world)
+        bw.ensure("shattered_realms")
+        required = {"empty_bundle_template.json", "area_zone_room_template.json", "bad_duplicate_vnum_test.json", "future_keys_test.json", "feature_library_template.json"}
+>       assert required <= {p.name for p in (root / "shattered_realms/builder/templates").glob("*.json")}
+E       AssertionError: assert {'area_zone_r...ys_test.json'} <= set()
+E         
+E         Extra items in the left set:
+E         'area_zone_room_template.json'
+E         'bad_duplicate_vnum_test.json'
+E         'feature_library_template.json'
+E         'empty_bundle_template.json'
+E         'future_keys_test.json'
+
+tests/test_builder_phase4g_hotfix.py:33: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+__________ test_import_list_guidance_and_template_validation_results ___________
+
+isolated_builder_world = IsolatedBuilderWorld(world_root=PosixPath('/tmp/pytest-of-root/pytest-7/test_import_list_guidance_and_0/worlds'), worl...4bcb0>, database_path=PosixPath('/tmp/pytest-of-root/pytest-7/test_import_list_guidance_and_0/user_data/mud_state.db'))
+
+    def test_import_list_guidance_and_template_validation_results(isolated_builder_world):
+        bw, root = workspace(isolated_builder_world)
+        bw.ensure("shattered_realms")
+        msg = bw.import_list(actor()).message
+        assert "No import files found." in msg
+        assert "builder template copy area_zone_room_template.json my_area.json" in msg
+        assert "worlds/shattered_realms/builder/imports/" in msg
+        bw.template_copy(actor(), "area_zone_room_template.json", "area.json")
+>       assert bw.import_validate(actor(), "area.json").ok
+E       AssertionError: assert False
+E        +  where False = BuilderResult(ok=False, message='Import validation failed.\n\nErrors:\n- Import file not found: area.json\n\nWarnings:\n- none', data=None).ok
+E        +    where BuilderResult(ok=False, message='Import validation failed.\n\nErrors:\n- Import file not found: area.json\n\nWarnings:\n- none', data=None) = import_validate(namespace(role='builder', account_role='builder', world_id='shattered_realms', id='c1', account_id='a1', room_id='guildhall_crossing_square', edit_room_id='guildhall_crossing_square', name='Tester'), 'area.json')
+E        +      where import_validate = <smart_mud.builder.BuilderWorkspace object at 0x7f054d7f5370>.import_validate
+E        +      and   namespace(role='builder', account_role='builder', world_id='shattered_realms', id='c1', account_id='a1', room_id='guildhall_crossing_square', edit_room_id='guildhall_crossing_square', name='Tester') = actor()
+
+tests/test_builder_phase4g_hotfix.py:54: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+__________________ test_phase4h_content_pack_files_and_shape ___________________
+
+    def test_phase4h_content_pack_files_and_shape():
+>       assert (ROOT / 'templates' / PACK).exists()
+E       AssertionError: assert False
+E        +  where False = exists()
+E        +    where exists = ((PosixPath('worlds/shattered_realms/builder') / 'templates') / 'starter_guildlands_content_pack_v1.json').exists
+
+tests/test_builder_phase4h_content_pack.py:26: AssertionError
+__________ test_phase4h_room_vnums_exits_zones_spawns_and_ai_profiles __________
+
+    def test_phase4h_room_vnums_exits_zones_spawns_and_ai_profiles():
+>       data = load_pack()
+               ^^^^^^^^^^^
+
+tests/test_builder_phase4h_content_pack.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_builder_phase4h_content_pack.py:23: in load_pack
+    return json.loads((ROOT / 'templates' / PACK).read_text(encoding='utf-8'))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.pyenv/versions/3.14.4/lib/python3.14/pathlib/__init__.py:787: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('worlds/shattered_realms/builder/templates/starter_guildlands_content_pack_v1.json')
+mode = 'r', buffering = -1, encoding = 'utf-8', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: 'worlds/shattered_realms/builder/templates/starter_guildlands_content_pack_v1.json'
+
+/root/.pyenv/versions/3.14.4/lib/python3.14/pathlib/__init__.py:771: FileNotFoundError
+____________ test_phase4h_builder_import_pipeline_and_template_copy ____________
+
+isolated_builder_world = IsolatedBuilderWorld(world_root=PosixPath('/tmp/pytest-of-root/pytest-7/test_phase4h_builder_import_pi0/worlds'), worl...fb620>, database_path=PosixPath('/tmp/pytest-of-root/pytest-7/test_phase4h_builder_import_pi0/user_data/mud_state.db'))
+
+    def test_phase4h_builder_import_pipeline_and_template_copy(isolated_builder_world):
+        worlds_dir = isolated_builder_world.world_root
+        bw = isolated_builder_world.workspace
+        a = actor()
+>       assert PACK in bw.template_list(a).message
+E       AssertionError: assert 'starter_guildlands_content_pack_v1.json' in 'Builder import templates:\n- none'
+E        +  where 'Builder import templates:\n- none' = BuilderResult(ok=True, message='Builder import templates:\n- none', data=None).message
+E        +    where BuilderResult(ok=True, message='Builder import templates:\n- none', data=None) = template_list(namespace(id='builder', account_id='acct', role='builder', world_id='shattered_realms'))
+E        +      where template_list = <smart_mud.builder.BuilderWorkspace object at 0x7f054c5f5b50>.template_list
+
+tests/test_builder_phase4h_content_pack.py:73: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+_______________ test_multiline_rdesc_end_cancel_and_redit_cycle ________________
+
+isolated_builder_world = IsolatedBuilderWorld(world_root=PosixPath('/tmp/pytest-of-root/pytest-7/test_multiline_rdesc_end_cance0/worlds'), worl...582f0>, database_path=PosixPath('/tmp/pytest-of-root/pytest-7/test_multiline_rdesc_end_cance0/user_data/mud_state.db'))
+
+    def test_multiline_rdesc_end_cancel_and_redit_cycle(isolated_builder_world):
+        rt, cid = make_runtime(isolated_builder_world)
+        out(rt, cid, "rcreate first_phase4d")
+        out(rt, cid, "rcreate second_phase4d")
+        assert "Description editor" in out(rt, cid, "rdesc")
+        out(rt, cid, "The room is warm.")
+        out(rt, cid, "A fireplace burns brightly.")
+        done = out(rt, cid, ".end")
+>       assert "Updated room:" in done and "second_phase4d" in done
+E       AssertionError: assert ('Updated room:' in 'Updated room:' and 'second_phase4d' in 'Updated room:')
+
+tests/test_builder_workflow_phase4d.py:44: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+----------------------------- Captured stdout call -----------------------------
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.220 status=ready
+[mud-persistence] Saved character Builder Four (char_shattered_realms_builder_four)
+[mud-persistence] Loaded character Builder Four (char_shattered_realms_builder_four)
+[mud-command] Routing builder as builder for Builder Four
+[mud-command] Deterministic: builder
+[mud-persistence] Command history: builder on
+[mud-command] Routing rcreate as rcreate for Builder Four
+[mud-command] Deterministic: rcreate
+[mud-persistence] Command history: rcreate first_phase4d
+[mud-command] Routing rcreate as rcreate for Builder Four
+[mud-command] Deterministic: rcreate
+[mud-persistence] Command history: rcreate second_phase4d
+[mud-command] Routing rdesc as rdesc for Builder Four
+[mud-command] Deterministic: rdesc
+[mud-persistence] Command history: rdesc
+[mud-persistence] Command history: The room is warm.
+[mud-persistence] Command history: A fireplace burns brightly.
+[mud-persistence] Command history: .end
+____________________ test_phase4d_hotfix_builder_usability _____________________
+
+isolated_builder_world = IsolatedBuilderWorld(world_root=PosixPath('/tmp/pytest-of-root/pytest-7/test_phase4d_hotfix_builder_us0/worlds'), worl...fb4d0>, database_path=PosixPath('/tmp/pytest-of-root/pytest-7/test_phase4d_hotfix_builder_us0/user_data/mud_state.db'))
+
+    def test_phase4d_hotfix_builder_usability(isolated_builder_world):
+        rt, cid = make_runtime(isolated_builder_world)
+        out(rt, cid, "rcreate testies_two")
+        out(rt, cid, "rname testies")
+        one = out(rt, cid, "rdesc testies room")
+        assert "Description updated for currently selected room:" in one
+        assert "Room: testies_two" in one
+        assert "Name: testies" in one
+        assert "Description: testies room" in one
+    
+        assert "Description editor" in out(rt, cid, "rdesc")
+        out(rt, cid, "pending line")
+        assert "cancelled" in out(rt, cid, ".cancel").lower()
+        assert "No active editor session." in out(rt, cid, ".end")
+    
+        out(rt, cid, "rcreate third_room")
+        direct = out(rt, cid, "rdesc room testies_two This is the second test room.")
+        assert "Room: testies_two" in direct and "Description: This is the second test room." in direct
+        assert "Builder Status" in direct
+    
+        suggested = out(rt, cid, "rname suggest")
+        assert "Testies Two" in suggested
+    
+        typo = out(rt, cid, "builder statys")
+        assert "Unknown builder command: statys." in typo
+        assert "Did you mean builder status?" in typo
+    
+>       assert "Mob/entity listing is not implemented yet" in out(rt, cid, "mlist")
+E       AssertionError: assert 'Mob/entity listing is not implemented yet' in '--------------------------------------------------------\nMob List - Mobiles in Shattered Realms (22 records)\nWorld:...  ----  Wild Boar                   2  Live     UNASSIGNED\n\n--------------------------------------------------------'
+E        +  where '--------------------------------------------------------\nMob List - Mobiles in Shattered Realms (22 records)\nWorld:...  ----  Wild Boar                   2  Live     UNASSIGNED\n\n--------------------------------------------------------' = out(<engine.mud_runtime.MudRuntime object at 0x7f054e8fb4d0>, 'char_shattered_realms_builder_four', 'mlist')
+
+tests/test_builder_workflow_phase4d.py:79: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+----------------------------- Captured stdout call -----------------------------
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.277 status=ready
+[mud-persistence] Saved character Builder Four (char_shattered_realms_builder_four)
+[mud-persistence] Loaded character Builder Four (char_shattered_realms_builder_four)
+[mud-command] Routing builder as builder for Builder Four
+[mud-command] Deterministic: builder
+[mud-persistence] Command history: builder on
+[mud-command] Routing rcreate as rcreate for Builder Four
+[mud-command] Deterministic: rcreate
+[mud-persistence] Command history: rcreate testies_two
+[mud-command] Routing rname as rname for Builder Four
+[mud-command] Deterministic: rname
+[mud-persistence] Command history: rname testies
+[mud-command] Routing rdesc as rdesc for Builder Four
+[mud-command] Deterministic: rdesc
+[mud-persistence] Command history: rdesc testies room
+[mud-command] Routing rdesc as rdesc for Builder Four
+[mud-command] Deterministic: rdesc
+[mud-persistence] Command history: rdesc
+[mud-persistence] Command history: pending line
+[mud-persistence] Command history: .cancel
+[mud-persistence] Command history: .end
+[mud-command] Routing rcreate as rcreate for Builder Four
+[mud-command] Deterministic: rcreate
+[mud-persistence] Command history: rcreate third_room
+[mud-command] Routing rdesc as rdesc for Builder Four
+[mud-command] Deterministic: rdesc
+[mud-persistence] Command history: rdesc room testies_two This is the second test room.
+[mud-command] Routing rname as rname for Builder Four
+[mud-command] Deterministic: rname
+[mud-persistence] Command history: rname suggest
+[mud-command] Routing builder as builder for Builder Four
+[mud-command] Deterministic: builder
+[mud-persistence] Command history: builder statys
+[mud-command] Routing mlist as mlist for Builder Four
+[mud-command] Deterministic: mlist
+[mud-persistence] Command history: mlist
+________________ test_new_ability_is_added_after_successful_use ________________
+
+    def test_new_ability_is_added_after_successful_use() -> None:
+        state = load_state()
+        state.settings.play_style.auto_update_character_sheet_from_actions = True
+        state.settings.play_style.strict_sheet_enforcement = True
+        engine = CampaignEngine(StaticNarrationAdapter("You cast rain spell and the storm answers immediately."), data_dir=Path("data"))
+    
+        engine.run_turn(state, "cast rain spell")
+    
+        names = [entry.get("name") for entry in state.structured_state.runtime.spellbook]
+        assert "Rain Spell" not in names
+>       assert any(event.get("payload", {}).get("name") == "Rain Spell" for event in state.structured_state.runtime.campaign_events)
+E       assert False
+E        +  where False = any(<generator object test_new_ability_is_added_after_successful_use.<locals>.<genexpr> at 0x7f054bfdda80>)
+
+tests/test_campaign_extensions.py:294: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[turn-routing] intent=gameplay
+___________ test_ability_normalization_produces_clean_reusable_names ___________
+
+    def test_ability_normalization_produces_clean_reusable_names() -> None:
+        state = load_state()
+        state.settings.play_style.auto_update_character_sheet_from_actions = True
+        engine = CampaignEngine(StaticNarrationAdapter("You cast chain lightning and it succeeds."), data_dir=Path("data"))
+    
+        engine.run_turn(state, "cast chain lightning in the air")
+        assert not any(entry.get("name") == "Chain Lightning" for entry in state.structured_state.runtime.spellbook)
+>       assert any(event.get("type") == "ability_suggested" and event.get("status") == "pending" for event in state.structured_state.runtime.campaign_events)
+E       assert False
+E        +  where False = any(<generator object test_ability_normalization_produces_clean_reusable_names.<locals>.<genexpr> at 0x7f054bfdd380>)
+
+tests/test_campaign_extensions.py:304: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[turn-routing] intent=gameplay
+_________ test_summon_and_create_actions_normalize_to_named_abilities __________
+
+    def test_summon_and_create_actions_normalize_to_named_abilities() -> None:
+        state = load_state()
+        state.settings.play_style.auto_update_character_sheet_from_actions = True
+        engine = CampaignEngine(StaticNarrationAdapter("You channel primal power and it works."), data_dir=Path("data"))
+    
+        engine.run_turn(state, "i summon fire")
+        engine.run_turn(state, "i create rain")
+    
+        names = [entry.get("name") for entry in state.structured_state.runtime.spellbook]
+        assert "Fire Summoning" not in names
+        assert "Rain Calling" not in names
+        event_names = [event.get("payload", {}).get("name") for event in state.structured_state.runtime.campaign_events]
+>       assert "Fire Summoning" in event_names
+E       AssertionError: assert 'Fire Summoning' in [None, None]
+
+tests/test_campaign_extensions.py:319: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[turn-routing] intent=gameplay
+[turn-routing] intent=gameplay
+_______ test_learned_ability_persists_across_turns_and_prompt_injection ________
+
+    def test_learned_ability_persists_across_turns_and_prompt_injection() -> None:
+        state = load_state()
+        state.settings.play_style.auto_update_character_sheet_from_actions = True
+        engine = CampaignEngine(StaticNarrationAdapter("You cast rain spell and it succeeds."), data_dir=Path("data"))
+    
+        engine.run_turn(state, "cast rain spell")
+        engine.run_turn(state, "look")
+    
+        gm_context = engine.state_orchestrator.build_gm_context(state)
+        assert not any(entry.get("name") == "Rain Spell" for entry in state.structured_state.runtime.spellbook)
+>       assert any(event.get("payload", {}).get("name") == "Rain Spell" for event in state.structured_state.runtime.campaign_events)
+E       assert False
+E        +  where False = any(<generator object test_learned_ability_persists_across_turns_and_prompt_injection.<locals>.<genexpr> at 0x7f054ecfac00>)
+
+tests/test_campaign_extensions.py:333: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[turn-routing] intent=gameplay
+[turn-routing] intent=gameplay
+[character-sheets] auto_created_main_sheet=true id=sheet_auto_player_1
+[gm-context-audit] campaign=moonfall
+[gm-context-audit] world_name=Untitled World
+[gm-context-audit] premise_present=false
+[gm-context-audit] location=moonfall_town
+[gm-context-audit] player_core_present=true
+[gm-context-audit] main_sheet_present=true
+[gm-context-audit] inventory_items=3
+[gm-context-audit] inventory_state_items=0
+[gm-context-audit] spellbook_entries=0
+[gm-context-audit] active_quests=0
+[gm-context-audit] npc_count=0
+[gm-context-audit] minion_count=0
+[gm-context-audit] recent_turn_actions=0
+[gm-context-audit] custom_narrator_rules=0
+________________ test_duplicate_ability_entries_are_not_created ________________
+
+    def test_duplicate_ability_entries_are_not_created() -> None:
+        state = load_state()
+        state.settings.play_style.auto_update_character_sheet_from_actions = True
+        engine = CampaignEngine(StaticNarrationAdapter("You cast rain spell and it works."), data_dir=Path("data"))
+    
+        engine.run_turn(state, "cast rain spell")
+        engine.run_turn(state, "cast rain spell")
+    
+        matches = [entry for entry in state.structured_state.runtime.spellbook if entry.get("name") == "Rain Spell"]
+        assert len(matches) == 0
+        proposals = [event for event in state.structured_state.runtime.campaign_events if event.get("payload", {}).get("name") == "Rain Spell"]
+>       assert len(proposals) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_campaign_extensions.py:347: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[turn-routing] intent=gameplay
+[turn-routing] intent=gameplay
+_______ test_duplicate_ability_entries_are_prevented_by_fuzzy_similarity _______
+
+    def test_duplicate_ability_entries_are_prevented_by_fuzzy_similarity() -> None:
+        state = load_state()
+        state.settings.play_style.auto_update_character_sheet_from_actions = True
+        engine = CampaignEngine(StaticNarrationAdapter("You cast chain lightning and it works."), data_dir=Path("data"))
+    
+        engine.run_turn(state, "cast chain lightning in the air")
+        engine.run_turn(state, "cast chain-lightning")
+    
+        matches = [entry for entry in state.structured_state.runtime.spellbook if entry.get("name") == "Chain Lightning"]
+        assert len(matches) == 0
+        proposals = [event for event in state.structured_state.runtime.campaign_events if event.get("payload", {}).get("name") == "Chain Lightning"]
+>       assert len(proposals) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_campaign_extensions.py:361: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[turn-routing] intent=gameplay
+[turn-routing] intent=gameplay
+_________ test_strict_mode_recognizes_learned_abilities_after_learning _________
+
+    def test_strict_mode_recognizes_learned_abilities_after_learning() -> None:
+        state = load_state()
+        state.settings.play_style.auto_update_character_sheet_from_actions = True
+        state.settings.play_style.strict_sheet_enforcement = True
+        engine = CampaignEngine(StaticNarrationAdapter("You cast rain spell and it succeeds."), data_dir=Path("data"))
+    
+        first = engine.run_turn(state, "cast rain spell")
+        second = engine.run_turn(state, "cast rain spell")
+    
+>       assert any("state=untrained" in msg for msg in (first.metadata or {}).get("debug_trace", []) if msg.startswith("Ability authority:"))
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_campaign_extensions.py:373: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <list_iterator object at 0x7f0551cfc2e0>
+
+>   assert any("state=untrained" in msg for msg in (first.metadata or {}).get("debug_trace", []) if msg.startswith("Ability authority:"))
+                                                                                                    ^^^^^^^^^^^^^^
+E   AttributeError: 'dict' object has no attribute 'startswith'
+
+tests/test_campaign_extensions.py:373: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[turn-routing] intent=gameplay
+[turn-routing] intent=gameplay
+_ test_ability_state_matrix_strict_on_auto_update_on_transitions_after_learning _
+
+    def test_ability_state_matrix_strict_on_auto_update_on_transitions_after_learning() -> None:
+        state = load_state()
+        state.settings.play_style.strict_sheet_enforcement = True
+        state.settings.play_style.auto_update_character_sheet_from_actions = True
+        state.settings.play_style.allow_freeform_powers = False
+        engine = CampaignEngine(StaticNarrationAdapter("You cast chain lightning and it succeeds."), data_dir=Path("data"))
+    
+        first = engine.run_turn(state, "cast chain lightning")
+        second = engine.run_turn(state, "cast chain lightning")
+    
+>       first_authority = next(msg for msg in (first.metadata or {}).get("debug_trace", []) if msg.startswith("Ability authority:"))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_campaign_extensions.py:387: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <list_iterator object at 0x7f055068dfc0>
+
+>   first_authority = next(msg for msg in (first.metadata or {}).get("debug_trace", []) if msg.startswith("Ability authority:"))
+                                                                                           ^^^^^^^^^^^^^^
+E   AttributeError: 'dict' object has no attribute 'startswith'
+
+tests/test_campaign_extensions.py:387: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[turn-routing] intent=gameplay
+[turn-routing] intent=gameplay
+_ test_ability_state_matrix_strict_on_auto_update_off_never_learns_unknown_action _
+
+    def test_ability_state_matrix_strict_on_auto_update_off_never_learns_unknown_action() -> None:
+        state = load_state()
+        state.settings.play_style.strict_sheet_enforcement = True
+        state.settings.play_style.auto_update_character_sheet_from_actions = False
+        engine = CampaignEngine(StaticNarrationAdapter("You cast rain spell and it succeeds."), data_dir=Path("data"))
+    
+        first = engine.run_turn(state, "cast rain spell")
+        second = engine.run_turn(state, "cast rain spell")
+    
+>       assert any("state=untrained" in msg for msg in (first.metadata or {}).get("debug_trace", []) if msg.startswith("Ability authority:"))
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_campaign_extensions.py:404: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <list_iterator object at 0x7f055068e1a0>
+
+>   assert any("state=untrained" in msg for msg in (first.metadata or {}).get("debug_trace", []) if msg.startswith("Ability authority:"))
+                                                                                                    ^^^^^^^^^^^^^^
+E   AttributeError: 'dict' object has no attribute 'startswith'
+
+tests/test_campaign_extensions.py:404: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[turn-routing] intent=gameplay
+[turn-routing] intent=gameplay
+_ test_ability_state_matrix_strict_off_freeform_on_allows_freer_untrained_resolution _
+
+    def test_ability_state_matrix_strict_off_freeform_on_allows_freer_untrained_resolution() -> None:
+        state = load_state()
+        state.settings.play_style.strict_sheet_enforcement = False
+        state.settings.play_style.auto_update_character_sheet_from_actions = False
+        state.settings.play_style.allow_freeform_powers = True
+        engine = CampaignEngine(StaticNarrationAdapter("You invoke storm lattice and it works."), data_dir=Path("data"))
+    
+        turn = engine.run_turn(state, "invoke storm lattice")
+    
+>       authority = next(msg for msg in (turn.metadata or {}).get("debug_trace", []) if msg.startswith("Ability authority:"))
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_campaign_extensions.py:418: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <list_iterator object at 0x7f055068e590>
+
+>   authority = next(msg for msg in (turn.metadata or {}).get("debug_trace", []) if msg.startswith("Ability authority:"))
+                                                                                    ^^^^^^^^^^^^^^
+E   AttributeError: 'dict' object has no attribute 'startswith'
+
+tests/test_campaign_extensions.py:418: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[turn-routing] intent=gameplay
+______ test_ability_authority_changes_by_settings_without_codepath_drift _______
+
+    def test_ability_authority_changes_by_settings_without_codepath_drift() -> None:
+        state = load_state()
+        state.settings.play_style.auto_update_character_sheet_from_actions = False
+        state.settings.play_style.allow_freeform_powers = True
+        engine = CampaignEngine(StaticNarrationAdapter("You channel void pulse and it works."), data_dir=Path("data"))
+    
+        state.settings.play_style.strict_sheet_enforcement = True
+        strict_turn = engine.run_turn(state, "channel void pulse")
+        state.settings.play_style.strict_sheet_enforcement = False
+        relaxed_turn = engine.run_turn(state, "channel void pulse")
+    
+>       strict_authority = next(msg for msg in (strict_turn.metadata or {}).get("debug_trace", []) if msg.startswith("Ability authority:"))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_campaign_extensions.py:435: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <list_iterator object at 0x7f05506ce830>
+
+>   strict_authority = next(msg for msg in (strict_turn.metadata or {}).get("debug_trace", []) if msg.startswith("Ability authority:"))
+                                                                                                  ^^^^^^^^^^^^^^
+E   AttributeError: 'dict' object has no attribute 'startswith'
+
+tests/test_campaign_extensions.py:435: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[turn-routing] intent=gameplay
+[turn-routing] intent=gameplay
+_________ test_prompt_injection_includes_settings_driven_ability_truth _________
+
+    def test_prompt_injection_includes_settings_driven_ability_truth() -> None:
+        state = load_state()
+        state.settings.play_style.strict_sheet_enforcement = True
+        state.settings.play_style.auto_update_character_sheet_from_actions = True
+        engine = CampaignEngine(StaticNarrationAdapter("You cast rain spell and it succeeds."), data_dir=Path("data"))
+    
+        engine.run_turn(state, "cast rain spell")
+>       prompt = engine.get_last_prompt_debug_packet(state.campaign_id)["turn_prompt"]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'turn_prompt'
+
+tests/test_campaign_extensions.py:450: KeyError
+----------------------------- Captured stdout call -----------------------------
+[turn-routing] intent=gameplay
+_____ test_main_character_sheet_is_auto_created_and_injected_when_missing ______
+
+    def test_main_character_sheet_is_auto_created_and_injected_when_missing() -> None:
+        state = load_state()
+        state.character_sheets = []
+        engine = CampaignEngine(StaticNarrationAdapter("You look around carefully."), data_dir=Path("data"))
+    
+        engine.run_turn(state, "look")
+    
+>       assert any(sheet.sheet_type == "main_character" for sheet in state.character_sheets)
+E       assert False
+E        +  where False = any(<generator object test_main_character_sheet_is_auto_created_and_injected_when_missing.<locals>.<genexpr> at 0x7f054ea9acf0>)
+
+tests/test_campaign_extensions.py:465: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[turn-routing] intent=gameplay
+______ test_latest_action_priority_retries_when_stale_fire_overrides_ice _______
+
+    def test_latest_action_priority_retries_when_stale_fire_overrides_ice() -> None:
+        state = load_state()
+        adapter = SequencedNarrationAdapter(
+            [
+                "Flames engulf him again while torches flicker and patrons lean in.",
+                "Ice surges over him, locking his legs in place as frost hardens across the floor.",
+            ]
+        )
+        engine = CampaignEngine(adapter, data_dir=Path("data"))
+    
+        state.structured_state.runtime.scene_state = {
+            "location_id": state.current_location_id,
+            "location_name": state.locations[state.current_location_id].name,
+            "recent_consequences": ["fire scorched the pillar"],
+            "last_player_action": "cast fireball at the thug",
+        }
+        result = engine.run_turn(state, "freeze him in ice")
+    
+>       assert adapter.calls == 2
+E       assert 1 == 2
+E        +  where 1 = <tests.test_campaign_extensions.SequencedNarrationAdapter object at 0x7f05508e1e80>.calls
+
+tests/test_campaign_extensions.py:660: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[turn-routing] intent=gameplay
+______________ test_spell_action_requires_clear_effect_and_impact ______________
+
+    def test_spell_action_requires_clear_effect_and_impact() -> None:
+        state = load_state()
+        adapter = SequencedNarrationAdapter(
+            [
+                "The room feels tense and uncertain as everyone waits.",
+                "Your flamestrike crashes down in a white-hot column, blasting the target backward.",
+            ]
+        )
+        engine = CampaignEngine(adapter, data_dir=Path("data"))
+        turn = engine.run_turn(state, "cast flamestrike")
+    
+>       assert "flamestrike" in turn.narrative.lower()
+E       AssertionError: assert 'flamestrike' in 'you act, and the world responds cautiously while awaiting a fuller gm ruling.'
+E        +  where 'you act, and the world responds cautiously while awaiting a fuller gm ruling.' = <built-in method lower of str object at 0x7f05503d94b0>()
+E        +    where <built-in method lower of str object at 0x7f05503d94b0> = 'You act, and the world responds cautiously while awaiting a fuller GM ruling.'.lower
+E        +      where 'You act, and the world responds cautiously while awaiting a fuller GM ruling.' = TurnResult(narrative='You act, and the world responds cautiously while awaiting a fuller GM ruling.', system_messages=... act, and the world responds cautiously while awaiting a fuller GM ruling.', 'debug_notes': ['no_json_object_found']}}).narrative
+
+tests/test_campaign_extensions.py:677: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[turn-routing] intent=gameplay
+____________ test_coherent_output_does_not_trigger_quality_fallback ____________
+
+    def test_coherent_output_does_not_trigger_quality_fallback() -> None:
+        state = load_state()
+        adapter = SequencedNarrationAdapter(
+            [
+                "You hesitate for a heartbeat, then the room answers your move: chairs scrape back and Elder Thorne watches for what you do next.",
+            ]
+        )
+        engine = CampaignEngine(adapter, data_dir=Path("data"))
+        result = engine.run_turn(state, "look")
+    
+        assert result.metadata is not None
+        assert result.metadata["quality_fallback_used"] is False
+>       assert "elder thorne" in result.narrative.lower()
+E       AssertionError: assert 'elder thorne' in 'you act, and the world responds cautiously while awaiting a fuller gm ruling.'
+E        +  where 'you act, and the world responds cautiously while awaiting a fuller gm ruling.' = <built-in method lower of str object at 0x7f05503d94b0>()
+E        +    where <built-in method lower of str object at 0x7f05503d94b0> = 'You act, and the world responds cautiously while awaiting a fuller GM ruling.'.lower
+E        +      where 'You act, and the world responds cautiously while awaiting a fuller GM ruling.' = TurnResult(narrative='You act, and the world responds cautiously while awaiting a fuller GM ruling.', system_messages=... act, and the world responds cautiously while awaiting a fuller GM ruling.', 'debug_notes': ['no_json_object_found']}}).narrative
+
+tests/test_campaign_extensions.py:796: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[turn-routing] intent=gameplay
+_______________ test_look_reflects_combat_and_clears_after_death _______________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_look_reflects_combat_and_0')
+
+    def test_look_reflects_combat_and_clears_after_death(tmp_path):
+        rt, ch = runtime_with_wolves(tmp_path)
+        wolf = rt.resolve_entity_keywords('forest wolf', rt.find_visible_entities(ch.room_id, ch)['mobs'])['entity']
+        rt.command_engine.handle_command(ch, 'kill forest wolf')
+        look = rt._handle_runtime_command(ch, 'look').narrative.lower()
+        assert 'forest wolf is here, fighting kraevok.' in look
+    
+        current = rt.find_entity(wolf['entity_id'])
+        st = dict(current['state']); st.update({'current_health': 1, 'maximum_health': 8, 'is_alive': True})
+        rt.update_entity_state(wolf['entity_id'], st)
+        for _ in range(6):
+            rt.command_engine.handle_command(ch, 'kill forest wolf')
+            rt.advance_world_time('shattered_realms', 2)
+            if rt.find_visible_entities(ch.room_id, ch).get('corpses'):
+                break
+        after = rt._handle_runtime_command(ch, 'look').narrative.lower()
+>       assert 'fighting kraevok' not in after
+E       AssertionError: assert 'fighting kraevok' not in 'emberwood h...orth south ]'
+E         
+E         'fighting kraevok' is contained here:
+E            is here, fighting kraevok.
+E           
+E           [ exits: north south ]
+
+tests/test_combat_gameplay_polish_phase12d4.py:33: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.269 status=ready
+[mud-persistence] Saved character Kraevok (char_shattered_realms_kraevok)
+[mud-persistence] Loaded character Kraevok (char_shattered_realms_kraevok)
+[mud-persistence] Saved character Kraevok (char_shattered_realms_kraevok)
+[mud-persistence] Loaded character Kraevok (char_shattered_realms_kraevok)
+[mud-command] Routing kill as kill for Kraevok
+[mud-command] Deterministic: kill
+[mud-persistence] Loaded character Kraevok (char_shattered_realms_kraevok)
+[mud-persistence] Saved character Kraevok (char_shattered_realms_kraevok)
+[combat-start] actor=Kraevok target=Forest Wolf encounter=enc_288f611bb83e4f978830ca2863ea0373 opening_ms=0
+[mud-persistence] Loaded character Kraevok (char_shattered_realms_kraevok)
+[mud-persistence] Saved character Kraevok (char_shattered_realms_kraevok)
+[mud-command] Routing look as look for Kraevok
+[mud-command] Deterministic: look
+[mud-command] Routing kill as kill for Kraevok
+[mud-command] Deterministic: kill
+[combat-validation] actor=Kraevok allowed=false reason=already_fighting health=100 position=recovering lifecycle=alive encounter=enc_288f611bb83e4f978830ca2863ea0373
+[mud-command] Routing kill as kill for Kraevok
+[mud-command] Deterministic: kill
+[combat-validation] actor=Kraevok allowed=false reason=already_fighting health=100 position=recovering lifecycle=alive encounter=enc_288f611bb83e4f978830ca2863ea0373
+[mud-command] Routing kill as kill for Kraevok
+[mud-command] Deterministic: kill
+[combat-validation] actor=Kraevok allowed=false reason=already_fighting health=100 position=recovering lifecycle=alive encounter=enc_288f611bb83e4f978830ca2863ea0373
+[mud-command] Routing kill as kill for Kraevok
+[mud-command] Deterministic: kill
+[combat-validation] actor=Kraevok allowed=false reason=already_fighting health=100 position=recovering lifecycle=alive encounter=enc_288f611bb83e4f978830ca2863ea0373
+[mud-command] Routing kill as kill for Kraevok
+[mud-command] Deterministic: kill
+[combat-validation] actor=Kraevok allowed=false reason=already_fighting health=100 position=recovering lifecycle=alive encounter=enc_288f611bb83e4f978830ca2863ea0373
+[mud-command] Routing kill as kill for Kraevok
+[mud-command] Deterministic: kill
+[combat-validation] actor=Kraevok allowed=false reason=already_fighting health=100 position=recovering lifecycle=alive encounter=enc_288f611bb83e4f978830ca2863ea0373
+[mud-command] Routing look as look for Kraevok
+[mud-command] Deterministic: look
+____ test_numbered_target_command_replaces_queued_action_without_duplicates ____
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_numbered_target_command_r0')
+
+    def test_numbered_target_command_replaces_queued_action_without_duplicates(tmp_path):
+        rt, ch = runtime_with_wolves(tmp_path)
+        first = rt.command_engine.handle_command(ch, 'kill wolf')
+        assert first.ok
+        target = rt.command_engine.handle_command(ch, 'target 1.wolf')
+        assert target.ok
+        assert 'turn your attention' in target.narrative.lower()
+        with sqlite3.connect(rt.state_store.db_path) as con:
+            assert con.execute("SELECT count(*) FROM combat_action_queue WHERE status='queued'").fetchone()[0] == 1
+>           assert con.execute("SELECT count(*) FROM combat_action_queue WHERE status='replaced'").fetchone()[0] >= 1
+E           assert 0 >= 1
+
+tests/test_combat_gameplay_polish_phase12d4.py:46: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.237 status=ready
+[mud-persistence] Saved character Kraevok (char_shattered_realms_kraevok)
+[mud-persistence] Loaded character Kraevok (char_shattered_realms_kraevok)
+[mud-persistence] Saved character Kraevok (char_shattered_realms_kraevok)
+[mud-persistence] Loaded character Kraevok (char_shattered_realms_kraevok)
+[mud-command] Routing kill as kill for Kraevok
+[mud-command] Deterministic: kill
+[mud-persistence] Loaded character Kraevok (char_shattered_realms_kraevok)
+[mud-persistence] Saved character Kraevok (char_shattered_realms_kraevok)
+[combat-start] actor=Kraevok target=Forest Wolf encounter=enc_6b91908cd820445cb717b01e77f5fe87 opening_ms=0
+[mud-persistence] Loaded character Kraevok (char_shattered_realms_kraevok)
+[mud-persistence] Saved character Kraevok (char_shattered_realms_kraevok)
+[mud-command] Routing target as target for Kraevok
+______ test_build_launch_command_uses_direct_python_without_batch_wrapper ______
+
+obj = <module 'app.web' from '/workspace/smartmud/app/web.py'>, name = 'os'
+ann = 'app.web'
+
+    def annotated_getattr(obj: object, name: str, ann: str) -> object:
+        try:
+>           obj = getattr(obj, name)
+                  ^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'app.web' has no attribute 'os'
+
+/root/.pyenv/versions/3.14.4/lib/python3.14/site-packages/_pytest/monkeypatch.py:92: AttributeError
+
+The above exception was the direct cause of the following exception:
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_build_launch_command_uses0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054dba1590>
+
+    def test_build_launch_command_uses_direct_python_without_batch_wrapper(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+        comfy_dir = _comfy_root(tmp_path)
+>       monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt", path=os.path))
+
+tests/test_comfy_portable_launch.py:31: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/root/.pyenv/versions/3.14.4/lib/python3.14/site-packages/_pytest/monkeypatch.py:106: in derive_importpath
+    annotated_getattr(target, attr, ann=module)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+obj = <module 'app.web' from '/workspace/smartmud/app/web.py'>, name = 'os'
+ann = 'app.web'
+
+    def annotated_getattr(obj: object, name: str, ann: str) -> object:
+        try:
+            obj = getattr(obj, name)
+        except AttributeError as e:
+>           raise AttributeError(
+                f"{type(obj).__name__!r} object at {ann} has no attribute {name!r}"
+            ) from e
+E           AttributeError: 'module' object at app.web has no attribute 'os'
+
+/root/.pyenv/versions/3.14.4/lib/python3.14/site-packages/_pytest/monkeypatch.py:94: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+__________________ test_detect_child_process_uses_port_probe ___________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_detect_child_process_uses0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054c035150>
+
+    def test_detect_child_process_uses_port_probe(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+    
+        class _FakeProcess:
+            def poll(self):
+                return 1
+    
+>       monkeypatch.setattr(runtime, "_is_port_listening", lambda *_args, **_kwargs: True)
+E       AttributeError: <app.web.WebRuntime object at 0x7f054be42490> has no attribute '_is_port_listening'
+
+tests/test_comfy_portable_launch.py:50: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+_____ test_start_image_engine_reports_immediate_launcher_exit_with_output ______
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_start_image_engine_report0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054e64e050>
+
+    def test_start_image_engine_reports_immediate_launcher_exit_with_output(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       runtime.app_config.image.provider = "comfyui"
+        ^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'app_config'
+
+tests/test_comfy_portable_launch.py:56: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+_____________ test_validate_install_does_not_require_venv_runtime ______________
+
+obj = <module 'app.web' from '/workspace/smartmud/app/web.py'>, name = 'os'
+ann = 'app.web'
+
+    def annotated_getattr(obj: object, name: str, ann: str) -> object:
+        try:
+>           obj = getattr(obj, name)
+                  ^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'app.web' has no attribute 'os'
+
+/root/.pyenv/versions/3.14.4/lib/python3.14/site-packages/_pytest/monkeypatch.py:92: AttributeError
+
+The above exception was the direct cause of the following exception:
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_validate_install_does_not0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054d7bc8c0>
+
+    def test_validate_install_does_not_require_venv_runtime(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+        comfy_dir = _comfy_root(tmp_path)
+>       monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt", path=os.path))
+
+tests/test_comfy_portable_launch.py:112: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/root/.pyenv/versions/3.14.4/lib/python3.14/site-packages/_pytest/monkeypatch.py:106: in derive_importpath
+    annotated_getattr(target, attr, ann=module)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+obj = <module 'app.web' from '/workspace/smartmud/app/web.py'>, name = 'os'
+ann = 'app.web'
+
+    def annotated_getattr(obj: object, name: str, ann: str) -> object:
+        try:
+            obj = getattr(obj, name)
+        except AttributeError as e:
+>           raise AttributeError(
+                f"{type(obj).__name__!r} object at {ann} has no attribute {name!r}"
+            ) from e
+E           AttributeError: 'module' object at app.web has no attribute 'os'
+
+/root/.pyenv/versions/3.14.4/lib/python3.14/site-packages/_pytest/monkeypatch.py:94: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+__________ test_dependency_bootstrap_is_skipped_for_portable_runtime ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_dependency_bootstrap_is_s0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054d7bea80>
+
+    def test_dependency_bootstrap_is_skipped_for_portable_runtime(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       result = runtime._bootstrap_comfy_python_dependencies(Path("."), ["cmd.exe", "/d", "/c", "run_nvidia_gpu.bat"], "portable_nvidia_launcher")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute '_bootstrap_comfy_python_dependencies'
+
+tests/test_comfy_portable_launch.py:121: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+________________ test_read_only_commands_do_not_save_character _________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_read_only_commands_do_not0')
+
+    def test_read_only_commands_do_not_save_character(tmp_path):
+        rt, cid = _runtime(tmp_path)
+        calls = []
+        original = rt.state_store.save_character
+    
+        def spy(*args, **kwargs):
+            calls.append((args, kwargs))
+            return original(*args, **kwargs)
+    
+        rt.state_store.save_character = spy
+        for command in ["look", "score", "worth", "equipment", "inventory", "abilities"]:
+            result = rt.handle_input(cid, command)
+>           assert result["ok"] is True
+E           assert False is True
+
+tests/test_command_latency_save_policy.py:26: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.220 status=ready
+[mud-persistence] Saved character Latency Save Policy (char_shattered_realms_latency_save_policy)
+[mud-persistence] Loaded character Latency Save Policy (char_shattered_realms_latency_save_policy)
+[mud-command] Routing look as look for Latency Save Policy
+[mud-command] Deterministic: look
+[mud-persistence] Command history: look
+[mud-command] Routing score as score for Latency Save Policy
+[mud-command] Deterministic: score
+[mud-persistence] Command history: score
+------------------------------ Captured log call -------------------------------
+ERROR    engine.display_services:display_services.py:259 canonical_combat_snapshot_failed
+Traceback (most recent call last):
+  File "/workspace/smartmud/engine/display_services.py", line 257, in build_snapshot
+    canonical_snapshot = combat_service.get_combat_snapshot(character, {"runtime": rt})
+  File "/workspace/smartmud/engine/character_stats.py", line 447, in get_combat_snapshot
+    ai=self.build_actor_stat_input(ch,context); source_versions=self._source_versions(ai,context); key=(ai.actor_id,source_versions.get('overall_snapshot'))
+  File "/workspace/smartmud/engine/character_stats.py", line 334, in build_actor_stat_input
+    else: ai=PlayerStatInputAdapter(self).build(actor_or_character,context)
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/smartmud/engine/character_stats.py", line 272, in build
+    attrs={k:v.base_value for k,v in self.service.attribute_service.get_all_attributes(actor,context).items()}
+                                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/workspace/smartmud/engine/character_stats.py", line 229, in get_all_attributes
+    prim=self.get_primary_stats(character,context); out={}
+  File "/workspace/smartmud/engine/character_stats.py", line 245, in get_primary_stats
+    self.migrate_character(actor_input_or_actor); rows=self._rows(_cid(actor_input_or_actor)); mods=self.collect_modifiers(actor_input_or_actor,context); source_versions={'attributes':self.migration_version}
+                                                       ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/smartmud/engine/character_stats.py", line 189, in _rows
+    with self.state_store.connect() as con: return {r['attribute_id']:dict(r) for r in con.execute('SELECT * FROM character_attributes WHERE character_id=?',(cid,))}
+                                                    ~^^^^^^^^^^^^^^^^
+TypeError: tuple indices must be integers or slices, not str
+ERROR    engine.mud_commands:mud_commands.py:2115 score_projection_incomplete
+_______________________ test_help_uses_registry_metadata _______________________
+
+    def test_help_uses_registry_metadata():
+        engine = MudCommandEngine()
+        score = engine.handle_command(char(), "help score").narrative
+        get = engine.handle_command(char(), "help get").narrative
+>       assert "Command: score" in score and "Aliases: sc" in score
+E       AssertionError: assert ('Command: score' in 'SCORE\n\nCharacter status summary.\n\nSCORE shows canonical identity, resources, progression, attributes, currency, s...es are implemented and available.\n\nSyntax:\n  help score\n\nRelated topics: attributes, worth\n\nCategory: character')
+
+tests/test_command_registry_phase3d.py:43: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[mud-command] Routing help as help for Tester
+[mud-command] Deterministic: help
+[mud-command] Routing help as help for Tester
+[mud-command] Deterministic: help
+_____ test_committed_starter_area_zones_rooms_are_organized_and_consistent _____
+
+    def test_committed_starter_area_zones_rooms_are_organized_and_consistent():
+        areas = load("areas")
+        zones = load("zones")
+        rooms = load("rooms")
+>       assert areas["starter_guildlands"]["world_id"] == "shattered_realms"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'starter_guildlands'
+
+tests/test_committed_starter_builder_drafts.py:51: KeyError
+__ test_builder_validate_rstat_and_export_import_use_isolated_starter_drafts ___
+
+isolated_builder_world = IsolatedBuilderWorld(world_root=PosixPath('/tmp/pytest-of-root/pytest-7/test_builder_validate_rstat_an0/worlds'), worl...4b620>, database_path=PosixPath('/tmp/pytest-of-root/pytest-7/test_builder_validate_rstat_an0/user_data/mud_state.db'))
+
+    def test_builder_validate_rstat_and_export_import_use_isolated_starter_drafts(isolated_builder_world):
+        bw = isolated_builder_world.workspace
+        a = actor()
+        validation = bw.validate(a)
+>       assert validation.ok, validation.message
+E       AssertionError: Builder validation failed.
+E         
+E         Errors
+E         - room builder_broken_room exit west references missing room missing_room_for_validation
+E         
+E         Warnings
+E         - legacy loose room alias_room; use rassign <room_id> area current zone current vnum <number>
+E         - room alias_room missing name
+E         - room alias_room missing description
+E         - legacy loose room builder_broken_room; use rassign <room_id> area current zone current vnum <number>
+E         - Room builder_broken_room has a confusing display name: Broken. Suggested name: Builder Broken Room.
+E         - room builder_broken_room missing description
+E         - legacy loose room builder_test_room; use rassign <room_id> area current zone current vnum <number>
+E         - legacy loose room edit_room; use rassign <room_id> area current zone current vnum <number>
+E         - room edit_room missing name
+E         - room edit_room missing description
+E         - legacy loose room first_room; use rassign <room_id> area current zone current vnum <number>
+E         - room first_room missing name
+E         - room first_room missing description
+E         - legacy loose room hidden_draft; use rassign <room_id> area current zone current vnum <number>
+E         - room hidden_draft missing description
+E         - legacy loose room loop_room; use rassign <room_id> area current zone current vnum <number>
+E         - room loop_room missing description
+E         - room loop_room exit north is a self-loop
+E         - room loop_room exit south is a self-loop
+E         - legacy loose room north_road; use rassign <room_id> area current zone current vnum <number>
+E         - room north_road missing description
+E         - room north_road exit south missing reverse exit north
+E         - legacy loose room other_room; use rassign <room_id> area current zone current vnum <number>
+E         - room other_room missing name
+E         - room other_room missing description
+E         - legacy loose room quoted_room; use rassign <room_id> area current zone current vnum <number>
+E         - room quoted_room missing description
+E         - room quoted_room exit south missing reverse exit north
+E         - legacy loose room room_one; use rassign <room_id> area current zone current vnum <number>
+E         - legacy loose room room_two; use rassign <room_id> area current zone current vnum <number>
+E         - room room_two missing name
+E         - room room_two missing description
+E         - legacy loose room second_room; use rassign <room_id> area current zone current vnum <number>
+E         - room second_room missing name
+E         - room second_room missing description
+E         - legacy loose room source_room; use rassign <room_id> area current zone current vnum <number>
+E         - room source_room missing name
+E         - room source_room missing description
+E         - legacy loose room test_room; use rassign <room_id> area current zone current vnum <number>
+E         - room test_room exit south missing reverse exit north
+E         - legacy loose room test_room_2; use rassign <room_id> area current zone current vnum <number>
+E         - room test_room_2 exit east missing reverse exit west
+E         - legacy loose room test_room_3; use rassign <room_id> area current zone current vnum <number>
+E         - room test_room_3 missing name
+E         - room test_room_3 missing description
+E         - legacy loose room test_room_4; use rassign <room_id> area current zone current vnum <number>
+E         - room test_room_4 missing description
+E         - legacy loose room test_room_two; use rassign <room_id> area current zone current vnum <number>
+E         - room test_room_two missing name
+E         - room test_room_two missing description
+E         
+E         Info
+E         - builder current target: guildhall_crossing_square
+E       assert False
+E        +  where False = BuilderResult(ok=False, message='Builder validation failed.\n\nErrors\n- room builder_broken_room exit west references...ssing name', 'room test_room_two missing description'], 'info': ['builder current target: guildhall_crossing_square']}).ok
+
+tests/test_committed_starter_builder_drafts.py:79: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+_______ test_mutating_builder_operations_do_not_change_repository_drafts _______
+
+isolated_builder_world = IsolatedBuilderWorld(world_root=PosixPath('/tmp/pytest-of-root/pytest-7/test_mutating_builder_operatio0/worlds'), worl...4aba0>, database_path=PosixPath('/tmp/pytest-of-root/pytest-7/test_mutating_builder_operatio0/user_data/mud_state.db'))
+
+    def test_mutating_builder_operations_do_not_change_repository_drafts(isolated_builder_world):
+        protected = [ROOT / filename for filename in REQUIRED_FILES.values()]
+        before = {path: path.read_bytes() for path in protected}
+        noise_dirs = [ROOT / name for name in ("imports", "exports", "history", "audit", "snapshots")]
+        noise_before = {path: sorted(p.relative_to(path).as_posix() for p in path.rglob("*")) if path.exists() else [] for path in noise_dirs}
+    
+        bw = isolated_builder_world.workspace
+        a = actor()
+        engine = MudCommandEngine()
+        engine.builder = bw
+        assert engine.handle_command(a, "rcreate repo_integrity_room").ok
+        assert engine.handle_command(a, "rname Repository Integrity Room").ok
+        assert bw.export(a).ok
+>       assert bw.template_copy(a, "area_zone_room_template.json", "integrity_import.json", force=True).ok
+E       AssertionError: assert False
+E        +  where False = BuilderResult(ok=False, message='Template not found: area_zone_room_template.json', data=None).ok
+E        +    where BuilderResult(ok=False, message='Template not found: area_zone_room_template.json', data=None) = template_copy(namespace(role='builder', account_role='builder', world_id='shattered_realms', id='c1', account_id='a1', room_id='repo...m_id='guildhall_crossing_square', last_edited_target='repo_integrity_room', last_created_room_id='repo_integrity_room'), 'area_zone_room_template.json', 'integrity_import.json', force=True)
+E        +      where template_copy = <smart_mud.builder.BuilderWorkspace object at 0x7f054cf9af30>.template_copy
+
+tests/test_committed_starter_builder_drafts.py:118: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+----------------------------- Captured stdout call -----------------------------
+[mud-command] Routing rcreate as rcreate for Tester
+[mud-command] Deterministic: rcreate
+[mud-command] Routing rname as rname for Tester
+[mud-command] Deterministic: rname
+______________ test_builder_rcontents_and_stats_are_builder_only _______________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_builder_rcontents_and_sta0')
+
+    def test_builder_rcontents_and_stats_are_builder_only(tmp_path):
+        rt = MudRuntime(Path.cwd(), tmp_path); rt.load_world("shattered_realms")
+        cid = rt.create_character(world_id="shattered_realms", name="Diag Player")['character_id']; rt.enter_world(cid)
+        assert "permission" in rt.handle_input(cid, "rcontents")["output"].lower()
+    
+        import sqlite3
+        with sqlite3.connect(rt.state_store.db_path) as conn:
+            conn.execute("UPDATE characters SET role='builder', builder_enabled=1, immortal_level=50 WHERE id=?", (cid,))
+        char = rt.state_store.load_character(cid); char.builder_mode = True
+        rt.goto_room(char, "blacksmith_stall")
+        out = rt.handle_input(cid, "rcontents here")["output"]
+>       assert "Runtime item instances" in out and "Item placement declarations" in out and "Materialization records" in out
+E       AssertionError: assert ('Runtime item instances' in 'You do not have permission for that command.')
+
+tests/test_content_diagnostics_phase5a.py:16: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.297 status=ready
+[mud-persistence] Saved character Diag Player (char_shattered_realms_diag_player)
+[mud-persistence] Loaded character Diag Player (char_shattered_realms_diag_player)
+[mud-persistence] Command history: rcontents
+[mud-persistence] Loaded character Diag Player (char_shattered_realms_diag_player)
+[mud-persistence] Saved character Diag Player (char_shattered_realms_diag_player)
+[mud-persistence] Command history: rcontents here
+___ test_core_character_creation_mage_known_spells_inventory_and_no_journal ____
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_core_character_creation_m0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054f18b310>
+
+    def test_core_character_creation_mage_known_spells_inventory_and_no_journal(tmp_path, monkeypatch):
+        monkeypatch.setenv('ADVENTURERS_GUILD_USER_DATA', str(tmp_path / 'user_data'))
+        runtime = WebRuntime(Path.cwd())
+>       created = runtime.create_campaign({'slot': 'core_mage', 'character_name': 'Mira', 'character_role': 'Mage', 'species': '', 'background': 'Guild Recruit', 'starting_ability_mode': 'suggest', 'starting_item_mode': 'suggest', 'rules_style': 'Hybrid', 'play_style': 'Storybook Mode'})
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'create_campaign'
+
+tests/test_core_game.py:64: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+______________ test_core_character_creation_warrior_known_skills _______________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_core_character_creation_w0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054eb28f30>
+
+    def test_core_character_creation_warrior_known_skills(tmp_path, monkeypatch):
+        monkeypatch.setenv('ADVENTURERS_GUILD_USER_DATA', str(tmp_path / 'user_data'))
+        runtime = WebRuntime(Path.cwd())
+>       state = runtime.create_campaign({'slot': 'core_warrior', 'character_name': 'Bran', 'character_role': 'Warrior', 'starting_ability_mode': 'suggest', 'starting_item_mode': 'suggest', 'rules_style': 'Hybrid', 'play_style': 'MUD Mode'})['state']
+                ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'create_campaign'
+
+tests/test_core_game.py:75: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+_____________ test_world_registry_lists_and_loads_shattered_realms _____________
+
+    def test_world_registry_lists_and_loads_shattered_realms():
+        from engine.world_registry import WorldRegistry
+        registry = WorldRegistry()
+        worlds = registry.list_worlds()
+>       assert {w["id"] for w in worlds} >= {"shattered_realms", "frontier_stars", "modern_earth"}
+E       AssertionError: assert {'shattered_realms'} >= {'frontier_st...tered_realms'}
+E         
+E         Extra items in the right set:
+E         'modern_earth'
+E         'frontier_stars'
+
+tests/test_core_game.py:262: AssertionError
+________________ test_mud_renderer_semantic_html_and_plain_text ________________
+
+    def test_mud_renderer_semantic_html_and_plain_text():
+>       from engine.mud_rendering import PRESETS, render_room, render_semantic_html, render_semantic_plain, semantic
+E       ImportError: cannot import name 'render_room' from 'engine.mud_rendering' (/workspace/smartmud/engine/mud_rendering.py)
+
+tests/test_core_game.py:270: ImportError
+_______________ test_mud_v2_campaign_creation_and_room_movement ________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_mud_v2_campaign_creation_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054e576ea0>
+
+    def test_mud_v2_campaign_creation_and_room_movement(tmp_path, monkeypatch):
+        from app.web import WebRuntime
+        from models.base import NullNarrationAdapter
+        from engine.campaign_engine import CampaignEngine
+        monkeypatch.setenv('ADVENTURERS_GUILD_USER_DATA', str(tmp_path / 'user_data'))
+        runtime = WebRuntime(Path.cwd())
+>       created = runtime.create_campaign({"mode":"mud_v2", "slot":"mud_v2", "character_name":"Mira", "race_id":"human", "class_id":"mage", "appearance":"blue cloak"})
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'create_campaign'
+
+tests/test_core_game.py:286: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+_______________ test_shattered_realms_v1_world_content_integrity _______________
+
+    def test_shattered_realms_v1_world_content_integrity():
+        from engine.world_registry import WorldRegistry, by_id
+        required = {"id","area_id","name","short_description","long_description","terrain","lighting","weather","tags","npcs","objects","exits","ambient_messages","active_hooks"}
+        world = WorldRegistry().load_world("shattered_realms")
+        assert len(world.rooms) >= 25
+        rooms = by_id(world.rooms); npcs = by_id(world.npcs); items = by_id(world.items)
+        allowed_objects = {"old_gate", "fountain", "notice_board"}
+        reverse = {"north":"south","south":"north","east":"west","west":"east","northeast":"southwest","southwest":"northeast","northwest":"southeast","southeast":"northwest","up":"down","down":"up","in":"out","out":"in"}
+        for room in world.rooms:
+            assert required <= set(room)
+            for exit_ in room["exits"]:
+                dest = exit_["destination_room_id"]
+                assert dest in rooms
+                if not exit_.get("one_way"):
+                    assert any(e["destination_room_id"] == room["id"] and e["direction"] == reverse[exit_["direction"]] for e in rooms[dest]["exits"])
+            assert all(n in npcs for n in room["npcs"])
+            assert all(o in items or o in allowed_objects for o in room["objects"])
+        abilities = by_id(world.abilities)
+        for cls in world.classes:
+>           assert all(a in abilities for a in cls["starting_abilities"])
+E           assert False
+E            +  where False = all(<generator object test_shattered_realms_v1_world_content_integrity.<locals>.<genexpr> at 0x7f054bf6fe60>)
+
+tests/test_core_game.py:317: AssertionError
+___________ test_mud_v2_deterministic_commands_and_diagonal_support ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_mud_v2_deterministic_comm0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054c8465d0>
+
+    def test_mud_v2_deterministic_commands_and_diagonal_support(tmp_path, monkeypatch):
+        from app.web import WebRuntime
+        from models.base import NullNarrationAdapter
+        from engine.campaign_engine import CampaignEngine
+        monkeypatch.setenv('ADVENTURERS_GUILD_USER_DATA', str(tmp_path / 'user_data'))
+        runtime = WebRuntime(Path.cwd())
+>       runtime.create_campaign({"mode":"mud_v2", "slot":"mud_v2_cmds", "character_name":"Mira", "race_id":"human", "class_id":"mage", "appearance":"blue cloak"})
+        ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'create_campaign'
+
+tests/test_core_game.py:341: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+________ test_mud_command_registry_resolution_help_and_unknown_freeform ________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_mud_command_registry_reso0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054e781850>
+
+    def test_mud_command_registry_resolution_help_and_unknown_freeform(tmp_path, monkeypatch):
+        from app.web import WebRuntime
+>       from engine.mud_commands import REGISTRY
+E       ImportError: cannot import name 'REGISTRY' from 'engine.mud_commands' (/workspace/smartmud/engine/mud_commands.py)
+
+tests/test_core_game.py:353: ImportError
+______________ test_emberwood_rooms_topology_area_zone_and_vnums _______________
+
+    def test_emberwood_rooms_topology_area_zone_and_vnums():
+        rooms={r['id']:r for r in load('rooms/rooms.json')}
+        assert len(set(rooms))==len(rooms)
+        assert all(r in rooms for r in FOREST)
+        old_gate_dirs=[e['direction'] for e in rooms['old_gate_road']['exits']]
+        assert len(old_gate_dirs)==len(set(old_gate_dirs))
+        assert sum(1 for e in rooms['old_gate_road']['exits'] if e['direction']=='north')==1
+        assert exits(rooms['old_gate_road'])['north']=='emberwood_hunting_trail'
+        for rid in FOREST:
+            assert rooms[rid]['area_id']=='emberwood_edge'
+            assert rooms[rid]['zone_id']=='emberwood_forest'
+            assert not rooms[rid].get('npcs')
+            dirs=[e['direction'] for e in rooms[rid]['exits']]
+            assert len(dirs)==len(set(dirs))
+            for d,t in exits(rooms[rid]).items():
+                assert t in rooms
+        opposite={'north':'south','south':'north','east':'west','west':'east','in':'out','out':'in'}
+        for rid in FOREST+['old_gate_road']:
+            for d,t in exits(rooms[rid]).items():
+                if t in rooms and d in opposite and rid in FOREST and t in FOREST+['old_gate_road']:
+                    assert exits(rooms[t]).get(opposite[d])==rid
+        seen={'old_gate_road'}; q=deque(['old_gate_road'])
+        while q:
+            r=q.popleft()
+            for t in exits(rooms[r]).values():
+                if t not in seen and t in rooms: seen.add(t); q.append(t)
+        assert set(FOREST).issubset(seen)
+        back={rid:[] for rid in rooms}
+        for rid,r in rooms.items():
+            for t in exits(r).values(): back.setdefault(t,[]).append(rid)
+        for rid in FOREST: assert rid in seen and back[rid]
+        br=load('builder/rooms.json')
+        vnums=[r['vnum'] for r in br.values() if 'vnum' in r]
+>       assert len(vnums)==len(set(vnums))
+E       assert 19 == 1
+E        +  where 19 = len([None, None, None, None, None, None, ...])
+E        +  and   1 = len({None})
+E        +    where {None} = set([None, None, None, None, None, None, ...])
+
+tests/test_emberwood_forest_phase15a.py:47: AssertionError
+_______________________ test_entityaudit_is_builder_only _______________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_entityaudit_is_builder_on0')
+
+    def test_entityaudit_is_builder_only(tmp_path):
+        rt = MudRuntime(Path.cwd(), tmp_path); rt.load_world("shattered_realms")
+        cid = rt.create_character(world_id="shattered_realms", name="Audit")['character_id']; rt.enter_world(cid)
+        assert "permission" in rt.handle_input(cid, "entityaudit here")["output"].lower()
+        with sqlite3.connect(rt.state_store.db_path) as conn:
+            conn.execute("UPDATE characters SET role='builder', builder_enabled=1, immortal_level=50 WHERE id=?", (cid,))
+        char = rt.state_store.load_character(cid); char.builder_mode = True; rt.goto_room(char, "blacksmith_stall")
+        out = rt.handle_input(cid, "entityaudit here")["output"]
+>       assert "Runtime instances:" in out and "Materialization records:" in out and "Duplicate risks:" in out
+E       AssertionError: assert ('Runtime instances:' in 'You do not have permission for that command.')
+
+tests/test_entity_render_source_integrity_phase5a.py:26: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.348 status=ready
+[mud-persistence] Saved character Audit (char_shattered_realms_audit)
+[mud-persistence] Loaded character Audit (char_shattered_realms_audit)
+[mud-persistence] Command history: entityaudit here
+[mud-persistence] Loaded character Audit (char_shattered_realms_audit)
+[mud-persistence] Saved character Audit (char_shattered_realms_audit)
+[mud-persistence] Command history: entityaudit here
+______ test_npc_mob_rendering_lookup_movement_persistence_and_ids_hidden _______
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_npc_mob_rendering_lookup_0')
+
+    def test_npc_mob_rendering_lookup_movement_persistence_and_ids_hidden(tmp_path):
+        rt, _ = runtime(tmp_path)
+        cid = rt.create_character(world_id="shattered_realms", name="Entity Tester")["character_id"]
+        char = rt.state_store.load_character(cid)
+        char.room_id = "guildhall_registrar_office"; rt.state_store.save_character(char, "shattered_realms")
+        out = rt.handle_input(cid, "look")["output"]
+        assert "Guild Registrar Maren" in out and "ent_" not in out
+>       assert "Guild Registrar Maren is a memorable resident" in rt.handle_input(cid, "look maren")["output"]
+E       AssertionError: assert 'Guild Registrar Maren is a memorable resident' in 'Guild Registrar Maren\nMaren watches over the guild register, quill poised above a stack of fresh forms.\n\nCondition:\nUnharmed.\n\nStatus:\nIdle.\n\nEquipment:\nNone visible.'
+
+tests/test_entity_system_phase3a.py:37: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.247 status=ready
+[mud-persistence] Saved character Entity Tester (char_shattered_realms_entity_tester)
+[mud-persistence] Loaded character Entity Tester (char_shattered_realms_entity_tester)
+[mud-persistence] Saved character Entity Tester (char_shattered_realms_entity_tester)
+[mud-persistence] Loaded character Entity Tester (char_shattered_realms_entity_tester)
+[mud-command] Routing look as look for Entity Tester
+[mud-command] Deterministic: look
+[mud-persistence] Command history: look
+[mud-persistence] Command history: look maren
+__________________ test_runtime_movement_events_and_aff_alias __________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_runtime_movement_events_a0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054d59ed50>
+
+    def test_runtime_movement_events_and_aff_alias(tmp_path: Path, monkeypatch) -> None:
+        runtime, character_id = _entered_runtime(tmp_path, monkeypatch)
+        seen: list[str] = []
+        for name in ["movement_succeeded", "movement_failed"]:
+            runtime.event_bus.subscribe(name, lambda event, name=name: seen.append(name))
+>       assert "You have no active affects." in runtime.handle_input("aff", command_echo=False)["output_text"]
+E       AssertionError: assert 'You have no active affects.' in '╔═════════════════════════════════════════════════════════════════════════════╗\n║                                   ...════════════════════════════════════╣\n╚═════════════════════════════════════════════════════════════════════════════╝'
+
+tests/test_event_bus_phase2c.py:132: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.216 status=ready
+[mud-persistence] Saved character Phase Tester (char_shattered_realms_phase_tester)
+[mud-persistence] Loaded character Phase Tester (char_shattered_realms_phase_tester)
+[mud-command] Routing aff as affects for Phase Tester
+[mud-command] Deterministic: affects
+[mud-persistence] Command history: aff
+_______________ test_builder_diagnostics_commands_are_read_only ________________
+
+    def test_builder_diagnostics_commands_are_read_only():
+        eng = MudCommandEngine()
+        c = char()
+>       assert "attack_rating" in eng.handle_command(c, "formula list").narrative
+E       AssertionError: assert 'attack_rating' in 'Formula drafts (42)\n- max_health |  |  | default= min= max= creation=- group= order= enabled=True visible=\n- max_ma...er= enabled=True visible=\n- critical_damage |  |  | default= min= max= creation=- group= order= enabled=True visible='
+E        +  where 'Formula drafts (42)\n- max_health |  |  | default= min= max= creation=- group= order= enabled=True visible=\n- max_ma...er= enabled=True visible=\n- critical_damage |  |  | default= min= max= creation=- group= order= enabled=True visible=' = CommandResult(narrative='Formula drafts (42)\n- max_health |  |  | default= min= max= creation=- group= order= enabled...state_updates=None, should_exit=False, ok=True, display_document=None, display_intent='SYSTEM', semantic_role='system').narrative
+E        +    where CommandResult(narrative='Formula drafts (42)\n- max_health |  |  | default= min= max= creation=- group= order= enabled...state_updates=None, should_exit=False, ok=True, display_document=None, display_intent='SYSTEM', semantic_role='system') = handle_command(namespace(id='c1', account_id='a1', name='Tester', role='builder', account_role='builder', world_id='shattered_realms'...tart', level=1, hp=10, max_hp=10, mana=5, max_mana=5, stamina=5, max_stamina=5, xp=0, gold=0, equipment={}, affects={}), 'formula list')
+E        +      where handle_command = <engine.mud_commands.MudCommandEngine object at 0x7f054eb28f30>.handle_command
+
+tests/test_formula_engine_phase5d.py:55: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[mud-command] Routing formula as formula for Tester
+[mud-command] Deterministic: formula
+__________ test_starter_combat_content_builder_owned_and_world_loaded __________
+
+    def test_starter_combat_content_builder_owned_and_world_loaded():
+        content=QuestContent(WORLD)
+        result=QuestValidator(content).validate_all()
+        assert result.ok, result
+        q=content.get('quest_definitions','guildlands_wolf_pelts')
+        assert q['availability_profile_id']=='after_emberleaf_errand'
+        assert q['reward_definition_id']=='guildlands_wolf_pelts_reward'
+        kill=content.get('quest_objectives','guildlands_wolf_pelts_kill_one')
+        pelt=content.get('quest_objectives','guildlands_wolf_pelts_obtain_pelt')
+        assert kill['objective_type']=='kill_template'
+        assert kill['target_definition']['actor_template_id']=='forest_wolf'
+        assert pelt['target_definition']['item_template_id']=='wolf_pelt'
+        npcs=json_load(WORLD/'npcs/npcs.json')
+        wolf=[n for n in npcs if n['id']=='forest_wolf'][0]
+        assert wolf['combat_behavior_profile_id']=='wolf_pack'
+        assert wolf['ability_loadout_id']=='wolf_basic'
+        assert wolf['death_loot_profile_id']=='starter_wolf_death_loot'
+        rooms=json_load(WORLD/'rooms/rooms.json')
+        trail=[r for r in rooms if r['id']=='emberwood_hunting_trail'][0]
+>       assert 'forest_wolf' in trail['npcs']
+E       AssertionError: assert 'forest_wolf' in []
+
+tests/test_guildlands_starter_phase11f.py:105: AssertionError
+_________ test_image_backend_diagnostics_reports_missing_comfyui_path __________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_image_backend_diagnostics0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054e666550>
+
+    def test_image_backend_diagnostics_reports_missing_comfyui_path(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       runtime.app_config.image.provider = "comfyui"
+        ^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'app_config'
+
+tests/test_image_backend_setup_diagnostics.py:18: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+_______ test_image_backend_diagnostics_includes_managed_runtime_details ________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_image_backend_diagnostics1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054e7843d0>
+
+    def test_image_backend_diagnostics_includes_managed_runtime_details(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       runtime.app_config.image.provider = "comfyui"
+        ^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'app_config'
+
+tests/test_image_backend_setup_diagnostics.py:34: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+______ test_image_backend_diagnostics_reports_running_when_api_reachable _______
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_image_backend_diagnostics2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054e55c440>
+
+    def test_image_backend_diagnostics_reports_running_when_api_reachable(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       runtime.app_config.image.provider = "comfyui"
+        ^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'app_config'
+
+tests/test_image_backend_setup_diagnostics.py:54: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+________ test_image_backend_diagnostics_exposes_launch_strategy_details ________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_image_backend_diagnostics3')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054cf4da90>
+
+    def test_image_backend_diagnostics_exposes_launch_strategy_details(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+        runtime.image_startup_status = {
+            "launch_diagnostics": {
+                "primary_launch_attempt": "nvidia_gpu",
+                "fallback_launch_used": "cpu",
+                "nvidia_failure_reason": "torch-cuda-disabled",
+                "final_running_mode": "cpu",
+            }
+        }
+>       monkeypatch.setattr(
+            runtime,
+            "get_path_configuration_status",
+            lambda: {
+                "image": {
+                    "mode": "managed",
+                    "comfyui_root": {"configured": False, "valid": False, "path": ""},
+                    "workflow_path": {"configured": False, "valid": False, "path": ""},
+                    "output_dir": {"configured": False, "valid": True, "path": ""},
+                    "checkpoint_dir": {"configured": False, "valid": False, "path": "", "model_ready": False},
+                    "resolved_paths": {},
+                }
+            },
+        )
+E       AttributeError: <app.web.WebRuntime object at 0x7f054d141a70> has no attribute 'get_path_configuration_status'
+
+tests/test_image_backend_setup_diagnostics.py:98: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+__ test_start_image_engine_returns_already_running_without_spawning_duplicate __
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_start_image_engine_return0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054cf4fd90>
+
+    def test_start_image_engine_returns_already_running_without_spawning_duplicate(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       runtime.app_config.image.provider = "comfyui"
+        ^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'app_config'
+
+tests/test_image_backend_setup_diagnostics.py:123: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+___________ test_start_image_engine_reports_missing_workflow_cleanly ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_start_image_engine_report1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054cd087c0>
+
+    def test_start_image_engine_reports_missing_workflow_cleanly(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       runtime.app_config.image.provider = "comfyui"
+        ^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'app_config'
+
+tests/test_image_backend_setup_diagnostics.py:148: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+_________ test_image_engine_service_status_reports_not_installed_state _________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_image_engine_service_stat0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054cf4de80>
+
+    def test_image_engine_service_status_reports_not_installed_state(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       runtime.app_config.image.provider = "comfyui"
+        ^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'app_config'
+
+tests/test_image_backend_setup_diagnostics.py:181: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+___________ test_install_image_engine_does_not_force_browser_launch ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_install_image_engine_does0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054cf4f700>
+
+    def test_install_image_engine_does_not_force_browser_launch(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       monkeypatch.setattr(runtime, "_is_windows", lambda: True)
+E       AttributeError: <app.web.WebRuntime object at 0x7f054d1436f0> has no attribute '_is_windows'
+
+tests/test_image_backend_setup_diagnostics.py:195: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+_______________ test_managed_mode_resolves_to_app_managed_paths ________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_managed_mode_resolves_to_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054f072c80>
+
+    def test_managed_mode_resolves_to_app_managed_paths(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       runtime.app_config.image.comfyui_path = ""
+        ^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'app_config'
+
+tests/test_image_backend_setup_diagnostics.py:211: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+________________ test_external_mode_uses_selected_external_path ________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_external_mode_uses_select0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054cf4f2a0>
+
+    def test_external_mode_uses_selected_external_path(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+        comfy_root = tmp_path / "external" / "ComfyUI"
+        comfy_root.mkdir(parents=True, exist_ok=True)
+        (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
+        for folder in ("custom_nodes", "models", "output", "input", "user"):
+            (comfy_root / folder).mkdir(exist_ok=True)
+        runtime_exe = comfy_root / ".venv" / "Scripts" / "python.exe"
+        runtime_exe.parent.mkdir(parents=True, exist_ok=True)
+        runtime_exe.write_text("", encoding="utf-8")
+        (comfy_root / "run_cpu.bat").write_text("@echo off", encoding="utf-8")
+>       runtime.app_config.image.comfyui_path = str(comfy_root)
+        ^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'app_config'
+
+tests/test_image_backend_setup_diagnostics.py:232: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+___________ test_external_mode_persists_selected_root_across_restart ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_external_mode_persists_se0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054e903770>
+
+    def test_external_mode_persists_selected_root_across_restart(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+        comfy_root = tmp_path / "external" / "ComfyUI"
+        comfy_root.mkdir(parents=True, exist_ok=True)
+        (comfy_root / "main.py").write_text("print('ok')", encoding="utf-8")
+        for folder in ("custom_nodes", "models", "output", "input", "user"):
+            (comfy_root / folder).mkdir(exist_ok=True)
+        runtime_exe = comfy_root / ".venv" / "Scripts" / "python.exe"
+        runtime_exe.parent.mkdir(parents=True, exist_ok=True)
+        runtime_exe.write_text("", encoding="utf-8")
+>       connect = runtime.connect_comfyui_path(str(comfy_root))
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'connect_comfyui_path'
+
+tests/test_image_backend_setup_diagnostics.py:248: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+______________ test_checkpoint_folder_is_rejected_as_comfyui_root ______________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_checkpoint_folder_is_reje0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054df2cd70>
+
+    def test_checkpoint_folder_is_rejected_as_comfyui_root(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+        checkpoint_dir = tmp_path / "models" / "checkpoints"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        (checkpoint_dir / "dreamshaper.safetensors").write_text("", encoding="utf-8")
+    
+>       result = runtime.connect_comfyui_path(str(checkpoint_dir))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'connect_comfyui_path'
+
+tests/test_image_backend_setup_diagnostics.py:264: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+_______ test_start_image_engine_reports_missing_root_with_precise_error ________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_start_image_engine_report2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054df2d780>
+
+    def test_start_image_engine_reports_missing_root_with_precise_error(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       runtime.app_config.image.provider = "comfyui"
+        ^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'app_config'
+
+tests/test_image_backend_setup_diagnostics.py:272: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+________________ test_detect_install_path_passes_for_valid_root ________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_detect_install_path_passe0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054cc3af20>
+
+    def test_detect_install_path_passes_for_valid_root(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       comfy_root = runtime._coerce_managed_install_path()
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute '_coerce_managed_install_path'
+
+tests/test_image_backend_setup_diagnostics.py:288: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+___________________ test_managed_install_keeps_mode_managed ____________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_managed_install_keeps_mod0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054ec63000>
+
+    def test_managed_install_keeps_mode_managed(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       runtime.app_config.image.provider = "comfyui"
+        ^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'app_config'
+
+tests/test_image_backend_setup_diagnostics.py:309: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+________________ test_windows_venv_python_command_is_preferred _________________
+
+obj = <module 'app.web' from '/workspace/smartmud/app/web.py'>, name = 'os'
+ann = 'app.web'
+
+    def annotated_getattr(obj: object, name: str, ann: str) -> object:
+        try:
+>           obj = getattr(obj, name)
+                  ^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'app.web' has no attribute 'os'
+
+/root/.pyenv/versions/3.14.4/lib/python3.14/site-packages/_pytest/monkeypatch.py:92: AttributeError
+
+The above exception was the direct cause of the following exception:
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_windows_venv_python_comma0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054c0a8bb0>
+
+    def test_windows_venv_python_command_is_preferred(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+        comfy_root = tmp_path / "ComfyUI"
+        comfy_root.mkdir(parents=True, exist_ok=True)
+        (comfy_root / "run_nvidia_gpu.bat").write_text("@echo off", encoding="utf-8")
+>       monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+
+tests/test_image_backend_setup_diagnostics.py:332: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/root/.pyenv/versions/3.14.4/lib/python3.14/site-packages/_pytest/monkeypatch.py:106: in derive_importpath
+    annotated_getattr(target, attr, ann=module)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+obj = <module 'app.web' from '/workspace/smartmud/app/web.py'>, name = 'os'
+ann = 'app.web'
+
+    def annotated_getattr(obj: object, name: str, ann: str) -> object:
+        try:
+            obj = getattr(obj, name)
+        except AttributeError as e:
+>           raise AttributeError(
+                f"{type(obj).__name__!r} object at {ann} has no attribute {name!r}"
+            ) from e
+E           AttributeError: 'module' object at app.web has no attribute 'os'
+
+/root/.pyenv/versions/3.14.4/lib/python3.14/site-packages/_pytest/monkeypatch.py:94: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+_____________ test_windows_system_python_requires_explicit_setting _____________
+
+obj = <module 'app.web' from '/workspace/smartmud/app/web.py'>, name = 'os'
+ann = 'app.web'
+
+    def annotated_getattr(obj: object, name: str, ann: str) -> object:
+        try:
+>           obj = getattr(obj, name)
+                  ^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'app.web' has no attribute 'os'
+
+/root/.pyenv/versions/3.14.4/lib/python3.14/site-packages/_pytest/monkeypatch.py:92: AttributeError
+
+The above exception was the direct cause of the following exception:
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_windows_system_python_req0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054c0a8d00>
+
+    def test_windows_system_python_requires_explicit_setting(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+        comfy_root = tmp_path / "ComfyUI"
+        comfy_root.mkdir(parents=True, exist_ok=True)
+>       monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+
+tests/test_image_backend_setup_diagnostics.py:342: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/root/.pyenv/versions/3.14.4/lib/python3.14/site-packages/_pytest/monkeypatch.py:106: in derive_importpath
+    annotated_getattr(target, attr, ann=module)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+obj = <module 'app.web' from '/workspace/smartmud/app/web.py'>, name = 'os'
+ann = 'app.web'
+
+    def annotated_getattr(obj: object, name: str, ann: str) -> object:
+        try:
+            obj = getattr(obj, name)
+        except AttributeError as e:
+>           raise AttributeError(
+                f"{type(obj).__name__!r} object at {ann} has no attribute {name!r}"
+            ) from e
+E           AttributeError: 'module' object at app.web has no attribute 'os'
+
+/root/.pyenv/versions/3.14.4/lib/python3.14/site-packages/_pytest/monkeypatch.py:94: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+__________ test_resolve_comfy_python_runtime_uses_py_launcher_prefix ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_resolve_comfy_python_runt0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054bec1470>
+
+    def test_resolve_comfy_python_runtime_uses_py_launcher_prefix(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       resolved = runtime._resolve_comfy_python_runtime(["py", "-3", "main.py"], "py_launcher")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute '_resolve_comfy_python_runtime'
+
+tests/test_image_backend_setup_diagnostics.py:356: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+___ test_dependency_bootstrap_reports_missing_sqlalchemy_when_install_fails ____
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_dependency_bootstrap_repo0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054bec2350>
+
+    def test_dependency_bootstrap_reports_missing_sqlalchemy_when_install_fails(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       result = runtime._bootstrap_comfy_python_dependencies(Path("."), ["cmd.exe", "/d", "/c", "run_nvidia_gpu.bat"], "portable_nvidia_launcher")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute '_bootstrap_comfy_python_dependencies'
+
+tests/test_image_backend_setup_diagnostics.py:363: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+_ test_dependency_bootstrap_reports_precise_requirements_context_on_pip_failure _
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_dependency_bootstrap_repo1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054c9a3d90>
+
+    def test_dependency_bootstrap_reports_precise_requirements_context_on_pip_failure(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       result = runtime._bootstrap_comfy_python_dependencies(Path("."), ["cmd.exe", "/d", "/c", "run_nvidia_gpu.bat"], "portable_nvidia_launcher")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute '_bootstrap_comfy_python_dependencies'
+
+tests/test_image_backend_setup_diagnostics.py:370: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+_____________ test_dependency_bootstrap_missing_pip_fails_cleanly ______________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_dependency_bootstrap_miss0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054d288520>
+
+    def test_dependency_bootstrap_missing_pip_fails_cleanly(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       result = runtime._bootstrap_comfy_python_dependencies(Path("."), ["cmd.exe", "/d", "/c", "run_nvidia_gpu.bat"], "portable_nvidia_launcher")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute '_bootstrap_comfy_python_dependencies'
+
+tests/test_image_backend_setup_diagnostics.py:377: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+___________ test_dependency_bootstrap_pip_available_sets_pip_version ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_dependency_bootstrap_pip_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054d28b380>
+
+    def test_dependency_bootstrap_pip_available_sets_pip_version(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       result = runtime._bootstrap_comfy_python_dependencies(Path("."), ["cmd.exe", "/d", "/c", "run_nvidia_gpu.bat"], "portable_nvidia_launcher")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute '_bootstrap_comfy_python_dependencies'
+
+tests/test_image_backend_setup_diagnostics.py:384: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+_______ test_dependency_bootstrap_reports_precise_error_when_pip_missing _______
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_dependency_bootstrap_repo2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054c7eb070>
+
+    def test_dependency_bootstrap_reports_precise_error_when_pip_missing(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+    
+        def _fake_run(runtime_command: list[str], args: list[str], timeout_seconds: int = 60):
+            if args[:3] == ["-m", "pip", "--version"]:
+                return subprocess.CompletedProcess([*runtime_command, *args], 1, stdout="", stderr="No module named pip")
+            raise AssertionError(f"unexpected command: {args}")
+    
+>       monkeypatch.setattr(runtime, "_run_runtime_python_capture", _fake_run)
+E       AttributeError: <app.web.WebRuntime object at 0x7f054c7782b0> has no attribute '_run_runtime_python_capture'
+
+tests/test_image_backend_setup_diagnostics.py:397: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+__ test_dependency_bootstrap_does_not_install_requirements_if_pip_unavailable __
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_dependency_bootstrap_does0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054c7eb3f0>
+
+    def test_dependency_bootstrap_does_not_install_requirements_if_pip_unavailable(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       result = runtime._bootstrap_comfy_python_dependencies(Path("."), ["cmd.exe", "/d", "/c", "run_nvidia_gpu.bat"], "portable_nvidia_launcher")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute '_bootstrap_comfy_python_dependencies'
+
+tests/test_image_backend_setup_diagnostics.py:406: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+_______________ test_diagnostics_include_pip_availability_status _______________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_diagnostics_include_pip_a0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054d76a200>
+
+    def test_diagnostics_include_pip_availability_status(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       runtime.app_config.image.provider = "comfyui"
+        ^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'app_config'
+
+tests/test_image_backend_setup_diagnostics.py:413: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+______ test_diagnostics_dependency_probe_failure_marks_runtime_incomplete ______
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_diagnostics_dependency_pr0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054d76ac10>
+
+    def test_diagnostics_dependency_probe_failure_marks_runtime_incomplete(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       runtime.app_config.image.provider = "comfyui"
+        ^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'app_config'
+
+tests/test_image_backend_setup_diagnostics.py:442: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+_____ test_start_image_engine_skips_launch_when_dependency_bootstrap_fails _____
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_start_image_engine_skips_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054c8c8910>
+
+    def test_start_image_engine_skips_launch_when_dependency_bootstrap_fails(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       runtime.app_config.image.provider = "comfyui"
+        ^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'app_config'
+
+tests/test_image_backend_setup_diagnostics.py:476: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+_ test_start_image_engine_recreates_runtime_once_on_exit_106_dependency_failure _
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_start_image_engine_recrea0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054c8c8440>
+
+    def test_start_image_engine_recreates_runtime_once_on_exit_106_dependency_failure(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       runtime.app_config.image.provider = "comfyui"
+        ^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'app_config'
+
+tests/test_image_backend_setup_diagnostics.py:512: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+______ test_diagnostics_resolved_path_matches_launch_path_source_of_truth ______
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_diagnostics_resolved_path0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054d1687c0>
+
+    def test_diagnostics_resolved_path_matches_launch_path_source_of_truth(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       runtime.app_config.image.provider = "comfyui"
+        ^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'app_config'
+
+tests/test_image_backend_setup_diagnostics.py:574: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+__________ test_managed_launch_attempts_use_only_nvidia_gpu_launcher ___________
+
+obj = <module 'app.web' from '/workspace/smartmud/app/web.py'>, name = 'os'
+ann = 'app.web'
+
+    def annotated_getattr(obj: object, name: str, ann: str) -> object:
+        try:
+>           obj = getattr(obj, name)
+                  ^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'app.web' has no attribute 'os'
+
+/root/.pyenv/versions/3.14.4/lib/python3.14/site-packages/_pytest/monkeypatch.py:92: AttributeError
+
+The above exception was the direct cause of the following exception:
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_managed_launch_attempts_u0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054c1d3e70>
+
+    def test_managed_launch_attempts_use_only_nvidia_gpu_launcher(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+        comfy_root = tmp_path / "ComfyUI"
+        comfy_root.mkdir(parents=True, exist_ok=True)
+        (comfy_root / "run_nvidia_gpu.bat").write_text("@echo off\r\npython main.py --windows-standalone-build", encoding="utf-8")
+        (comfy_root / "run_cpu.bat").write_text("@echo off\r\npython main.py --cpu", encoding="utf-8")
+        runtime_python = comfy_root / ".venv" / "Scripts" / "python.exe"
+        runtime_python.parent.mkdir(parents=True, exist_ok=True)
+        runtime_python.write_text("", encoding="utf-8")
+>       monkeypatch.setattr("app.web.os", SimpleNamespace(name="nt"))
+
+tests/test_image_backend_setup_diagnostics.py:598: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/root/.pyenv/versions/3.14.4/lib/python3.14/site-packages/_pytest/monkeypatch.py:106: in derive_importpath
+    annotated_getattr(target, attr, ann=module)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+obj = <module 'app.web' from '/workspace/smartmud/app/web.py'>, name = 'os'
+ann = 'app.web'
+
+    def annotated_getattr(obj: object, name: str, ann: str) -> object:
+        try:
+            obj = getattr(obj, name)
+        except AttributeError as e:
+>           raise AttributeError(
+                f"{type(obj).__name__!r} object at {ann} has no attribute {name!r}"
+            ) from e
+E           AttributeError: 'module' object at app.web has no attribute 'os'
+
+/root/.pyenv/versions/3.14.4/lib/python3.14/site-packages/_pytest/monkeypatch.py:94: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+______ test_classify_nvidia_launch_failure_cuda_patterns_disable_fallback ______
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_classify_nvidia_launch_fa0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054ea5e6d0>
+
+    def test_classify_nvidia_launch_failure_cuda_patterns_disable_fallback(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+        cases = [
+            "AssertionError: Torch not compiled with CUDA enabled",
+            "RuntimeError: CUDA initialization error",
+            "RuntimeError: No NVIDIA driver found",
+            "ImportError: cudnn64_9.dll missing",
+        ]
+        for detail in cases:
+>           classification = runtime._classify_nvidia_launch_failure(detail, exit_code=1, launcher_exists=True)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'WebRuntime' object has no attribute '_classify_nvidia_launch_failure'
+
+tests/test_image_backend_setup_diagnostics.py:621: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+_ test_start_image_engine_nvidia_failure_returns_structured_error_without_cpu_fallback _
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_start_image_engine_nvidia0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054c8c80c0>
+
+    def test_start_image_engine_nvidia_failure_returns_structured_error_without_cpu_fallback(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       runtime.app_config.image.provider = "comfyui"
+        ^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'app_config'
+
+tests/test_image_backend_setup_diagnostics.py:627: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+_ test_start_image_engine_missing_nvidia_launcher_fails_fast_without_cpu_fallback _
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_start_image_engine_missin0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054ea5e3c0>
+
+    def test_start_image_engine_missing_nvidia_launcher_fails_fast_without_cpu_fallback(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       runtime.app_config.image.provider = "comfyui"
+        ^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'app_config'
+
+tests/test_image_backend_setup_diagnostics.py:721: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+_______ test_text_gameplay_remains_usable_after_image_ai_nvidia_failure ________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_text_gameplay_remains_usa0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054c8c9160>
+
+    def test_text_gameplay_remains_usable_after_image_ai_nvidia_failure(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       runtime.app_config.image.provider = "comfyui"
+        ^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'app_config'
+
+tests/test_image_backend_setup_diagnostics.py:777: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+__________ test_start_image_engine_nvidia_waits_for_delayed_readiness __________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_start_image_engine_nvidia1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054c8c9860>
+
+    def test_start_image_engine_nvidia_waits_for_delayed_readiness(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       runtime.app_config.image.provider = "comfyui"
+        ^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'app_config'
+
+tests/test_image_backend_setup_diagnostics.py:791: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+________ test_start_image_engine_timeout_includes_launcher_output_tail _________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_start_image_engine_timeou0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054d7694e0>
+
+    def test_start_image_engine_timeout_includes_launcher_output_tail(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       runtime.app_config.image.provider = "comfyui"
+        ^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'app_config'
+
+tests/test_image_backend_setup_diagnostics.py:850: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+__________ test_direction_actor_runtime_object_and_corpse_inspection ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_direction_actor_runtime_o0')
+
+    def test_direction_actor_runtime_object_and_corpse_inspection(tmp_path):
+        rt, cid = make_runtime(tmp_path)
+        assert "North" in output(rt, cid, "look north") or "north" in output(rt, cid, "look north").lower()
+        ch = rt.state_store.load_character(cid)
+        ch.room_id = "emberwood_hunting_trail"
+        rt.state_store.save_character(ch, "shattered_realms")
+        wolf = output(rt, cid, "look wolf")
+>       assert "Forest Wolf" in wolf and "wary eyes" in wolf
+E       AssertionError: assert ('Forest Wolf' in 'Wolf Pelt\nA tagged quest pelt recovered from a starter forest wolf corpse.')
+
+tests/test_inspection_respawn_parity.py:58: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.230 status=ready
+[mud-persistence] Saved character Inspect Tester (char_shattered_realms_inspect_tester)
+[mud-persistence] Loaded character Inspect Tester (char_shattered_realms_inspect_tester)
+[mud-persistence] Command history: look north
+[mud-persistence] Loaded character Inspect Tester (char_shattered_realms_inspect_tester)
+[mud-persistence] Saved character Inspect Tester (char_shattered_realms_inspect_tester)
+[mud-persistence] Command history: look wolf
+___________ test_forest_wolf_respawn_queue_restart_and_new_lifecycle ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_forest_wolf_respawn_queue0')
+
+    def test_forest_wolf_respawn_queue_restart_and_new_lifecycle(tmp_path):
+        rt, cid = make_runtime(tmp_path)
+        ch = rt.state_store.load_character(cid)
+        ch.room_id = "emberwood_hunting_trail"
+        rt.state_store.save_character(ch, "shattered_realms")
+        wolf = rt.resolve_entity_keywords("wolf", rt.find_visible_entities(ch.room_id, ch).get("mobs", []))["entity"]
+        old_lifecycle = (wolf.get("state") or {}).get("lifecycle_id")
+        rt.create_corpse(wolf["entity_id"], death_id="death_respawn_a", killer_actor_id=f"character:{cid}")
+        assert not rt.resolve_entity_keywords("wolf", rt.find_visible_entities(ch.room_id, ch).get("mobs", [])).get("entity")
+        with sqlite3.connect(rt.state_store.db_path) as con:
+>           row = con.execute("SELECT due_at,state FROM entity_respawn_queue WHERE template_id='forest_wolf'").fetchone()
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           sqlite3.OperationalError: no such table: entity_respawn_queue
+
+tests/test_inspection_respawn_parity.py:76: OperationalError
+----------------------------- Captured stdout call -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.217 status=ready
+[mud-persistence] Saved character Inspect Tester (char_shattered_realms_inspect_tester)
+[mud-persistence] Loaded character Inspect Tester (char_shattered_realms_inspect_tester)
+[mud-persistence] Saved character Inspect Tester (char_shattered_realms_inspect_tester)
+_____________ test_inventory_manual_upsert_edit_delete_and_persist _____________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_inventory_manual_upsert_e0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054d5ba430>
+
+    def test_inventory_manual_upsert_edit_delete_and_persist(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       runtime.create_campaign({"slot": "slot_inventory_manual"})
+        ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'create_campaign'
+
+tests/test_inventory_spellbook_ownership.py:16: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+__________ test_spellbook_no_longer_auto_learns_from_normal_gameplay ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_spellbook_no_longer_auto_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054cd6c1a0>
+
+    def test_spellbook_no_longer_auto_learns_from_normal_gameplay(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       runtime.create_campaign({"slot": "slot_no_auto_spellbook"})
+        ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'create_campaign'
+
+tests/test_inventory_spellbook_ownership.py:38: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+________ test_ooc_structured_updates_can_write_inventory_and_spellbook _________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_ooc_structured_updates_ca0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054cd6d550>
+
+    def test_ooc_structured_updates_can_write_inventory_and_spellbook(tmp_path: Path, monkeypatch) -> None:
+        runtime = _runtime(tmp_path, monkeypatch)
+>       runtime.create_campaign({"slot": "slot_ooc_writes"})
+        ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WebRuntime' object has no attribute 'create_campaign'
+
+tests/test_inventory_spellbook_ownership.py:49: AttributeError
+----------------------------- Captured stdout call -----------------------------
+[startup] Loading configuration...
+[startup] Opening SQLite...
+[startup] Running migrations...
+[startup] Discovering plugins...
+[startup] Resolving plugin dependencies...
+[startup] Scanning worlds...
+[startup] Preparing Builder workspace: shattered_realms
+[startup] Validating runtime package: shattered_realms
+[startup] Loading world assets: shattered_realms
+[startup] Initializing runtime...
+[mud-runtime] Smart MUD runtime initialized
+[startup] Ready.
+SQLite Ready
+World Registry Ready
+Listening...
+____ test_blacksmith_get_all_takes_every_portable_duplicate_and_ignores_npc ____
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_blacksmith_get_all_takes_0')
+
+    def test_blacksmith_get_all_takes_every_portable_duplicate_and_ignores_npc(tmp_path):
+        rt, cid = make_runtime(tmp_path)
+        char = move_to_blacksmith(rt, cid)
+        initial = rt.find_room_items(char.room_id)
+        extra_iron = next(i["instance_id"] for i in initial if i["name"] == "Iron Sword")
+        assert names(initial).count("Iron Sword") == 2
+        assert names(initial).count("Training Sword") == 1
+>       assert "Blacksmith Harl" in out(rt, cid, "look")
+E       AssertionError: assert 'Blacksmith Harl' in 'Guildhall Crossing Square\n\nOpens beneath worn stone arches, where travelers pass between the guildhall, market lane, and old gate road.\n\nYou see:\nOld Gate\nFountain\n\n[ Exits: north west east in ]'
+E        +  where 'Guildhall Crossing Square\n\nOpens beneath worn stone arches, where travelers pass between the guildhall, market lane, and old gate road.\n\nYou see:\nOld Gate\nFountain\n\n[ Exits: north west east in ]' = out(<engine.mud_runtime.MudRuntime object at 0x7f054e65b770>, 'char_shattered_realms_bulk_tester', 'look')
+
+tests/test_item_bulk_commands_hotfix.py:36: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.304 status=ready
+[mud-persistence] Saved character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-persistence] Loaded character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-persistence] Loaded character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-persistence] Saved character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-persistence] Loaded character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-command] Routing look as look for Bulk Tester
+[mud-command] Deterministic: look
+[mud-persistence] Command history: look
+__________ test_take_aliases_match_bulk_get_and_no_portables_message ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_take_aliases_match_bulk_g0')
+
+    def test_take_aliases_match_bulk_get_and_no_portables_message(tmp_path):
+        for command in ("take all", "get everything", "take everything"):
+            rt, cid = make_runtime(tmp_path / command.replace(" ", "_"))
+            char = move_to_blacksmith(rt, cid)
+            msg = out(rt, cid, command)
+>           assert msg.count("Iron Sword") == 2
+E           AssertionError: assert 0 == 2
+E            +  where 0 = <built-in method count of str object at 0x7f05513149e0>('Iron Sword')
+E            +    where <built-in method count of str object at 0x7f05513149e0> = 'There is nothing here you can take.'.count
+
+tests/test_item_bulk_commands_hotfix.py:53: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.491 status=ready
+[mud-persistence] Saved character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-persistence] Loaded character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-persistence] Loaded character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-persistence] Saved character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-persistence] Loaded character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-persistence] Command history: take all
+________________ test_get_one_duplicate_then_get_all_remaining _________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_get_one_duplicate_then_ge0')
+
+    def test_get_one_duplicate_then_get_all_remaining(tmp_path):
+        rt, cid = make_runtime(tmp_path)
+        char = move_to_blacksmith(rt, cid)
+        first = out(rt, cid, "get iron")
+>       assert first == "You pick up Iron Sword."
+E       assert "You don't see that here." == 'You pick up Iron Sword.'
+E         
+E         - You pick up Iron Sword.
+E         + You don't see that here.
+
+tests/test_item_bulk_commands_hotfix.py:63: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.272 status=ready
+[mud-persistence] Saved character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-persistence] Loaded character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-persistence] Loaded character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-persistence] Saved character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-persistence] Loaded character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-persistence] Loaded character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-persistence] Command history: get iron
+__________ test_drop_all_round_trip_preserves_ids_and_skips_equipped ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_drop_all_round_trip_prese0')
+
+    def test_drop_all_round_trip_preserves_ids_and_skips_equipped(tmp_path):
+        rt, cid = make_runtime(tmp_path)
+        char = move_to_blacksmith(rt, cid)
+        out(rt, cid, "get all")
+        assert len(rt.find_inventory_items(cid)) >= 3
+        assert "equip" in out(rt, cid, "wield iron").lower()
+        equipped_ids = {i["instance_id"] for i in rt.find_equipped_items(cid)}
+        droppable_ids = [i["instance_id"] for i in rt.find_inventory_items(cid)]
+        portable_droppable_ids = [i["instance_id"] for i in rt.find_inventory_items(cid) if (i.get("template") or {}).get("portable", True)]
+    
+        msg = out(rt, cid, "drop all")
+        assert "Equipped items were not dropped." in msg
+>       assert {i["instance_id"] for i in rt.find_room_items(char.room_id)} == set(droppable_ids)
+E       AssertionError: assert {'item_152950...9577124ff2ba'} == {'item_007347...e1a9a95', ...}
+E         
+E         Extra items in the left set:
+E         'item_366150035c81470fa71fd8cdeddc74e8'
+E         'item_15295054bcaa4a72b193b86a95578ec8'
+E         'item_cafef9734ba94376abd59577124ff2ba'
+E         Extra items in the right set:
+E         'item_ad793fa265cd4016ac4913f381af0bcd'...
+E         
+E         ...Full output truncated (42 lines hidden), use '-vv' to show
+
+tests/test_item_bulk_commands_hotfix.py:83: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.222 status=ready
+[mud-persistence] Saved character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-persistence] Loaded character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-persistence] Loaded character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-persistence] Saved character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-persistence] Loaded character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-persistence] Command history: get all
+[mud-persistence] Command history: wield iron
+[mud-persistence] Command history: drop all
+_____ test_bulk_state_survives_look_movement_and_reload_without_reseeding ______
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_bulk_state_survives_look_0')
+
+    def test_bulk_state_survives_look_movement_and_reload_without_reseeding(tmp_path):
+        rt, cid = make_runtime(tmp_path)
+        char = move_to_blacksmith(rt, cid)
+        out(rt, cid, "get all")
+        inv_ids = {i["instance_id"] for i in rt.find_inventory_items(cid)}
+>       assert not rt.find_room_items(char.room_id)
+E       AssertionError: assert not [{'condition': 'normal', 'created_at': '2026-07-16T05:25:54.688014+00:00', 'custom_flags': {'source_seed_id': 'blacksm..._seed_id': 'blacksmith_stall_training_sword_once'}, 'description': 'training sword for beginner Smart MUD play.', ...}]
+E        +  where [{'condition': 'normal', 'created_at': '2026-07-16T05:25:54.688014+00:00', 'custom_flags': {'source_seed_id': 'blacksm..._seed_id': 'blacksmith_stall_training_sword_once'}, 'description': 'training sword for beginner Smart MUD play.', ...}] = find_room_items('blacksmith_stall')
+E        +    where find_room_items = <engine.mud_runtime.MudRuntime object at 0x7f054e659fd0>.find_room_items
+E        +    and   'blacksmith_stall' = MudCharacter(id='char_shattered_realms_bulk_tester', name='Bulk Tester', role='player', immortal_level=0, room_id='bla...lder_desc_editor_lines=[], actor_data={'race_id': '', 'class_id': '', 'primary_class_id': '', 'resource_versions': {}}).room_id
+
+tests/test_item_bulk_commands_hotfix.py:97: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.273 status=ready
+[mud-persistence] Saved character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-persistence] Loaded character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-persistence] Loaded character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-persistence] Saved character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-persistence] Loaded character Bulk Tester (char_shattered_realms_bulk_tester)
+[mud-persistence] Command history: get all
+_______________ test_equipment_commands_conflicts_and_rendering ________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_equipment_commands_confli0')
+
+    def test_equipment_commands_conflicts_and_rendering(tmp_path):
+        rt, _ = make_runtime(tmp_path)
+        cid = make_char(rt)
+        assert "equip Small Lantern" in rt.handle_input(cid, "hold lantern")["output"]
+>       assert "Light: Small Lantern" in rt.handle_input(cid, "equipment")["output"]
+E       AssertionError: assert 'Light: Small Lantern' in '╔══════════════════════════════════════════════════════════╗\n║                        EQUIPMENT                     ...ht                   Small Lantern                     ║\n╚══════════════════════════════════════════════════════════╝'
+
+tests/test_item_system_phase2e.py:67: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.219 status=ready
+[mud-persistence] Saved character Phase Tester (char_shattered_realms_phase_tester)
+[mud-persistence] Loaded character Phase Tester (char_shattered_realms_phase_tester)
+[mud-persistence] Command history: hold lantern
+[mud-persistence] Command history: equipment
+___________ test_startup_log_file_uses_user_data_logs_in_source_mode ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f054f0cdbe0>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_startup_log_file_uses_use0')
+
+    def test_startup_log_file_uses_user_data_logs_in_source_mode(monkeypatch, tmp_path: Path) -> None:
+        monkeypatch.setenv("ADVENTURER_GUILD_AI_USER_DATA_DIR", str(tmp_path / "user_data"))
+        monkeypatch.setattr(run.sys, "frozen", False, raising=False)
+>       assert run._startup_log_file() == tmp_path / "user_data" / "logs" / "startup.log"
+E       AssertionError: assert PosixPath('/root/.smartmud/logs/startup.log') == (((PosixPath('/tmp/pytest-of-root/pytest-7/test_startup_log_file_uses_use0') / 'user_data') / 'logs') / 'startup.log')
+E        +  where PosixPath('/root/.smartmud/logs/startup.log') = <function _startup_log_file at 0x7f054f0bc250>()
+E        +    where <function _startup_log_file at 0x7f054f0bc250> = run._startup_log_file
+
+tests/test_launcher_readiness.py:157: AssertionError
+________ test_rcontents_reports_legacy_separately_and_rendering_source _________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_rcontents_reports_legacy_0')
+
+    def test_rcontents_reports_legacy_separately_and_rendering_source(tmp_path):
+        rt = MudRuntime(Path.cwd(), tmp_path)
+        rt.load_world("shattered_realms")
+        cid = rt.create_character(world_id="shattered_realms", name="Builder")["character_id"]
+        import sqlite3
+        with sqlite3.connect(rt.state_store.db_path) as conn:
+            conn.execute("UPDATE characters SET role='builder', builder_enabled=1, immortal_level=50 WHERE id=?", (cid,))
+        rt.enter_world(cid)
+        char = rt.state_store.load_character(cid)
+        assert rt.goto_room(char, "training_yard")[0]
+        out = rt.handle_input(cid, "rcontents here")["output"]
+        assert "Runtime entity instances:" in out
+        assert "Legacy room NPC declarations:" in out
+        assert "Rendering source:\n- runtime entity instances only" in out
+>       assert "Training Master Borik" in out
+E       assert 'Training Master Borik' in 'Room: guildhall_crossing_square\nResolved source: canonical runtime content\nFeatures:\n- old_gate: Old Gate portable..."item_2ed85ac59cbe46d2b5580e8a85276aff"]\nRendering source:\n- runtime entity instances only\nDuplicate risks:\n- none'
+
+tests/test_legacy_entity_source_retirement_phase5a.py:20: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.310 status=ready
+[mud-persistence] Saved character Builder (char_shattered_realms_builder)
+[mud-persistence] Loaded character Builder (char_shattered_realms_builder)
+[mud-persistence] Loaded character Builder (char_shattered_realms_builder)
+[mud-persistence] Saved character Builder (char_shattered_realms_builder)
+[mud-persistence] Command history: rcontents here
+_________ test_attack_creates_persistent_encounter_and_wolf_retaliates _________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_attack_creates_persistent0')
+
+    def test_attack_creates_persistent_encounter_and_wolf_retaliates(tmp_path):
+        rt, ch = runtime_with_wolf(tmp_path)
+        out = rt.command_engine.handle_command(ch, 'attack forest wolf')
+        assert out.ok
+        assert any(word in out.narrative.lower() for word in ('damage', 'miss', 'glance', 'hit', 'strike', 'pulverize'))
+        assert 'clash begins' not in out.narrative.lower()
+        with sqlite3.connect(rt.state_store.db_path) as con:
+            assert con.execute("SELECT count(*) FROM combat_encounters WHERE status='active'").fetchone()[0] == 1
+            assert con.execute("SELECT count(*) FROM combat_participants").fetchone()[0] == 2
+        before = rt.state_store.load_character(ch.id).hp
+        rt.process_runtime_pulse(__import__("time").monotonic() + 2.1)
+        after = rt.state_store.load_character(ch.id).hp
+>       assert after < before
+E       assert 100 < 100
+
+tests/test_live_combat_runtime_phase12b1.py:34: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.229 status=ready
+[mud-persistence] Saved character Combat Tester (char_shattered_realms_combat_tester)
+[mud-persistence] Loaded character Combat Tester (char_shattered_realms_combat_tester)
+[mud-persistence] Saved character Combat Tester (char_shattered_realms_combat_tester)
+[mud-persistence] Loaded character Combat Tester (char_shattered_realms_combat_tester)
+[mud-command] Routing attack as attack for Combat Tester
+[mud-command] Deterministic: attack
+[mud-persistence] Loaded character Combat Tester (char_shattered_realms_combat_tester)
+[mud-persistence] Saved character Combat Tester (char_shattered_realms_combat_tester)
+[combat-start] actor=Combat Tester target=Forest Wolf encounter=enc_1f66684f6df54f3996f9a9c5b2c8a63a opening_ms=0
+[mud-persistence] Loaded character Combat Tester (char_shattered_realms_combat_tester)
+[mud-persistence] Saved character Combat Tester (char_shattered_realms_combat_tester)
+[mud-persistence] Loaded character Combat Tester (char_shattered_realms_combat_tester)
+[mud-persistence] Loaded character Combat Tester (char_shattered_realms_combat_tester)
+[mud-persistence] Saved character Combat Tester (char_shattered_realms_combat_tester)
+[mud-persistence] Loaded character Combat Tester (char_shattered_realms_combat_tester)
+[mud-persistence] Saved character Combat Tester (char_shattered_realms_combat_tester)
+[violence-pulse] trace_id=violence_d819cd8d0e57 pulse=20 now=3248 active_encounters=1 processed_encounters=1 actions=2 messages=2 duration_ms=20.728
+[mud-persistence] Loaded character Combat Tester (char_shattered_realms_combat_tester)
+___ test_lethal_damage_retires_living_wolf_and_creates_lootable_corpse_once ____
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_lethal_damage_retires_liv0')
+
+    def test_lethal_damage_retires_living_wolf_and_creates_lootable_corpse_once(tmp_path):
+        rt, ch = runtime_with_wolf(tmp_path)
+        w = wolf(rt)
+        st = dict(w['state']); st.update({'current_health': 1, 'maximum_health': 8, 'is_alive': True})
+        rt.update_entity_state(w['entity_id'], st)
+    
+        out = rt.command_engine.handle_command(ch, 'kill forest wolf')
+        text = out.narrative.lower()
+>       assert 'killing blow' in text or 'collapses and dies' in text
+E       AssertionError: assert ('killing blow' in 'you punch forest wolf extremely hard! you hit forest wolf.' or 'collapses and dies' in 'you punch forest wolf extremely hard! you hit forest wolf.')
+
+tests/test_live_combat_runtime_phase12d2.py:29: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.285 status=ready
+[mud-persistence] Saved character Kraevok (char_shattered_realms_kraevok)
+[mud-persistence] Loaded character Kraevok (char_shattered_realms_kraevok)
+[mud-persistence] Saved character Kraevok (char_shattered_realms_kraevok)
+[mud-persistence] Loaded character Kraevok (char_shattered_realms_kraevok)
+[mud-command] Routing kill as kill for Kraevok
+[mud-command] Deterministic: kill
+[mud-persistence] Loaded character Kraevok (char_shattered_realms_kraevok)
+[mud-persistence] Saved character Kraevok (char_shattered_realms_kraevok)
+[combat-start] actor=Kraevok target=Forest Wolf encounter=enc_f727161d81f14494933f453ffb65114d opening_ms=0
+[mud-persistence] Loaded character Kraevok (char_shattered_realms_kraevok)
+[mud-persistence] Saved character Kraevok (char_shattered_realms_kraevok)
+__________ test_respawned_entity_gets_new_lifecycle_and_can_die_again __________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-7/test_respawned_entity_gets_new0')
+
+    def test_respawned_entity_gets_new_lifecycle_and_can_die_again(tmp_path):
+        rt, ch = runtime_with_wolf(tmp_path)
+        first = wolf(rt)
+        first_life = (first['state'] or {})['lifecycle_id']
+        st = dict(first['state']); st.update({'current_health': 1, 'maximum_health': 8, 'is_alive': True})
+        rt.update_entity_state(first['entity_id'], st)
+        rt.command_engine.handle_command(ch, 'kill forest wolf')
+        second = rt.respawn_entity(first['template_id'], room_id=ch.room_id, source_system='test')
+        second_life = (second['state'] or {})['lifecycle_id']
+        assert second_life != first_life
+        st = dict(second['state']); st.update({'current_health': 1, 'maximum_health': 8, 'is_alive': True})
+        rt.update_entity_state(second['entity_id'], st)
+        rt.command_engine.handle_command(ch, 'kill forest wolf')
+        with sqlite3.connect(rt.state_store.db_path) as con:
+            rows = con.execute("SELECT death_id,lifecycle_id,corpse_entity_id FROM combat_death_transactions ORDER BY created_at").fetchall()
+>           assert len(rows) == 2
+E           assert 0 == 2
+E            +  where 0 = len([])
+
+tests/test_live_combat_runtime_phase12d2.py:80: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[mud-runtime] Smart MUD runtime initialized
+[entity-materialization] templates=21
+[entity-materialization] canonical_spawns=0
+[entity-materialization] legacy_declarations=28
+[entity-materialization] normalized_legacy_spawns=14
+[entity-materialization] adopted_instances=0
+[entity-materialization] created_instances=14
+[entity-materialization] duplicate_candidates=0
+[combat-warmup] world=shattered_realms formulas=0 body_profiles=7 natural_weapons=7 entity_templates=7 message_tables=10 duration_ms=0.230 status=ready
+[mud-persistence] Saved character Kraevok (char_shattered_realms_kraevok)
+[mud-persistence] Loaded character Kraevok (char_shattered_realms_kraevok)
+[mud-persistence] Saved character Kraevok (char_shattered_realms_kraevok)
+[mud-persistence] Loaded character Kraevok (char_shattered_realms_kraevok)
+[mud-command] Routing kill as kill for Kraevok
+[mud-command] Deterministic: kill
+[mud-persistence] Loaded character Kraevok (char_shattered_realms_kraevok)
+[mud-persistence] Saved character Kraevok (char_shattered_realms_kraevok)
+[combat-start] actor=Kraevok target=Forest Wolf encounter=enc_0e4b8dc313c44b08a2ec49f6efdf031c opening_ms=0
+[mud-persistence] Loaded character Kraevok (char_shattered_realms_kraevok)
+[mud-persistence] Saved character Kraevok (char_shattered_realms_kraevok)
+[mud-command] Routing kill as kill for Kraevok
+[mud-command] Deterministic: kill
+[combat-validation] actor=Kraevok allowed=false reason=already_fighting health=100 position=recovering lifecycle=alive encounter=enc_0e4b8dc313c44b08a2ec49f6efdf031c
+=============================== warnings summary ===============================
+tests/test_backend_startup_smoke.py::test_backend_dependency_chain_imports_and_app_constructs
+  /workspace/smartmud/app/web.py:562: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_backend_startup_smoke.py::test_backend_dependency_chain_imports_and_app_constructs
+tests/test_backend_startup_smoke.py::test_backend_dependency_chain_imports_and_app_constructs
+  /root/.pyenv/versions/3.14.4/lib/python3.14/site-packages/fastapi/applications.py:4675: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
+
+tests/test_backend_startup_smoke.py::test_backend_dependency_chain_imports_and_app_constructs
+  /workspace/smartmud/app/web.py:566: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("shutdown")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_builder_list_filters_phase4h_hotfix.py::test_runtime_rlist_and_rooms_filters_use_active_drafts_after_import
+FAILED tests/test_builder_phase4f.py::test_builder_import_validate_preview_apply_round_trip
+FAILED tests/test_builder_phase4g_hotfix.py::test_template_files_exist_and_commands_copy_without_overwrite
+FAILED tests/test_builder_phase4g_hotfix.py::test_import_list_guidance_and_template_validation_results
+FAILED tests/test_builder_phase4h_content_pack.py::test_phase4h_content_pack_files_and_shape
+FAILED tests/test_builder_phase4h_content_pack.py::test_phase4h_room_vnums_exits_zones_spawns_and_ai_profiles
+FAILED tests/test_builder_phase4h_content_pack.py::test_phase4h_builder_import_pipeline_and_template_copy
+FAILED tests/test_builder_workflow_phase4d.py::test_multiline_rdesc_end_cancel_and_redit_cycle
+FAILED tests/test_builder_workflow_phase4d.py::test_phase4d_hotfix_builder_usability
+FAILED tests/test_campaign_extensions.py::test_new_ability_is_added_after_successful_use
+FAILED tests/test_campaign_extensions.py::test_ability_normalization_produces_clean_reusable_names
+FAILED tests/test_campaign_extensions.py::test_summon_and_create_actions_normalize_to_named_abilities
+FAILED tests/test_campaign_extensions.py::test_learned_ability_persists_across_turns_and_prompt_injection
+FAILED tests/test_campaign_extensions.py::test_duplicate_ability_entries_are_not_created
+FAILED tests/test_campaign_extensions.py::test_duplicate_ability_entries_are_prevented_by_fuzzy_similarity
+FAILED tests/test_campaign_extensions.py::test_strict_mode_recognizes_learned_abilities_after_learning
+FAILED tests/test_campaign_extensions.py::test_ability_state_matrix_strict_on_auto_update_on_transitions_after_learning
+FAILED tests/test_campaign_extensions.py::test_ability_state_matrix_strict_on_auto_update_off_never_learns_unknown_action
+FAILED tests/test_campaign_extensions.py::test_ability_state_matrix_strict_off_freeform_on_allows_freer_untrained_resolution
+FAILED tests/test_campaign_extensions.py::test_ability_authority_changes_by_settings_without_codepath_drift
+FAILED tests/test_campaign_extensions.py::test_prompt_injection_includes_settings_driven_ability_truth
+FAILED tests/test_campaign_extensions.py::test_main_character_sheet_is_auto_created_and_injected_when_missing
+FAILED tests/test_campaign_extensions.py::test_latest_action_priority_retries_when_stale_fire_overrides_ice
+FAILED tests/test_campaign_extensions.py::test_spell_action_requires_clear_effect_and_impact
+FAILED tests/test_campaign_extensions.py::test_coherent_output_does_not_trigger_quality_fallback
+FAILED tests/test_combat_gameplay_polish_phase12d4.py::test_look_reflects_combat_and_clears_after_death
+FAILED tests/test_combat_gameplay_polish_phase12d4.py::test_numbered_target_command_replaces_queued_action_without_duplicates
+FAILED tests/test_comfy_portable_launch.py::test_build_launch_command_uses_direct_python_without_batch_wrapper
+FAILED tests/test_comfy_portable_launch.py::test_detect_child_process_uses_port_probe
+FAILED tests/test_comfy_portable_launch.py::test_start_image_engine_reports_immediate_launcher_exit_with_output
+FAILED tests/test_comfy_portable_launch.py::test_validate_install_does_not_require_venv_runtime
+FAILED tests/test_comfy_portable_launch.py::test_dependency_bootstrap_is_skipped_for_portable_runtime
+FAILED tests/test_command_latency_save_policy.py::test_read_only_commands_do_not_save_character
+FAILED tests/test_command_registry_phase3d.py::test_help_uses_registry_metadata
+FAILED tests/test_committed_starter_builder_drafts.py::test_committed_starter_area_zones_rooms_are_organized_and_consistent
+FAILED tests/test_committed_starter_builder_drafts.py::test_builder_validate_rstat_and_export_import_use_isolated_starter_drafts
+FAILED tests/test_committed_starter_builder_drafts.py::test_mutating_builder_operations_do_not_change_repository_drafts
+FAILED tests/test_content_diagnostics_phase5a.py::test_builder_rcontents_and_stats_are_builder_only
+FAILED tests/test_core_game.py::test_core_character_creation_mage_known_spells_inventory_and_no_journal
+FAILED tests/test_core_game.py::test_core_character_creation_warrior_known_skills
+FAILED tests/test_core_game.py::test_world_registry_lists_and_loads_shattered_realms
+FAILED tests/test_core_game.py::test_mud_renderer_semantic_html_and_plain_text
+FAILED tests/test_core_game.py::test_mud_v2_campaign_creation_and_room_movement
+FAILED tests/test_core_game.py::test_shattered_realms_v1_world_content_integrity
+FAILED tests/test_core_game.py::test_mud_v2_deterministic_commands_and_diagonal_support
+FAILED tests/test_core_game.py::test_mud_command_registry_resolution_help_and_unknown_freeform
+FAILED tests/test_emberwood_forest_phase15a.py::test_emberwood_rooms_topology_area_zone_and_vnums
+FAILED tests/test_entity_render_source_integrity_phase5a.py::test_entityaudit_is_builder_only
+FAILED tests/test_entity_system_phase3a.py::test_npc_mob_rendering_lookup_movement_persistence_and_ids_hidden
+FAILED tests/test_event_bus_phase2c.py::test_runtime_movement_events_and_aff_alias
+FAILED tests/test_formula_engine_phase5d.py::test_builder_diagnostics_commands_are_read_only
+FAILED tests/test_guildlands_starter_phase11f.py::test_starter_combat_content_builder_owned_and_world_loaded
+FAILED tests/test_image_backend_setup_diagnostics.py::test_image_backend_diagnostics_reports_missing_comfyui_path
+FAILED tests/test_image_backend_setup_diagnostics.py::test_image_backend_diagnostics_includes_managed_runtime_details
+FAILED tests/test_image_backend_setup_diagnostics.py::test_image_backend_diagnostics_reports_running_when_api_reachable
+FAILED tests/test_image_backend_setup_diagnostics.py::test_image_backend_diagnostics_exposes_launch_strategy_details
+FAILED tests/test_image_backend_setup_diagnostics.py::test_start_image_engine_returns_already_running_without_spawning_duplicate
+FAILED tests/test_image_backend_setup_diagnostics.py::test_start_image_engine_reports_missing_workflow_cleanly
+FAILED tests/test_image_backend_setup_diagnostics.py::test_image_engine_service_status_reports_not_installed_state
+FAILED tests/test_image_backend_setup_diagnostics.py::test_install_image_engine_does_not_force_browser_launch
+FAILED tests/test_image_backend_setup_diagnostics.py::test_managed_mode_resolves_to_app_managed_paths
+FAILED tests/test_image_backend_setup_diagnostics.py::test_external_mode_uses_selected_external_path
+FAILED tests/test_image_backend_setup_diagnostics.py::test_external_mode_persists_selected_root_across_restart
+FAILED tests/test_image_backend_setup_diagnostics.py::test_checkpoint_folder_is_rejected_as_comfyui_root
+FAILED tests/test_image_backend_setup_diagnostics.py::test_start_image_engine_reports_missing_root_with_precise_error
+FAILED tests/test_image_backend_setup_diagnostics.py::test_detect_install_path_passes_for_valid_root
+FAILED tests/test_image_backend_setup_diagnostics.py::test_managed_install_keeps_mode_managed
+FAILED tests/test_image_backend_setup_diagnostics.py::test_windows_venv_python_command_is_preferred
+FAILED tests/test_image_backend_setup_diagnostics.py::test_windows_system_python_requires_explicit_setting
+FAILED tests/test_image_backend_setup_diagnostics.py::test_resolve_comfy_python_runtime_uses_py_launcher_prefix
+FAILED tests/test_image_backend_setup_diagnostics.py::test_dependency_bootstrap_reports_missing_sqlalchemy_when_install_fails
+FAILED tests/test_image_backend_setup_diagnostics.py::test_dependency_bootstrap_reports_precise_requirements_context_on_pip_failure
+FAILED tests/test_image_backend_setup_diagnostics.py::test_dependency_bootstrap_missing_pip_fails_cleanly
+FAILED tests/test_image_backend_setup_diagnostics.py::test_dependency_bootstrap_pip_available_sets_pip_version
+FAILED tests/test_image_backend_setup_diagnostics.py::test_dependency_bootstrap_reports_precise_error_when_pip_missing
+FAILED tests/test_image_backend_setup_diagnostics.py::test_dependency_bootstrap_does_not_install_requirements_if_pip_unavailable
+FAILED tests/test_image_backend_setup_diagnostics.py::test_diagnostics_include_pip_availability_status
+FAILED tests/test_image_backend_setup_diagnostics.py::test_diagnostics_dependency_probe_failure_marks_runtime_incomplete
+FAILED tests/test_image_backend_setup_diagnostics.py::test_start_image_engine_skips_launch_when_dependency_bootstrap_fails
+FAILED tests/test_image_backend_setup_diagnostics.py::test_start_image_engine_recreates_runtime_once_on_exit_106_dependency_failure
+FAILED tests/test_image_backend_setup_diagnostics.py::test_diagnostics_resolved_path_matches_launch_path_source_of_truth
+FAILED tests/test_image_backend_setup_diagnostics.py::test_managed_launch_attempts_use_only_nvidia_gpu_launcher
+FAILED tests/test_image_backend_setup_diagnostics.py::test_classify_nvidia_launch_failure_cuda_patterns_disable_fallback
+FAILED tests/test_image_backend_setup_diagnostics.py::test_start_image_engine_nvidia_failure_returns_structured_error_without_cpu_fallback
+FAILED tests/test_image_backend_setup_diagnostics.py::test_start_image_engine_missing_nvidia_launcher_fails_fast_without_cpu_fallback
+FAILED tests/test_image_backend_setup_diagnostics.py::test_text_gameplay_remains_usable_after_image_ai_nvidia_failure
+FAILED tests/test_image_backend_setup_diagnostics.py::test_start_image_engine_nvidia_waits_for_delayed_readiness
+FAILED tests/test_image_backend_setup_diagnostics.py::test_start_image_engine_timeout_includes_launcher_output_tail
+FAILED tests/test_inspection_respawn_parity.py::test_direction_actor_runtime_object_and_corpse_inspection
+FAILED tests/test_inspection_respawn_parity.py::test_forest_wolf_respawn_queue_restart_and_new_lifecycle
+FAILED tests/test_inventory_spellbook_ownership.py::test_inventory_manual_upsert_edit_delete_and_persist
+FAILED tests/test_inventory_spellbook_ownership.py::test_spellbook_no_longer_auto_learns_from_normal_gameplay
+FAILED tests/test_inventory_spellbook_ownership.py::test_ooc_structured_updates_can_write_inventory_and_spellbook
+FAILED tests/test_item_bulk_commands_hotfix.py::test_blacksmith_get_all_takes_every_portable_duplicate_and_ignores_npc
+FAILED tests/test_item_bulk_commands_hotfix.py::test_take_aliases_match_bulk_get_and_no_portables_message
+FAILED tests/test_item_bulk_commands_hotfix.py::test_get_one_duplicate_then_get_all_remaining
+FAILED tests/test_item_bulk_commands_hotfix.py::test_drop_all_round_trip_preserves_ids_and_skips_equipped
+FAILED tests/test_item_bulk_commands_hotfix.py::test_bulk_state_survives_look_movement_and_reload_without_reseeding
+FAILED tests/test_item_system_phase2e.py::test_equipment_commands_conflicts_and_rendering
+FAILED tests/test_launcher_readiness.py::test_startup_log_file_uses_user_data_logs_in_source_mode
+FAILED tests/test_legacy_entity_source_retirement_phase5a.py::test_rcontents_reports_legacy_separately_and_rendering_source
+FAILED tests/test_live_combat_runtime_phase12b1.py::test_attack_creates_persistent_encounter_and_wolf_retaliates
+FAILED tests/test_live_combat_runtime_phase12d2.py::test_lethal_damage_retires_living_wolf_and_creates_lootable_corpse_once
+FAILED tests/test_live_combat_runtime_phase12d2.py::test_respawned_entity_gets_new_lifecycle_and_can_die_again
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+/workspace/smartmud/engine/crafting.py:51: KeyboardInterrupt
+(to show a full traceback on KeyboardInterrupt use --full-trace)
+104 failed, 1122 passed, 4 warnings in 297.35s (0:04:57)
