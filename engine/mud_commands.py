@@ -508,15 +508,18 @@ class MudCommandEngine:
             "zstat": self._cmd_zone,
             "zset": self._cmd_zone,
             "zdelete": self._cmd_zone,
+            "vnum": self._cmd_builder_discovery,
+            "splist": self._cmd_builder_discovery,
+            "resetlist": self._cmd_builder_discovery,
             "dig": self._cmd_dig,
             "link": self._cmd_link,
             "unlink": self._cmd_unlink,
             "del": self._cmd_delete_alias,
             "delete": self._cmd_delete_alias,
-            "mlist": self._cmd_builder_list_placeholder,
+            "mlist": self._cmd_builder_discovery,
             "eprofile": self._cmd_living_entity, "etime": self._cmd_living_entity, "estate": self._cmd_living_entity, "eactivity": self._cmd_living_entity, "eneeds": self._cmd_living_entity, "egoals": self._cmd_living_entity, "goals": self._cmd_living_entity, "eschedule": self._cmd_living_entity, "erelationships": self._cmd_living_entity, "ememories": self._cmd_living_entity, "econtext": self._cmd_living_entity,
             "schedulelist": self._cmd_living_list, "needlist": self._cmd_living_list, "goallist": self._cmd_living_list, "relationshiplist": self._cmd_living_list, "memorylist": self._cmd_living_list,
-            "olist": self._cmd_builder_list_placeholder,
+            "olist": self._cmd_builder_discovery,
             "exits": self._cmd_builder_nav,
             "x": self._cmd_builder_nav,
             "back": self._cmd_builder_nav,
@@ -3523,6 +3526,20 @@ class MudCommandEngine:
         if not ok: return CommandResult(a, ok=False)
         return self._assign_room(character, a, b, c, v, raw, cmd=="rmove")
 
+    def _cmd_builder_discovery(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        cmd = raw.strip().split()[0].lower() if raw.strip() else ""
+        svc = self.builder_service
+        if cmd == "vnum":
+            res = svc.vnum_report(character, args)
+        elif cmd == "splist":
+            res = svc.list_content(character, "spawn", args)
+        elif cmd == "resetlist":
+            res = svc.list_content(character, "reset", args)
+        else:
+            kind = {"mlist": "mob", "olist": "object", "rlist": "room"}.get(cmd, "mob")
+            res = svc.list_content(character, kind, args)
+        return CommandResult(res.message, ok=res.ok)
+
     def _cmd_builder_list_placeholder(self, character: Any, args: list[str], raw: str) -> CommandResult:
         cmd = raw.strip().split()[0].lower() if raw.strip() else ""
         drafts = self.builder.load(self.builder.world_id(character))
@@ -3826,11 +3843,7 @@ class MudCommandEngine:
                 return CommandResult("Builder target set.\n" + self._builder_room_status(character, args[1], drafts))
             return CommandResult('Usage: btarget [room <room_id>|clear]', ok=False)
         if cmd in {"medit", "oedit", "aedit", "zedit"}:
-            coll = {"medit":"entities", "oedit":"items", "aedit":"areas", "zedit":"zones"}[cmd]
-            target = args[0] if args else room_id
-            if not target:
-                return CommandResult(f"Usage: {cmd} <id>", ok=False)
-            res = self.builder_service.start_editor(character, cmd, coll, target)
+            res = self.builder_service.discover_editor_target(character, cmd, args)
             return CommandResult(res.message, ok=res.ok)
         if cmd in {"mclone", "oclone", "rclone"}:
             if len(args) < 2: return CommandResult(f"Usage: {cmd} <source_id> <new_id>", ok=False)
