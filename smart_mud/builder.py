@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import json, shutil, re
 from copy import deepcopy
-from dataclasses import dataclass
-from datetime import datetime, timezone
+from dataclasses import dataclass, field
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +17,7 @@ VALID_ENTITY_TYPES = {"npc", "mob", "merchant", "trainer", "banker", "healer", "
 DRAFT_FILES = {
     "world": "world.json", "display_themes": "display_themes.json",
     "areas": "areas.json", "zones": "zones.json", "rooms": "rooms.json",
-    "features": "features.json", "items": "item_templates.json", "item_placements": "item_placements.json", "entities": "entity_templates.json", "spawns": "spawns.json", "resets": "resets.json", "schedules": "schedules.json", "relationship_seeds": "relationship_seeds.json", "memory_seeds": "memory_seeds.json", "need_profiles": "need_profiles.json", "goal_profiles": "goal_profiles.json", "formulas": "formulas.json", "modifier_types": "modifier_types.json", "future_formula_templates": "future_formula_templates.json", "abilities": "abilities.json", "ability_loadouts": "ability_loadouts.json", "ability_schools": "ability_schools.json", "ability_categories": "ability_categories.json", "cooldown_groups": "cooldown_groups.json", "targeting_profiles": "targeting_profiles.json", "healing_profiles": "healing_profiles.json", "casting_profiles": "casting_profiles.json", "combat_behavior_profiles": "combat_behavior_profiles.json", "threat_profiles": "threat_profiles.json", "aggression_profiles": "aggression_profiles.json", "assist_profiles": "assist_profiles.json", "flee_profiles": "flee_profiles.json", "surrender_profiles": "surrender_profiles.json", "pursuit_profiles": "pursuit_profiles.json", "combat_groups": "combat_groups.json", "combat_action_rules": "combat_action_rules.json", "recipe_definitions": "recipe_definitions.json", "workstation_profiles": "workstation_profiles.json", "production_profiles": "production_profiles.json", "item_quality_profiles": "item_quality_profiles.json", "crafting_quality_profiles": "crafting_quality_profiles.json", "ingredient_substitution_profiles": "ingredient_substitution_profiles.json", "crafting_message_profiles": "crafting_message_profiles.json", "profession_experience_curves": "profession_experience_curves.json", "profession_growth_profiles": "profession_growth_profiles.json", "quest_definitions": "quest_definitions.json", "quest_series": "quest_series.json", "quest_chapters": "quest_chapters.json", "quest_stages": "quest_stages.json", "quest_objectives": "quest_objectives.json", "quest_availability_profiles": "quest_availability_profiles.json", "quest_acceptance_profiles": "quest_acceptance_profiles.json", "quest_repeat_policies": "quest_repeat_policies.json", "quest_failure_profiles": "quest_failure_profiles.json", "quest_abandon_profiles": "quest_abandon_profiles.json", "quest_sharing_profiles": "quest_sharing_profiles.json", "quest_action_definitions": "quest_action_definitions.json", "conversation_definitions": "conversation_definitions.json", "conversation_nodes": "conversation_nodes.json", "conversation_choices": "conversation_choices.json", "conversation_conditions": "conversation_conditions.json", "conversation_actions": "conversation_actions.json", "quest_message_profiles": "quest_message_profiles.json", "quest_time_limit_profiles": "quest_time_limit_profiles.json", "world_state_definitions": "world_state_definitions.json", "organization_definitions": "organization_definitions.json", "organization_roles": "organization_roles.json", "organization_membership_policies": "organization_membership_policies.json", "organization_invitation_policies": "organization_invitation_policies.json", "organization_application_policies": "organization_application_policies.json", "organization_leadership_policies": "organization_leadership_policies.json", "organization_permission_profiles": "organization_permission_profiles.json", "organization_communication_profiles": "organization_communication_profiles.json", "organization_group_combat_profiles": "organization_group_combat_profiles.json", "organization_shared_quest_profiles": "organization_shared_quest_profiles.json", "organization_reward_profiles": "organization_reward_profiles.json", "organization_relationship_profiles": "organization_relationship_profiles.json", "organization_seeds": "organization_seeds.json", "organization_message_profiles": "organization_message_profiles.json", "faction_definitions": "faction_definitions.json", "faction_reputation_profiles": "faction_reputation_profiles.json", "faction_standing_tier_profiles": "faction_standing_tier_profiles.json", "faction_membership_reputation_policies": "faction_membership_reputation_policies.json", "faction_diplomacy_profiles": "faction_diplomacy_profiles.json", "faction_hostility_profiles": "faction_hostility_profiles.json", "faction_access_profiles": "faction_access_profiles.json", "faction_guard_response_profiles": "faction_guard_response_profiles.json", "faction_economy_modifier_profiles": "faction_economy_modifier_profiles.json", "faction_reward_profiles": "faction_reward_profiles.json", "faction_reputation_decay_profiles": "faction_reputation_decay_profiles.json", "faction_combat_reputation_profiles": "faction_combat_reputation_profiles.json", "faction_title_profiles": "faction_title_profiles.json", "faction_message_profiles": "faction_message_profiles.json", "trainer_definitions": "trainer_definitions.json", "training_offer_definitions": "training_offer_definitions.json", "training_requirement_profiles": "training_requirement_profiles.json", "training_cost_profiles": "training_cost_profiles.json", "training_result_profiles": "training_result_profiles.json", "trainer_availability_profiles": "trainer_availability_profiles.json", "class_track_training_profiles": "class_track_training_profiles.json", "advancement_conversion_profiles": "advancement_conversion_profiles.json", "respec_profiles": "respec_profiles.json", "training_refund_profiles": "training_refund_profiles.json", "training_cooldown_profiles": "training_cooldown_profiles.json", "training_message_profiles": "training_message_profiles.json", "written_document_definitions": "written_document_definitions.json", "written_content_profiles": "written_content_profiles.json", "written_content_pages": "written_content_pages.json", "written_access_profiles": "written_access_profiles.json", "written_retention_profiles": "written_retention_profiles.json", "written_render_profiles": "written_render_profiles.json", "written_sanitization_profiles": "written_sanitization_profiles.json", "mail_service_profiles": "mail_service_profiles.json", "bulletin_board_definitions": "bulletin_board_definitions.json", "bulletin_posting_profiles": "bulletin_posting_profiles.json", "written_moderation_profiles": "written_moderation_profiles.json", "written_message_profiles": "written_message_profiles.json", "readable_item_profiles": "readable_item_profiles.json", "journal_profiles": "journal_profiles.json", "book_profiles": "book_profiles.json"
+    "features": "features.json", "items": "item_templates.json", "attack_family_definitions": "attack_family_definitions.json", "body_profiles": "body_profiles.json", "natural_weapon_profiles": "natural_weapon_profiles.json", "item_placements": "item_placements.json", "entities": "entity_templates.json", "spawns": "spawns.json", "resets": "resets.json", "schedules": "schedules.json", "relationship_seeds": "relationship_seeds.json", "memory_seeds": "memory_seeds.json", "need_profiles": "need_profiles.json", "goal_profiles": "goal_profiles.json", "formulas": "formulas.json", "modifier_types": "modifier_types.json", "future_formula_templates": "future_formula_templates.json", "abilities": "abilities.json", "ability_loadouts": "ability_loadouts.json", "ability_schools": "ability_schools.json", "ability_categories": "ability_categories.json", "cooldown_groups": "cooldown_groups.json", "targeting_profiles": "targeting_profiles.json", "healing_profiles": "healing_profiles.json", "casting_profiles": "casting_profiles.json", "combat_behavior_profiles": "combat_behavior_profiles.json", "threat_profiles": "threat_profiles.json", "aggression_profiles": "aggression_profiles.json", "assist_profiles": "assist_profiles.json", "flee_profiles": "flee_profiles.json", "surrender_profiles": "surrender_profiles.json", "pursuit_profiles": "pursuit_profiles.json", "combat_groups": "combat_groups.json", "combat_action_rules": "combat_action_rules.json", "recipe_definitions": "recipe_definitions.json", "workstation_profiles": "workstation_profiles.json", "production_profiles": "production_profiles.json", "item_quality_profiles": "item_quality_profiles.json", "crafting_quality_profiles": "crafting_quality_profiles.json", "ingredient_substitution_profiles": "ingredient_substitution_profiles.json", "crafting_message_profiles": "crafting_message_profiles.json", "profession_experience_curves": "profession_experience_curves.json", "profession_growth_profiles": "profession_growth_profiles.json", "quest_definitions": "quest_definitions.json", "quest_series": "quest_series.json", "quest_chapters": "quest_chapters.json", "quest_stages": "quest_stages.json", "quest_objectives": "quest_objectives.json", "quest_availability_profiles": "quest_availability_profiles.json", "quest_acceptance_profiles": "quest_acceptance_profiles.json", "quest_repeat_policies": "quest_repeat_policies.json", "quest_failure_profiles": "quest_failure_profiles.json", "quest_abandon_profiles": "quest_abandon_profiles.json", "quest_sharing_profiles": "quest_sharing_profiles.json", "quest_action_definitions": "quest_action_definitions.json", "conversation_definitions": "conversation_definitions.json", "conversation_nodes": "conversation_nodes.json", "conversation_choices": "conversation_choices.json", "conversation_conditions": "conversation_conditions.json", "conversation_actions": "conversation_actions.json", "quest_message_profiles": "quest_message_profiles.json", "quest_time_limit_profiles": "quest_time_limit_profiles.json", "world_state_definitions": "world_state_definitions.json", "organization_definitions": "organization_definitions.json", "organization_roles": "organization_roles.json", "organization_membership_policies": "organization_membership_policies.json", "organization_invitation_policies": "organization_invitation_policies.json", "organization_application_policies": "organization_application_policies.json", "organization_leadership_policies": "organization_leadership_policies.json", "organization_permission_profiles": "organization_permission_profiles.json", "organization_communication_profiles": "organization_communication_profiles.json", "organization_group_combat_profiles": "organization_group_combat_profiles.json", "organization_shared_quest_profiles": "organization_shared_quest_profiles.json", "organization_reward_profiles": "organization_reward_profiles.json", "organization_relationship_profiles": "organization_relationship_profiles.json", "organization_seeds": "organization_seeds.json", "organization_message_profiles": "organization_message_profiles.json", "faction_definitions": "faction_definitions.json", "faction_reputation_profiles": "faction_reputation_profiles.json", "faction_standing_tier_profiles": "faction_standing_tier_profiles.json", "faction_membership_reputation_policies": "faction_membership_reputation_policies.json", "faction_diplomacy_profiles": "faction_diplomacy_profiles.json", "faction_hostility_profiles": "faction_hostility_profiles.json", "faction_access_profiles": "faction_access_profiles.json", "faction_guard_response_profiles": "faction_guard_response_profiles.json", "faction_economy_modifier_profiles": "faction_economy_modifier_profiles.json", "faction_reward_profiles": "faction_reward_profiles.json", "faction_reputation_decay_profiles": "faction_reputation_decay_profiles.json", "faction_combat_reputation_profiles": "faction_combat_reputation_profiles.json", "faction_title_profiles": "faction_title_profiles.json", "faction_message_profiles": "faction_message_profiles.json", "trainer_definitions": "trainer_definitions.json", "training_offer_definitions": "training_offer_definitions.json", "training_requirement_profiles": "training_requirement_profiles.json", "training_cost_profiles": "training_cost_profiles.json", "training_result_profiles": "training_result_profiles.json", "trainer_availability_profiles": "trainer_availability_profiles.json", "class_track_training_profiles": "class_track_training_profiles.json", "advancement_conversion_profiles": "advancement_conversion_profiles.json", "respec_profiles": "respec_profiles.json", "training_refund_profiles": "training_refund_profiles.json", "training_cooldown_profiles": "training_cooldown_profiles.json", "training_message_profiles": "training_message_profiles.json", "written_document_definitions": "written_document_definitions.json", "written_content_profiles": "written_content_profiles.json", "written_content_pages": "written_content_pages.json", "written_access_profiles": "written_access_profiles.json", "written_retention_profiles": "written_retention_profiles.json", "written_render_profiles": "written_render_profiles.json", "written_sanitization_profiles": "written_sanitization_profiles.json", "mail_service_profiles": "mail_service_profiles.json", "bulletin_board_definitions": "bulletin_board_definitions.json", "bulletin_posting_profiles": "bulletin_posting_profiles.json", "written_moderation_profiles": "written_moderation_profiles.json", "written_message_profiles": "written_message_profiles.json", "readable_item_profiles": "readable_item_profiles.json", "journal_profiles": "journal_profiles.json", "book_profiles": "book_profiles.json"
 }
 
 COOKING_COLLECTION_FILES = {
@@ -304,6 +304,9 @@ class BuilderWorkspace:
         for name in ("audit", "history", "snapshots", "exports", "imports", "templates", "examples"):
             (root / name).mkdir(parents=True, exist_ok=True)
         starters = {
+            "attack_family_definitions": {fam: {"id": fam, "display_name": fam.replace("_", " ").title()} for fam in TBA_ATTACK_FAMILIES},
+            "body_profiles": {"wolf": {"id":"wolf", "capabilities":["fangs","claws"], "suggested_natural_weapon_ids":["wolf_fangs","wolf_claws"]}, "bear": {"id":"bear", "capabilities":["teeth","claws","paws"], "suggested_natural_weapon_ids":["bear_claw","bear_bite","bear_maul"]}, "humanoid": {"id":"humanoid", "capabilities":["fists"], "suggested_natural_weapon_ids":["humanoid_fist"]}},
+            "natural_weapon_profiles": {"wolf_fangs": _canonical_weapon({"id":"wolf_fangs","family":"bite","noun":"fangs","verb":"bites","damage_type":"piercing","damage_dice":"1d6","weight":100}, "wolf"), "wolf_claws": _canonical_weapon({"id":"wolf_claws","family":"claw","noun":"claws","verb":"rakes","damage_type":"slashing","damage_dice":"1d4","weight":30}, "wolf"), "bear_claw": _canonical_weapon({"id":"bear_claw","family":"claw","noun":"claws","verb":"claws","damage_type":"slashing","damage_dice":"1d8","weight":50}, "bear"), "bear_bite": _canonical_weapon({"id":"bear_bite","family":"bite","noun":"teeth","verb":"bites","damage_type":"piercing","damage_dice":"1d8","weight":25}, "bear"), "bear_maul": _canonical_weapon({"id":"bear_maul","family":"maul","noun":"paws","verb":"mauls","damage_type":"bludgeoning","damage_dice":"2d6","weight":25}, "bear")},
             "formulas": {"attack_rating": {"id": "attack_rating", "display_name": "Attack Rating", "description": "Starter placeholder; Builders may replace this formula later.", "version": "1.0.0", "dependencies": [], "inputs": [], "outputs": ["attack_rating"], "validation": {"placeholder": True}, "plugin_owner": None, "builder_owner": None, "world_overrides": {}, "plugin_data": {}}},
             "modifier_types": {"add": {"id": "add", "operation": "add", "description": "Adds a contributed value without defining gameplay math."}, "custom": {"id": "custom", "operation": "custom", "description": "Reserved for future plugin or Builder-defined modifier handling."}},
             "future_formula_templates": {"derived_stat_template": {"id": "builder_defined_stat", "display_name": "Builder Defined Stat", "description": "Copy this shape when authoring a future formula.", "version": "1.0.0", "dependencies": [], "inputs": ["future_variable"], "outputs": ["builder_defined_stat"], "validation": {}, "plugin_owner": None, "builder_owner": "builder", "world_overrides": {}, "plugin_data": {}}},
@@ -410,6 +413,15 @@ class BuilderWorkspace:
                 if actor is not None:
                     self.audit(actor, world_id, "draft normalization", "room", str(room_id), None, normalized)
                     self.publish("builder_draft_room_normalized", actor, world_id, "room", str(room_id), command="draft normalization")
+        entities = drafts.setdefault("entities", {})
+        for entity_id, rec in list(entities.items()):
+            if isinstance(rec, dict) and rec.get("natural_attacks") is not None:
+                before = deepcopy(rec); attacks = rec.pop("natural_attacks") or []
+                cp = dict(rec.get("combat_profile") or {})
+                cp["natural_weapons"] = [_canonical_weapon(x, str(entity_id)) for x in attacks if isinstance(x, dict)]
+                rec["combat_profile"] = cp; rec.setdefault("migration_log", []).append({"schema":"natural_attacks_to_combat_profile.natural_weapons","timestamp":self.stamp()})
+                entities[entity_id] = rec; changed = True
+                if actor is not None: self.audit(actor, world_id, "schema migration", "entities", str(entity_id), before, rec)
         return changed
 
     def save_drafts(self, world_id: str, drafts: dict[str, Any]) -> None:
@@ -771,10 +783,82 @@ BODY_PROFILE_ATTACKS = {
     "construct": [{"family":"slam","verb":"slams","noun":"frame","weight":100,"damage_type":"bludgeoning","damage_dice":"1d8"}],
 }
 
+
+TBA_ATTACK_FAMILIES = ("fist", "sting", "whip", "slash", "bite", "bludgeon", "crush", "pound", "claw", "maul", "thrash", "pierce", "blast", "punch", "stab", "gore", "kick", "tail", "breath", "slam")
+
+def _canonical_weapon(raw: dict[str, Any], fallback_id: str = "natural_weapon") -> dict[str, Any]:
+    family = str(raw.get("mechanical_family") or raw.get("family") or raw.get("attack_type") or fallback_id).lower()
+    noun_plural = str(raw.get("noun_plural") or raw.get("noun") or raw.get("name") or family)
+    verb_third = str(raw.get("verb_third_person") or raw.get("verb") or (family + "s"))
+    wid = str(raw.get("id") or f"{fallback_id}_{family}").lower().replace(" ", "_")
+    return {
+        "id": wid, "mechanical_family": family, "name": str(raw.get("name") or noun_plural),
+        "noun_singular": str(raw.get("noun_singular") or noun_plural.rstrip("s") or noun_plural),
+        "noun_plural": noun_plural, "verb_base": str(raw.get("verb_base") or family), "verb_third_person": verb_third,
+        "attacker_template": str(raw.get("attacker_template") or "You {verb_base} {victim} with your {noun_plural}."),
+        "victim_template": str(raw.get("victim_template") or "{attacker} {verb_third_person} you with {noun_plural}."),
+        "observer_template": str(raw.get("observer_template") or "{attacker} {verb_third_person} {victim} with {noun_plural}."),
+        "damage_type": str(raw.get("damage_type") or "physical"), "damage_dice": str(raw.get("damage_dice") or raw.get("dice") or "1d3"),
+        "minimum_damage": int(raw.get("minimum_damage") or raw.get("min_damage") or 1),
+        "maximum_damage": int(raw.get("maximum_damage") or raw.get("max_damage") or raw.get("base_damage") or 3),
+        "accuracy_modifier": int(raw.get("accuracy_modifier") or 0), "critical_modifier": int(raw.get("critical_modifier") or 0),
+        "selection_weight": int(raw.get("selection_weight") or raw.get("weight") or 100), "cooldown_pulses": int(raw.get("cooldown_pulses") or 0),
+        "required_body_capability": str(raw.get("required_body_capability") or raw.get("capability") or family),
+        "enabled": bool(raw.get("enabled", True)), "metadata": dict(raw.get("metadata") or {}),
+    }
+
+@dataclass
+class BuilderEditSession:
+    session_id: str; builder_account_id: str; builder_character_id: str; world_id: str; editor_type: str; collection: str; object_id: str; lock_key: str
+    mode: str = "main_menu"; section: str = ""; subsection: str = ""; pending_field: str = ""; pending_value_type: str = ""; pending_choices: list[str] = field(default_factory=list)
+    draft_revision: int = 0; started_at: str = ""; last_activity_at: str = ""; dirty: bool = False; saved: bool = True; validation_state: str = "unknown"; return_stack: list[str] = field(default_factory=list)
+
+class BuilderSessionManager:
+    def __init__(self, service: 'BuilderService') -> None:
+        self.service = service; self.active: dict[str, BuilderEditSession] = {}
+    def actor_key(self, actor: Any) -> str: return str(getattr(actor, 'id', '') or getattr(actor, 'name', 'builder'))
+    def start(self, actor: Any, editor: str, collection: str, object_id: str) -> BuilderResult:
+        lock = self.service.acquire_lock(actor, collection, object_id)
+        if not lock.ok: return lock
+        world_id = self.service.workspace.world_id(actor); now = self.service.workspace.stamp(); rec = self.service._record(world_id, collection, object_id) or {"id": object_id}
+        sess = BuilderEditSession(f"{self.actor_key(actor)}-{now}", str(getattr(actor,'account_id','')), self.actor_key(actor), world_id, editor, collection, object_id, f"{collection}:{object_id}", draft_revision=int(rec.get('_builder_revision') or 0), started_at=now, last_activity_at=now)
+        self.active[self.actor_key(actor)] = sess
+        return BuilderResult(True, self.service.render_session(sess))
+    def has(self, actor: Any) -> bool: return self.actor_key(actor) in self.active
+    def handle(self, actor: Any, text: str) -> BuilderResult:
+        sess = self.active.get(self.actor_key(actor))
+        if not sess: return BuilderResult(False, 'No active editor session.')
+        return self.service.handle_session_input(actor, sess, text.strip())
+    def end(self, actor: Any, release: bool = True) -> None:
+        sess = self.active.pop(self.actor_key(actor), None)
+        if sess and release: self.service.release_lock(actor, sess.collection, sess.object_id)
+
 class BuilderService:
     """Canonical draft-first builder facade used by commands, OLC, importers, and future UI."""
     def __init__(self, workspace: BuilderWorkspace | None = None) -> None:
         self.workspace = workspace or BuilderWorkspace()
+        self.sessions = BuilderSessionManager(self)
+
+    def _record(self, world_id: str, collection: str, object_id: str) -> dict[str, Any] | None:
+        rec = self.workspace.load(world_id).get(collection, {}).get(object_id)
+        return rec if isinstance(rec, dict) else None
+
+    def _can_admin(self, actor: Any) -> bool:
+        return str(getattr(actor, "role", "")).lower() in {"admin", "owner"} or str(getattr(actor, "account_role", "")).lower() in {"admin", "owner"}
+
+    def _check_permission(self, actor: Any, collection: str, object_id: str, action: str) -> BuilderResult | None:
+        if not self.workspace.can_build(actor):
+            return BuilderResult(False, "You do not have permission for that command.")
+        if action in {"publish", "activate", "force_unlock"} and not self._can_admin(actor):
+            return BuilderResult(False, f"You do not have permission to {action}.")
+        return None
+
+    def _lock_record(self, world_id: str, collection: str, object_id: str) -> dict[str, Any] | None:
+        return self.workspace._read(self._state_path(world_id, "locks.json"), {}).get(f"{collection}:{object_id}")
+
+    def _owns_lock(self, actor: Any, collection: str, object_id: str) -> bool:
+        lock = self._lock_record(self.workspace.world_id(actor), collection, object_id) or {}
+        return lock.get("builder") == self._actor_id(actor)
 
     def _actor_id(self, actor: Any) -> str:
         return str(getattr(actor, "name", "") or getattr(actor, "id", "builder"))
@@ -787,85 +871,216 @@ class BuilderService:
     def _history_path(self, actor: Any) -> Path:
         return self._state_path(self.workspace.world_id(actor), f"{getattr(actor,'id','builder')}_history.json")
 
-    def _push_history(self, actor: Any, drafts: dict[str, Any]) -> None:
+    def _push_history(self, actor: Any, collection: str, object_id: str, before: Any, after: Any, operation: str) -> None:
         path = self._history_path(actor); data = self.workspace._read(path, {"undo": [], "redo": []})
-        data.setdefault("undo", []).append(deepcopy(drafts)); data["undo"] = data["undo"][-25:]; data["redo"] = []
+        rec = {"revision_id": self.workspace.stamp(), "world_id": self.workspace.world_id(actor), "collection": collection, "object_id": object_id, "builder": self._actor_id(actor), "timestamp": self.workspace.stamp(), "operation": operation, "before": before, "after": after, "base_revision": (before or {}).get("_builder_revision") if isinstance(before, dict) else None}
+        data.setdefault("undo", []).append(rec); data["undo"] = data["undo"][-100:]; data["redo"] = []
         self.workspace._atomic_json_write(path, data)
 
-    def mutate(self, actor: Any, collection: str, object_id: str, updates: dict[str, Any], action: str = "builder mutate") -> BuilderResult:
-        world_id = self.workspace.world_id(actor); drafts = self.workspace.load(world_id); self._push_history(actor, drafts)
-        bucket = drafts.setdefault(collection, {}); before = deepcopy(bucket.get(object_id)); rec = deepcopy(before) if isinstance(before, dict) else {"id": object_id}
-        rec.update(updates); bucket[object_id] = rec; self.workspace.save_drafts(world_id, drafts)
+    def mutate(self, actor: Any, collection: str, object_id: str, updates: dict[str, Any], action: str = "builder mutate", expected_revision: int | None = None, admin_override: bool = False) -> BuilderResult:
+        denied = self._check_permission(actor, collection, object_id, "mutate")
+        if denied: return denied
+        if not admin_override and not self._owns_lock(actor, collection, object_id):
+            return BuilderResult(False, f"Active edit lock owned by {self._actor_id(actor)} is required for {collection} {object_id}.")
+        world_id = self.workspace.world_id(actor); drafts = self.workspace.load(world_id); bucket = drafts.setdefault(collection, {})
+        before = deepcopy(bucket.get(object_id)); rec = deepcopy(before) if isinstance(before, dict) else {"id": object_id}
+        current_rev = int(rec.get("_builder_revision") or 0)
+        if expected_revision is not None and expected_revision != current_rev and not admin_override:
+            return BuilderResult(False, f"Draft changed since this editor opened (expected revision {expected_revision}, found {current_rev}). Reload before saving.")
+        if collection == "entities": updates = self._normalize_entity_updates(object_id, updates)
+        rec.update(updates); rec["_builder_revision"] = current_rev + 1; bucket[object_id] = rec
+        self.workspace.save_drafts(world_id, drafts); self._push_history(actor, collection, object_id, before, rec, action)
         self.workspace.audit(actor, world_id, action, collection, object_id, before, rec)
-        return BuilderResult(True, f"Draft {collection} {object_id} updated.", rec)
+        return BuilderResult(True, f"Draft {collection} {object_id} updated (revision {rec['_builder_revision']}).", rec)
 
-    def clone(self, actor: Any, collection: str, source_id: str, new_id: str) -> BuilderResult:
+    def _normalize_entity_updates(self, object_id: str, updates: dict[str, Any]) -> dict[str, Any]:
+        updates = deepcopy(updates)
+        raw = updates.pop("natural_attacks", None)
+        if raw is not None:
+            cp = dict(updates.get("combat_profile") or {})
+            cp["natural_weapons"] = [_canonical_weapon(x, object_id) for x in raw if isinstance(x, dict)]
+            updates["combat_profile"] = cp
+        if "natural_weapons" in updates:
+            cp = dict(updates.get("combat_profile") or {})
+            cp["natural_weapons"] = [_canonical_weapon(x, object_id) for x in updates.pop("natural_weapons") if isinstance(x, dict)]
+            updates["combat_profile"] = cp
+        return updates
+
+    def clone(self, actor: Any, collection: str, source_id: str, new_id: str, display_name: str | None = None, keywords: list[str] | None = None) -> BuilderResult:
+        denied = self._check_permission(actor, collection, source_id, "mutate")
+        if denied: return denied
         world_id=self.workspace.world_id(actor); drafts=self.workspace.load(world_id); src=drafts.get(collection,{}).get(source_id)
         if not isinstance(src, dict): return BuilderResult(False, f"Cannot clone missing {collection} {source_id}.")
-        rec=deepcopy(src); rec["id"]=new_id; rec["name"]=rec.get("name", source_id).replace(source_id, new_id) if isinstance(rec.get("name"), str) else new_id
-        return self.mutate(actor, collection, new_id, rec, "clone")
+        self.acquire_lock(actor, collection, new_id, admin=True)
+        rec=deepcopy(src); rec["id"]=new_id; rec["name"]=display_name or new_id.replace("_", " ").title(); rec["keywords"]=keywords or new_id.replace("_", " ").split(); rec["builder_status"]="incomplete"; rec.pop("_builder_revision", None)
+        return self.mutate(actor, collection, new_id, rec, "clone", admin_override=True)
 
     def undo(self, actor: Any) -> BuilderResult:
         world_id=self.workspace.world_id(actor); path=self._history_path(actor); data=self.workspace._read(path,{"undo":[],"redo":[]})
         if not data.get("undo"): return BuilderResult(False,"Nothing to undo.")
-        cur=self.workspace.load(world_id); prev=data["undo"].pop(); data.setdefault("redo",[]).append(cur); self.workspace._atomic_json_write(path,data); self.workspace.save_drafts(world_id, prev)
-        return BuilderResult(True,"Undo applied to builder drafts.")
+        rec=data["undo"].pop(); drafts=self.workspace.load(world_id); bucket=drafts.setdefault(rec["collection"], {})
+        cur=deepcopy(bucket.get(rec["object_id"])); data.setdefault("redo",[]).append({**rec,"before":rec.get("after"),"after":cur})
+        if rec.get("before") is None: bucket.pop(rec["object_id"], None)
+        else: bucket[rec["object_id"]]=rec["before"]
+        self.workspace._atomic_json_write(path,data); self.workspace.save_drafts(world_id, drafts)
+        return BuilderResult(True,f"Undo applied to {rec['collection']} {rec['object_id']}.")
 
     def redo(self, actor: Any) -> BuilderResult:
         world_id=self.workspace.world_id(actor); path=self._history_path(actor); data=self.workspace._read(path,{"undo":[],"redo":[]})
         if not data.get("redo"): return BuilderResult(False,"Nothing to redo.")
-        cur=self.workspace.load(world_id); nxt=data["redo"].pop(); data.setdefault("undo",[]).append(cur); self.workspace._atomic_json_write(path,data); self.workspace.save_drafts(world_id, nxt)
-        return BuilderResult(True,"Redo applied to builder drafts.")
+        rec=data["redo"].pop(); drafts=self.workspace.load(world_id); bucket=drafts.setdefault(rec["collection"], {})
+        before=deepcopy(bucket.get(rec["object_id"])); data.setdefault("undo",[]).append({**rec,"before":before})
+        if rec.get("after") is None: bucket.pop(rec["object_id"], None)
+        else: bucket[rec["object_id"]]=rec["after"]
+        self.workspace._atomic_json_write(path,data); self.workspace.save_drafts(world_id, drafts)
+        return BuilderResult(True,f"Redo applied to {rec['collection']} {rec['object_id']}.")
 
     def acquire_lock(self, actor: Any, collection: str, object_id: str, admin: bool = False) -> BuilderResult:
+        denied = self._check_permission(actor, collection, object_id, "force_unlock" if admin else "mutate")
+        if denied and not admin: return denied
         world_id=self.workspace.world_id(actor); path=self._state_path(world_id,"locks.json"); locks=self.workspace._read(path,{})
-        key=f"{collection}:{object_id}"; owner=locks.get(key,{}).get("builder")
-        if owner and owner != self._actor_id(actor) and not admin: return BuilderResult(False, f"{object_id} currently being edited by {owner}.")
-        locks[key]={"builder": self._actor_id(actor), "timestamp": self.workspace.stamp()}; self.workspace._atomic_json_write(path, locks); return BuilderResult(True, f"Edit lock acquired for {object_id}.")
+        key=f"{collection}:{object_id}"; now=datetime.now(timezone.utc); cur=locks.get(key,{}) ; owner=cur.get("builder")
+        try: expired = datetime.fromisoformat(str(cur.get("expires_at","1970-01-01T00:00:00+00:00")).replace("Z","+00:00")) < now
+        except Exception: expired = True
+        if owner and owner != self._actor_id(actor) and not admin and not expired: return BuilderResult(False, f"{object_id} currently being edited by {owner}.")
+        rec=self._record(world_id, collection, object_id) or {}
+        locks[key]={"world_id":world_id,"collection":collection,"object_id":object_id,"builder": self._actor_id(actor),"builder_account":str(getattr(actor,'account_id','')),"builder_character":str(getattr(actor,'id','')),"session_id":str(getattr(actor,'session_id','')),"acquired_at": self.workspace.stamp(),"last_activity_at": self.workspace.stamp(),"expires_at": (now+timedelta(hours=2)).isoformat(),"revision": int(rec.get('_builder_revision') or 0)}
+        self.workspace._atomic_json_write(path, locks); return BuilderResult(True, f"Edit lock acquired for {object_id}.")
+
+    def release_lock(self, actor: Any, collection: str, object_id: str) -> BuilderResult:
+        world_id=self.workspace.world_id(actor); path=self._state_path(world_id,"locks.json"); locks=self.workspace._read(path,{})
+        key=f"{collection}:{object_id}"
+        if locks.get(key,{}).get("builder") == self._actor_id(actor) or self._can_admin(actor): locks.pop(key, None); self.workspace._atomic_json_write(path, locks); return BuilderResult(True, f"Edit lock released for {object_id}.")
+        return BuilderResult(False, "Cannot release a lock owned by another builder.")
 
     def admin_unlock(self, actor: Any, collection: str, object_id: str) -> BuilderResult:
         world_id=self.workspace.world_id(actor); path=self._state_path(world_id,"locks.json"); locks=self.workspace._read(path,{})
         locks.pop(f"{collection}:{object_id}", None); self.workspace._atomic_json_write(path, locks); return BuilderResult(True, f"Edit lock cleared for {object_id}.")
 
     def validate_object(self, actor: Any, collection: str, object_id: str) -> BuilderResult:
-        full = self.workspace.validate(actor)
-        issues = (full.data or {}) if full.data else {}
-        text: list[str] = []
-        for kind in ("errors", "warnings"):
-            for msg in issues.get(kind, []):
-                if object_id in msg or collection.rstrip("s") in msg:
-                    text.append(f"{kind[:-1]}: {msg} -- fix in {collection} editor then validate again.")
-        message = "Validation for %s:\n%s" % (object_id, "\n".join(text) if text else "- no focused issues")
-        return BuilderResult(not any(t.startswith("error:") for t in text), message, {"issues": text})
+        rec = self._record(self.workspace.world_id(actor), collection, object_id)
+        issues=[]
+        if not rec: issues.append({"severity":"error","code":"missing_object","collection":collection,"object_id":object_id,"field_path":"id","message":"Object not found.","fix_hint":"Create the draft first."})
+        if collection == "entities" and rec:
+            for fld in ("id","name"):
+                if not rec.get(fld): issues.append({"severity":"error","code":"required_field","collection":collection,"object_id":object_id,"field_path":fld,"message":f"{fld} is required.","fix_hint":f"Set {fld}."})
+            if rec.get("natural_attacks") is not None: issues.append({"severity":"error","code":"deprecated_field","collection":collection,"object_id":object_id,"field_path":"natural_attacks","message":"natural_attacks is deprecated; use combat_profile.natural_weapons.","fix_hint":"Run migration or save through BuilderService."})
+            weapons=(rec.get("combat_profile") or {}).get("natural_weapons") or []
+            if not weapons: issues.append({"severity":"warning","code":"no_natural_weapons","collection":collection,"object_id":object_id,"field_path":"combat_profile.natural_weapons","message":"Mob has no natural weapons.","fix_hint":"Add at least one non-humanoid natural weapon."})
+            for i,w in enumerate(weapons):
+                for fld in ("id","mechanical_family","noun_plural","verb_third_person","damage_type","damage_dice","selection_weight"):
+                    if not w.get(fld): issues.append({"severity":"error","code":"natural_weapon_required","collection":collection,"object_id":object_id,"field_path":f"combat_profile.natural_weapons[{i}].{fld}","message":f"Natural weapon {fld} is required.","fix_hint":"Edit the weapon field."})
+        lines=[f"{x['severity']}: {x['field_path']} {x['message']}" for x in issues] or ["- no focused issues"]
+        return BuilderResult(not any(x['severity']=='error' for x in issues), "Validation for %s:\n%s" % (object_id, "\n".join(lines)), {"issues": issues})
 
     def preview(self, actor: Any, collection: str, object_id: str) -> BuilderResult:
-        rec = self.workspace.load(self.workspace.world_id(actor)).get(collection, {}).get(object_id, {})
-        if not rec:
-            return BuilderResult(False, f"No draft {collection} {object_id}.")
-        name = rec.get("name") or rec.get("title") or object_id
-        desc = rec.get("description") or rec.get("long_description") or "(no description)"
-        lines = ["LOOK", str(name), str(desc)]
+        rec = self._record(self.workspace.world_id(actor), collection, object_id) or {}
+        if not rec: return BuilderResult(False, f"No draft {collection} {object_id}.")
+        name = rec.get("name") or rec.get("title") or object_id; desc = rec.get("description") or rec.get("long_description") or "(no description)"
+        lines = ["LOOK", str(name), str(desc), "", "EXAMINE", str(rec.get("examine_description") or desc), "", "CONSIDER", f"{name} appears to be level {rec.get('level', 1)}."]
         if collection == "entities":
-            lines += [""] + ["COMBAT MESSAGES"] + [f"- {a.get('verb','hits')} with {a.get('noun', a.get('family','attack'))} ({a.get('damage_dice','1d1')})" for a in rec.get("natural_attacks", [])]
-        if collection == "items":
-            lines += ["", "EXAMINE", str(rec.get("short_description") or desc), "Loot: " + str(rec.get("loot_profile_id", "none"))]
-        if collection == "rooms":
-            lines += ["", "EXITS", ", ".join(sorted((rec.get("exits") or {}).keys())) or "none", "SPAWNS", ", ".join(str(x) for x in rec.get("spawn_list", [])) or "none"]
+            weapons=((rec.get("combat_profile") or {}).get("natural_weapons") or [])
+            lines += ["", "COMBAT SNAPSHOT", f"natural weapons: {len(weapons)}", "NATURAL ATTACK LIST"]
+            lines += [f"- {w.get('id')} {w.get('mechanical_family')} {w.get('verb_third_person')} with {w.get('noun_plural')} ({w.get('damage_dice')}, weight {w.get('selection_weight')})" for w in weapons] or ["- none"]
+            if weapons:
+                w=weapons[0]; lines += ["", "SAMPLE NORMAL HIT", str(w.get("observer_template", "{attacker} hits {victim}.")).format(attacker=name, victim="you", verb_third_person=w.get('verb_third_person'), verb_base=w.get('verb_base'), noun_plural=w.get('noun_plural'))]
         return BuilderResult(True, "\n".join(lines), {"record": rec})
 
     def publish(self, actor: Any) -> BuilderResult:
-        world_id=self.workspace.world_id(actor); gen=f"generation-{self.workspace.stamp()}"; root=self.workspace.ensure(world_id); gens=root/"generations"/gen; gens.mkdir(parents=True, exist_ok=True)
-        drafts=self.workspace.load(world_id)
-        for key, filename in DRAFT_FILES.items(): self.workspace._atomic_json_write(gens/filename, drafts.get(key, {}))
-        self.workspace._atomic_json_write(root/"generations"/"active.json", {"active_generation": gen, "published_at": self.workspace.stamp()})
-        self.workspace.audit(actor, world_id, "publish generation", "generation", gen, None, {"collections": sorted(drafts)})
-        return BuilderResult(True, f"Published builder drafts as {gen}; runtime may atomically swap to this generation.", {"generation": gen})
+        denied = self._check_permission(actor, "generation", "publish", "publish")
+        if denied: return denied
+        world_id=self.workspace.world_id(actor); root=self.workspace.ensure(world_id); drafts=self.workspace.load(world_id)
+        errors=[]; warnings=[]
+        for oid in drafts.get("entities", {}):
+            v=self.validate_object(actor, "entities", oid); issues=(v.data or {}).get("issues", [])
+            errors += [x for x in issues if x.get("severity")=="error"]; warnings += [x for x in issues if x.get("severity")=="warning"]
+        if errors: return BuilderResult(False, "Publish blocked by validation errors:\n"+"\n".join(f"- {e['object_id']} {e['field_path']}: {e['message']}" for e in errors), {"errors": errors})
+        parent=(self.workspace._read(root/"generations"/"active.json", {}) or {}).get("active_generation")
+        gen=f"generation-{self.workspace.stamp()}"; gens=root/"generations"/gen; tmp=root/"generations"/(gen+".tmp"); tmp.mkdir(parents=True, exist_ok=True)
+        import hashlib
+        hashes={}
+        for key, filename in DRAFT_FILES.items():
+            data=drafts.get(key, {}); payload=json.dumps(data, indent=2, sort_keys=True)+"\n"; (tmp/filename).write_text(payload, encoding="utf-8"); hashes[filename]=hashlib.sha256(payload.encode()).hexdigest()
+        manifest={"generation_id":gen,"parent_generation":parent,"timestamp":self.workspace.stamp(),"publisher":self._actor_id(actor),"content_hashes":hashes,"schema_versions":{"natural_weapons":"combat_profile.natural_weapons/v1"},"changed_collections":sorted(drafts),"validation_report":{"errors":[],"warnings":warnings},"rollback_metadata":{"previous_generation":parent},"live_mob_update_policy":"new spawns use this generation; existing live mobs retain old template combat state until despawn/death"}
+        self.workspace._atomic_json_write(tmp/"manifest.json", manifest); tmp.replace(gens)
+        self.workspace.audit(actor, world_id, "publish generation", "generation", gen, None, manifest)
+        return BuilderResult(True, f"Published immutable generation package {gen}. Activate explicitly with builder generation activate {gen}.", {"generation": gen, "plan": manifest})
 
-    def body_profiles(self) -> list[str]: return sorted(BODY_PROFILE_ATTACKS)
+    def activate_generation(self, actor: Any, generation_id: str | None = None) -> BuilderResult:
+        denied = self._check_permission(actor, "generation", generation_id or "active", "activate")
+        if denied: return denied
+        world_id=self.workspace.world_id(actor); root=self.workspace.ensure(world_id); active_path=root/"generations"/"active.json"
+        if not generation_id or generation_id == "latest":
+            gens=sorted(p.name for p in (root/"generations").glob("generation-*") if p.is_dir())
+            if not gens: return BuilderResult(False, "No generation packages exist.")
+            generation_id=gens[-1]
+        gen_dir=root/"generations"/generation_id; manifest=self.workspace._read(gen_dir/"manifest.json", None)
+        if not manifest: return BuilderResult(False, f"Generation {generation_id} is missing manifest.json.")
+        previous=(self.workspace._read(active_path,{}) or {}).get("active_generation")
+        self.workspace._atomic_json_write(active_path, {"active_generation":generation_id,"previous_generation":previous,"activated_at":self.workspace.stamp(),"activated_by":self._actor_id(actor),"world_generation":self.workspace.stamp(),"live_mob_update_policy":manifest.get("live_mob_update_policy")})
+        self.workspace.audit(actor, world_id, "activate generation", "generation", generation_id, {"previous":previous}, {"active":generation_id})
+        return BuilderResult(True, f"Activated generation {generation_id}. Previous generation: {previous or 'none'}.", {"active_generation":generation_id,"previous_generation":previous})
+
+    def rollback_generation(self, actor: Any) -> BuilderResult:
+        active=self.workspace._read(self.workspace.ensure(self.workspace.world_id(actor))/"generations"/"active.json", {})
+        prev=active.get("previous_generation")
+        if not prev: return BuilderResult(False, "No previous generation is recorded for rollback.")
+        return self.activate_generation(actor, prev)
+
+    def body_profiles(self) -> list[str]:
+        return sorted((self.workspace.load("shattered_realms").get("body_profiles") or {}).keys())
     def apply_body_profile(self, actor: Any, mob_id: str, profile: str) -> BuilderResult:
-        prof=profile.lower();
-        if prof not in BODY_PROFILE_ATTACKS: return BuilderResult(False, "Unknown body profile. Choose: " + ", ".join(self.body_profiles()))
-        return self.mutate(actor, "entities", mob_id, {"body_profile_id": prof, "natural_attacks": deepcopy(BODY_PROFILE_ATTACKS[prof])}, "body profile")
+        world_id=self.workspace.world_id(actor); drafts=self.workspace.load(world_id); prof=profile.lower(); bp=(drafts.get("body_profiles") or {}).get(prof)
+        if not bp: return BuilderResult(False, "Unknown body profile. Choose: " + ", ".join(sorted(drafts.get("body_profiles",{}))))
+        weapons=[deepcopy((drafts.get("natural_weapon_profiles") or {}).get(wid)) for wid in bp.get("suggested_natural_weapon_ids", [])]
+        weapons=[w for w in weapons if isinstance(w, dict)]
+        return self.mutate(actor, "entities", mob_id, {"body_profile_id": prof, "combat_profile": {"body_profile": prof, "natural_weapons": weapons}}, "body profile")
+
+    def start_editor(self, actor: Any, editor: str, collection: str, object_id: str) -> BuilderResult:
+        return self.sessions.start(actor, editor, collection, object_id)
+
+    def render_session(self, sess: BuilderEditSession) -> str:
+        title = (self._record(sess.world_id, sess.collection, sess.object_id) or {}).get("name") or sess.object_id.replace("_", " ").title()
+        if sess.section == "natural_weapons":
+            rec = self._record(sess.world_id, sess.collection, sess.object_id) or {}
+            weapons = ((rec.get("combat_profile") or {}).get("natural_weapons") or [])
+            rows = [f"{i+1}. {w.get('id')} {w.get('mechanical_family')} {w.get('noun_plural')} weight={w.get('selection_weight')} dice={w.get('damage_dice')}" for i,w in enumerate(weapons)]
+            return "Natural Weapons\n" + ("\n".join(rows) if rows else "- none") + "\nCommands: add <id>, set <id> <field> <value>, delete <id>, preview, validate, back, save, quit"
+        return self.menu(sess.editor_type, str(title)) + "\n\nEditor session active. Type a number, help, preview, validate, testspawn, save, undo, redo, or quit."
+
+    def handle_session_input(self, actor: Any, sess: BuilderEditSession, text: str) -> BuilderResult:
+        low = text.lower().strip(); sess.last_activity_at = self.workspace.stamp()
+        if low in {"q", "quit"}: self.sessions.end(actor); return BuilderResult(True, "Editor closed and lock released.")
+        if low in {"back", "cancel"}: sess.section=""; sess.mode="main_menu"; return BuilderResult(True, self.render_session(sess))
+        if low in {"?", "help"}: return BuilderResult(True, "Builder help: use menu numbers; Natural Weapons supports add/set/delete/list; global commands are preview, validate, testspawn, save, undo, redo, quit.")
+        if low in {"7", "natural", "natural weapons", "natural attacks"}: sess.section="natural_weapons"; sess.mode="section_menu"; return BuilderResult(True, self.render_session(sess))
+        if low == "preview": return self.preview(actor, sess.collection, sess.object_id)
+        if low == "validate": return self.validate_object(actor, sess.collection, sess.object_id)
+        if low == "testspawn": return self.testspawn(actor, sess.object_id)
+        if low == "save": return BuilderResult(True, f"Draft {sess.object_id} saved at revision {sess.draft_revision}; lock retained.")
+        if low == "undo": return self.undo(actor)
+        if low == "redo": return self.redo(actor)
+        if sess.section == "natural_weapons":
+            parts = text.split()
+            if not parts or parts[0].lower() in {"list", "l"}: return BuilderResult(True, self.render_session(sess))
+            rec = self._record(sess.world_id, sess.collection, sess.object_id) or {"id": sess.object_id}; weapons = list((rec.get("combat_profile") or {}).get("natural_weapons") or [])
+            if parts[0].lower() == "add" and len(parts) >= 2:
+                wid=parts[1]; weapons.append(_canonical_weapon({"id": wid, "family": wid.split("_")[-1]}, wid))
+            elif parts[0].lower() == "delete" and len(parts) >= 2:
+                weapons=[w for w in weapons if w.get("id") != parts[1]]
+            elif parts[0].lower() == "set" and len(parts) >= 4:
+                wid, field, value = parts[1], parts[2].replace("-", "_"), " ".join(parts[3:])
+                aliases={"family":"mechanical_family","weight":"selection_weight","verb":"verb_third_person","noun":"noun_plural","dice":"damage_dice"}; field=aliases.get(field, field)
+                for w in weapons:
+                    if w.get("id") == wid:
+                        w[field] = int(value) if field in {"selection_weight","minimum_damage","maximum_damage","accuracy_modifier","critical_modifier","cooldown_pulses"} and value.lstrip('-').isdigit() else value
+                        break
+                else: return BuilderResult(False, f"Natural weapon {wid} not found.")
+            else: return BuilderResult(False, "Usage: add <id>, set <id> <field> <value>, delete <id>, list")
+            res=self.mutate(actor, sess.collection, sess.object_id, {"combat_profile": {**(rec.get("combat_profile") or {}), "natural_weapons": weapons}}, "natural weapon edit", expected_revision=sess.draft_revision)
+            if res.ok: sess.dirty=True; sess.saved=False; sess.draft_revision=int((res.data or {}).get("_builder_revision") or sess.draft_revision)
+            return BuilderResult(res.ok, res.message+"\n"+self.render_session(sess), res.data)
+        return BuilderResult(True, self.render_session(sess))
 
     def search(self, actor: Any, query: str) -> BuilderResult:
         q = query.lower()
@@ -890,12 +1105,18 @@ class BuilderService:
         return BuilderResult(True, "Picker choices:\n" + body, {"choices": rows})
 
     def testspawn(self, actor: Any, mob_id: str) -> BuilderResult:
-        rec = self.workspace.load(self.workspace.world_id(actor)).get("entities", {}).get(mob_id)
-        if not rec:
-            return BuilderResult(False, f"No draft mob {mob_id}.")
-        setattr(actor, "builder_test_room_id", f"builder_test_{getattr(actor,'id','builder')}")
-        setattr(actor, "builder_testspawn", deepcopy(rec))
-        return BuilderResult(True, f"Spawned draft {mob_id} in private Builder testing room {getattr(actor,'builder_test_room_id')}.", {"mob": rec})
+        rec = self._record(self.workspace.world_id(actor), "entities", mob_id)
+        if not rec: return BuilderResult(False, f"No draft mob {mob_id}.")
+        v=self.validate_object(actor, "entities", mob_id)
+        if not v.ok: return BuilderResult(False, "Cannot testspawn invalid draft.\n"+v.message, v.data)
+        room_id=f"builder_test_{getattr(actor,'id','builder')}"; instance_id=f"testspawn_{mob_id}_{self.workspace.stamp()}"
+        mob={"id":instance_id,"template_id":mob_id,"name":rec.get("name") or mob_id.replace("_"," ").title(),"room_id":room_id,"actor_type":"npc","ephemeral":True,"combat_profile":deepcopy(rec.get("combat_profile") or {}),"body_profile_id":rec.get("body_profile_id"),"description":rec.get("description","")}
+        setattr(actor, "builder_test_room_id", room_id); spawns=list(getattr(actor,"builder_test_mobs",[]) or []); spawns.append(mob); setattr(actor,"builder_test_mobs",spawns)
+        return BuilderResult(True, f"Spawned real ephemeral draft mob {mob['name']} ({instance_id}) in private Builder testing room {room_id}. LOOK/EXAMINE/CONSIDER/KILL can target it in runtime adapters.", {"mob": mob, "room_id": room_id})
+
+    def testclear(self, actor: Any) -> BuilderResult:
+        count=len(getattr(actor,"builder_test_mobs",[]) or []); setattr(actor,"builder_test_mobs",[])
+        return BuilderResult(True, f"Cleared {count} ephemeral Builder test mob(s).")
 
     def menu(self, editor: str, title: str) -> str:
         sections = {
