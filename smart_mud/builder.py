@@ -973,6 +973,48 @@ class BuilderContentQueryService:
             return [r for r in rows if r.legacy_vnum == int(token)]
         return [r for r in rows if r.canonical_id == token] or self.search(actor, kind, token)
 
+
+class BuilderVnumRangeService:
+    """Canonical Shattered Realms range helper for Builder normalization."""
+    AREA_ID = "starter_guildlands"
+    WORLD_ID = "shattered_realms"
+    AREA_RANGE = (1000, 1999)
+    ROOM_RANGE = (1000, 1299)
+    OBJECT_RANGE = (1300, 1499)
+    MOBILE_RANGE = (1500, 1699)
+    SPAWN_RESET_RANGE = (1700, 1799)
+
+    def __init__(self, service: "BuilderService") -> None:
+        self.service = service
+
+    def zone_for_room_vnum(self, zones: dict[str, dict[str, Any]], vnum: int | None) -> str:
+        if vnum is None:
+            return ""
+        for zid, z in sorted(zones.items(), key=lambda kv: (int((kv[1] or {}).get("vnum_start") or 999999), kv[0])):
+            try:
+                if int(z.get("vnum_start")) <= int(vnum) <= int(z.get("vnum_end")):
+                    return str(zid)
+            except Exception:
+                continue
+        return ""
+
+    def range_for(self, kind: str) -> tuple[int, int]:
+        return {"rooms": self.ROOM_RANGE, "entities": self.MOBILE_RANGE, "items": self.OBJECT_RANGE, "spawns": self.SPAWN_RESET_RANGE, "resets": self.SPAWN_RESET_RANGE}.get(kind, self.AREA_RANGE)
+
+    def in_range(self, kind: str, vnum: int | None) -> bool:
+        if vnum is None:
+            return False
+        lo, hi = self.range_for(kind)
+        return lo <= int(vnum) <= hi
+
+    def first_free(self, kind: str, used: set[int]) -> int | None:
+        lo, hi = self.range_for(kind)
+        for n in range(lo, hi + 1):
+            if n not in used:
+                used.add(n)
+                return n
+        return None
+
 class BuilderService:
     """Canonical draft-first builder facade used by commands, OLC, importers, and future UI."""
     def __init__(self, workspace: BuilderWorkspace | None = None, runtime: Any | None = None) -> None:
@@ -980,6 +1022,7 @@ class BuilderService:
         self.runtime = runtime
         self.sessions = BuilderSessionManager(self)
         self.content_query = BuilderContentQueryService(self)
+        self.vnum_ranges = BuilderVnumRangeService(self)
 
     def attach_runtime(self, runtime: Any) -> None:
         self.runtime = runtime
@@ -1416,15 +1459,17 @@ class BuilderService:
         if not rows:
             return BuilderResult(False, f"No {kind} matches {' '.join(words)}.")
         if len(rows) > 1:
+            self._set_picker(actor, editor, rows)
             return BuilderResult(False, self.render_picker(f"{editor.upper()} choices", rows))
         coll = BuilderContentQueryService.COLLECTIONS.get(kind, kind)
         return self.start_editor(actor, editor, coll, rows[0].canonical_id)
 
-    def render_picker(self, title: str, rows: list[BuilderContentRecord]) -> str:
-        lines = [title, "Choose one; do not guess:"]
-        for i, r in enumerate(rows[:25], 1):
-            lines.append(f"{i}. {r.legacy_vnum if r.legacy_vnum is not None else '-'} {r.canonical_id} - {r.display_name} [{r.content_source}/{r.validation_status}]")
-        if len(rows) > 25: lines.append(f"... {len(rows)-25} more. Refine your search.")
+    def render_picker(self, title: str, rows: list[BuilderContentRecord], page: int = 1) -> str:
+        per = 25; pages = max(1, (len(rows) + per - 1) // per); page = min(max(1, page), pages)
+        shown = rows[(page - 1) * per: page * per]
+        lines = [title, f"Choose one; do not guess. Page {page}/{pages}. Enter number, N, P, or Q:"]
+        for i, r in enumerate(shown, 1):
+            lines.append(f"{i:>2}. {r.legacy_vnum if r.legacy_vnum is not None else '----'} {r.canonical_id} - {r.display_name} [{r.content_source}/{self._status_code(r)}]")
         return "\n".join(lines)
 
     def _current_runtime_location(self, actor: Any, drafts: dict[str, Any]) -> tuple[str, str, str, str]:
@@ -1446,25 +1491,53 @@ class BuilderService:
     def _validation_text(self, r: BuilderContentRecord) -> str:
         rec = r.record or {}
         problems: list[str] = []
-        if not r.display_name or r.display_name == r.canonical_id: problems.append("Missing display name")
-        if r.legacy_vnum is None and r.type in {"entities", "items", "rooms"}: problems.append("Missing VNUM")
+        if not r.display_name or r.display_name == r.canonical_id:
+            problems.append("Missing display name")
+        if r.legacy_vnum is None and r.type in {"entities", "items", "rooms"}:
+            problems.append("Missing VNUM")
+        if r.type in {"entities", "items", "rooms"}:
+            if not r.area:
+                problems.append("Missing area")
+            if not r.zone:
+                problems.append("Missing zone")
         if r.type == "entities":
-            if not (rec.get("body_profile_id") or (rec.get("combat_profile") or {}).get("body_profile")): problems.append("Missing body profile")
-            if not (rec.get("keywords") or rec.get("aliases")): problems.append("Missing keywords")
-            if not (rec.get("long_description") or rec.get("description") or rec.get("look_description")): problems.append("Missing long description")
-            if r.spawn_count == 0: problems.append("No spawn")
-            if not ((rec.get("combat_profile") or {}).get("natural_weapons") or rec.get("natural_attacks")): problems.append("Missing natural attacks")
-            if not (rec.get("ai_profile_id") or rec.get("behavior_profile_id") or rec.get("combat_behavior_profile_id")): problems.append("Missing AI")
-            if not (rec.get("loot_profile_id") or rec.get("loot_table_id") or rec.get("loot") or rec.get("drops")): problems.append("Missing loot")
+            role_text = " ".join(str(rec.get(k) or "") for k in ("entity_type", "role", "npc_role", "service_type", "combat_role", "combat_behavior_profile_id", "shop_id", "trainer_id")).lower()
+            service_npc = any(x in role_text or x in r.canonical_id.lower() for x in ("merchant", "shop", "trainer", "registrar", "banker", "healer", "tavern", "keeper"))
+            combat_npc = any(x in role_text for x in ("combat", "aggressive", "hostile", "creature", "beast")) or not service_npc
+            if not (rec.get("keywords") or rec.get("aliases")):
+                problems.append("Missing keywords")
+            if not (rec.get("long_description") or rec.get("description") or rec.get("look_description")):
+                problems.append("Missing long description")
+            if combat_npc:
+                if not (rec.get("body_profile_id") or (rec.get("combat_profile") or {}).get("body_profile")):
+                    problems.append("Missing body profile")
+                if not ((rec.get("combat_profile") or {}).get("natural_weapons") or rec.get("natural_attacks") or rec.get("weapon_id") or rec.get("equipment")):
+                    problems.append("Missing attack profile")
+                if not (rec.get("ai_profile_id") or rec.get("behavior_profile_id") or rec.get("combat_behavior_profile_id")):
+                    problems.append("Missing combat behavior")
+            elif service_npc and r.spawn_count == 0:
+                problems.append("Service NPC has no spawn")
         elif r.type == "items":
-            if not (rec.get("keywords") or rec.get("aliases")): problems.append("Missing keywords")
-            if not (rec.get("long_description") or rec.get("description")): problems.append("Missing long description")
-            if not (rec.get("item_type") or rec.get("type")): problems.append("Missing type")
+            if not (rec.get("keywords") or rec.get("aliases")):
+                problems.append("Missing keywords")
+            if not (rec.get("long_description") or rec.get("description")):
+                problems.append("Missing long description")
+            if not (rec.get("item_type") or rec.get("type")):
+                problems.append("Missing type")
         elif r.type == "rooms":
-            if not (rec.get("description") or rec.get("long_description")): problems.append("Missing description")
-            if not rec.get("area_id"): problems.append("Missing area")
-            if not rec.get("zone_id"): problems.append("Missing zone")
+            if not (rec.get("description") or rec.get("long_description")):
+                problems.append("Missing description")
         return "; ".join(problems) if problems else "Valid"
+
+    def _status_code(self, r: BuilderContentRecord) -> str:
+        if r.builder_status.lower() == "draft":
+            return "DRAFT"
+        if not r.area or not r.zone or r.legacy_vnum is None:
+            return "UNASSIGNED"
+        text = self._validation_text(r)
+        if text == "Valid":
+            return "OK"
+        return "ERROR" if "Missing VNUM" in text or "Missing area" in text or "Missing zone" in text else "WARN"
 
     def _table(self, headers: list[str], rows: list[list[str]]) -> str:
         if not rows:
@@ -1486,7 +1559,10 @@ class BuilderService:
         drafts = self.workspace.load(self.workspace.world_id(actor))
         world_id, cur_area, cur_zone, cur_room = self._current_runtime_location(actor, drafts)
         rows = self.content_query.list(actor, kind)
-        page = 1; source = ""; mode = args[0].lower() if args else "current"
+        page = 1; source = ""; detail_mode = "brief"
+        if args and args[0].lower() in {"brief", "detail", "verbose"}:
+            detail_mode = args.pop(0).lower()
+        mode = args[0].lower() if args else "current"
         if mode in {"list", "all", "world", ""}: mode = "all"
         if mode == "page" and len(args) > 1 and args[1].isdigit(): page = int(args[1]); mode = "all"
         elif mode == "source" and len(args) > 1: source = args[1].lower(); mode = "all"
@@ -1510,19 +1586,29 @@ class BuilderService:
             a = args[1] if len(args) > 1 else cur_area; rows = [r for r in rows if r.area == a]
         elif mode in {"current"} and cur_zone: rows = [r for r in rows if r.zone == cur_zone]
         elif mode == "here": rows = [r for r in rows if r.canonical_id == cur_room or str(r.record.get("room_id") or "") == cur_room or cur_room in json.dumps(r.record, default=str)]
-        elif mode in {"invalid","incomplete"}: rows = [r for r in rows if self._validation_text(r) != "Valid" or r.builder_status.lower() == "incomplete"]
+        elif mode in {"invalid","incomplete"}:
+            detail_mode = "verbose"
+            rows = [r for r in rows if self._validation_text(r) != "Valid" or r.builder_status.lower() == "incomplete"]
         per = 25; total = len(rows); pages = max(1, (total + per - 1) // per); page = min(max(1, page), pages); shown = rows[(page-1)*per:page*per]
         title = {"mob":"Mob List", "object":"Object List", "room":"Room List", "area":"Area List", "zone":"Zone List"}.get(kind, f"{kind.title()} List")
         table_rows: list[list[str]] = []
         if kind == "mob":
-            headers = ["VNUM","ID","Name","Lvl","Area","Zone","Source","Validation"]
-            for r in shown: table_rows.append([r.legacy_vnum if r.legacy_vnum is not None else "-", r.canonical_id, r.display_name, r.record.get("level", ""), r.area, r.zone, r.content_source, self._validation_text(r)])
+            if detail_mode == "brief":
+                headers = ["Num","VNUM","Name","Lvl","Source","Status"]
+                for n, r in enumerate(shown, (page-1)*per+1): table_rows.append([n, r.legacy_vnum if r.legacy_vnum is not None else "----", r.display_name, r.record.get("level", ""), r.content_source.title(), self._status_code(r)])
+            else:
+                headers = ["VNUM","ID","Name","Lvl","Area","Zone","Source","Validation"]
+                for r in shown: table_rows.append([r.legacy_vnum if r.legacy_vnum is not None else "----", r.canonical_id, r.display_name, r.record.get("level", ""), r.area, r.zone, r.content_source, self._validation_text(r) if detail_mode == "verbose" else self._status_code(r)])
         elif kind == "object":
-            headers = ["VNUM","ID","Name","Type","Wear","Area","Zone","Status"]
-            for r in shown: table_rows.append([r.legacy_vnum if r.legacy_vnum is not None else "-", r.canonical_id, r.display_name, r.record.get("item_type") or r.record.get("type", ""), ",".join(r.record.get("wear_slots") or r.record.get("wear_flags") or []), r.area, r.zone, self._validation_text(r)])
+            if detail_mode == "brief":
+                headers = ["Num","VNUM","Name","Type","Source","Status"]
+                for n, r in enumerate(shown, (page-1)*per+1): table_rows.append([n, r.legacy_vnum if r.legacy_vnum is not None else "----", r.display_name, r.record.get("item_type") or r.record.get("type", ""), r.content_source.title(), self._status_code(r)])
+            else:
+                headers = ["VNUM","ID","Name","Type","Wear","Area","Zone","Status"]
+                for r in shown: table_rows.append([r.legacy_vnum if r.legacy_vnum is not None else "----", r.canonical_id, r.display_name, r.record.get("item_type") or r.record.get("type", ""), ",".join(r.record.get("wear_slots") or r.record.get("wear_flags") or []), r.area, r.zone, self._validation_text(r) if detail_mode == "verbose" else self._status_code(r)])
         elif kind == "room":
             headers = ["VNUM","ID","Title","Area","Zone","Flags","Exits"]
-            for r in shown: table_rows.append([r.legacy_vnum if r.legacy_vnum is not None else "-", r.canonical_id, r.display_name, r.area, r.zone, ",".join(r.record.get("flags") or []), len(r.record.get("exits") or {})])
+            for r in shown: table_rows.append([r.legacy_vnum if r.legacy_vnum is not None else "----", r.canonical_id, r.display_name, r.area, r.zone, ",".join(r.record.get("flags") or []), len(r.record.get("exits") or {})])
         elif kind == "area":
             headers = ["Area name","ID","Rooms","Mobs","Objects","Resets","Validation"]
             all_rooms = self.resolve_collection_records(actor, "rooms")
@@ -1533,7 +1619,6 @@ class BuilderService:
                 aid = r.canonical_id
 
                 rc = sum(1 for x in all_rooms.values() if x.get("area_id") == aid)
-                if aid == "starter_guildlands" and rc < 70: rc = 70
                 table_rows.append([r.display_name, aid, rc, sum(1 for x in all_mobs.values() if x.get("area_id") == aid), sum(1 for x in all_objs.values() if x.get("area_id") == aid), sum(1 for x in all_resets.values() if x.get("area_id") == aid or aid in json.dumps(x, default=str)), self._validation_text(r)])
         elif kind == "zone":
             headers = ["Zone","VNUM range","Rooms","Mobs","Objects","Spawns","Resets"]
@@ -1547,14 +1632,16 @@ class BuilderService:
                 table_rows.append([zid, f"{rec.get('vnum_start','')}-{rec.get('vnum_end','')}", sum(1 for x in all_rooms.values() if x.get("zone_id") == zid), sum(1 for x in all_mobs.values() if x.get("zone_id") == zid), sum(1 for x in all_objs.values() if x.get("zone_id") == zid), sum(1 for x in all_spawns.values() if x.get("zone_id") == zid or zid in json.dumps(x, default=str)), sum(1 for x in all_resets.values() if x.get("zone_id") == zid or zid in json.dumps(x, default=str))])
         else:
             headers = ["VNUM","ID","Name","Type","Area","Zone","Source","Status"]
-            for r in shown: table_rows.append([r.legacy_vnum if r.legacy_vnum is not None else "-", r.canonical_id, r.display_name, r.type, r.area, r.zone, r.content_source, self._validation_text(r)])
+            for r in shown: table_rows.append([r.legacy_vnum if r.legacy_vnum is not None else "----", r.canonical_id, r.display_name, r.type, r.area, r.zone, r.content_source, self._validation_text(r) if detail_mode == "verbose" else self._status_code(r)])
         # Hide columns that are entirely blank/dash except for identity essentials.
         keep=[]
         for i,h in enumerate(headers):
             vals=[str(row[i]) for row in table_rows]
             keep.append(h in {"VNUM","ID","Name","Title"} or any(v not in {"", "-", "none"} for v in vals))
         headers=[h for h,k in zip(headers,keep) if k]; table_rows=[[str(c) for c,k in zip(row,keep) if k] for row in table_rows]
-        lines = self._builder_list_header(title, total, world_id, cur_area, cur_zone, cur_room, page, pages)
+        if kind == "mob": title = "Mob List - Mobiles in " + world_id.replace("_", " ").title()
+        elif kind == "object": title = "Object List - Objects in " + world_id.replace("_", " ").title()
+        lines = self._builder_list_header(title, total, world_id, cur_area if mode not in {"all","world"} else "", cur_zone if mode not in {"all","world"} else "", cur_room, page, pages)
         if kind in {"mob", "object"}:
             lines.append(f"Current zone: {cur_zone or 'none'}")
             lines.append(f"Usage: {'mlist 1500-1599' if kind == 'mob' else 'olist 1300-1399'} | {kind}list all | zone | area | id | vnum | source draft|active|live")
@@ -1563,12 +1650,18 @@ class BuilderService:
             if len(shown) == 1:
                 rec = shown[0].record
                 lines += ["Area detail:", f"room_vnum_start-room_vnum_end: {rec.get('room_vnum_start')}-{rec.get('room_vnum_end')}"]
-            if any(r.canonical_id == "starter_guildlands" for r in shown): lines.append("starter_guildlands | 70 | ")
         if kind == "zone" and len(shown) == 1:
             lines += ["Zone detail:", f"room_ids count: {len(shown[0].record.get('room_ids') or [])}"]
         if kind == "area" and mode == "current":
             lines.append('Use "alist all" to list all areas.')
         lines += ["", self._table(headers, table_rows), "", "-" * 56]
+        if detail_mode == "brief" and kind in {"mob", "object", "room"}:
+            legacy = []
+            for r in shown:
+                if kind == "mob": legacy.append(f"{r.legacy_vnum if r.legacy_vnum is not None else '----'} | {r.canonical_id} | {r.display_name} | {r.record.get('level', '')} | {r.record.get('race', '')}")
+                elif kind == "object": legacy.append(f"{r.legacy_vnum if r.legacy_vnum is not None else '----'} | {r.canonical_id} | {r.display_name} | {r.record.get('item_type') or r.record.get('type', '')} | {','.join(r.record.get('wear_slots') or r.record.get('wear_flags') or [])}")
+                elif kind == "room": legacy.append(f"{r.legacy_vnum if r.legacy_vnum is not None else '----'} | {r.canonical_id} | {r.display_name} | {r.area} | {r.zone} | {len(r.record.get('exits') or {})}")
+            if legacy: lines += ["Legacy pipe view:", "VNUM | ID | Name | Lvl/Type | Extra"] + legacy
         return BuilderResult(True, "\n".join(lines), {"total": total, "rows": [r.__dict__ for r in shown]})
 
     def vnum_report(self, actor: Any, args: list[str] | None = None) -> BuilderResult:
@@ -1587,6 +1680,118 @@ class BuilderService:
         dups={v:ks for v,ks in seen.items() if len(ks)>1}
         lines.append("duplicate/cross-type conflicts: " + (", ".join(f"{v}({','.join(ks)})" for v,ks in sorted(dups.items())) or "none"))
         return BuilderResult(True,"\n".join(lines))
+
+    def _picker_key(self, actor: Any) -> str:
+        return "%s:%s:%s:%s" % (getattr(actor, "account_id", ""), getattr(actor, "id", getattr(actor, "name", "builder")), getattr(actor, "session_id", ""), self.workspace.world_id(actor))
+
+    def _set_picker(self, actor: Any, editor: str, rows: list[BuilderContentRecord], page: int = 1) -> None:
+        state = getattr(self, "_pending_pickers", {})
+        state[self._picker_key(actor)] = {"editor": editor, "ids": [r.canonical_id for r in rows], "kind": {"medit":"mob","oedit":"object","redit":"room","zedit":"zone","aedit":"area"}.get(editor, editor), "page": page, "created_at": self.workspace.stamp()}
+        self._pending_pickers = state
+
+    def continue_picker(self, actor: Any, text: str) -> BuilderResult | None:
+        token = str(text or "").strip().lower()
+        state = getattr(self, "_pending_pickers", {})
+        pick = state.get(self._picker_key(actor))
+        if not pick or token not in {"q", "quit", "cancel", "n", "next", "p", "prev", "previous"} and not token.isdigit():
+            return None
+        rows_by_id = {r.canonical_id: r for r in self.content_query.list(actor, pick["kind"])}
+        rows = [rows_by_id[i] for i in pick.get("ids", []) if i in rows_by_id]
+        per = 25; page = int(pick.get("page") or 1); pages = max(1, (len(rows) + per - 1)//per)
+        if token in {"q", "quit", "cancel"}:
+            state.pop(self._picker_key(actor), None); return BuilderResult(True, "Picker cancelled.")
+        if token in {"n", "next"}:
+            pick["page"] = min(pages, page + 1); return BuilderResult(True, self.render_picker(f"{pick['editor'].upper()} choices", rows, pick["page"]))
+        if token in {"p", "prev", "previous"}:
+            pick["page"] = max(1, page - 1); return BuilderResult(True, self.render_picker(f"{pick['editor'].upper()} choices", rows, pick["page"]))
+        idx = (page - 1) * per + int(token) - 1
+        if idx < 0 or idx >= len(rows):
+            return BuilderResult(False, "Picker selection out of range. Enter a listed number, N, P, or Q.")
+        state.pop(self._picker_key(actor), None)
+        coll = BuilderContentQueryService.COLLECTIONS.get(pick["kind"], pick["kind"])
+        return self.start_editor(actor, pick["editor"], coll, rows[idx].canonical_id)
+
+    def _normalization_records(self, actor: Any) -> tuple[dict[str, dict[str, dict[str, Any]]], dict[str, dict[str, Any]]]:
+        world_id = self.workspace.world_id(actor)
+        drafts = self.workspace.load(world_id)
+        records = {k: self.resolve_collection_records(actor, k) for k in ("areas", "zones", "rooms", "entities", "items", "spawns", "resets")}
+        return records, drafts
+
+    def _infer_area_zone(self, kind: str, rec: dict[str, Any], records: dict[str, dict[str, dict[str, Any]]]) -> tuple[str, str, str]:
+        aid = str(rec.get("area_id") or rec.get("area") or "")
+        zid = str(rec.get("zone_id") or rec.get("zone") or "")
+        rooms = records.get("rooms", {})
+        zones = records.get("zones", {})
+        room_ref = str(rec.get("room_id") or rec.get("spawn_room_id") or rec.get("reset_room_id") or rec.get("default_room_id") or "")
+        if room_ref and room_ref in rooms:
+            room = rooms[room_ref]; aid = aid or str(room.get("area_id") or ""); zid = zid or str(room.get("zone_id") or "")
+        if kind == "rooms":
+            v = rec.get("vnum")
+            try: v = int(v) if v not in (None, "") else None
+            except Exception: v = None
+            zid = zid or self.vnum_ranges.zone_for_room_vnum(zones, v)
+            if zid and zid in zones: aid = aid or str(zones[zid].get("area_id") or self.vnum_ranges.AREA_ID)
+        if zid and not aid and zid in zones: aid = str(zones[zid].get("area_id") or "")
+        if not aid and (kind in {"entities", "items", "spawns", "resets"}): aid = self.vnum_ranges.AREA_ID
+        return aid, zid, "explicit/reference/range" if (aid or zid) else "manual_review"
+
+    def normalization_plan(self, actor: Any) -> list[dict[str, Any]]:
+        records, _drafts = self._normalization_records(actor)
+        used = {k: {int(r.get("vnum", r.get("spawn_vnum"))) for r in records.get(k, {}).values() if str(r.get("vnum", r.get("spawn_vnum", ""))).isdigit()} for k in ("rooms", "entities", "items", "spawns", "resets")}
+        plan = []
+        for kind in ("rooms", "items", "entities", "spawns", "resets"):
+            for oid, rec in sorted(records.get(kind, {}).items(), key=lambda kv: (str(kv[1].get("zone_id") or ""), str(kv[0]))):
+                old_v = rec.get("vnum", rec.get("spawn_vnum"))
+                try: old_v_int = int(old_v) if old_v not in (None, "") else None
+                except Exception: old_v_int = None
+                aid, zid, evidence = self._infer_area_zone(kind, rec, records)
+                new_v = old_v_int if self.vnum_ranges.in_range(kind, old_v_int) else self.vnum_ranges.first_free(kind, used[kind])
+                changes = {}
+                if old_v_int != new_v: changes["vnum"] = [old_v_int, new_v]
+                if str(rec.get("area_id") or "") != aid: changes["area_id"] = [rec.get("area_id"), aid]
+                if str(rec.get("zone_id") or "") != zid: changes["zone_id"] = [rec.get("zone_id"), zid]
+                if changes:
+                    plan.append({"kind": kind, "id": oid, "name": rec.get("name") or rec.get("title") or oid, "old_vnum": old_v_int, "new_vnum": new_v, "old_area": rec.get("area_id"), "new_area": aid, "old_zone": rec.get("zone_id"), "new_zone": zid, "changes": changes, "reason": evidence, "confidence": "high" if aid and (zid or kind in {"items","entities"}) else "manual_review"})
+        return plan
+
+    def normalize_command(self, actor: Any, args: list[str] | None = None) -> BuilderResult:
+        action = (args or ["audit"])[0].lower()
+        plan = self.normalization_plan(actor)
+        records, drafts = self._normalization_records(actor)
+        missing_v = sum(1 for k in ("rooms","entities","items") for r in records[k].values() if not str(r.get("vnum", "")).isdigit())
+        missing_own = sum(1 for k in ("rooms","entities","items") for r in records[k].values() if not r.get("area_id") or not r.get("zone_id"))
+        dups = 0
+        for k in ("rooms","entities","items","spawns","resets"):
+            vals = [int(r.get("vnum", r.get("spawn_vnum"))) for r in records[k].values() if str(r.get("vnum", r.get("spawn_vnum", ""))).isdigit()]
+            dups += len(vals) - len(set(vals))
+        if action == "audit":
+            return BuilderResult(True, f"Builder normalization audit\nMissing ownership: {missing_own}\nMissing VNUMs: {missing_v}\nDuplicate VNUM conflicts: {dups}\nPlanned changes: {len(plan)}")
+        if action == "plan":
+            lines = ["Builder normalization plan", "Type | ID | Old VNUM | New VNUM | Old Area | New Area | Old Zone | New Zone | Confidence | Reason"]
+            lines += [f"{p['kind']} | {p['id']} | {p['old_vnum'] if p['old_vnum'] is not None else '----'} | {p['new_vnum'] if p['new_vnum'] is not None else '----'} | {p['old_area'] or ''} | {p['new_area'] or ''} | {p['old_zone'] or ''} | {p['new_zone'] or ''} | {p['confidence']} | {p['reason']}" for p in plan]
+            return BuilderResult(True, "\n".join(lines) if len(lines) > 2 else "Builder normalization plan\nNo changes required.", {"plan": plan})
+        if action == "verify":
+            ok = missing_v == 0 and missing_own == 0 and dups == 0
+            return BuilderResult(ok, f"Builder normalization verification: {'OK' if ok else 'FAILED'}\nMissing ownership: {missing_own}\nMissing VNUMs: {missing_v}\nDuplicate VNUM conflicts: {dups}")
+        if action == "rollback":
+            snap = self._state_path(self.workspace.world_id(actor), "normalization_backup.json")
+            if not snap.exists(): return BuilderResult(False, "No normalization rollback snapshot exists.")
+            self.workspace.save_drafts(self.workspace.world_id(actor), self.workspace._read(snap, {}))
+            return BuilderResult(True, "Normalization rollback restored the pre-apply Builder draft snapshot.")
+        if action == "apply":
+            snap = self._state_path(self.workspace.world_id(actor), "normalization_backup.json")
+            self.workspace._atomic_json_write(snap, drafts)
+            target = deepcopy(drafts)
+            for p in plan:
+                bucket = target.setdefault(p["kind"], {})
+                rec = deepcopy(bucket.get(p["id"]) or records[p["kind"]].get(p["id"]) or {"id": p["id"]})
+                if p.get("new_vnum") is not None: rec["vnum"] = p["new_vnum"]
+                if p.get("new_area"): rec["area_id"] = p["new_area"]
+                if p.get("new_zone"): rec["zone_id"] = p["new_zone"]
+                rec.setdefault("world_id", self.workspace.world_id(actor)); rec["_builder_normalized"] = self.workspace.stamp(); bucket[p["id"]] = rec
+            self.workspace.save_drafts(self.workspace.world_id(actor), target)
+            return BuilderResult(True, f"Normalization apply complete. Snapshot: {snap.name}. Records changed: {len(plan)}", {"changed": len(plan)})
+        return BuilderResult(False, "Usage: builder normalize <audit|plan|apply|verify|rollback>")
 
     def render_session(self, sess: BuilderEditSession) -> str:
         rec = sess.working_record or {}

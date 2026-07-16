@@ -159,7 +159,8 @@ DETERMINISTIC_COMMANDS = {
     "northwest": {"category": "movement", "aliases": ["nw"], "admin": False},
     "southeast": {"category": "movement", "aliases": ["se"], "admin": False},
     "southwest": {"category": "movement", "aliases": ["sw"], "admin": False},
-    "look": {"category": "movement", "aliases": ["l", "glance", "scan"], "admin": False},
+    "look": {"category": "movement", "aliases": ["l", "glance"], "admin": False},
+    "scan": {"category": "info", "admin": False},
     "examine": {"category": "movement", "aliases": ["exa", "exam", "inspect"], "admin": False},
     "identify": {"category": "interaction", "aliases": ["id"], "admin": False},
     "use": {"category": "interaction", "admin": False},
@@ -530,6 +531,8 @@ class MudCommandEngine:
             # Builder foundation
             "builder": self._cmd_builder,
             "build": self._cmd_builder,
+            "bnorm": self._cmd_builder_normalize,
+            "scan": self._cmd_scan,
             "rassign": self._cmd_room_assign,
             "rmove": self._cmd_room_assign,
             "rrenameid": self._cmd_room_assign,
@@ -1803,6 +1806,10 @@ class MudCommandEngine:
             raw_cmd_name = "combatstats"
         if raw_cmd_name in {".end", ".cancel"}:
             return CommandResult(narrative="No active editor session.", ok=False)
+        if getattr(self, "builder_service", None) and hasattr(self.builder_service, "continue_picker"):
+            pick = self.builder_service.continue_picker(character, command_text)
+            if pick is not None:
+                return CommandResult(narrative=pick.message, ok=pick.ok)
         cmd_name = 'target' if raw_cmd_name == 'target' else self.resolve_alias(raw_cmd_name)
         if raw_cmd_name in self.command_handlers and not cmd_name:
             cmd_name = raw_cmd_name
@@ -3721,6 +3728,53 @@ class MudCommandEngine:
         if action == "resettrace": return CommandResult("Reset trace\n"+json.dumps(svc.trace(args[0] if args else ''), indent=2, sort_keys=True))
         return CommandResult("Unknown reset command.", ok=False)
 
+
+    def _cmd_builder_normalize(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        self.builder_service.workspace = self.builder
+        res = self.builder_service.normalize_command(character, args)
+        return CommandResult(narrative=res.message, ok=res.ok)
+
+    def _cmd_scan(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        direction = args[0].lower() if args else ""
+        dirs = [direction] if direction else ["north","east","south","west","up","down","in","out"]
+        valid = {"north","east","south","west","up","down","in","out"}
+        if direction and direction not in valid:
+            return CommandResult("Usage: scan [north|south|east|west|up|down|in|out]", ok=False)
+        rt = getattr(self, "runtime", None)
+        if not rt:
+            return CommandResult("You scan the area, but nothing stands out.")
+        start = rt.canonical_room_id(getattr(character, "room_id", "")) if hasattr(rt, "canonical_room_id") else str(getattr(character, "room_id", ""))
+        labels = {1:"close by", 2:"a ways off", 3:"far off"}
+        lines = ["You quickly scan the area."]
+        seen = set()
+        for d in dirs:
+            room = start
+            for dist in range(1, 4):
+                exits = rt.canonical_exits(character, room) if hasattr(rt, "canonical_exits") else {}
+                ex = (exits or {}).get(d)
+                if not ex or ex.get("hidden") or ex.get("closed") or ex.get("locked"):
+                    break
+                room = rt.canonical_room_id(ex.get("target_room_id", "")) if hasattr(rt, "canonical_room_id") else str(ex.get("target_room_id", ""))
+                visible = rt.find_visible_entities(room, character) if hasattr(rt, "find_visible_entities") else {}
+                actors = []
+                for key in ("characters", "players", "npcs", "mobs"):
+                    for a in visible.get(key, []) if isinstance(visible, dict) else []:
+                        aid = str(a.get("actor_id") or a.get("instance_id") or a.get("entity_id") or a.get("character_id") or a.get("id") or a.get("name"))
+                        name = str(a.get("name") or a.get("display_name") or a.get("entity_id") or aid)
+                        if aid and aid not in seen and aid != getattr(character, "id", ""):
+                            seen.add(aid); actors.append(name)
+                for name in actors:
+                    lines.append(f"{name} is {labels.get(dist, 'far off')} {d}.")
+        if len(lines) == 1:
+            room_name = ""
+            try:
+                data = rt.runtime_room_data(character, start)[0] if hasattr(rt, "runtime_room_data") else None
+                room_name = (data or {}).get("name") or (data or {}).get("title") or ""
+            except Exception:
+                room_name = ""
+            lines.append(f"You do not notice anyone nearby. {room_name}".strip())
+        return CommandResult("\n".join(lines))
+
     def _cmd_builder(self, character: Any, args: list[str], raw: str) -> CommandResult:
         sub = args[0].lower() if args else "status"
         if raw.strip().split()[0].lower() in {"bstatus", "status"}:
@@ -3731,6 +3785,10 @@ class MudCommandEngine:
             return CommandResult(narrative=res.message + (("\n" + status) if status else ""), ok=res.ok)
         if sub in {"off", "disable"}:
             res = self.builder.set_builder_mode(character, False)
+            return CommandResult(narrative=res.message, ok=res.ok)
+        if sub == "normalize":
+            self.builder_service.workspace = self.builder
+            res = self.builder_service.normalize_command(character, args[1:] if len(args) > 1 else [])
             return CommandResult(narrative=res.message, ok=res.ok)
         if sub == "migrate":
             if len(args) >= 2 and args[1].lower() == "starter":
