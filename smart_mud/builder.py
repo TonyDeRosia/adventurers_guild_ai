@@ -938,7 +938,18 @@ class BuilderContentQueryService:
         records = self.service.resolve_collection_records(actor, collection, scratch=scratch)
         aux = {k: self.service.resolve_collection_records(actor, k) for k in ("spawns", "resets", "quest_definitions")}
         rows = [self._record(collection, oid, rec, aux) for oid, rec in records.items() if isinstance(rec, dict)]
-        return sorted(rows, key=lambda r: (r.legacy_vnum is None, r.legacy_vnum or 999999999, r.canonical_id))
+        rows = sorted(rows, key=lambda r: (r.legacy_vnum is None, r.legacy_vnum or 999999999, r.canonical_id))
+        ranges = {"rooms": (1000, 1299), "items": (1300, 1499), "entities": (1500, 1699), "spawns": (1700, 1799), "resets": (1700, 1799)}
+        if collection in ranges:
+            used = {int(r.legacy_vnum) for r in rows if r.legacy_vnum is not None}
+            nxt = ranges[collection][0]
+            for r in rows:
+                if r.legacy_vnum is None:
+                    while nxt in used and nxt <= ranges[collection][1]:
+                        nxt += 1
+                    if nxt <= ranges[collection][1]:
+                        r.legacy_vnum = nxt; used.add(nxt); nxt += 1
+        return rows
 
     def _record(self, collection: str, oid: str, rec: dict[str, Any], aux: dict[str, dict[str, dict[str, Any]]]) -> BuilderContentRecord:
         cid = str(rec.get("id") or oid)
@@ -1576,10 +1587,10 @@ class BuilderService:
         elif mode in {"draft", "live", "active"}: source = "generation" if mode == "active" else mode; mode = "all"
         elif re.fullmatch(r"\d+-\d+", mode):
             a,b = [int(x) for x in mode.split("-",1)]; rows = [r for r in rows if r.legacy_vnum is not None and a <= r.legacy_vnum <= b]; mode = "filtered"
-        elif mode == "id" and len(args) > 1: rows = [r for r in rows if r.canonical_id == args[1]]; mode = "filtered"
-        elif mode == "vnum" and len(args) > 1 and args[1].isdigit(): rows = [r for r in rows if r.legacy_vnum == int(args[1])]; mode = "filtered"
+        elif mode == "id" and len(args) > 1: rows = [r for r in rows if r.canonical_id == args[1]]; mode = "filtered"; detail_mode = "detail"
+        elif mode == "vnum" and len(args) > 1 and args[1].isdigit(): rows = [r for r in rows if r.legacy_vnum == int(args[1])]; mode = "filtered"; detail_mode = "detail"
         elif mode not in {"all","world","zone","area","here","current","invalid","incomplete"}:
-            rows = self.content_query.search(actor, kind, " ".join(args)); mode = "search"
+            rows = self.content_query.search(actor, kind, " ".join(args)); mode = "search"; detail_mode = "detail"
         if source: rows = [r for r in rows if r.content_source == source]
         if kind == "area" and mode == "current":
             rows = [r for r in rows if r.canonical_id == cur_area]
@@ -1601,21 +1612,22 @@ class BuilderService:
         table_rows: list[list[str]] = []
         if kind == "mob":
             if detail_mode == "brief":
-                headers = ["Num","VNUM","Name","Lvl","Source","Status"]
-                for n, r in enumerate(shown, (page-1)*per+1): table_rows.append([n, r.legacy_vnum if r.legacy_vnum is not None else "----", r.display_name, r.record.get("level", ""), r.content_source.title(), self._status_code(r)])
+                headers = ["Num","VNUM","Name","Lvl"]
+                for n, r in enumerate(shown, (page-1)*per+1): table_rows.append([n, r.legacy_vnum if r.legacy_vnum is not None else "----", r.display_name, r.record.get("level", "")])
             else:
                 headers = ["VNUM","ID","Name","Lvl","Area","Zone","Source","Validation"]
                 for r in shown: table_rows.append([r.legacy_vnum if r.legacy_vnum is not None else "----", r.canonical_id, r.display_name, r.record.get("level", ""), r.area, r.zone, r.content_source, self._validation_text(r) if detail_mode == "verbose" else self._status_code(r)])
         elif kind == "object":
             if detail_mode == "brief":
-                headers = ["Num","VNUM","Name","Type","Source","Status"]
-                for n, r in enumerate(shown, (page-1)*per+1): table_rows.append([n, r.legacy_vnum if r.legacy_vnum is not None else "----", r.display_name, r.record.get("item_type") or r.record.get("type", ""), r.content_source.title(), self._status_code(r)])
+                headers = ["Num","VNUM","Name","Type"]
+                for n, r in enumerate(shown, (page-1)*per+1): table_rows.append([n, r.legacy_vnum if r.legacy_vnum is not None else "----", r.display_name, r.record.get("item_type") or r.record.get("type", "")])
             else:
                 headers = ["VNUM","ID","Name","Type","Wear","Area","Zone","Status"]
                 for r in shown: table_rows.append([r.legacy_vnum if r.legacy_vnum is not None else "----", r.canonical_id, r.display_name, r.record.get("item_type") or r.record.get("type", ""), ",".join(r.record.get("wear_slots") or r.record.get("wear_flags") or []), r.area, r.zone, self._validation_text(r) if detail_mode == "verbose" else self._status_code(r)])
         elif kind == "room":
             headers = ["VNUM","ID","Title","Area","Zone","Flags","Exits"]
             for r in shown: table_rows.append([r.legacy_vnum if r.legacy_vnum is not None else "----", r.canonical_id, r.display_name, r.area, r.zone, ",".join(r.record.get("flags") or []), len(r.record.get("exits") or {})])
+            room_legacy = [f"{r.legacy_vnum if r.legacy_vnum is not None else '----'} | {r.canonical_id} | {r.display_name} | {r.area} | {r.zone} | {len(r.record.get('exits') or {})}" for r in shown]
         elif kind == "area":
             headers = ["Area name","ID","Rooms","Mobs","Objects","Resets","Validation"]
             all_rooms = self.resolve_collection_records(actor, "rooms")
@@ -1649,7 +1661,7 @@ class BuilderService:
         if kind == "mob": title = "Mob List - Mobiles in " + world_id.replace("_", " ").title()
         elif kind == "object": title = "Object List - Objects in " + world_id.replace("_", " ").title()
         lines = self._builder_list_header(title, total, world_id, cur_area if mode not in {"all","world"} else "", cur_zone if mode not in {"all","world"} else "", cur_room, page, pages)
-        if kind in {"mob", "object"}:
+        if kind in {"mob", "object"} and detail_mode != "brief":
             lines.append(f"Current zone: {cur_zone or 'none'}")
             lines.append(f"Usage: {'mlist 1500-1599' if kind == 'mob' else 'olist 1300-1399'} | {kind}list all | zone | area | id | vnum | source draft|active|live")
         if kind == "area":
@@ -1661,7 +1673,26 @@ class BuilderService:
             lines += ["Zone detail:", f"room_ids count: {len(shown[0].record.get('room_ids') or [])}"]
         if kind == "area" and mode == "current":
             lines.append('Use "alist all" to list all areas.')
-        lines += ["", self._table(headers, table_rows), "", "-" * 56]
+        if kind in {"mob", "object"} and detail_mode == "brief":
+            title_line = " Mobiles (Mob List)" if kind == "mob" else " Objects (Object List)"
+            header = self._builder_list_header("Mob List" if kind == "mob" else "Object List", total, world_id, cur_area, cur_zone, cur_room, page, pages)
+            legacy = []
+            if kind == "mob":
+                legacy = [f"{r.legacy_vnum if r.legacy_vnum is not None else '----'} | {r.canonical_id} | {r.display_name} | {r.record.get('level','')} | {r.record.get('race') or r.record.get('type','')}" for r in shown]
+            elif kind == "object":
+                legacy = [f"{r.legacy_vnum if r.legacy_vnum is not None else '----'} | {r.canonical_id} | {r.display_name} | {r.record.get('item_type') or r.record.get('type','')} | {','.join(r.record.get('wear_slots') or r.record.get('wear_flags') or [])}" for r in shown]
+            lines = header + ["ID: use detail mode for canonical IDs", "", title_line, "", self._table(headers, table_rows)] + legacy + ["", f" {total} {'mobiles' if kind == 'mob' else 'objects'} found."]
+        elif kind == "room" and 'room_legacy' in locals():
+            lines += ["", self._table(headers, table_rows)] + room_legacy + ["", "-" * 56]
+        elif kind in {"mob", "object"} and detail_mode != "brief":
+            legacy = []
+            if kind == "mob":
+                legacy = [f"{r.legacy_vnum if r.legacy_vnum is not None else '----'} | {r.canonical_id} | {r.display_name} | {r.record.get('level','')} | {r.record.get('race') or r.record.get('type','')}" for r in shown]
+            elif kind == "object":
+                legacy = [f"{r.legacy_vnum if r.legacy_vnum is not None else '----'} | {r.canonical_id} | {r.display_name} | {r.record.get('item_type') or r.record.get('type','')} | {','.join(r.record.get('wear_slots') or r.record.get('wear_flags') or [])}" for r in shown]
+            lines += ["", self._table(headers, table_rows)] + legacy + ["", "-" * 56]
+        else:
+            lines += ["", self._table(headers, table_rows), "", "-" * 56]
         return BuilderResult(True, "\n".join(lines), {"total": total, "rows": [r.__dict__ for r in shown]})
 
     def vnum_report(self, actor: Any, args: list[str] | None = None) -> BuilderResult:

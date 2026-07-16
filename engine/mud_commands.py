@@ -283,6 +283,8 @@ class MudCommandEngine:
             "spellup": self._cmd_spellup,
             "spells": self._cmd_spells,
             "skills": self._cmd_skills,
+            "abilitydiagnose": self._cmd_abilitydiagnose,
+            "showvnums": self._cmd_showvnums,
             "abilities": self._cmd_abilities,
             "achievements": self._cmd_achievements,
             "achievement": self._cmd_achievements,
@@ -2614,10 +2616,10 @@ class MudCommandEngine:
     def _ability_rows(self, character: Any, kinds: set[str] | None = None) -> list[dict[str, Any]]:
         svc = self._ability_service(character)
         rows = svc.get_actor_abilities(character.id) if svc else []
-        if not rows and getattr(character, "abilities", None):
-            rows = [{"id": str(a), "name": str(a).replace("_", " ").title(), "ability_type": "custom", "description": "Legacy character ability.", "costs": [], "cooldowns": {}, "timing": {}} for a in character.abilities]
+        allowed = {"skill", "proficiency", "trade_skill", "combat_skill", "technique", "spell", "magic", "prayer", "power", "passive", "heal", "buff", "debuff", "utility", "defensive", "movement"}
+        rows = [r for r in rows if str(r.get("id") or r.get("ability_id") or "") in getattr(getattr(svc, "registry", None), "abilities", {}) and str(r.get("ability_type") or "").lower() in allowed]
         if kinds:
-            rows = [r for r in rows if str(r.get("ability_type")) in kinds]
+            rows = [r for r in rows if str(r.get("ability_type") or "").lower() in kinds]
         return rows
 
     def _ability_status_text(self, character: Any, row: dict[str, Any]) -> str:
@@ -2649,6 +2651,37 @@ class MudCommandEngine:
                 if not res.get("ok"): break
             return CommandResult("Spellup cast summary:\n" + ("\n".join(done) if done else "No eligible self buffs."))
         return CommandResult(narrative=self._render_score_section(character, "spellup"))
+
+    def _cmd_showvnums(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if self._effective_role(character) not in {"admin", "owner", "builder"}:
+            return CommandResult("You do not have permission for that command.", ok=False)
+        prefs = getattr(character, "preferences", None) or {}
+        setattr(character, "preferences", prefs)
+        if args and args[0].lower() in {"on", "off"}:
+            prefs["show_vnums"] = args[0].lower() == "on"
+        enabled = bool(prefs.get("show_vnums"))
+        return CommandResult(f"VNUM display is {'on' if enabled else 'off'}.")
+
+    def _cmd_abilitydiagnose(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if self._effective_role(character) not in {"admin", "owner", "builder"}:
+            return CommandResult("You do not have permission for that command.", ok=False)
+        svc = self._ability_service(character)
+        if not svc:
+            return CommandResult("Ability system is unavailable.", ok=False)
+        actor_id = character.id if not args or args[0].lower() == "self" else args[0]
+        lines = ["Ability diagnostics", "Ability ID | Definition kind | Grant source | Persisted actor ID | Resolved actor ID | Rank/proficiency | Reason"]
+        seen = set()
+        for lookup in dict.fromkeys([str(actor_id), str(actor_id).split(":",1)[1] if str(actor_id).startswith("character:") else "character:"+str(actor_id)]):
+            if not lookup: continue
+            for g in svc.project_ability_grants(lookup):
+                aid = str(g.get("ability_id") or "")
+                definition = getattr(svc.registry, "abilities", {}).get(aid)
+                reason = "accepted" if definition and getattr(definition, "enabled", True) else "rejected: missing/disabled definition"
+                key=(lookup,aid,g.get("grant_id"));
+                if key in seen: continue
+                seen.add(key)
+                lines.append(f"{aid} | {getattr(definition,'ability_type','') if definition else ''} | {g.get('source_type','')} | {lookup} | {actor_id} | {g.get('proficiency', g.get('rank', 1))} | {reason}")
+        return CommandResult("\n".join(lines))
 
     def _cmd_spells(self, character: Any, args: list[str], raw: str) -> CommandResult:
         svc = self._ability_service(character)
@@ -3902,13 +3935,19 @@ class MudCommandEngine:
             rec = draft or live or {}
             return (rec.get("name") or rec.get("title") or "(unnamed)", "draft" if draft is not None else "live" if live is not None else "unknown", draft is not None)
         loc_name, loc_source, _ = info(loc_id)
-        area = drafts.get("areas", {}).get(str(getattr(character,"current_area_id","") or ""))
-        zone = drafts.get("zones", {}).get(str(getattr(character,"current_zone_id","") or ""))
+        rooms = drafts.get("rooms", {})
+        current_room = rooms.get(loc_id, {})
+        current_area_id = str(current_room.get("area_id") or getattr(character,"current_area_id","") or "")
+        current_zone_id = str(current_room.get("zone_id") or getattr(character,"current_zone_id","") or "")
+        area = drafts.get("areas", {}).get(current_area_id)
+        zone = drafts.get("zones", {}).get(current_zone_id)
         world_name = self.builder.world_id(character).replace("_", " ").title()
-        lines = ["Builder Status:", "================================================", "Builder Mode", "", "World:", world_name, "", "Area:"]
-        lines.append(f"{area.get('id')}, {area.get('name')}, {area.get('vnum_start')}-{area.get('vnum_end')}" if area else "none selected")
-        lines += ["", "Zone:"]
-        lines.append(f"{zone.get('id')}, {zone.get('name')}, {zone.get('vnum_start')}-{zone.get('vnum_end')}" if zone else "none selected")
+        def label(kind, rec, cid):
+            if not cid: return f"{kind}: unknown"
+            name = (rec or {}).get("name")
+            return f"{kind}: {name} [{cid}]" if name else f"{kind}: [{cid}] (missing display name)"
+        lines = ["Builder Status:", "================================================", "Builder Mode", "", "World:", world_name, "", "Current location:"]
+        lines += ["  " + label("Area", area, current_area_id), "  " + label("Zone", zone, current_zone_id), f"  Room: {loc_name} [{loc_id}]", f"  VNUM: {current_room.get('vnum') if current_room.get('vnum') is not None else 'none'}", "", "Builder scope:", f"  Area: {'current' if current_area_id else 'none selected'}", f"  Zone: {'current' if current_zone_id else 'none selected'}"]
         lines += ["", "Location:", f"{loc_id}, {loc_name}", "", "Currently editing:", "Editing:"]
         if not room_id:
             lines.append("none")
@@ -3920,9 +3959,9 @@ class MudCommandEngine:
             a = drafts.get("areas", {}).get(aid, {})
             z = drafts.get("zones", {}).get(zid, {})
             legacy = not aid and not zid and vnum is None
-            area_text = f"{aid}, {a.get('name')}" if aid else "none"
-            zone_text = f"{zid}, {z.get('name')}" if zid else "none"
-            lines += ["", "Room Organization:", f"Area: {area_text}", f"Zone: {zone_text}", f"VNUM: {vnum if vnum is not None else 'none'}", f"Status: {'legacy/unassigned' if legacy else 'organized'}"]
+            area_text = f"{a.get('name')} [{aid}]" if aid and a.get('name') else (f"[{aid}] (missing display name)" if aid else "none")
+            zone_text = f"{z.get('name')} [{zid}]" if zid and z.get('name') else (f"[{zid}] (missing display name)" if zid else "none")
+            lines += ["", "Room Organization:", f"Area: {area_text}", f"Zone: {zone_text}", f"Room: {name} [{room_id}]", f"VNUM: {vnum if vnum is not None else 'none'}", f"Status: {'legacy/unassigned' if legacy else 'organized'}"]
             if legacy:
                 ca=getattr(character,"current_area_id","") or "<area_id>"; cz=getattr(character,"current_zone_id","") or "<zone_id>"
                 lines += ["", "Suggested next command:", f"rassign here area {ca} zone {cz} vnum <number>"]
