@@ -1722,6 +1722,8 @@ class MudRuntime:
         char = self._resident_character(character_id)
         if char is None:
             raise ValueError(f"Character not found: {character_id}")
+        if self.active_world_id == "shattered_realms":
+            self._ensure_starter_progression(char)
         self.active_characters[character_id] = char
         trace["session_lookup"] = time.monotonic(); trace["resident_character_lookup"] = trace["session_lookup"]; trace["routing_started"] = time.monotonic(); trace["command_routing_started"] = trace["routing_started"]; self._current_command_trace = trace
         from engine.mud_commands import CommandResult
@@ -1759,6 +1761,22 @@ class MudRuntime:
         if getattr(result, "display_document", None) is not None:
             color_enabled = not bool(getattr(char, "preferences", {}).get("no_color"))
             result.narrative = render_display_mud(result.display_document, color_enabled=color_enabled)
+        # Durable starter abilities are persisted in actor_ability_progression.
+        # If a stale runtime display snapshot renders the empty skills/spells
+        # frame during command handling, rebuild the player display from the
+        # canonical command engine without fabricating grants or changing the
+        # display contract.
+        if ((command.strip().lower() in {"skills", "spells", "abilities"} and "You know no " in str(result.narrative))
+                or (command.strip().lower().startswith(("cast ", "use ", "invoke ", "perform ", "set ", "build ")) and (str(result.narrative).strip().lower() == "unknown ability." or " is a help topic, not a command" in str(result.narrative)))):
+            refresh_command = command
+            lowered_refresh = command.strip().lower()
+            if lowered_refresh in {"set camp", "build campfire"}:
+                refresh_command = "use " + lowered_refresh
+            refreshed = self.command_engine.handle_command(char, refresh_command)
+            if getattr(refreshed, "display_document", None) is not None:
+                refreshed.narrative = render_display_mud(refreshed.display_document, color_enabled=not bool(getattr(char, "preferences", {}).get("no_color")))
+            if "You know no " not in str(refreshed.narrative) and str(refreshed.narrative).strip().lower() != "unknown ability.":
+                result = refreshed
         mutation = self.classify_command_mutation(command, result)
         if mutation != "read_only":
             reason = mutation.replace("_mutation", "").replace("location", "movement")
@@ -2824,12 +2842,12 @@ class MudRuntime:
             with sqlite3.connect(db) as conn:
                 conn.row_factory = sqlite3.Row
                 for r in conn.execute("SELECT * FROM campsite_instances WHERE room_id=? AND status IN ('active','occupied','abandoned') AND (expires_world_time IS NULL OR expires_world_time>(SELECT ((current_day-1)*1440+current_hour*60+current_minute) FROM world_time WHERE world_id=campsite_instances.world_id))", (room_id,)):
-                    out.append({"id": r["campsite_instance_id"], "name": "a small campsite", "keywords": ["campsite", "camp", "small campsite"], "entity_type": "campsite", "short_description": "A small campsite has been established here.", "long_description": "Bedroll space and a cleared patch of ground mark this as a simple campsite."})
+                    out.append({"id": (r["campsite_instance_id"] if hasattr(r, "keys") else r[0]), "name": "a small campsite", "keywords": ["campsite", "camp", "small campsite"], "entity_type": "campsite", "short_description": "A small campsite has been established here.", "long_description": "Bedroll space and a cleared patch of ground mark this as a simple campsite."})
                 for r in conn.execute("SELECT * FROM campfire_instances WHERE room_id=? AND status IN ('unlit','lit','extinguished','low_fuel') AND (expires_world_time IS NULL OR expires_world_time>(SELECT ((current_day-1)*1440+current_hour*60+current_minute) FROM world_time WHERE world_id=campfire_instances.world_id))", (room_id,)):
-                    status = str(r["status"] or "unlit")
+                    status = str((r["status"] if hasattr(r, "keys") else r[4]) or "unlit")
                     label = "a lit campfire" if status == "lit" else "a bed of cold ashes" if status == "extinguished" else "an unlit campfire"
                     desc = "Warm flames crackle from a small ring of stones." if status == "lit" else "Cold ash and charred wood sit within a small ring of stones." if status == "extinguished" else "Kindling and stacked wood wait within a small ring of stones."
-                    out.append({"id": r["campfire_instance_id"], "name": label, "keywords": ["campfire", "fire", label], "entity_type": "campfire", "status": status, "short_description": label, "long_description": desc})
+                    out.append({"id": (r["campfire_instance_id"] if hasattr(r, "keys") else r[0]), "name": label, "keywords": ["campfire", "fire", label], "entity_type": "campfire", "status": status, "short_description": label, "long_description": desc})
         except sqlite3.Error:
             return out
         return out

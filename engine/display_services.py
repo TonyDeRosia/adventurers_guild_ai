@@ -435,6 +435,12 @@ class AbilityDisplaySnapshotService:
         svc=self.execution_service; actor_id=str(_field(character,"id","character_id", default=""))
         if hasattr(svc, "actor_from_character"): svc.actor_from_character(character)
         rows = svc.get_actor_abilities(actor_id) if svc else []
+        # Some entry paths materialize a prefixed live actor while learned
+        # player abilities are persisted under the canonical character id.
+        # Never fabricate display rows, but do fall back to the durable
+        # character id when the live actor projection is empty.
+        if not rows and actor_id.startswith("character:"):
+            rows = svc.get_actor_abilities(actor_id.split(":", 1)[1]) if svc else []
         out=[]
         for row in rows:
             kind=str(row.get("ability_type") or "ability")

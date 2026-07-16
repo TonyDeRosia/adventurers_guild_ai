@@ -1808,8 +1808,11 @@ class BuilderService:
     def _pending_key(self, actor: Any) -> str:
         return f"{getattr(actor,'account_id','')}:{getattr(actor,'id','')}:{getattr(actor,'session_id','')}:{self.workspace.world_id(actor)}"
 
-    def _snapshot_root(self, world_id: str) -> Path:
+    def _normalization_snapshot_root(self, world_id: str) -> Path:
         p=self.workspace.ensure(world_id)/"builder"/"normalization_snapshots"; p.mkdir(parents=True, exist_ok=True); return p
+
+    def _snapshot_root(self, world_id: str) -> Path:
+        return self._normalization_snapshot_root(world_id)
 
     def _create_normalization_snapshot(self, actor: Any, plan: list[dict[str, Any]], command: str) -> str:
         world_id=self.workspace.world_id(actor); sid="normalize_"+datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
@@ -1825,8 +1828,18 @@ class BuilderService:
         self.workspace._atomic_json_write(root/"verification_before.json", manifest["before_verification_result"])
         return sid
 
-    def _verify_issues(self, actor: Any) -> list[dict[str, Any]]:
-        records,_=self._normalization_records(actor); issues=[]; seen={}
+    def _build_reference_index(self, actor: Any, *, records_by_collection=None) -> dict[str, Any]:
+        records = records_by_collection or self._normalization_records(actor)[0]
+        refs=[]
+        for sid,s in records.get("spawns",{}).items():
+            for key, coll in (("room_id","rooms"),("mobile_id","entities"),("entity_id","entities"),("object_id","items"),("item_id","items")):
+                val=str(s.get(key) or "")
+                if val: refs.append({"source_collection":"spawns","source_id":sid,"source_field":key,"target_collection":coll,"target_id":val,"reference_type":"spawn_link","world":self.workspace.world_id(actor),"required":True,"metadata":{}})
+        return {"references": refs}
+
+    def _verify_issues(self, actor: Any, *, records_by_collection=None, reference_index=None, scope=None) -> list[dict[str, Any]]:
+        records=records_by_collection or self._normalization_records(actor)[0]; issues=[]; seen={}
+        reference_index = reference_index or self._build_reference_index(actor, records_by_collection=records)
         def issue(code, coll, oid, path, msg, hint="", blocking=True): issues.append({"code":code,"collection":coll,"id":oid,"field_path":path,"message":msg,"fix_hint":hint,"blocking":blocking})
         for coll in ("areas","zones","rooms","entities","items","spawns","resets"):
             ids=set()
@@ -1849,10 +1862,9 @@ class BuilderService:
             for v, owners in vals.items():
                 if len(owners)>1:
                     for coll,oid in owners: issue("DUPLICATE_VNUM",coll,oid,"vnum",f"VNUM {v} duplicates in namespace {ns}: {owners}")
-        for sid,s in records.get("spawns",{}).items():
-            for key, coll in (("room_id","rooms"),("mobile_id","entities"),("entity_id","entities"),("object_id","items"),("item_id","items")):
-                val=str(s.get(key) or "")
-                if val and val not in records.get(coll,{}): issue("BROKEN_REFERENCE","spawns",sid,key,f"Referenced {coll} {val} does not exist")
+        for ref in reference_index.get("references", []):
+            coll=ref.get("target_collection"); val=str(ref.get("target_id") or "")
+            if val and val not in records.get(coll,{}): issue("BROKEN_REFERENCE",str(ref.get("source_collection")),str(ref.get("source_id")),str(ref.get("source_field")),f"Referenced {coll} {val} does not exist")
         return issues
 
     def normalize_command(self, actor: Any, args: list[str] | None = None) -> BuilderResult:

@@ -1204,12 +1204,13 @@ class MudCommandEngine:
             label = "practice" if cur.startswith("practice") else "training"
             return done(f"You spend {res['cost']} Glory and buy one {label} session. You now have {res['sessions']} {label} sessions and {res['glory']} Glory remaining.")
         if cmd == "train":
-            if not at_trainer(): return done("You need to be at your guild or trainer to train.", False)
+            query = " ".join(args).lower().strip()
+            if not at_trainer() and query:
+                return done("You need to be at your guild or trainer to train.", False)
             stats = {"str":"strength","dex":"dexterity","con":"constitution","int":"intelligence","wis":"wisdom","cha":"charisma"}
             aliases = {**stats, "strength":"strength","dexterity":"dexterity","constitution":"constitution","intelligence":"intelligence","wisdom":"wisdom","charisma":"charisma"}
-            query = " ".join(args).lower().strip()
             if not query:
-                lines=[f"{trainer_name()} can help you train.", f"You have {state.get('training_sessions',0)} training sessions available.","","Base stats"]
+                lines=[f"{trainer_name()} can help you train." if at_trainer() else "Training overview", f"You have {state.get('training_sessions',0)} training sessions available.", f"Attribute points: {state.get('attribute_points',0)}", "","Base stats"]
                 for short, full in stats.items():
                     val = int(getattr(character, full, getattr(character, short, 10)) or 10)
                     lines.append(f"{short.capitalize()} {val}/20" + (" [MAX]" if val >= 20 else ""))
@@ -2652,12 +2653,16 @@ class MudCommandEngine:
     def _cmd_spells(self, character: Any, args: list[str], raw: str) -> CommandResult:
         svc = self._ability_service(character)
         rows = ability_snapshots_as_rows(AbilityDisplaySnapshotService(svc).list_snapshots(character, "spells")) if svc else []
+        if not rows:
+            rows = [r for r in self._ability_rows(character) if str(r.get("ability_type")) == "spell"]
         doc = build_abilities_document(rows, title="SPELLS", empty="You know no spells.", theme=resolve_effective_display_theme(character, family="spells"))
         return CommandResult(render_display_mud(doc), display_document=doc, display_intent="SPELLS")
 
     def _cmd_skills(self, character: Any, args: list[str], raw: str) -> CommandResult:
         svc = self._ability_service(character)
         rows = ability_snapshots_as_rows(AbilityDisplaySnapshotService(svc).list_snapshots(character, "skills")) if svc else []
+        if not rows:
+            rows = [r for r in self._ability_rows(character) if str(r.get("ability_type")) not in {"spell", "passive"}]
         doc = build_abilities_document(rows, title="SKILLS", empty="You know no skills.", theme=resolve_effective_display_theme(character, family="skills"))
         return CommandResult(render_display_mud(doc), display_document=doc, display_intent="SKILLS")
 

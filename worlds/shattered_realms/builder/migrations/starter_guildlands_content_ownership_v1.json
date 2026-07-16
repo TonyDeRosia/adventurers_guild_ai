@@ -1,0 +1,18 @@
+{
+  "manifest_id": "starter_guildlands_content_ownership_v1",
+  "version": 1,
+  "world_id": "shattered_realms",
+  "records": [],
+  "unresolved": [
+    {
+      "collection": "items",
+      "id": "review_required",
+      "ownership_category": "UNRESOLVED",
+      "world_id": "shattered_realms",
+      "area_id": "",
+      "zone_id": "",
+      "vnum": null,
+      "evidence": ["Placeholder manifest created for review-only migration workflow; do not apply until populated from audited placement references."]
+    }
+  ]
+}

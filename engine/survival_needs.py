@@ -349,8 +349,8 @@ class SurvivalNeedsService:
             c.row_factory=sqlite3.Row; r=c.execute("SELECT * FROM campfire_instances WHERE campfire_instance_id=? AND status IN ('unlit','low_fuel','extinguished')",(campfire_instance_id,)).fetchone()
             if not r: return {'ok':False,'reason':'not_found_or_inactive'}
             c.execute("UPDATE campfire_instances SET status='lit',lit_world_time=?,last_updated_world_time=?,updated_at=? WHERE campfire_instance_id=?",(wt,wt,now,campfire_instance_id))
-        self._publish('runtime_object_state_changed', self._runtime_event_payload(dict(r),'campfire_instance_id','lit'))
-        self._publish('campfire_lit', {'actor_id':actor_id,'campfire_instance_id':campfire_instance_id}); return {'ok':True,'status':'lit','expires_world_time':r['expires_world_time']}
+        self._publish('runtime_object_state_changed', self._runtime_event_payload(dict(r) if hasattr(r, 'keys') else {'campfire_instance_id': r[0], 'world_id': r[1], 'profile_id': r[2], 'room_id': r[3], 'owner_actor_id': r[4], 'status': r[5], 'expires_world_time': r[8]},'campfire_instance_id','lit'))
+        self._publish('campfire_lit', {'actor_id':actor_id,'campfire_instance_id':campfire_instance_id}); return {'ok':True,'status':'lit','expires_world_time':(r['expires_world_time'] if hasattr(r, 'keys') else r[8])}
     def add_campfire_fuel(self, actor_id, campfire_instance_id, item_instance_id=None):
         eid=f"fuel_{_stable(campfire_instance_id,item_instance_id or 'generic',actor_id)}"; now=utc_now()
         with sqlite3.connect(self.db_path) as c:
