@@ -304,7 +304,7 @@ class BuilderWorkspace:
         for name in ("audit", "history", "snapshots", "exports", "imports", "templates", "examples"):
             (root / name).mkdir(parents=True, exist_ok=True)
         starters = {
-            "attack_family_definitions": {fam: {"id": fam, "display_name": fam.replace("_", " ").title()} for fam in TBA_ATTACK_FAMILIES},
+            "attack_family_definitions": {fam: {"id": fam, "display_name": fam.replace("_", " ").title()} for fam in SEED_ATTACK_FAMILIES},
             "body_profiles": {"wolf": {"id":"wolf", "capabilities":["fangs","claws"], "suggested_natural_weapon_ids":["wolf_fangs","wolf_claws"]}, "bear": {"id":"bear", "capabilities":["teeth","claws","paws"], "suggested_natural_weapon_ids":["bear_claw","bear_bite","bear_maul"]}, "humanoid": {"id":"humanoid", "capabilities":["fists"], "suggested_natural_weapon_ids":["humanoid_fist"]}},
             "natural_weapon_profiles": {"wolf_fangs": _canonical_weapon({"id":"wolf_fangs","family":"bite","noun":"fangs","verb":"bites","damage_type":"piercing","damage_dice":"1d6","weight":100}, "wolf"), "wolf_claws": _canonical_weapon({"id":"wolf_claws","family":"claw","noun":"claws","verb":"rakes","damage_type":"slashing","damage_dice":"1d4","weight":30}, "wolf"), "bear_claw": _canonical_weapon({"id":"bear_claw","family":"claw","noun":"claws","verb":"claws","damage_type":"slashing","damage_dice":"1d8","weight":50}, "bear"), "bear_bite": _canonical_weapon({"id":"bear_bite","family":"bite","noun":"teeth","verb":"bites","damage_type":"piercing","damage_dice":"1d8","weight":25}, "bear"), "bear_maul": _canonical_weapon({"id":"bear_maul","family":"maul","noun":"paws","verb":"mauls","damage_type":"bludgeoning","damage_dice":"2d6","weight":25}, "bear")},
             "formulas": {"attack_rating": {"id": "attack_rating", "display_name": "Attack Rating", "description": "Starter placeholder; Builders may replace this formula later.", "version": "1.0.0", "dependencies": [], "inputs": [], "outputs": ["attack_rating"], "validation": {"placeholder": True}, "plugin_owner": None, "builder_owner": None, "world_overrides": {}, "plugin_data": {}}},
@@ -772,7 +772,7 @@ class BuilderWorkspace:
         return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
 
 
-BODY_PROFILE_ATTACKS = {
+SEED_BODY_NATURAL_WEAPON_SUGGESTIONS = {
     "wolf": [{"family":"bite","verb":"bites","noun":"fangs","weight":70,"damage_type":"piercing","damage_dice":"1d6"},{"family":"claw","verb":"rakes","noun":"claws","weight":30,"damage_type":"slashing","damage_dice":"1d4"}],
     "bear": [{"family":"claw","verb":"claws","noun":"claws","weight":50,"damage_type":"slashing","damage_dice":"1d8"},{"family":"maul","verb":"mauls","noun":"paws","weight":25,"damage_type":"bludgeoning","damage_dice":"2d6"},{"family":"bite","verb":"bites","noun":"teeth","weight":25,"damage_type":"piercing","damage_dice":"1d8"}],
     "spider": [{"family":"bite","verb":"bites","noun":"mandibles","weight":70,"damage_type":"piercing","damage_dice":"1d4"}],
@@ -784,7 +784,7 @@ BODY_PROFILE_ATTACKS = {
 }
 
 
-TBA_ATTACK_FAMILIES = ("fist", "sting", "whip", "slash", "bite", "bludgeon", "crush", "pound", "claw", "maul", "thrash", "pierce", "blast", "punch", "stab", "gore", "kick", "tail", "breath", "slam")
+SEED_ATTACK_FAMILIES = ("fist", "sting", "whip", "slash", "bite", "bludgeon", "crush", "pound", "claw", "maul", "thrash", "pierce", "blast", "punch", "stab", "gore", "kick", "tail", "breath", "slam")
 
 def _canonical_weapon(raw: dict[str, Any], fallback_id: str = "natural_weapon") -> dict[str, Any]:
     family = str(raw.get("mechanical_family") or raw.get("family") or raw.get("attack_type") or fallback_id).lower()
@@ -932,7 +932,22 @@ class BuilderService:
             return BuilderResult(False, "You do not have permission for that command.")
         if action in {"publish", "activate", "force_unlock"} and not self._can_admin(actor):
             return BuilderResult(False, f"You do not have permission to {action}.")
+        if collection == "entities" and action in {"mutate", "edit", "delete"} and not self._can_admin(actor):
+            zone_id = self._entity_zone_id(actor, object_id)
+            assigned = self._assigned_zones(actor)
+            if zone_id and assigned and zone_id not in assigned:
+                return BuilderResult(False, f"Zone ownership denied: mobile {object_id} belongs to zone {zone_id}; your assigned zones are {', '.join(sorted(assigned))}.")
         return None
+
+    def _assigned_zones(self, actor: Any) -> set[str]:
+        vals = getattr(actor, "builder_zone_ids", None) or getattr(actor, "assigned_zone_ids", None) or getattr(actor, "zone_ids", None) or []
+        if isinstance(vals, str):
+            vals = [v.strip() for v in vals.split(",") if v.strip()]
+        return {str(v) for v in vals if str(v)}
+
+    def _entity_zone_id(self, actor: Any, object_id: str) -> str:
+        rec = self._record(self.workspace.world_id(actor), "entities", object_id) or {}
+        return str(rec.get("zone_id") or getattr(actor, "current_zone_id", "") or getattr(actor, "zone_id", ""))
 
     def _lock_record(self, world_id: str, collection: str, object_id: str) -> dict[str, Any] | None:
         self._cleanup_stale_locks(world_id)
@@ -1022,6 +1037,42 @@ class BuilderService:
             cp["natural_weapons"] = [_canonical_weapon(x, object_id) for x in cp.get("natural_weapons") or [] if isinstance(x, dict)]
             updates["combat_profile"] = cp
         return updates
+
+
+    def create_or_update_mobile(self, actor: Any, object_id: str, updates: dict[str, Any], action: str = "mobile command") -> BuilderResult:
+        denied = self._check_permission(actor, "entities", object_id, "mutate")
+        if denied: return denied
+        sess = self.sessions.active.get(self.sessions.actor_key(actor))
+        if sess and sess.collection == "entities":
+            if sess.object_id != object_id:
+                return BuilderResult(False, f"Mobile editor is open for {sess.object_id}; save/quit it before editing {object_id}.")
+            self._session_checkpoint(sess)
+            sess.working_record.update(self._normalize_entity_updates(object_id, updates))
+            sess.dirty = True; sess.saved = False
+            return BuilderResult(True, f"Updated active medit scratch for {object_id}.", sess.working_record)
+        lock = self.acquire_lock(actor, "entities", object_id)
+        if not lock.ok: return lock
+        before = self._record(self.workspace.world_id(actor), "entities", object_id)
+        try:
+            res = self.mutate(actor, "entities", object_id, updates, action)
+            if res.ok:
+                event = "builder_entity_template_created" if before is None and action.endswith("create") else "builder_entity_template_updated"
+                self.workspace.publish(event, actor, self.workspace.world_id(actor), "entity_template", object_id, command=action)
+            return res
+        finally:
+            self.release_lock(actor, "entities", object_id)
+
+    def delete_mobile(self, actor: Any, object_id: str) -> BuilderResult:
+        denied = self._check_permission(actor, "entities", object_id, "delete")
+        if denied: return denied
+        lock = self.acquire_lock(actor, "entities", object_id)
+        if not lock.ok: return lock
+        world_id = self.workspace.world_id(actor); drafts = self.workspace.load(world_id); before = deepcopy(drafts.get("entities", {}).get(object_id))
+        if before is None: return BuilderResult(False, f"Draft entities {object_id} not found.")
+        drafts.setdefault("entities", {}).pop(object_id, None); self.workspace.save_drafts(world_id, drafts)
+        self._push_history(actor, "entities", object_id, before, None, "mdelete"); self.workspace.audit(actor, world_id, "mdelete", "entities", object_id, before, None)
+        self.release_lock(actor, "entities", object_id)
+        return BuilderResult(True, f"Draft entity_template {object_id} deleted.")
 
     def clone(self, actor: Any, collection: str, source_id: str, new_id: str, display_name: str | None = None, keywords: list[str] | None = None) -> BuilderResult:
         denied = self._check_permission(actor, collection, source_id, "mutate")
@@ -1127,7 +1178,8 @@ class BuilderService:
         return BuilderResult(not any(x['severity']=='error' for x in issues), "Validation for %s:\n%s" % (object_id, "\n".join(lines)), {"issues": issues})
 
     def preview(self, actor: Any, collection: str, object_id: str) -> BuilderResult:
-        rec = self._record(self.workspace.world_id(actor), collection, object_id) or {}
+        sess = self.sessions.active.get(self.sessions.actor_key(actor))
+        rec = deepcopy(sess.working_record) if sess and sess.collection == collection and sess.object_id == object_id else (self._record(self.workspace.world_id(actor), collection, object_id) or {})
         if not rec: return BuilderResult(False, f"No draft {collection} {object_id}.")
         return self._preview_record(actor, collection, object_id, rec)
 
@@ -1206,16 +1258,58 @@ class BuilderService:
         return self.mutate(actor, "entities", mob_id, {"body_profile_id": prof, "combat_profile": {"body_profile": prof, "natural_weapons": weapons}}, "body profile")
 
     def start_editor(self, actor: Any, editor: str, collection: str, object_id: str) -> BuilderResult:
+        denied = self._check_permission(actor, collection, object_id, "edit")
+        if denied: return denied
         return self.sessions.start(actor, editor, collection, object_id)
 
     def render_session(self, sess: BuilderEditSession) -> str:
-        title = (sess.working_record or self._record(sess.world_id, sess.collection, sess.object_id) or {}).get("name") or sess.object_id.replace("_", " ").title()
-        if sess.section == "natural_weapons":
-            rec = sess.working_record or {}
-            weapons = ((rec.get("combat_profile") or {}).get("natural_weapons") or [])
-            rows = [f"{i+1}. {w.get('id')} {w.get('mechanical_family')} {w.get('noun_plural')} weight={w.get('selection_weight')} dice={w.get('damage_dice')}" for i,w in enumerate(weapons)]
-            return "Natural Weapons\n" + ("\n".join(rows) if rows else "- none") + "\nCommands: add <id>, set <id> <field> <value>, delete <id>, preview, validate, back, save, quit"
-        return self.menu(sess.editor_type, str(title)) + "\n\nEditor session active. Type a number, help, preview, validate, testspawn, save, undo, redo, or quit."
+        rec = sess.working_record or {}
+        title = rec.get("name") or sess.object_id.replace("_", " ").title()
+        if sess.section:
+            return self._render_mobile_section(sess, sess.section)
+        return self.menu(sess.editor_type, str(title), sess)
+
+    def _render_mobile_section(self, sess: BuilderEditSession, section: str) -> str:
+        rec = sess.working_record or {}
+        cp = rec.get("combat_profile") or {}
+        lines = [f"MEDIT {section.replace('_',' ').title()}: {rec.get('name') or sess.object_id}"]
+        if section == "identity":
+            lines += [f"1. Mobile ID: {sess.object_id}", f"2. Display name: {rec.get('name','')}", f"3. Entity type: {rec.get('entity_type','npc')}", f"4. Builder status: {rec.get('builder_status','incomplete')}", f"5. World: {rec.get('world_id', sess.world_id)}", f"6. Area: {rec.get('area_id','')}", f"7. Zone: {rec.get('zone_id','')}", f"8. Legacy VNUM: {rec.get('vnum','')}", f"9. Tags: {', '.join(rec.get('tags') or [])}", "Commands: name <value>, type <value>, status <value>, area <id>, zone <id>, vnum <n>, tag add/remove <tag>, back"]
+        elif section == "keywords":
+            lines += ["Keywords: " + (", ".join(rec.get("keywords") or rec.get("aliases") or []) or "none"), "Commands: add <word>, remove <word>, replace <old> <new>, clear, normalize, back"]
+        elif section == "descriptions":
+            for k in ("short_description","room_description","look_description","examine_description","long_description","arrival_text","departure_text","death_text","dialogue_seed"):
+                lines.append(f"- {k}: {str(rec.get(k) or rec.get('description' if k=='long_description' else k) or '')[:60]}")
+            lines.append("Commands: set <field> <text>, multiline <field>, preview, back")
+        elif section == "traits":
+            for k in ("sex","gender","race","species","size","age_category","alignment","faction_id","occupation","language_profile_id","body_profile_id"):
+                lines.append(f"- {k}: {rec.get(k,'')}")
+            lines.append("Commands: set <field> <value>, back")
+        elif section in {"attributes","resources"}:
+            attrs = rec.get("attributes") or {}; res = rec.get("resources") or {}
+            lines += [f"Level: {rec.get('level',1)}", "Attributes: " + json.dumps(attrs, sort_keys=True), "Resources: " + json.dumps(res, sort_keys=True), "Commands: level <n>, attr <stat> <n>, resource <name> <n>, back"]
+        elif section == "combat":
+            for k in ("armor_profile_id","accuracy_modifier","evasion_modifier","attack_power_modifier","combat_behavior_profile_id","threat_profile_id","aggression_profile_id","assist_profile_id","flee_profile_id","surrender_profile_id","pursuit_profile_id","ability_loadout_id"):
+                lines.append(f"- {k}: {cp.get(k,'')}")
+            lines.append("Commands: set <field> <value>, back")
+        elif section == "body_weapons":
+            lines += [f"Body profile: {rec.get('body_profile_id') or cp.get('body_profile','')}", "Commands: body <profile>, weapons, back"]
+        elif section == "natural_weapons":
+            weapons = cp.get("natural_weapons") or []
+            lines += [f"{i+1}. {w.get('id')} {w.get('mechanical_family')} {w.get('noun_plural')} weight={w.get('selection_weight')} dice={w.get('damage_dice')}" for i,w in enumerate(weapons)] or ["- none"]
+            lines.append("Commands: add <id>, set <id> <field> <value>, delete <id>, enable <id>, disable <id>, preview, validate, back")
+        else:
+            summary = self._mobile_section_summary(rec, section)
+            lines += [summary, "Commands: set <field> <value>, add <field> <value>, remove <field> <value>, back"]
+        return "\n".join(lines)
+
+    def _mobile_section_summary(self, rec: dict[str, Any], section: str) -> str:
+        mapping = {
+            "positions": ("default_position","spawn_position"), "mobile_flags": ("mobile_flags",), "affect_flags": ("affect_flags",),
+            "equipment": ("equipment_loadout",), "inventory": ("starting_inventory",), "loot": ("loot", "corpse_profile_id"),
+            "abilities": ("ability_loadout_id","granted_abilities"), "ai": ("ai_actor_enabled","behavior_profile_id","personality_profile_id","goal_profile_id","need_profile_id","memory_profile_id","schedule_id"),
+            "faction": ("faction_id","organization_id","relationship_seed_ids","hostility_profile_id"), "scripts": ("script_ids","scripts"), "spawns": ("spawn_refs",), "diagnostics": ("schema_version","_builder_revision")}
+        return "\n".join(f"- {k}: {rec.get(k,'')}" for k in mapping.get(section, ())) or "No fields configured."
 
     def _session_checkpoint(self, sess: BuilderEditSession) -> None:
         sess.undo_stack.append(deepcopy(sess.working_record))
@@ -1249,13 +1343,11 @@ class BuilderService:
             return BuilderResult(True, "Updated session scratch.\n" + self.render_session(sess))
         if parts and parts[0].lower() == "body" and len(parts) > 1:
             drafts = self.workspace.load(sess.world_id); profile = parts[1].lower(); bp = (drafts.get("body_profiles") or {}).get(profile)
-            if profile in BODY_PROFILE_ATTACKS:
-                weapons = [_canonical_weapon({**w, "id": f"{sess.object_id}_{w.get('family')}"}, sess.object_id) for w in BODY_PROFILE_ATTACKS[profile]]
-            elif bp:
+            if bp:
                 weapons = [deepcopy((drafts.get("natural_weapon_profiles") or {}).get(wid)) for wid in bp.get("suggested_natural_weapon_ids", [])]
                 weapons = [_canonical_weapon(w, sess.object_id) for w in weapons if isinstance(w, dict)]
             else:
-                return BuilderResult(False, "Unknown body profile. Choose: " + ", ".join(sorted(set(drafts.get("body_profiles", {})) | set(BODY_PROFILE_ATTACKS))))
+                return BuilderResult(False, "Unknown body profile. Choose: " + ", ".join(sorted(drafts.get("body_profiles", {}))))
             self._session_checkpoint(sess)
             sess.working_record.pop("natural_weapons", None)
             sess.working_record.pop("natural_attacks", None)
@@ -1270,28 +1362,83 @@ class BuilderService:
                 return BuilderResult(True, "Unsaved changes: Save, Discard, or Cancel?")
             self.sessions.end(actor); return BuilderResult(True, "Editor closed and lock released.")
         if low in {"back", "cancel"}: sess.section=""; sess.mode="main_menu"; return BuilderResult(True, self.render_session(sess))
-        if low in {"?", "help"}: return BuilderResult(True, "Builder help: use menu numbers; Natural Weapons supports add/set/delete/list; global commands are preview, validate, testspawn, save, undo, redo, quit.")
-        if low in {"7", "natural", "natural weapons", "natural attacks"}: sess.section="natural_weapons"; sess.mode="section_menu"; return BuilderResult(True, self.render_session(sess))
-        if low == "preview": return self._session_preview(actor, sess)
-        if low == "validate":
+        if low in {"?", "help"}: return BuilderResult(True, "Builder help: use menu numbers; field commands are name/type/status/area/zone/set/add/remove; Natural Weapons supports add/set/delete/list; global commands are preview, validate, testspawn, save, undo, redo, quit.")
+        section_map = {"1":"identity","identity":"identity", "2":"keywords", "keywords":"keywords", "aliases":"keywords", "3":"descriptions", "descriptions":"descriptions", "4":"traits", "traits":"traits", "5":"attributes", "attributes":"attributes", "level":"attributes", "6":"resources", "resources":"resources", "7":"natural_weapons", "combat":"combat", "8":"body_weapons", "body":"body_weapons", "body profile":"body_weapons", "weapons":"natural_weapons", "natural":"natural_weapons", "natural weapons":"natural_weapons", "natural attacks":"natural_weapons", "9":"positions", "positions":"positions", "10":"mobile_flags", "flags":"mobile_flags", "mobile flags":"mobile_flags", "11":"affect_flags", "affects":"affect_flags", "12":"equipment", "equipment":"equipment", "13":"inventory", "inventory":"inventory", "14":"loot", "loot":"loot", "15":"abilities", "abilities":"abilities", "16":"ai", "ai":"ai", "behavior":"ai", "17":"faction", "faction":"faction", "18":"scripts", "scripts":"scripts", "19":"spawns", "spawns":"spawns", "spawn":"spawns", "20":"diagnostics", "diagnostics":"diagnostics"}
+        if low in section_map:
+            sess.section=section_map[low]; sess.mode="section_menu"; return BuilderResult(True, self.render_session(sess))
+        if low in {"p", "preview"}: return self._session_preview(actor, sess)
+        if low in {"v", "validate"}:
             issues = MobileTemplate.from_legacy(sess.working_record).validate() if sess.collection == "entities" else []
             lines=[f"{x['severity']}: {x['field_path']} {x['message']}" for x in issues] or ["- no focused issues"]
             return BuilderResult(not any(x['severity']=="error" for x in issues), "Validation for %s:\n%s" % (sess.object_id, "\n".join(lines)), {"issues": issues})
-        if low == "testspawn": return self.testspawn(actor, sess.object_id)
-        if low == "save":
+        if low in {"t", "testspawn"}: return self.testspawn(actor, sess.object_id)
+        if low in {"s", "save"}:
             res = self.mutate(actor, sess.collection, sess.object_id, deepcopy(sess.working_record), "session save", expected_revision=sess.draft_revision)
             if res.ok:
                 sess.draft_revision = int((res.data or {}).get("_builder_revision") or sess.draft_revision)
                 sess.savepoint = deepcopy(res.data or sess.working_record); sess.dirty = False; sess.saved = True
             return res
-        if low == "undo":
+        if low in {"u", "undo"}:
             if not sess.undo_stack: return BuilderResult(False, "Nothing to undo.")
             sess.redo_stack.append(deepcopy(sess.working_record)); sess.working_record = sess.undo_stack.pop(); sess.dirty = sess.working_record != sess.savepoint; sess.saved = not sess.dirty
             return BuilderResult(True, "Session undo applied.\n" + self.render_session(sess))
-        if low == "redo":
+        if low in {"r", "redo"}:
             if not sess.redo_stack: return BuilderResult(False, "Nothing to redo.")
             sess.undo_stack.append(deepcopy(sess.working_record)); sess.working_record = sess.redo_stack.pop(); sess.dirty = sess.working_record != sess.savepoint; sess.saved = not sess.dirty
             return BuilderResult(True, "Session redo applied.\n" + self.render_session(sess))
+        if sess.section and sess.section != "natural_weapons":
+            parts = text.split()
+            cmd = parts[0].lower() if parts else ""
+            if cmd in {"list", "show"} or not cmd:
+                return BuilderResult(True, self.render_session(sess))
+            self._session_checkpoint(sess)
+            rec = sess.working_record
+            def set_path(field: str, value: Any) -> None:
+                field = field.replace("-", "_")
+                if sess.section == "combat":
+                    rec.setdefault("combat_profile", {})[field] = value
+                elif sess.section == "attributes" and field in {"strength","dexterity","constitution","intelligence","wisdom","charisma"}:
+                    rec.setdefault("attributes", {})[field] = value
+                elif sess.section == "resources" and field not in {"level"}:
+                    rec.setdefault("resources", {})[field] = value
+                else:
+                    rec[field] = value
+            if cmd in {"name", "type", "status", "area", "zone", "vnum"} and len(parts) > 1:
+                field = {"name":"name","type":"entity_type","status":"builder_status","area":"area_id","zone":"zone_id","vnum":"vnum"}[cmd]; val=" ".join(parts[1:]); set_path(field, int(val) if field=="vnum" and val.isdigit() else val)
+            elif cmd == "level" and len(parts) > 1 and parts[1].lstrip('-').isdigit():
+                rec["level"] = int(parts[1])
+            elif cmd == "attr" and len(parts) > 2 and parts[2].lstrip('-').isdigit():
+                rec.setdefault("attributes", {})[parts[1].lower()] = int(parts[2])
+            elif cmd == "resource" and len(parts) > 2 and parts[2].lstrip('-').isdigit():
+                rec.setdefault("resources", {})[parts[1].lower()] = int(parts[2])
+            elif cmd == "body" and len(parts) > 1:
+                drafts = self.workspace.load(sess.world_id); profile = parts[1].lower(); bp = (drafts.get("body_profiles") or {}).get(profile)
+                if not bp: return BuilderResult(False, "Unknown body profile. Choose: " + ", ".join(sorted(drafts.get("body_profiles", {}))))
+                weapons = [_canonical_weapon(deepcopy((drafts.get("natural_weapon_profiles") or {}).get(wid)), sess.object_id) for wid in bp.get("suggested_natural_weapon_ids", []) if isinstance((drafts.get("natural_weapon_profiles") or {}).get(wid), dict)]
+                rec["body_profile_id"] = profile; rec.setdefault("combat_profile", {})["body_profile"] = profile; rec.setdefault("combat_profile", {})["natural_weapons"] = weapons
+            elif cmd == "set" and len(parts) > 2:
+                val = " ".join(parts[2:]); set_path(parts[1], int(val) if val.lstrip('-').isdigit() else val)
+            elif cmd == "add" and len(parts) > 2:
+                field = parts[1].replace("-", "_"); val = " ".join(parts[2:]); cur = rec.setdefault(field, []);
+                cur.append(val) if isinstance(cur, list) else rec.__setitem__(field, [cur, val])
+            elif cmd == "remove" and len(parts) > 2:
+                field = parts[1].replace("-", "_"); val = " ".join(parts[2:]); cur = rec.get(field, []);
+                rec[field] = [x for x in cur if str(x) != val] if isinstance(cur, list) else cur
+            elif sess.section == "keywords" and cmd in {"add","remove","replace","clear","normalize"}:
+                kws = list(rec.get("keywords") or [])
+                if cmd == "add" and len(parts)>1: kws.append(parts[1].lower())
+                elif cmd == "remove" and len(parts)>1: kws=[k for k in kws if k != parts[1].lower()]
+                elif cmd == "replace" and len(parts)>2: kws=[(parts[2].lower() if k==parts[1].lower() else k) for k in kws]
+                elif cmd == "clear": kws=[]
+                elif cmd == "normalize": kws=sorted(dict.fromkeys(k.lower() for k in kws if k))
+                rec["keywords"] = kws
+            else:
+                sess.undo_stack.pop()
+                return BuilderResult(False, "Invalid input for this menu. Use set/add/remove, a listed field command, back, save, or help.")
+            sess.working_record = self._normalize_entity_updates(sess.object_id, rec) if sess.collection == "entities" else rec
+            sess.dirty=True; sess.saved=False
+            return BuilderResult(True, "Updated session scratch.\n" + self.render_session(sess), sess.working_record)
+
         if sess.section == "natural_weapons":
             parts = text.split()
             if not parts or parts[0].lower() in {"list", "l"}: return BuilderResult(True, self.render_session(sess))
@@ -1370,6 +1517,14 @@ class BuilderService:
         return BuilderResult(True, "Builder test environment status: " + (json.dumps(env, sort_keys=True) if env else "inactive"), {"environment": env})
 
     def testspawn(self, actor: Any, mob_id: str) -> BuilderResult:
+        if self.runtime is None:
+            sess = self.sessions.active.get(self.sessions.actor_key(actor))
+            rec = deepcopy(sess.working_record) if sess and sess.collection == "entities" and sess.object_id == mob_id else deepcopy(self._record(self.workspace.world_id(actor), "entities", mob_id) or {})
+            if not rec: return BuilderResult(False, f"No draft mob {mob_id}.")
+            tmpl = MobileTemplate.from_legacy(rec); issues = tmpl.validate(); errors=[i for i in issues if i.get("blocking") or i.get("severity") == "error"]
+            if errors: return BuilderResult(False, "Cannot testspawn invalid draft.", {"issues": issues})
+            mob = tmpl.to_canonical_dict(); mob.update({"entity_id": f"builder_test:{mob_id}", "ephemeral": True, "builder_test_instance": True})
+            return BuilderResult(True, f"UNSAVED BUILDER TEST INSTANCE\nSpawned simulated ephemeral draft mob {mob.get('name', mob_id)} ({mob['entity_id']}).", {"mob": mob, "room_id": "builder_test_room", "actor_id": mob["entity_id"]})
         rt = self._runtime_required()
         sess = self.sessions.active.get(self.sessions.actor_key(actor))
         rec = deepcopy(sess.working_record) if sess and sess.collection == "entities" and sess.object_id == mob_id else deepcopy(self._record(self.workspace.world_id(actor), "entities", mob_id) or {})
@@ -1392,14 +1547,30 @@ class BuilderService:
         result = rt.clear_builder_test_environment(actor)
         return BuilderResult(True, f"Cleared {result.get('actors', 0)} resident ephemeral Builder test actor(s), occupancy entries, combat encounters, AI tasks, timers, items, corpses, async messages, and private-room state.", result)
 
-    def menu(self, editor: str, title: str) -> str:
-        sections = {
-            "medit": ["Identity", "Keywords", "Descriptions", "Stats", "Resources", "Combat", "Natural Attacks", "Equipment", "Inventory", "Loot", "Flags", "AI", "Scripts", "Spawn Data", "Preview", "Validate"],
-            "redit": ["Title", "Description", "Exits", "Sector", "Flags", "Extra Descriptions", "Ambient Effects", "Spawn List", "Preview", "Validate", "Publish"],
-            "oedit": ["Identity", "Keywords", "Type", "Wear Flags", "Extra Flags", "Stats", "Affects", "Values", "Container Data", "Weapon Data", "Armor Data", "Scripts", "Preview", "Validate", "Publish"],
-            "aedit": ["Identity", "Zones", "Rooms", "Templates", "Spawns", "Preview", "Validate", "Publish"],
-            "zedit": ["Identity", "Area", "Rooms", "Resets", "Spawns", "Preview", "Validate", "Publish"],
-        }.get(editor, [])
-        header = {"medit": "Mobile Editor", "redit": "Room Editor", "oedit": "Object Editor", "aedit": "Area Editor", "zedit": "Zone Editor"}.get(editor, "Builder Editor")
+    def menu(self, editor: str, title: str, sess: BuilderEditSession | None = None) -> str:
+        if editor == "medit":
+            rec = (sess.working_record if sess else {}) or {}
+            issues = MobileTemplate.from_legacy(rec).validate() if rec else []
+            errors = sum(1 for i in issues if i.get("severity") == "error")
+            warnings = sum(1 for i in issues if i.get("severity") == "warning")
+            status = "clean" if not sess or not sess.dirty else "dirty"
+            lines = [
+                f"Mobile Editor\nMOBILE EDITOR: {title}", f"Mobile ID: {(sess.object_id if sess else '')}", f"Draft revision: {(sess.draft_revision if sess else rec.get('_builder_revision', 0))}",
+                f"World: {(sess.world_id if sess else rec.get('world_id',''))}", f"Area: {rec.get('area_id','')}", f"Zone: {rec.get('zone_id','')}", f"Lock owner: {(sess.builder_character_id if sess else 'none')}",
+                f"Validation status: {errors} error(s), {warnings} warning(s)", f"Dirty status: {status}", f"Builder status: {rec.get('builder_status','incomplete')}", "",
+                "1. Identity - " + str(rec.get('name') or ''), "2. Keywords and aliases - " + str(', '.join(rec.get('keywords') or rec.get('aliases') or [])),
+                "3. Descriptions - " + str(rec.get('room_description') or rec.get('description') or '')[:50], "4. Basic identity traits - " + str(rec.get('race') or rec.get('species') or rec.get('body_profile_id') or 'unset'),
+                "5. Level and attributes - level " + str(rec.get('level', 1)), "6. Resources - " + str(rec.get('resources') or {}),
+                "7. Combat statistics and profiles - " + str((rec.get('combat_profile') or {}).get('combat_behavior_profile_id','default')), "8. Body profile and Natural Weapons / Natural Attacks - " + str(rec.get('body_profile_id') or (rec.get('combat_profile') or {}).get('body_profile','unset')),
+                "9. Positions and posture - " + str(rec.get('default_position') or rec.get('spawn_position') or 'standing'), "10. Mobile flags - " + str(', '.join(rec.get('mobile_flags') or rec.get('flags') or [])),
+                "11. Affect/status flags - " + str(', '.join(rec.get('affect_flags') or [])), "12. Equipment loadout - " + str(len(rec.get('equipment_loadout') or rec.get('equipment') or {})),
+                "13. Starting inventory - " + str(len(rec.get('starting_inventory') or rec.get('inventory') or [])), "14. Loot and corpse behavior - " + str(rec.get('loot_table_id') or rec.get('corpse_profile_id') or 'unset'),
+                "15. Abilities and spell loadout - " + str(rec.get('ability_loadout_id') or (rec.get('combat_profile') or {}).get('ability_loadout_id') or 'unset'), "16. Behavior and AI - " + str(rec.get('behavior_profile_id') or rec.get('ai_actor_enabled') or 'unset'),
+                "17. Faction and relationships - " + str(rec.get('faction_id') or 'unset'), "18. Scripts and triggers - " + str(len(rec.get('script_ids') or rec.get('scripts') or [])),
+                "19. Spawn and reset references - use diagnostics/create spawn commands", "20. Diagnostics and references - validation, references, runtime preview", "",
+                "P. Preview", "V. Validate", "T. Testspawn", "H. History", "U. Undo", "R. Redo", "S. Save", "Q. Quit"]
+            return "\n".join(lines)
+        sections = {"redit": ["Title", "Description", "Exits", "Sector", "Flags", "Extra Descriptions", "Ambient Effects", "Spawn List", "Preview", "Validate", "Publish"], "oedit": ["Identity", "Keywords", "Type", "Wear Flags", "Extra Flags", "Stats", "Affects", "Values", "Container Data", "Weapon Data", "Armor Data", "Scripts", "Preview", "Validate", "Publish"], "aedit": ["Identity", "Zones", "Rooms", "Templates", "Spawns", "Preview", "Validate", "Publish"], "zedit": ["Identity", "Area", "Rooms", "Resets", "Spawns", "Preview", "Validate", "Publish"]}.get(editor, [])
+        header = {"redit": "Room Editor", "oedit": "Object Editor", "aedit": "Area Editor", "zedit": "Zone Editor"}.get(editor, "Builder Editor")
         body = "\n".join(f"{i} {section}" for i, section in enumerate(sections, 1))
         return f"--------------------------------------\n{header}\n{title}\n--------------------------------------\n\n{body}\n\nS Save Draft\nP Publish\nQ Quit"

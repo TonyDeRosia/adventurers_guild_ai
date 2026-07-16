@@ -3960,6 +3960,14 @@ Cancel:
         prefix = "spawn" if cmd.startswith("spawn") else cmd[0]
         coll=maps.get(prefix); target_type={"items":"item_template","entities":"entity_template","spawns":"spawn"}.get(coll, "builder")
         if coll:
+            if coll == "entities":
+                if cmd.endswith("create") and args:
+                    updates={"id": args[0], "name": args[0].replace("_", " ").title(), "entity_type": "npc", "builder_status": "incomplete", "world_id": world_id, "area_id": getattr(character, "current_area_id", ""), "zone_id": getattr(character, "current_zone_id", getattr(character, "zone_id", "")), "keywords": args[0].split("_"), "description": "An unfinished mobile prototype stands here.", "level": 1, "attributes": {}, "resources": {"health": 10}}
+                    return out(self.builder_service.create_or_update_mobile(character, args[0], updates, cmd))
+                if cmd.endswith("set") and len(args)>=3: return out(self.builder_service.create_or_update_mobile(character, args[0], {args[1]: self._builder_value(raw,3)}, cmd))
+                if cmd.endswith("desc") and len(args)>=2: return out(self.builder_service.create_or_update_mobile(character, args[0], {"long_description": self._builder_value(raw,2), "description": self._builder_value(raw,2)}, cmd))
+                if cmd.endswith("delete") and args: return out(self.builder_service.delete_mobile(character, args[0]))
+                if cmd.endswith("stat") and args: return CommandResult(narrative=f"Draft {target_type}: {drafts.get(coll,{}).get(args[0],{})}")
             if cmd.endswith("create") and args:
                 updates={"name": args[0]}
                 if coll=="spawns" and len(args)>1: updates["entity_template_id"]=args[1]; updates.setdefault("room_id", room_id)
