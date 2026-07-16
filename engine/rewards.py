@@ -281,14 +281,10 @@ class RewardService:
         with sqlite3.connect(self.db_path) as con:
             con.row_factory=sqlite3.Row; r=con.execute("SELECT * FROM reward_packets WHERE reward_packet_id=?",(reward_packet_id,)).fetchone()
             if not r: return None
-            keys = list(r.keys()) if hasattr(r, "keys") else [d[0] for d in con.execute("SELECT * FROM reward_packets WHERE reward_packet_id=?",(reward_packet_id,)).description]
-            pkt = {k: r[k] for k in keys} if hasattr(r, "keys") else dict(zip(keys, r))
-            pkt["metadata"]=_loads(pkt.pop("metadata_json"),{}); pkt["eligibility_result"]=pkt["metadata"].get("eligibility_result",{})
+            pkt=dict(r); pkt["metadata"]=_loads(pkt.pop("metadata_json"),{}); pkt["eligibility_result"]=pkt["metadata"].get("eligibility_result",{})
             entries=[]
             for er in con.execute("SELECT * FROM reward_entries WHERE reward_packet_id=? ORDER BY reward_entry_id",(reward_packet_id,)):
-                ekeys = list(er.keys()) if hasattr(er, "keys") else [d[0] for d in con.execute("SELECT * FROM reward_entries WHERE reward_packet_id=? ORDER BY reward_entry_id",(reward_packet_id,)).description]
-                d = {k: er[k] for k in ekeys} if hasattr(er, "keys") else dict(zip(ekeys, er))
-                d["resolved_value"]=_loads(d.pop("resolved_value_json"),{}); d["recipient_override"]=_loads(d.pop("recipient_override_json"),{}); d["destination_override"]=_loads(d.pop("destination_override_json"),{}); d["metadata"]=_loads(d.pop("metadata_json"),{}); entries.append(d)
+                d=dict(er); d["resolved_value"]=_loads(d.pop("resolved_value_json"),{}); d["recipient_override"]=_loads(d.pop("recipient_override_json"),{}); d["destination_override"]=_loads(d.pop("destination_override_json"),{}); d["metadata"]=_loads(d.pop("metadata_json"),{}); entries.append(d)
             pkt["resolved_entries"]=entries; return pkt
     def trace_reward_resolution(self, reward_packet_id): return self.get_reward_packet(reward_packet_id)
     def trace_loot_table(self, loot_table_id, seed=None, context=None):

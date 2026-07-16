@@ -326,28 +326,26 @@ class RuntimeLifecycleService:
             con.row_factory=sqlite3.Row; con.execute('BEGIN IMMEDIATE')
             inserted=con.execute("INSERT OR IGNORE INTO actor_lifecycle_transitions(transition_id,world_id,room_id,actor_id,character_id,transition_type,trigger_action_id,previous_state,new_state,created_at,updated_at,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(transition_id,world,room,defender.actor_id,defender.actor_id.split(':',1)[1] if defender.actor_id.startswith('character:') else '', 'death','' if not trigger_action_id else trigger_action_id,defender.lifecycle_state or 'alive','dead',now,now,json.dumps({'encounter_id':encounter_id,'killer_actor_id':attacker.actor_id}))).rowcount
             row=con.execute('SELECT * FROM actor_lifecycle_transitions WHERE transition_id=?',(transition_id,)).fetchone(); con.commit()
-        row_keys = list(row.keys()) if hasattr(row, "keys") else ["transition_id","world_id","room_id","actor_id","character_id","transition_type","trigger_action_id","previous_state","new_state","defeat_status","death_status","corpse_status","reward_status","respawn_status","combat_end_status","corpse_id","reward_claim_id","respawn_id","created_at","updated_at","metadata_json"]
-        row_map = {k: row[k] for k in row_keys} if hasattr(row, "keys") else dict(zip(row_keys, row))
-        already = not bool(inserted) and row_map.get('corpse_status')=='completed' and row_map.get('reward_status')=='completed' and row_map.get('respawn_status') in {'pending','completed'} and row_map.get('combat_end_status')=='completed'
-        events=[]; corpse_id=row_map.get('corpse_id') or ''; reward_id=row_map.get('reward_claim_id') or ''; respawn_id=row_map.get('respawn_id') or ''
-        corpse_status = row_map.get('corpse_status') or 'pending'; reward_status = row_map.get('reward_status') or 'pending'; loot_status = row_map.get('loot_status') or 'pending'; kill_credit_status = row_map.get('kill_credit_status') or 'pending'; quest_credit_status = row_map.get('quest_credit_status') or 'pending'; respawn_status = row_map.get('respawn_status') or 'pending'; combat_end_status = row_map.get('combat_end_status') or 'pending'
+        already = not bool(inserted) and row['corpse_status']=='completed' and row['reward_status']=='completed' and row['respawn_status'] in {'pending','completed'} and row['combat_end_status']=='completed'
+        events=[]; corpse_id=row['corpse_id'] or ''; reward_id=row['reward_claim_id'] or ''; respawn_id=row['respawn_id'] or ''
+        corpse_status = row['corpse_status'] or 'pending'; reward_status = row['reward_status'] or 'pending'; loot_status = (row['loot_status'] if 'loot_status' in row.keys() else 'pending') or 'pending'; kill_credit_status = (row['kill_credit_status'] if 'kill_credit_status' in row.keys() else 'pending') or 'pending'; quest_credit_status = (row['quest_credit_status'] if 'quest_credit_status' in row.keys() else 'pending') or 'pending'; respawn_status = row['respawn_status'] or 'pending'; combat_end_status = row['combat_end_status'] or 'pending'
         self.combat._defeat(encounter_id, defender.actor_id); events.append('combat_participant_defeated')
         death_status = 'completed'; defeat_status = 'completed'
         if defender.actor_id.startswith('entity:'):
             defender.lifecycle_state='dead'; defender.resources.health=0; self.combat.persist_actor(defender)
-            if row_map.get('corpse_status')!='completed':
+            if row['corpse_status']!='completed':
                 corpse_res = self.create_corpse(transition_id, defender, attacker.actor_id)
                 corpse_id = corpse_res.corpse_id; corpse_status = corpse_res.status; loot_status = 'completed' if corpse_res.status == 'completed' else corpse_res.status
                 with sqlite3.connect(self.db_path) as con:
                     con.execute("UPDATE actor_lifecycle_transitions SET corpse_status=?,loot_status=?,corpse_id=?,death_status='completed',defeat_status='completed',updated_at=? WHERE transition_id=?",(corpse_status,loot_status,corpse_id,now,transition_id))
                     con.execute("INSERT OR IGNORE INTO combat_death_transactions(death_id,encounter_id,actor_id,killer_actor_id,corpse_entity_id,world_id,room_id,created_world_time,created_at,metadata_json,lifecycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)",(transition_id,encounter_id,defender.actor_id,attacker.actor_id,corpse_id,world,room,self.combat.world_time(),now,json.dumps({'lifecycle_transition_id':transition_id}),str(defender.lifecycle_profile.get('lifecycle_id') or defender.actor_id)))
                 events += ['actor_died'] + list(corpse_res.events)
-            if row_map.get('reward_status') not in {'completed','skipped_by_policy'}:
+            if row['reward_status'] not in {'completed','skipped_by_policy'}:
                 reward_res = self.award_kill_rewards(transition_id, encounter_id, attacker, defender, trigger_action_id)
                 reward_id = reward_res.reward_claim_id; reward_status = reward_res.status; kill_credit_status = 'completed' if reward_res.kill_credit_awards else reward_res.status; quest_credit_status = 'unsupported'
                 with sqlite3.connect(self.db_path) as con: con.execute("UPDATE actor_lifecycle_transitions SET reward_status=?,kill_credit_status=?,quest_credit_status=?,reward_claim_id=?,updated_at=? WHERE transition_id=?",(reward_status,kill_credit_status,quest_credit_status,reward_id,now,transition_id))
                 events += list(reward_res.events)
-            if row_map.get('respawn_status') not in {'pending','completed'} or not row_map.get('respawn_id'):
+            if row['respawn_status'] not in {'pending','completed'} or not row['respawn_id']:
                 respawn_res = self.schedule_respawn(transition_id, defender)
                 respawn_id = respawn_res.respawn_id; respawn_status = respawn_res.status
                 with sqlite3.connect(self.db_path) as con: con.execute("UPDATE actor_lifecycle_transitions SET respawn_status=?,respawn_id=?,updated_at=? WHERE transition_id=?",(respawn_status,respawn_id,now,transition_id))
@@ -863,7 +861,7 @@ class CombatRuntimeService:
             return CombatRuntimeResult(False, ["There is nowhere to flee."])
         opponents = self._active_flee_opponents(eid, actor)
         calc = self.calculate_flee_chance(actor, opponents)
-        rng = self.flee_rng or (lambda: min(float(calc["chance"]), self.engine.roller.roll_percent(aid, calc.get("selected_opponent") or "escape", self.world_time(), "flee")))
+        rng = self.flee_rng or (lambda: self.engine.roller.roll_percent(aid, calc.get("selected_opponent") or "escape", self.world_time(), "flee"))
         roll = float(rng())
         success = roll <= float(calc["chance"])
         dest = self.runtime.canonical_room_id(exit_data["target_room_id"])
@@ -879,39 +877,13 @@ class CombatRuntimeService:
             self.last_flee_trace.update({"success": False, "reason": "movement_failed", "location_sync": False})
             return CombatRuntimeResult(False, [f"You try to flee {direction}, but cannot escape that way."])
         actor.identity.current_location = dest
-        self.reconcile_after_separation(eid, aid, reason="flee")
+        self.clear_actor_combat_state(aid, reason='flee_success', expected_encounter_id=eid, status='fled')
+        self.end_if_finished(eid)
         char_room = getattr(actor_source, "room_id", dest) if hasattr(actor_source, "id") else dest
         occ = self.runtime.resident_occupants_by_room
         self.last_flee_trace["location_sync"] = (self.runtime.canonical_room_id(char_room) == dest and actor.identity.current_location == dest and aid in occ.get(dest, {}) and aid not in occ.get(old_room, {}))
         self._publish("combat_participant_fled", {"encounter_id": eid, "actor_id": aid, "direction": direction, "world_time": self.world_time()})
         return CombatRuntimeResult(True, [f"You break away and flee {direction}!" if hasattr(actor_source, "id") else f"{actor.identity.name} flees {direction}."], eid)
-
-    def reconcile_after_separation(self, encounter_id: str, actor_id: str, reason: str = "separation") -> None:
-        """Remove invalid hostile pairings after flee/movement separation."""
-        enc = self.resident_encounters.get(encounter_id)
-        if not enc:
-            return
-        actor = self._load_actor(actor_id)
-        separated: set[str] = {actor_id}
-        for aid, part in list(enc.participants.items()):
-            target_id = part.target_actor_id
-            target = self._load_actor(target_id) if target_id else None
-            source = self._load_actor(aid)
-            if target_id == actor_id or aid == actor_id or (source and target and self.runtime.canonical_room_id(source.identity.current_location) != self.runtime.canonical_room_id(target.identity.current_location)):
-                part.target_actor_id = ""
-                part.queued_action = None
-                if aid == actor_id:
-                    part.participation_status = "fled" if reason == "flee" else "separated"
-                    part.fled = reason == "flee"
-                separated.add(aid)
-        enc.dirty = True
-        now = datetime.now(timezone.utc).isoformat()
-        with sqlite3.connect(self.db_path) as con:
-            con.execute("UPDATE combat_participants SET participation_status=CASE WHEN actor_id=? AND ?='flee' THEN 'fled' WHEN actor_id=? THEN 'separated' ELSE participation_status END,current_target_actor_id='',fled=CASE WHEN actor_id=? AND ?='flee' THEN 1 ELSE fled END WHERE encounter_id=? AND (actor_id=? OR current_target_actor_id=?)", (actor_id, reason, actor_id, actor_id, reason, encounter_id, actor_id, actor_id))
-            con.execute("UPDATE combat_action_queue SET status='cancelled',resolved_at=? WHERE encounter_id=? AND status='queued' AND (actor_id=? OR target_actor_id=?)", (now, encounter_id, actor_id, actor_id))
-        for aid in separated:
-            self._standing_after_combat(self._load_actor(aid), reason=f"{reason}_separation")
-        self.end_if_finished(encounter_id)
 
     def actor_assist(self, actor_source: Any, ally_source: Any | None = None) -> CombatRuntimeResult:
         actor = self._actor_from_source(actor_source); room_id = actor.identity.current_location
@@ -1087,9 +1059,6 @@ class CombatRuntimeService:
             else:
                 msgs.append(third_msg)
                 self._broadcast_room(eid, attacker.identity.current_location, third_msg, category='condition_changed')
-        if defender.resources.health<=0 and request.metadata.get("opening"):
-            defender.resources.health = 1
-            self.persist_actor(defender)
         if defender.resources.health<=0:
             life = self.lifecycle.process_defeat_or_death(encounter_id=eid, attacker=attacker, defender=defender, trigger_action_id=request.action_id)
             self.last_resolution['lifecycle_result'] = life.__dict__

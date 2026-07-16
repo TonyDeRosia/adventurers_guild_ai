@@ -8,11 +8,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
 
-from engine.mud_displays import semantic
 from smart_mud.world_registry import WORLDS_DIR, _records
-
-def builder_semantic(role: str, text: Any) -> str:
-    return semantic(str(role).replace(".", "_"), text)
 
 BUILDER_ROLES = {"builder", "admin", "owner"}
 VALID_WEAR_SLOTS = {"head","face","neck","shoulders","back","chest","body","torso","arms","wrists","hands","finger","wrist","finger_left","finger_right","waist","legs","feet","mainhand","main_hand","primary_weapon","offhand","off_hand","secondary_weapon","held","wield","shield","quiver","ammo","ranged","light","accessory_1","accessory_2"}
@@ -63,15 +59,6 @@ class BuilderResult:
     ok: bool
     message: str
     data: dict[str, Any] | None = None
-
-@dataclass
-class NormalizationRestoreResult:
-    ok: bool
-    snapshot_id: str
-    restored_files: list[str] = field(default_factory=list)
-    removed_files: list[str] = field(default_factory=list)
-    errors: list[str] = field(default_factory=list)
-    verification_issues: list[dict[str, Any]] = field(default_factory=list)
 
 class BuilderWorkspace:
     """Persists draft Builder edits under worlds/<world_id>/builder without touching live files."""
@@ -1562,45 +1549,17 @@ class BuilderService:
     def _table(self, headers: list[str], rows: list[list[str]]) -> str:
         if not rows:
             return "  (none)"
-        strip = lambda s: re.sub(r"</?[^>]+>", "", str(s))
-        widths = [len(strip(h)) for h in headers]
+        widths = [len(h) for h in headers]
         for row in rows:
-            for i, cell in enumerate(row): widths[i] = max(widths[i], len(strip(cell)))
-        def pad(cell: Any, width: int) -> str:
-            text = str(cell)
-            return text + " " * max(0, width - len(strip(text)))
-        head = "  ".join(pad(builder_semantic("builder.heading", h), widths[i]) for i, h in enumerate(headers))
-        sep = builder_semantic("builder.separator", "  ".join("-" * w for w in widths))
-        body = ["  ".join(pad(str(c), widths[i]) for i, c in enumerate(row)) for row in rows]
-        return "\n".join([head, sep] + body)
-
-    def _style_builder_cell(self, header: str, value: Any) -> str:
-        text = str(value)
-        h = header.lower()
-        upper = text.upper()
-        if "vnum" in h or "range" in h:
-            return builder_semantic("builder.vnum", text)
-        if h in {"id", "zone"} or h.endswith(" id"):
-            return builder_semantic("builder.id", text)
-        if upper in {"OK", "VALID"}:
-            return builder_semantic("builder.status.ok", text)
-        if upper in {"WARN", "WARNING", "INCOMPLETE", "UNASSIGNED", "MANUAL", "MANUAL_REVIEW"}:
-            return builder_semantic("builder.status.warn", text)
-        if upper in {"ERROR", "BLOCKED", "FAILED"} or "missing" in text.lower():
-            return builder_semantic("builder.status.error", text)
-        if upper == "DRAFT" or text.lower() == "draft":
-            return builder_semantic("builder.source.draft", text)
-        if text.lower() == "live":
-            return builder_semantic("builder.source.live", text)
-        if text.lower() in {"generation", "active"}:
-            return builder_semantic("builder.source.generation", text)
-        return builder_semantic("builder.row", text)
+            for i, cell in enumerate(row): widths[i] = max(widths[i], len(str(cell)))
+        fmt = "  ".join("{:<" + str(w) + "}" for w in widths)
+        return "\n".join([fmt.format(*headers), "  ".join("-" * w for w in widths)] + [fmt.format(*[str(c) for c in row]) for row in rows])
 
     def _builder_list_header(self, title: str, total: int, world_id: str, area_id: str, zone_id: str, room_id: str, page: int, pages: int) -> list[str]:
         rule = "-" * 56
         areas = self.workspace.load(world_id).get("areas", {})
         zones = self.workspace.load(world_id).get("zones", {})
-        return [builder_semantic("builder.separator", rule), builder_semantic("builder.title", f"{title} ({total} {'record' if total == 1 else 'records'})"), f"{builder_semantic('builder.context_label','World')}: {builder_semantic('builder.context_value', world_id)}", f"{builder_semantic('builder.context_label','Area ')}: {builder_semantic('builder.context_value', areas.get(area_id, {}).get('name') or area_id or 'none')}", f"{builder_semantic('builder.context_label','Zone ')}: {builder_semantic('builder.context_value', zones.get(zone_id, {}).get('name') or zone_id or 'none')}", f"{builder_semantic('builder.context_label','Room ')}: {builder_semantic('builder.context_value', room_id or 'none')}", f"{builder_semantic('builder.context_label','Page ')}: {builder_semantic('builder.context_value', f'{page} / {pages}')}", builder_semantic("builder.separator", rule)]
+        return [rule, f"{title} ({total} {'record' if total == 1 else 'records'})", f"World: {world_id}", f"Area : {areas.get(area_id, {}).get('name') or area_id or 'none'}", f"Zone : {zones.get(zone_id, {}).get('name') or zone_id or 'none'}", f"Room : {room_id or 'none'}", f"Page : {page} / {pages}", rule]
 
     def list_content(self, actor: Any, kind: str, args: list[str] | None = None) -> BuilderResult:
         args = list(args or [])
@@ -1687,7 +1646,6 @@ class BuilderService:
             vals=[str(row[i]) for row in table_rows]
             keep.append(h in {"VNUM","ID","Name","Title"} or any(v not in {"", "-", "none"} for v in vals))
         headers=[h for h,k in zip(headers,keep) if k]; table_rows=[[str(c) for c,k in zip(row,keep) if k] for row in table_rows]
-        table_rows = [[self._style_builder_cell(headers[i], c) for i, c in enumerate(row)] for row in table_rows]
         if kind == "mob": title = "Mob List - Mobiles in " + world_id.replace("_", " ").title()
         elif kind == "object": title = "Object List - Objects in " + world_id.replace("_", " ").title()
         lines = self._builder_list_header(title, total, world_id, cur_area if mode not in {"all","world"} else "", cur_zone if mode not in {"all","world"} else "", cur_room, page, pages)
@@ -1808,58 +1766,8 @@ class BuilderService:
         if txt.strip(): hints.append(f"weak name/tag hint: {txt[:80]}")
         return aid, zid, "MANUAL_REVIEW", evidence + hints, conflicts
 
-    def _add_reference(self, refs: list[dict[str, Any]], source_collection: str, source_id: str, source_field: str, target_collection: str, target_id: Any, reference_type: str, world_id: str) -> None:
-        if target_id in (None, "", [], {}):
-            return
-        refs.append({"source_collection": source_collection, "source_id": str(source_id), "source_field": source_field, "target_collection": target_collection, "target_id": str(target_id), "reference_type": reference_type, "world_id": world_id})
-
-    def _build_reference_index(self, actor: Any, records: dict[str, dict[str, dict[str, Any]]] | None = None) -> dict[str, Any]:
-        world_id = self.workspace.world_id(actor)
-        records = records or self._normalization_records(actor)[0]
-        refs: list[dict[str, Any]] = []
-        for zid, z in records.get("zones", {}).items():
-            self._add_reference(refs, "zones", zid, "area_id", "areas", z.get("area_id"), "zone_area", world_id)
-            for rid in z.get("room_ids") or []:
-                self._add_reference(refs, "zones", zid, "room_ids", "rooms", rid, "zone_room", world_id)
-        for rid, r in records.get("rooms", {}).items():
-            self._add_reference(refs, "rooms", rid, "area_id", "areas", r.get("area_id"), "room_area", world_id)
-            self._add_reference(refs, "rooms", rid, "zone_id", "zones", r.get("zone_id"), "room_zone", world_id)
-            exits = r.get("exits") or {}
-            if isinstance(exits, dict):
-                for direction, ex in exits.items():
-                    if isinstance(ex, dict):
-                        self._add_reference(refs, "rooms", rid, f"exits.{direction}.target_room_id", "rooms", ex.get("target_room_id") or ex.get("destination_room_id") or ex.get("room_id"), "room_exit", world_id)
-        for coll in ("entities", "items", "spawns", "resets"):
-            for oid, rec in records.get(coll, {}).items():
-                self._add_reference(refs, coll, oid, "area_id", "areas", rec.get("area_id"), f"{coll}_area", world_id)
-                self._add_reference(refs, coll, oid, "zone_id", "zones", rec.get("zone_id"), f"{coll}_zone", world_id)
-                for key, target_coll, rtype in (
-                    ("room_id", "rooms", f"{coll}_room"), ("default_room_id", "rooms", f"{coll}_default_room"),
-                    ("entity_template_id", "entities", f"{coll}_entity"), ("mobile_id", "entities", f"{coll}_entity"), ("mob_id", "entities", f"{coll}_entity"), ("entity_id", "entities", f"{coll}_entity"),
-                    ("item_template_id", "items", f"{coll}_item"), ("object_id", "items", f"{coll}_item"), ("item_id", "items", f"{coll}_item"), ("target_container_id", "items", f"{coll}_container"),
-                ):
-                    self._add_reference(refs, coll, oid, key, target_coll, rec.get(key), rtype, world_id)
-                for key, value in rec.items():
-                    if isinstance(value, str) and key.endswith("_id"):
-                        target = "rooms" if "room" in key else "entities" if any(x in key for x in ("keeper","trainer","giver","entity","mobile","mob")) else "items" if "item" in key or "object" in key else ""
-                        if target:
-                            self._add_reference(refs, coll, oid, key, target, value, f"{coll}_{key}", world_id)
-        for coll in ("item_placements", "trainer_definitions", "quest_definitions", "conversation_definitions"):
-            for oid, rec in self.resolve_collection_records(actor, coll).items():
-                for key, value in rec.items():
-                    if isinstance(value, str) and key.endswith("_id"):
-                        target = "rooms" if "room" in key else "entities" if any(x in key for x in ("keeper","trainer","giver","turn_in","entity","mobile","mob")) else "items" if "item" in key or "object" in key else ""
-                        if target:
-                            self._add_reference(refs, coll, oid, key, target, value, f"{coll}_{key}", world_id)
-        incoming: dict[str, list[dict[str, Any]]] = {}; outgoing: dict[str, list[dict[str, Any]]] = {}
-        for ref in refs:
-            incoming.setdefault(f"{ref['target_collection']}:{ref['target_id']}", []).append(ref)
-            outgoing.setdefault(f"{ref['source_collection']}:{ref['source_id']}", []).append(ref)
-        return {"references": refs, "incoming": incoming, "outgoing": outgoing}
-
     def normalization_plan(self, actor: Any) -> list[dict[str, Any]]:
         records, _drafts = self._normalization_records(actor)
-        ref_index = self._build_reference_index(actor, records)
         used_by_ns: dict[str, set[int]] = {}
         for k in ("rooms", "entities", "items", "spawns", "resets"):
             ns = self.vnum_ranges.namespace_for(k); used_by_ns.setdefault(ns, set())
@@ -1874,20 +1782,6 @@ class BuilderService:
                 try: old_v_int=int(old_v) if old_v not in (None, "") else None
                 except Exception: old_v_int=None
                 aid,zid,state,evidence,conflicts=self._infer_area_zone(kind, rec, records)
-                key = f"{kind}:{oid}"
-                incoming = ref_index.get("incoming", {}).get(key, [])
-                outgoing = ref_index.get("outgoing", {}).get(key, [])
-                if state == "MANUAL_REVIEW" and not any("room" in str(e).lower() for e in evidence):
-                    medium_zones = []
-                    for ref in incoming + outgoing:
-                        if ref.get("target_collection") == "rooms":
-                            ra, rz = self._room_owner(str(ref.get("target_id") or ""), records)
-                            if ra and rz:
-                                medium_zones.append((ra, rz, ref.get("reference_type")))
-                    uniq = {(a, z) for a, z, _ in medium_zones}
-                    if len(uniq) == 1 and len({t for _, _, t in medium_zones}) >= 2:
-                        aid, zid = next(iter(uniq)); state = "INFERRED"
-                        evidence.append("deterministic inference from two independent medium-strength room references")
                 valid_range, range_text = self.vnum_ranges.validate_range(kind)
                 if not valid_range:
                     state="BLOCKED"; conflicts.append(f"invalid configured range {range_text}")
@@ -1903,7 +1797,7 @@ class BuilderService:
                 if changes:
                     confidence = state if state in {"CONFIRMED","INFERRED","MANUAL_REVIEW","BLOCKED"} else "MANUAL_REVIEW"
                     blocking = confidence in {"MANUAL_REVIEW","BLOCKED"}
-                    plan.append({"kind":kind,"id":oid,"name":rec.get("name") or rec.get("title") or oid,"old_vnum":old_v_int,"new_vnum":new_v,"old_area":rec.get("area_id"),"new_area":aid,"old_zone":rec.get("zone_id"),"new_zone":zid,"changes":changes,"reason":"; ".join(evidence) or confidence,"confidence":confidence,"evidence":evidence,"conflicting_evidence":conflicts,"incoming_references":incoming,"outgoing_references":outgoing,"blocking":blocking,"namespace":ns,"ownership_category":"ZONE_OWNED" if zid else "MANUAL_REVIEW"})
+                    plan.append({"kind":kind,"id":oid,"name":rec.get("name") or rec.get("title") or oid,"old_vnum":old_v_int,"new_vnum":new_v,"old_area":rec.get("area_id"),"new_area":aid,"old_zone":rec.get("zone_id"),"new_zone":zid,"changes":changes,"reason":"; ".join(evidence) or confidence,"confidence":confidence,"evidence":evidence,"conflicting_evidence":conflicts,"incoming_references":{},"outgoing_references":{},"blocking":blocking,"namespace":ns})
         return plan
 
     def _plan_hash(self, plan: list[dict[str, Any]]) -> str:
@@ -1914,77 +1808,22 @@ class BuilderService:
     def _pending_key(self, actor: Any) -> str:
         return f"{getattr(actor,'account_id','')}:{getattr(actor,'id','')}:{getattr(actor,'session_id','')}:{self.workspace.world_id(actor)}"
 
-    def _normalization_snapshot_root(self, world_id: str) -> Path:
-        p = self.workspace.ensure(world_id) / "normalization_snapshots"
-        p.mkdir(parents=True, exist_ok=True)
-        return p
-
-    def _legacy_normalization_snapshot_roots(self, world_id: str) -> list[Path]:
-        legacy = self.workspace.ensure(world_id) / "builder" / "normalization_snapshots"
-        return [legacy] if legacy.exists() else []
-
     def _snapshot_root(self, world_id: str) -> Path:
-        return self._normalization_snapshot_root(world_id)
-
-    def _find_normalization_snapshot(self, world_id: str, snapshot_id: str) -> Path | None:
-        for root in [self._normalization_snapshot_root(world_id), *self._legacy_normalization_snapshot_roots(world_id)]:
-            cand = root / snapshot_id
-            if (cand / "manifest.json").exists():
-                return cand
-        return None
-
-    def _sha256_file(self, path: Path) -> str:
-        return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else ""
-
-    def _draft_file_hashes(self, world_id: str) -> dict[str, str]:
-        root = self.workspace.ensure(world_id)
-        return {fname: self._sha256_file(root / fname) for fname in DRAFT_FILES.values() if (root / fname).exists()}
+        p=self.workspace.ensure(world_id)/"builder"/"normalization_snapshots"; p.mkdir(parents=True, exist_ok=True); return p
 
     def _create_normalization_snapshot(self, actor: Any, plan: list[dict[str, Any]], command: str) -> str:
         world_id=self.workspace.world_id(actor); sid="normalize_"+datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
-        root=self._normalization_snapshot_root(world_id)/sid; root.mkdir(parents=True, exist_ok=False)
+        root=self._snapshot_root(world_id)/sid; root.mkdir(parents=True, exist_ok=False)
         drafts=self.workspace.load(world_id); files=[]
-        draft_root = self.workspace.ensure(world_id)
         for coll, fname in DRAFT_FILES.items():
-            src = draft_root / fname
-            existed = src.exists()
             if coll in drafts:
-                self.workspace._atomic_json_write(root/fname, drafts.get(coll, {}))
-            files.append({"relative_path": fname, "sha256": self._sha256_file(root/fname) if (root/fname).exists() else "", "existed": existed, "record_count": len(drafts.get(coll, {})) if isinstance(drafts.get(coll), dict) else 0})
+                self.workspace._atomic_json_write(root/fname, drafts.get(coll, {})); files.append(fname)
         verify=self._verify_issues(actor)
-        manifest={"snapshot_id":sid,"created_at":datetime.now(timezone.utc).isoformat(),"timestamp":datetime.now(timezone.utc).isoformat(),"world_id":world_id,"account_id":str(getattr(actor,'account_id','')),"character_id":str(getattr(actor,'id','')),"command":command,"plan_hash":self._plan_hash(plan),"plan_record_count":len(plan),"source_revisions":self._draft_file_hashes(world_id),"source_revision_information":{"draft_collections":sorted(drafts)},"captured_files":files,"files_captured":[f["relative_path"] for f in files],"record_counts":{k:len(v) for k,v in drafts.items() if isinstance(v,dict)},"verification_before":{"errors":sum(1 for i in verify if i['blocking']),"issues":verify},"before_verification_result":{"errors":sum(1 for i in verify if i['blocking']),"issues":verify},"schema_version":"15B.25","builder_version":"15B.25","builder_schema_version":"15B.25"}
+        manifest={"snapshot_id":sid,"timestamp":datetime.now(timezone.utc).isoformat(),"world_id":world_id,"account_id":str(getattr(actor,'account_id','')),"character_id":str(getattr(actor,'id','')),"command":command,"plan_hash":self._plan_hash(plan),"source_revision_information":{"draft_collections":sorted(drafts)},"files_captured":files,"record_counts":{k:len(v) for k,v in drafts.items() if isinstance(v,dict)},"before_verification_result":{"errors":sum(1 for i in verify if i['blocking']),"issues":verify},"builder_schema_version":"15B.24"}
         self.workspace._atomic_json_write(root/"manifest.json", manifest)
-        self.workspace._atomic_json_write(root/"reference_indexes.json", self._build_reference_index(actor))
-        self.workspace._atomic_json_write(root/"normalization_plan.json", plan)
+        self.workspace._atomic_json_write(root/"reference_indexes.json", {"plan_ids":[p['id'] for p in plan]})
         self.workspace._atomic_json_write(root/"verification_before.json", manifest["before_verification_result"])
         return sid
-
-    def _restore_normalization_snapshot_internal(self, world_id: str, snapshot_id: str, *, reason: str, actor: Any | None) -> NormalizationRestoreResult:
-        snap = self._find_normalization_snapshot(world_id, snapshot_id)
-        if not snap:
-            return NormalizationRestoreResult(False, snapshot_id, errors=[f"snapshot not found: {snapshot_id}"])
-        manifest = self.workspace._read(snap / "manifest.json", {}) or {}
-        root = self.workspace.ensure(world_id)
-        restored: list[str] = []; removed: list[str] = []; errors: list[str] = []
-        captured = manifest.get("captured_files") or [{"relative_path": f, "existed": True, "sha256": ""} for f in manifest.get("files_captured", [])]
-        for entry in captured:
-            rel = str(entry.get("relative_path") or "")
-            if not rel or rel not in set(DRAFT_FILES.values()):
-                continue
-            src = snap / rel; dst = root / rel
-            if entry.get("existed", True):
-                if not src.exists():
-                    errors.append(f"snapshot missing {rel}"); continue
-                shutil.copyfile(src, dst)
-                expected = str(entry.get("sha256") or self._sha256_file(src))
-                actual = self._sha256_file(dst)
-                if expected and actual != expected:
-                    errors.append(f"hash mismatch after restore {rel}: {actual} != {expected}")
-                restored.append(rel)
-            elif dst.exists():
-                dst.unlink(); removed.append(rel)
-        issues = self._verify_issues(actor) if actor is not None else []
-        return NormalizationRestoreResult(not errors, snapshot_id, restored, removed, errors, issues)
 
     def _verify_issues(self, actor: Any) -> list[dict[str, Any]]:
         records,_=self._normalization_records(actor); issues=[]; seen={}
@@ -2016,83 +1855,6 @@ class BuilderService:
                 if val and val not in records.get(coll,{}): issue("BROKEN_REFERENCE","spawns",sid,key,f"Referenced {coll} {val} does not exist")
         return issues
 
-    def _candidate_drafts_for_plan(self, actor: Any, plan: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-        world_id = self.workspace.world_id(actor)
-        records, drafts = self._normalization_records(actor)
-        candidate = deepcopy(drafts)
-        errors: list[dict[str, Any]] = []
-        for p in plan:
-            if p.get("blocking"):
-                errors.append({"code": "BLOCKING_PLAN_ROW", "collection": p.get("kind"), "id": p.get("id"), "field_path": "confidence", "message": f"{p.get('confidence')} records cannot be applied", "blocking": True})
-                continue
-            bucket = candidate.setdefault(p["kind"], {})
-            rec = deepcopy(bucket.get(p["id"]) or records[p["kind"]].get(p["id"]) or {"id": p["id"]})
-            if p.get("new_vnum") is not None: rec["vnum"] = p["new_vnum"]
-            if p.get("new_area"): rec["area_id"] = p["new_area"]
-            if p.get("new_zone"): rec["zone_id"] = p["new_zone"]
-            rec.setdefault("world_id", world_id); rec["_builder_normalized"] = self.workspace.stamp()
-            bucket[p["id"]] = rec
-        # Validate candidate by temporarily routing _normalization_records to candidate without writing.
-        original = self._normalization_records
-        try:
-            self._normalization_records = lambda _actor: ({k: candidate.get(k, {}) for k in ("areas","zones","rooms","entities","items","spawns","resets")}, candidate)  # type: ignore[method-assign]
-            errors.extend([i for i in self._verify_issues(actor) if i.get("blocking")])
-        finally:
-            self._normalization_records = original  # type: ignore[method-assign]
-        return candidate, errors
-
-    def _write_normalization_staging(self, world_id: str, transaction_id: str, candidate: dict[str, Any], affected: list[str]) -> tuple[Path, dict[str, str]]:
-        root = self.workspace.ensure(world_id) / ".normalization_staging" / transaction_id
-        if root.exists():
-            shutil.rmtree(root)
-        root.mkdir(parents=True, exist_ok=False)
-        hashes: dict[str, str] = {}
-        for coll in affected:
-            fname = DRAFT_FILES[coll]
-            payload = json.dumps(candidate.get(coll, {}), indent=2, sort_keys=True) + "\n"
-            path = root / fname
-            with open(path, "w", encoding="utf-8") as fh:
-                fh.write(payload); fh.flush()
-                try: os.fsync(fh.fileno())
-                except OSError: pass
-            reread = path.read_text(encoding="utf-8")
-            json.loads(reread)
-            h = hashlib.sha256(reread.encode()).hexdigest()
-            if h != hashlib.sha256(payload.encode()).hexdigest():
-                raise RuntimeError(f"staged hash mismatch for {fname}")
-            hashes[fname] = h
-        return root, hashes
-
-    def _transaction_path(self, world_id: str, transaction_id: str) -> Path:
-        return self.workspace.ensure(world_id) / "normalization_transactions" / transaction_id / "normalization_transaction.json"
-
-    def _write_transaction_journal(self, world_id: str, transaction_id: str, journal: dict[str, Any]) -> None:
-        self.workspace._atomic_json_write(self._transaction_path(world_id, transaction_id), journal)
-
-    def _commit_normalization_transaction(self, actor: Any, transaction_id: str, snapshot_id: str, candidate: dict[str, Any], staging: Path, staged_hashes: dict[str, str], affected: list[str]) -> tuple[bool, str]:
-        world_id = self.workspace.world_id(actor); root = self.workspace.ensure(world_id)
-        journal = {"transaction_id": transaction_id, "snapshot_id": snapshot_id, "affected_files": [DRAFT_FILES[c] for c in affected], "old_hashes": self._draft_file_hashes(world_id), "staged_hashes": staged_hashes, "files_already_replaced": [], "state": "PREPARED"}
-        self._write_transaction_journal(world_id, transaction_id, journal)
-        try:
-            journal["state"] = "COMMITTING"; self._write_transaction_journal(world_id, transaction_id, journal)
-            for coll in affected:
-                fname = DRAFT_FILES[coll]
-                os.replace(staging / fname, root / fname)
-                journal["files_already_replaced"].append(fname); self._write_transaction_journal(world_id, transaction_id, journal)
-            journal["state"] = "COMMITTED"; self._write_transaction_journal(world_id, transaction_id, journal)
-            for fname, expected in staged_hashes.items():
-                if self._sha256_file(root / fname) != expected:
-                    raise RuntimeError(f"post-commit hash mismatch for {fname}")
-            post = self._verify_issues(actor)
-            if any(i.get("blocking") for i in post):
-                raise RuntimeError("post-commit verification failed")
-            return True, ""
-        except Exception as exc:
-            journal["state"] = "ROLLING_BACK"; journal["failure"] = str(exc); self._write_transaction_journal(world_id, transaction_id, journal)
-            restored = self._restore_normalization_snapshot_internal(world_id, snapshot_id, reason="normalization_commit_failure", actor=actor)
-            journal["restore_result"] = restored.__dict__; journal["state"] = "ROLLED_BACK" if restored.ok else "FAILED"; self._write_transaction_journal(world_id, transaction_id, journal)
-            return False, f"{exc}; restore_ok={restored.ok}; errors={restored.errors}"
-
     def normalize_command(self, actor: Any, args: list[str] | None = None) -> BuilderResult:
         args=list(args or ["audit"]); action=args[0].lower(); world_id=self.workspace.world_id(actor)
         if action in {"confirm","confirm_normalize"} or (action=="confirm" and len(args)>1): action="confirm"
@@ -2121,55 +1883,29 @@ class BuilderService:
             for i in issues[:200]: lines.append(f"- {i['code']} | {i['collection']} | {i['id']} | {i['field_path']} | {i['message']} | Fix: {i['fix_hint']} | Blocking: {i['blocking']}")
             return BuilderResult(errors==0,"\n".join(lines),{"issues":issues})
         if action == "snapshots":
-            root=self._normalization_snapshot_root(world_id); snaps=sorted([p.name for p in root.iterdir() if p.is_dir()])
-            legacy=[]
-            for lr in self._legacy_normalization_snapshot_roots(world_id):
-                legacy += sorted([p.name for p in lr.iterdir() if p.is_dir()])
-            lines=["Normalization snapshots"] + ([f"- {s}" for s in snaps] if snaps else ["- none"])
-            if legacy:
-                lines += ["Legacy snapshot locations:"] + [f"- {s}" for s in legacy]
-            return BuilderResult(True,"\n".join(lines),{"snapshots":snaps,"legacy_snapshots":legacy})
+            root=self._snapshot_root(world_id); snaps=sorted([p.name for p in root.iterdir() if p.is_dir()])
+            return BuilderResult(True,"Normalization snapshots\n"+("\n".join(f"- {s}" for s in snaps) if snaps else "- none"),{"snapshots":snaps})
         if action == "snapshot":
-            sid=args[1] if len(args)>1 else ""; snap=self._find_normalization_snapshot(world_id, sid); man=(snap/"manifest.json") if snap else self._normalization_snapshot_root(world_id)/sid/"manifest.json"
+            sid=args[1] if len(args)>1 else ""; man=self._snapshot_root(world_id)/sid/"manifest.json"
             if not man.exists(): return BuilderResult(False,f"Normalization snapshot not found: {sid}")
             return BuilderResult(True,"Normalization snapshot\n"+json.dumps(self.workspace._read(man,{}),indent=2,sort_keys=True))
-        if action == "transactions":
-            root = self.workspace.ensure(world_id) / "normalization_transactions"
-            txs = sorted(p.name for p in root.iterdir() if p.is_dir()) if root.exists() else []
-            return BuilderResult(True, "Normalization transactions\n" + ("\n".join(f"- {t}" for t in txs) if txs else "- none"), {"transactions": txs})
-        if action == "transaction":
-            tid = args[1] if len(args) > 1 else ""
-            path = self._transaction_path(world_id, tid)
-            if not path.exists(): return BuilderResult(False, f"Normalization transaction not found: {tid}")
-            return BuilderResult(True, "Normalization transaction\n" + json.dumps(self.workspace._read(path, {}), indent=2, sort_keys=True))
-        if action == "recover":
-            root = self.workspace.ensure(world_id) / "normalization_transactions"; recovered=[]
-            for path in root.glob("*/normalization_transaction.json") if root.exists() else []:
-                journal = self.workspace._read(path, {}) or {}
-                if journal.get("state") in {"COMMITTING","ROLLING_BACK"} and journal.get("snapshot_id"):
-                    res = self._restore_normalization_snapshot_internal(world_id, str(journal["snapshot_id"]), reason="normalization_recover", actor=actor)
-                    journal["state"] = "ROLLED_BACK" if res.ok else "FAILED"; journal["restore_result"] = res.__dict__; self.workspace._atomic_json_write(path, journal); recovered.append(path.parent.name)
-                elif journal.get("state") == "PREPARED":
-                    journal["state"] = "ROLLED_BACK"; self.workspace._atomic_json_write(path, journal); recovered.append(path.parent.name)
-            return BuilderResult(True, "Normalization recovery complete\n" + ("\n".join(f"- {t}" for t in recovered) if recovered else "- no unfinished transactions"), {"recovered": recovered})
         if action == "rollback":
             if not self._can_admin(actor): return BuilderResult(False,"You do not have permission to apply Builder normalization.")
-            root=self._normalization_snapshot_root(world_id); sid=args[1] if len(args)>1 else ""
+            root=self._snapshot_root(world_id); sid=args[1] if len(args)>1 else ""
             if not sid:
                 dirs=sorted([p.name for p in root.iterdir() if p.is_dir()]); sid=dirs[-1] if dirs else ""
             if not sid: return BuilderResult(False,"No normalization rollback snapshot exists.")
             pend=getattr(self,"_pending_normalize",{})
             key=self._pending_key(actor); token=f"CONFIRM ROLLBACK {sid}"
             if not (pend.get(key,{}).get("type")=="rollback" and pend[key].get("snapshot_id")==sid):
-                if getattr(actor, "builder_zone_ids", None):
-                    pend[key]={"type":"rollback","snapshot_id":sid,"expires":time.time()+120}; self._pending_normalize=pend
-                    return self.normalize_command(actor, ["rollback", sid])
                 pend[key]={"type":"rollback","snapshot_id":sid,"expires":time.time()+120}; self._pending_normalize=pend
                 return BuilderResult(False,f"Rollback snapshot {sid} is ready.\nType:\n{token}\nto restore, or Q to cancel.")
-            restored = self._restore_normalization_snapshot_internal(world_id, sid, reason="interactive_rollback", actor=actor); pend.pop(key,None)
-            if not restored.ok:
-                return BuilderResult(False, f"Normalization rollback failed for snapshot {sid}: {'; '.join(restored.errors)}", {"restore": restored.__dict__})
-            return BuilderResult(True,f"Normalization rollback restored snapshot {sid}.", {"restore": restored.__dict__})
+            snap=root/sid; target=self.workspace.load(world_id)
+            for coll,fname in DRAFT_FILES.items():
+                fp=snap/fname
+                if fp.exists(): target[coll]=self.workspace._read(fp,{})
+            self.workspace.save_drafts(world_id,target); pend.pop(key,None)
+            return BuilderResult(True,f"Normalization rollback restored snapshot {sid}.")
         if action == "apply":
             if not self._can_admin(actor): return BuilderResult(False,"You do not have permission to apply Builder normalization.")
             if manual or blocked:
@@ -2178,8 +1914,6 @@ class BuilderService:
                 return BuilderResult(False,"\n".join(lines))
             sid="normalize_"+datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ"); h=self._plan_hash(plan); key=self._pending_key(actor); pend=getattr(self,"_pending_normalize",{})
             pend[key]={"type":"apply","count":len(plan),"hash":h,"expires":time.time()+120,"snapshot_id":sid}; self._pending_normalize=pend
-            if getattr(actor, "builder_zone_ids", None):
-                return self.normalize_command(actor, ["confirm", str(len(plan))])
             return BuilderResult(False,f"Normalization plan is ready.\n\nRecords to update: {len(plan)}\nConfirmed: {confirmed}\nInferred: {inferred}\nManual review: {manual}\nBlocked: {blocked}\n\nSnapshot to create:\n{sid}\n\nType:\n\nCONFIRM NORMALIZE {len(plan)}\n\nto apply, or Q to cancel.",{"plan_hash":h,"count":len(plan)})
         if action == "confirm":
             key=self._pending_key(actor); pend=getattr(self,"_pending_normalize",{}); pending=pend.get(key)
@@ -2188,27 +1922,23 @@ class BuilderService:
             if count != int(pending.get('count')): return BuilderResult(False,f"Confirmation count does not match pending plan ({pending.get('count')}).")
             if self._plan_hash(plan) != pending.get("hash"): return BuilderResult(False,"Normalization plan changed after confirmation was requested; rerun builder normalize apply.")
             if manual or blocked: return BuilderResult(False,f"Normalization cannot be applied because {manual} records require manual review and {blocked} records are blocked.\nRun `builder normalize plan verbose` to inspect unresolved records.")
-            candidate, candidate_errors = self._candidate_drafts_for_plan(actor, plan)
-            if candidate_errors:
-                pend.pop(key,None)
-                return BuilderResult(False, "Normalization candidate verification failed before any draft write:\n" + "\n".join(f"- {e.get('collection')} {e.get('id')} {e.get('field_path')}: {e.get('message')}" for e in candidate_errors[:50]), {"issues": candidate_errors})
             sid=self._create_normalization_snapshot(actor, plan, "builder normalize apply")
-            transaction_id="normtx_"+datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
-            affected=sorted({p["kind"] for p in plan if p.get("kind") in DRAFT_FILES})
-            try:
-                staging, staged_hashes = self._write_normalization_staging(world_id, transaction_id, candidate, affected)
-                ok, err = self._commit_normalization_transaction(actor, transaction_id, sid, candidate, staging, staged_hashes, affected)
-            except Exception as exc:
-                restored = self._restore_normalization_snapshot_internal(world_id, sid, reason="normalization_staging_failure", actor=actor)
-                pend.pop(key,None)
-                return BuilderResult(False, f"Normalization apply failed before commit: {exc}; restored snapshot {sid}: {restored.ok}", {"snapshot_id": sid, "restore": restored.__dict__})
+            target=deepcopy(drafts)
+            for p in plan:
+                bucket=target.setdefault(p['kind'],{}); rec=deepcopy(bucket.get(p['id']) or records[p['kind']].get(p['id']) or {'id':p['id']})
+                if p.get('new_vnum') is not None: rec['vnum']=p['new_vnum']
+                if p.get('new_area'): rec['area_id']=p['new_area']
+                if p.get('new_zone'): rec['zone_id']=p['new_zone']
+                rec.setdefault('world_id',world_id); rec['_builder_normalized']=self.workspace.stamp(); bucket[p['id']]=rec
+            self.workspace.save_drafts(world_id,target)
             pend.pop(key,None)
-            if not ok:
-                return BuilderResult(False, f"Normalization apply failed; exact snapshot restore attempted for {sid}. {err}", {"snapshot_id": sid, "transaction_id": transaction_id})
-            return BuilderResult(True,f"Normalization apply complete. Snapshot: {sid}. Transaction: {transaction_id}. Records changed: {len(plan)}",{"changed":len(plan),"snapshot_id":sid,"transaction_id":transaction_id})
+            post=self._verify_issues(actor)
+            if any(i['blocking'] for i in post):
+                self.normalize_command(actor,["rollback",sid]); return BuilderResult(False,f"Post-apply verification failed; restored snapshot {sid}.")
+            return BuilderResult(True,f"Normalization apply complete. Snapshot: {sid}. Records changed: {len(plan)}",{"changed":len(plan),"snapshot_id":sid})
         if action == "q":
             getattr(self,"_pending_normalize",{}).pop(self._pending_key(actor),None); return BuilderResult(True,"Normalization confirmation cancelled.")
-        return BuilderResult(False,"Usage: builder normalize <audit|plan|apply|verify|snapshots|snapshot|rollback|transactions|transaction|recover>")
+        return BuilderResult(False,"Usage: builder normalize <audit|plan|apply|verify|snapshots|snapshot|rollback>")
 
     def render_session(self, sess: BuilderEditSession) -> str:
         rec = sess.working_record or {}
