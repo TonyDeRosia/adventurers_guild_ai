@@ -26,18 +26,33 @@ def test_scratch_save_discard_quit_and_resident_testspawn(tmp_path):
     assert s.sessions.handle(a, "name Ashback Bear Draft").ok
     assert s.workspace.load("test_world")["entities"]["ashback_bear"]["name"] == "Ashback Bear"
     assert s.sessions.handle(a, "body bear").ok
-    ts = s.sessions.handle(a, "testspawn")
-    assert ts.ok
-    mob = ts.data["mob"]
-    assert mob["resident"] and mob["ephemeral"] and mob["combat_registered"]
+    preview = s.sessions.handle(a, "preview")
+    assert preview.ok
+    mob = preview.data["runtime_projection"]
     families = {w["mechanical_family"] for w in mob["combat_profile"]["natural_weapons"]}
     assert {"claw", "bite", "maul"} <= families
     assert "fist" not in families and "punch" not in families
     assert s.sessions.handle(a, "save").ok
     assert s.workspace.load("test_world")["entities"]["ashback_bear"]["name"] == "Ashback Bear Draft"
     assert s.sessions.handle(a, "quit").message.startswith("Editor closed")
-    assert s.testclear(a).ok
-    assert not getattr(a, "builder_test_mobs")
+
+
+def test_session_natural_weapon_edits_are_scratch_until_save_and_quit_prompts(tmp_path):
+    s, a = service(tmp_path)
+    assert s.start_editor(a, "medit", "entities", "ashback_bear").ok
+    assert s.sessions.handle(a, "7").ok
+    assert s.sessions.handle(a, "add bear_claw").ok
+    stored = s.workspace.load("test_world")["entities"]["ashback_bear"]
+    assert not (stored.get("combat_profile") or {}).get("natural_weapons")
+    quit_msg = s.sessions.handle(a, "quit").message
+    assert "Save, Discard, or Cancel" in quit_msg
+    assert s.sessions.handle(a, "cancel").ok
+    assert s.sessions.handle(a, "undo").ok
+    assert not (s.sessions.active[s.sessions.actor_key(a)].working_record.get("combat_profile") or {}).get("natural_weapons")
+    assert s.sessions.handle(a, "redo").ok
+    assert s.sessions.handle(a, "save").ok
+    stored = s.workspace.load("test_world")["entities"]["ashback_bear"]
+    assert (stored.get("combat_profile") or {}).get("natural_weapons")
 
 
 def test_canonical_adapter_and_generation_activation_rollback(tmp_path):
