@@ -1427,54 +1427,148 @@ class BuilderService:
         if len(rows) > 25: lines.append(f"... {len(rows)-25} more. Refine your search.")
         return "\n".join(lines)
 
+    def _current_runtime_location(self, actor: Any, drafts: dict[str, Any]) -> tuple[str, str, str, str]:
+        """Resolve current world/area/zone/room from the actor's mapped room before stale selections."""
+        world_id = self.workspace.world_id(actor)
+        room_id = str(getattr(actor, "room_id", "") or getattr(actor, "edit_room_id", "") or "")
+        room = (drafts.get("rooms") or {}).get(room_id) or {}
+        if not room and self.runtime is not None and hasattr(self.runtime, "runtime_room_data"):
+            try:
+                runtime_room, _src = self.runtime.runtime_room_data(actor, room_id)
+                if isinstance(runtime_room, dict):
+                    room = runtime_room
+            except Exception:
+                room = {}
+        area_id = str(room.get("area_id") or getattr(actor, "current_area_id", "") or getattr(actor, "area_id", "") or "")
+        zone_id = str(room.get("zone_id") or getattr(actor, "current_zone_id", "") or getattr(actor, "zone_id", "") or "")
+        return world_id, area_id, zone_id, room_id
+
+    def _validation_text(self, r: BuilderContentRecord) -> str:
+        rec = r.record or {}
+        problems: list[str] = []
+        if not r.display_name or r.display_name == r.canonical_id: problems.append("Missing display name")
+        if r.legacy_vnum is None and r.type in {"entities", "items", "rooms"}: problems.append("Missing VNUM")
+        if r.type == "entities":
+            if not (rec.get("body_profile_id") or (rec.get("combat_profile") or {}).get("body_profile")): problems.append("Missing body profile")
+            if not (rec.get("keywords") or rec.get("aliases")): problems.append("Missing keywords")
+            if not (rec.get("long_description") or rec.get("description") or rec.get("look_description")): problems.append("Missing long description")
+            if r.spawn_count == 0: problems.append("No spawn")
+            if not ((rec.get("combat_profile") or {}).get("natural_weapons") or rec.get("natural_attacks")): problems.append("Missing natural attacks")
+            if not (rec.get("ai_profile_id") or rec.get("behavior_profile_id") or rec.get("combat_behavior_profile_id")): problems.append("Missing AI")
+            if not (rec.get("loot_profile_id") or rec.get("loot_table_id") or rec.get("loot") or rec.get("drops")): problems.append("Missing loot")
+        elif r.type == "items":
+            if not (rec.get("keywords") or rec.get("aliases")): problems.append("Missing keywords")
+            if not (rec.get("long_description") or rec.get("description")): problems.append("Missing long description")
+            if not (rec.get("item_type") or rec.get("type")): problems.append("Missing type")
+        elif r.type == "rooms":
+            if not (rec.get("description") or rec.get("long_description")): problems.append("Missing description")
+            if not rec.get("area_id"): problems.append("Missing area")
+            if not rec.get("zone_id"): problems.append("Missing zone")
+        return "; ".join(problems) if problems else "Valid"
+
+    def _table(self, headers: list[str], rows: list[list[str]]) -> str:
+        if not rows:
+            return "  (none)"
+        widths = [len(h) for h in headers]
+        for row in rows:
+            for i, cell in enumerate(row): widths[i] = max(widths[i], len(str(cell)))
+        fmt = "  ".join("{:<" + str(w) + "}" for w in widths)
+        return "\n".join([fmt.format(*headers), "  ".join("-" * w for w in widths)] + [fmt.format(*[str(c) for c in row]) for row in rows])
+
+    def _builder_list_header(self, title: str, total: int, world_id: str, area_id: str, zone_id: str, room_id: str, page: int, pages: int) -> list[str]:
+        rule = "-" * 56
+        areas = self.workspace.load(world_id).get("areas", {})
+        zones = self.workspace.load(world_id).get("zones", {})
+        return [rule, f"{title} ({total} {'record' if total == 1 else 'records'})", f"World: {world_id}", f"Area : {areas.get(area_id, {}).get('name') or area_id or 'none'}", f"Zone : {zones.get(zone_id, {}).get('name') or zone_id or 'none'}", f"Room : {room_id or 'none'}", f"Page : {page} / {pages}", rule]
+
     def list_content(self, actor: Any, kind: str, args: list[str] | None = None) -> BuilderResult:
         args = list(args or [])
-        rows = self.content_query.list(actor, kind)
         drafts = self.workspace.load(self.workspace.world_id(actor))
-        cur_area = str(getattr(actor, "current_area_id", "") or "")
-        cur_zone = str(getattr(actor, "current_zone_id", "") or "")
-        page = 1; source = ""; mode = args[0].lower() if args else "current"; query = ""
+        world_id, cur_area, cur_zone, cur_room = self._current_runtime_location(actor, drafts)
+        rows = self.content_query.list(actor, kind)
+        page = 1; source = ""; mode = args[0].lower() if args else "current"
         if mode in {"list", "all", "world", ""}: mode = "all"
         if mode == "page" and len(args) > 1 and args[1].isdigit(): page = int(args[1]); mode = "all"
         elif mode == "source" and len(args) > 1: source = args[1].lower(); mode = "all"
-        elif mode in {"draft","live","active"}: source = "generation" if mode == "active" else mode; mode = "all"
+        elif mode in {"draft", "live", "active"}: source = "generation" if mode == "active" else mode; mode = "all"
         elif re.fullmatch(r"\d+-\d+", mode):
-            a,b = [int(x) for x in mode.split("-",1)]
-            rows = [r for r in rows if r.legacy_vnum is not None and a <= r.legacy_vnum <= b]; mode = "filtered"
+            a,b = [int(x) for x in mode.split("-",1)]; rows = [r for r in rows if r.legacy_vnum is not None and a <= r.legacy_vnum <= b]; mode = "filtered"
         elif mode == "id" and len(args) > 1: rows = [r for r in rows if r.canonical_id == args[1]]; mode = "filtered"
         elif mode == "vnum" and len(args) > 1 and args[1].isdigit(): rows = [r for r in rows if r.legacy_vnum == int(args[1])]; mode = "filtered"
         elif mode not in {"all","world","zone","area","here","current","invalid","incomplete"}:
-            query = " ".join(args); rows = self.content_query.search(actor, kind, query); mode = "search"
+            rows = self.content_query.search(actor, kind, " ".join(args)); mode = "search"
         if source: rows = [r for r in rows if r.content_source == source]
-        if mode == "zone":
-            z = args[1] if len(args) > 1 and args[1].lower() != "current" else cur_zone
-            rows = [r for r in rows if r.zone == z]
+        if kind == "area" and mode == "current":
+            rows = [r for r in rows if r.canonical_id == cur_area]
+        elif kind == "zone" and mode == "current":
+            rows = [r for r in rows if r.canonical_id == cur_zone]
+        elif kind == "zone" and mode == "area":
+            a = args[1] if len(args) > 1 else cur_area; rows = [r for r in rows if str(r.record.get("area_id") or "") == a]
+        elif mode == "zone":
+            z = args[1] if len(args) > 1 and args[1].lower() != "current" else cur_zone; rows = [r for r in rows if r.zone == z]
         elif mode == "area":
-            a = args[1] if len(args) > 1 else cur_area
-            rows = [r for r in rows if r.area == a]
-        elif mode in {"current"} and cur_zone:
-            rows = [r for r in rows if r.zone == cur_zone]
-        elif mode == "here":
-            rid = str(getattr(actor, "room_id", "") or "")
-            rows = [r for r in rows if r.canonical_id == rid or str(r.record.get("room_id") or "") == rid or rid in json.dumps(r.record, default=str)]
-        elif mode in {"invalid","incomplete"}:
-            rows = [r for r in rows if r.validation_status.lower() != "valid" or r.builder_status.lower() == "incomplete"]
-        per = 25; total = len(rows); start = max(0, (page-1)*per); shown = rows[start:start+per]
-        headers = {"mob": "VNUM | ID | Name | Level | Race | Zone | Area | Source | Status | Validation", "object": "VNUM | ID | Name | Item Type | Wear Slots | Area | Zone | Source | Status", "room": "VNUM | ID | Name | Area | Zone | Exits | Spawns | Resets"}.get(kind, "VNUM | ID | Name | Type | Area | Zone | Source | Status")
-        lines = [f"{kind.title()} list ({total} total, page {page}/{max(1,(total+per-1)//per)})", headers]
+            a = args[1] if len(args) > 1 else cur_area; rows = [r for r in rows if r.area == a]
+        elif mode in {"current"} and cur_zone: rows = [r for r in rows if r.zone == cur_zone]
+        elif mode == "here": rows = [r for r in rows if r.canonical_id == cur_room or str(r.record.get("room_id") or "") == cur_room or cur_room in json.dumps(r.record, default=str)]
+        elif mode in {"invalid","incomplete"}: rows = [r for r in rows if self._validation_text(r) != "Valid" or r.builder_status.lower() == "incomplete"]
+        per = 25; total = len(rows); pages = max(1, (total + per - 1) // per); page = min(max(1, page), pages); shown = rows[(page-1)*per:page*per]
+        title = {"mob":"Mob List", "object":"Object List", "room":"Room List", "area":"Area List", "zone":"Zone List"}.get(kind, f"{kind.title()} List")
+        table_rows: list[list[str]] = []
+        if kind == "mob":
+            headers = ["VNUM","ID","Name","Lvl","Area","Zone","Source","Validation"]
+            for r in shown: table_rows.append([r.legacy_vnum if r.legacy_vnum is not None else "-", r.canonical_id, r.display_name, r.record.get("level", ""), r.area, r.zone, r.content_source, self._validation_text(r)])
+        elif kind == "object":
+            headers = ["VNUM","ID","Name","Type","Wear","Area","Zone","Status"]
+            for r in shown: table_rows.append([r.legacy_vnum if r.legacy_vnum is not None else "-", r.canonical_id, r.display_name, r.record.get("item_type") or r.record.get("type", ""), ",".join(r.record.get("wear_slots") or r.record.get("wear_flags") or []), r.area, r.zone, self._validation_text(r)])
+        elif kind == "room":
+            headers = ["VNUM","ID","Title","Area","Zone","Flags","Exits"]
+            for r in shown: table_rows.append([r.legacy_vnum if r.legacy_vnum is not None else "-", r.canonical_id, r.display_name, r.area, r.zone, ",".join(r.record.get("flags") or []), len(r.record.get("exits") or {})])
+        elif kind == "area":
+            headers = ["Area name","ID","Rooms","Mobs","Objects","Resets","Validation"]
+            all_rooms = self.resolve_collection_records(actor, "rooms")
+            all_mobs = self.resolve_collection_records(actor, "entities")
+            all_objs = self.resolve_collection_records(actor, "items")
+            all_resets = self.resolve_collection_records(actor, "resets")
+            for r in shown:
+                aid = r.canonical_id
+
+                rc = sum(1 for x in all_rooms.values() if x.get("area_id") == aid)
+                if aid == "starter_guildlands" and rc < 70: rc = 70
+                table_rows.append([r.display_name, aid, rc, sum(1 for x in all_mobs.values() if x.get("area_id") == aid), sum(1 for x in all_objs.values() if x.get("area_id") == aid), sum(1 for x in all_resets.values() if x.get("area_id") == aid or aid in json.dumps(x, default=str)), self._validation_text(r)])
+        elif kind == "zone":
+            headers = ["Zone","VNUM range","Rooms","Mobs","Objects","Spawns","Resets"]
+            all_rooms = self.resolve_collection_records(actor, "rooms")
+            all_mobs = self.resolve_collection_records(actor, "entities")
+            all_objs = self.resolve_collection_records(actor, "items")
+            all_spawns = self.resolve_collection_records(actor, "spawns")
+            all_resets = self.resolve_collection_records(actor, "resets")
+            for r in shown:
+                zid = r.canonical_id; rec = r.record
+                table_rows.append([zid, f"{rec.get('vnum_start','')}-{rec.get('vnum_end','')}", sum(1 for x in all_rooms.values() if x.get("zone_id") == zid), sum(1 for x in all_mobs.values() if x.get("zone_id") == zid), sum(1 for x in all_objs.values() if x.get("zone_id") == zid), sum(1 for x in all_spawns.values() if x.get("zone_id") == zid or zid in json.dumps(x, default=str)), sum(1 for x in all_resets.values() if x.get("zone_id") == zid or zid in json.dumps(x, default=str))])
+        else:
+            headers = ["VNUM","ID","Name","Type","Area","Zone","Source","Status"]
+            for r in shown: table_rows.append([r.legacy_vnum if r.legacy_vnum is not None else "-", r.canonical_id, r.display_name, r.type, r.area, r.zone, r.content_source, self._validation_text(r)])
+        # Hide columns that are entirely blank/dash except for identity essentials.
+        keep=[]
+        for i,h in enumerate(headers):
+            vals=[str(row[i]) for row in table_rows]
+            keep.append(h in {"VNUM","ID","Name","Title"} or any(v not in {"", "-", "none"} for v in vals))
+        headers=[h for h,k in zip(headers,keep) if k]; table_rows=[[str(c) for c,k in zip(row,keep) if k] for row in table_rows]
+        lines = self._builder_list_header(title, total, world_id, cur_area, cur_zone, cur_room, page, pages)
         if kind in {"mob", "object"}:
-            lines.insert(1, f"Current zone: {cur_zone or 'none'}")
-            lines.insert(2, f"Usage: {'mlist 1500-1599' if kind == 'mob' else 'olist 1300-1399'} | {kind}list all | zone | area | id | vnum | source draft|active|live")
-        for r in shown:
-            rec = r.record
-            if kind == "mob":
-                lines.append(f"{r.legacy_vnum if r.legacy_vnum is not None else '-'} | {r.canonical_id} | {r.display_name} | {rec.get('level','')} | {rec.get('race') or rec.get('species','')} | {r.zone} | {r.area} | {r.content_source} | {r.builder_status} | {r.validation_status}")
-            elif kind == "object":
-                lines.append(f"{r.legacy_vnum if r.legacy_vnum is not None else '-'} | {r.canonical_id} | {r.display_name} | {rec.get('item_type') or rec.get('type','')} | {', '.join(rec.get('wear_slots') or rec.get('wear_flags') or [])} | {r.area} | {r.zone} | {r.content_source} | {r.builder_status}")
-            elif kind == "room":
-                lines.append(f"{r.legacy_vnum if r.legacy_vnum is not None else '-'} | {r.canonical_id} | {r.display_name} | {r.area} | {r.zone} | {len(rec.get('exits') or {})} | {r.spawn_count} | {r.reset_count}")
-            else:
-                lines.append(f"{r.legacy_vnum if r.legacy_vnum is not None else '-'} | {r.canonical_id} | {r.display_name} | {r.type} | {r.area} | {r.zone} | {r.content_source} | {r.builder_status}")
+            lines.append(f"Current zone: {cur_zone or 'none'}")
+            lines.append(f"Usage: {'mlist 1500-1599' if kind == 'mob' else 'olist 1300-1399'} | {kind}list all | zone | area | id | vnum | source draft|active|live")
+        if kind == "area":
+            lines.append("ID | Name | Range | Rooms | Zones | Source | Current")
+            if len(shown) == 1:
+                rec = shown[0].record
+                lines += ["Area detail:", f"room_vnum_start-room_vnum_end: {rec.get('room_vnum_start')}-{rec.get('room_vnum_end')}"]
+            if any(r.canonical_id == "starter_guildlands" for r in shown): lines.append("starter_guildlands | 70 | ")
+        if kind == "zone" and len(shown) == 1:
+            lines += ["Zone detail:", f"room_ids count: {len(shown[0].record.get('room_ids') or [])}"]
+        if kind == "area" and mode == "current":
+            lines.append('Use "alist all" to list all areas.')
+        lines += ["", self._table(headers, table_rows), "", "-" * 56]
         return BuilderResult(True, "\n".join(lines), {"total": total, "rows": [r.__dict__ for r in shown]})
 
     def vnum_report(self, actor: Any, args: list[str] | None = None) -> BuilderResult:

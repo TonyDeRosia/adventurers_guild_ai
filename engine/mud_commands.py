@@ -3331,8 +3331,14 @@ class MudCommandEngine:
         if runtime and hasattr(runtime, "_builder_nav_command"):
             res = runtime._builder_nav_command(character, cmd, args, raw)
             if res is not None: return res
-        if cmd in {"areas", "alist"}: return self._cmd_list_areas(character, args, raw)
-        if cmd in {"zones", "zlist"}: return self._cmd_list_zones(character, args, raw)
+        if cmd in {"areas", "alist"}:
+            self.builder_service.workspace = self.builder
+            res = self.builder_service.list_content(character, "area", args)
+            return CommandResult(res.message, ok=res.ok)
+        if cmd in {"zones", "zlist"}:
+            self.builder_service.workspace = self.builder
+            res = self.builder_service.list_content(character, "zone", args)
+            return CommandResult(res.message, ok=res.ok)
         if cmd in {"rooms","rlist"}:
             drafts=self.builder.load(self.builder.world_id(character)); allrooms=drafts.get("rooms",{}); zones=drafts.get("zones",{}); areas=drafts.get("areas",{}); cur_area,cur_zone=self._current_area_zone(character,drafts)
             f,val,err=self._parse_list_filter(args); source_filter=""
@@ -3557,6 +3563,7 @@ class MudCommandEngine:
     def _cmd_builder_discovery(self, character: Any, args: list[str], raw: str) -> CommandResult:
         cmd = raw.strip().split()[0].lower() if raw.strip() else ""
         svc = self.builder_service
+        svc.workspace = self.builder
         if cmd == "vnum":
             res = svc.vnum_report(character, args)
         elif cmd == "splist":
@@ -3871,6 +3878,7 @@ class MudCommandEngine:
                 return CommandResult("Builder target set.\n" + self._builder_room_status(character, args[1], drafts))
             return CommandResult('Usage: btarget [room <room_id>|clear]', ok=False)
         if cmd in {"medit", "oedit", "aedit", "zedit"}:
+            self.builder_service.workspace = self.builder
             res = self.builder_service.discover_editor_target(character, cmd, args)
             return CommandResult(res.message, ok=res.ok)
         if cmd in {"mclone", "oclone", "rclone"}:
