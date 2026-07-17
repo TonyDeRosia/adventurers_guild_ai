@@ -1510,6 +1510,14 @@ class BuilderService:
                 room = {}
         area_id = str(room.get("area_id") or getattr(actor, "current_area_id", "") or getattr(actor, "area_id", "") or "")
         zone_id = str(room.get("zone_id") or getattr(actor, "current_zone_id", "") or getattr(actor, "zone_id", "") or "")
+        if not zone_id:
+            for zid, zone in (drafts.get("zones") or {}).items():
+                if room_id in (zone.get("room_ids") or []):
+                    zone_id = str(zid); break
+        if not zone_id and self.runtime is not None and getattr(self.runtime, "active_world", None) is not None:
+            for zone in getattr(self.runtime.active_world, "zones", []) or []:
+                if room_id in (zone.get("room_ids") or []):
+                    zone_id = str(zone.get("id") or ""); break
         return world_id, area_id, zone_id, room_id
 
     def _validation_text(self, r: BuilderContentRecord) -> str:
@@ -1574,9 +1582,12 @@ class BuilderService:
 
     def _builder_list_header(self, title: str, total: int, world_id: str, area_id: str, zone_id: str, room_id: str, page: int, pages: int) -> list[str]:
         rule = "-" * 56
-        areas = self.workspace.load(world_id).get("areas", {})
-        zones = self.workspace.load(world_id).get("zones", {})
-        return [rule, f"{title} ({total} {'record' if total == 1 else 'records'})", f"World: {world_id}", f"Area : {areas.get(area_id, {}).get('name') or area_id or 'none'}", f"Zone : {zones.get(zone_id, {}).get('name') or zone_id or 'none'}", f"Room : {room_id or 'none'}", f"Page : {page} / {pages}", rule]
+        areas = self.resolve_collection_records(None, "areas")
+        zones = self.resolve_collection_records(None, "zones")
+        rooms = self.resolve_collection_records(None, "rooms")
+        room = rooms.get(room_id, {})
+        room_label = ((f"[{int(room.get('vnum')):04d}] " if room.get('vnum') is not None else "") + str(room.get('name') or room.get('title') or room_id or 'unassigned'))
+        return [rule, f"{title} ({total} {'record' if total == 1 else 'records'})", f"World: {world_id}", f"Area : {areas.get(area_id, {}).get('name') or area_id or 'unassigned'}", f"Zone : {zones.get(zone_id, {}).get('name') or zone_id or 'unassigned'}", f"Room : {room_label}", f"Page : {page} / {pages}", rule]
 
     def list_content(self, actor: Any, kind: str, args: list[str] | None = None) -> BuilderResult:
         args = list(args or [])

@@ -1,4 +1,6 @@
 from types import SimpleNamespace
+from pathlib import Path
+import tempfile
 
 from engine.mud_commands import MudCommandEngine
 
@@ -57,3 +59,17 @@ def test_phase15b22_editor_picker_and_open_by_vnum_id_search(isolated_builder_wo
     assert "MEDIT choices" in picker and "Choose one; do not guess" in picker
     assert e.handle_command(a, "medit dire_forest_wolf").ok
     assert "Mobile Editor" in e.handle_command(a, "medit 1501").narrative
+
+def test_phase15b31_live_room_area_zone_resolution_from_zone_room_membership():
+    from engine.mud_runtime import MudRuntime
+    from smart_mud.builder import BuilderService, BuilderWorkspace
+    rt = MudRuntime(Path.cwd(), Path(tempfile.mkdtemp(prefix="phase15b31_builder_")))
+    rt.load_world('shattered_realms')
+    svc = BuilderService(BuilderWorkspace())
+    svc.runtime = rt
+    a = actor(); a.room_id = 'fallen_oak'; a.edit_room_id = 'fallen_oak'
+    text = svc.list_content(a, 'mob', []).message
+    assert 'Area : Emberwood Forest' in text
+    assert 'Zone : Emberwood Forest' in text
+    assert 'Room : [1218] Fallen Oak' in text
+    assert text.count('Index VNum') == 1

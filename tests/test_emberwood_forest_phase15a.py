@@ -86,3 +86,64 @@ def test_emberwood_reset_profile_and_no_static_population():
     assert 'old_hunters_blind' not in rooms
     bear=[c for c in prof['commands'] if c['entity_template_id']=='ashback_bear']
     assert len(bear)==1 and bear[0]['maximum_scope']=='zone' and bear[0]['maximum_count']==1
+
+def test_phase15b31_canonical_spawns_loaded_and_match_reset_profile():
+    from smart_mud.world_registry import WorldRegistry
+    world = WorldRegistry().load_world('shattered_realms')
+    spawns = {s['id']: s for s in world.spawns}
+    assert len(spawns) >= 15
+    profiles = ZoneResetService(worlds_dir='worlds').load_profiles('shattered_realms')
+    prof = next(p for p in profiles if p['reset_profile_id'] == 'emberwood_forest_population')
+    command_ids = {c['reset_command_id'] for c in prof['commands'] if c['command_type'] == 'SPAWN_ENTITY'}
+    assert command_ids.issubset(spawns)
+    for cid in command_ids:
+        spawn = spawns[cid]
+        command = next(c for c in prof['commands'] if c['reset_command_id'] == cid)
+        assert spawn['entity_template_id'] == command['entity_template_id']
+        assert spawn['room_id'] == command['room_id']
+        assert spawn['reset_profile_id'] == prof['reset_profile_id']
+
+
+def test_phase15b31_zone_reset_living_count_ignores_dead_and_corpses(tmp_path):
+    import sqlite3, json
+    from engine.mud_runtime import MudRuntime
+    db = tmp_path / 'mud_state.db'
+    rt = MudRuntime(Path.cwd(), tmp_path)
+    rt.load_world('shattered_realms')
+    svc = ZoneResetService(runtime=rt, db_path=db, worlds_dir='worlds')
+    assert svc._count('entity', 'forest_wolf', 'room', 'emberwood_hunting_trail', 'emberwood_forest', 'shattered_realms') == 1
+    wolf = rt.find_room_entities('emberwood_hunting_trail')[0]
+    rt.update_entity_state(wolf['entity_id'], {'current_state': 'dead', 'is_alive': False}, source_system='test')
+    assert svc._count('entity', 'forest_wolf', 'room', 'emberwood_hunting_trail', 'emberwood_forest', 'shattered_realms') == 0
+    with sqlite3.connect(db) as con:
+        con.execute("INSERT INTO entity_instances(entity_id,world_id,entity_type,template_id,name,keywords,short_description,long_description,current_room_id,owner_type,owner_id,faction_id,level,state,flags,created_at,updated_at,plugin_data) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", ('corpse_test','shattered_realms','corpse','forest_wolf','corpse','[]','corpse','corpse','emberwood_hunting_trail','room','','',1,json.dumps({'current_state':'corpse','is_alive':False}),'[]','now','now','{}'))
+    assert svc._count('entity', 'forest_wolf', 'room', 'emberwood_hunting_trail', 'emberwood_forest', 'shattered_realms') == 0
+    result = svc.execute('emberwood_forest_population', trigger='manual', force=True)
+    assert result['entities'] == 1
+    assert svc._count('entity', 'forest_wolf', 'room', 'emberwood_hunting_trail', 'emberwood_forest', 'shattered_realms') == 1
+    again = svc.execute('emberwood_forest_population', trigger='manual', force=True)
+    assert again['entities'] == 0
+
+def test_phase15b31_spawn_validation_rejects_bad_refs_and_duplicate_ids(tmp_path):
+    import json, shutil
+    from smart_mud.world_registry import WorldRegistry, WorldValidationError
+    src = Path('worlds/shattered_realms')
+    dst_root = tmp_path / 'worlds'
+    dst = dst_root / 'shattered_realms'
+    ignore = shutil.ignore_patterns('builder', '__pycache__')
+    shutil.copytree(src, dst, ignore=ignore)
+    spawn_path = dst / 'spawns' / 'spawns.json'
+    data = json.loads(spawn_path.read_text())
+    data['spawns'].append(dict(data['spawns'][0]))
+    data['spawns'].append({**data['spawns'][0], 'id': 'bad_template_ref', 'entity_template_id': 'missing_template'})
+    data['spawns'].append({**data['spawns'][0], 'id': 'bad_room_ref', 'room_id': 'missing_room'})
+    spawn_path.write_text(json.dumps(data))
+    try:
+        WorldRegistry(dst_root).load_world('shattered_realms')
+    except WorldValidationError as exc:
+        text = '\n'.join(exc.errors)
+    else:
+        raise AssertionError('invalid canonical spawn data should fail validation')
+    assert 'Duplicate spawn ID' in text
+    assert 'missing entity template' in text
+    assert 'missing room' in text

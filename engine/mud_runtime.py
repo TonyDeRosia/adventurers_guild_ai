@@ -3585,12 +3585,12 @@ class MudRuntime:
 
     def _live_entity_spawns(self) -> dict[str, dict[str, Any]]:
         spawns: dict[str, dict[str, Any]] = {}
-        canonical_keys: set[tuple[str, str, int]] = set()
+        canonical_keys: set[tuple[str, str]] = set()
         for raw in getattr(self.active_world, "spawns", []) or []:
             if isinstance(raw, dict) and raw.get("id"):
                 rec = dict(raw)
                 spawns[str(raw["id"])] = rec
-                canonical_keys.add((str(rec.get("room_id") or ""), str(rec.get("entity_template_id") or rec.get("template_id") or ""), int(rec.get("quantity") or 1)))
+                canonical_keys.add((str(rec.get("room_id") or ""), str(rec.get("entity_template_id") or rec.get("template_id") or "")))
         legacy_sources: list[tuple[str, str, str]] = []
         for room in getattr(self.active_world, "rooms", []) or []:
             rid = str(room.get("id") or "")
@@ -3604,7 +3604,7 @@ class MudRuntime:
         for rid, tid, source in legacy_sources:
             if not rid or tid not in self.entity_templates:
                 continue
-            if (rid, tid, 1) in canonical_keys:
+            if (rid, tid) in canonical_keys:
                 continue
             sid = self._legacy_spawn_id(rid, tid)
             spawns.setdefault(sid, {"id": sid, "entity_template_id": tid, "room_id": rid, "zone_id": "", "quantity": 1, "spawn_policy": "once", "flags": ["legacy_room_npc" if source == "room.npcs" else "legacy_default_room"], "tags": [], "plugin_data": {"legacy_source": {"source_file": "rooms/rooms.json" if source == "room.npcs" else "npcs", "source_room_id": rid, "source_field": source, "normalized": True}}})
