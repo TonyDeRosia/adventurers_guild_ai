@@ -1391,6 +1391,11 @@ class BuilderService:
             self.release_lock(actor, "items", object_id)
 
     def object_menu(self, actor: Any, object_id: str) -> BuilderResult:
+        rows = self.content_query.by_id_or_vnum(actor, "object", str(object_id))
+        if len(rows) == 1:
+            if str(object_id).isdigit():
+                self.start_editor(actor, "oedit", "items", rows[0].canonical_id)
+            object_id = rows[0].canonical_id
         rec = normalize_object_template(object_id, self._record(self.workspace.world_id(actor), "items", object_id))
         issues = validate_object_template(rec)
         item_type = str(rec.get("item_type") or rec.get("type") or "misc").lower()
@@ -1407,7 +1412,7 @@ class BuilderService:
             present = sum(1 for f in fields if rec.get(f) not in (None, "", [], {}))
             label = {"combat":"Combat / Weapon Data / Armor Data", "container":"Container Data", "light":"Light Data", "food":"Food Data", "drink":"Drink Container Data"}.get(name, name.title())
             lines.append(f"- {label} ({present}/{len(fields)}): " + ", ".join(fields))
-        lines += ["", "Commands:", "  ocreate <id>", "  oedit <id>", "  oset <id> <field> <value>", "  opreview <id>", "  ovalidate <id>", "  owhere <id>", "  ofind <query>", "  oclone <source_id> <new_id>"]
+        lines += ["", "Interactive workflow:", "  Open oedit, choose numbered fields, use flag/list/reference managers, preview, validate, undo/redo, and save.", "  Discovery helpers: opreview, ovalidate, owhere, ofind, oclone."]
         if issues:
             lines += ["", "Validation:"] + [f"- {i['severity']}: {i['field_path']} {i['message']}" for i in issues]
         return BuilderResult(True, "\n".join(lines), {"record": rec, "issues": issues, "sections": OBJECT_BUILDER_SECTIONS})
@@ -2344,7 +2349,7 @@ class BuilderService:
         lines = [f"{f.label if f else 'Reference'} selector", f"Current: {self._fmt_value(cur)}"]
         for i, (oid, rec) in enumerate(rows[:25], 1):
             lines.append(f"{i}. {rec.get('vnum','----')} {oid} - {rec.get('name') or rec.get('display_name') or oid}")
-        lines.append("Commands: number, stable ID, search <text>, unset, back")
+        lines.append("Commands: number, stable ID, search text, unset, back")
         return "\n".join(lines)
 
     def _render_mobile_section(self, sess: BuilderEditSession, section: str) -> str:
@@ -2360,33 +2365,33 @@ class BuilderService:
             lines += ["", "Q. Back", "V. Validate", "U. Undo", "R. Redo", "S. Save"]
             return "\n".join(lines)
         if section == "identity":
-            lines += [f"1. Mobile ID: {sess.object_id}", f"2. Display name: {rec.get('name','')}", f"3. Entity type: {rec.get('entity_type','npc')}", f"4. Builder status: {rec.get('builder_status','incomplete')}", f"5. World: {rec.get('world_id', sess.world_id)}", f"6. Area: {rec.get('area_id','')}", f"7. Zone: {rec.get('zone_id','')}", f"8. Legacy VNUM: {rec.get('vnum','')}", f"9. Tags: {', '.join(rec.get('tags') or [])}", "Commands: name <value>, type <value>, status <value>, area <id>, zone <id>, vnum <n>, tag add/remove <tag>, back"]
+            lines += [f"1. Mobile ID: {sess.object_id}", f"2. Display name: {rec.get('name','')}", f"3. Entity type: {rec.get('entity_type','npc')}", f"4. Builder status: {rec.get('builder_status','incomplete')}", f"5. World: {rec.get('world_id', sess.world_id)}", f"6. Area: {rec.get('area_id','')}", f"7. Zone: {rec.get('zone_id','')}", f"8. Legacy VNUM: {rec.get('vnum','')}", f"9. Tags: {', '.join(rec.get('tags') or [])}", "Commands: choose a numbered field, preview, validate, undo, redo, save, back"]
         elif section == "keywords":
-            lines += ["Keywords: " + (", ".join(rec.get("keywords") or rec.get("aliases") or []) or "none"), "Commands: add <word>, remove <word>, replace <old> <new>, clear, normalize, back"]
+            lines += ["Keywords: " + (", ".join(rec.get("keywords") or rec.get("aliases") or []) or "none"), "Commands: choose Keywords, then use list editor actions: add item, remove selected item, move item, clear, back"]
         elif section == "descriptions":
             for k in ("short_description","room_description","look_description","examine_description","long_description","arrival_text","departure_text","death_text","dialogue_seed"):
                 lines.append(f"- {k}: {str(rec.get(k) or rec.get('description' if k=='long_description' else k) or '')[:60]}")
-            lines.append("Commands: set <field> <text>, multiline <field>, preview, back")
+            lines.append("Commands: choose a numbered description field, preview, validate, undo, redo, save, back")
         elif section == "traits":
             for k in ("sex","gender","race","species","size","age_category","alignment","faction_id","occupation","language_profile_id","body_profile_id"):
                 lines.append(f"- {k}: {rec.get(k,'')}")
-            lines.append("Commands: set <field> <value>, back")
+            lines.append("Commands: choose a numbered field, preview, validate, undo, redo, save, back")
         elif section in {"attributes","resources"}:
             attrs = rec.get("attributes") or {}; res = rec.get("resources") or {}
-            lines += [f"Level: {rec.get('level',1)}", "Attributes: " + json.dumps(attrs, sort_keys=True), "Resources: " + json.dumps(res, sort_keys=True), "Commands: level <n>, attr <stat> <n>, resource <name> <n>, back"]
+            lines += [f"Level: {rec.get('level',1)}", "Attributes: " + json.dumps(attrs, sort_keys=True), "Resources: " + json.dumps(res, sort_keys=True), "Commands: choose a numbered numeric field, preview, validate, undo, redo, save, back"]
         elif section == "combat":
             for k in ("armor_profile_id","accuracy_modifier","evasion_modifier","attack_power_modifier","combat_behavior_profile_id","threat_profile_id","aggression_profile_id","assist_profile_id","flee_profile_id","surrender_profile_id","pursuit_profile_id","ability_loadout_id"):
                 lines.append(f"- {k}: {cp.get(k,'')}")
-            lines.append("Commands: set <field> <value>, back")
+            lines.append("Commands: choose a numbered field, preview, validate, undo, redo, save, back")
         elif section == "body_weapons":
-            lines += [f"Body profile: {rec.get('body_profile_id') or cp.get('body_profile','')}", "Commands: body <profile>, weapons, back"]
+            lines += [f"Body profile: {rec.get('body_profile_id') or cp.get('body_profile','')}", "Commands: choose Body profile, open Natural Weapons, preview, validate, undo, redo, save, back"]
         elif section == "natural_weapons":
             weapons = cp.get("natural_weapons") or []
             lines += [f"{i+1}. {w.get('id')} {w.get('mechanical_family')} {w.get('noun_plural')} weight={w.get('selection_weight')} dice={w.get('damage_dice')}" for i,w in enumerate(weapons)] or ["- none"]
-            lines.append("Commands: add <id>, set <id> <field> <value>, delete <id>, enable <id>, disable <id>, preview, validate, back")
+            lines.append("Commands: add weapon, edit weapon, delete weapon, preview, validate, back")
         else:
             summary = self._mobile_section_summary(rec, section)
-            lines += [summary, "Commands: set <field> <value>, add <field> <value>, remove <field> <value>, back"]
+            lines += [summary, "Commands: choose a numbered field, use list/reference editors where offered, preview, validate, undo, redo, save, back"]
         return "\n".join(lines)
 
     def _mobile_section_summary(self, rec: dict[str, Any], section: str) -> str:
@@ -2419,7 +2424,7 @@ class BuilderService:
         for i, entry in enumerate(carried if isinstance(carried, list) else [], 1):
             lines.append(f"{i}. {self._item_label(actor, entry.get('item_template_id',''))} chance={entry.get('chance',100)} qty={entry.get('quantity',1)}")
         if not carried: lines.append("- none")
-        lines += ["", "A. Assign equipment slot", "B. Edit equipment-slot entry", "C. Remove equipment-slot entry", "D. Add carried inventory object", "E. Edit carried inventory entry", "F. Remove carried inventory entry", "G. Clear complete loadout", "P. Preview spawned mobile loadout", "V. Validate", "U. Undo", "R. Redo", "Q. Back", "Commands: assign <slot> <object> [chance] [qty]; carry <object> [chance] [qty]; remove <slot|#>; search <text>; help equipment"]
+        lines += ["", "A. Assign equipment slot", "B. Edit equipment-slot entry", "C. Remove equipment-slot entry", "D. Add carried inventory object", "E. Edit carried inventory entry", "F. Remove carried inventory entry", "G. Clear complete loadout", "P. Preview spawned mobile loadout", "V. Validate", "U. Undo", "R. Redo", "Q. Back", "Commands: assign slot object [chance] [qty]; carry object [chance] [qty]; remove slot-or-number; search text; help equipment"]
         return "\n".join(lines)
 
     def _equipment_validate(self, actor: Any, sess: BuilderEditSession) -> list[str]:
@@ -2849,7 +2854,7 @@ class BuilderService:
                 rec["keywords"] = kws
             else:
                 sess.undo_stack.pop()
-                return BuilderResult(False, "Invalid input for this menu. Use set/add/remove, a listed field command, back, save, or help.")
+                return BuilderResult(False, "Invalid input for this menu. Choose a listed field number/name, or use back, preview, validate, undo, redo, save, or help.")
             sess.working_record = self._normalize_entity_updates(sess.object_id, rec) if sess.collection == "entities" else rec
             sess.dirty=True; sess.saved=False
             return BuilderResult(True, "Updated session scratch.\n" + self.render_session(sess), sess.working_record)
@@ -2871,7 +2876,7 @@ class BuilderService:
                         w[field] = int(value) if field in {"selection_weight","minimum_damage","maximum_damage","accuracy_modifier","critical_modifier","cooldown_pulses"} and value.lstrip('-').isdigit() else value
                         break
                 else: return BuilderResult(False, f"Natural weapon {wid} not found.")
-            else: return BuilderResult(False, "Usage: add <id>, set <id> <field> <value>, delete <id>, list")
+            else: return BuilderResult(False, "Use natural weapon actions: add weapon, edit weapon, delete weapon, list")
             sess.working_record["combat_profile"] = {**(rec.get("combat_profile") or {}), "natural_weapons": weapons}
             sess.working_record = self._normalize_entity_updates(sess.object_id, sess.working_record) if sess.collection == "entities" else sess.working_record
             sess.dirty=True; sess.saved=False
