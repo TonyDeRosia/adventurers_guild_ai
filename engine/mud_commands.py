@@ -3021,6 +3021,12 @@ class MudCommandEngine:
                 keys = [fid, feature.get("name", ""), *(feature.get("keywords", []) if isinstance(feature.get("keywords"), list) else [])]
                 if target in [str(k).lower() for k in keys if k]:
                     return CommandResult(narrative=feature.get("long_description") or feature.get("short_description") or feature.get("name") or fid)
+            extras = self.builder.load(self.builder.world_id(character)).get("rooms", {}).get(room_id, {}).get("extra_descriptions", [])
+            q = " ".join(x for x in [a.lower() for a in args] if x not in {"at", "the", "a", "an"})
+            for entry in extras if isinstance(extras, list) else []:
+                keys = [str(k).lower() for k in (entry.get("keywords") or [])] if isinstance(entry, dict) else []
+                if entry.get("enabled", True) and q in keys:
+                    return CommandResult(narrative=entry.get("description") or "")
         return CommandResult(narrative="", state_updates={"render_room": True})
 
     def _cmd_help(self, character: Any, args: list[str], raw: str) -> CommandResult:

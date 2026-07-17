@@ -83,6 +83,72 @@ REDIT_ROOM_FLAGS = ("dark", "death", "indoors", "peaceful", "soundproof", "nomob
 REDIT_SECTORS = ("inside", "city", "field", "forest", "hills", "mountain", "water", "air")
 TBA_APPLY_TYPES = ("strength", "dexterity", "intelligence", "wisdom", "constitution", "charisma", "class", "level", "age", "weight", "height", "mana", "hit", "move", "gold", "experience", "armor", "hitroll", "damroll", "saving_para", "saving_rod", "saving_petri", "saving_breath", "saving_spell")
 
+def normalize_extra_keywords(value: Any) -> list[str]:
+    raw = value if isinstance(value, list) else str(value or "").split()
+    out: list[str] = []
+    seen: set[str] = set()
+    for part in raw:
+        word = re.sub(r"\s+", " ", str(part or "").strip()).lower()
+        word = re.sub(r"^[^a-z0-9_']+|[^a-z0-9_']+$", "", word)
+        if not word or word in seen:
+            continue
+        seen.add(word); out.append(word)
+    return out
+
+def normalize_room_extra_descriptions(value: Any, room_id: str = "room") -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    normalized: list[dict[str, Any]] = []
+    used: set[str] = set()
+    for i, raw in enumerate(value):
+        rec = deepcopy(raw) if isinstance(raw, dict) else {"description": str(raw or "")}
+        keywords = normalize_extra_keywords(rec.get("keywords") or rec.get("keyword") or rec.get("key") or rec.get("name") or "")
+        desc = str(rec.get("description") or rec.get("text") or rec.get("long_description") or "").rstrip()
+        eid = str(rec.get("id") or "").strip()
+        if not eid:
+            seed = "|".join([room_id, str(i), " ".join(keywords), desc[:40]])
+            eid = "rextra_" + hashlib.sha1(seed.encode("utf-8")).hexdigest()[:10]
+        base = re.sub(r"[^a-zA-Z0-9_:-]+", "_", eid).strip("_") or f"rextra_{i+1}"
+        eid = base; n = 2
+        while eid in used:
+            eid = f"{base}_{n}"; n += 1
+        used.add(eid)
+        rec["id"] = eid; rec["keywords"] = keywords; rec["description"] = desc
+        rec["sort_order"] = i
+        if "enabled" in rec:
+            rec["enabled"] = bool(rec.get("enabled"))
+        normalized.append(rec)
+    return normalized
+
+def validate_room_extra_descriptions(rec: dict[str, Any]) -> list[str]:
+    issues: list[str] = []
+    raw = rec.get("extra_descriptions", [])
+    if raw in (None, ""):
+        return issues
+    if not isinstance(raw, list):
+        return ["error: extra_descriptions must be a list"]
+    ids: set[str] = set(); keyword_owner: dict[str, str] = {}
+    for i, entry in enumerate(raw, 1):
+        if not isinstance(entry, dict):
+            issues.append(f"error: extra_descriptions[{i}] must be an object"); continue
+        eid = str(entry.get("id") or "").strip()
+        if not eid: issues.append(f"error: extra_descriptions[{i}] missing stable id")
+        elif eid in ids: issues.append(f"error: extra_descriptions[{i}] duplicate id {eid}")
+        ids.add(eid)
+        keywords = normalize_extra_keywords(entry.get("keywords"))
+        if not keywords: issues.append(f"error: extra_descriptions[{i}] requires at least one keyword")
+        if len(keywords) != len(entry.get("keywords") or []): issues.append(f"warning: extra_descriptions[{i}] has duplicate or non-normal keywords")
+        for kw in keywords:
+            if kw in keyword_owner and keyword_owner[kw] != eid:
+                issues.append(f"warning: extra description keyword '{kw}' also appears on {keyword_owner[kw]}; runtime uses first ordered match")
+            keyword_owner.setdefault(kw, eid)
+        if not str(entry.get("description") or "").strip():
+            issues.append(f"error: extra_descriptions[{i}] description is empty")
+        so = entry.get("sort_order", i-1)
+        if not isinstance(so, int) or so < 0:
+            issues.append(f"warning: extra_descriptions[{i}] sort_order should be a non-negative integer")
+    return issues
+
 OBJECT_NUMERIC_FIELDS = {"weight", "cost", "stack_size", "destroy_timer", "speed", "range", "capacity", "weight_capacity", "lock_difficulty", "charges", "recharge", "fuel", "burn_time", "brightness", "nutrition", "decay", "servings"}
 OBJECT_LIST_FIELDS = {"keywords", "extra_descriptions", "wear_flags", "extra_flags", "slot_restrictions", "resistances", "container_flags", "spell_storage", "passive_effects", "affects", "scripts", "ingredients", "resource_tags", "recipes", "gathering"}
 OBJECT_BOOL_FIELDS = {"open", "closed", "locked", "transparent", "poison"}
@@ -475,7 +541,8 @@ class BuilderWorkspace:
         if not isinstance(record.get("flags"), list): record["flags"] = []
         if not isinstance(record.get("tags"), list): record["tags"] = []
         if not isinstance(record.get("plugin_data"), dict): record["plugin_data"] = {}
-        ordered = {k: record.get(k) for k in ("id","name","description","world_id","area_id","zone_id","vnum","exits","features","flags","tags","plugin_data")}
+        record["extra_descriptions"] = normalize_room_extra_descriptions(record.get("extra_descriptions"), room_id)
+        ordered = {k: record.get(k) for k in ("id","name","description","world_id","area_id","zone_id","vnum","exits","features","extra_descriptions","flags","tags","plugin_data")}
         for k, v in record.items():
             if k not in ordered: ordered[k] = v
         return ordered, ordered != original
@@ -739,6 +806,8 @@ class BuilderWorkspace:
             if name_text and name_text.lower() != suggested.lower() and name_text.lower().replace(" ", "_") in str(rid).lower():
                 warnings.append(f"Room {rid} has a confusing display name: {name_text}. Suggested name: {suggested}.")
             if not room.get("description"): warnings.append(f"room {rid} missing description")
+            for issue in validate_room_extra_descriptions(room):
+                (errors if issue.startswith("error:") else warnings).append(f"room {rid} {issue.split(': ',1)[1] if ': ' in issue else issue}")
             for d, ex in (room.get("exits") or {}).items():
                 target = ex.get("target_room_id") or ex.get("to") or ex.get("room_id")
                 if not target: errors.append(f"room {rid} exit {d} missing target_room_id")
@@ -975,6 +1044,7 @@ class BuilderEditSession:
     undo_stack: list[dict[str, Any]] = field(default_factory=list); redo_stack: list[dict[str, Any]] = field(default_factory=list)
     menu_stack: list[str] = field(default_factory=list); active_field: str = ""; field_input_type: str = ""; pending_value: Any = None; confirmation_type: str = ""; multiline_lines: list[str] = field(default_factory=list); reference_filter: str = ""; reference_page: int = 1
     active_direction: str = ""
+    active_extra_index: int = 0
 
 @dataclass(frozen=True)
 class OlcFieldDescriptor:
@@ -2950,6 +3020,11 @@ class BuilderService:
                 return BuilderResult(False, "Save blocked by validation errors:\n- name: Room name is required.")
             if not isinstance(rec.get("exits", {}), dict):
                 return BuilderResult(False, "Save blocked by validation errors:\n- exits: Room exits must be a dictionary.")
+            issues = self._validate_room_extra_descriptions(rec)
+            errors = [i for i in issues if i.startswith("error:")]
+            if errors:
+                return BuilderResult(False, "Save blocked by validation errors:\n" + "\n".join(f"- {e[6:]}" for e in errors), {"issues": issues})
+            rec["extra_descriptions"] = normalize_room_extra_descriptions(rec.get("extra_descriptions"), sess.object_id)
         if sess.collection == "items":
             issues = validate_object_template(normalize_object_template(sess.object_id, sess.working_record))
             errors = [i for i in issues if i.get("severity") == "error"]
@@ -3015,6 +3090,9 @@ class BuilderService:
         msg = prefix or f"{f.label} changed from {self._fmt_value(before)} to {self._fmt_value(value)}."
         return BuilderResult(True, msg + "\n" + self.render_session(sess), sess.working_record)
 
+    def _validate_room_extra_descriptions(self, rec: dict[str, Any]) -> list[str]:
+        return validate_room_extra_descriptions(rec)
+
     def _room_dependencies(self, actor: Any, room_id: str) -> list[str]:
         records = self.resolve_collection_records(actor, "rooms")
         deps: list[str] = []
@@ -3033,6 +3111,114 @@ class BuilderService:
             if room_id in json.dumps(rs, default=str): deps.append(f"reset reference {sid}")
         if str(getattr(actor, "room_id", "")) == str(room_id): deps.append("your character is currently in this room")
         return sorted(set(deps))
+
+    def _room_extras(self, sess: BuilderEditSession) -> list[dict[str, Any]]:
+        extras = normalize_room_extra_descriptions((sess.working_record or {}).get("extra_descriptions"), sess.object_id)
+        sess.working_record["extra_descriptions"] = extras
+        return extras
+
+    def _extra_preview(self, entry: dict[str, Any], limit: int = 72) -> str:
+        text = " ".join(str(entry.get("description") or "").split())
+        return text[:limit-3] + "..." if len(text) > limit else (text or "(empty description)")
+
+    def _render_room_extra_list(self, sess: BuilderEditSession) -> str:
+        rec = sess.working_record or {}; extras = self._room_extras(sess)
+        lines = [f"-- Room Extra Descriptions: [{self._room_display_id(rec, sess.object_id)}] {rec.get('name') or sess.object_id}", f"Draft status: {'modified' if sess.dirty else 'clean'}", ""]
+        if not extras:
+            lines.append("- none")
+        for i, entry in enumerate(extras, 1):
+            status = "" if entry.get("enabled", True) else " [disabled]"
+            lines += [f"{i}) {' '.join(entry.get('keywords') or [])}{status}", f"   {self._extra_preview(entry)}"]
+        lines += ["", "A) Add", "E) Edit/select", "D) Delete", "C) Copy", "M) Move", "T) Toggle", "Q) Back", "Commands: number, add, edit <#>, delete <#>, copy <#>, move <#> up|down|to <#>, toggle <#>, back"]
+        return "\n".join(lines)
+
+    def _render_room_extra_entry(self, sess: BuilderEditSession) -> str:
+        extras = self._room_extras(sess)
+        if not extras:
+            return self._render_room_extra_list(sess)
+        sess.active_extra_index = max(0, min(sess.active_extra_index, len(extras)-1))
+        entry = extras[sess.active_extra_index]
+        lines = [f"-- Room Extra Description Entry {sess.active_extra_index + 1} of {len(extras)}", f"Room: {sess.object_id}", ""]
+        lines.append(f"1) Keywords    : {' '.join(entry.get('keywords') or [])}")
+        lines.append("2) Description :")
+        lines.extend(["   " + line for line in (str(entry.get("description") or "").splitlines() or [""])])
+        lines += [f"3) Previous description: {'Available' if sess.active_extra_index > 0 else 'Not Set.'}", f"4) Next description    : {'Available' if sess.active_extra_index + 1 < len(extras) else 'Not Set.'}", "C) Copy entry", "D) Delete entry", "Q) Back", "Commands: 1 keywords, 2 description, 3/prev, 4/next, copy, delete, back"]
+        return "\n".join(lines)
+
+    def _mark_room_extra_change(self, actor: Any, sess: BuilderEditSession, before: list[dict[str, Any]], message: str, *, entry_index: int | None = None) -> BuilderResult:
+        after = self._room_extras(sess)
+        if before != after:
+            self._session_checkpoint(sess)
+            sess.undo_stack[-1]["extra_descriptions"] = before
+            sess.dirty = sess.working_record != sess.savepoint; sess.saved = not sess.dirty
+            sess.dirty_fields = sorted(set(sess.dirty_fields + ["extra_descriptions"]))
+            try:
+                self.workspace.audit(actor, sess.world_id, message.lower(), "rooms", sess.object_id, {"extra_descriptions": before}, {"extra_descriptions": after})
+            except Exception:
+                pass
+        if entry_index is not None:
+            sess.active_extra_index = max(0, min(entry_index, max(len(after)-1, 0)))
+        return BuilderResult(True, message + "\n" + (self._render_room_extra_entry(sess) if sess.section == "extra_entry" and after else self._render_room_extra_list(sess)), sess.working_record)
+
+    def _handle_room_extra_list(self, actor: Any, sess: BuilderEditSession, text: str, low: str) -> BuilderResult:
+        parts = text.split(); extras = self._room_extras(sess)
+        if low in {"q","back","quit","0"}:
+            sess.section = ""; sess.mode = "main_menu"; sess.active_field = ""
+            return BuilderResult(True, self._render_redit_menu(sess))
+        cmd = parts[0].lower() if parts else ""
+        if low.isdigit() and 1 <= int(low) <= len(extras):
+            sess.section = "extra_entry"; sess.active_extra_index = int(low)-1
+            return BuilderResult(True, self._render_room_extra_entry(sess))
+        if cmd in {"e","edit","select"} and len(parts) > 1 and parts[1].isdigit() and 1 <= int(parts[1]) <= len(extras):
+            sess.section = "extra_entry"; sess.active_extra_index = int(parts[1])-1
+            return BuilderResult(True, self._render_room_extra_entry(sess))
+        if cmd in {"a","add"}:
+            sess.mode = "room_extra_keywords"; sess.section = "extra_add"; sess.pending_value = {"id": "rextra_" + hashlib.sha1(f"{sess.object_id}:{time.time()}".encode()).hexdigest()[:10]}
+            return BuilderResult(True, "Enter one or more keywords for the new extra description, or Q to cancel.")
+        target = int(parts[1])-1 if len(parts) > 1 and parts[1].isdigit() else (int(parts[0])-1 if parts and parts[0].isdigit() else -1)
+        if cmd in {"d","delete"} and 0 <= target < len(extras):
+            sess.confirmation_type = "extra_delete"; sess.pending_value = target
+            return BuilderResult(True, f"Delete extra description {target+1}: {' '.join(extras[target].get('keywords') or [])}\n{self._extra_preview(extras[target], 120)}\nType DELETE DESCRIPTION to confirm, or Q to cancel.")
+        if cmd in {"c","copy"} and 0 <= target < len(extras):
+            before = deepcopy(extras); new = deepcopy(extras[target]); new["id"] = "rextra_" + hashlib.sha1(f"{sess.object_id}:copy:{time.time()}".encode()).hexdigest()[:10]
+            extras.insert(target+1, new); sess.working_record["extra_descriptions"] = normalize_room_extra_descriptions(extras, sess.object_id); sess.section = "extra_entry"
+            return self._mark_room_extra_change(actor, sess, before, "Extra description copied. Warning: duplicate keywords may make look/examine choose the first matching entry.", entry_index=target+1)
+        if cmd in {"t","toggle"} and 0 <= target < len(extras):
+            before = deepcopy(extras); extras[target]["enabled"] = not extras[target].get("enabled", True); sess.working_record["extra_descriptions"] = extras
+            return self._mark_room_extra_change(actor, sess, before, "Extra description toggled.")
+        if cmd in {"m","move"} and 0 <= target < len(extras):
+            before = deepcopy(extras); dest = target
+            if len(parts) >= 3 and parts[2].lower() == "up": dest = target - 1
+            elif len(parts) >= 3 and parts[2].lower() == "down": dest = target + 1
+            elif len(parts) >= 4 and parts[2].lower() == "to" and parts[3].isdigit(): dest = int(parts[3])-1
+            if not (0 <= dest < len(extras)): return BuilderResult(False, "Move target is out of range.\n" + self._render_room_extra_list(sess))
+            entry = extras.pop(target); extras.insert(dest, entry); sess.working_record["extra_descriptions"] = normalize_room_extra_descriptions(extras, sess.object_id)
+            return self._mark_room_extra_change(actor, sess, before, "Extra descriptions reordered.")
+        return BuilderResult(False, "Choose a listed entry or use add, edit <#>, delete <#>, copy <#>, move <#> up|down|to <#>, toggle <#>, or Q.\n" + self._render_room_extra_list(sess))
+
+    def _handle_room_extra_entry(self, actor: Any, sess: BuilderEditSession, text: str, low: str) -> BuilderResult:
+        extras = self._room_extras(sess)
+        if not extras:
+            sess.section = "extra_list"; return BuilderResult(True, self._render_room_extra_list(sess))
+        if low in {"q","back","quit","0"}:
+            sess.section = "extra_list"; sess.mode = "section_menu"; return BuilderResult(True, self._render_room_extra_list(sess))
+        if low in {"1","keywords"}:
+            sess.mode = "room_extra_keywords"; sess.pending_value = {"edit_index": sess.active_extra_index}
+            return BuilderResult(True, f"Current keywords: {' '.join(extras[sess.active_extra_index].get('keywords') or [])}\nEnter replacement keywords, or Q to cancel.")
+        if low in {"2","description"}:
+            sess.mode = "multiline_text"; sess.active_field = f"extra:{sess.active_extra_index}:description"; sess.multiline_lines = []
+            return BuilderResult(True, self._render_multiline(sess))
+        if low in {"3","prev","previous"}:
+            if sess.active_extra_index <= 0: return BuilderResult(False, "Already at the first extra description.\n" + self._render_room_extra_entry(sess))
+            sess.active_extra_index -= 1; return BuilderResult(True, self._render_room_extra_entry(sess))
+        if low in {"4","next"}:
+            if sess.active_extra_index + 1 >= len(extras): return BuilderResult(False, "Already at the last extra description.\n" + self._render_room_extra_entry(sess))
+            sess.active_extra_index += 1; return BuilderResult(True, self._render_room_extra_entry(sess))
+        if low in {"c","copy"}:
+            return self._handle_room_extra_list(actor, sess, f"copy {sess.active_extra_index+1}", "copy")
+        if low in {"d","delete"}:
+            return self._handle_room_extra_list(actor, sess, f"delete {sess.active_extra_index+1}", "delete")
+        return BuilderResult(False, "Choose 1, 2, 3, 4, C, D, or Q.\n" + self._render_room_extra_entry(sess))
 
     def _handle_redit_confirmation(self, actor: Any, sess: BuilderEditSession, text: str, low: str) -> BuilderResult | None:
         if sess.confirmation_type == "redit_copy":
@@ -3070,6 +3256,12 @@ class BuilderService:
         cancel_words = {"q","quit","cancel","back"}
         if sess.mode == "multiline_text":
             if low == ".cancel" or low in cancel_words:
+                if str(sess.active_field).startswith("extra:"):
+                    if str(sess.active_field) == "extra:new:description":
+                        sess.mode = "section_menu"; sess.section = "extra_list"; sess.active_field = ""; sess.multiline_lines = []; sess.pending_value = None
+                        return BuilderResult(True, "New extra description cancelled.\n" + self._render_room_extra_list(sess))
+                    sess.mode = "section_menu"; sess.section = "extra_entry"; sess.active_field = ""; sess.multiline_lines = []
+                    return BuilderResult(True, "Text edit cancelled.\n" + self._render_room_extra_entry(sess))
                 sess.mode = "section_menu"; sess.active_field = ""; sess.multiline_lines = []
                 return BuilderResult(True, "Text edit cancelled.\n" + self.render_session(sess))
             if low == ".help":
@@ -3081,6 +3273,25 @@ class BuilderService:
                 sess.multiline_lines = []
                 return BuilderResult(True, "Pending text cleared.")
             if low == ".save":
+                if str(sess.active_field).startswith("extra:"):
+                    if str(sess.active_field) == "extra:new:description":
+                        new = "\n".join(sess.multiline_lines).rstrip()
+                        if not new.strip():
+                            return BuilderResult(False, "Description cannot be empty. Add text, .clear, .save, or .cancel.")
+                        extras = self._room_extras(sess); before = deepcopy(extras)
+                        pending = dict(sess.pending_value or {})
+                        entry = {"id": pending.get("id") or "rextra_" + hashlib.sha1(f"{sess.object_id}:{time.time()}".encode()).hexdigest()[:10], "keywords": pending.get("keywords") or [], "description": new}
+                        extras.append(entry); sess.working_record["extra_descriptions"] = normalize_room_extra_descriptions(extras, sess.object_id)
+                        sess.mode = "section_menu"; sess.section = "extra_entry"; sess.active_field = ""; sess.multiline_lines = []; sess.pending_value = None
+                        return self._mark_room_extra_change(actor, sess, before, "Extra description added.", entry_index=len(extras)-1)
+                    _, idx_text, _field_name = sess.active_field.split(":", 2)
+                    idx = int(idx_text); extras = self._room_extras(sess)
+                    new = "\n".join(sess.multiline_lines).rstrip()
+                    if not new.strip():
+                        return BuilderResult(False, "Description cannot be empty. Add text, .clear, .save, or .cancel.")
+                    before = deepcopy(extras); extras[idx]["description"] = new; sess.working_record["extra_descriptions"] = extras
+                    sess.mode = "section_menu"; sess.section = "extra_entry"; sess.multiline_lines = []; sess.active_field = ""
+                    return self._mark_room_extra_change(actor, sess, before, "Extra description changed.", entry_index=idx)
                 if str(sess.active_field).startswith("exit:"):
                     _, direction, field_name = sess.active_field.split(":", 2)
                     new = "\n".join(sess.multiline_lines).rstrip()
@@ -3092,6 +3303,22 @@ class BuilderService:
                 return self._apply_field_value(actor, sess, f, new, "Text saved.")
             sess.multiline_lines.append(text)
             return BuilderResult(True, f"Line {len(sess.multiline_lines)} added. Use .show or .save.")
+        if sess.mode == "room_extra_keywords":
+            if low in cancel_words:
+                adding = sess.section == "extra_add"
+                sess.mode = "section_menu"; sess.section = "extra_list" if adding else "extra_entry"; sess.pending_value = None
+                return BuilderResult(True, "Keyword edit cancelled.\n" + (self._render_room_extra_list(sess) if adding else self._render_room_extra_entry(sess)))
+            keywords = normalize_extra_keywords(text)
+            if not keywords:
+                return BuilderResult(False, "Enter at least one usable keyword, or Q to cancel.")
+            if sess.section == "extra_add":
+                sess.pending_value = {**(sess.pending_value or {}), "keywords": keywords}
+                sess.mode = "multiline_text"; sess.active_field = "extra:new:description"; sess.multiline_lines = []
+                return BuilderResult(True, "Enter the multiline description. Use .save to create the entry or .cancel to abort.")
+            idx = int((sess.pending_value or {}).get("edit_index", sess.active_extra_index)); extras = self._room_extras(sess)
+            before = deepcopy(extras); extras[idx]["keywords"] = keywords; sess.working_record["extra_descriptions"] = extras
+            sess.mode = "section_menu"; sess.pending_value = None
+            return self._mark_room_extra_change(actor, sess, before, "Extra description keywords changed.", entry_index=idx)
         if sess.mode == "field_prompt":
             if low in cancel_words:
                 sess.mode = "section_menu"; sess.active_field = ""
@@ -3230,10 +3457,27 @@ class BuilderService:
             if topic in {"damage dice", "action flags", "capacity"}: return BuilderResult(True, f"{topic.title()} help: edit through the structured field menu; values are validated immediately and saved only to Builder drafts.")
             return BuilderResult(True, "Builder help: use menu numbers; structured editors support preview, validate, undo, redo, save, and back. Use help equipment, help spawn maximum, help action flags, help damage dice, or help capacity.")
         if sess.editor_type == "redit" and sess.confirmation_type:
+            if sess.confirmation_type == "extra_delete":
+                if low in cancel_words:
+                    sess.confirmation_type = ""; sess.pending_value = None
+                    return BuilderResult(True, "Delete cancelled.\n" + (self._render_room_extra_entry(sess) if sess.section == "extra_entry" else self._render_room_extra_list(sess)))
+                if text.strip() != "DELETE DESCRIPTION":
+                    return BuilderResult(False, "Type DELETE DESCRIPTION to confirm deletion, or Q to cancel.")
+                extras = self._room_extras(sess); idx = int(sess.pending_value)
+                if not (0 <= idx < len(extras)):
+                    sess.confirmation_type = ""; sess.pending_value = None
+                    return BuilderResult(False, "Extra description no longer exists.\n" + self._render_room_extra_list(sess))
+                before = deepcopy(extras); extras.pop(idx); sess.working_record["extra_descriptions"] = normalize_room_extra_descriptions(extras, sess.object_id)
+                sess.confirmation_type = ""; sess.pending_value = None; sess.section = "extra_list"
+                return self._mark_room_extra_change(actor, sess, before, "Extra description deleted.")
             handled = self._handle_redit_confirmation(actor, sess, text, low)
             if handled is not None: return handled
         if sess.editor_type == "redit" and sess.section == "exit":
             return self._handle_exit_editor(actor, sess, text, low)
+        if sess.editor_type == "redit" and sess.section == "extra_list":
+            return self._handle_room_extra_list(actor, sess, text, low)
+        if sess.editor_type == "redit" and sess.section == "extra_entry":
+            return self._handle_room_extra_entry(actor, sess, text, low)
         if sess.editor_type == "redit" and not sess.section:
             rmap = {"1":"name","2":"description","3":"room_flags","4":"sector"}
             if low in rmap:
@@ -3245,7 +3489,9 @@ class BuilderService:
                 idx = {"5":0,"6":1,"7":2,"8":3,"9":4,"a":5}[low]; direction = REDIT_DIRECTIONS[idx]
                 sess.section = "exit"; sess.mode = "section_menu"; sess.active_direction = direction
                 return BuilderResult(True, self._render_exit_editor(actor, sess))
-            if low == "f": return BuilderResult(True, f"Extra description editing is not yet available in REDIT. Current extra descriptions: {len(sess.working_record.get('extra_descriptions') or [])}.\n" + self._render_redit_menu(sess))
+            if low == "f":
+                sess.section = "extra_list"; sess.mode = "section_menu"; sess.active_field = ""
+                return BuilderResult(True, self._render_room_extra_list(sess))
             if low == "r": return BuilderResult(True, "Room reset editing is not yet available in REDIT. Use existing reset/spawn Builder commands for detailed reset work.\n" + self._render_redit_menu(sess))
             if low == "s": return BuilderResult(True, "Script attachment editing is not yet available until script runtime support is enabled for rooms.\n" + self._render_redit_menu(sess))
             if low == "w": sess.confirmation_type="redit_copy"; return BuilderResult(True, "Copy room: enter a new target room ID, or Q to cancel.")

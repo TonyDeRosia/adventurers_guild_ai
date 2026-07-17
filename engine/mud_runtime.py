@@ -2021,6 +2021,15 @@ class MudRuntime:
             direction = str(ex.get("direction") or ex.get("dir") or "").lower() if isinstance(ex, dict) else ""
             if direction:
                 features.append({"name": direction.title(), "keywords": [direction], "feature_id": direction, "entity_type": "exit", "long_description": ex.get("description") if isinstance(ex, dict) else ""})
+        try:
+            room_data, _ = self.runtime_room_data(None, room.id)
+        except Exception:
+            room_data = self._live_room_data(room.id) or {}
+        for i, entry in enumerate(room_data.get("extra_descriptions") or [] if isinstance(room_data, dict) else []):
+            if isinstance(entry, dict) and entry.get("enabled", True):
+                keys = [str(k).lower() for k in (entry.get("keywords") or []) if str(k).strip()]
+                if keys and str(entry.get("description") or "").strip():
+                    features.append({"name": " ".join(keys), "keywords": keys, "feature_id": entry.get("id") or f"extra_{i}", "entity_type": "room_extra_description", "long_description": entry.get("description"), "description": entry.get("description")})
         # De-duplicate by feature id/name while preserving first useful metadata.
         seen = set(); unique = []
         for f in features:
@@ -2031,6 +2040,12 @@ class MudRuntime:
 
     def _resolve_interaction_target(self, char: MudCharacter, query: str) -> dict[str, Any]:
         features = self._room_features(self._current_room(char))
+        room_data, _ = self.runtime_room_data(char, char.room_id)
+        for i, entry in enumerate((room_data or {}).get("extra_descriptions") or []):
+            if isinstance(entry, dict) and entry.get("enabled", True):
+                keys = [str(k).lower() for k in (entry.get("keywords") or []) if str(k).strip()]
+                if keys and str(entry.get("description") or "").strip():
+                    features.append({"name": " ".join(keys), "keywords": keys, "feature_id": entry.get("id") or f"extra_{i}", "entity_type": "room_extra_description", "long_description": entry.get("description"), "description": entry.get("description")})
         qnorm = " ".join([w for w in re.findall(r"[a-z0-9_']+", query.lower()) if w not in self.ARTICLES])
         exact_features = [f for f in features if qnorm and (str(f.get("name", "")).lower() == qnorm or qnorm == str(f.get("feature_id", "")).lower().replace("_", " "))]
         keyword_features = [f for f in features if qnorm and qnorm in [str(k).lower() for k in f.get("keywords", [])]]

@@ -20,3 +20,13 @@ This document records the implemented mobile Builder slice for Phase 15B.14C.
 
 * The production runtime still needs deeper direct integration points for every live movement/combat registry; this phase exposes the Builder-side resident/runtime projections and generation pointer without changing the combat latency architecture.
 * Windows manual acceptance is not claimed until Tony performs the documented manual tests.
+
+## Phase 15B.46 Room Extra Descriptions
+
+REDIT option `F) Extra descriptions menu` now opens a nested, draft-backed room extra-description editor based on Anthony DeRosia's customized Adventurer's Lair Builder workflow, while using Smart MUD's ordered-list and session-draft architecture instead of legacy linked-list storage. Room drafts store `extra_descriptions` as an ordered list of records with stable `id`, normalized lower-case `keywords`, multiline `description`, `sort_order`, and optional `enabled` state.
+
+The list editor supports add, select/edit, delete with `DELETE DESCRIPTION` confirmation, copy, move up/down or to an explicit position, toggle enabled state, and back to REDIT. The entry editor shows `Entry N of M`, exposes keywords and multiline description editing, supports previous/next navigation, copy, delete, and returns to the list without leaving the active REDIT session.
+
+Keyword input is whitespace-normalized, lower-cased, and de-duplicated case-insensitively. Runtime matching is case-insensitive and checks the current room only. `look <keyword>`, `look at <keyword>`, and `examine <keyword>` can resolve room extra descriptions after higher-priority visible players, NPCs/mobs/corpses, inventory/equipment, room objects, exits, world objects, and ordinary room features are considered; ambiguous duplicate extra-description keywords are validation warnings because runtime resolution is deterministic by ordered first match.
+
+Validation blocks malformed extra-description lists, missing stable IDs, empty keyword lists, duplicate IDs, and empty descriptions. It warns about duplicate/non-normal keywords within an entry, invalid ordering metadata, and keyword collisions between entries. Saving REDIT persists only to Builder drafts; live world package promotion remains a separate publish/apply concern.
