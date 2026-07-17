@@ -70,6 +70,13 @@ OBJECT_BUILDER_SECTIONS = {
     "crafting": ("ingredients", "resource_tags", "recipes", "gathering"),
     "builder": ("builder_notes", "validation", "preview", "dependencies"),
 }
+
+TBA_OEDIT_EXTRA_FLAGS = ("glow", "hum", "dark", "lock", "evil", "invisible", "magic", "nodrop", "bless", "anti_good", "anti_evil", "anti_neutral", "noremove", "inventory", "unique")
+TBA_OEDIT_WEAR_FLAGS = ("take", "finger", "neck", "body", "head", "legs", "feet", "hands", "arms", "shield", "about", "waist", "wrist", "wield", "hold", "float", "light", "mainhand", "offhand")
+TBA_OEDIT_PERM_AFFECTS = ("blind", "invisible", "detect_invisible", "detect_magic", "sense_life", "waterwalk", "sanctuary", "group", "curse", "infravision", "poison", "protect_evil", "protect_good", "sleep", "notrack", "flying")
+TBA_ITEM_TYPES = ("light", "scroll", "wand", "staff", "potion", "weapon", "armor", "container", "drink_container", "fountain", "food", "money", "furniture", "note", "other", "worn", "treasure", "trash", "key", "pen", "boat", "misc")
+TBA_APPLY_TYPES = ("strength", "dexterity", "intelligence", "wisdom", "constitution", "charisma", "class", "level", "age", "weight", "height", "mana", "hit", "move", "gold", "experience", "armor", "hitroll", "damroll", "saving_para", "saving_rod", "saving_petri", "saving_breath", "saving_spell")
+
 OBJECT_NUMERIC_FIELDS = {"weight", "cost", "stack_size", "destroy_timer", "speed", "range", "capacity", "weight_capacity", "lock_difficulty", "charges", "recharge", "fuel", "burn_time", "brightness", "nutrition", "decay", "servings"}
 OBJECT_LIST_FIELDS = {"keywords", "extra_descriptions", "wear_flags", "extra_flags", "slot_restrictions", "resistances", "container_flags", "spell_storage", "passive_effects", "affects", "scripts", "ingredients", "resource_tags", "recipes", "gathering"}
 OBJECT_BOOL_FIELDS = {"open", "closed", "locked", "transparent", "poison"}
@@ -1393,29 +1400,8 @@ class BuilderService:
     def object_menu(self, actor: Any, object_id: str) -> BuilderResult:
         rows = self.content_query.by_id_or_vnum(actor, "object", str(object_id))
         if len(rows) == 1:
-            if str(object_id).isdigit():
-                self.start_editor(actor, "oedit", "items", rows[0].canonical_id)
             object_id = rows[0].canonical_id
-        rec = normalize_object_template(object_id, self._record(self.workspace.world_id(actor), "items", object_id))
-        issues = validate_object_template(rec)
-        item_type = str(rec.get("item_type") or rec.get("type") or "misc").lower()
-        visible_sections = []
-        for name, fields in OBJECT_BUILDER_SECTIONS.items():
-            if name in {"combat", "weapon"} and item_type not in {"weapon", "armor"}: continue
-            if name == "container" and item_type != "container": continue
-            if name == "light" and item_type != "light": continue
-            if name == "food" and item_type not in {"food", "consumable"}: continue
-            if name == "drink" and item_type not in {"drink", "drink_container"}: continue
-            visible_sections.append((name, fields))
-        lines = [f"Object Builder: {object_id}", "Object Editor", f"Type-specific sections for {item_type}:", "Grouped sections:"]
-        for name, fields in visible_sections:
-            present = sum(1 for f in fields if rec.get(f) not in (None, "", [], {}))
-            label = {"combat":"Combat / Weapon Data / Armor Data", "container":"Container Data", "light":"Light Data", "food":"Food Data", "drink":"Drink Container Data"}.get(name, name.title())
-            lines.append(f"- {label} ({present}/{len(fields)}): " + ", ".join(fields))
-        lines += ["", "Interactive workflow:", "  Open oedit, choose numbered fields, use flag/list/reference managers, preview, validate, undo/redo, and save.", "  Discovery helpers: opreview, ovalidate, owhere, ofind, oclone."]
-        if issues:
-            lines += ["", "Validation:"] + [f"- {i['severity']}: {i['field_path']} {i['message']}" for i in issues]
-        return BuilderResult(True, "\n".join(lines), {"record": rec, "issues": issues, "sections": OBJECT_BUILDER_SECTIONS})
+        return self.start_editor(actor, "oedit", "items", object_id)
 
     def object_dependencies(self, actor: Any, object_id: str) -> BuilderResult:
         world_id = self.workspace.world_id(actor); drafts = self.workspace.load(world_id); matches=[]
@@ -2227,6 +2213,9 @@ class BuilderService:
             return self._render_reference_selector(None, sess)
         if sess.mode == "list_editor":
             return self._render_list_editor(sess)
+        if sess.editor_type == "oedit" and not sess.section and sess.mode in {"main_menu", "section_menu"}:
+            sess.mode = "main_menu"
+            return self._render_oedit_menu(sess)
         if sess.editor_type != "medit" and sess.section:
             lines = [f"{sess.editor_type.upper()} {sess.object_id} > Fields", f"Draft status: {'modified' if sess.dirty else 'clean'}"]
             for i, f in enumerate(self._field_descriptors(sess), 1):
@@ -2240,6 +2229,53 @@ class BuilderService:
                 return self._render_spawns_editor(None, sess)
             return self._render_mobile_section(sess, sess.section)
         return self.menu(sess.editor_type, str(title), sess)
+
+
+    def _render_oedit_menu(self, sess: BuilderEditSession) -> str:
+        rec = normalize_object_template(sess.object_id, sess.working_record or {})
+        item_type = str(rec.get("item_type") or rec.get("type") or "misc").lower()
+        def yn(values): return ", ".join(map(str, values or [])) or "none"
+        def desc_count(): return len(rec.get("extra_descriptions") or [])
+        def apply_count(): return len(rec.get("affects") or rec.get("applies") or [])
+        lines = [f"-- Item number : [{rec.get('vnum', sess.object_id)}]", f"Object ID     : {sess.object_id}", f"Draft status  : {'modified' if sess.dirty else 'clean'}", ""]
+        rows = [
+            ("1", "Keywords", yn(rec.get("keywords"))),
+            ("2", "S-Desc", rec.get("short_description") or rec.get("name") or ""),
+            ("3", "L-Desc", rec.get("long_description") or ""),
+            ("4", "A-Desc", rec.get("look_description") or rec.get("action_description") or ""),
+            ("5", "Type", item_type),
+            ("6", "Extra flags", yn(rec.get("extra_flags"))),
+            ("7", "Wear flags", yn(rec.get("wear_flags"))),
+            ("8", "Weight", rec.get("weight", 0)),
+            ("9", "Cost", rec.get("cost", 0)),
+            ("A", "Cost/Day", rec.get("cost_per_day", rec.get("rent", 0))),
+            ("B", "Timer", rec.get("destroy_timer", rec.get("timer", 0))),
+            ("C", "Values", self._oedit_values_summary(rec)),
+            ("D", "Applies menu", f"{apply_count()} applies"),
+            ("E", "Extra descriptions menu", f"{desc_count()} descriptions"),
+            ("M", "Min Level", rec.get("min_level", 0)),
+            ("P", "Perm Affects", yn(rec.get("perm_affects"))),
+            ("S", "Script", yn(rec.get("scripts")) if rec.get("scripts") else "unsupported by runtime"),
+            ("W", "Copy object", "choose destination"),
+            ("X", "Delete object", "dependency-protected"),
+            ("Q", "Quit", "save/discard/abort"),
+        ]
+        lines += [f"{k}) {label:<28}: {value}" for k, label, value in rows]
+        lines += ["", "V) Validate   R) Preview   U) Undo   Y) Redo   H) Help", "Enter choice:"]
+        return "\n".join(lines)
+
+    def _oedit_values_summary(self, rec: dict[str, Any]) -> str:
+        typ = str(rec.get("item_type") or rec.get("type") or "misc").lower()
+        keys = {
+            "weapon": ("weapon_type", "damage_dice", "attack_type"), "armor": ("armor_values", "resistances"),
+            "container": ("weight_capacity", "container_flags", "key_id"), "light": ("brightness", "burn_time"),
+            "food": ("nutrition", "poison", "decay"), "drink_container": ("liquid_type", "servings", "poison"),
+            "fountain": ("liquid_type", "servings", "poison"), "wand": ("spell_storage", "charges"),
+            "staff": ("spell_storage", "charges"), "scroll": ("spell_storage",), "potion": ("spell_storage",),
+            "money": ("currency", "amount"), "furniture": ("capacity",), "key": ("key_id",), "boat": ("capacity",),
+        }.get(typ, ("subtype", "category"))
+        vals = [f"{k}={self._fmt_value(rec.get(k))}" for k in keys if rec.get(k) not in (None, "", [], {})]
+        return "; ".join(vals) if vals else f"{typ} defaults"
 
     def _field_descriptors(self, sess: BuilderEditSession) -> list[OlcFieldDescriptor]:
         if sess.editor_type == "medit":
@@ -2275,7 +2311,7 @@ class BuilderService:
                 return [OlcFieldDescriptor(f, f.replace("_"," ").title(), tuple(("combat_profile", f) if sess.section == "combat" else (f,)), "string_list" if f.endswith("ids") or f in {"granted_abilities","spell_loadout","starting_inventory"} else "string") for f in fields]
         # Shared minimal descriptors for OEDIT/REDIT/ZEDIT/AEDIT.
         if sess.editor_type == "oedit":
-            return [OlcFieldDescriptor("name","Object name",("name",),"string",required=True), OlcFieldDescriptor("keywords","Keywords",("keywords",),"string_list"), OlcFieldDescriptor("object_type","Object type",("type",),"enum",choices=("weapon","armor","container","consumable","tool","misc")), OlcFieldDescriptor("description","Detailed description",("description",),"multiline"), OlcFieldDescriptor("wear_flags","Wear flags",("wear_flags",),"flag_set",flags=tuple(sorted(VALID_WEAR_SLOTS))), OlcFieldDescriptor("extra_flags","Extra flags",("extra_flags",),"flag_set",flags=("glow","hum","invisible","magic","nodrop","bless","anti_good","anti_evil"))]
+            return [OlcFieldDescriptor("keywords","Keywords",("keywords",),"string_list"), OlcFieldDescriptor("short_description","Short description",("short_description",),"string",required=True), OlcFieldDescriptor("long_description","Long description",("long_description",),"multiline"), OlcFieldDescriptor("look_description","Action/look description",("look_description",),"multiline"), OlcFieldDescriptor("item_type","Item type",("item_type",),"enum",choices=TBA_ITEM_TYPES), OlcFieldDescriptor("extra_flags","Extra flags",("extra_flags",),"flag_set",flags=TBA_OEDIT_EXTRA_FLAGS), OlcFieldDescriptor("wear_flags","Wear flags",("wear_flags",),"flag_set",flags=TBA_OEDIT_WEAR_FLAGS), OlcFieldDescriptor("weight","Weight",("weight",),"integer",minimum=0,maximum=100000), OlcFieldDescriptor("cost","Cost",("cost",),"integer",minimum=0,maximum=100000000), OlcFieldDescriptor("cost_per_day","Cost per day",("cost_per_day",),"integer",minimum=0,maximum=100000000), OlcFieldDescriptor("destroy_timer","Timer",("destroy_timer",),"integer",minimum=0,maximum=1000000), OlcFieldDescriptor("values","Type-specific values",("type_values",),"list"), OlcFieldDescriptor("affects","Applies",("affects",),"list"), OlcFieldDescriptor("extra_descriptions","Extra descriptions",("extra_descriptions",),"list"), OlcFieldDescriptor("min_level","Minimum level",("min_level",),"integer",minimum=0,maximum=100), OlcFieldDescriptor("perm_affects","Permanent affects",("perm_affects",),"flag_set",flags=TBA_OEDIT_PERM_AFFECTS), OlcFieldDescriptor("scripts","Scripts",("scripts",),"list")]
         if sess.editor_type == "redit":
             return [OlcFieldDescriptor("name","Room name",("name",),"string",required=True), OlcFieldDescriptor("vnum","Room VNUM",("vnum",),"integer",minimum=1,maximum=999999), OlcFieldDescriptor("description","Room description",("description",),"multiline"), OlcFieldDescriptor("sector","Sector/terrain",("sector",),"enum",choices=("inside","city","field","forest","hills","mountain","water","air")), OlcFieldDescriptor("room_flags","Room flags",("flags",),"flag_set",flags=("dark","death","indoors","peaceful","soundproof","nomob","private")), OlcFieldDescriptor("exits","Exits",("exits",),"list")]
         if sess.editor_type in {"zedit","aedit"}:
@@ -2760,6 +2796,32 @@ class BuilderService:
                 if desc.input_type == "reference":
                     sess.mode = "reference_selector"; sess.reference_filter = ""; return BuilderResult(True, self._render_reference_selector(actor, sess))
                 sess.mode = "field_prompt"; return BuilderResult(True, self._render_field_prompt(sess))
+        if sess.editor_type == "oedit" and not sess.section:
+            oedit_map = {"1":"keywords","2":"short_description","3":"long_description","4":"look_description","5":"item_type","6":"extra_flags","7":"wear_flags","8":"weight","9":"cost","a":"cost_per_day","b":"destroy_timer","c":"values","d":"affects","e":"extra_descriptions","m":"min_level","p":"perm_affects","s":"scripts"}
+            if low in oedit_map:
+                field = oedit_map[low]; desc = self._descriptor(sess, field); sess.active_field = field
+                if field == "scripts" and not sess.working_record.get("scripts"):
+                    return BuilderResult(True, "Script editing is unavailable until DG/script runtime support is enabled for this object.\n" + self._render_oedit_menu(sess))
+                if desc.input_type == "multiline": sess.mode = "multiline_text"; sess.multiline_lines = []; return BuilderResult(True, self._render_multiline(sess))
+                if desc.input_type == "flag_set": sess.mode = "flag_editor"; return BuilderResult(True, self._render_flag_editor(sess))
+                if desc.input_type in {"string_list","list"}: sess.mode = "list_editor"; return BuilderResult(True, self._render_list_editor(sess))
+                sess.mode = "field_prompt"; return BuilderResult(True, self._render_field_prompt(sess))
+            if low == "w":
+                sess.confirmation_type = "copy"; return BuilderResult(True, "Copy object: enter destination object ID, or Q to cancel.")
+            if low == "x":
+                deps = self.object_dependencies(actor, sess.object_id).data.get("matches", []) if self.object_dependencies(actor, sess.object_id).data else []
+                if deps: return BuilderResult(False, "Delete protected; dependencies exist:\n" + "\n".join(f"- {d}" for d in deps) + "\n" + self._render_oedit_menu(sess))
+                sess.confirmation_type = "delete"; return BuilderResult(True, "Delete object: type DELETE to confirm, or Q to cancel.")
+        if sess.editor_type == "oedit" and sess.confirmation_type == "copy":
+            if low in cancel_words: sess.confirmation_type = ""; return BuilderResult(True, "Copy cancelled.\n" + self._render_oedit_menu(sess))
+            if not re.fullmatch(r"[A-Za-z0-9_:-]+", text.strip()): return BuilderResult(False, "Destination object ID must be an identifier, or Q to cancel.")
+            res = self.clone(actor, "items", sess.object_id, text.strip())
+            sess.confirmation_type = ""
+            return BuilderResult(res.ok, res.message + ("\n" + self._render_oedit_menu(sess) if res.ok else ""), res.data)
+        if sess.editor_type == "oedit" and sess.confirmation_type == "delete":
+            if low in cancel_words: sess.confirmation_type = ""; return BuilderResult(True, "Delete cancelled.\n" + self._render_oedit_menu(sess))
+            if text.strip() != "DELETE": return BuilderResult(False, "Type DELETE to confirm deletion, or Q to cancel.")
+            self.sessions.end(actor); return self.workspace.delete(actor, "items", sess.object_id, "item_template")
         if sess.editor_type != "medit" and low in {"1","fields","edit"}:
             sess.section = "fields"; sess.mode = "section_menu"; return BuilderResult(True, self.render_session(sess))
         section_map = {"1":"identity","identity":"identity", "2":"keywords", "keywords":"keywords", "aliases":"keywords", "3":"descriptions", "descriptions":"descriptions", "4":"traits", "traits":"traits", "5":"attributes", "attributes":"attributes", "level":"attributes", "6":"resources", "resources":"resources", "7":"natural_weapons", "combat":"combat", "8":"body_weapons", "body":"body_weapons", "body profile":"body_weapons", "weapons":"natural_weapons", "natural":"natural_weapons", "natural weapons":"natural_weapons", "natural attacks":"natural_weapons", "9":"positions", "positions":"positions", "10":"mobile_flags", "flags":"mobile_flags", "mobile flags":"mobile_flags", "11":"affect_flags", "affects":"affect_flags", "12":"equipment", "equipment":"equipment", "13":"inventory", "inventory":"inventory", "14":"loot", "loot":"loot", "15":"abilities", "abilities":"abilities", "16":"ai", "ai":"ai", "behavior":"ai", "17":"faction", "faction":"faction", "18":"scripts", "scripts":"scripts", "19":"spawns", "spawns":"spawns", "spawn":"spawns", "20":"diagnostics", "diagnostics":"diagnostics"}
@@ -2786,6 +2848,9 @@ class BuilderService:
             if not sess.undo_stack: return BuilderResult(False, "Nothing to undo.")
             sess.redo_stack.append(deepcopy(sess.working_record)); sess.working_record = sess.undo_stack.pop(); sess.dirty = sess.working_record != sess.savepoint; sess.saved = not sess.dirty
             return BuilderResult(True, "Session undo applied.\n" + self.render_session(sess))
+        if low in {"r", "preview"} and sess.editor_type == "oedit": return self._session_preview(actor, sess)
+        if low in {"y", "redo"} and sess.editor_type == "oedit":
+            low = "redo"
         if low in {"r", "redo"}:
             if not sess.redo_stack: return BuilderResult(False, "Nothing to redo.")
             sess.undo_stack.append(deepcopy(sess.working_record)); sess.working_record = sess.redo_stack.pop(); sess.dirty = sess.working_record != sess.savepoint; sess.saved = not sess.dirty
