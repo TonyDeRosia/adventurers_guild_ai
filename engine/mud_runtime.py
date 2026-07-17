@@ -977,10 +977,23 @@ class MudRuntime:
         if getattr(self, "combat_runtime", None):
             self.combat_runtime.enqueue_output(character_id, message, room_id=room_id, category=category)
 
+    def _character_exclusions_for_actor(self, actor_id: str) -> set[str]:
+        aid = str(actor_id or "")
+        exclusions = {aid} if aid else set()
+        if aid.startswith("character:"):
+            exclusions.add(aid.split(":", 1)[1])
+        return exclusions
+
     def deliver_room_action(self, room_id: str, message: str, *, actor_id: str = "", category: str = "room_action") -> None:
-        for cid in self._active_character_ids_in_room(room_id, exclude={actor_id} if actor_id else set()):
+        excluded = self._character_exclusions_for_actor(actor_id)
+        delivered: set[str] = set()
+        for cid in self._active_character_ids_in_room(room_id, exclude=excluded):
+            if cid in delivered:
+                continue
+            delivered.add(cid)
             self._enqueue_room_output(cid, message, room_id=room_id, category=category)
-        self.event_bus.publish("room_action_observed", {"room_id": room_id, "actor_id": actor_id, "message_kind": category}, source_system="runtime", world_id=self.active_world_id or "", room_id=room_id)
+        logger.debug("[movement-broadcast] actor=%s room=%s excluded=%s delivered=%s category=%s", actor_id, room_id, sorted(excluded), sorted(delivered), category)
+        self.event_bus.publish("room_action_observed", {"room_id": room_id, "actor_id": actor_id, "message_kind": category, "excluded": sorted(excluded), "delivered": sorted(delivered)}, source_system="runtime", world_id=self.active_world_id or "", room_id=room_id)
 
 
     def deliver_perspective_action(self, actor: MudCharacter, target: Any, room_id: str, actor_message: str, target_message: str | None, observer_message: str | None, *, semantic_role: str = "system", intent: str = "SYSTEM", exclusions: set[str] | None = None, visibility_policy: Any = None):
