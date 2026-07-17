@@ -35,7 +35,8 @@ def test_redit_adventurers_lair_style_menu_and_routes(isolated_builder_world):
     assert "Room name changed" in changed
     assert "Draft status : modified" in changed
     assert "Room reset editing is not yet available" in _out(rt, cid, "r")
-    assert "Exit editing is not yet available" in _out(rt, cid, "a")
+    assert "-- Exit down for room guildhall_crossing_square" in _out(rt, cid, "a")
+    assert "4) Sector type" in _out(rt, cid, "q")
     assert "You have unsaved room changes" in _out(rt, cid, "q")
     assert "Continue editing" in _out(rt, cid, "c")
     assert rt.command_engine.builder_service.sessions.has(rt.active_characters[cid])

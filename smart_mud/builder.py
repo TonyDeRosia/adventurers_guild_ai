@@ -76,6 +76,9 @@ TBA_OEDIT_WEAR_FLAGS = ("take", "finger", "neck", "body", "head", "legs", "feet"
 TBA_OEDIT_PERM_AFFECTS = ("blind", "invisible", "detect_invisible", "detect_magic", "sense_life", "waterwalk", "sanctuary", "group", "curse", "infravision", "poison", "protect_evil", "protect_good", "sleep", "notrack", "flying")
 TBA_ITEM_TYPES = ("light", "scroll", "wand", "staff", "potion", "weapon", "armor", "container", "drink_container", "fountain", "food", "money", "furniture", "note", "other", "worn", "treasure", "trash", "key", "pen", "boat", "misc")
 REDIT_DIRECTIONS = ("north", "east", "south", "west", "up", "down")
+REDIT_REVERSE_DIRECTIONS = {"north": "south", "south": "north", "east": "west", "west": "east", "up": "down", "down": "up"}
+REDIT_DOOR_TYPES = ("open_passage", "door", "closed_door", "locked_door")
+REDIT_EXIT_FLAGS = ("hidden", "blocked", "pickproof", "climb", "swim", "fly", "crawl", "one_way", "no_mob", "no_player", "scripted")
 REDIT_ROOM_FLAGS = ("dark", "death", "indoors", "peaceful", "soundproof", "nomob", "private")
 REDIT_SECTORS = ("inside", "city", "field", "forest", "hills", "mountain", "water", "air")
 TBA_APPLY_TYPES = ("strength", "dexterity", "intelligence", "wisdom", "constitution", "charisma", "class", "level", "age", "weight", "height", "mana", "hit", "move", "gold", "experience", "armor", "hitroll", "damroll", "saving_para", "saving_rod", "saving_petri", "saving_breath", "saving_spell")
@@ -971,6 +974,7 @@ class BuilderEditSession:
     original_record: dict[str, Any] = field(default_factory=dict); working_record: dict[str, Any] = field(default_factory=dict); savepoint: dict[str, Any] = field(default_factory=dict); dirty_fields: list[str] = field(default_factory=list); quit_pending: bool = False
     undo_stack: list[dict[str, Any]] = field(default_factory=list); redo_stack: list[dict[str, Any]] = field(default_factory=list)
     menu_stack: list[str] = field(default_factory=list); active_field: str = ""; field_input_type: str = ""; pending_value: Any = None; confirmation_type: str = ""; multiline_lines: list[str] = field(default_factory=list); reference_filter: str = ""; reference_page: int = 1
+    active_direction: str = ""
 
 @dataclass(frozen=True)
 class OlcFieldDescriptor:
@@ -1900,7 +1904,7 @@ class BuilderService:
         lines = self._builder_list_header(title, total, world_id, cur_area if mode not in {"all","world"} else "", cur_zone if mode not in {"all","world"} else "", cur_room, page, pages)
         if kind in {"mob", "object"}:
             lines.append(f"Current zone: {cur_zone or 'none'}")
-            lines.append(f"Usage: {'mlist 1500-1599' if kind == 'mob' else 'olist 1300-1399'} | {kind}list all | zone | area | id | vnum | source draft|active|live")
+            lines.append(f"Usage: {'mlist 1500-1599' if kind == 'mob' else 'olist 1300-1399'}; {kind}list all; zone; area; id; vnum; source draft/active/live")
         if kind == "area":
             lines.append("ID | Name | Range | Rooms | Zones | Source | Current")
             for row in table_rows:
@@ -2229,6 +2233,8 @@ class BuilderService:
         if sess.editor_type == "redit" and not sess.section and sess.mode in {"main_menu", "section_menu"}:
             sess.mode = "main_menu"
             return self._render_redit_menu(sess)
+        if sess.editor_type == "redit" and sess.section == "exit":
+            return self._render_exit_editor(None, sess)
         if sess.editor_type != "medit" and sess.section:
             lines = [f"{sess.editor_type.upper()} {sess.object_id} > Fields", f"Draft status: {'modified' if sess.dirty else 'clean'}"]
             for i, f in enumerate(self._field_descriptors(sess), 1):
@@ -2265,11 +2271,227 @@ class BuilderService:
         records = self.resolve_collection_records(actor, "rooms") if actor is not None else self.workspace.load(sess.world_id).get("rooms", {})
         return f"{target}" + (" (invalid)" if str(target) not in records else "")
 
+    def _exit_target(self, ex: Any) -> str:
+        return str((ex or {}).get("target_room_id") or (ex or {}).get("destination_room_id") or (ex or {}).get("room_id") or (ex or {}).get("to") or "") if isinstance(ex, dict) else ""
+
+    def _room_by_id_or_vnum(self, actor: Any, token: str) -> tuple[str, dict[str, Any] | None, str]:
+        token = str(token or "").strip()
+        if not token:
+            return "", None, "Room identifier is required."
+        records = self.resolve_collection_records(actor, "rooms")
+        if token in records:
+            return token, records[token], ""
+        if token.isdigit():
+            matches = [(rid, r) for rid, r in records.items() if str(r.get("vnum") or r.get("legacy_vnum") or "") == token]
+            if len(matches) == 1:
+                return matches[0][0], matches[0][1], ""
+            if len(matches) > 1:
+                return "", None, f"Room VNUM {token} is ambiguous; use a canonical room ID."
+        return "", None, f"Room not found: {token}"
+
+    def _reverse_status(self, actor: Any, sess: BuilderEditSession, direction: str) -> tuple[str, str]:
+        ex = (sess.working_record.get("exits") or {}).get(direction)
+        target = self._exit_target(ex)
+        if not target:
+            return "Destination room unresolved", ""
+        rev = REDIT_REVERSE_DIRECTIONS.get(direction)
+        if not rev:
+            return "Reverse direction unsupported", ""
+        records = self.resolve_collection_records(actor, "rooms", scratch=sess.working_record)
+        dest = records.get(target)
+        if not isinstance(dest, dict):
+            return "Destination room unresolved", target
+        back = self._exit_target((dest.get("exits") or {}).get(rev))
+        if not back:
+            return "Missing", target
+        if back == sess.object_id:
+            return "Correct", target
+        return f"Points elsewhere ({back})", target
+
+    def _render_exit_editor(self, actor: Any, sess: BuilderEditSession) -> str:
+        direction = sess.active_direction
+        ex = (sess.working_record.setdefault("exits", {}) or {}).get(direction) or {}
+        target = self._exit_target(ex) or "None"
+        desc = ex.get("description") or "Not Set."
+        keywords = ex.get("keywords") or []
+        if isinstance(keywords, str): keywords = keywords.split()
+        flags = ex.get("flags") or []
+        status, _target = self._reverse_status(actor, sess, direction)
+        rev = REDIT_REVERSE_DIRECTIONS.get(direction, "n/a")
+        link_mode = "One-way" if "one_way" in flags or ex.get("one_way") else "Two-way"
+        return "\n".join([
+            f"-- Exit {direction} for room {sess.object_id}",
+            f"1) Destination : {target}",
+            f"2) Description : {desc}",
+            f"3) Keywords    : {', '.join(map(str, keywords)) if keywords else 'Not Set.'}",
+            f"4) Door type   : {str(ex.get('door_type') or 'open_passage').replace('_',' ').title()}",
+            f"5) Exit flags  : {', '.join(str(f).upper() for f in flags) if flags else 'NOBITS'}",
+            f"6) Key         : {ex.get('key_id') or ex.get('key_item_id') or 'None'}",
+            f"7) Reverse     : {rev} -> {sess.object_id}: {status}",
+            f"8) Link mode   : {link_mode}",
+            "D) Delete Exit",
+            "R) Repair Reverse Exit",
+            "Q) Back",
+            "Enter choice :",
+        ])
+
+    def _set_exit_field(self, sess: BuilderEditSession, direction: str, updates: dict[str, Any] | None) -> None:
+        self._session_checkpoint(sess)
+        exits = deepcopy(sess.working_record.get("exits") or {})
+        if updates is None:
+            exits.pop(direction, None)
+        else:
+            ex = dict(exits.get(direction) or {})
+            ex.update(updates)
+            if not self._exit_target(ex):
+                exits.pop(direction, None)
+            else:
+                exits[direction] = ex
+        sess.working_record["exits"] = exits
+        sess.dirty = sess.working_record != sess.savepoint; sess.saved = not sess.dirty
+
+    def _handle_exit_editor(self, actor: Any, sess: BuilderEditSession, text: str, low: str) -> BuilderResult:
+        direction = sess.active_direction
+        if low in {"q", "quit", "back"}:
+            sess.section = ""; sess.mode = "main_menu"; sess.active_field = ""; sess.confirmation_type = ""; sess.pending_value = None
+            return BuilderResult(True, self._render_redit_menu(sess))
+        if sess.confirmation_type == "exit_destination":
+            if low in {"q","quit","cancel","back"}:
+                sess.confirmation_type = ""; return BuilderResult(True, "Destination edit cancelled.\n" + self._render_exit_editor(actor, sess))
+            if low in {"clear","none","-1"}:
+                self._set_exit_field(sess, direction, None); sess.confirmation_type = ""
+                return BuilderResult(True, "Exit destination cleared.\n" + self._render_exit_editor(actor, sess))
+            rid, _room, err = self._room_by_id_or_vnum(actor, text)
+            if err:
+                return BuilderResult(False, err + "\nEnter a room ID/VNUM, clear, or Q.")
+            if str((_room or {}).get("world_id") or sess.world_id) != sess.world_id:
+                return BuilderResult(False, "Cross-world exits are not supported by this Builder.")
+            self._set_exit_field(sess, direction, {"target_room_id": rid}); sess.confirmation_type = ""
+            status, _ = self._reverse_status(actor, sess, direction)
+            return BuilderResult(True, f"Exit destination changed. Reverse status: {status}\n" + self._render_exit_editor(actor, sess))
+        if sess.confirmation_type == "exit_keywords":
+            if low in {"q","quit","cancel","back"}:
+                sess.confirmation_type = ""; return BuilderResult(True, "Keyword edit cancelled.\n" + self._render_exit_editor(actor, sess))
+            words = [] if low in {"clear","none"} else [w for w in re.split(r"\s+", text.strip()) if w]
+            self._set_exit_field(sess, direction, {"keywords": words}); sess.confirmation_type = ""
+            return BuilderResult(True, "Exit keywords changed.\n" + self._render_exit_editor(actor, sess))
+        if sess.confirmation_type == "exit_door":
+            if low in {"q","quit","cancel","back"}:
+                sess.confirmation_type = ""; return BuilderResult(True, "Door type edit cancelled.\n" + self._render_exit_editor(actor, sess))
+            choice = REDIT_DOOR_TYPES[int(low)-1] if low.isdigit() and 1 <= int(low) <= len(REDIT_DOOR_TYPES) else low.replace(" ", "_")
+            if choice not in REDIT_DOOR_TYPES:
+                return BuilderResult(False, "Choose a supported door type: " + ", ".join(REDIT_DOOR_TYPES))
+            self._set_exit_field(sess, direction, {"door_type": choice}); sess.confirmation_type = ""
+            return BuilderResult(True, "Door type changed.\n" + self._render_exit_editor(actor, sess))
+        if sess.confirmation_type == "exit_flags":
+            if low in {"q","quit","cancel","back"}:
+                sess.confirmation_type = ""; return BuilderResult(True, self._render_exit_editor(actor, sess))
+            ex = (sess.working_record.get("exits") or {}).get(direction) or {}
+            cur = set(ex.get("flags") or [])
+            if low in {"clear","none"}: cur = set()
+            elif low.isdigit() and 1 <= int(low) <= len(REDIT_EXIT_FLAGS):
+                flag = REDIT_EXIT_FLAGS[int(low)-1]; (cur.remove if flag in cur else cur.add)(flag)
+            elif low in REDIT_EXIT_FLAGS:
+                (cur.remove if low in cur else cur.add)(low)
+            else:
+                return BuilderResult(False, "Choose a flag number, clear, or Q.")
+            self._set_exit_field(sess, direction, {"flags": sorted(cur)})
+            return BuilderResult(True, "Exit flags changed.\n" + self._render_exit_editor(actor, sess))
+        if sess.confirmation_type == "exit_key":
+            if low in {"q","quit","cancel","back"}:
+                sess.confirmation_type = ""; return BuilderResult(True, "Key edit cancelled.\n" + self._render_exit_editor(actor, sess))
+            val = "" if low in {"clear","none"} else text.strip()
+            if val and val not in self.resolve_collection_records(actor, "items"):
+                return BuilderResult(False, f"Object/key not found: {val}")
+            self._set_exit_field(sess, direction, {"key_id": val or None}); sess.confirmation_type = ""
+            return BuilderResult(True, "Exit key changed.\n" + self._render_exit_editor(actor, sess))
+        if sess.confirmation_type == "exit_delete":
+            if low in {"q","quit","cancel","back"}:
+                sess.confirmation_type = ""; return BuilderResult(True, "Delete exit cancelled.\n" + self._render_exit_editor(actor, sess))
+            if low not in {"one-way","oneway","current","both","two-way","twoway"}:
+                return BuilderResult(False, "Type current for one-way deletion, both for two-way deletion, or Q.")
+            self._set_exit_field(sess, direction, None); sess.confirmation_type = ""
+            return BuilderResult(True, "Exit deleted from current room draft. Two-way deletion is available through UNDIG for saved drafts.\n" + self._render_redit_menu(sess))
+        if sess.confirmation_type == "exit_repair":
+            if low in {"q","quit","cancel","back"}:
+                sess.confirmation_type = ""; return BuilderResult(True, "Reverse repair cancelled.\n" + self._render_exit_editor(actor, sess))
+            if low not in {"repair","confirm","yes","y"}:
+                return BuilderResult(False, "Type REPAIR to create/replace the reverse exit, or Q.")
+            target = self._exit_target((sess.working_record.get("exits") or {}).get(direction)); rev = REDIT_REVERSE_DIRECTIONS.get(direction)
+            if not target or not rev:
+                return BuilderResult(False, "Cannot repair without a valid destination and reverse direction.")
+            res = self.link_rooms(actor, target, rev, sess.object_id, one_way=True, require_existing_target=True, allow_overwrite=True, action="redit repair reverse")
+            sess.confirmation_type = ""
+            return BuilderResult(res.ok, res.message + "\n" + self._render_exit_editor(actor, sess), res.data)
+        if low == "1":
+            sess.confirmation_type = "exit_destination"; return BuilderResult(True, "Enter destination room ID/VNUM, clear, or Q.")
+        if low == "2":
+            sess.mode = "multiline_text"; sess.active_field = f"exit:{direction}:description"; sess.multiline_lines = []
+            return BuilderResult(True, "Multiline text editor for exit description. Use .save or .cancel.")
+        if low == "3":
+            sess.confirmation_type = "exit_keywords"; return BuilderResult(True, "Enter space-separated exit keywords, clear, or Q.")
+        if low == "4":
+            sess.confirmation_type = "exit_door"; return BuilderResult(True, "Door types:\n" + "\n".join(f"{i}) {v.replace('_',' ').title()}" for i,v in enumerate(REDIT_DOOR_TYPES,1)))
+        if low == "5":
+            sess.confirmation_type = "exit_flags"; return BuilderResult(True, "Exit flags:\n" + "\n".join(f"{i}) {v}" for i,v in enumerate(REDIT_EXIT_FLAGS,1)))
+        if low == "6":
+            sess.confirmation_type = "exit_key"; return BuilderResult(True, "Enter key object ID, clear, or Q.")
+        if low == "7":
+            status, _ = self._reverse_status(actor, sess, direction); return BuilderResult(True, f"Reverse status: {status}\n" + self._render_exit_editor(actor, sess))
+        if low == "8":
+            ex = (sess.working_record.get("exits") or {}).get(direction) or {}; flags = set(ex.get("flags") or [])
+            if "one_way" in flags: flags.remove("one_way"); msg = "Link mode set to Two-way."
+            else: flags.add("one_way"); msg = "Link mode set to One-way."
+            self._set_exit_field(sess, direction, {"flags": sorted(flags)})
+            return BuilderResult(True, msg + "\n" + self._render_exit_editor(actor, sess))
+        if low == "d":
+            sess.confirmation_type = "exit_delete"; return BuilderResult(True, "Delete exit: type current for one-way deletion, both for two-way deletion, or Q.")
+        if low == "r":
+            status, target = self._reverse_status(actor, sess, direction); rev = REDIT_REVERSE_DIRECTIONS.get(direction, "")
+            sess.confirmation_type = "exit_repair"
+            return BuilderResult(True, f"Repair reverse exit?\nSource room: {sess.object_id}\nSource direction: {direction}\nDestination room: {target or 'unresolved'}\nExpected reverse direction: {rev}\nCurrent reverse destination: {status}\nWhat will change: {target} {rev} -> {sess.object_id}\nType REPAIR to confirm, or Q.")
+        return BuilderResult(False, "Choose an exit menu option.\n" + self._render_exit_editor(actor, sess))
+
+    def link_rooms(self, actor: Any, source_id: str, direction: str, target_id: str, *, one_way: bool = False, require_existing_target: bool = True, allow_overwrite: bool = False, action: str = "builder link") -> BuilderResult:
+        if direction not in REDIT_DIRECTIONS:
+            return BuilderResult(False, f"Unsupported direction: {direction}")
+        records = self.resolve_collection_records(actor, "rooms")
+        if source_id not in records:
+            return BuilderResult(False, f"Source room not found: {source_id}")
+        if require_existing_target and target_id not in records:
+            return BuilderResult(False, f"Target room not found: {target_id}")
+        denied = self._check_permission(actor, "rooms", source_id, "mutate") or self._check_permission(actor, "rooms", target_id, "mutate")
+        if denied: return denied
+        rev = REDIT_REVERSE_DIRECTIONS.get(direction, "")
+        world_id = self.workspace.world_id(actor); drafts = self.workspace.load(world_id); rooms = drafts.setdefault("rooms", {})
+        before_source = deepcopy(rooms.get(source_id) or records.get(source_id) or {"id": source_id})
+        before_target = deepcopy(rooms.get(target_id) or records.get(target_id) or {"id": target_id})
+        src_ex = (before_source.get("exits") or {}).get(direction)
+        if src_ex and self._exit_target(src_ex) not in {"", target_id} and not allow_overwrite:
+            return BuilderResult(False, f"Source exit {source_id} {direction} already points to {self._exit_target(src_ex)}.")
+        if not one_way and rev:
+            rev_ex = (before_target.get("exits") or {}).get(rev)
+            if rev_ex and self._exit_target(rev_ex) not in {"", source_id} and not allow_overwrite:
+                return BuilderResult(False, f"Reverse exit {target_id} {rev} already points to {self._exit_target(rev_ex)}.")
+        after_source = deepcopy(before_source); after_target = deepcopy(before_target)
+        after_source.setdefault("exits", {})[direction] = {"target_room_id": target_id}
+        if not one_way and rev:
+            after_target.setdefault("exits", {})[rev] = {"target_room_id": source_id}
+        rooms[source_id] = after_source; rooms[target_id] = after_target
+        self.workspace.save_drafts(world_id, drafts)
+        self._push_history(actor, "rooms", source_id, before_source, after_source, action)
+        if target_id != source_id:
+            self._push_history(actor, "rooms", target_id, before_target, after_target, action)
+        self.workspace.audit(actor, world_id, action, "rooms", f"{source_id}:{direction}", {"source": before_source, "target": before_target}, {"source": after_source, "target": after_target})
+        lines = ["Created two-way link:" if not one_way else "Created one-way link:", f"  {source_id} {direction} -> {target_id}"]
+        if not one_way and rev: lines.append(f"  {target_id} {rev} -> {source_id}")
+        return BuilderResult(True, "\n".join(lines), {"source": after_source, "target": after_target})
+
     def _render_redit_menu(self, sess: BuilderEditSession) -> str:
         rec = sess.working_record or {}
         flags = ", ".join(str(f).upper() for f in (rec.get("flags") or [])) or "None"
         sector = str(rec.get("sector") or rec.get("sector_type") or "inside")
-        lines = [f"-- Room number: [{self._room_display_id(rec, sess.object_id)}] Room zone: [{self._room_zone_summary(sess, rec)}]", f"Room ID      : {sess.object_id}", f"Draft status : {'modified' if sess.dirty else 'clean'}", ""]
+        lines = ["Currently editing:", f"Room: {sess.object_id}", f"Name: {rec.get('name') or ''}", "Source: draft", f"Dirty: {'yes' if sess.dirty else 'no'}", f"-- Room number: [{self._room_display_id(rec, sess.object_id)}] Room zone: [{self._room_zone_summary(sess, rec)}]", f"Room ID      : {sess.object_id}", f"Draft status : {'modified' if sess.dirty else 'clean'}", ""]
         lines.append(f"1) Name        : {rec.get('name') or ''}")
         lines.append("2) Description :")
         desc = str(rec.get("description") or "")
@@ -2859,6 +3081,12 @@ class BuilderService:
                 sess.multiline_lines = []
                 return BuilderResult(True, "Pending text cleared.")
             if low == ".save":
+                if str(sess.active_field).startswith("exit:"):
+                    _, direction, field_name = sess.active_field.split(":", 2)
+                    new = "\n".join(sess.multiline_lines).rstrip()
+                    self._set_exit_field(sess, direction, {field_name: new})
+                    sess.mode = "section_menu"; sess.section = "exit"; sess.multiline_lines = []; sess.active_field = ""
+                    return BuilderResult(True, "Text saved.\n" + self._render_exit_editor(actor, sess), sess.working_record)
                 f = self._descriptor(sess, sess.active_field)
                 new = "\n".join(sess.multiline_lines).rstrip()
                 return self._apply_field_value(actor, sess, f, new, "Text saved.")
@@ -3004,6 +3232,8 @@ class BuilderService:
         if sess.editor_type == "redit" and sess.confirmation_type:
             handled = self._handle_redit_confirmation(actor, sess, text, low)
             if handled is not None: return handled
+        if sess.editor_type == "redit" and sess.section == "exit":
+            return self._handle_exit_editor(actor, sess, text, low)
         if sess.editor_type == "redit" and not sess.section:
             rmap = {"1":"name","2":"description","3":"room_flags","4":"sector"}
             if low in rmap:
@@ -3013,7 +3243,8 @@ class BuilderService:
                 sess.mode = "field_prompt"; return BuilderResult(True, self._render_field_prompt(sess))
             if low in {"5","6","7","8","9","a"}:
                 idx = {"5":0,"6":1,"7":2,"8":3,"9":4,"a":5}[low]; direction = REDIT_DIRECTIONS[idx]
-                return BuilderResult(True, f"Exit editing is not yet available in this interface. Current {direction} destination is {self._exit_summary(actor, sess, direction)}.\n" + self._render_redit_menu(sess))
+                sess.section = "exit"; sess.mode = "section_menu"; sess.active_direction = direction
+                return BuilderResult(True, self._render_exit_editor(actor, sess))
             if low == "f": return BuilderResult(True, f"Extra description editing is not yet available in REDIT. Current extra descriptions: {len(sess.working_record.get('extra_descriptions') or [])}.\n" + self._render_redit_menu(sess))
             if low == "r": return BuilderResult(True, "Room reset editing is not yet available in REDIT. Use existing reset/spawn Builder commands for detailed reset work.\n" + self._render_redit_menu(sess))
             if low == "s": return BuilderResult(True, "Script attachment editing is not yet available until script runtime support is enabled for rooms.\n" + self._render_redit_menu(sess))

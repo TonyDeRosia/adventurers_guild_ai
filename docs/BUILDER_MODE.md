@@ -363,3 +363,27 @@ Implemented shortcuts:
 - `Q` exits immediately when clean. Dirty sessions show `S) Save Draft`, `D) Discard Changes`, and `C) Continue Editing`.
 
 Saving from REDIT validates the scratch room and writes only Builder draft data through the existing Builder session/mutate lifecycle. Saving a Builder draft does not publish or directly mutate live runtime world-package JSON; publishing/activation remains a separate Builder lifecycle step.
+
+## Phase 15B.45 Exit editor and room-link command parity
+
+REDIT exit choices `5`, `6`, `7`, `8`, `9`, and `A` now open persistent nested exit editors for north, east, south, west, up, and down. The nested editor remains inside the current Builder edit session and returns to the REDIT main menu with `Q`; it does not close the room session.
+
+The exit editor uses the canonical room `exits` mapping and currently exposes fields represented by Smart MUD room drafts: `target_room_id`, `description`, `keywords`, `door_type`, `flags`, and `key_id`. Destination editing accepts canonical room IDs and unique VNUMs, supports `clear`/`none`/`-1`, rejects missing or ambiguous destinations, and blocks cross-world links because runtime cross-world exits are not canonical yet. Description editing uses the same multiline `.save`/`.cancel` flow as room descriptions, preserving newlines and preventing description text from being routed as gameplay commands. Keywords are stored canonically as a normalized list rather than a display string.
+
+Door types are limited to the supported canonical Builder values: open passage, door, closed door, and locked door. Exit flags are stored as named flags and are intentionally conservative until the runtime door-state phase implements full behavior for every historical TBA bit. Keyed exits store a stable object-template reference in `key_id`; the editor validates that the referenced object exists and supports clearing the key.
+
+Reverse-link inspection classifies exits as correct, missing, pointing elsewhere, unresolved destination, or unsupported reverse direction. `R) Repair Reverse Exit` shows the source room, source direction, destination, expected reverse direction, current reverse destination, and the exact change before requiring `REPAIR`. The repair path updates the destination room through the Builder service and draft history rather than mutating live runtime rooms.
+
+`D) Delete Exit` requires an explicit current/one-way or both/two-way selection. The current REDIT nested deletion removes the current draft side and reports that full two-way deletion is handled by `undig` against saved drafts, preventing silent deletion of mismatched reverse exits.
+
+Room-link command compatibility:
+
+- `dig <direction> <target>` keeps the established Smart MUD workflow for creating a new draft room when the target does not exist, links both directions by default, accepts safe direction abbreviations, and treats `dig <direction> -1` as `undig <direction>`.
+- `undig <direction>` removes the current room's exit from drafts and removes the reverse side only when it correctly points back to the source room.
+- `rdig <direction> <new-room-id-or-vnum> ["Room Name"]` deliberately uses Smart MUD's safe create-and-link semantics by routing through `dig`; existing target refusal and area/zone inheritance remain those of the canonical room-creation workflow.
+- `relink <direction> <target-room-id-or-vnum>` deliberately changes an existing/current exit destination through the canonical multi-room Builder link service, overwriting only via the explicit relink command.
+- `rlinks [room-id]` inspects draft outbound and inbound links for the current or named room and reports broken destinations, missing reverses, mismatched reverses, and one-way-style problems.
+
+All of these Builder operations remain draft-first. `builder save`/REDIT save writes Builder drafts, not published world-package JSON, and normal live runtime movement is unchanged until the existing publish/apply lifecycle makes draft changes active. Authorization still uses Builder/admin roles plus the existing Builder workspace permission checks; no player or hard-coded account receives special authority.
+
+Known limitations: full runtime door state, hidden-exit discovery, lock/unlock/pick behavior, automatic area/zone prompts for ambiguous missing-room creation, and a graphical reverse-link repair UI are deferred. The next room-structure phase is `PHASE 15B.46 — ROOM EXTRA DESCRIPTIONS`.
