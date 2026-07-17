@@ -156,6 +156,7 @@ def test_builder_edit_target_updates_immediately_and_persists(tmp_path):
     assert "Name: Test Room 2" in target
     redit = out(rt, cid, "redit test_room_3")
     assert "Room: test_room_3" in redit
+    out(rt, cid, "q")
 
     goto = out(rt, cid, "goto test_room_2")
     assert "Room: test_room_2" in goto

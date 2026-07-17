@@ -529,6 +529,10 @@ class MudCommandEngine:
             "splist": self._cmd_builder_discovery,
             "resetlist": self._cmd_builder_discovery,
             "dig": self._cmd_dig,
+            "undig": self._cmd_undig,
+            "rdig": self._cmd_rdig,
+            "relink": self._cmd_relink,
+            "rlinks": self._cmd_rlinks,
             "link": self._cmd_link,
             "unlink": self._cmd_unlink,
             "del": self._cmd_delete_alias,
@@ -3648,6 +3652,22 @@ class MudCommandEngine:
     def _reverse_dir(self, direction: str) -> str:
         return {"north":"south","south":"north","east":"west","west":"east","up":"down","down":"up","in":"out","out":"in"}.get(direction, "")
 
+    def _resolve_builder_direction(self, token: str) -> str:
+        aliases = {"n":"north","e":"east","s":"south","w":"west","u":"up","d":"down"}
+        token = str(token or "").lower()
+        if token in aliases: return aliases[token]
+        matches = [d for d in ("north","east","south","west","up","down") if d.startswith(token)]
+        return matches[0] if len(matches) == 1 else token
+
+    def _resolve_builder_room_id(self, character: Any, token: str) -> tuple[str, str]:
+        drafts = self.builder.load(self.builder.world_id(character)); rooms = drafts.get("rooms", {})
+        if token in rooms: return token, ""
+        if str(token).isdigit():
+            matches = [rid for rid, r in rooms.items() if str(r.get("vnum") or "") == str(token)]
+            if len(matches) == 1: return matches[0], ""
+            if len(matches) > 1: return "", f"Room VNUM {token} is ambiguous; use room ID."
+        return "", f"Room not found: {token}"
+
     def _valid_room_id(self, room_id: str) -> bool:
         return bool(re.fullmatch(r"[a-z0-9]+(?:_[a-z0-9]+)*", str(room_id or "")))
 
@@ -3685,7 +3705,9 @@ class MudCommandEngine:
             return CommandResult(usage, ok=False)
         args = parsed[1:]
         if len(args) < 2: return CommandResult(usage, ok=False)
-        direction, rid_token = args[0].lower(), args[1]
+        direction, rid_token = self._resolve_builder_direction(args[0]), args[1]
+        if rid_token == "-1":
+            return self._cmd_undig(character, [direction], "undig " + direction)
         custom = rid_token.lower() == "custom"
         if custom:
             if len(args) < 3: return CommandResult(usage, ok=False)
@@ -3723,6 +3745,59 @@ class MudCommandEngine:
         runtime = getattr(self, "runtime", None)
         if runtime: runtime.state_store.save_character(character, world_id)
         return CommandResult(f"Dug {direction} to {rid}.\n" + "\n".join(["Created room:", "ID:", rid, "Name:", name, "Area:", getattr(character,"current_area_id", "") or "none", "Zone:", getattr(character,"current_zone_id", "") or "none", "VNUM:", str(vnum) if vnum is not None else "none", "", "Linked:", f"{old} {direction} -> {rid}", f"{rid} {self._reverse_dir(direction)} -> {old}" if not one_way and self._reverse_dir(direction) else "", "", "Editing:", rid]) + "\n" + self._builder_room_status(character, rid, self.builder.load(world_id)), state_updates={"render_room": True})
+
+    def _cmd_undig(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if not args: return CommandResult("Usage: undig <direction>", ok=False)
+        direction = self._resolve_builder_direction(args[0]); world_id = self.builder.world_id(character); room_id = self.builder.current_room_id(character); drafts = self.builder.load(world_id); rooms = drafts.setdefault("rooms", {})
+        room = rooms.get(room_id) or {}; ex = (room.get("exits") or {}).get(direction)
+        if not ex: return CommandResult(f"No {direction} exit exists from {room_id}.", ok=False)
+        target = ex.get("target_room_id") or ex.get("destination_room_id"); reverse = self._reverse_dir(direction)
+        before_room = copy.deepcopy(room); before_target = copy.deepcopy(rooms.get(target, {})) if target in rooms else None
+        room.setdefault("exits", {}).pop(direction, None); rooms[room_id] = room
+        removed_reverse = False
+        if target in rooms and reverse and (rooms[target].get("exits") or {}).get(reverse, {}).get("target_room_id") == room_id:
+            rooms[target].setdefault("exits", {}).pop(reverse, None); removed_reverse = True
+        self.builder.save_drafts(world_id, drafts)
+        self.builder_service._push_history(character, "rooms", room_id, before_room, room, "undig")
+        if before_target is not None: self.builder_service._push_history(character, "rooms", target, before_target, rooms[target], "undig")
+        return CommandResult(f"Removed exit {room_id} {direction} -> {target}." + ("\nRemoved matching reverse exit." if removed_reverse else "\nReverse exit was missing or mismatched; it was not changed."))
+
+    def _cmd_rdig(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if len(args) < 2: return CommandResult("Usage: rdig <direction> <new-room-id|vnum> [\"room name\"]", ok=False)
+        return self._cmd_dig(character, args, "dig " + " ".join(args))
+
+    def _cmd_relink(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if len(args) < 2: return CommandResult("Usage: relink <direction> <target-room-id|vnum>", ok=False)
+        direction = self._resolve_builder_direction(args[0]); target, err = self._resolve_builder_room_id(character, args[1])
+        if err: return CommandResult(err, ok=False)
+        source = self.builder.current_room_id(character)
+        res = self.builder_service.link_rooms(character, source, direction, target, one_way=False, require_existing_target=True, allow_overwrite=True, action="relink")
+        return CommandResult("Relinked existing exit destination.\n" + res.message, ok=res.ok)
+
+    def _cmd_rlinks(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        world_id = self.builder.world_id(character); drafts = self.builder.load(world_id); rooms = drafts.get("rooms", {})
+        room_id = args[0] if args else self.builder.current_room_id(character)
+        if room_id not in rooms: return CommandResult(f"Room not found: {room_id}", ok=False)
+        reverse = {"north":"south","south":"north","east":"west","west":"east","up":"down","down":"up"}
+        lines = [f"Room links for {room_id}", "", "Outbound exits:"]
+        problems = []
+        for d, ex in sorted((rooms[room_id].get("exits") or {}).items()):
+            tgt = (ex or {}).get("target_room_id") or (ex or {}).get("destination_room_id")
+            lines.append(f"  {d:<5} -> {tgt or 'None'}")
+            if tgt not in rooms: problems.append(f"  {d} -> missing {tgt}")
+            else:
+                back = (rooms[tgt].get("exits") or {}).get(reverse.get(d,""), {}).get("target_room_id")
+                if back != room_id: problems.append(f"  {d} -> {tgt}, reverse is {'missing' if not back else 'mismatched to '+back}")
+        lines += ["", "Inbound exits:"]
+        for rid, room in sorted(rooms.items()):
+            for d, ex in (room.get("exits") or {}).items():
+                if ((ex or {}).get("target_room_id") or (ex or {}).get("destination_room_id")) == room_id and rid != room_id:
+                    lines.append(f"  {rid} {d} -> this room")
+                    if (rooms[room_id].get("exits") or {}).get(reverse.get(d,""), {}).get("target_room_id") != rid:
+                        problems.append(f"  {rid} {d} -> this room, but reverse is missing")
+        if lines[-1] == "Inbound exits:": lines.append("  none")
+        lines += ["", "Problems:"] + (problems or ["  none"])
+        return CommandResult("\n".join(lines))
 
     def _cmd_link(self, character: Any, args: list[str], raw: str) -> CommandResult:
         both = bool(args and args[0].lower()=="both")
@@ -4198,6 +4273,11 @@ class MudCommandEngine:
         if cmd == "oedit" and args:
             self.builder_service.workspace = self.builder
             return out(self.builder_service.object_menu(character, args[0]))
+        if cmd == "redit" and not args:
+            if not room_id:
+                return CommandResult(self._builder_room_status(character, room_id, drafts) + "\nNo room is currently selected.\nUse redit <room_id>, rcreate <room_id>, goto <room_id>, or btarget room <room_id>.", ok=False)
+            self.builder_service.workspace = self.builder
+            return out(self.builder_service.start_editor(character, "redit", "rooms", room_id))
         if cmd in {"medit", "oedit", "redit", "aedit", "zedit"}:
             self.builder_service.workspace = self.builder
             res = self.builder_service.discover_editor_target(character, cmd, args)
