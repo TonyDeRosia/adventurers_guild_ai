@@ -13,6 +13,12 @@ from smart_mud.world_registry import WORLDS_DIR, _records
 BUILDER_ROLES = {"builder", "admin", "owner"}
 VALID_WEAR_SLOTS = {"head","face","neck","shoulders","back","chest","body","torso","arms","wrists","hands","finger","wrist","finger_left","finger_right","waist","legs","feet","mainhand","main_hand","primary_weapon","offhand","off_hand","secondary_weapon","held","wield","shield","quiver","ammo","ranged","light","accessory_1","accessory_2"}
 VALID_ENTITY_TYPES = {"npc", "mob", "merchant", "trainer", "banker", "healer", "critter", "object"}
+MEDIT_SEX_VALUES = ("neutral","male","female","nonbinary","unknown","custom")
+MEDIT_SIZE_VALUES = ("tiny","small","medium","large","huge","gargantuan","custom")
+MEDIT_POSITIONS = ("sleeping","resting","sitting","standing","fighting","stunned","incapacitated","mortally_wounded","dead")
+MEDIT_ATTACK_TYPES = ("hit","sting","whip","slash","bite","bludgeon","crush","pound","claw","maul","thrash","pierce","blast","punch","stab","gore","kick","tail","breath","slam")
+MEDIT_MOBILE_FLAGS = ("sentinel","stay_zone","wander","no_wander","aggressive","wimpy","memory","helper","no_kill","elite","boss","scavenger","mountable","pet","purchasable","companion","no_charm","shopkeeper","trainer","guildmaster","questmaster","banker","healer","ai_actor","scripted_only","behavior_profile_controlled","immortal","protected","unique","no_purge","debug_only")
+MEDIT_AFFECT_FLAGS = ("detect_invisible","darkvision","detect_magic","awareness","invisible","hidden","camouflage","sanctuary","protection","shield","flying","water_breathing","swimming","pass_door","haste","slow","poison","disease","blindness","silence","fear","charm","rooted","stunned","sleeping")
 
 DRAFT_FILES = {
     "world": "world.json", "display_themes": "display_themes.json",
@@ -975,6 +981,35 @@ def _canonical_weapon(raw: dict[str, Any], fallback_id: str = "natural_weapon") 
         "enabled": bool(raw.get("enabled", True)), "metadata": dict(raw.get("metadata") or {}),
     }
 
+def _canonical_keywords(values: Any, fallback: str = "") -> list[str]:
+    raw = values if isinstance(values, list) else str(values or "").replace(",", " ").split()
+    out: list[str] = []
+    for value in raw:
+        keyword = re.sub(r"\s+", " ", str(value or "").strip().lower())
+        if keyword and keyword not in out:
+            out.append(keyword)
+    if not out and fallback:
+        out = [x for x in re.findall(r"[a-z0-9_']+", fallback.lower()) if x]
+    return out
+
+def _canonical_mobile_entry(raw: dict[str, Any], prefix: str, index: int, object_id: str) -> dict[str, Any]:
+    seed = str(raw.get("id") or raw.get("entry_id") or raw.get("item_template_id") or raw.get("object_id") or f"{object_id}_{prefix}_{index}")
+    entry = dict(raw)
+    entry["id"] = re.sub(r"[^a-z0-9_:-]+", "_", seed.lower()).strip("_") or f"{object_id}_{prefix}_{index}"
+    if entry.get("object_id") and not entry.get("item_template_id"):
+        entry["item_template_id"] = entry.pop("object_id")
+    if "chance" in entry:
+        try: entry["chance"] = int(entry.get("chance"))
+        except Exception: entry["chance"] = 100
+    else:
+        entry["chance"] = 100
+    if "quantity" in entry:
+        try: entry["quantity"] = int(entry.get("quantity"))
+        except Exception: entry["quantity"] = 1
+    entry.setdefault("enabled", True)
+    entry.setdefault("order", index)
+    return entry
+
 
 class MobileTemplate:
     """Canonical mobile adapter shared by Builder preview, testspawn and generation activation."""
@@ -1009,31 +1044,88 @@ class MobileTemplate:
         return cls(rec, "legacy")
 
     def validate(self) -> list[dict[str, Any]]:
-        rec = self.record; oid = str(rec.get("id") or "")
+        rec = self.to_canonical_dict(); oid = str(rec.get("id") or "")
         issues: list[dict[str, Any]] = []
         def issue(sev, code, path, msg, hint=""):
             issues.append({"severity":sev,"code":code,"collection":"entities","object_id":oid,"field_path":path,"message":msg,"fix_hint":hint,"reference_target":"","blocking":sev=="error"})
         for fld in ("id","name"):
             if not rec.get(fld): issue("error","required_field",fld,f"{fld} is required.",f"Set {fld}.")
+        kws = _canonical_keywords(rec.get("keywords"), "")
+        if not kws: issue("error","empty_keywords","keywords","At least one keyword is required.","Add target-resolution keywords.")
+        if not (rec.get("short_description") or rec.get("name")): issue("error","missing_short_description","short_description","Short description is required.","Set a short description.")
+        if not (rec.get("room_description") or rec.get("description") or rec.get("long_description")): issue("error","missing_room_description","room_description","Long room description is required.","Set the room-visible description.")
+        if not (rec.get("look_description") or rec.get("examine_description")): issue("warning","missing_detail_description","look_description","Detailed examine description is empty.","Add look/examine text.")
+        try:
+            level = int(rec.get("level", 1) or 1)
+            if not 1 <= level <= 100: issue("error","level_range","level","Level must be 1-100.")
+        except Exception: issue("error","level_number","level","Level must be a whole number.")
+        for pos_field in ("default_position", "spawn_position"):
+            pos = str(rec.get(pos_field) or "standing")
+            if pos not in MEDIT_POSITIONS: issue("warning","unknown_position",pos_field,f"{pos_field} '{pos}' is not a canonical named position.")
+            if pos == "dead": issue("warning","spawn_dead",pos_field,"Templates should not spawn dead unless intentionally staged.")
         if "natural_attacks" in rec: issue("error","deprecated_field","natural_attacks","natural_attacks is deprecated; use combat_profile.natural_weapons.","Save through BuilderService migration.")
         attrs = rec.get("attributes") or {}
         for fld in ("strength","dexterity","constitution","intelligence","wisdom","charisma"):
             if fld in attrs and not (1 <= int(attrs.get(fld) or 0) <= 100): issue("error","attribute_range",f"attributes.{fld}","Attribute must be 1-100.")
-        for res in ("max_health","max_mana","max_move"):
-            if res in rec and int(rec.get(res) or 0) < 0: issue("error","resource_range",res,"Resource maximum cannot be negative.")
+        resources = rec.get("resources") or {}
+        if not (resources.get("health") or rec.get("max_health")): issue("warning","missing_health","resources.health","A health resource is required before publish/runtime activation.","Add health with a positive maximum.")
+        for rname, rvalue in resources.items() if isinstance(resources, dict) else []:
+            data = rvalue if isinstance(rvalue, dict) else {"maximum": rvalue, "starting": rvalue}
+            try:
+                maximum = int(data.get("maximum") if data.get("maximum") is not None else data.get("max"))
+                starting = int(data.get("starting") if data.get("starting") is not None else maximum)
+                if maximum < 0: issue("error","resource_range",f"resources.{rname}.maximum","Resource maximum cannot be negative.")
+                if starting > maximum: issue("error","resource_start",f"resources.{rname}.starting","Starting resource cannot exceed maximum.")
+            except Exception: issue("error","resource_number",f"resources.{rname}","Resource maximum/starting values must be whole numbers.")
         weapons=(rec.get("combat_profile") or {}).get("natural_weapons") or []
         if not weapons: issue("warning","no_natural_weapons","combat_profile.natural_weapons","Mob has no natural weapons.","Add an authored natural weapon.")
         for i,w in enumerate(weapons):
             for fld in ("id","mechanical_family","noun_plural","verb_third_person","damage_type","damage_dice","selection_weight"):
                 if not w.get(fld): issue("error","natural_weapon_required",f"combat_profile.natural_weapons[{i}].{fld}",f"Natural weapon {fld} is required.")
             if int(w.get("selection_weight") or 0) <= 0: issue("error","natural_weapon_weight",f"combat_profile.natural_weapons[{i}].selection_weight","Weight must be positive.")
+        flags = set(rec.get("mobile_flags") or rec.get("flags") or [])
+        affects = set(rec.get("affect_flags") or [])
+        if "wander" in flags and "no_wander" in flags: issue("warning","contradictory_flags","mobile_flags","wander and no_wander are both authored.")
+        if "pet" not in flags and (rec.get("pet_price") or (rec.get("economy") or {}).get("purchase_price")): issue("warning","pet_price_without_pet","pet_price","Pet price is set but pet flag is not enabled.")
+        if "haste" in affects and "slow" in affects: issue("warning","contradictory_affects","affect_flags","haste and slow are both permanent affects.")
         return issues
 
     def to_canonical_dict(self) -> dict[str, Any]:
         rec = deepcopy(self.record)
+        oid = str(rec.get("id") or "mobile")
+        rec["id"] = oid
+        if rec.get("aliases") and not rec.get("keywords"):
+            rec["keywords"] = rec.get("aliases")
+        rec["keywords"] = _canonical_keywords(rec.get("keywords"), str(rec.get("name") or oid))
+        rec["aliases"] = list(dict.fromkeys([str(x).strip() for x in (rec.get("aliases") or []) if str(x).strip()]))
+        if rec.get("gender") and not rec.get("sex"):
+            rec["sex"] = rec.get("gender")
+        rec.setdefault("sex", "neutral")
+        rec.setdefault("enabled", True)
+        rec.setdefault("default_position", rec.get("spawn_position") or "standing")
+        rec.setdefault("spawn_position", rec.get("default_position") or "standing")
+        resources = dict(rec.get("resources") or {})
+        legacy_health = rec.get("max_health") if rec.get("max_health") is not None else (rec.get("stats") or {}).get("max_health") if isinstance(rec.get("stats"), dict) else None
+        if legacy_health is not None and "health" not in resources:
+            resources["health"] = {"maximum": legacy_health, "starting": legacy_health, "enabled": True}
+        if resources and all(not isinstance(v, dict) for v in resources.values()):
+            resources = {str(k): {"maximum": v, "starting": v, "enabled": True} for k, v in resources.items()}
+        rec["resources"] = resources
+        rec["attributes"] = dict(rec.get("attributes") or {})
+        rec["mobile_flags"] = list(dict.fromkeys([str(x).lower() for x in (rec.get("mobile_flags") or rec.get("flags") or [])]))
+        rec["affect_flags"] = list(dict.fromkeys([str(x).lower() for x in (rec.get("affect_flags") or rec.get("permanent_affects") or [])]))
+        rec["starting_inventory"] = [_canonical_mobile_entry(x, "inventory", i + 1, oid) for i, x in enumerate(rec.get("starting_inventory") or rec.get("inventory") or []) if isinstance(x, dict)]
+        loot = dict(rec.get("loot") or {})
+        entries = loot.get("entries") if isinstance(loot.get("entries"), list) else rec.get("loot_entries") or []
+        loot["entries"] = [_canonical_mobile_entry(x, "loot", i + 1, oid) for i, x in enumerate(entries) if isinstance(x, dict)]
+        loot.setdefault("profile_id", rec.get("loot_table_id") or rec.get("loot_profile_id"))
+        loot.setdefault("corpse_enabled", True)
+        rec["loot"] = loot
         rec.pop("natural_attacks", None); rec.pop("natural_weapons", None)
         cp = dict(rec.get("combat_profile") or {})
         cp["natural_weapons"] = [_canonical_weapon(x, str(rec.get("id") or "mobile")) for x in cp.get("natural_weapons") or []]
+        if rec.get("attack_type") and not cp.get("attack_type"):
+            cp["attack_type"] = rec.get("attack_type")
         rec["combat_profile"] = cp
         return rec
 
@@ -1423,7 +1515,8 @@ class BuilderService:
         return BuilderResult(True, f"Draft {collection} {object_id} updated (revision {rec['_builder_revision']}).", rec)
 
     def _normalize_entity_updates(self, object_id: str, updates: dict[str, Any]) -> dict[str, Any]:
-        updates = deepcopy(updates)
+        updates = MobileTemplate.from_legacy(deepcopy(updates)).to_canonical_dict()
+        updates["id"] = object_id
         raw = updates.pop("natural_attacks", None)
         if raw is not None:
             cp = dict(updates.get("combat_profile") or {})
@@ -1509,6 +1602,20 @@ class BuilderService:
     def delete_mobile(self, actor: Any, object_id: str) -> BuilderResult:
         denied = self._check_permission(actor, "entities", object_id, "delete")
         if denied: return denied
+        world_id = self.workspace.world_id(actor); drafts = self.workspace.load(world_id); deps=[]
+        for coll, label in (("spawns","spawn/reset"),("resets","reset"),("rooms","room"),("quest_definitions","quest"),("items","object"),("faction_definitions","faction"),("abilities","ability/script")):
+            for rid, rec in (drafts.get(coll) or {}).items():
+                if rid == object_id:
+                    continue
+                if object_id.lower() in json.dumps(rec, default=str).lower():
+                    deps.append(f"{label} {rid}")
+        if deps:
+            before = deepcopy((drafts.get("entities") or {}).get(object_id))
+            if isinstance(before, dict) and not before.get("deletion_state"):
+                staged = deepcopy(before); staged["deletion_state"] = "staged"; staged["enabled"] = False; staged.setdefault("builder_status", "delete_staged")
+                drafts.setdefault("entities", {})[object_id] = staged; self.workspace.save_drafts(world_id, drafts)
+                self._push_history(actor, "entities", object_id, before, staged, "mdelete staged"); self.workspace.audit(actor, world_id, "mdelete staged", "entities", object_id, before, staged)
+            return BuilderResult(False, "Delete protected; staged a soft deletion marker because dependencies exist:\n" + "\n".join(f"- {d}" for d in sorted(set(deps))) + "\nRemove dependencies before hard deletion or publish activation.")
         lock = self.acquire_lock(actor, "entities", object_id)
         if not lock.ok: return lock
         try:
@@ -1643,12 +1750,16 @@ class BuilderService:
             lines = ["LOOK OBJECT", str(name), str(rec.get("look_description") or desc), "", "INVENTORY", f"{name} x{rec.get('stack_size', 1)}", "", "EQUIPMENT", f"{name} ({', '.join(rec.get('wear_flags') or []) or 'not wearable'})", "", "SHOP DISPLAY", f"{name} - {rec.get('cost', 0)} coins", "", "GROUND DISPLAY", str(rec.get('long_description') or f'{name} is here.')]
             return BuilderResult(True, "\n".join(lines), {"record": rec, "runtime_projection": projection})
         if collection == "entities":
-            projection = MobileTemplate.from_legacy(rec).to_runtime_projection()
+            canonical = MobileTemplate.from_legacy(rec).to_canonical_dict()
+            projection = MobileTemplate.from_legacy(canonical).to_runtime_projection()
             weapons=((projection.get("combat_profile") or {}).get("natural_weapons") or [])
-            lines += ["", "COMBAT SNAPSHOT", f"natural weapons: {len(weapons)}", "NATURAL ATTACK LIST"]
+            loadout = canonical.get("equipment_loadout") or {}
+            loot = canonical.get("loot") or {}
+            lines += ["", "RESOLVED TRAITS", f"species: {canonical.get('species') or canonical.get('race') or 'unset'}", f"body profile: {canonical.get('body_profile_id') or (canonical.get('combat_profile') or {}).get('body_profile') or 'unset'}", f"size: {canonical.get('size') or 'unset'}", f"positions: default={canonical.get('default_position')} spawn={canonical.get('spawn_position')}", f"flags: {', '.join(canonical.get('mobile_flags') or []) or 'none'}", f"permanent effects: {', '.join(canonical.get('affect_flags') or []) or 'none'}", "", "RESOLVED STATS", f"attributes: {json.dumps(canonical.get('attributes') or {}, sort_keys=True)}", f"resources: {json.dumps(canonical.get('resources') or {}, sort_keys=True)}", f"combat profile: {json.dumps(canonical.get('combat_profile') or {}, sort_keys=True)[:500]}", "", "CONTENT", f"equipment: {len(loadout.get('equipped') or {})} equipped slot(s)", f"inventory: {len(canonical.get('starting_inventory') or [])} carried entries", f"loot: profile={loot.get('profile_id') or 'unset'} explicit={len(loot.get('entries') or [])} corpse_enabled={loot.get('corpse_enabled')}", f"abilities: {canonical.get('ability_loadout_id') or (canonical.get('combat_profile') or {}).get('ability_loadout_id') or 'unset'}", f"behavior: {canonical.get('behavior_profile_id') or 'unset'}", f"faction: {canonical.get('faction_id') or 'unset'}", f"scripts: {', '.join(canonical.get('script_ids') or canonical.get('scripts') or []) or 'none'}", "", "COMBAT SNAPSHOT", f"natural weapons: {len(weapons)}", "NATURAL ATTACK LIST"]
             lines += [f"- {w.get('id')} {w.get('mechanical_family')} {w.get('verb_third_person')} with {w.get('noun_plural')} ({w.get('damage_dice')}, weight {w.get('selection_weight')})" for w in weapons] or ["- none"]
             if weapons:
                 w=weapons[0]; lines += ["", "SAMPLE NORMAL HIT", str(w.get("observer_template", "{attacker} hits {victim}.")).format(attacker=name, victim="you", verb_third_person=w.get('verb_third_person'), verb_base=w.get('verb_base'), noun_plural=w.get('noun_plural'))]
+            lines += ["", "SAMPLE DEATH/CORPSE", f"{name} dies. Corpse output uses loot profile {loot.get('profile_id') or 'none'} plus {len(loot.get('entries') or [])} explicit entries."]
             return BuilderResult(True, "\n".join(lines), {"record": rec, "runtime_projection": projection})
         return BuilderResult(True, "\n".join(lines), {"record": rec})
 
@@ -2706,24 +2817,24 @@ class BuilderService:
         if sess.editor_type == "medit":
             attrs = ("strength","dexterity","constitution","intelligence","wisdom","charisma")
             if sess.section == "identity":
-                return [OlcFieldDescriptor("name","Display name",("name",),"string",required=True), OlcFieldDescriptor("id","Stable mobile ID",("id",),"slug",read_only=True), OlcFieldDescriptor("vnum","Legacy VNUM",("vnum",),"integer",minimum=1,maximum=999999), OlcFieldDescriptor("entity_type","Entity type",("entity_type",),"enum",choices=tuple(sorted(VALID_ENTITY_TYPES)))]
+                return [OlcFieldDescriptor("name","Display name",("name",),"string",required=True), OlcFieldDescriptor("id","Stable mobile ID",("id",),"slug",read_only=True), OlcFieldDescriptor("vnum","Legacy VNUM",("vnum",),"integer",minimum=1,maximum=999999), OlcFieldDescriptor("entity_type","Entity type",("entity_type",),"enum",choices=tuple(sorted(VALID_ENTITY_TYPES))), OlcFieldDescriptor("sex","Sex/gender presentation",("sex",),"enum",choices=MEDIT_SEX_VALUES), OlcFieldDescriptor("species","Species/race reference",("species",),"string"), OlcFieldDescriptor("classification","Creature classification",("classification",),"string"), OlcFieldDescriptor("size","Size",("size",),"enum",choices=MEDIT_SIZE_VALUES), OlcFieldDescriptor("enabled","Enabled",("enabled",),"boolean"), OlcFieldDescriptor("tags","Builder tags",("tags",),"string_list")]
             if sess.section == "keywords":
                 return [OlcFieldDescriptor("keywords","Keywords",("keywords",),"string_list",required=True)]
             if sess.section == "descriptions":
                 return [OlcFieldDescriptor("room_description","Room-visible description",("room_description",),"multiline"), OlcFieldDescriptor("look_description","Detailed look description",("look_description",),"multiline"), OlcFieldDescriptor("short_description","Short description",("short_description",),"string")]
             if sess.section == "traits":
-                return [OlcFieldDescriptor(k,k.replace("_"," ").title(),(k,),"string") for k in ("species","race","gender","size","alignment")]
+                return [OlcFieldDescriptor("species","Species",("species",),"string"), OlcFieldDescriptor("race","Race",("race",),"string"), OlcFieldDescriptor("body_profile_id","Body profile",("body_profile_id",),"reference",reference_collection="body_profiles"), OlcFieldDescriptor("natural_attack_profile_id","Natural attack profile",("natural_attack_profile_id",),"reference",reference_collection="natural_weapon_profiles"), OlcFieldDescriptor("behavior_profile_id","Behavior archetype",("behavior_profile_id",),"reference",reference_collection="combat_behavior_profiles"), OlcFieldDescriptor("faction_id","Faction",("faction_id",),"reference",reference_collection="faction_definitions"), OlcFieldDescriptor("loot_profile_id","Loot profile",("loot_profile_id",),"string"), OlcFieldDescriptor("sex","Sex/gender",("sex",),"enum",choices=MEDIT_SEX_VALUES), OlcFieldDescriptor("size","Size",("size",),"enum",choices=MEDIT_SIZE_VALUES), OlcFieldDescriptor("alignment","Alignment",("alignment",),"string")]
             if sess.section in {"attributes","resources"}:
-                return [OlcFieldDescriptor("level","Level",("level",),"integer",minimum=1,maximum=100)] + [OlcFieldDescriptor(a,a.title(),("attributes",a),"integer",minimum=1,maximum=100) for a in attrs] + [OlcFieldDescriptor("resources","Resources",("resources",),"resource_map")]
+                return [OlcFieldDescriptor("level","Level",("level",),"integer",minimum=1,maximum=100)] + [OlcFieldDescriptor(a,a.title(),("attributes",a),"integer",minimum=1,maximum=100) for a in attrs] + [OlcFieldDescriptor("health","Health maximum",("resources","health","maximum"),"integer",minimum=1,maximum=100000), OlcFieldDescriptor("mana","Mana maximum",("resources","mana","maximum"),"integer",minimum=0,maximum=100000), OlcFieldDescriptor("stamina","Stamina maximum",("resources","stamina","maximum"),"integer",minimum=0,maximum=100000), OlcFieldDescriptor("movement","Movement maximum",("resources","movement","maximum"),"integer",minimum=0,maximum=100000)]
             if sess.section == "body_weapons":
                 return [OlcFieldDescriptor("body_profile_id","Body profile",("body_profile_id",),"reference",reference_collection="body_profiles",required=True)]
             if sess.section == "mobile_flags":
-                return [OlcFieldDescriptor("mobile_flags","Mobile Flags",("mobile_flags",),"flag_set",flags=("sentinel","scavenger","aggressive","stay_zone","wimpy","helper","trainer","merchant"))]
+                return [OlcFieldDescriptor("mobile_flags","Mobile Flags",("mobile_flags",),"flag_set",flags=MEDIT_MOBILE_FLAGS)]
             if sess.section == "affect_flags":
-                return [OlcFieldDescriptor("affect_flags","Affect/status Flags",("affect_flags",),"flag_set",flags=("blind","invisible","detect_invisible","sanctuary","poisoned","flying","sleeping"))]
+                return [OlcFieldDescriptor("affect_flags","Affect/status Flags",("affect_flags",),"flag_set",flags=MEDIT_AFFECT_FLAGS)]
             if sess.section in {"combat","positions","equipment","inventory","loot","abilities","ai","faction","scripts"}:
                 fields = {
-                    "combat": ("armor_profile_id","combat_behavior_profile_id","threat_profile_id","ability_loadout_id"),
+                    "combat": ("combat_profile_id","armor","defense","accuracy","hitroll","damage_bonus","damroll","damage_dice","attack_type","attack_verb","attacks_per_round","experience_reward","gold_reward","combat_behavior_profile_id","threat_profile_id","ability_loadout_id"),
                     "positions": ("default_position","spawn_position"),
                     "equipment": ("equipment_loadout",),
                     "inventory": ("starting_inventory",),
@@ -2733,7 +2844,17 @@ class BuilderService:
                     "faction": ("faction_id","relationship_seed_ids"),
                     "scripts": ("script_ids",),
                 }[sess.section]
-                return [OlcFieldDescriptor(f, f.replace("_"," ").title(), tuple(("combat_profile", f) if sess.section == "combat" else (f,)), "string_list" if f.endswith("ids") or f in {"granted_abilities","spell_loadout","starting_inventory"} else "string") for f in fields]
+                descriptors = []
+                for f in fields:
+                    input_type = "string_list" if f.endswith("ids") or f in {"granted_abilities","spell_loadout","starting_inventory"} else "string"
+                    if sess.section == "positions": input_type = "enum"
+                    if f in {"armor","defense","accuracy","hitroll","damage_bonus","damroll","attacks_per_round","experience_reward","gold_reward"}: input_type = "integer"
+                    if f == "attack_type": input_type = "enum"
+                    choices = MEDIT_POSITIONS if sess.section == "positions" else (MEDIT_ATTACK_TYPES if f == "attack_type" else ())
+                    descriptors.append(OlcFieldDescriptor(f, f.replace("_"," ").title(), tuple(("combat_profile", f) if sess.section == "combat" else (f,)), input_type, minimum=0 if input_type == "integer" else None, maximum=100000 if input_type == "integer" else None, choices=choices))
+                if sess.section == "loot":
+                    descriptors += [OlcFieldDescriptor("pet_price","Pet price",("pet_price",),"integer",minimum=0,maximum=100000000), OlcFieldDescriptor("currency","Currency",("economy","currency"),"string")]
+                return descriptors
         # Shared minimal descriptors for OEDIT/REDIT/ZEDIT/AEDIT.
         if sess.editor_type == "oedit":
             return [OlcFieldDescriptor("keywords","Keywords",("keywords",),"string_list"), OlcFieldDescriptor("short_description","Short description",("short_description",),"string",required=True), OlcFieldDescriptor("long_description","Long description",("long_description",),"multiline"), OlcFieldDescriptor("look_description","Action/look description",("look_description",),"multiline"), OlcFieldDescriptor("item_type","Item type",("item_type",),"enum",choices=TBA_ITEM_TYPES), OlcFieldDescriptor("extra_flags","Extra flags",("extra_flags",),"flag_set",flags=TBA_OEDIT_EXTRA_FLAGS), OlcFieldDescriptor("wear_flags","Wear flags",("wear_flags",),"flag_set",flags=TBA_OEDIT_WEAR_FLAGS), OlcFieldDescriptor("weight","Weight",("weight",),"integer",minimum=0,maximum=100000), OlcFieldDescriptor("cost","Cost",("cost",),"integer",minimum=0,maximum=100000000), OlcFieldDescriptor("cost_per_day","Cost per day",("cost_per_day",),"integer",minimum=0,maximum=100000000), OlcFieldDescriptor("destroy_timer","Timer",("destroy_timer",),"integer",minimum=0,maximum=1000000), OlcFieldDescriptor("values","Type-specific values",("type_values",),"list"), OlcFieldDescriptor("affects","Applies",("affects",),"list"), OlcFieldDescriptor("extra_descriptions","Extra descriptions",("extra_descriptions",),"list"), OlcFieldDescriptor("min_level","Minimum level",("min_level",),"integer",minimum=0,maximum=100), OlcFieldDescriptor("perm_affects","Permanent affects",("perm_affects",),"flag_set",flags=TBA_OEDIT_PERM_AFFECTS), OlcFieldDescriptor("scripts","Scripts",("scripts",),"list")]
@@ -3349,6 +3470,10 @@ class BuilderService:
                 if not sess.redo_stack: return BuilderResult(False, "Nothing to redo.")
                 sess.undo_stack.append(deepcopy(sess.working_record)); sess.working_record = sess.redo_stack.pop(); sess.dirty = sess.working_record != sess.savepoint; sess.saved = not sess.dirty
                 return BuilderResult(True, "Session redo applied.\n" + self._render_flag_editor(sess))
+            if low in {"v","validate"}:
+                issues = MobileTemplate.from_legacy(sess.working_record).validate() if sess.collection == "entities" else validate_object_template(normalize_object_template(sess.object_id, sess.working_record))
+                lines=[f"{x['severity']}: {x['field_path']} {x['message']}" for x in issues] or ["- no focused issues"]
+                return BuilderResult(not any(x.get("severity")=="error" for x in issues), "Validation for %s:\n%s" % (sess.object_id, "\n".join(lines)), {"issues": issues})
             if low in cancel_words:
                 sess.mode = "section_menu"; sess.active_field = ""
                 return BuilderResult(True, self.render_session(sess))
@@ -3358,8 +3483,10 @@ class BuilderService:
             elif low.isdigit() and 1 <= int(low) <= len(f.flags):
                 flag = f.flags[int(low)-1]
                 (cur.remove if flag in cur else cur.add)(flag); new = sorted(cur)
+            elif low in set(f.flags):
+                (cur.remove if low in cur else cur.add)(low); new = sorted(cur)
             else:
-                return BuilderResult(False, "Choose a flag number, all, none, clear, or Q.\n" + self._render_flag_editor(sess))
+                return BuilderResult(False, "Choose a flag number/name, all, none, clear, or Q.\n" + self._render_flag_editor(sess))
             return self._apply_field_value(actor, sess, f, new, "Flag selection updated.")
         if sess.mode == "list_editor":
             f = self._descriptor(sess, sess.active_field)
@@ -3558,7 +3685,7 @@ class BuilderService:
                 if text.strip() != "DELETE": return BuilderResult(False, "Type DELETE to confirm deletion, or Q to cancel.")
                 self.sessions.end(actor); return self.workspace.delete(actor, "items", sess.object_id, "item_template")
         if low in {"q", "quit"}:
-            if sess.section:
+            if sess.section and low == "q":
                 sess.section = ""; sess.mode = "main_menu"
                 return BuilderResult(True, self.render_session(sess))
             if sess.dirty:
@@ -3819,15 +3946,15 @@ class BuilderService:
                 f"World: {(sess.world_id if sess else rec.get('world_id',''))}", f"Area: {rec.get('area_id','')}", f"Zone: {rec.get('zone_id','')}", f"Lock owner: {(sess.builder_character_id if sess else 'none')}",
                 f"Validation status: {errors} error(s), {warnings} warning(s)", f"Dirty status: {status}", f"Builder status: {rec.get('builder_status','incomplete')}", "",
                 "1. Identity - " + str(rec.get('name') or ''), "2. Keywords and aliases - " + str(', '.join(rec.get('keywords') or rec.get('aliases') or [])),
-                "3. Descriptions - " + str(rec.get('room_description') or rec.get('description') or '')[:50], "4. Basic identity traits - " + str(rec.get('race') or rec.get('species') or rec.get('body_profile_id') or 'unset'),
+                "3. Descriptions - " + str(rec.get('room_description') or rec.get('description') or '')[:50], "4. Basic identity traits - species=" + str(rec.get('species') or rec.get('race') or 'unset') + " body=" + str(rec.get('body_profile_id') or 'unset'),
                 "5. Level and attributes - level " + str(rec.get('level', 1)), "6. Resources - " + str(rec.get('resources') or {}),
-                "7. Combat statistics and profiles - " + str((rec.get('combat_profile') or {}).get('combat_behavior_profile_id','default')), "8. Body profile and Natural Weapons / Natural Attacks - " + str(rec.get('body_profile_id') or (rec.get('combat_profile') or {}).get('body_profile','unset')),
+                "7. Combat statistics and profiles - editable stats, profile " + str((rec.get('combat_profile') or {}).get('combat_profile_id') or (rec.get('combat_profile') or {}).get('combat_behavior_profile_id','default')), "8. Body profile and Natural Weapons / Natural Attacks - body=" + str(rec.get('body_profile_id') or (rec.get('combat_profile') or {}).get('body_profile','unset')) + " attacks=" + str(len((rec.get('combat_profile') or {}).get('natural_weapons') or [])),
                 "9. Positions and posture - " + str(rec.get('default_position') or rec.get('spawn_position') or 'standing'), "10. Mobile flags - " + str(', '.join(rec.get('mobile_flags') or rec.get('flags') or [])),
                 "11. Affect/status flags - " + str(', '.join(rec.get('affect_flags') or [])), "12. Equipment loadout - " + str(len(rec.get('equipment_loadout') or rec.get('equipment') or {})),
                 "13. Starting inventory - " + str(len(rec.get('starting_inventory') or rec.get('inventory') or [])), "14. Loot and corpse behavior - " + str(rec.get('loot_table_id') or rec.get('corpse_profile_id') or 'unset'),
                 "15. Abilities and spell loadout - " + str(rec.get('ability_loadout_id') or (rec.get('combat_profile') or {}).get('ability_loadout_id') or 'unset'), "16. Behavior and AI - " + str(rec.get('behavior_profile_id') or rec.get('ai_actor_enabled') or 'unset'),
                 "17. Faction and relationships - " + str(rec.get('faction_id') or 'unset'), "18. Scripts and triggers - " + str(len(rec.get('script_ids') or rec.get('scripts') or [])),
-                "19. Spawn and reset references - use diagnostics/create spawn commands", "20. Diagnostics and references - validation, references, runtime preview", "",
+                "19. Spawn and reset references - read-only diagnostics/add draft references", "20. Diagnostics and references - validation, references, runtime preview", "",
                 "P. Preview", "V. Validate", "T. Testspawn", "H. History", "U. Undo", "R. Redo", "S. Save", "Q. Quit"]
             return "\n".join(lines)
         sections = {"redit": ["Title", "Description", "Exits", "Sector", "Flags", "Extra Descriptions", "Ambient Effects", "Spawn List", "Preview", "Validate", "Publish"], "oedit": ["Identity", "Keywords", "Type", "Wear Flags", "Extra Flags", "Stats", "Affects", "Values", "Container Data", "Weapon Data", "Armor Data", "Scripts", "Preview", "Validate", "Publish"], "aedit": ["Identity", "Zones", "Rooms", "Templates", "Spawns", "Preview", "Validate", "Publish"], "zedit": ["Identity", "Area", "Rooms", "Resets", "Spawns", "Preview", "Validate", "Publish"]}.get(editor, [])

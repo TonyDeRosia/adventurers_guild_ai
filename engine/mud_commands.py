@@ -570,7 +570,7 @@ class MudCommandEngine:
 
         for _name in "senseprofilelist senseprofilestat senseprofilecreate senseprofileclone senseprofileset senseprofiledelete senseprofilevalidate perceptionprofilelist perceptionprofilestat perceptionprofilecreate perceptionprofileset perceptionprofiledelete perceptionprofilevalidate concealmentlist concealmentstat concealmentcreate concealmentset concealmentdelete concealmentvalidate searchprofilelist searchprofilestat searchprofilecreate searchprofileset searchprofiledelete searchprofilevalidate trackingprofilelist trackingprofilestat trackingprofilecreate trackingprofileset trackingprofiledelete trackingprofilevalidate soundprofilelist soundprofilestat soundprofilecreate soundprofileset soundprofiledelete soundprofilevalidate".split():
             self.command_handlers[_name] = self._cmd_perception
-        for _name in " undo redo find mclone oclone rclone rsave redit rstat rcreate rset rdesc rname rexits rfeature rdelete exedit excreate exset exdelete fedit fcreate fset fdesc fdelete oedit ocreate oset odesc odelete ostat opreview ovalidate owhere ofind medit mcreate mset mdesc mdelete mstat spawnedit spawncreate spawnset spawndelete spawnstat zstat astat wstat btarget rtarget target bsave wsave".split():
+        for _name in " undo redo find mclone mcopy msearch oclone rclone rsave redit rstat rcreate rset rdesc rname rexits rfeature rdelete exedit excreate exset exdelete fedit fcreate fset fdesc fdelete oedit ocreate oset odesc odelete ostat opreview ovalidate owhere ofind medit mcreate mset mdesc mdelete mstat spawnedit spawncreate spawnset spawndelete spawnstat zstat astat wstat btarget rtarget target bsave wsave".split():
             if _name:
                 self.command_handlers[_name] = self._cmd_builder_edit
         for _name in ("rassign", "rmove", "rrenameid"):
@@ -4288,6 +4288,10 @@ class MudCommandEngine:
             self.builder_service.workspace = self.builder
             res = self.builder_service.discover_editor_target(character, cmd, args)
             return CommandResult(res.message, ok=res.ok)
+        if cmd == "msearch":
+            res = self.builder_service.search(character, " ".join(args)); return CommandResult(res.message, ok=res.ok)
+        if cmd == "mcopy":
+            cmd = "mclone"
         if cmd in {"mclone", "oclone", "rclone"}:
             if len(args) < 2: return CommandResult(f"Usage: {cmd} <source_id> <new_id>", ok=False)
             coll = {"mclone":"entities", "oclone":"items", "rclone":"rooms"}[cmd]

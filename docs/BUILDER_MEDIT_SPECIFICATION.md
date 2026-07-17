@@ -190,3 +190,11 @@ Copy must duplicate the working mobile into a new ID/VNUM, preserve field values
 ## Future Smart MUD Extensions After Parity
 
 After parity, Smart MUD should add equipment profiles, loot profiles, behavior profiles, dialogue packages, schedules, relationships, personalities, memory templates, AI archetypes, profession templates, spawn profiles, faction packages, and encounter templates. These belong after 15C.9 and must be profile-driven so many mobiles can share balanced behavior without duplicated records.
+
+## Phase 15C.1 Implementation Clarification
+
+Phase 15C.1 establishes the functional Smart MUD MEDIT foundation on the existing BuilderEditSession and draft workflow. The implemented foundation keeps mobile edits in canonical entity templates and normalizes legacy-compatible mobile fields into named schema sections for identity, keywords, descriptions, traits, attributes/resources, combat profile data, body/natural attacks, positions, flags, affects, economy, loadout, inventory, and loot/corpse configuration.
+
+The editor intentionally distinguishes fully editable foundation sections from advanced references. Ability loadouts, behavior/AI profiles, factions, and scripts are preserved, previewed, and validated as references where current runtime support exists; full advanced editors remain later MEDIT phases. Pet/economy data is stored, validated, and previewed, but runtime purchasing remains limited unless a world supplies the corresponding shop/service flow.
+
+Normalization is deterministic and backward-compatible: legacy `natural_attacks` and top-level `natural_weapons` migrate into `combat_profile.natural_weapons`; aliases can seed keywords; resources can be represented as explicit named resource objects; mobile flags and permanent affects use named lists rather than integer bitvectors. Normalization must not infer a creature species from body, combat, behavior, faction, or loot profile names.
