@@ -2210,6 +2210,14 @@ class MudRuntime:
         if dialogue_result is not None:
             self.event_bus.publish("command_executed", {"raw_input": command, "canonical_command": cmd_name, "arguments": args, "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id, "result_summary": dialogue_result.narrative[:120]}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
             return dialogue_result
+        if cmd_name == "examine" and args:
+            item_preview = self._handle_item_command(char, command, cmd_name, args)
+            if item_preview is not None and not item_preview.narrative.startswith("You don't see that"):
+                return item_preview
+        if cmd_name in {"look", "examine"} and args and args[0].lower() == "in":
+            item_preview = self._handle_item_command(char, command, cmd_name, args)
+            if item_preview is not None:
+                return item_preview
         if cmd_name in {"look", "examine"} and args:
             feature_result = self._handle_interaction_command(char, cmd_name, args, command)
             if feature_result is not None:
@@ -2515,6 +2523,10 @@ class MudRuntime:
                 "usable": bool(raw.get("usable", False)),
                 "openable": bool(raw.get("openable", False)),
                 "locked": bool(raw.get("locked", False)),
+                "container": bool(raw.get("container") or str(raw.get("item_type") or raw.get("type") or "").lower() == "container"),
+                "container_capacity": int(raw.get("container_capacity", raw.get("capacity", 0)) or 0),
+                "container_weight_capacity": int(raw.get("container_weight_capacity", raw.get("weight_capacity", 0)) or 0),
+                "container_flags": list(raw.get("container_flags") or []),
                 "locked_message": str(raw.get("locked_message") or "It is locked."),
                 "default_interactions": raw.get("default_interactions") or {},
             }
@@ -2548,6 +2560,8 @@ class MudRuntime:
         return bool(item)
 
     def move_item(self, instance_id: str, owner_type: str, owner_id: str | None = None, room_id: str | None = None, equipped_slot: str | None = None) -> dict[str, Any]:
+        if owner_type in {"container", "corpse"}:
+            self._validate_container_move(instance_id, owner_type, owner_id or "")
         now = datetime.now(timezone.utc).isoformat()
         with sqlite3.connect(self.state_store.db_path) as conn: conn.execute("UPDATE item_instances SET owner_type=?, owner_id=?, room_id=?, equipped_slot=?, updated_at=? WHERE instance_id=? AND destroyed_at IS NULL", (owner_type, owner_id or "", room_id or "", equipped_slot or "", now, instance_id))
         return self.find_item(instance_id)
@@ -2574,13 +2588,81 @@ class MudRuntime:
         flags = item.get("custom_flags") or {}
         return bool(flags.get("open", flags.get("container_open", (item.get("template") or {}).get("default_open", True))))
 
+    def _container_locked(self, item: dict[str, Any]) -> bool:
+        flags = item.get("custom_flags") or {}
+        return bool(flags.get("locked", (item.get("template") or {}).get("locked", False)))
+
+    def _set_item_flag(self, instance_id: str, key: str, value: Any) -> dict[str, Any] | None:
+        item = self.find_item(instance_id)
+        if not item:
+            return None
+        flags = dict(item.get("custom_flags") or {})
+        flags[key] = value
+        with sqlite3.connect(self.state_store.db_path) as conn:
+            conn.execute("UPDATE item_instances SET custom_flags=?, updated_at=? WHERE instance_id=? AND destroyed_at IS NULL", (json.dumps(flags), datetime.now(timezone.utc).isoformat(), instance_id))
+        return self.find_item(instance_id)
+
+    def _contained_weight(self, owner_id: str, seen: set[str] | None = None) -> int:
+        seen = seen or set()
+        if owner_id in seen:
+            return 0
+        seen.add(owner_id)
+        total = 0
+        for item in self.find_container_items(owner_id):
+            tmpl = item.get("template") or {}
+            total += int(tmpl.get("weight") or 0) * int(item.get("stack_count") or 1)
+            if self._is_container_item(item):
+                total += self._contained_weight(item["instance_id"], seen)
+        return total
+
+    def _validate_container_move(self, instance_id: str, owner_type: str, owner_id: str) -> None:
+        if not owner_id:
+            raise ValueError("Container ownership requires an owner id.")
+        if owner_type == "container":
+            if instance_id == owner_id:
+                raise ValueError("An item cannot contain itself.")
+            parent = self.find_item(owner_id)
+            if not parent or not self._is_container_item(parent):
+                raise ValueError("Target is not a container.")
+            seen = {instance_id}
+            cur = parent
+            while cur and cur.get("owner_type") == "container":
+                cid = str(cur.get("owner_id") or "")
+                if cid in seen:
+                    raise ValueError("Container ownership cycle rejected.")
+                seen.add(cid)
+                cur = self.find_item(cid)
+
+    def validate_item_ownership(self) -> dict[str, Any]:
+        errors: list[str] = []
+        rows = self._fetch_items("1=1", ())
+        ids = {i["instance_id"] for i in rows}
+        for item in rows:
+            ot, oid, rid = item.get("owner_type"), item.get("owner_id"), item.get("room_id")
+            if ot == "room" and not rid:
+                errors.append(f"{item['instance_id']}: room owner missing room_id")
+            if ot in {"character", "equipment", "entity", "container", "corpse"} and not oid:
+                errors.append(f"{item['instance_id']}: {ot} owner missing owner_id")
+            if ot == "container" and oid not in ids:
+                errors.append(f"{item['instance_id']}: missing parent container {oid}")
+            try:
+                if ot in {"container", "corpse"}:
+                    self._validate_container_move(item["instance_id"], ot, oid)
+            except ValueError as exc:
+                errors.append(f"{item['instance_id']}: {exc}")
+        return {"ok": not errors, "errors": errors}
+
     def _with_container_display(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         out = []
+        def append_children(parent: dict[str, Any], depth: int) -> None:
+            for child in self.find_container_items(parent.get("instance_id", "")):
+                out.append({**child, "display_line": ("  " * depth) + str(child.get("name") or child.get("template_id") or "something")})
+                if self._is_container_item(child):
+                    append_children(child, depth + 1)
         for item in items:
             out.append(item)
             if self._is_container_item(item):
-                for child in self.find_container_items(item.get("instance_id", "")):
-                    out.append({**child, "display_line": "  " + str(child.get("name") or child.get("template_id") or "something")})
+                append_children(item, 1)
         return out
     def get_visible_room_items(self, room_id: str) -> list[dict[str, Any]]: return self.find_room_items(room_id)
 
@@ -2687,11 +2769,23 @@ class MudRuntime:
         if cmd in {"equipment"}: return CommandResult(self._render_equipment(char.id))
         if cmd in {"put"}:
             if len(args) < 2: return CommandResult("Put what where?")
+            inv_containers = [i for i in self.find_inventory_display_items(char.id)+self.get_visible_room_items(char.room_id) if self._is_container_item(i)]
+            for split in range(1, len(args)):
+                item_q = " ".join(args[:split])
+                cont_q = " ".join(args[split:])
+                if self.resolve_item_keywords(cont_q, inv_containers).get("status") == "ok":
+                    return CommandResult(self.put_in_container(char, item_q, cont_q))
             return CommandResult(self.put_in_container(char, " ".join(args[:-1]), args[-1]))
+        if cmd in {"open","close","lock","unlock"}:
+            return CommandResult(self.container_state_command(char, cmd, q) if q else f"{cmd.title()} what?")
         if cmd in {"give"}:
             if len(args) < 2: return CommandResult("Give what to whom?")
             return CommandResult(self.give_item(char, " ".join(args[:-1]), args[-1]))
         if cmd in {"get","take"}:
+            if len(args) >= 2 and "." in args[-1] and args[-1].split(".", 1)[0]:
+                item_q = " ".join(args[:-1]) or "all"
+                cont_q = args[-1].split(".", 1)[0]
+                return CommandResult(self.get_from_container(char, item_q, cont_q))
             if len(args) >= 3 and "from" in [a.lower() for a in args]:
                 idx = [a.lower() for a in args].index("from")
                 return CommandResult(self.get_from_container(char, " ".join(args[:idx]) or "all", " ".join(args[idx+1:]) or "corpse"))
@@ -2699,6 +2793,10 @@ class MudRuntime:
                 return CommandResult(self.get_from_container(char, " ".join(args[:-2]), args[-1]))
             if len(args) >= 2 and args[-1].lower().startswith(("corp", "cor", "body")):
                 return CommandResult(self.get_from_container(char, " ".join(args[:-1]) or "all", args[-1]))
+            if len(args) >= 2:
+                cont_q = " ".join(args[1:])
+                if self.resolve_item_keywords(cont_q, self.find_inventory_display_items(char.id)+self.get_visible_room_items(char.room_id)).get("status") == "ok":
+                    return CommandResult(self.get_from_container(char, args[0], cont_q))
             if len(args) >= 3 and args[0].lower() in {"all", "everything"} and args[1].lower() in {"from", "in"}:
                 return CommandResult(self.get_from_container(char, "all", " ".join(args[2:])))
             if q in {"all", "everything"}: return CommandResult(self.bulk_get(char, q))
@@ -2722,14 +2820,14 @@ class MudRuntime:
                 return CommandResult("You remove all equipment.")
             return CommandResult(self.unequip_item(char.id, q or ("main_hand" if cmd in {"unwield","unequip"} else "")) if q or cmd in {"unwield","unequip"} else "Remove what?")
         if cmd in {"look","examine"} and q:
-            if args and args[0].lower() == "in":
+            if args and args[0].lower() in {"in", "inside"}:
                 return CommandResult(self.look_in_container(char, " ".join(args[1:])))
             text = self.look_at_target(char, q, examine=(cmd == "examine"))
             return CommandResult(text)
         return None
 
     def look_in_container(self, char: MudCharacter, container_query: str) -> str:
-        res = self.resolve_item_keywords(container_query, self.find_inventory_items(char.id)+self.get_visible_room_items(char.room_id))
+        res = self.resolve_item_keywords(container_query, self.find_inventory_display_items(char.id)+self.get_visible_room_items(char.room_id))
         if res.get("status") == "ok":
             item = res["item"]
             if not self._is_container_item(item): return "That is not a container."
@@ -2743,18 +2841,65 @@ class MudRuntime:
             if er.get("status")=="ok": return self._look_in_container(char, er["entity"])
         return self._resolve_message(res, "You don't see that.")
 
+    def container_state_command(self, char: MudCharacter, command: str, container_query: str) -> str:
+        res = self.resolve_item_keywords(container_query, self.find_inventory_display_items(char.id)+self.get_visible_room_items(char.room_id))
+        if res.get("status") != "ok":
+            return self._resolve_message(res, "You don't see that.")
+        item = res["item"]
+        if not self._is_container_item(item):
+            return "That is not a container."
+        if command == "open":
+            if self._container_locked(item):
+                return "It is locked."
+            if self._container_open(item):
+                return "It is already open."
+            self._set_item_flag(item["instance_id"], "open", True)
+            return f"You open {item['name']}."
+        if command == "close":
+            if not self._container_open(item):
+                return "It is already closed."
+            self._set_item_flag(item["instance_id"], "open", False)
+            return f"You close {item['name']}."
+        if command == "lock":
+            self._set_item_flag(item["instance_id"], "locked", True)
+            self._set_item_flag(item["instance_id"], "open", False)
+            return f"You lock {item['name']}."
+        self._set_item_flag(item["instance_id"], "locked", False)
+        return f"You unlock {item['name']}."
+
+    def _select_items(self, query: str, candidates: list[dict[str, Any]]) -> list[dict[str, Any]] | dict[str, Any]:
+        q = str(query or "").strip().lower()
+        if q in {"all", "everything"}:
+            return list(candidates)
+        if q.startswith("all."):
+            needle = q[4:].strip()
+            return [i for i in candidates if self.resolve_item_keywords(needle, [i]).get("status") == "ok"]
+        found = self.resolve_item_keywords(query, candidates)
+        return [found["item"]] if found.get("status") == "ok" else found
+
     def put_in_container(self, char: MudCharacter, item_query: str, container_query: str) -> str:
-        cres = self.resolve_item_keywords(container_query, self.find_inventory_items(char.id)+self.get_visible_room_items(char.room_id))
+        cres = self.resolve_item_keywords(container_query, self.find_inventory_display_items(char.id)+self.get_visible_room_items(char.room_id))
         if cres.get("status") != "ok": return self._resolve_message(cres, "You don't see that container.")
         cont = cres["item"]
         if not self._is_container_item(cont): return "That is not a container."
+        if self._container_locked(cont): return "It is locked."
         if not self._container_open(cont): return "It is closed."
         items = [i for i in self.find_inventory_items(char.id) if i.get("instance_id") != cont.get("instance_id")]
-        found = None if item_query.lower() in {"all","everything"} else self.resolve_item_keywords(item_query, items)
-        selected = items if found is None else ([found.get("item")] if found.get("status")=="ok" else [])
+        selected = self._select_items(item_query, items)
+        if isinstance(selected, dict): return self._resolve_message(selected, "You aren't carrying that.")
         if not selected: return "You aren't carrying that."
         names=[]
         for item in selected:
+            try:
+                self._validate_container_move(item["instance_id"], "container", cont["instance_id"])
+            except ValueError as exc:
+                return str(exc)
+            cap = int((cont.get("template") or {}).get("container_capacity") or 0)
+            wcap = int((cont.get("template") or {}).get("container_weight_capacity") or 0)
+            if cap and len(self.find_container_items(cont["instance_id"])) >= cap:
+                return "It can't hold any more."
+            if wcap and self._contained_weight(cont["instance_id"]) + int((item.get("template") or {}).get("weight") or 0) > wcap:
+                return "It can't hold that much weight."
             moved=self.transfer_item(item["instance_id"], to_owner=("container", cont["instance_id"]))
             names.append(moved["name"])
         return "You put:\n  " + "\n  ".join(names) + f"\ninto {cont['name']}."
@@ -2840,16 +2985,14 @@ class MudRuntime:
             else:
                 return self._resolve_message(res, "You don't see that.")
         container = res.get("target", {})
+        if container.get("instance_id") and self._container_locked(container): return "It is locked."
+        if container.get("instance_id") and not self._container_open(container): return "It is closed."
         items = self.find_container_items(container.get("entity_id") or container.get("instance_id") or "")
         if not items:
             return "The corpse is empty." if container.get("entity_type") == "corpse" else "It is empty."
-        if item_query.lower() in {"all", "everything"}:
-            selected = items
-        else:
-            found = self.resolve_item_keywords(item_query, items)
-            if found.get("status") != "ok":
-                return self._resolve_message(found, "You don't see that in the corpse.")
-            selected = [found["item"]]
+        selected = self._select_items(item_query, items)
+        if isinstance(selected, dict):
+            return self._resolve_message(selected, "You don't see that in the corpse.")
         names=[]
         for item in selected:
             moved = self.transfer_item(item["instance_id"], to_owner=("character", char.id))

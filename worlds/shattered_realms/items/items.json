@@ -707,7 +707,17 @@
     "wear_slots": [
       "none"
     ],
-    "weight": 1
+    "weight": 1,
+    "item_type": "container",
+    "container_capacity": 12,
+    "container_weight_capacity": 20,
+    "container_flags": [
+      "closeable"
+    ],
+    "keywords": [
+      "pouch",
+      "component pouch"
+    ]
   },
   {
     "description": "lockpick set for beginner Smart MUD play.",
@@ -1149,7 +1159,12 @@
     "wear_slots": [
       "back"
     ],
-    "weight": 1
+    "weight": 1,
+    "container_capacity": 20,
+    "container_weight_capacity": 80,
+    "container_flags": [
+      "closeable"
+    ]
   },
   {
     "equipment_slots": [
