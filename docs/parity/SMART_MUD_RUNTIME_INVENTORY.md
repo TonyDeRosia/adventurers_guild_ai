@@ -125,3 +125,22 @@ Baseline commit: `f1aebf27f2e89833a087ebacf02bfb9a38e10cbf`; branch observed as 
 | combat messages | none found | SQLite/world packages where implemented | none traced | varies | none found | NEEDS-VERIFICATION | Production evidence traced where paths are listed; empty paths mean no conclusive production path was found during Phase 16A. |
 
 See `runtime_parity_inventory.json` for all inventoried capabilities.
+
+## Phase 16A.1 runtime inventory verification addendum
+
+Runtime ownership must be treated as production-code ownership, not merely schema presence. The verified inventory baseline is:
+
+| Runtime area | Production owner | Completeness finding | Duplicate/prototype/schema-only risk |
+| --- | --- | --- | --- |
+| Character state/resources | `engine/character_state.py`, `engine/runtime_resources.py`, `engine/character_sheet.py` | Substantial runtime support with focused parity docs. | Keep display projections separate from canonical state. |
+| Movement/rooms | `engine/mud_runtime.py`, `engine/world_registry.py`, room JSON | Functional movement exists; persistent door/exit state is partial. | Builder room fields must not be treated as runtime state until 16B. |
+| Commands | `engine/mud_commands.py`, `engine/command_registry.py` | Dispatch exists; per-command parity varies. | Avoid adding command-only state that bypasses services. |
+| Combat | `engine/combat_runtime.py`, `engine/combat.py`, `engine/combat_behavior.py` | Stronger than most domains but advanced parity remains partial. | Profiles are not behavior unless runtime service consumes them. |
+| Inventory/equipment | `engine/inventory.py`, `engine/combat_equipment.py` | Basic ownership exists; containers/object use need phases. | Item templates and instances must not diverge. |
+| World resets | `engine/zone_resets.py`, `engine/content_registry.py` | Reset data exists; dependency/state replay needs hardening. | Reset JSON is schema/content until executed by runtime. |
+| Builder/content | `engine/builder_content_editor.py`, `engine/content_registry.py` | Strong Builder/content evidence. | Builder-only completeness must not be counted as runtime parity. |
+| Quests/dialogue | `engine/quests.py`, `engine/dialogue_service.py` | Smart MUD systems exist; DG script parity is absent. | Quest content does not replace trigger runtime. |
+| Economy/shops | `engine/economy.py`, shop profile JSON | Partial runtime support. | Shop definitions require command/runtime verification. |
+| Persistence | `engine/mud_state_store.py`, `engine/save_manager.py` | Persistence exists; shared world-state semantics are incomplete. | Avoid per-feature persistence islands without resolver. |
+
+Phase 16B remains the next phase because movement/exit state is a prerequisite for reset correctness, object/container interactions, hidden exits, mobile movement, and Builder validation.
