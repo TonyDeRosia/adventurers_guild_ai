@@ -1807,7 +1807,7 @@ class MudCommandEngine:
         if len(cmd_tokens) >= 2 and raw_cmd_name == "combat" and cmd_tokens[1].lower() == "stats":
             cmd_tokens = ["combatstats"] + cmd_tokens[2:]
             raw_cmd_name = "combatstats"
-        if raw_cmd_name in {".end", ".cancel"}:
+        if raw_cmd_name in {".end", ".cancel"} and not (getattr(self, "builder_service", None) and self.builder_service.sessions.has(character)):
             return CommandResult(narrative="No active editor session.", ok=False)
         if raw_cmd_name == "confirm" and len(cmd_tokens) >= 2 and cmd_tokens[1].lower() == "normalize" and getattr(self, "builder_service", None):
             self.builder_service.workspace = self.builder
@@ -1817,13 +1817,9 @@ class MudCommandEngine:
             self.builder_service.workspace = self.builder
             res = self.builder_service.normalize_command(character, ["rollback"] + cmd_tokens[2:])
             return CommandResult(narrative=res.message, ok=res.ok)
-        if getattr(self, "builder_service", None) and self.builder_service.sessions.has(character) and raw_cmd_name in {"medit", "oedit", "redit", "zedit", "aedit"} and len(cmd_tokens) > 1:
-            self.builder_service.sessions.end(character)
-        elif getattr(self, "builder_service", None) and self.builder_service.sessions.has(character) and raw_cmd_name not in {"say", "tell"}:
-            local = {"q", "quit", "back", "cancel", "help", "?", "p", "preview", "v", "validate", "t", "testspawn", "h", "history", "u", "undo", "r", "redo", "s", "save"}
-            if raw_cmd_name.isdigit() or raw_cmd_name in local or raw_cmd_name not in self.command_handlers:
-                res = self.builder_service.sessions.handle(character, command_text)
-                return CommandResult(narrative=res.message, ok=res.ok)
+        if getattr(self, "builder_service", None) and self.builder_service.sessions.has(character):
+            res = self.builder_service.sessions.handle(character, command_text)
+            return CommandResult(narrative=res.message, ok=res.ok)
         if raw_cmd_name == "q" and getattr(self, "builder_service", None):
             res = self.builder_service.normalize_command(character, ["q"])
             if res.ok:
@@ -3994,7 +3990,7 @@ class MudCommandEngine:
                 self.builder.publish("builder_edit_target_changed", character, world_id, "room", args[1], command=raw)
                 return CommandResult("Builder target set.\n" + self._builder_room_status(character, args[1], drafts))
             return CommandResult('Usage: btarget [room <room_id>|clear]', ok=False)
-        if cmd in {"medit", "oedit", "aedit", "zedit"}:
+        if cmd in {"medit", "oedit", "aedit", "zedit"} or (cmd == "redit" and args and str(args[0]).isdigit()):
             self.builder_service.workspace = self.builder
             res = self.builder_service.discover_editor_target(character, cmd, args)
             return CommandResult(res.message, ok=res.ok)
@@ -4008,10 +4004,6 @@ class MudCommandEngine:
             res = self.builder_service.search(character, " ".join(args)); return CommandResult(res.message, ok=res.ok)
         if cmd == "builder" and args and args[0].lower() == "testspawn" and len(args) > 1:
             res = self.builder_service.testspawn(character, args[1]); return CommandResult(res.message, ok=res.ok)
-        if cmd == "redit" and args:
-            self.builder_service.workspace = self.builder
-            res = self.builder_service.discover_editor_target(character, cmd, args)
-            return CommandResult(res.message, ok=res.ok)
         if cmd == "redit":
             if args:
                 ordered = sorted(drafts.get("rooms", {}).keys())

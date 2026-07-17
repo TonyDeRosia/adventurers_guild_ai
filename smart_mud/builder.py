@@ -880,10 +880,29 @@ class MobileTemplate:
 @dataclass
 class BuilderEditSession:
     session_id: str; builder_account_id: str; builder_character_id: str; world_id: str; editor_type: str; collection: str; object_id: str; lock_key: str
-    mode: str = "editor_root"; section: str = ""; subsection: str = ""; pending_field: str = ""; pending_value_type: str = ""; pending_choices: list[str] = field(default_factory=list)
+    mode: str = "main_menu"; section: str = ""; subsection: str = ""; pending_field: str = ""; pending_value_type: str = ""; pending_choices: list[str] = field(default_factory=list)
     draft_revision: int = 0; working_revision: int = 0; started_at: str = ""; last_activity_at: str = ""; dirty: bool = False; saved: bool = True; validation_state: str = "unknown"; return_stack: list[str] = field(default_factory=list)
-    original_record: dict[str, Any] = field(default_factory=dict); working_record: dict[str, Any] = field(default_factory=dict); savepoint: dict[str, Any] = field(default_factory=dict); dirty_fields: list[str] = field(default_factory=list); quit_pending: bool = False; pending_confirmation: str = ""
+    original_record: dict[str, Any] = field(default_factory=dict); working_record: dict[str, Any] = field(default_factory=dict); savepoint: dict[str, Any] = field(default_factory=dict); dirty_fields: list[str] = field(default_factory=list); quit_pending: bool = False
     undo_stack: list[dict[str, Any]] = field(default_factory=list); redo_stack: list[dict[str, Any]] = field(default_factory=list)
+    menu_stack: list[str] = field(default_factory=list); active_field: str = ""; field_input_type: str = ""; pending_value: Any = None; confirmation_type: str = ""; multiline_lines: list[str] = field(default_factory=list); reference_filter: str = ""; reference_page: int = 1
+
+@dataclass(frozen=True)
+class OlcFieldDescriptor:
+    key: str
+    label: str
+    path: tuple[str, ...]
+    input_type: str = "string"
+    help: str = ""
+    minimum: int | float | None = None
+    maximum: int | float | None = None
+    choices: tuple[str, ...] = ()
+    flags: tuple[str, ...] = ()
+    reference_collection: str = ""
+    required: bool = False
+    multiple: bool = False
+    read_only: bool = False
+    mutation: str = "Set {label} from {old} to {new}"
+
 
 class BuilderSessionManager:
     def __init__(self, service: 'BuilderService') -> None:
@@ -2034,15 +2053,149 @@ class BuilderService:
     def render_session(self, sess: BuilderEditSession) -> str:
         rec = sess.working_record or {}
         title = rec.get("name") or sess.object_id.replace("_", " ").title()
+        if sess.mode == "field_prompt":
+            return self._render_field_prompt(sess)
+        if sess.mode == "multiline_text":
+            return self._render_multiline(sess)
+        if sess.mode == "flag_editor":
+            return self._render_flag_editor(sess)
+        if sess.mode == "reference_selector":
+            return self._render_reference_selector(None, sess)
+        if sess.mode == "list_editor":
+            return self._render_list_editor(sess)
+        if sess.editor_type != "medit" and sess.section:
+            lines = [f"{sess.editor_type.upper()} {sess.object_id} > Fields", f"Draft status: {'modified' if sess.dirty else 'clean'}"]
+            for i, f in enumerate(self._field_descriptors(sess), 1):
+                lines.append(f"{i}. {f.label:<24}: {self._fmt_value(self._get_path(rec, f.path))}{' (read-only)' if f.read_only else ''}")
+            lines += ["", "Q. Back", "V. Validate", "U. Undo", "R. Redo", "S. Save"]
+            return "\n".join(lines)
         if sess.section:
             return self._render_mobile_section(sess, sess.section)
         return self.menu(sess.editor_type, str(title), sess)
 
+    def _field_descriptors(self, sess: BuilderEditSession) -> list[OlcFieldDescriptor]:
+        if sess.editor_type == "medit":
+            attrs = ("strength","dexterity","constitution","intelligence","wisdom","charisma")
+            if sess.section == "identity":
+                return [OlcFieldDescriptor("name","Display name",("name",),"string",required=True), OlcFieldDescriptor("id","Stable mobile ID",("id",),"slug",read_only=True), OlcFieldDescriptor("vnum","Legacy VNUM",("vnum",),"integer",minimum=1,maximum=999999), OlcFieldDescriptor("entity_type","Entity type",("entity_type",),"enum",choices=tuple(sorted(VALID_ENTITY_TYPES)))]
+            if sess.section == "keywords":
+                return [OlcFieldDescriptor("keywords","Keywords",("keywords",),"string_list",required=True)]
+            if sess.section == "descriptions":
+                return [OlcFieldDescriptor("room_description","Room-visible description",("room_description",),"multiline"), OlcFieldDescriptor("look_description","Detailed look description",("look_description",),"multiline"), OlcFieldDescriptor("short_description","Short description",("short_description",),"string")]
+            if sess.section == "traits":
+                return [OlcFieldDescriptor(k,k.replace("_"," ").title(),(k,),"string") for k in ("species","race","gender","size","alignment")]
+            if sess.section in {"attributes","resources"}:
+                return [OlcFieldDescriptor("level","Level",("level",),"integer",minimum=1,maximum=100)] + [OlcFieldDescriptor(a,a.title(),("attributes",a),"integer",minimum=1,maximum=100) for a in attrs] + [OlcFieldDescriptor("resources","Resources",("resources",),"resource_map")]
+            if sess.section == "body_weapons":
+                return [OlcFieldDescriptor("body_profile_id","Body profile",("body_profile_id",),"reference",reference_collection="body_profiles",required=True)]
+            if sess.section == "mobile_flags":
+                return [OlcFieldDescriptor("mobile_flags","Mobile Flags",("mobile_flags",),"flag_set",flags=("sentinel","scavenger","aggressive","stay_zone","wimpy","helper","trainer","merchant"))]
+            if sess.section == "affect_flags":
+                return [OlcFieldDescriptor("affect_flags","Affect/status Flags",("affect_flags",),"flag_set",flags=("blind","invisible","detect_invisible","sanctuary","poisoned","flying","sleeping"))]
+            if sess.section in {"combat","positions","equipment","inventory","loot","abilities","ai","faction","scripts"}:
+                fields = {
+                    "combat": ("armor_profile_id","combat_behavior_profile_id","threat_profile_id","ability_loadout_id"),
+                    "positions": ("default_position","spawn_position"),
+                    "equipment": ("equipment_loadout",),
+                    "inventory": ("starting_inventory",),
+                    "loot": ("loot_table_id","corpse_profile_id"),
+                    "abilities": ("granted_abilities","spell_loadout"),
+                    "ai": ("behavior_profile_id","personality_profile_id","schedule_id"),
+                    "faction": ("faction_id","relationship_seed_ids"),
+                    "scripts": ("script_ids",),
+                }[sess.section]
+                return [OlcFieldDescriptor(f, f.replace("_"," ").title(), tuple(("combat_profile", f) if sess.section == "combat" else (f,)), "string_list" if f.endswith("ids") or f in {"granted_abilities","spell_loadout","starting_inventory"} else "string") for f in fields]
+        # Shared minimal descriptors for OEDIT/REDIT/ZEDIT/AEDIT.
+        if sess.editor_type == "oedit":
+            return [OlcFieldDescriptor("name","Object name",("name",),"string",required=True), OlcFieldDescriptor("keywords","Keywords",("keywords",),"string_list"), OlcFieldDescriptor("object_type","Object type",("type",),"enum",choices=("weapon","armor","container","consumable","tool","misc")), OlcFieldDescriptor("description","Detailed description",("description",),"multiline"), OlcFieldDescriptor("wear_flags","Wear flags",("wear_flags",),"flag_set",flags=tuple(sorted(VALID_WEAR_SLOTS))), OlcFieldDescriptor("extra_flags","Extra flags",("extra_flags",),"flag_set",flags=("glow","hum","invisible","magic","nodrop","bless","anti_good","anti_evil"))]
+        if sess.editor_type == "redit":
+            return [OlcFieldDescriptor("name","Room name",("name",),"string",required=True), OlcFieldDescriptor("vnum","Room VNUM",("vnum",),"integer",minimum=1,maximum=999999), OlcFieldDescriptor("description","Room description",("description",),"multiline"), OlcFieldDescriptor("sector","Sector/terrain",("sector",),"enum",choices=("inside","city","field","forest","hills","mountain","water","air")), OlcFieldDescriptor("room_flags","Room flags",("flags",),"flag_set",flags=("dark","death","indoors","peaceful","soundproof","nomob","private")), OlcFieldDescriptor("exits","Exits",("exits",),"list")]
+        if sess.editor_type in {"zedit","aedit"}:
+            return [OlcFieldDescriptor("name","Name",("name",),"string",required=True), OlcFieldDescriptor("id","Stable ID",("id",),"slug",read_only=True), OlcFieldDescriptor("flags","Flags",("flags",),"flag_set",flags=("starter","safe","builder","published"))]
+        return []
+
+    def _descriptor(self, sess: BuilderEditSession, token: str) -> OlcFieldDescriptor | None:
+        fields = self._field_descriptors(sess)
+        if str(token).isdigit():
+            i = int(token) - 1
+            return fields[i] if 0 <= i < len(fields) else None
+        t = token.lower().replace("-","_")
+        return next((f for f in fields if f.key == t or f.label.lower().replace(" ","_") == t), None)
+
+    def _get_path(self, rec: dict[str, Any], path: tuple[str, ...]) -> Any:
+        cur: Any = rec
+        for p in path:
+            if not isinstance(cur, dict): return None
+            cur = cur.get(p)
+        return cur
+
+    def _set_path(self, rec: dict[str, Any], path: tuple[str, ...], value: Any) -> None:
+        cur = rec
+        for p in path[:-1]:
+            cur = cur.setdefault(p, {})
+        cur[path[-1]] = value
+
+    def _fmt_value(self, value: Any) -> str:
+        if value in (None, "", [], {}): return "none"
+        if isinstance(value, list): return ", ".join(map(str, value)) or "none"
+        if isinstance(value, dict): return json.dumps(value, sort_keys=True)
+        return str(value)
+
+    def _render_field_prompt(self, sess: BuilderEditSession) -> str:
+        f = self._descriptor(sess, sess.active_field)
+        if not f: return "No active field."
+        cur = self._get_path(sess.working_record, f.path)
+        rng = f" [{f.minimum}-{f.maximum}]" if f.minimum is not None or f.maximum is not None else ""
+        choices = "\nChoices: " + ", ".join(f.choices) if f.choices else ""
+        clear = " Use clear/none/unset to remove optional values." if not f.required else ""
+        return f"Current {f.label.lower()}: {self._fmt_value(cur)}\nEnter new {f.label.lower()}{rng}, or Q to cancel.{clear}{choices}"
+
+    def _render_multiline(self, sess: BuilderEditSession) -> str:
+        return "Multiline text editor. Enter text lines. Commands: .save .cancel .clear .show .help"
+
+    def _render_flag_editor(self, sess: BuilderEditSession) -> str:
+        f = self._descriptor(sess, sess.active_field); cur = set(self._get_path(sess.working_record, f.path) or []) if f else set()
+        lines = [f"{sess.editor_type.upper()} {sess.object_id} > {f.label if f else 'Flags'}"]
+        for i, flag in enumerate((f.flags if f else ()), 1):
+            lines.append(f"{i}. {flag.upper():<18} [{'X' if flag in cur else ' '}]")
+        lines += ["Q. Back", "Commands: number toggles, all, none, clear, back"]
+        return "\n".join(lines)
+
+    def _render_list_editor(self, sess: BuilderEditSession) -> str:
+        f = self._descriptor(sess, sess.active_field); cur = self._get_path(sess.working_record, f.path) if f else []
+        cur = cur if isinstance(cur, list) else ([] if cur in (None,"") else [cur])
+        lines = [f"{f.label if f else 'List'} list editor"]
+        lines += [f"{i}. {v}" for i, v in enumerate(cur, 1)] or ["- none"]
+        lines.append("Commands: list, add <value>, remove <number|value>, move <from> <to>, clear, back")
+        return "\n".join(lines)
+
+    def _render_reference_selector(self, actor: Any | None, sess: BuilderEditSession) -> str:
+        f = self._descriptor(sess, sess.active_field)
+        rows = []
+        if f:
+            rows = list(self.resolve_collection_records(actor, f.reference_collection).items())
+            q = sess.reference_filter.lower().strip()
+            if q:
+                rows = [(k,v) for k,v in rows if q in k.lower() or q in str(v.get("name") or v.get("display_name") or "").lower()]
+        cur = self._get_path(sess.working_record, f.path) if f else None
+        lines = [f"{f.label if f else 'Reference'} selector", f"Current: {self._fmt_value(cur)}"]
+        for i, (oid, rec) in enumerate(rows[:25], 1):
+            lines.append(f"{i}. {rec.get('vnum','----')} {oid} - {rec.get('name') or rec.get('display_name') or oid}")
+        lines.append("Commands: number, stable ID, search <text>, unset, back")
+        return "\n".join(lines)
+
     def _render_mobile_section(self, sess: BuilderEditSession, section: str) -> str:
         rec = sess.working_record or {}
         cp = rec.get("combat_profile") or {}
-        label = self._section_label(section)
-        lines = [f"{sess.editor_type.upper()} {rec.get('vnum') or sess.object_id} > {label}"]
+        lines = [f"MEDIT {section.replace('_',' ').title()}: {rec.get('name') or sess.object_id}"]
+        descriptors = self._field_descriptors(sess)
+        if descriptors and section not in {"natural_weapons", "spawns", "diagnostics"}:
+            lines = [f"{sess.editor_type.upper()} {sess.object_id} > {section.replace('_',' ').title()}", f"Draft status: {'modified' if sess.dirty else 'clean'}"]
+            for i, f in enumerate(descriptors, 1):
+                suffix = " (read-only)" if f.read_only else ""
+                lines.append(f"{i}. {f.label:<28}: {self._fmt_value(self._get_path(rec, f.path))}{suffix}")
+            lines += ["", "Q. Back", "V. Validate", "U. Undo", "R. Redo", "S. Save"]
+            return "\n".join(lines)
         if section == "identity":
             lines += [f"1. Mobile ID: {sess.object_id}", f"2. Display name: {rec.get('name','')}", f"3. Entity type: {rec.get('entity_type','npc')}", f"4. Builder status: {rec.get('builder_status','incomplete')}", f"5. World: {rec.get('world_id', sess.world_id)}", f"6. Area: {rec.get('area_id','')}", f"7. Zone: {rec.get('zone_id','')}", f"8. Legacy VNUM: {rec.get('vnum','')}", f"9. Tags: {', '.join(rec.get('tags') or [])}", "Commands: name <value>, type <value>, status <value>, area <id>, zone <id>, vnum <n>, tag add/remove <tag>, back"]
         elif section == "keywords":
@@ -2073,25 +2226,6 @@ class BuilderService:
             lines += [summary, "Commands: set <field> <value>, add <field> <value>, remove <field> <value>, back"]
         return "\n".join(lines)
 
-
-    def _section_label(self, section: str) -> str:
-        return {"identity":"Identity", "keywords":"Keywords and aliases", "descriptions":"Descriptions", "traits":"Basic identity traits", "attributes":"Level and Attributes", "resources":"Resources", "combat":"Combat Statistics and Profiles", "body_weapons":"Body Profile and Natural Weapons", "natural_weapons":"Natural Weapons", "positions":"Positions and Posture", "mobile_flags":"Mobile Flags", "affect_flags":"Affect/Status Flags", "equipment":"Equipment Loadout", "inventory":"Starting Inventory", "loot":"Loot and Corpse Behavior", "abilities":"Abilities and Spell Loadout", "ai":"Behavior and AI", "faction":"Faction and Relationships", "scripts":"Scripts and Triggers", "spawns":"Spawn and Reset References", "diagnostics":"Diagnostics and References"}.get(section, section.replace("_", " ").title())
-
-    def _session_help(self, sess: BuilderEditSession) -> str:
-        if sess.pending_confirmation:
-            return "This draft has unsaved changes.\nSave changes before leaving?\n[S]ave, [D]iscard, [C]ancel:"
-        if sess.section:
-            return f"Unknown {sess.editor_type.upper()} option. Use the listed field commands, BACK, Q, HELP, PREVIEW, VALIDATE, SAVE, UNDO, or REDO."
-        return f"Unknown {sess.editor_type.upper()} option. Enter a menu number, P, V, T, H, U, R, S, Q, HELP, or BACK."
-
-    def _begin_exit_confirmation(self, sess: BuilderEditSession) -> BuilderResult:
-        sess.mode = "confirmation"; sess.quit_pending = True; sess.pending_confirmation = "exit_dirty"
-        return BuilderResult(True, self._session_help(sess))
-
-    def _close_session(self, actor: Any, message: str) -> BuilderResult:
-        self.sessions.end(actor)
-        return BuilderResult(True, message)
-
     def _mobile_section_summary(self, rec: dict[str, Any], section: str) -> str:
         mapping = {
             "positions": ("default_position","spawn_position"), "mobile_flags": ("mobile_flags",), "affect_flags": ("affect_flags",),
@@ -2108,62 +2242,228 @@ class BuilderService:
     def _session_preview(self, actor: Any, sess: BuilderEditSession) -> BuilderResult:
         return self._preview_record(actor, sess.collection, sess.object_id, sess.working_record)
 
+    def _parse_field_value(self, sess: BuilderEditSession, f: OlcFieldDescriptor | None, text: str) -> BuilderResult:
+        if not f: return BuilderResult(False, "No active field.")
+        raw = text.strip()
+        if raw == "":
+            return BuilderResult(False, f"{f.label} requires an explicit value; blank input is not accepted.")
+        if raw.lower() in {"clear","none","unset"}:
+            if f.required: return BuilderResult(False, f"{f.label} is required and cannot be cleared.")
+            return BuilderResult(True, "", {"value": None})
+        try:
+            if f.input_type == "integer":
+                if not re.fullmatch(r"[0-9]+", raw):
+                    return BuilderResult(False, f"{f.label} must be a whole number.")
+                val = int(raw)
+                if f.minimum is not None and val < f.minimum: return BuilderResult(False, f"{f.label} must be between {f.minimum} and {f.maximum}.")
+                if f.maximum is not None and val > f.maximum: return BuilderResult(False, f"{f.label} must be between {f.minimum} and {f.maximum}.")
+                return BuilderResult(True, "", {"value": val})
+            if f.input_type == "enum":
+                choices = {c.lower(): c for c in f.choices}
+                if raw.lower() not in choices: return BuilderResult(False, f"{f.label} must be one of: {', '.join(f.choices)}.")
+                return BuilderResult(True, "", {"value": choices[raw.lower()]})
+            if f.input_type == "slug":
+                if not re.fullmatch(r"[a-zA-Z0-9_:-]+", raw): return BuilderResult(False, f"{f.label} must be an identifier using letters, numbers, underscore, colon, or dash.")
+                return BuilderResult(True, "", {"value": raw})
+            return BuilderResult(True, "", {"value": raw})
+        except Exception as exc:
+            return BuilderResult(False, f"Could not parse {f.label}: {exc}")
+
+    def _apply_field_value(self, actor: Any, sess: BuilderEditSession, f: OlcFieldDescriptor | None, value: Any, prefix: str = "") -> BuilderResult:
+        if not f: return BuilderResult(False, "No active field.")
+        before = self._get_path(sess.working_record, f.path)
+        if before == value:
+            sess.mode = "section_menu"; sess.active_field = ""
+            sess.dirty = sess.working_record != sess.savepoint; sess.saved = not sess.dirty
+            return BuilderResult(True, f"{f.label} unchanged.\n" + self.render_session(sess), sess.working_record)
+        self._session_checkpoint(sess)
+        self._set_path(sess.working_record, f.path, value)
+        if sess.collection == "entities":
+            sess.working_record = self._normalize_entity_updates(sess.object_id, sess.working_record)
+        sess.dirty = sess.working_record != sess.savepoint; sess.saved = not sess.dirty
+        sess.dirty_fields = sorted(set(sess.dirty_fields + [".".join(f.path)]))
+        next_mode = "section_menu"
+        keep_field = False
+        if f.input_type == "flag_set":
+            next_mode = "flag_editor"; keep_field = True
+        elif f.input_type in {"string_list", "list"}:
+            next_mode = "list_editor"; keep_field = True
+        sess.mode = next_mode; sess.active_field = f.key if keep_field else ""; sess.field_input_type = ""; sess.pending_value = None; sess.multiline_lines = []
+        msg = prefix or f"{f.label} changed from {self._fmt_value(before)} to {self._fmt_value(value)}."
+        return BuilderResult(True, msg + "\n" + self.render_session(sess), sess.working_record)
+
     def handle_session_input(self, actor: Any, sess: BuilderEditSession, text: str) -> BuilderResult:
-        text = str(text or "").strip(); low = text.lower(); sess.last_activity_at = self.workspace.stamp()
+        low = text.lower().strip(); sess.last_activity_at = self.workspace.stamp()
         parts = text.split()
-        if not low:
-            return BuilderResult(True, self._session_help(sess) if sess.pending_confirmation else self.render_session(sess))
-        if sess.pending_confirmation:
+        cancel_words = {"q","quit","cancel","back"}
+        if sess.mode == "multiline_text":
+            if low == ".cancel" or low in cancel_words:
+                sess.mode = "section_menu"; sess.active_field = ""; sess.multiline_lines = []
+                return BuilderResult(True, "Text edit cancelled.\n" + self.render_session(sess))
+            if low == ".help":
+                return BuilderResult(True, ".save commits text, .cancel aborts, .clear clears pending text, .show displays pending text.")
+            if low == ".show":
+                body = "\n".join(f"{i+1}: {line}" for i, line in enumerate(sess.multiline_lines)) or "(empty)"
+                return BuilderResult(True, body)
+            if low == ".clear":
+                sess.multiline_lines = []
+                return BuilderResult(True, "Pending text cleared.")
+            if low == ".save":
+                f = self._descriptor(sess, sess.active_field)
+                new = "\n".join(sess.multiline_lines).rstrip()
+                return self._apply_field_value(actor, sess, f, new, "Text saved.")
+            sess.multiline_lines.append(text)
+            return BuilderResult(True, f"Line {len(sess.multiline_lines)} added. Use .show or .save.")
+        if sess.mode == "field_prompt":
+            if low in cancel_words:
+                sess.mode = "section_menu"; sess.active_field = ""
+                return BuilderResult(True, "Edit cancelled.\n" + self.render_session(sess))
+            f = self._descriptor(sess, sess.active_field)
+            parsed = self._parse_field_value(sess, f, text)
+            if not parsed.ok:
+                return BuilderResult(False, parsed.message + "\n" + self._render_field_prompt(sess))
+            return self._apply_field_value(actor, sess, f, parsed.data["value"])
+        if sess.mode == "flag_editor":
+            f = self._descriptor(sess, sess.active_field)
+            if low in {"u","undo"}:
+                if not sess.undo_stack: return BuilderResult(False, "Nothing to undo.")
+                sess.redo_stack.append(deepcopy(sess.working_record)); sess.working_record = sess.undo_stack.pop(); sess.dirty = sess.working_record != sess.savepoint; sess.saved = not sess.dirty
+                return BuilderResult(True, "Session undo applied.\n" + self._render_flag_editor(sess))
+            if low in {"r","redo"}:
+                if not sess.redo_stack: return BuilderResult(False, "Nothing to redo.")
+                sess.undo_stack.append(deepcopy(sess.working_record)); sess.working_record = sess.redo_stack.pop(); sess.dirty = sess.working_record != sess.savepoint; sess.saved = not sess.dirty
+                return BuilderResult(True, "Session redo applied.\n" + self._render_flag_editor(sess))
+            if low in cancel_words:
+                sess.mode = "section_menu"; sess.active_field = ""
+                return BuilderResult(True, self.render_session(sess))
+            cur = set(self._get_path(sess.working_record, f.path) or [])
+            if low in {"none","clear"}: new = []
+            elif low == "all": new = list(f.flags)
+            elif low.isdigit() and 1 <= int(low) <= len(f.flags):
+                flag = f.flags[int(low)-1]
+                (cur.remove if flag in cur else cur.add)(flag); new = sorted(cur)
+            else:
+                return BuilderResult(False, "Choose a flag number, all, none, clear, or Q.\n" + self._render_flag_editor(sess))
+            return self._apply_field_value(actor, sess, f, new, "Flag selection updated.")
+        if sess.mode == "list_editor":
+            f = self._descriptor(sess, sess.active_field)
+            if low in cancel_words:
+                sess.mode = "section_menu"; sess.active_field = ""
+                return BuilderResult(True, self.render_session(sess))
+            cur = self._get_path(sess.working_record, f.path)
+            cur = list(cur) if isinstance(cur, list) else []
+            cmd = parts[0].lower() if parts else "list"
+            if cmd == "list": return BuilderResult(True, self._render_list_editor(sess))
+            if cmd == "add" and len(parts) > 1:
+                val = " ".join(parts[1:]).strip()
+                if val.lower() in {str(x).lower() for x in cur}: return BuilderResult(False, "Duplicate list value rejected.")
+                cur.append(val)
+            elif cmd == "remove" and len(parts) > 1:
+                tok = " ".join(parts[1:])
+                if tok.isdigit() and 1 <= int(tok) <= len(cur): cur.pop(int(tok)-1)
+                else: cur = [x for x in cur if str(x) != tok]
+            elif cmd == "move" and len(parts) == 3 and parts[1].isdigit() and parts[2].isdigit():
+                a,b = int(parts[1])-1, int(parts[2])-1
+                if not (0 <= a < len(cur) and 0 <= b < len(cur)): return BuilderResult(False, "Move indexes are out of range.")
+                val = cur.pop(a); cur.insert(b, val)
+            elif cmd == "clear": cur = []
+            else: return BuilderResult(False, "Commands: list, add <value>, remove <number|value>, move <from> <to>, clear, back")
+            return self._apply_field_value(actor, sess, f, cur, "List updated.")
+        if sess.mode == "reference_selector":
+            f = self._descriptor(sess, sess.active_field)
+            if low in cancel_words:
+                sess.mode = "section_menu"; sess.active_field = ""
+                return BuilderResult(True, self.render_session(sess))
+            if low.startswith("search "):
+                sess.reference_filter = text[7:].strip()
+                return BuilderResult(True, self._render_reference_selector(actor, sess))
+            if low in {"unset","clear","none"} and not f.required:
+                return self._apply_field_value(actor, sess, f, None, "Reference cleared.")
+            records = list(self.resolve_collection_records(actor, f.reference_collection).items())
+            if low.isdigit() and 1 <= int(low) <= len(records):
+                return self._apply_field_value(actor, sess, f, records[int(low)-1][0], "Reference updated.")
+            if low in dict(records):
+                return self._apply_field_value(actor, sess, f, low, "Reference updated.")
+            return BuilderResult(False, f'{f.label} reference "{text}" does not exist. Use search, a number, a stable ID, or Q.')
+        if sess.quit_pending:
             if low in {"save", "s"}:
-                sess.pending_confirmation = ""; sess.quit_pending = False; sess.mode = "editor_root" if not sess.section else "editor_submenu"
+                sess.quit_pending = False
                 res = self.handle_session_input(actor, sess, "save")
                 if res.ok:
-                    return self._close_session(actor, res.message + "\nEditor saved, closed, and lock released.")
-                return BuilderResult(False, res.message + "\n" + self.render_session(sess), res.data)
-            if low in {"discard", "d"}:
-                return self._close_session(actor, "Editor changes discarded; lock released.")
-            if low in {"cancel", "c", "q", "quit", "back"}:
-                sess.pending_confirmation = ""; sess.quit_pending = False; sess.mode = "editor_root" if not sess.section else "editor_submenu"
+                    self.sessions.end(actor)
+                    return BuilderResult(True, res.message + "\nEditor saved, closed, and lock released.", res.data)
+                return res
+            if low in {"discard", "d", "no", "n"}:
+                self.sessions.end(actor)
+                return BuilderResult(True, "Editor changes discarded; lock released.")
+            if low in {"cancel", "c", "back"}:
+                sess.quit_pending = False
                 return BuilderResult(True, "Quit cancelled.\n" + self.render_session(sess))
-            return BuilderResult(False, self._session_help(sess))
-        if low in {"back", "q"} and sess.section:
-            sess.return_stack.pop() if sess.return_stack else None
-            sess.section = ""; sess.mode = "editor_root"
-            return BuilderResult(True, self.render_session(sess))
-        if low == "quit" and sess.section:
-            sess.section = ""; sess.mode = "editor_root"
-            if sess.dirty:
-                return self._begin_exit_confirmation(sess)
-            return self._close_session(actor, "Editor closed and lock released.")
-        if low in {"q", "quit"} and not sess.section:
-            if sess.dirty:
-                return self._begin_exit_confirmation(sess)
-            return self._close_session(actor, "Editor closed and lock released.")
-        if low in {"back", "cancel"} and not sess.section:
-            return BuilderResult(True, "Already at the root editor menu. Use Q to quit.\n" + self.render_session(sess))
-        if low in {"?", "help"}: return BuilderResult(True, "Builder help: use menu numbers; field commands are name/type/status/area/zone/set/add/remove; Natural Weapons supports add/set/delete/list; Q or BACK returns from submenus; root Q exits; root dirty exit asks Save/Discard/Cancel.")
-        section_map = {"1":"identity","identity":"identity", "2":"keywords", "keywords":"keywords", "aliases":"keywords", "3":"descriptions", "descriptions":"descriptions", "4":"traits", "traits":"traits", "5":"attributes", "attributes":"attributes", "level":"attributes", "6":"resources", "resources":"resources", "7":"natural_weapons", "combat":"combat", "8":"body_weapons", "body":"body_weapons", "body profile":"body_weapons", "weapons":"natural_weapons", "natural":"natural_weapons", "natural weapons":"natural_weapons", "natural attacks":"natural_weapons", "9":"positions", "positions":"positions", "10":"mobile_flags", "flags":"mobile_flags", "mobile flags":"mobile_flags", "11":"affect_flags", "affects":"affect_flags", "12":"equipment", "equipment":"equipment", "13":"inventory", "inventory":"inventory", "14":"loot", "loot":"loot", "15":"abilities", "abilities":"abilities", "16":"ai", "ai":"ai", "behavior":"ai", "17":"faction", "faction":"faction", "18":"scripts", "scripts":"scripts", "19":"spawns", "spawns":"spawns", "spawn":"spawns", "20":"diagnostics", "diagnostics":"diagnostics"}
-        if low in section_map and not sess.section:
-            sess.return_stack.append(""); sess.section=section_map[low]; sess.mode="editor_submenu"; return BuilderResult(True, self.render_session(sess))
+            return BuilderResult(False, "Unsaved changes: type Save, Discard, or Cancel.")
         if parts and parts[0].lower() == "name" and len(parts) > 1:
-            self._session_checkpoint(sess); sess.working_record["name"] = text[len(parts[0]):].strip(); sess.dirty = True; sess.saved = False
+            self._session_checkpoint(sess)
+            sess.working_record["name"] = text[len(parts[0]):].strip(); sess.dirty = True; sess.saved = False
             return BuilderResult(True, "Updated session scratch.\n" + self.render_session(sess))
         if parts and parts[0].lower() == "body" and len(parts) > 1:
             prof, bp, weapons = self._body_profile_result(actor, parts[1], scratch=sess.working_record)
-            if not bp: return BuilderResult(False, "Unknown body profile. Choose: " + ", ".join(self.body_profiles(actor)))
-            self._session_checkpoint(sess); sess.working_record.pop("natural_weapons", None); sess.working_record.pop("natural_attacks", None); sess.working_record["body_profile_id"] = prof; sess.working_record.setdefault("combat_profile", {})["body_profile"] = prof; sess.working_record.setdefault("combat_profile", {})["natural_weapons"] = weapons; sess.dirty = True; sess.saved = False
+            if not bp:
+                return BuilderResult(False, "Unknown body profile. Choose: " + ", ".join(self.body_profiles(actor)))
+            self._session_checkpoint(sess)
+            sess.working_record.pop("natural_weapons", None)
+            sess.working_record.pop("natural_attacks", None)
+            sess.working_record["body_profile_id"] = prof
+            sess.working_record.setdefault("combat_profile", {})["body_profile"] = prof
+            sess.working_record.setdefault("combat_profile", {})["natural_weapons"] = weapons
+            sess.dirty = True; sess.saved = False
             return BuilderResult(True, "Updated session scratch.\n" + self.render_session(sess))
+        if low in {"q", "quit"}:
+            if sess.section:
+                sess.section = ""; sess.mode = "main_menu"
+                return BuilderResult(True, self.render_session(sess))
+            if sess.dirty:
+                sess.quit_pending = True
+                return BuilderResult(True, "Unsaved changes: Save, Discard, or Cancel?")
+            self.sessions.end(actor); return BuilderResult(True, "Editor closed and lock released.")
+        if low in {"back", "cancel"}: sess.section=""; sess.mode="main_menu"; return BuilderResult(True, self.render_session(sess))
+        if low in {"?", "help"}: return BuilderResult(True, "Builder help: use menu numbers; field commands are name/type/status/area/zone/set/add/remove; Natural Weapons supports add/set/delete/list; global commands are preview, validate, testspawn, save, undo, redo, quit.")
+        if sess.section and sess.section != "natural_weapons":
+            field_token = parts[0].lower() if parts else ""
+            desc = self._descriptor(sess, field_token)
+            if desc:
+                if desc.read_only:
+                    return BuilderResult(False, f"{desc.label} is read-only in this editor.")
+                sess.active_field = desc.key
+                if desc.input_type == "multiline":
+                    sess.mode = "multiline_text"; sess.multiline_lines = []
+                    return BuilderResult(True, self._render_multiline(sess))
+                if desc.input_type == "flag_set":
+                    sess.mode = "flag_editor"; return BuilderResult(True, self._render_flag_editor(sess))
+                if desc.input_type in {"string_list","list"}:
+                    sess.mode = "list_editor"; return BuilderResult(True, self._render_list_editor(sess))
+                if desc.input_type == "reference":
+                    sess.mode = "reference_selector"; sess.reference_filter = ""; return BuilderResult(True, self._render_reference_selector(actor, sess))
+                sess.mode = "field_prompt"; return BuilderResult(True, self._render_field_prompt(sess))
+        if sess.editor_type != "medit" and low in {"1","fields","edit"}:
+            sess.section = "fields"; sess.mode = "section_menu"; return BuilderResult(True, self.render_session(sess))
+        section_map = {"1":"identity","identity":"identity", "2":"keywords", "keywords":"keywords", "aliases":"keywords", "3":"descriptions", "descriptions":"descriptions", "4":"traits", "traits":"traits", "5":"attributes", "attributes":"attributes", "level":"attributes", "6":"resources", "resources":"resources", "7":"natural_weapons", "combat":"combat", "8":"body_weapons", "body":"body_weapons", "body profile":"body_weapons", "weapons":"natural_weapons", "natural":"natural_weapons", "natural weapons":"natural_weapons", "natural attacks":"natural_weapons", "9":"positions", "positions":"positions", "10":"mobile_flags", "flags":"mobile_flags", "mobile flags":"mobile_flags", "11":"affect_flags", "affects":"affect_flags", "12":"equipment", "equipment":"equipment", "13":"inventory", "inventory":"inventory", "14":"loot", "loot":"loot", "15":"abilities", "abilities":"abilities", "16":"ai", "ai":"ai", "behavior":"ai", "17":"faction", "faction":"faction", "18":"scripts", "scripts":"scripts", "19":"spawns", "spawns":"spawns", "spawn":"spawns", "20":"diagnostics", "diagnostics":"diagnostics"}
+        if low in section_map:
+            sess.section=section_map[low]; sess.mode="section_menu"; return BuilderResult(True, self.render_session(sess))
         if low in {"p", "preview"}: return self._session_preview(actor, sess)
         if low in {"v", "validate"}:
             issues = MobileTemplate.from_legacy(sess.working_record).validate() if sess.collection == "entities" else []
             lines=[f"{x['severity']}: {x['field_path']} {x['message']}" for x in issues] or ["- no focused issues"]
             return BuilderResult(not any(x['severity']=="error" for x in issues), "Validation for %s:\n%s" % (sess.object_id, "\n".join(lines)), {"issues": issues})
         if low in {"t", "testspawn"}: return self.testspawn(actor, sess.object_id)
-        if low in {"h", "history"}: return BuilderResult(True, "Session history: undo entries %d, redo entries %d." % (len(sess.undo_stack), len(sess.redo_stack)))
         if low in {"s", "save"}:
+            if sess.collection == "entities":
+                issues = MobileTemplate.from_legacy(sess.working_record).validate()
+                errors = [i for i in issues if i.get("severity") == "error" or i.get("blocking")]
+                if errors:
+                    return BuilderResult(False, "Save blocked by validation errors:\n" + "\n".join(f"- {e.get('field_path')}: {e.get('message')}" for e in errors), {"issues": issues})
             res = self.mutate(actor, sess.collection, sess.object_id, deepcopy(sess.working_record), "session save", expected_revision=sess.draft_revision)
             if res.ok:
-                sess.draft_revision = int((res.data or {}).get("_builder_revision") or sess.draft_revision); sess.savepoint = deepcopy(res.data or sess.working_record); sess.dirty = False; sess.saved = True
+                sess.draft_revision = int((res.data or {}).get("_builder_revision") or sess.draft_revision)
+                sess.savepoint = deepcopy(res.data or sess.working_record); sess.dirty = False; sess.saved = True
             return res
         if low in {"u", "undo"}:
             if not sess.undo_stack: return BuilderResult(False, "Nothing to undo.")
@@ -2174,23 +2474,59 @@ class BuilderService:
             sess.undo_stack.append(deepcopy(sess.working_record)); sess.working_record = sess.redo_stack.pop(); sess.dirty = sess.working_record != sess.savepoint; sess.saved = not sess.dirty
             return BuilderResult(True, "Session redo applied.\n" + self.render_session(sess))
         if sess.section and sess.section != "natural_weapons":
-            parts = text.split(); cmd = parts[0].lower() if parts else ""
-            if cmd in {"list", "show"}: return BuilderResult(True, self.render_session(sess))
-            self._session_checkpoint(sess); rec = sess.working_record
+            field_token = parts[0].lower() if parts else ""
+            desc = self._descriptor(sess, field_token)
+            if desc:
+                if desc.read_only:
+                    return BuilderResult(False, f"{desc.label} is read-only in this editor.")
+                sess.active_field = desc.key
+                if desc.input_type == "multiline":
+                    sess.mode = "multiline_text"; sess.multiline_lines = []
+                    return BuilderResult(True, self._render_multiline(sess))
+                if desc.input_type == "flag_set":
+                    sess.mode = "flag_editor"; return BuilderResult(True, self._render_flag_editor(sess))
+                if desc.input_type in {"string_list","list"}:
+                    sess.mode = "list_editor"; return BuilderResult(True, self._render_list_editor(sess))
+                if desc.input_type == "reference":
+                    sess.mode = "reference_selector"; sess.reference_filter = ""; return BuilderResult(True, self._render_reference_selector(actor, sess))
+                sess.mode = "field_prompt"; return BuilderResult(True, self._render_field_prompt(sess))
+        if sess.section and sess.section != "natural_weapons":
+            parts = text.split()
+            cmd = parts[0].lower() if parts else ""
+            if cmd in {"list", "show"} or not cmd:
+                return BuilderResult(True, self.render_session(sess))
+            self._session_checkpoint(sess)
+            rec = sess.working_record
             def set_path(field: str, value: Any) -> None:
                 field = field.replace("-", "_")
-                if sess.section == "combat": rec.setdefault("combat_profile", {})[field] = value
-                elif sess.section == "attributes" and field in {"strength","dexterity","constitution","intelligence","wisdom","charisma"}: rec.setdefault("attributes", {})[field] = value
-                elif sess.section == "resources" and field not in {"level"}: rec.setdefault("resources", {})[field] = value
-                else: rec[field] = value
+                if sess.section == "combat":
+                    rec.setdefault("combat_profile", {})[field] = value
+                elif sess.section == "attributes" and field in {"strength","dexterity","constitution","intelligence","wisdom","charisma"}:
+                    rec.setdefault("attributes", {})[field] = value
+                elif sess.section == "resources" and field not in {"level"}:
+                    rec.setdefault("resources", {})[field] = value
+                else:
+                    rec[field] = value
             if cmd in {"name", "type", "status", "area", "zone", "vnum"} and len(parts) > 1:
                 field = {"name":"name","type":"entity_type","status":"builder_status","area":"area_id","zone":"zone_id","vnum":"vnum"}[cmd]; val=" ".join(parts[1:]); set_path(field, int(val) if field=="vnum" and val.isdigit() else val)
-            elif cmd == "level" and len(parts) > 1 and parts[1].lstrip('-').isdigit(): rec["level"] = int(parts[1])
-            elif cmd == "attr" and len(parts) > 2 and parts[2].lstrip('-').isdigit(): rec.setdefault("attributes", {})[parts[1].lower()] = int(parts[2])
-            elif cmd == "resource" and len(parts) > 2 and parts[2].lstrip('-').isdigit(): rec.setdefault("resources", {})[parts[1].lower()] = int(parts[2])
-            elif cmd == "set" and len(parts) > 2: val = " ".join(parts[2:]); set_path(parts[1], int(val) if val.lstrip('-').isdigit() else val)
-            elif cmd == "add" and len(parts) > 2: field = parts[1].replace("-", "_"); val = " ".join(parts[2:]); cur = rec.setdefault(field, []); cur.append(val) if isinstance(cur, list) else rec.__setitem__(field, [cur, val])
-            elif cmd == "remove" and len(parts) > 2: field = parts[1].replace("-", "_"); val = " ".join(parts[2:]); cur = rec.get(field, []); rec[field] = [x for x in cur if str(x) != val] if isinstance(cur, list) else cur
+            elif cmd == "level" and len(parts) > 1 and parts[1].lstrip('-').isdigit():
+                rec["level"] = int(parts[1])
+            elif cmd == "attr" and len(parts) > 2 and parts[2].lstrip('-').isdigit():
+                rec.setdefault("attributes", {})[parts[1].lower()] = int(parts[2])
+            elif cmd == "resource" and len(parts) > 2 and parts[2].lstrip('-').isdigit():
+                rec.setdefault("resources", {})[parts[1].lower()] = int(parts[2])
+            elif cmd == "body" and len(parts) > 1:
+                prof, bp, weapons = self._body_profile_result(actor, parts[1], scratch=rec)
+                if not bp: return BuilderResult(False, "Unknown body profile. Choose: " + ", ".join(self.body_profiles(actor)))
+                rec["body_profile_id"] = prof; rec.setdefault("combat_profile", {})["body_profile"] = prof; rec.setdefault("combat_profile", {})["natural_weapons"] = weapons
+            elif cmd == "set" and len(parts) > 2:
+                val = " ".join(parts[2:]); set_path(parts[1], int(val) if val.lstrip('-').isdigit() else val)
+            elif cmd == "add" and len(parts) > 2:
+                field = parts[1].replace("-", "_"); val = " ".join(parts[2:]); cur = rec.setdefault(field, []);
+                cur.append(val) if isinstance(cur, list) else rec.__setitem__(field, [cur, val])
+            elif cmd == "remove" and len(parts) > 2:
+                field = parts[1].replace("-", "_"); val = " ".join(parts[2:]); cur = rec.get(field, []);
+                rec[field] = [x for x in cur if str(x) != val] if isinstance(cur, list) else cur
             elif sess.section == "keywords" and cmd in {"add","remove","replace","clear","normalize"}:
                 kws = list(rec.get("keywords") or [])
                 if cmd == "add" and len(parts)>1: kws.append(parts[1].lower())
@@ -2200,24 +2536,35 @@ class BuilderService:
                 elif cmd == "normalize": kws=sorted(dict.fromkeys(k.lower() for k in kws if k))
                 rec["keywords"] = kws
             else:
-                sess.undo_stack.pop(); return BuilderResult(False, self._session_help(sess))
-            sess.working_record = self._normalize_entity_updates(sess.object_id, rec) if sess.collection == "entities" else rec; sess.dirty=True; sess.saved=False
+                sess.undo_stack.pop()
+                return BuilderResult(False, "Invalid input for this menu. Use set/add/remove, a listed field command, back, save, or help.")
+            sess.working_record = self._normalize_entity_updates(sess.object_id, rec) if sess.collection == "entities" else rec
+            sess.dirty=True; sess.saved=False
             return BuilderResult(True, "Updated session scratch.\n" + self.render_session(sess), sess.working_record)
+
         if sess.section == "natural_weapons":
             parts = text.split()
             if not parts or parts[0].lower() in {"list", "l"}: return BuilderResult(True, self.render_session(sess))
-            self._session_checkpoint(sess); rec = sess.working_record or {"id": sess.object_id}; weapons = list((rec.get("combat_profile") or {}).get("natural_weapons") or [])
-            if parts[0].lower() == "add" and len(parts) >= 2: wid=parts[1]; weapons.append(_canonical_weapon({"id": wid, "family": wid.split("_")[-1]}, wid))
-            elif parts[0].lower() == "delete" and len(parts) >= 2: weapons=[w for w in weapons if w.get("id") != parts[1]]
+            self._session_checkpoint(sess)
+            rec = sess.working_record or {"id": sess.object_id}; weapons = list((rec.get("combat_profile") or {}).get("natural_weapons") or [])
+            if parts[0].lower() == "add" and len(parts) >= 2:
+                wid=parts[1]; weapons.append(_canonical_weapon({"id": wid, "family": wid.split("_")[-1]}, wid))
+            elif parts[0].lower() == "delete" and len(parts) >= 2:
+                weapons=[w for w in weapons if w.get("id") != parts[1]]
             elif parts[0].lower() == "set" and len(parts) >= 4:
-                wid, field, value = parts[1], parts[2].replace("-", "_"), " ".join(parts[3:]); field={"family":"mechanical_family","weight":"selection_weight","verb":"verb_third_person","noun":"noun_plural","dice":"damage_dice"}.get(field, field)
+                wid, field, value = parts[1], parts[2].replace("-", "_"), " ".join(parts[3:])
+                aliases={"family":"mechanical_family","weight":"selection_weight","verb":"verb_third_person","noun":"noun_plural","dice":"damage_dice"}; field=aliases.get(field, field)
                 for w in weapons:
-                    if w.get("id") == wid: w[field] = int(value) if field in {"selection_weight","minimum_damage","maximum_damage","accuracy_modifier","critical_modifier","cooldown_pulses"} and value.lstrip('-').isdigit() else value; break
+                    if w.get("id") == wid:
+                        w[field] = int(value) if field in {"selection_weight","minimum_damage","maximum_damage","accuracy_modifier","critical_modifier","cooldown_pulses"} and value.lstrip('-').isdigit() else value
+                        break
                 else: return BuilderResult(False, f"Natural weapon {wid} not found.")
             else: return BuilderResult(False, "Usage: add <id>, set <id> <field> <value>, delete <id>, list")
-            sess.working_record["combat_profile"] = {**(rec.get("combat_profile") or {}), "natural_weapons": weapons}; sess.working_record = self._normalize_entity_updates(sess.object_id, sess.working_record) if sess.collection == "entities" else sess.working_record; sess.dirty=True; sess.saved=False
+            sess.working_record["combat_profile"] = {**(rec.get("combat_profile") or {}), "natural_weapons": weapons}
+            sess.working_record = self._normalize_entity_updates(sess.object_id, sess.working_record) if sess.collection == "entities" else sess.working_record
+            sess.dirty=True; sess.saved=False
             return BuilderResult(True, "Updated session scratch.\n"+self.render_session(sess), sess.working_record)
-        return BuilderResult(False, self._session_help(sess))
+        return BuilderResult(False, "Invalid editor input. Use a menu number, back, save, quit, or help.\n" + self.render_session(sess))
 
     def search(self, actor: Any, query: str) -> BuilderResult:
         q = query.lower()
@@ -2310,9 +2657,8 @@ class BuilderService:
             errors = sum(1 for i in issues if i.get("severity") == "error")
             warnings = sum(1 for i in issues if i.get("severity") == "warning")
             status = "clean" if not sess or not sess.dirty else "dirty"
-            vnum = rec.get('vnum') or (sess.object_id if sess else '')
             lines = [
-                f"Mobile Editor\nMEDIT {vnum}: {title}", f"Mobile ID: {(sess.object_id if sess else '')}", f"Draft revision: {(sess.draft_revision if sess else rec.get('_builder_revision', 0))}",
+                f"Mobile Editor\nMOBILE EDITOR: {title}", f"Mobile ID: {(sess.object_id if sess else '')}", f"Draft revision: {(sess.draft_revision if sess else rec.get('_builder_revision', 0))}",
                 f"World: {(sess.world_id if sess else rec.get('world_id',''))}", f"Area: {rec.get('area_id','')}", f"Zone: {rec.get('zone_id','')}", f"Lock owner: {(sess.builder_character_id if sess else 'none')}",
                 f"Validation status: {errors} error(s), {warnings} warning(s)", f"Dirty status: {status}", f"Builder status: {rec.get('builder_status','incomplete')}", "",
                 "1. Identity - " + str(rec.get('name') or ''), "2. Keywords and aliases - " + str(', '.join(rec.get('keywords') or rec.get('aliases') or [])),
@@ -2330,12 +2676,4 @@ class BuilderService:
         sections = {"redit": ["Title", "Description", "Exits", "Sector", "Flags", "Extra Descriptions", "Ambient Effects", "Spawn List", "Preview", "Validate", "Publish"], "oedit": ["Identity", "Keywords", "Type", "Wear Flags", "Extra Flags", "Stats", "Affects", "Values", "Container Data", "Weapon Data", "Armor Data", "Scripts", "Preview", "Validate", "Publish"], "aedit": ["Identity", "Zones", "Rooms", "Templates", "Spawns", "Preview", "Validate", "Publish"], "zedit": ["Identity", "Area", "Rooms", "Resets", "Spawns", "Preview", "Validate", "Publish"]}.get(editor, [])
         header = {"redit": "Room Editor", "oedit": "Object Editor", "aedit": "Area Editor", "zedit": "Zone Editor"}.get(editor, "Builder Editor")
         body = "\n".join(f"{i} {section}" for i, section in enumerate(sections, 1))
-        if sess:
-            rec = (sess.working_record if sess else {}) or {}
-            ident = rec.get('vnum') or sess.object_id
-            dirty = 'dirty' if sess.dirty else 'clean'
-            prefix = ""
-            if editor == "redit":
-                prefix = f"Currently editing:\nRoom: {sess.object_id}\nName: {title}\nSource: draft\nDirty: no\n"
-            return f"--------------------------------------\n{header}\n{prefix}{editor.upper()} {ident}: {title}\nDirty status: {dirty}\nLock owner: {sess.builder_character_id}\n--------------------------------------\n\n{body}\n\nS Save Draft\nP Publish\nQ Quit"
         return f"--------------------------------------\n{header}\n{title}\n--------------------------------------\n\n{body}\n\nS Save Draft\nP Publish\nQ Quit"
