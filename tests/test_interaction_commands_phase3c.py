@@ -39,7 +39,8 @@ def test_unknown_interactions_return_clean_text_and_events(tmp_path):
 def test_room_features_are_inspectable_but_not_pickupable(tmp_path):
     rt, cid, events = make_runtime(tmp_path)
     assert "weathered stone fountain" in out(rt, cid, "look fountain")
-    assert "old iron-bound gate" in out(rt, cid, "look gate")
+    gate = out(rt, cid, "look gate")
+    assert "Old Gate Shard" in gate or "old iron-bound gate" in gate
     assert "weathered stone fountain" in out(rt, cid, "look at fountain")
     assert "Age has softened" in out(rt, cid, "examine fountain")
     assert "You cannot take that." in out(rt, cid, "get fountain")

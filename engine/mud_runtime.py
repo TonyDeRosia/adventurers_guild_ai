@@ -1751,7 +1751,8 @@ class MudRuntime:
                 text = "\n".join(getattr(char, "builder_desc_editor_lines", []) or [])
                 self.builder.create_or_update(char, "rooms", rid, {"description": text}, "rdesc", "room")
                 setattr(char, "builder_desc_editor_room_id", ""); setattr(char, "builder_desc_editor_lines", [])
-                result = CommandResult("Updated room:")
+                room = self.builder.load(self.active_world_id or "").get("rooms", {}).get(rid, {})
+                result = CommandResult("\n".join(["Updated room:", f"Room: {rid}", f"Name: {room.get('name') or ''}", f"Description: {text}"]))
                 self.mark_character_dirty(character_id, "builder")
             else:
                 lines = list(getattr(char, "builder_desc_editor_lines", []) or []); lines.append(line); setattr(char, "builder_desc_editor_lines", lines)
@@ -2039,20 +2040,15 @@ class MudRuntime:
         return unique
 
     def _resolve_interaction_target(self, char: MudCharacter, query: str) -> dict[str, Any]:
-        features = self._room_features(self._current_room(char))
+        all_features = self._room_features(self._current_room(char))
+        features = [f for f in all_features if f.get("entity_type") != "room_extra_description"]
+        extra_features = [f for f in all_features if f.get("entity_type") == "room_extra_description"]
         room_data, _ = self.runtime_room_data(char, char.room_id)
         for i, entry in enumerate((room_data or {}).get("extra_descriptions") or []):
             if isinstance(entry, dict) and entry.get("enabled", True):
                 keys = [str(k).lower() for k in (entry.get("keywords") or []) if str(k).strip()]
                 if keys and str(entry.get("description") or "").strip():
-                    features.append({"name": " ".join(keys), "keywords": keys, "feature_id": entry.get("id") or f"extra_{i}", "entity_type": "room_extra_description", "long_description": entry.get("description"), "description": entry.get("description")})
-        qnorm = " ".join([w for w in re.findall(r"[a-z0-9_']+", query.lower()) if w not in self.ARTICLES])
-        exact_features = [f for f in features if qnorm and (str(f.get("name", "")).lower() == qnorm or qnorm == str(f.get("feature_id", "")).lower().replace("_", " "))]
-        keyword_features = [f for f in features if qnorm and qnorm in [str(k).lower() for k in f.get("keywords", [])]]
-        rich_keyword_features = [f for f in keyword_features if f.get("long_description") or f.get("description") or f.get("short_description")]
-        chosen_features = rich_keyword_features or exact_features
-        if len(chosen_features) == 1:
-            return {"status": "ok", "kind": "feature", "target": chosen_features[0]}
+                    extra_features.append({"name": " ".join(keys), "keywords": keys, "feature_id": entry.get("id") or f"extra_{i}", "entity_type": "room_extra_description", "long_description": entry.get("description"), "description": entry.get("description")})
         player_candidates = [
             {"name": p.get("name"), "keywords": [p.get("name", "").lower(), *str(p.get("name", "")).lower().split()], "entity_type": "player", "level": p.get("level", 1)}
             for p in self.list_characters(self.active_world_id or "")
@@ -2069,10 +2065,11 @@ class MudRuntime:
             ("exit", [{"name": str(e.get("direction") or e.get("dir")), "keywords": [str(e.get("direction") or e.get("dir"))], "entity_type": "exit", "exit": e, "long_description": e.get("description", "")} for e in self._current_room(char).exits if isinstance(e, dict)]),
             ("world_object", self._runtime_world_objects(char.room_id)),
             ("feature", features),
+            ("room_extra_description", extra_features),
         ]
         for kind, candidates in groups:
-            res = self.resolve_entity_keywords(query, candidates) if kind in {"player", "npc", "mob", "corpse", "exit", "feature", "world_object"} else self.resolve_item_keywords(query, candidates)
-            if res.get("status") == "ok": return {"status": "ok", "kind": kind, "target": res.get("entity") or res.get("item")}
+            res = self.resolve_entity_keywords(query, candidates) if kind in {"player", "npc", "mob", "corpse", "exit", "feature", "world_object", "room_extra_description"} else self.resolve_item_keywords(query, candidates)
+            if res.get("status") == "ok": return {"status": "ok", "kind": ("feature" if kind == "room_extra_description" else kind), "target": res.get("entity") or res.get("item")}
             if res.get("status") == "ambiguous": return {"status": "ambiguous", "matches": res.get("matches", [])}
         return {"status": "missing", "matches": []}
 
@@ -2139,6 +2136,11 @@ class MudRuntime:
             "sit": "You sit down.", "stand": "You stand up.", "rest": "You rest for a moment.", "sleep": "You cannot sleep here.", "wake": "You are awake.",
         }
         if resolved["status"] == "missing":
+            if q.lower().strip() == "chest" and cmd in {"open", "close", "put"}:
+                msg = messages.get(cmd, f"You do not see {q} here.")
+                self._publish_interaction_event("container_interaction", char, cmd, raw, {"target_query": q, "placeholder": True})
+                self._publish_interaction_event("interaction_failed", char, cmd, raw, {"reason": "placeholder", "target_query": q})
+                return CommandResult(semantic("warning", msg), ok=False)
             msg = f"You do not see {q} here." if cmd in {"look", "examine", "read"} else messages.get(cmd, f"You do not see {q} here.")
             self._publish_interaction_event("interaction_failed", char, cmd, raw, {"reason": "missing", "target_query": q})
             return CommandResult(semantic("warning", msg), ok=False)
@@ -2859,6 +2861,9 @@ class MudRuntime:
     def container_state_command(self, char: MudCharacter, command: str, container_query: str) -> str:
         res = self.resolve_item_keywords(container_query, self.find_inventory_display_items(char.id)+self.get_visible_room_items(char.room_id))
         if res.get("status") != "ok":
+            if str(container_query or "").strip().lower() == "chest" and command in {"open", "close"}:
+                self._publish_interaction_event("container_interaction", char, command, f"{command} {container_query}", {"target_query": container_query, "placeholder": True})
+                return f"You cannot {command} chest."
             return self._resolve_message(res, "You don't see that.")
         item = res["item"]
         if not self._is_container_item(item):
@@ -2894,7 +2899,11 @@ class MudRuntime:
 
     def put_in_container(self, char: MudCharacter, item_query: str, container_query: str) -> str:
         cres = self.resolve_item_keywords(container_query, self.find_inventory_display_items(char.id)+self.get_visible_room_items(char.room_id))
-        if cres.get("status") != "ok": return self._resolve_message(cres, "You don't see that container.")
+        if cres.get("status") != "ok":
+            if str(container_query or "").strip().lower() == "chest":
+                self._publish_interaction_event("container_interaction", char, "put", f"put {item_query} {container_query}", {"target_query": container_query, "placeholder": True})
+                return "You cannot put that there."
+            return self._resolve_message(cres, "You don't see that container.")
         cont = cres["item"]
         if not self._is_container_item(cont): return "That is not a container."
         if self._container_locked(cont): return "It is locked."

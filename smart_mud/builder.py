@@ -372,6 +372,11 @@ class BuilderWorkspace:
             if not isinstance(merged.get(k), dict): merged[k] = {}
             merged.setdefault(k, {}).update(v if isinstance(v,dict) else {})
         errors=[]; warnings=[f"Future top-level collection {key} is not applied by this version." for key in future_keys]; self._validate_bundle_refs(merged, errors, warnings)
+        baseline_errors: list[str] = []
+        baseline_warnings: list[str] = []
+        self._validate_bundle_refs(self.load(self.world_id(actor)), baseline_errors, baseline_warnings)
+        baseline = set(baseline_errors)
+        errors = [e for e in errors if e not in baseline]
         ok=not errors
         return BuilderResult(ok, ('Import validation passed.' if ok else 'Import validation failed.')+'\n\nErrors:\n'+('\n'.join('- '+e for e in errors) if errors else '- none')+'\n\nWarnings:\n'+('\n'.join('- '+w for w in warnings) if warnings else '- none'))
 
@@ -389,6 +394,11 @@ class BuilderWorkspace:
             if not isinstance(merged.get(k), dict): merged[k] = {}
             merged.setdefault(k,{}).update(v if isinstance(v,dict) else {})
         self._validate_bundle_refs(merged,errors,warnings)
+        baseline_errors: list[str] = []
+        baseline_warnings: list[str] = []
+        self._validate_bundle_refs(drafts, baseline_errors, baseline_warnings)
+        baseline = set(baseline_errors)
+        errors = [e for e in errors if e not in baseline]
         lines += ['', 'Conflicts:', '- none', 'Legacy/unassigned warnings:', *(('- '+w for w in warnings if 'legacy' in w.lower()) or ['- none']), 'Broken references:', *(('- '+e for e in errors) or ['- none']), '', 'No files changed.']
         return BuilderResult(True, '\n'.join(lines))
 
@@ -3272,7 +3282,7 @@ class BuilderService:
             if low == ".clear":
                 sess.multiline_lines = []
                 return BuilderResult(True, "Pending text cleared.")
-            if low == ".save":
+            if low in {".save", ".end"}:
                 if str(sess.active_field).startswith("extra:"):
                     if str(sess.active_field) == "extra:new:description":
                         new = "\n".join(sess.multiline_lines).rstrip()
@@ -3280,7 +3290,8 @@ class BuilderService:
                             return BuilderResult(False, "Description cannot be empty. Add text, .clear, .save, or .cancel.")
                         extras = self._room_extras(sess); before = deepcopy(extras)
                         pending = dict(sess.pending_value or {})
-                        entry = {"id": pending.get("id") or "rextra_" + hashlib.sha1(f"{sess.object_id}:{time.time()}".encode()).hexdigest()[:10], "keywords": pending.get("keywords") or [], "description": new}
+                        seed = "|".join([str(sess.object_id), str(len(extras)), " ".join(pending.get("keywords") or []), new[:40]])
+                        entry = {"id": pending.get("id") or "rextra_" + hashlib.sha1(seed.encode("utf-8")).hexdigest()[:10], "keywords": pending.get("keywords") or [], "description": new}
                         extras.append(entry); sess.working_record["extra_descriptions"] = normalize_room_extra_descriptions(extras, sess.object_id)
                         sess.mode = "section_menu"; sess.section = "extra_entry"; sess.active_field = ""; sess.multiline_lines = []; sess.pending_value = None
                         return self._mark_room_extra_change(actor, sess, before, "Extra description added.", entry_index=len(extras)-1)

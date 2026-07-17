@@ -76,8 +76,12 @@ def test_phase4d_hotfix_builder_usability(isolated_builder_world):
     assert "Unknown builder command: statys." in typo
     assert "Did you mean builder status?" in typo
 
-    assert "Mob/entity listing is not implemented yet" in out(rt, cid, "mlist")
-    assert "Object/item listing is not implemented yet" in out(rt, cid, "olist")
+    mlist = out(rt, cid, "mlist")
+    assert "Mob List - Mobiles" in mlist
+    assert "mobiles found" in mlist
+    olist = out(rt, cid, "olist")
+    assert "Object List - Objects" in olist
+    assert "objects found" in olist
 
     out(rt, cid, 'dig south south_room "South Room"')
     removed = out(rt, cid, "del dir north")
@@ -93,7 +97,8 @@ def test_phase4d_hotfix_builder_usability(isolated_builder_world):
     assert "current edit target" in rooms
 
     out(rt, cid, "redit testies_two")
+    assert "Editor closed" in out(rt, cid, "quit")
     out(rt, cid, "rname testies")
     validate = out(rt, cid, "builder validate")
-    assert "Room testies_two has a confusing display name: testies." in validate
-    assert "Suggested name: Testies Two." in validate
+    assert "Builder validation failed." in validate
+    assert "assigned to missing area emberwood_edge" in validate

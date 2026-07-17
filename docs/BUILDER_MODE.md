@@ -387,3 +387,11 @@ Room-link command compatibility:
 All of these Builder operations remain draft-first. `builder save`/REDIT save writes Builder drafts, not published world-package JSON, and normal live runtime movement is unchanged until the existing publish/apply lifecycle makes draft changes active. Authorization still uses Builder/admin roles plus the existing Builder workspace permission checks; no player or hard-coded account receives special authority.
 
 Known limitations: full runtime door state, hidden-exit discovery, lock/unlock/pick behavior, automatic area/zone prompts for ambiguous missing-room creation, and a graphical reverse-link repair UI are deferred. The next room-structure phase is `PHASE 15B.46 — ROOM EXTRA DESCRIPTIONS`.
+
+### Phase 15B.46A stabilization notes
+
+The shared multiline editor contract is consistent across room, exit, and room extra-description editing: `.save` commits pending text and returns to the parent editor, `.end` remains a legacy room-description completion alias, and `.cancel` abandons pending text without dirtying the draft. Completion clears pending multiline state before returning to REDIT, the exit editor, or the extra-description entry editor.
+
+Room import validation compares newly introduced import errors against the current draft baseline so an unrelated preexisting draft reference problem does not cause an otherwise valid import file to fail validation. Room `extra_descriptions` remain canonical data on room records, with deterministic generated IDs during normalization.
+
+Runtime target resolution keeps room extra descriptions last: players, NPCs/mobs/corpses, inventory/equipment, room objects, exits, world objects, ordinary room features, then room extra descriptions. Extra descriptions therefore do not shadow dialogue targets, containers, visible objects, exits, or ordinary room features.
