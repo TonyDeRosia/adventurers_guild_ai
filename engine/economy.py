@@ -161,7 +161,10 @@ class EconomyService:
         with sqlite3.connect(self.db_path) as con: con.execute("UPDATE economy_transactions SET status=?,failure_reason=?,completed_world_time=COALESCE(completed_world_time,0),updated_at=? WHERE transaction_id=? AND status!='completed'",(status,failure_reason,utc_now(),transaction_id))
         self.publish("economy_transaction_completed" if status=="completed" else "economy_transaction_failed", {"transaction_id":transaction_id,"status":status,"failure_reason":failure_reason})
     def get_transaction(self, transaction_id):
-        with sqlite3.connect(self.db_path) as con: con.row_factory=sqlite3.Row; r=con.execute("SELECT * FROM economy_transactions WHERE transaction_id=?",(transaction_id,)).fetchone(); return dict(r) if r else None
+        keys = ["transaction_id","world_id","transaction_type","buyer_type","buyer_id","seller_type","seller_id","shop_id","service_provider_id","status","quote_id","subtotal_json","fees_json","discounts_json","total_json","delivery_status","failure_reason","started_world_time","completed_world_time","created_at","updated_at","metadata_json"]
+        with sqlite3.connect(self.db_path) as con:
+            r=con.execute("SELECT * FROM economy_transactions WHERE transaction_id=?",(transaction_id,)).fetchone()
+            return dict(zip(keys, r)) if r else None
     def quote_price(self, quote_type, buyer_id="", seller_id="", shop_id="", offer_id="", item_instance_id="", item_template_id="", service_id="", quantity=1, base_price=None, currency_id="gold", expires_world_time=60, formula_id=None, modifiers=None, **kw):
         qty=max(1,int(quantity)); base=int((base_price or {currency_id:0}).get(currency_id, base_price if isinstance(base_price,int) else 0) or 0); mods=modifiers or {}; price=base*qty
         if "markup" in mods: price = price * (100 + int(mods["markup"])) // 100
@@ -173,7 +176,10 @@ class EconomyService:
         with sqlite3.connect(self.db_path) as con: con.execute("INSERT OR IGNORE INTO economy_price_quotes VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(qid,self.world_id,quote_type,buyer_id,seller_id,shop_id,offer_id,item_instance_id,item_template_id,service_id,qty,_json({currency_id:price}),_json({currency_id:base}),_json(trace),kw.get("world_time",0),expires_world_time,"active",now,_json(kw.get("metadata",{}))))
         self.publish("economy_quote_created", {"quote_id":qid,"quote_type":quote_type,"total":{currency_id:price}}); return PriceQuote(qid,quote_type,{currency_id:price},"active",trace)
     def get_quote(self, quote_id):
-        with sqlite3.connect(self.db_path) as con: con.row_factory=sqlite3.Row; r=con.execute("SELECT * FROM economy_price_quotes WHERE quote_id=?",(quote_id,)).fetchone(); return dict(r) if r else None
+        keys = ["quote_id","world_id","quote_type","buyer_id","seller_id","shop_id","offer_id","item_instance_id","item_template_id","service_id","quantity","currency_cost_json","base_price_json","modifier_trace_json","created_world_time","expires_world_time","status","created_at","metadata_json"]
+        with sqlite3.connect(self.db_path) as con:
+            r=con.execute("SELECT * FROM economy_price_quotes WHERE quote_id=?",(quote_id,)).fetchone()
+            return dict(zip(keys, r)) if r else None
     def cancel_quote(self, actor_id, quote_id):
         with sqlite3.connect(self.db_path) as con: con.execute("UPDATE economy_price_quotes SET status='cancelled' WHERE quote_id=? AND status='active'",(quote_id,)); return True
     cancel_sale_quote = cancel_quote
@@ -186,7 +192,10 @@ class EconomyService:
                 con.execute("INSERT OR IGNORE INTO shop_stock_entries VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(eid,self.world_id,shop_id,e.get("id"),e.get("item_template_id",""),"",int(e.get("quantity",0) or 0),0,1,now,now,_json(e)))
         return self.list_shop_stock(shop_id)
     def list_shop_stock(self, shop_id):
-        with sqlite3.connect(self.db_path) as con: con.row_factory=sqlite3.Row; return [dict(r) for r in con.execute("SELECT * FROM shop_stock_entries WHERE world_id=? AND shop_id=? AND available=1 ORDER BY stock_definition_id",(self.world_id,shop_id))]
+        with sqlite3.connect(self.db_path) as con:
+            rows = con.execute("SELECT stock_entry_id,world_id,shop_id,stock_definition_id,item_template_id,item_instance_id,quantity,reserved_quantity,available,created_at,updated_at,metadata_json FROM shop_stock_entries WHERE world_id=? AND shop_id=? AND available=1 ORDER BY stock_definition_id",(self.world_id,shop_id)).fetchall()
+            keys = ["stock_entry_id","world_id","shop_id","stock_definition_id","item_template_id","item_instance_id","quantity","reserved_quantity","available","created_at","updated_at","metadata_json"]
+            return [dict(zip(keys, r)) for r in rows]
     def reserve_stock(self, shop_id, stock_entry_id, quantity=1):
         qty=int(quantity)
         with sqlite3.connect(self.db_path) as con:

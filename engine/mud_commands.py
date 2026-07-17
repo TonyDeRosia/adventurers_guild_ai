@@ -333,6 +333,7 @@ class MudCommandEngine:
             "who": self._cmd_who,
             "whoami": self._cmd_whoami,
             "save": self._cmd_save,
+            "asave": self._cmd_asave,
             "desc": self._cmd_builder_edit,
             "recall": self._cmd_direct_ability,
             "grantrole": self._cmd_grantrole,
@@ -555,7 +556,7 @@ class MudCommandEngine:
 
         for _name in "senseprofilelist senseprofilestat senseprofilecreate senseprofileclone senseprofileset senseprofiledelete senseprofilevalidate perceptionprofilelist perceptionprofilestat perceptionprofilecreate perceptionprofileset perceptionprofiledelete perceptionprofilevalidate concealmentlist concealmentstat concealmentcreate concealmentset concealmentdelete concealmentvalidate searchprofilelist searchprofilestat searchprofilecreate searchprofileset searchprofiledelete searchprofilevalidate trackingprofilelist trackingprofilestat trackingprofilecreate trackingprofileset trackingprofiledelete trackingprofilevalidate soundprofilelist soundprofilestat soundprofilecreate soundprofileset soundprofiledelete soundprofilevalidate".split():
             self.command_handlers[_name] = self._cmd_perception
-        for _name in " undo redo find mclone oclone rclone rsave redit rstat rcreate rset rdesc rname rexits rfeature rdelete exedit excreate exset exdelete fedit fcreate fset fdesc fdelete oedit ocreate oset odesc odelete ostat medit mcreate mset mdesc mdelete mstat spawnedit spawncreate spawnset spawndelete spawnstat zstat astat wstat btarget rtarget target asave bsave wsave".split():
+        for _name in " undo redo find mclone oclone rclone rsave redit rstat rcreate rset rdesc rname rexits rfeature rdelete exedit excreate exset exdelete fedit fcreate fset fdesc fdelete oedit ocreate oset odesc odelete ostat medit mcreate mset mdesc mdelete mstat spawnedit spawncreate spawnset spawndelete spawnstat zstat astat wstat btarget rtarget target bsave wsave".split():
             if _name:
                 self.command_handlers[_name] = self._cmd_builder_edit
         for _name in ("rassign", "rmove", "rrenameid"):
@@ -1831,9 +1832,10 @@ class MudCommandEngine:
             pick = self.builder_service.continue_picker(character, command_text)
             if pick is not None:
                 return CommandResult(narrative=pick.message, ok=pick.ok)
-        cmd_name = 'target' if raw_cmd_name == 'target' else self.resolve_alias(raw_cmd_name)
-        if raw_cmd_name in self.command_handlers and not cmd_name:
+        if raw_cmd_name in self.command_handlers:
             cmd_name = raw_cmd_name
+        else:
+            cmd_name = 'target' if raw_cmd_name == 'target' else self.resolve_alias(raw_cmd_name)
         if not cmd_name:
             choices = self.registry.resolve(raw_cmd_name)[1].split(":",1)[1].strip()
             return CommandResult(narrative=f"Which command did you mean? {choices}", ok=False)
@@ -2190,9 +2192,115 @@ class MudCommandEngine:
         world_id=getattr(rt, 'active_world_id', None) or self.builder.world_id(character)
         return EconomyService(db_path, world_id=world_id, world_root=Path('worlds')/world_id, event_bus=self.event_bus, runtime=rt)
 
+
+    def _resolve_shop_context(self, character: Any, svc: Any) -> tuple[dict[str, Any] | None, str]:
+        rt = getattr(self, "runtime", None)
+        room_id = str(getattr(character, "room_id", "") or getattr(character, "current_room_id", ""))
+        npcs = getattr(rt, "resident_entities_by_actor_id", {}) if rt else {}
+        for shop in svc.content.list("shop_definitions"):
+            rooms = set(str(r) for r in (shop.get("room_ids") or []) if r)
+            keeper_template = str(shop.get("keeper_template_id") or "")
+            if room_id in rooms:
+                return shop, "room"
+            for ent in npcs.values():
+                if str(ent.get("room_id") or ent.get("current_room_id") or "") == room_id and str(ent.get("template_id") or ent.get("entity_template_id") or ent.get("npc_id") or ent.get("id") or "") == keeper_template:
+                    return shop, "keeper"
+            if keeper_template:
+                tmpl = (getattr(rt, "entity_templates", {}) if rt else {}).get(keeper_template) or {}
+                if str(tmpl.get("default_room_id") or "") == room_id:
+                    return shop, "keeper-default"
+        return None, "none"
+
+    def _shop_stock_rows(self, svc: Any, shop_id: str) -> list[dict[str, Any]]:
+        return [r for r in svc.initialize_shop_stock(shop_id) if int(r.get("available") or 0) and int(r.get("quantity") or 0) - int(r.get("reserved_quantity") or 0) > 0]
+
+    def _shop_item_name(self, template_id: str) -> str:
+        rt = getattr(self, "runtime", None)
+        tmpl = (getattr(rt, "item_templates", {}) if rt else {}).get(template_id) or {}
+        return str(tmpl.get("name") or template_id.replace("_", " ").title())
+
+    def _resolve_shop_stock(self, svc: Any, shop_id: str, query: str) -> dict[str, Any] | None:
+        rows = self._shop_stock_rows(svc, shop_id)
+        q = str(query or "").strip().lower()
+        if q.isdigit():
+            idx = int(q) - 1
+            return rows[idx] if 0 <= idx < len(rows) else None
+        for r in rows:
+            name = self._shop_item_name(r.get("item_template_id", "")).lower()
+            tid = str(r.get("item_template_id") or "").lower()
+            if q in {tid, name} or all(part in name or part in tid for part in q.split()):
+                return r
+        return None
+
+    def _cmd_shop_runtime(self, character: Any, args: list[str], raw: str) -> CommandResult | None:
+        svc = self._economy_service(character)
+        cmd = (raw.split() or [""])[0].lower()
+        actor_id = str(getattr(character, "id", getattr(character, "character_id", "self")))
+        shop, source = self._resolve_shop_context(character, svc)
+        if not shop:
+            return CommandResult("There is no shopkeeper here.", ok=False)
+        shop_id = shop.get("id")
+        keeper = (shop.get("name") or "The shopkeeper").replace("'s Shop", "")
+        if cmd == "list":
+            rows = self._shop_stock_rows(svc, shop_id)
+            if not rows:
+                return CommandResult(f'{keeper} says, "I have nothing for sale."')
+            lines = ["#   Item                         Price   Qty"]
+            for i, r in enumerate(rows, 1):
+                meta = json.loads(r.get("metadata_json") or "{}")
+                price = next(iter((meta.get("price_override") or {"gold": 10}).values()))
+                qty = int(r.get("quantity") or 0) - int(r.get("reserved_quantity") or 0)
+                lines.append(f"{i:<3} {self._shop_item_name(r.get('item_template_id',''))[:28]:<28} {price:>5}   {qty}")
+            return CommandResult("\n".join(lines))
+        if cmd == "buy":
+            if not args:
+                return CommandResult("Buy what?", ok=False)
+            qty = 1; query = " ".join(args)
+            if len(args) >= 2 and args[0].isdigit():
+                qty = max(1, int(args[0])); query = " ".join(args[1:])
+            row = self._resolve_shop_stock(svc, shop_id, query)
+            if not row:
+                return CommandResult(f'{keeper} says, "I do not have that for sale."', ok=False)
+            try:
+                q = svc.quote_purchase(actor_id, shop_id, row, qty)
+                txn = svc.confirm_purchase(actor_id, q.quote_id)
+                logger.debug("[shop] actor=%s keeper=%s action=buy result=%s", actor_id, keeper, txn.get("status") if isinstance(txn, dict) else "ok")
+                return CommandResult(f"{keeper} gives you {qty} {self._shop_item_name(row.get('item_template_id',''))}.")
+            except ValueError as e:
+                return CommandResult(f'{keeper} says, "{str(e).replace("_", " ").capitalize()}."', ok=False)
+        if cmd in {"value", "sell"}:
+            if not args:
+                return CommandResult(f"{cmd.title()} what?", ok=False)
+            rt = getattr(self, "runtime", None)
+            inv = rt.find_inventory_items(actor_id) if rt and hasattr(rt, "find_inventory_items") else []
+            if args[0].lower() == "all" and cmd == "sell":
+                sold = skipped = total = 0
+                for item in list(inv):
+                    try:
+                        q = svc.quote_sale(actor_id, shop_id, item["instance_id"]); amt = next(iter(q.total.values()))
+                        svc.confirm_sale(actor_id, q.quote_id); sold += 1; total += int(amt)
+                    except Exception:
+                        skipped += 1
+                logger.debug("[shop] actor=%s keeper=%s action=sell-all sold=%s skipped=%s", actor_id, keeper, sold, skipped)
+                return CommandResult(f"You sell {sold} items for {total} gold.\n{skipped} items could not be sold.")
+            res = rt.resolve_item_keywords(" ".join(args), inv) if rt and hasattr(rt, "resolve_item_keywords") else {"status":"missing"}
+            if res.get("status") != "ok":
+                return CommandResult(f'{keeper} says, "You do not have that item."', ok=False)
+            item = res["item"]
+            q = svc.quote_sale(actor_id, shop_id, item["instance_id"]); amt = next(iter(q.total.values()))
+            if cmd == "value":
+                return CommandResult(f'{keeper} says, "I will give you {amt} gold for {item.get("name")}."')
+            svc.confirm_sale(actor_id, q.quote_id)
+            return CommandResult(f"You sell {item.get('name')} for {amt} gold.")
+        return None
+
     def _cmd_phase7b_economy(self, character: Any, args: list[str], raw: str) -> CommandResult:
         from engine.economy import EconomyContent
-        svc=self._economy_service(character); cmd=(args[0] if args else raw.split()[0]).lower(); actor_id=str(getattr(character,'id',getattr(character,'character_id','self')))
+        svc=self._economy_service(character); cmd=(raw.split()[0] if raw.split() else (args[0] if args else "")).lower(); actor_id=str(getattr(character,'id',getattr(character,'character_id','self')))
+        if cmd in {'list','buy','sell','value'}:
+            shop_result = self._cmd_shop_runtime(character, args, raw)
+            if shop_result is not None:
+                return shop_result
         coll_map={'currency':'currency_profiles','shop':'shop_definitions','stock':'shop_stock_profiles','pricing':'pricing_profiles','service':'service_definitions','repairprofile':'repair_profiles','bankprofile':'bank_profiles','restock':'shop_restock_profiles'}
         if cmd in {'currency','currencybalance','balance'}:
             bals=svc.get_currency_balances('actor', actor_id) or {'gold': svc.get_currency_balance('actor', actor_id, 'gold')}
@@ -2937,6 +3045,68 @@ class MudCommandEngine:
                 lines.append("  " + " ".join(groups[cat]))
         return CommandResult(narrative="\n".join(lines))
 
+
+
+    def _builder_display_name(self, rec: dict[str, Any] | None, cid: str = "") -> str:
+        rec = rec or {}
+        for key in ("display_name", "name", "title"):
+            val = str(rec.get(key) or "").strip()
+            if val:
+                return val
+        if cid:
+            return str(cid).replace("_", " ").title()
+        return "(unnamed area)"
+
+    def _builder_collection_record(self, character: Any, drafts: dict[str, Any], collection: str, record_id: str) -> dict[str, Any]:
+        draft = (drafts.get(collection, {}) or {}).get(record_id)
+        live = {}
+        runtime = getattr(self, "runtime", None)
+        if collection == "rooms" and runtime and hasattr(runtime, "runtime_room_data"):
+            live = runtime.runtime_room_data(character, record_id)[0] or {}
+        elif record_id:
+            world_id = self.builder.world_id(character)
+            path = Path("worlds") / world_id / collection / f"{collection}.json"
+            try:
+                data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+                rows = data.get(collection, []) if isinstance(data, dict) else data
+                live = next((r for r in rows if str(r.get("id")) == str(record_id)), {})
+            except Exception:
+                live = {}
+        merged = dict(live or {})
+        merged.update(draft or {})
+        return merged
+
+    def _cmd_asave(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if self._effective_role(character) not in {"builder", "admin", "owner"}:
+            return CommandResult("You do not have permission for that command.", ok=False)
+        if not getattr(character, "builder_mode", False):
+            return CommandResult("ASAVE is a Builder area/world save command. Enable Builder Mode first.", ok=False)
+        scope = (args[0].lower() if args else "help")
+        if scope in {"help", "?"}:
+            return CommandResult("ASAVE commands: asave list, asave changed, asave area, asave zone, asave world.\nbuilder save exports draft/session data; asave publishes validated changed Builder content scopes.")
+        world_id = self.builder.world_id(character)
+        drafts = self.builder.load(world_id)
+        live_drafts = {k: v for k, v in drafts.items() if isinstance(v, dict) and v}
+        if scope == "list":
+            lines = ["Changed Builder records:"]
+            count = 0
+            for coll in sorted(live_drafts):
+                for rid in sorted(live_drafts[coll]):
+                    lines.append(f"  {coll}: {rid}"); count += 1
+            if not count:
+                lines.append("  none")
+            return CommandResult("\n".join(lines))
+        if scope not in {"changed", "area", "zone", "world"}:
+            return CommandResult("Usage: asave <changed|area|zone|world|list|help>", ok=False)
+        res = self.builder.validate(character)
+        blocked = 0 if res.ok else 1
+        if not res.ok:
+            logger.debug("[builder-asave] actor=%s scope=%s saved=0 blocked=%s", getattr(character, "id", ""), scope, blocked)
+            return CommandResult(f"{scope.title()} save blocked by validation.\n{res.message}", ok=False)
+        export = self.builder.export(character)
+        saved = sum(len(v) for v in live_drafts.values())
+        logger.debug("[builder-asave] actor=%s scope=%s saved=%s blocked=0", getattr(character, "id", ""), scope, saved)
+        return CommandResult(f"{scope.title()} save complete:\n  {saved} records saved\n  0 unchanged\n  0 blocked by validation\n{export.message}", ok=export.ok)
 
     def _cmd_save(self, character: Any, args: list[str], raw: str) -> CommandResult:
         cmd = raw.strip().split()[0].lower() if raw.strip() else "save"
@@ -3956,13 +4126,12 @@ class MudCommandEngine:
         current_room = rooms.get(loc_id, {})
         current_area_id = str(current_room.get("area_id") or getattr(character,"current_area_id","") or "")
         current_zone_id = str(current_room.get("zone_id") or getattr(character,"current_zone_id","") or "")
-        area = drafts.get("areas", {}).get(current_area_id)
-        zone = drafts.get("zones", {}).get(current_zone_id)
+        area = self._builder_collection_record(character, drafts, "areas", current_area_id)
+        zone = self._builder_collection_record(character, drafts, "zones", current_zone_id)
         world_name = self.builder.world_id(character).replace("_", " ").title()
         def label(kind, rec, cid):
             if not cid: return f"{kind}: unknown"
-            name = (rec or {}).get("name")
-            return f"{kind}: {name} [{cid}]" if name else f"{kind}: [{cid}] (missing display name)"
+            return f"{kind}: {self._builder_display_name(rec, cid)} [{cid}]"
         lines = ["Builder Status:", "================================================", "Builder Mode", "", "World:", world_name, "", "Current location:"]
         lines += ["  " + label("Area", area, current_area_id), "  " + label("Zone", zone, current_zone_id), f"  Room: {loc_name} [{loc_id}]", f"  VNUM: {current_room.get('vnum') if current_room.get('vnum') is not None else 'none'}", "", "Builder scope:", f"  Area: {'current' if current_area_id else 'none selected'}", f"  Zone: {'current' if current_zone_id else 'none selected'}"]
         lines += ["", "Location:", f"{loc_id}, {loc_name}", "", "Currently editing:", "Editing:"]
@@ -3973,11 +4142,11 @@ class MudCommandEngine:
             lines += [f"Room: {room_id}", f"Name: {name}", f"Source: {source}", f"Dirty: {'yes' if dirty else 'no'}", f"Editing room: {room_id} {name}"]
             room = drafts.get("rooms", {}).get(room_id, {})
             aid, zid, vnum = room.get("area_id") or "", room.get("zone_id") or "", room.get("vnum")
-            a = drafts.get("areas", {}).get(aid, {})
-            z = drafts.get("zones", {}).get(zid, {})
+            a = self._builder_collection_record(character, drafts, "areas", aid)
+            z = self._builder_collection_record(character, drafts, "zones", zid)
             legacy = not aid and not zid and vnum is None
-            area_text = f"{a.get('name')} [{aid}]" if aid and a.get('name') else (f"[{aid}] (missing display name)" if aid else "none")
-            zone_text = f"{z.get('name')} [{zid}]" if zid and z.get('name') else (f"[{zid}] (missing display name)" if zid else "none")
+            area_text = f"{self._builder_display_name(a, aid)} [{aid}]" if aid else "none"
+            zone_text = f"{self._builder_display_name(z, zid)} [{zid}]" if zid else "none"
             lines += ["", "Room Organization:", f"Area: {area_text}", f"Zone: {zone_text}", f"Room: {name} [{room_id}]", f"VNUM: {vnum if vnum is not None else 'none'}", f"Status: {'legacy/unassigned' if legacy else 'organized'}"]
             if legacy:
                 ca=getattr(character,"current_area_id","") or "<area_id>"; cz=getattr(character,"current_zone_id","") or "<zone_id>"

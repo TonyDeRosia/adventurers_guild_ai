@@ -49,9 +49,9 @@
   },
   {
     "id": "wayfarers_mug",
-    "name": "The Wayfarer\u2019s Mug",
+    "name": "The Wayfarer’s Mug",
     "world_id": "shattered_realms",
-    "description": "The Wayfarer\u2019s Mug beginner area.",
+    "description": "The Wayfarer’s Mug beginner area.",
     "reset_enabled": true,
     "reset_interval_minutes": 30,
     "reset_mode": "empty_only",
@@ -85,7 +85,7 @@
   },
   {
     "id": "emberwood_edge",
-    "name": "Emberwood Forest",
+    "name": "Emberwood Edge",
     "world_id": "shattered_realms",
     "description": "Emberwood Forest is the level 1 to 5 beginner woodland north of Old Gate Road.",
     "reset_enabled": true,
@@ -93,7 +93,8 @@
     "reset_mode": "empty_only",
     "min_level": 1,
     "max_level": 5,
-    "reset_rules": []
+    "reset_rules": [],
+    "display_name": "Emberwood Edge"
   },
   {
     "id": "abandoned_watchpost",
