@@ -171,6 +171,8 @@ DETERMINISTIC_COMMANDS = {
     "pull": {"category": "interaction", "admin": False},
     "climb": {"category": "interaction", "admin": False},
     "get": {"category": "item", "aliases": ["take", "pickup"], "admin": False},
+    "loot": {"category": "item", "admin": False},
+    "sacrifice": {"category": "item", "aliases": ["sac"], "admin": False},
     "drop": {"category": "item", "admin": False},
     "wear": {"category": "item", "admin": False},
     "remove": {"category": "item", "aliases": ["rem"], "admin": False},
@@ -279,6 +281,7 @@ class MudCommandEngine:
             "worth": self._cmd_worth,
             "inventory": self._cmd_inventory,
             "equipment": self._cmd_equipment,
+            "sacrifice": self._cmd_runtime_item,
             "resists": self._cmd_resists,
             "spellup": self._cmd_spellup,
             "spells": self._cmd_spells,
@@ -2238,12 +2241,27 @@ class MudCommandEngine:
         doc = build_inventory_document(list(inv or []), theme=theme)
         return CommandResult(narrative=render_display_mud(doc, color_enabled=theme.color_enabled), display_document=doc, display_intent="INVENTORY")
 
+    def _cmd_runtime_item(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        rt = getattr(self, "runtime", None)
+        if rt and hasattr(rt, "_handle_item_command"):
+            parsed = rt._parse_interaction_command(raw) if hasattr(rt, "_parse_interaction_command") else {"cmd": (raw.split() or [""])[0].lower(), "args": args}
+            cmd = parsed.get("cmd") or (raw.split() or [""])[0].lower()
+            res = rt._handle_item_command(character, raw, cmd, parsed.get("args", args))
+            if res is not None:
+                return res
+        return CommandResult("You cannot do that right now.", ok=False)
+
     def _cmd_equipment(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display equipped items through the single score renderer."""
         rt = getattr(self, "runtime", None)
-        items = rt.build_projection(character, "equipment") if rt and hasattr(rt, "build_projection") else (list((getattr(character, "equipment", {}) or {}).values()) if isinstance(getattr(character, "equipment", None), dict) else list(getattr(character, "equipment", []) or []))
+        if rt and hasattr(rt, "find_equipped_items"):
+            items = rt.find_equipped_items(getattr(character, "id", ""))
+            slots = list(getattr(rt, "EQUIPMENT_SLOTS", ["head", "chest", "main_hand", "off_hand", "legs", "feet"]))
+        else:
+            items = list((getattr(character, "equipment", {}) or {}).values()) if isinstance(getattr(character, "equipment", None), dict) else list(getattr(character, "equipment", []) or [])
+            slots = ["head", "chest", "main_hand", "off_hand", "legs", "feet"]
         theme = resolve_effective_display_theme(character, family="equipment")
-        doc=build_equipment_document(items, ["head","body","main_hand","off_hand","legs","feet"], theme=theme)
+        doc=build_equipment_document(items, slots, theme=theme)
         return CommandResult(narrative=render_display_mud(doc, color_enabled=theme.color_enabled), display_document=doc, display_intent="EQUIPMENT")
 
 

@@ -345,7 +345,7 @@ class RuntimeLifecycleService:
                 reward_id = reward_res.reward_claim_id; reward_status = reward_res.status; kill_credit_status = 'completed' if reward_res.kill_credit_awards else reward_res.status; quest_credit_status = 'unsupported'
                 with sqlite3.connect(self.db_path) as con: con.execute("UPDATE actor_lifecycle_transitions SET reward_status=?,kill_credit_status=?,quest_credit_status=?,reward_claim_id=?,updated_at=? WHERE transition_id=?",(reward_status,kill_credit_status,quest_credit_status,reward_id,now,transition_id))
                 events += list(reward_res.events)
-            if row['respawn_status'] not in {'pending','completed'} or not row['respawn_id']:
+            if respawn_status not in {'pending','completed'} or not respawn_id:
                 respawn_res = self.schedule_respawn(transition_id, defender)
                 respawn_id = respawn_res.respawn_id; respawn_status = respawn_res.status
                 with sqlite3.connect(self.db_path) as con: con.execute("UPDATE actor_lifecycle_transitions SET respawn_status=?,respawn_id=?,updated_at=? WHERE transition_id=?",(respawn_status,respawn_id,now,transition_id))
@@ -778,9 +778,40 @@ class CombatRuntimeService:
         actor = self.resident_actors.get(aid)
         if actor is not None:
             self.runtime.performance_counters["combat_start_resident_player_hits"] = self.runtime.performance_counters.get("combat_start_resident_player_hits", 0) + 1
+            try:
+                equipped_items = list(self.runtime.find_equipped_items(getattr(character, 'id', '')))
+                if equipped_items:
+                    by_slot = {}
+                    for item in equipped_items:
+                        slots = str(item.get('equipped_slot') or '').split(',')
+                        if str(item.get('equipped_slot') or '') == 'both_hands': slots = ['main_hand','off_hand']
+                        for slot in slots:
+                            slot = slot.strip()
+                            if slot and slot not in by_slot: by_slot[slot] = item
+                    actor.equipment_profile['equipped'] = by_slot
+            except Exception:
+                pass
             return actor
         actor = actor_from_runtime_character(character, self.runtime.active_world_id or "")
         actor.actor_id = aid
+        # Hydrate live combat actors from canonical item_instances equipment, not
+        # only the legacy MudCharacter.equipment blob.  This is the production
+        # path used by kill/attack, so it must see the same equipped item
+        # instances as EQ, wear, wield, and persistence.
+        try:
+            equipped_items = list(self.runtime.find_equipped_items(getattr(character, 'id', '')))
+        except Exception:
+            equipped_items = []
+        if equipped_items:
+            by_slot = {}
+            for item in equipped_items:
+                for slot in str(item.get('equipped_slot') or '').split(','):
+                    slot = slot.strip()
+                    if slot and slot not in by_slot:
+                        by_slot[slot] = item
+                if str(item.get('equipped_slot') or '') == 'both_hands':
+                    by_slot.setdefault('main_hand', item); by_slot.setdefault('off_hand', item)
+            actor.equipment_profile['equipped'] = by_slot
         self.resident_actors[aid] = actor
         self.runtime.performance_counters["combat_start_resident_player_misses"] = self.runtime.performance_counters.get("combat_start_resident_player_misses", 0) + 1
         return actor

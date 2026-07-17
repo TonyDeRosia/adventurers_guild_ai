@@ -247,7 +247,15 @@ class CombatEngine:
         weapon = eq.get("weapon") or eq.get("main_hand") or equipped.get("main_hand") or equipped.get("primary_weapon")
         if isinstance(weapon, dict):
             data = self.content.weapon_attack_data(weapon) if self.content.weapon_templates or weapon.get("damage_profile") else dict(weapon.get("attack_profile") or weapon)
-            return AttackProfile(id=str(data.get("id", weapon.get("id", "weapon"))), name=str(data.get("name", weapon.get("name", "weapon"))), damage_type=str(data.get("damage_type", (data.get("damage_types") or ["physical"])[0])), base_damage=_num(data.get("base_damage", data.get("damage", 1)),1), speed=max(1,_num(data.get("speed", data.get("attack_speed", 1)),1)), reach=_num(data.get("reach",1),1), critical_multiplier=float(data.get("critical_multiplier", 2.0)), source="weapon", metadata={"weapon":data.get("weapon", weapon), "attack_profile":data.get("attack_profile_record", {}), "damage_profile":data.get("damage_profile_record", {}), "critical_profile":data.get("critical_profile_record", {})})
+            weapon_meta = dict(data.get("weapon", weapon) or {})
+            weapon_name = str(weapon.get("name") or weapon_meta.get("name") or data.get("name") or "weapon")
+            dtype = str(data.get("damage_type", (data.get("damage_types") or weapon_meta.get("damage_types") or ["physical"])[0]))
+            lower_name = weapon_name.lower()
+            family = str(weapon_meta.get("mechanical_family") or data.get("mechanical_family") or ("slash" if "sword" in lower_name or dtype in {"slash","slashing"} else "pierce" if dtype in {"pierce","piercing"} else "bludgeon" if dtype in {"blunt","bludgeoning"} else "weapon"))
+            weapon_meta.setdefault("name", weapon_name)
+            weapon_meta.setdefault("mechanical_family", family)
+            weapon_meta.setdefault("attack_noun", weapon_name)
+            return AttackProfile(id=str(data.get("id", weapon.get("id", "weapon"))), name=family, damage_type=dtype, base_damage=_num(data.get("base_damage", data.get("damage", 1)),1), speed=max(1,_num(data.get("speed", data.get("attack_speed", 1)),1)), reach=_num(data.get("reach",1),1), critical_multiplier=float(data.get("critical_multiplier", 2.0)), source="weapon", metadata={"weapon":weapon_meta, "attack_profile":data.get("attack_profile_record", {}), "damage_profile":data.get("damage_profile_record", {}), "critical_profile":data.get("critical_profile_record", {})})
         natural_data = self.content.natural_attack_data(actor)
         if natural_data:
             return AttackProfile(id=str(natural_data.get("id","natural")), name=str(natural_data.get("name", "natural attack")), damage_type=str(natural_data.get("damage_type","physical")), base_damage=_num(natural_data.get("base_damage",1),1), speed=max(1,_num(natural_data.get("speed",1),1)), reach=_num(natural_data.get("reach",1),1), critical_multiplier=float(natural_data.get("critical_multiplier", 2.0)), source="natural", metadata={"weapon": natural_data.get("weapon", {}), "body_profile": self.body_profiles.get(actor.body_profile_id).id, "attack_profile": natural_data.get("attack_profile_record", {}), "damage_profile": natural_data.get("damage_profile_record", {}), "critical_profile": natural_data.get("critical_profile_record", {})})
@@ -295,8 +303,22 @@ class CombatEngine:
         if authored_base:
             base = authored_base
         display_noun = authored_noun or family
+        # Misses do not carry a DamageEvent in the canonical resolver.  Recover
+        # the equipped main-hand weapon from the live actor so weapon users do
+        # not regress to unarmed punch wording on misses.
+        if outcome == "miss" and (not e) and family == "fist":
+            eq = (getattr(a, "equipment_profile", {}) or {}).get("equipped", getattr(a, "equipment_profile", {}) or {})
+            weapon = eq.get("main_hand") if isinstance(eq, dict) else None
+            tmpl = (weapon or {}).get("template") or {} if isinstance(weapon, dict) else {}
+            if isinstance(weapon, dict) and str(tmpl.get("item_type") or tmpl.get("type") or "").lower() == "weapon":
+                display_noun = str(weapon.get("name") or tmpl.get("name") or "weapon")
+                base = "slash" if "sword" in display_noun.lower() else "attack"
+                third = "slashes" if base == "slash" else "attacks"
+                family = "slash" if base == "slash" else "weapon"
         aname, dname = a.identity.name, d.identity.name
         if outcome == "miss":
+            if family != "fist":
+                return {"attacker":f"You try to {base} {dname} with your {display_noun}, but miss.","victim":f"{aname} tries to {base} you with {display_noun}, but misses.","observers":f"{aname} tries to {base} {dname} with {display_noun}, but misses."}
             return {"attacker":f"You try to {base} {dname}, but miss.","victim":f"{aname} tries to {base} you, but misses.","observers":f"{aname} tries to {base} {dname}, but misses."}
         dmg = max(0, e.final_damage if e else 0); maxhp=max(1,int(getattr(d.resources,"maximum_health",1) or 1)); rel=dmg/maxhp
         if dmg <= 0:
@@ -304,6 +326,14 @@ class CombatEngine:
         sev = "barely" if rel < .05 else "lightly" if rel < .12 else "" if rel < .25 else "hard" if rel < .45 else "very hard" if rel < .70 else "extremely hard"
         crit = bool(e and e.critical); lead = "ANNIHILATES" if crit else (third if not sev else f"{third} {sev}")
         bang = "!" if crit or rel >= .45 else "."
+        eq = (getattr(a, "equipment_profile", {}) or {}).get("equipped", getattr(a, "equipment_profile", {}) or {})
+        weapon = eq.get("main_hand") if isinstance(eq, dict) else None
+        tmpl = (weapon or {}).get("template") or {} if isinstance(weapon, dict) else {}
+        if family == "fist" and isinstance(weapon, dict) and str(tmpl.get("item_type") or tmpl.get("type") or "").lower() == "weapon":
+            display_noun = str(weapon.get("name") or tmpl.get("name") or "weapon")
+            base = "slash" if "sword" in display_noun.lower() else "attack"
+            third = "slashes" if base == "slash" else "attacks"
+            family = "slash" if base == "slash" else "weapon"
         if crit:
             return {"attacker":f"You {lead} {dname} with your {display_noun}{bang}","victim":f"{aname} {lead} you with its {display_noun}{bang}","observers":f"{aname} {lead} {dname} with its {display_noun}{bang}"}
         tail = (" " + sev) if sev else ""
@@ -442,7 +472,10 @@ class CombatResolutionService:
         use_natural = has_natural and str(getattr(a, 'actor_type', '')).lower() in {'mob','npc','entity','creature'}
         prof=(a.natural_weapon_profiles[0] if use_natural else (a.weapon_profile or (a.natural_weapon_profiles[0] if has_natural else a.unarmed_profile)))
         source='natural' if (use_natural or (has_natural and not a.weapon_profile)) else ('weapon' if a.weapon_profile else 'unarmed')
-        atk=AttackProfile(id=getattr(prof,'profile_id',source), name=getattr(prof,'name',getattr(prof,'source',source)), damage_type=getattr(prof,'damage_type','physical'), base_damage=int((getattr(prof,'minimum_damage',1)+getattr(prof,'maximum_damage',1))/2), speed=max(1,int(getattr(prof,'attack_speed',100) or 100)), reach=int(getattr(prof,'reach',1) or 1), critical_multiplier=float(a.criticals.get('critical_damage',1.5) or 1.5), source=source, metadata={'snapshot_authority':True})
+        weapon_meta = {}
+        if source == 'weapon':
+            weapon_meta = {'name': getattr(prof, 'weapon_name', getattr(prof, 'name', 'weapon')), 'attack_noun': getattr(prof, 'weapon_name', getattr(prof, 'name', 'weapon')), 'mechanical_family': 'slash' if str(getattr(prof, 'weapon_name', '')).lower().find('sword') >= 0 else str(getattr(prof, 'damage_type', 'weapon')).replace('slashing','slash').replace('blunt','bludgeon')}
+        atk=AttackProfile(id=getattr(prof,'profile_id',source), name=(weapon_meta.get('mechanical_family') or getattr(prof,'name',getattr(prof,'source',source))), damage_type=getattr(prof,'damage_type','physical'), base_damage=int((getattr(prof,'minimum_damage',1)+getattr(prof,'maximum_damage',1))/2), speed=max(1,int(getattr(prof,'attack_speed',100) or 100)), reach=int(getattr(prof,'reach',1) or 1), critical_multiplier=float(a.criticals.get('critical_damage',1.5) or 1.5), source=source, metadata={'snapshot_authority':True, 'weapon': weapon_meta})
         attack_kind=ctx.attack_kind or (AttackKind.MELEE_WEAPON.value if source=='weapon' else AttackKind.UNARMED.value)
         if attack_kind == AttackKind.HEALING.value and not bool(ctx.safe_metadata().get('requires_hit_roll')):
             heal_power=int(a.offense.get('healing_power', a.offense.get('spell_power', a.offense.get('attack_power',0))) or 0)
