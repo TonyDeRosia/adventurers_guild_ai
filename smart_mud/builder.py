@@ -2213,6 +2213,8 @@ class BuilderService:
             return self._render_reference_selector(None, sess)
         if sess.mode == "list_editor":
             return self._render_list_editor(sess)
+        if sess.mode == "oedit_values":
+            return self._render_oedit_values_editor(sess)
         if sess.editor_type == "oedit" and not sess.section and sess.mode in {"main_menu", "section_menu"}:
             sess.mode = "main_menu"
             return self._render_oedit_menu(sess)
@@ -2277,6 +2279,76 @@ class BuilderService:
         vals = [f"{k}={self._fmt_value(rec.get(k))}" for k in keys if rec.get(k) not in (None, "", [], {})]
         return "; ".join(vals) if vals else f"{typ} defaults"
 
+    def _oedit_value_descriptors(self, sess: BuilderEditSession) -> list[OlcFieldDescriptor]:
+        rec = sess.working_record or {}
+        typ = str(rec.get("item_type") or rec.get("type") or "misc").lower()
+        maps: dict[str, list[OlcFieldDescriptor]] = {
+            "weapon": [
+                OlcFieldDescriptor("weapon_type", "Weapon type", ("weapon_type",), "string"),
+                OlcFieldDescriptor("damage_dice", "Damage dice", ("damage_dice",), "string"),
+                OlcFieldDescriptor("attack_type", "Attack type", ("attack_type",), "string"),
+                OlcFieldDescriptor("range", "Range", ("range",), "integer", minimum=0, maximum=1000),
+            ],
+            "armor": [
+                OlcFieldDescriptor("armor_values", "Armor value", ("armor_values",), "integer", minimum=0, maximum=100000),
+                OlcFieldDescriptor("resistances", "Resistances", ("resistances",), "string_list"),
+            ],
+            "container": [
+                OlcFieldDescriptor("capacity", "Capacity", ("capacity",), "integer", minimum=0, maximum=1000000),
+                OlcFieldDescriptor("weight_capacity", "Weight capacity", ("weight_capacity",), "integer", minimum=0, maximum=1000000),
+                OlcFieldDescriptor("container_flags", "Container flags", ("container_flags",), "string_list"),
+                OlcFieldDescriptor("key_id", "Key object ID", ("key_id",), "string"),
+                OlcFieldDescriptor("lock_difficulty", "Lock difficulty", ("lock_difficulty",), "integer", minimum=0, maximum=1000),
+            ],
+            "light": [
+                OlcFieldDescriptor("brightness", "Brightness", ("brightness",), "integer", minimum=0, maximum=1000),
+                OlcFieldDescriptor("burn_time", "Burn time", ("burn_time",), "integer", minimum=0, maximum=1000000),
+                OlcFieldDescriptor("fuel", "Fuel", ("fuel",), "integer", minimum=0, maximum=1000000),
+            ],
+            "food": [
+                OlcFieldDescriptor("nutrition", "Nutrition", ("nutrition",), "integer", minimum=0, maximum=1000000),
+                OlcFieldDescriptor("poison", "Poisoned", ("poison",), "boolean"),
+                OlcFieldDescriptor("decay", "Decay timer", ("decay",), "integer", minimum=0, maximum=1000000),
+            ],
+            "drink_container": [
+                OlcFieldDescriptor("liquid_type", "Liquid type", ("liquid_type",), "string"),
+                OlcFieldDescriptor("servings", "Servings", ("servings",), "integer", minimum=0, maximum=1000000),
+                OlcFieldDescriptor("poison", "Poisoned", ("poison",), "boolean"),
+            ],
+            "fountain": [
+                OlcFieldDescriptor("liquid_type", "Liquid type", ("liquid_type",), "string"),
+                OlcFieldDescriptor("servings", "Servings", ("servings",), "integer", minimum=0, maximum=1000000),
+                OlcFieldDescriptor("poison", "Poisoned", ("poison",), "boolean"),
+            ],
+            "wand": [
+                OlcFieldDescriptor("spell_storage", "Stored spells", ("spell_storage",), "string_list"),
+                OlcFieldDescriptor("charges", "Charges", ("charges",), "integer", minimum=0, maximum=1000000),
+            ],
+            "staff": [
+                OlcFieldDescriptor("spell_storage", "Stored spells", ("spell_storage",), "string_list"),
+                OlcFieldDescriptor("charges", "Charges", ("charges",), "integer", minimum=0, maximum=1000000),
+            ],
+            "scroll": [OlcFieldDescriptor("spell_storage", "Stored spells", ("spell_storage",), "string_list")],
+            "potion": [OlcFieldDescriptor("spell_storage", "Stored spells", ("spell_storage",), "string_list")],
+            "money": [
+                OlcFieldDescriptor("currency", "Currency", ("currency",), "string"),
+                OlcFieldDescriptor("amount", "Amount", ("amount",), "integer", minimum=0, maximum=1000000000),
+            ],
+        }
+        return maps.get(typ, [
+            OlcFieldDescriptor("subtype", "Subtype", ("subtype",), "string"),
+            OlcFieldDescriptor("category", "Category", ("category",), "string"),
+        ])
+
+    def _render_oedit_values_editor(self, sess: BuilderEditSession) -> str:
+        rec = sess.working_record or {}
+        typ = str(rec.get("item_type") or rec.get("type") or "misc").lower()
+        lines = [f"OEDIT Values: {typ}", f"Draft status: {'modified' if sess.dirty else 'clean'}"]
+        for i, f in enumerate(self._oedit_value_descriptors(sess), 1):
+            lines.append(f"{i}. {f.label:<18}: {self._fmt_value(self._get_path(rec, f.path))}")
+        lines += ["", "Q. Back", "Commands: number edits a value, validate, preview, undo, redo, save"]
+        return "\n".join(lines)
+
     def _field_descriptors(self, sess: BuilderEditSession) -> list[OlcFieldDescriptor]:
         if sess.editor_type == "medit":
             attrs = ("strength","dexterity","constitution","intelligence","wisdom","charisma")
@@ -2319,6 +2391,13 @@ class BuilderService:
         return []
 
     def _descriptor(self, sess: BuilderEditSession, token: str) -> OlcFieldDescriptor | None:
+        if sess.editor_type == "oedit" and (sess.mode == "oedit_values" or sess.section == "values"):
+            fields = self._oedit_value_descriptors(sess)
+            if str(token).isdigit():
+                i = int(token) - 1
+                return fields[i] if 0 <= i < len(fields) else None
+            t = token.lower().replace("-","_")
+            return next((f for f in fields if f.key == t or f.label.lower().replace(" ","_") == t), None)
         fields = self._field_descriptors(sess)
         if str(token).isdigit():
             i = int(token) - 1
@@ -2586,6 +2665,23 @@ class BuilderService:
     def _session_preview(self, actor: Any, sess: BuilderEditSession) -> BuilderResult:
         return self._preview_record(actor, sess.collection, sess.object_id, sess.working_record)
 
+    def _session_save(self, actor: Any, sess: BuilderEditSession) -> BuilderResult:
+        if sess.collection == "entities":
+            issues = MobileTemplate.from_legacy(sess.working_record).validate()
+            errors = [i for i in issues if i.get("severity") == "error" or i.get("blocking")]
+            if errors:
+                return BuilderResult(False, "Save blocked by validation errors:\n" + "\n".join(f"- {e.get('field_path')}: {e.get('message')}" for e in errors), {"issues": issues})
+        if sess.collection == "items":
+            issues = validate_object_template(normalize_object_template(sess.object_id, sess.working_record))
+            errors = [i for i in issues if i.get("severity") == "error"]
+            if errors:
+                return BuilderResult(False, "Save blocked by validation errors:\n" + "\n".join(f"- {e.get('field_path')}: {e.get('message')}" for e in errors), {"issues": issues})
+        res = self.mutate(actor, sess.collection, sess.object_id, deepcopy(sess.working_record), "session save", expected_revision=sess.draft_revision)
+        if res.ok:
+            sess.draft_revision = int((res.data or {}).get("_builder_revision") or sess.draft_revision)
+            sess.savepoint = deepcopy(res.data or sess.working_record); sess.dirty = False; sess.saved = True
+        return res
+
     def _parse_field_value(self, sess: BuilderEditSession, f: OlcFieldDescriptor | None, text: str) -> BuilderResult:
         if not f: return BuilderResult(False, "No active field.")
         raw = text.strip()
@@ -2606,6 +2702,10 @@ class BuilderService:
                 choices = {c.lower(): c for c in f.choices}
                 if raw.lower() not in choices: return BuilderResult(False, f"{f.label} must be one of: {', '.join(f.choices)}.")
                 return BuilderResult(True, "", {"value": choices[raw.lower()]})
+            if f.input_type == "boolean":
+                if raw.lower() in {"yes", "true", "on", "1"}: return BuilderResult(True, "", {"value": True})
+                if raw.lower() in {"no", "false", "off", "0"}: return BuilderResult(True, "", {"value": False})
+                return BuilderResult(False, f"{f.label} must be yes/no, true/false, on/off, or 1/0.")
             if f.input_type == "slug":
                 if not re.fullmatch(r"[a-zA-Z0-9_:-]+", raw): return BuilderResult(False, f"{f.label} must be an identifier using letters, numbers, underscore, colon, or dash.")
                 return BuilderResult(True, "", {"value": raw})
@@ -2626,7 +2726,7 @@ class BuilderService:
             sess.working_record = self._normalize_entity_updates(sess.object_id, sess.working_record)
         sess.dirty = sess.working_record != sess.savepoint; sess.saved = not sess.dirty
         sess.dirty_fields = sorted(set(sess.dirty_fields + [".".join(f.path)]))
-        next_mode = "section_menu"
+        next_mode = "oedit_values" if sess.editor_type == "oedit" and sess.section == "values" else "section_menu"
         keep_field = False
         if f.input_type == "flag_set":
             next_mode = "flag_editor"; keep_field = True
@@ -2729,10 +2829,37 @@ class BuilderService:
             if low in dict(records):
                 return self._apply_field_value(actor, sess, f, low, "Reference updated.")
             return BuilderResult(False, f'{f.label} reference "{text}" does not exist. Use search, a number, a stable ID, or Q.')
+        if sess.mode == "oedit_values":
+            if low in cancel_words:
+                sess.mode = "main_menu"; sess.section = ""; sess.active_field = ""
+                return BuilderResult(True, self.render_session(sess))
+            if low in {"v", "validate"}:
+                issues = validate_object_template(normalize_object_template(sess.object_id, sess.working_record))
+                lines = [f"{x['severity']}: {x['field_path']} {x['message']}" for x in issues] or ["- no focused issues"]
+                return BuilderResult(not any(x.get("severity") == "error" for x in issues), "Validation for %s:\n%s" % (sess.object_id, "\n".join(lines)), {"issues": issues})
+            if low in {"p", "preview", "r"}:
+                return self._session_preview(actor, sess)
+            if low in {"u", "undo"}:
+                if not sess.undo_stack: return BuilderResult(False, "Nothing to undo.")
+                sess.redo_stack.append(deepcopy(sess.working_record)); sess.working_record = sess.undo_stack.pop(); sess.dirty = sess.working_record != sess.savepoint; sess.saved = not sess.dirty
+                return BuilderResult(True, "Session undo applied.\n" + self._render_oedit_values_editor(sess))
+            if low in {"y", "redo"}:
+                if not sess.redo_stack: return BuilderResult(False, "Nothing to redo.")
+                sess.undo_stack.append(deepcopy(sess.working_record)); sess.working_record = sess.redo_stack.pop(); sess.dirty = sess.working_record != sess.savepoint; sess.saved = not sess.dirty
+                return BuilderResult(True, "Session redo applied.\n" + self._render_oedit_values_editor(sess))
+            if low in {"s", "save"}:
+                return self._session_save(actor, sess)
+            desc = self._descriptor(sess, low)
+            if not desc:
+                return BuilderResult(False, "Choose a value number, validate, preview, undo, redo, save, or Q.\n" + self._render_oedit_values_editor(sess))
+            sess.active_field = desc.key
+            if desc.input_type in {"string_list", "list"}:
+                sess.mode = "list_editor"; return BuilderResult(True, self._render_list_editor(sess))
+            sess.mode = "field_prompt"; return BuilderResult(True, self._render_field_prompt(sess))
         if sess.quit_pending:
             if low in {"save", "s"}:
                 sess.quit_pending = False
-                res = self.handle_session_input(actor, sess, "save")
+                res = self._session_save(actor, sess)
                 if res.ok:
                     self.sessions.end(actor)
                     return BuilderResult(True, res.message + "\nEditor saved, closed, and lock released.", res.data)
@@ -2760,6 +2887,57 @@ class BuilderService:
             sess.working_record.setdefault("combat_profile", {})["natural_weapons"] = weapons
             sess.dirty = True; sess.saved = False
             return BuilderResult(True, "Updated session scratch.\n" + self.render_session(sess))
+        if low in {"?", "help"} or low.startswith("help "):
+            topic = low[5:].strip() if low.startswith("help ") else ""
+            if topic in {"equipment", "loadout"}: return BuilderResult(True, "Equipment help: assign wearable object templates to canonical wear slots with assign <slot> <object> [chance] [qty]; carried items use carry <object> [chance] [qty]. Template draft data, not live instances.")
+            if topic in {"spawn", "spawns", "spawn maximum"}: return BuilderResult(True, "Spawn help: add <room> [max] [chance] creates a canonical spawn/reset draft reference. Max must be positive; chance is 0-100. Live world changes only after publish.")
+            if topic in {"damage dice", "action flags", "capacity"}: return BuilderResult(True, f"{topic.title()} help: edit through the structured field menu; values are validated immediately and saved only to Builder drafts.")
+            return BuilderResult(True, "Builder help: use menu numbers; structured editors support preview, validate, undo, redo, save, and back. Use help equipment, help spawn maximum, help action flags, help damage dice, or help capacity.")
+        if sess.editor_type == "oedit" and sess.confirmation_type:
+            if sess.confirmation_type in {"copy", "copy_destination", "copy_source"}:
+                if low in cancel_words: sess.confirmation_type = ""; return BuilderResult(True, "Copy cancelled.\n" + self._render_oedit_menu(sess))
+                if sess.confirmation_type == "copy":
+                    if low.startswith("from "):
+                        src = text.split(None, 1)[1].strip()
+                        if not src: return BuilderResult(False, "Enter: from <source_object_id>, to <new_object_id>, or Q to cancel.")
+                        rows = self.content_query.by_id_or_vnum(actor, "object", src)
+                        if len(rows) != 1: return BuilderResult(False, "Source object is missing or ambiguous; use an exact object ID or VNUM.")
+                        sess.pending_value = rows[0].canonical_id; sess.confirmation_type = "copy_source"
+                        return BuilderResult(True, f"Copy {rows[0].canonical_id} into current draft {sess.object_id}? Type COPY SOURCE to confirm, or Q to cancel.")
+                    if low.startswith("to "):
+                        dest = text.split(None, 1)[1].strip()
+                    else:
+                        dest = text.strip()
+                    if not re.fullmatch(r"[A-Za-z0-9_:-]+", dest): return BuilderResult(False, "Destination object ID must be an identifier, or Q to cancel.")
+                    if self._record(self.workspace.world_id(actor), "items", dest) is not None:
+                        return BuilderResult(False, f"Object {dest} already exists; choose another destination. Copy never overwrites silently.")
+                    sess.pending_value = dest; sess.confirmation_type = "copy_destination"
+                    return BuilderResult(True, f"Clone current draft {sess.object_id} to new object {dest}? Type COPY DESTINATION to confirm, or Q to cancel.")
+                if sess.confirmation_type == "copy_destination":
+                    if low != "copy destination": return BuilderResult(False, "Type COPY DESTINATION to confirm cloning to a new object, or Q to cancel.")
+                    dest = str(sess.pending_value or "")
+                    lock = self.acquire_lock(actor, "items", dest, admin=True)
+                    if not lock.ok:
+                        return lock
+                    try:
+                        rec = deepcopy(sess.working_record); rec["id"] = dest; rec["name"] = dest.replace("_", " ").title(); rec["keywords"] = dest.replace("_", " ").split(); rec.pop("_builder_revision", None)
+                        res = self.mutate(actor, "items", dest, rec, "oedit clone", admin_override=True)
+                    finally:
+                        self.release_lock(actor, "items", dest)
+                    sess.confirmation_type = ""; sess.pending_value = None
+                    return BuilderResult(res.ok, res.message + ("\n" + self._render_oedit_menu(sess) if res.ok else ""), res.data)
+                if sess.confirmation_type == "copy_source":
+                    if low != "copy source": return BuilderResult(False, "Type COPY SOURCE to replace the current draft with the selected source, or Q to cancel.")
+                    src_id = str(sess.pending_value or "")
+                    src = deepcopy(self.resolve_collection_records(actor, "items").get(src_id))
+                    if not isinstance(src, dict): return BuilderResult(False, f"Source object {src_id} is no longer available.")
+                    self._session_checkpoint(sess); src["id"] = sess.object_id; sess.working_record = normalize_object_template(sess.object_id, src); sess.dirty = sess.working_record != sess.savepoint; sess.saved = not sess.dirty
+                    sess.confirmation_type = ""; sess.pending_value = None
+                    return BuilderResult(True, f"Copied {src_id} into current draft {sess.object_id}.\n" + self._render_oedit_menu(sess), sess.working_record)
+            if sess.confirmation_type == "delete":
+                if low in cancel_words: sess.confirmation_type = ""; return BuilderResult(True, "Delete cancelled.\n" + self._render_oedit_menu(sess))
+                if text.strip() != "DELETE": return BuilderResult(False, "Type DELETE to confirm deletion, or Q to cancel.")
+                self.sessions.end(actor); return self.workspace.delete(actor, "items", sess.object_id, "item_template")
         if low in {"q", "quit"}:
             if sess.section:
                 sess.section = ""; sess.mode = "main_menu"
@@ -2769,12 +2947,6 @@ class BuilderService:
                 return BuilderResult(True, "Unsaved changes: Save, Discard, or Cancel?")
             self.sessions.end(actor); return BuilderResult(True, "Editor closed and lock released.")
         if low in {"back", "cancel"}: sess.section=""; sess.mode="main_menu"; return BuilderResult(True, self.render_session(sess))
-        if low in {"?", "help"} or low.startswith("help "):
-            topic = low[5:].strip() if low.startswith("help ") else ""
-            if topic in {"equipment", "loadout"}: return BuilderResult(True, "Equipment help: assign wearable object templates to canonical wear slots with assign <slot> <object> [chance] [qty]; carried items use carry <object> [chance] [qty]. Template draft data, not live instances.")
-            if topic in {"spawn", "spawns", "spawn maximum"}: return BuilderResult(True, "Spawn help: add <room> [max] [chance] creates a canonical spawn/reset draft reference. Max must be positive; chance is 0-100. Live world changes only after publish.")
-            if topic in {"damage dice", "action flags", "capacity"}: return BuilderResult(True, f"{topic.title()} help: edit through the structured field menu; values are validated immediately and saved only to Builder drafts.")
-            return BuilderResult(True, "Builder help: use menu numbers; structured editors support preview, validate, undo, redo, save, and back. Use help equipment, help spawn maximum, help action flags, help damage dice, or help capacity.")
         if sess.editor_type == "medit" and sess.section == "equipment":
             return self._handle_equipment_editor(actor, sess, text)
         if sess.editor_type == "medit" and sess.section == "spawns":
@@ -2802,26 +2974,19 @@ class BuilderService:
                 field = oedit_map[low]; desc = self._descriptor(sess, field); sess.active_field = field
                 if field == "scripts" and not sess.working_record.get("scripts"):
                     return BuilderResult(True, "Script editing is unavailable until DG/script runtime support is enabled for this object.\n" + self._render_oedit_menu(sess))
+                if field == "values":
+                    sess.section = "values"; sess.mode = "oedit_values"; sess.active_field = ""
+                    return BuilderResult(True, self._render_oedit_values_editor(sess))
                 if desc.input_type == "multiline": sess.mode = "multiline_text"; sess.multiline_lines = []; return BuilderResult(True, self._render_multiline(sess))
                 if desc.input_type == "flag_set": sess.mode = "flag_editor"; return BuilderResult(True, self._render_flag_editor(sess))
                 if desc.input_type in {"string_list","list"}: sess.mode = "list_editor"; return BuilderResult(True, self._render_list_editor(sess))
                 sess.mode = "field_prompt"; return BuilderResult(True, self._render_field_prompt(sess))
             if low == "w":
-                sess.confirmation_type = "copy"; return BuilderResult(True, "Copy object: enter destination object ID, or Q to cancel.")
+                sess.confirmation_type = "copy"; return BuilderResult(True, "Copy object:\n- to <new_object_id> clones the current object into a new draft.\n- from <source_object_id> copies another object into this draft after confirmation.\nEnter a destination ID as shorthand for to <new_object_id>, or Q to cancel.")
             if low == "x":
                 deps = self.object_dependencies(actor, sess.object_id).data.get("matches", []) if self.object_dependencies(actor, sess.object_id).data else []
                 if deps: return BuilderResult(False, "Delete protected; dependencies exist:\n" + "\n".join(f"- {d}" for d in deps) + "\n" + self._render_oedit_menu(sess))
                 sess.confirmation_type = "delete"; return BuilderResult(True, "Delete object: type DELETE to confirm, or Q to cancel.")
-        if sess.editor_type == "oedit" and sess.confirmation_type == "copy":
-            if low in cancel_words: sess.confirmation_type = ""; return BuilderResult(True, "Copy cancelled.\n" + self._render_oedit_menu(sess))
-            if not re.fullmatch(r"[A-Za-z0-9_:-]+", text.strip()): return BuilderResult(False, "Destination object ID must be an identifier, or Q to cancel.")
-            res = self.clone(actor, "items", sess.object_id, text.strip())
-            sess.confirmation_type = ""
-            return BuilderResult(res.ok, res.message + ("\n" + self._render_oedit_menu(sess) if res.ok else ""), res.data)
-        if sess.editor_type == "oedit" and sess.confirmation_type == "delete":
-            if low in cancel_words: sess.confirmation_type = ""; return BuilderResult(True, "Delete cancelled.\n" + self._render_oedit_menu(sess))
-            if text.strip() != "DELETE": return BuilderResult(False, "Type DELETE to confirm deletion, or Q to cancel.")
-            self.sessions.end(actor); return self.workspace.delete(actor, "items", sess.object_id, "item_template")
         if sess.editor_type != "medit" and low in {"1","fields","edit"}:
             sess.section = "fields"; sess.mode = "section_menu"; return BuilderResult(True, self.render_session(sess))
         section_map = {"1":"identity","identity":"identity", "2":"keywords", "keywords":"keywords", "aliases":"keywords", "3":"descriptions", "descriptions":"descriptions", "4":"traits", "traits":"traits", "5":"attributes", "attributes":"attributes", "level":"attributes", "6":"resources", "resources":"resources", "7":"natural_weapons", "combat":"combat", "8":"body_weapons", "body":"body_weapons", "body profile":"body_weapons", "weapons":"natural_weapons", "natural":"natural_weapons", "natural weapons":"natural_weapons", "natural attacks":"natural_weapons", "9":"positions", "positions":"positions", "10":"mobile_flags", "flags":"mobile_flags", "mobile flags":"mobile_flags", "11":"affect_flags", "affects":"affect_flags", "12":"equipment", "equipment":"equipment", "13":"inventory", "inventory":"inventory", "14":"loot", "loot":"loot", "15":"abilities", "abilities":"abilities", "16":"ai", "ai":"ai", "behavior":"ai", "17":"faction", "faction":"faction", "18":"scripts", "scripts":"scripts", "19":"spawns", "spawns":"spawns", "spawn":"spawns", "20":"diagnostics", "diagnostics":"diagnostics"}
@@ -2829,21 +2994,12 @@ class BuilderService:
             sess.section=section_map[low]; sess.mode="section_menu"; return BuilderResult(True, self.render_session(sess))
         if low in {"p", "preview"}: return self._session_preview(actor, sess)
         if low in {"v", "validate"}:
-            issues = MobileTemplate.from_legacy(sess.working_record).validate() if sess.collection == "entities" else []
+            issues = MobileTemplate.from_legacy(sess.working_record).validate() if sess.collection == "entities" else validate_object_template(normalize_object_template(sess.object_id, sess.working_record))
             lines=[f"{x['severity']}: {x['field_path']} {x['message']}" for x in issues] or ["- no focused issues"]
             return BuilderResult(not any(x['severity']=="error" for x in issues), "Validation for %s:\n%s" % (sess.object_id, "\n".join(lines)), {"issues": issues})
         if low in {"t", "testspawn"}: return self.testspawn(actor, sess.object_id)
         if low in {"s", "save"}:
-            if sess.collection == "entities":
-                issues = MobileTemplate.from_legacy(sess.working_record).validate()
-                errors = [i for i in issues if i.get("severity") == "error" or i.get("blocking")]
-                if errors:
-                    return BuilderResult(False, "Save blocked by validation errors:\n" + "\n".join(f"- {e.get('field_path')}: {e.get('message')}" for e in errors), {"issues": issues})
-            res = self.mutate(actor, sess.collection, sess.object_id, deepcopy(sess.working_record), "session save", expected_revision=sess.draft_revision)
-            if res.ok:
-                sess.draft_revision = int((res.data or {}).get("_builder_revision") or sess.draft_revision)
-                sess.savepoint = deepcopy(res.data or sess.working_record); sess.dirty = False; sess.saved = True
-            return res
+            return self._session_save(actor, sess)
         if low in {"u", "undo"}:
             if not sess.undo_stack: return BuilderResult(False, "Nothing to undo.")
             sess.redo_stack.append(deepcopy(sess.working_record)); sess.working_record = sess.undo_stack.pop(); sess.dirty = sess.working_record != sess.savepoint; sess.saved = not sess.dirty

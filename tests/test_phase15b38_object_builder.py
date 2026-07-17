@@ -19,7 +19,8 @@ def test_object_builder_grouped_menu_validation_preview_dependencies_search_and_
     out=text(e,a,"ocreate iron_sword")
     assert "Draft items iron_sword updated" in out
     menu=text(e,a,"oedit iron_sword")
-    assert "Object Builder: iron_sword" in menu and "Identity" in menu and "Combat" in menu and "Crafting" in menu
+    assert "-- Item number" in menu and "1) Keywords" in menu and "C) Values" in menu and "W) Copy object" in menu
+    assert "Editor closed" in text(e,a,"quit")
     assert "cannot be negative" in text(e,a,"oset iron_sword weight -1")
     assert "updated" in text(e,a,"oset iron_sword item_type weapon")
     val=text(e,a,"ovalidate iron_sword")

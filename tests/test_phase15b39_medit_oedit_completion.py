@@ -16,11 +16,12 @@ def test_phase15b39_medit_visible_menus_do_not_advertise_raw_shells(isolated_bui
 def test_phase15b39_oedit_hides_raw_shell_and_unsupported_type_sections(isolated_builder_world):
     engine, actor = engine_with_pack(isolated_builder_world)
     menu = text(engine, actor, "oedit training_sword")
-    assert "Object Editor" in menu
+    assert "-- Item number" in menu and "Object ID" in menu
     assert "oset <id> <field> <value>" not in menu
     assert "raw field" not in menu.lower()
     assert "Container Data" not in menu
     assert "Light Data" not in menu
+    assert "Grouped sections" not in menu
 
 
 def test_phase15b39_completion_matrix_exists_and_documents_all_visible_sections():
