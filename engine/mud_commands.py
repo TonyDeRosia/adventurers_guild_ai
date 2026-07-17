@@ -1817,13 +1817,6 @@ class MudCommandEngine:
             self.builder_service.workspace = self.builder
             res = self.builder_service.normalize_command(character, ["rollback"] + cmd_tokens[2:])
             return CommandResult(narrative=res.message, ok=res.ok)
-        if getattr(self, "builder_service", None) and self.builder_service.sessions.has(character) and raw_cmd_name in {"medit", "oedit", "redit", "zedit", "aedit"} and len(cmd_tokens) > 1:
-            self.builder_service.sessions.end(character)
-        elif getattr(self, "builder_service", None) and self.builder_service.sessions.has(character) and raw_cmd_name not in {"say", "tell"}:
-            local = {"q", "quit", "back", "cancel", "help", "?", "p", "preview", "v", "validate", "t", "testspawn", "h", "history", "u", "undo", "r", "redo", "s", "save"}
-            if raw_cmd_name.isdigit() or raw_cmd_name in local or raw_cmd_name not in self.command_handlers:
-                res = self.builder_service.sessions.handle(character, command_text)
-                return CommandResult(narrative=res.message, ok=res.ok)
         if raw_cmd_name == "q" and getattr(self, "builder_service", None):
             res = self.builder_service.normalize_command(character, ["q"])
             if res.ok:
@@ -1839,6 +1832,10 @@ class MudCommandEngine:
             choices = self.registry.resolve(raw_cmd_name)[1].split(":",1)[1].strip()
             return CommandResult(narrative=f"Which command did you mean? {choices}", ok=False)
         args = cmd_tokens[1:]
+        builder_passthrough = {"look", "l", "examine", "exa", "consider", "con", "diagnose", "target", "kill", "attack", "builder"}
+        if getattr(self, "builder_service", None) and self.builder_service.sessions.has(character) and raw_cmd_name not in {"say", "tell"} and raw_cmd_name not in builder_passthrough:
+            res = self.builder_service.sessions.handle(character, command_text)
+            return CommandResult(narrative=res.message, ok=res.ok)
         self._publish("command_received", character, command_text, raw_input=command_text, canonical_command=raw_cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""))
         
         print(f"[mud-command] Routing {raw_cmd_name} as {cmd_name} for {character.name}")
@@ -4008,10 +4005,6 @@ class MudCommandEngine:
             res = self.builder_service.search(character, " ".join(args)); return CommandResult(res.message, ok=res.ok)
         if cmd == "builder" and args and args[0].lower() == "testspawn" and len(args) > 1:
             res = self.builder_service.testspawn(character, args[1]); return CommandResult(res.message, ok=res.ok)
-        if cmd == "redit" and args:
-            self.builder_service.workspace = self.builder
-            res = self.builder_service.discover_editor_target(character, cmd, args)
-            return CommandResult(res.message, ok=res.ok)
         if cmd == "redit":
             if args:
                 ordered = sorted(drafts.get("rooms", {}).keys())
