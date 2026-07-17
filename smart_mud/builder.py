@@ -54,6 +54,82 @@ for _gathering_key in (
 ):
     DRAFT_FILES.setdefault(_gathering_key, f"{_gathering_key}.json")
 
+
+# Phase 15B.38 canonical Object Builder capability contract.
+OBJECT_BUILDER_SECTIONS = {
+    "identity": ("name", "keywords", "short_description", "long_description", "look_description", "extra_descriptions"),
+    "classification": ("item_type", "subtype", "category", "material", "quality", "rarity", "ownership", "binding"),
+    "economy": ("weight", "cost", "stack_size", "destroy_timer"),
+    "wear": ("wear_flags", "extra_flags", "slot_restrictions"),
+    "combat": ("weapon_type", "attack_type", "damage_dice", "speed", "range", "armor_values", "resistances"),
+    "container": ("capacity", "weight_capacity", "container_flags", "open", "closed", "locked", "lock_difficulty", "key_id", "transparent"),
+    "magic": ("spell_storage", "charges", "recharge", "passive_effects", "affects", "scripts"),
+    "light": ("fuel", "burn_time", "brightness"),
+    "food": ("nutrition", "poison", "decay"),
+    "drink": ("liquid_type", "servings", "poison"),
+    "crafting": ("ingredients", "resource_tags", "recipes", "gathering"),
+    "builder": ("builder_notes", "validation", "preview", "dependencies"),
+}
+OBJECT_NUMERIC_FIELDS = {"weight", "cost", "stack_size", "destroy_timer", "speed", "range", "capacity", "weight_capacity", "lock_difficulty", "charges", "recharge", "fuel", "burn_time", "brightness", "nutrition", "decay", "servings"}
+OBJECT_LIST_FIELDS = {"keywords", "extra_descriptions", "wear_flags", "extra_flags", "slot_restrictions", "resistances", "container_flags", "spell_storage", "passive_effects", "affects", "scripts", "ingredients", "resource_tags", "recipes", "gathering"}
+OBJECT_BOOL_FIELDS = {"open", "closed", "locked", "transparent", "poison"}
+OBJECT_TEXT_FIELDS = set().union(*OBJECT_BUILDER_SECTIONS.values()) - OBJECT_NUMERIC_FIELDS - OBJECT_LIST_FIELDS - OBJECT_BOOL_FIELDS
+
+def normalize_object_template(object_id: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
+    rec = deepcopy(data or {})
+    rec.setdefault("id", object_id)
+    rec.setdefault("name", object_id.replace("_", " ").title())
+    rec.setdefault("keywords", object_id.replace("_", " ").split())
+    rec.setdefault("short_description", rec.get("name"))
+    rec.setdefault("long_description", f"{rec.get('name')} is here.")
+    rec.setdefault("look_description", rec.get("long_description", ""))
+    rec.setdefault("item_type", rec.get("type", "misc"))
+    rec.setdefault("category", "object")
+    rec.setdefault("weight", 0)
+    rec.setdefault("cost", 0)
+    rec.setdefault("stack_size", 1)
+    rec.setdefault("wear_flags", [])
+    rec.setdefault("extra_flags", [])
+    rec.setdefault("builder_notes", "")
+    return rec
+
+def coerce_object_field(field: str, raw: Any) -> Any:
+    if field in OBJECT_NUMERIC_FIELDS:
+        try:
+            val = int(raw)
+        except Exception as exc:
+            raise ValueError(f"{field} must be a number") from exc
+        if val < 0:
+            raise ValueError(f"{field} cannot be negative")
+        return val
+    if field in OBJECT_BOOL_FIELDS:
+        if isinstance(raw, bool): return raw
+        text = str(raw).strip().lower()
+        if text in {"yes", "true", "on", "1"}: return True
+        if text in {"no", "false", "off", "0"}: return False
+        raise ValueError(f"{field} must be true/false")
+    if field in OBJECT_LIST_FIELDS:
+        if isinstance(raw, list): return raw
+        return [x.strip() for x in str(raw).replace(";", ",").split(",") if x.strip()]
+    return str(raw)
+
+def validate_object_template(rec: dict[str, Any]) -> list[dict[str, Any]]:
+    issues=[]; oid=str(rec.get("id") or "")
+    for fld in ("id", "name", "item_type"):
+        if not str(rec.get(fld) or "").strip(): issues.append({"severity":"error","field_path":fld,"message":f"{fld} is required.","object_id":oid})
+    for fld in OBJECT_NUMERIC_FIELDS:
+        if fld in rec:
+            try: val=int(rec.get(fld) or 0)
+            except Exception: issues.append({"severity":"error","field_path":fld,"message":f"{fld} must be numeric.","object_id":oid}); continue
+            if val < 0: issues.append({"severity":"error","field_path":fld,"message":f"{fld} cannot be negative.","object_id":oid})
+    kws=[str(x).lower() for x in rec.get("keywords") or []]
+    if len(kws) != len(set(kws)): issues.append({"severity":"warning","field_path":"keywords","message":"Duplicate keywords.","object_id":oid})
+    typ=str(rec.get("item_type") or "").lower()
+    if typ == "weapon" and not rec.get("damage_dice"): issues.append({"severity":"warning","field_path":"damage_dice","message":"Weapon has no damage dice.","object_id":oid})
+    if typ == "container" and not int(rec.get("capacity") or 0): issues.append({"severity":"warning","field_path":"capacity","message":"Container has no capacity.","object_id":oid})
+    if rec.get("locked") and not rec.get("key_id"): issues.append({"severity":"warning","field_path":"key_id","message":"Locked object has no key reference.","object_id":oid})
+    return issues
+
 @dataclass
 class BuilderResult:
     ok: bool
@@ -1290,6 +1366,53 @@ class BuilderService:
         finally:
             self.release_lock(actor, "entities", object_id)
 
+    def create_or_update_object(self, actor: Any, object_id: str, updates: dict[str, Any], action: str = "oedit") -> BuilderResult:
+        denied = self._check_permission(actor, "items", object_id, "mutate")
+        if denied: return denied
+        clean = normalize_object_template(object_id, self._record(self.workspace.world_id(actor), "items", object_id))
+        for field, value in updates.items():
+            try:
+                clean[field] = coerce_object_field(field, value)
+            except ValueError as exc:
+                return BuilderResult(False, str(exc), {"field": field})
+        issues = validate_object_template(clean)
+        errors = [x for x in issues if x.get("severity") == "error"]
+        if errors:
+            return BuilderResult(False, "Object validation failed:\n" + "\n".join(f"- {e['field_path']}: {e['message']}" for e in errors), {"issues": issues})
+        lock = self.acquire_lock(actor, "items", object_id)
+        if not lock.ok: return lock
+        try:
+            res = self.mutate(actor, "items", object_id, clean, action)
+            if res.ok:
+                self.workspace.publish("builder_object_template_updated", actor, self.workspace.world_id(actor), "item_template", object_id, command=action)
+                res.data = {**(res.data or clean), "issues": issues}
+            return res
+        finally:
+            self.release_lock(actor, "items", object_id)
+
+    def object_menu(self, actor: Any, object_id: str) -> BuilderResult:
+        rec = normalize_object_template(object_id, self._record(self.workspace.world_id(actor), "items", object_id))
+        issues = validate_object_template(rec)
+        lines = [f"Object Builder: {object_id}", "Grouped sections:"]
+        for name, fields in OBJECT_BUILDER_SECTIONS.items():
+            present = sum(1 for f in fields if rec.get(f) not in (None, "", [], {}))
+            lines.append(f"- {name.title()} ({present}/{len(fields)}): " + ", ".join(fields))
+        lines += ["", "Commands:", "  ocreate <id>", "  oedit <id>", "  oset <id> <field> <value>", "  opreview <id>", "  ovalidate <id>", "  owhere <id>", "  ofind <query>", "  oclone <source_id> <new_id>"]
+        if issues:
+            lines += ["", "Validation:"] + [f"- {i['severity']}: {i['field_path']} {i['message']}" for i in issues]
+        return BuilderResult(True, "\n".join(lines), {"record": rec, "issues": issues, "sections": OBJECT_BUILDER_SECTIONS})
+
+    def object_dependencies(self, actor: Any, object_id: str) -> BuilderResult:
+        world_id = self.workspace.world_id(actor); drafts = self.workspace.load(world_id); matches=[]
+        def scan(coll, label):
+            for rid, rec in (drafts.get(coll) or {}).items():
+                text=json.dumps(rec, sort_keys=True).lower() if isinstance(rec, dict) else str(rec).lower()
+                if object_id.lower() in text and rid != object_id:
+                    matches.append(f"{label} {rid}")
+        for coll,label in (("rooms","room"),("resets","reset"),("entities","npc equipment"),("spawns","spawn"),("quest_definitions","quest"),("recipe_definitions","crafting"),("abilities","script/ability")):
+            scan(coll,label)
+        return BuilderResult(True, "Object dependencies for %s:\n%s" % (object_id, "\n".join(matches) if matches else "- none"), {"matches": matches})
+
     def delete_mobile(self, actor: Any, object_id: str) -> BuilderResult:
         denied = self._check_permission(actor, "entities", object_id, "delete")
         if denied: return denied
@@ -1399,6 +1522,8 @@ class BuilderService:
         rec = self._record(self.workspace.world_id(actor), collection, object_id)
         issues=[]
         if not rec: issues.append({"severity":"error","code":"missing_object","collection":collection,"object_id":object_id,"field_path":"id","message":"Object not found.","fix_hint":"Create the draft first."})
+        if collection == "items" and rec:
+            issues.extend(validate_object_template(normalize_object_template(object_id, rec)))
         if collection == "entities" and rec:
             for fld in ("id","name"):
                 if not rec.get(fld): issues.append({"severity":"error","code":"required_field","collection":collection,"object_id":object_id,"field_path":fld,"message":f"{fld} is required.","fix_hint":f"Set {fld}."})
@@ -1420,6 +1545,10 @@ class BuilderService:
     def _preview_record(self, actor: Any, collection: str, object_id: str, rec: dict[str, Any]) -> BuilderResult:
         name = rec.get("name") or rec.get("title") or object_id; desc = rec.get("description") or rec.get("long_description") or "(no description)"
         lines = ["LOOK", str(name), str(desc), "", "EXAMINE", str(rec.get("examine_description") or desc), "", "CONSIDER", f"{name} appears to be level {rec.get('level', 1)}."]
+        if collection == "items":
+            projection = normalize_object_template(object_id, rec)
+            lines = ["LOOK OBJECT", str(name), str(rec.get("look_description") or desc), "", "INVENTORY", f"{name} x{rec.get('stack_size', 1)}", "", "EQUIPMENT", f"{name} ({', '.join(rec.get('wear_flags') or []) or 'not wearable'})", "", "SHOP DISPLAY", f"{name} - {rec.get('cost', 0)} coins", "", "GROUND DISPLAY", str(rec.get('long_description') or f'{name} is here.')]
+            return BuilderResult(True, "\n".join(lines), {"record": rec, "runtime_projection": projection})
         if collection == "entities":
             projection = MobileTemplate.from_legacy(rec).to_runtime_projection()
             weapons=((projection.get("combat_profile") or {}).get("natural_weapons") or [])

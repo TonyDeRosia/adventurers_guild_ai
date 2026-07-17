@@ -566,7 +566,7 @@ class MudCommandEngine:
 
         for _name in "senseprofilelist senseprofilestat senseprofilecreate senseprofileclone senseprofileset senseprofiledelete senseprofilevalidate perceptionprofilelist perceptionprofilestat perceptionprofilecreate perceptionprofileset perceptionprofiledelete perceptionprofilevalidate concealmentlist concealmentstat concealmentcreate concealmentset concealmentdelete concealmentvalidate searchprofilelist searchprofilestat searchprofilecreate searchprofileset searchprofiledelete searchprofilevalidate trackingprofilelist trackingprofilestat trackingprofilecreate trackingprofileset trackingprofiledelete trackingprofilevalidate soundprofilelist soundprofilestat soundprofilecreate soundprofileset soundprofiledelete soundprofilevalidate".split():
             self.command_handlers[_name] = self._cmd_perception
-        for _name in " undo redo find mclone oclone rclone rsave redit rstat rcreate rset rdesc rname rexits rfeature rdelete exedit excreate exset exdelete fedit fcreate fset fdesc fdelete oedit ocreate oset odesc odelete ostat medit mcreate mset mdesc mdelete mstat spawnedit spawncreate spawnset spawndelete spawnstat zstat astat wstat btarget rtarget target bsave wsave".split():
+        for _name in " undo redo find mclone oclone rclone rsave redit rstat rcreate rset rdesc rname rexits rfeature rdelete exedit excreate exset exdelete fedit fcreate fset fdesc fdelete oedit ocreate oset odesc odelete ostat opreview ovalidate owhere ofind medit mcreate mset mdesc mdelete mstat spawnedit spawncreate spawnset spawndelete spawnstat zstat astat wstat btarget rtarget target bsave wsave".split():
             if _name:
                 self.command_handlers[_name] = self._cmd_builder_edit
         for _name in ("rassign", "rmove", "rrenameid"):
@@ -4195,6 +4195,9 @@ class MudCommandEngine:
                 self.builder.publish("builder_edit_target_changed", character, world_id, "room", args[1], command=raw)
                 return CommandResult("Builder target set.\n" + self._builder_room_status(character, args[1], drafts))
             return CommandResult('Usage: btarget [room <room_id>|clear]', ok=False)
+        if cmd == "oedit" and args:
+            self.builder_service.workspace = self.builder
+            return out(self.builder_service.object_menu(character, args[0]))
         if cmd in {"medit", "oedit", "aedit", "zedit"} or (cmd == "redit" and args and str(args[0]).isdigit()):
             self.builder_service.workspace = self.builder
             res = self.builder_service.discover_editor_target(character, cmd, args)
@@ -4335,6 +4338,15 @@ Cancel:
                 if cmd.endswith("desc") and len(args)>=2: return out(self.builder_service.create_or_update_mobile(character, args[0], {"long_description": self._builder_value(raw,2), "description": self._builder_value(raw,2)}, cmd))
                 if cmd.endswith("delete") and args: return out(self.builder_service.delete_mobile(character, args[0]))
                 if cmd.endswith("stat") and args: return CommandResult(narrative=f"Draft {target_type}: {drafts.get(coll,{}).get(args[0],{})}")
+            if coll == "items":
+                if cmd in {"oedit", "ostat"} and args: return out(self.builder_service.object_menu(character, args[0]))
+                if cmd == "opreview" and args: return out(self.builder_service.preview(character, "items", args[0]))
+                if cmd == "ovalidate" and args: return out(self.builder_service.validate_object(character, "items", args[0]))
+                if cmd == "owhere" and args: return out(self.builder_service.object_dependencies(character, args[0]))
+                if cmd == "ofind": return out(self.builder_service.search(character, " ".join(args)))
+                if cmd.endswith("create") and args: return out(self.builder_service.create_or_update_object(character, args[0], {"id": args[0]}, cmd))
+                if cmd.endswith("set") and len(args)>=3: return out(self.builder_service.create_or_update_object(character, args[0], {args[1]: self._builder_value(raw,3)}, cmd))
+                if cmd.endswith("desc") and len(args)>=2: return out(self.builder_service.create_or_update_object(character, args[0], {"long_description": self._builder_value(raw,2), "look_description": self._builder_value(raw,2)}, cmd))
             if cmd.endswith("create") and args:
                 updates={"name": args[0]}
                 if coll=="spawns" and len(args)>1: updates["entity_template_id"]=args[1]; updates.setdefault("room_id", room_id)
