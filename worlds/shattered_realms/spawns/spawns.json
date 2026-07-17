@@ -1,0 +1,274 @@
+{
+  "spawns": [
+    {
+      "id": "emberwood_spawn_10_forest_wolf_emberwood_hunting_trail",
+      "world_id": "shattered_realms",
+      "reset_profile_id": "emberwood_forest_population",
+      "zone_id": "emberwood_forest",
+      "entity_template_id": "forest_wolf",
+      "room_id": "emberwood_hunting_trail",
+      "quantity": 1,
+      "maximum_count": 1,
+      "maximum_scope": "room",
+      "spawn_policy": "maintain_population",
+      "flags": [
+        "emberwood_forest_reset"
+      ],
+      "tags": [
+        "canonical_reset_spawn"
+      ]
+    },
+    {
+      "id": "emberwood_spawn_11_emberwood_fox_emberwood_edge",
+      "world_id": "shattered_realms",
+      "reset_profile_id": "emberwood_forest_population",
+      "zone_id": "emberwood_forest",
+      "entity_template_id": "emberwood_fox",
+      "room_id": "emberwood_edge",
+      "quantity": 1,
+      "maximum_count": 1,
+      "maximum_scope": "room",
+      "spawn_policy": "maintain_population",
+      "flags": [
+        "emberwood_forest_reset"
+      ],
+      "tags": [
+        "canonical_reset_spawn"
+      ]
+    },
+    {
+      "id": "emberwood_spawn_12_forest_wolf_emberwood_game_trail",
+      "world_id": "shattered_realms",
+      "reset_profile_id": "emberwood_forest_population",
+      "zone_id": "emberwood_forest",
+      "entity_template_id": "forest_wolf",
+      "room_id": "emberwood_game_trail",
+      "quantity": 1,
+      "maximum_count": 1,
+      "maximum_scope": "room",
+      "spawn_policy": "maintain_population",
+      "flags": [
+        "emberwood_forest_reset"
+      ],
+      "tags": [
+        "canonical_reset_spawn"
+      ]
+    },
+    {
+      "id": "emberwood_spawn_13_forest_wolf_forest_trail",
+      "world_id": "shattered_realms",
+      "reset_profile_id": "emberwood_forest_population",
+      "zone_id": "emberwood_forest",
+      "entity_template_id": "forest_wolf",
+      "room_id": "forest_trail",
+      "quantity": 1,
+      "maximum_count": 1,
+      "maximum_scope": "room",
+      "spawn_policy": "maintain_population",
+      "flags": [
+        "emberwood_forest_reset"
+      ],
+      "tags": [
+        "canonical_reset_spawn"
+      ]
+    },
+    {
+      "id": "emberwood_spawn_14_emberwood_fox_fern_hollow",
+      "world_id": "shattered_realms",
+      "reset_profile_id": "emberwood_forest_population",
+      "zone_id": "emberwood_forest",
+      "entity_template_id": "emberwood_fox",
+      "room_id": "fern_hollow",
+      "quantity": 1,
+      "maximum_count": 1,
+      "maximum_scope": "room",
+      "spawn_policy": "maintain_population",
+      "flags": [
+        "emberwood_forest_reset"
+      ],
+      "tags": [
+        "canonical_reset_spawn"
+      ]
+    },
+    {
+      "id": "emberwood_spawn_15_emberwood_stag_mossy_creek",
+      "world_id": "shattered_realms",
+      "reset_profile_id": "emberwood_forest_population",
+      "zone_id": "emberwood_forest",
+      "entity_template_id": "emberwood_stag",
+      "room_id": "mossy_creek",
+      "quantity": 1,
+      "maximum_count": 1,
+      "maximum_scope": "room",
+      "spawn_policy": "maintain_population",
+      "flags": [
+        "emberwood_forest_reset"
+      ],
+      "tags": [
+        "canonical_reset_spawn"
+      ]
+    },
+    {
+      "id": "emberwood_spawn_16_wild_boar_fallen_oak",
+      "world_id": "shattered_realms",
+      "reset_profile_id": "emberwood_forest_population",
+      "zone_id": "emberwood_forest",
+      "entity_template_id": "wild_boar",
+      "room_id": "fallen_oak",
+      "quantity": 1,
+      "maximum_count": 1,
+      "maximum_scope": "room",
+      "spawn_policy": "maintain_population",
+      "flags": [
+        "emberwood_forest_reset"
+      ],
+      "tags": [
+        "canonical_reset_spawn"
+      ]
+    },
+    {
+      "id": "emberwood_spawn_17_wild_boar_briar_thicket",
+      "world_id": "shattered_realms",
+      "reset_profile_id": "emberwood_forest_population",
+      "zone_id": "emberwood_forest",
+      "entity_template_id": "wild_boar",
+      "room_id": "briar_thicket",
+      "quantity": 1,
+      "maximum_count": 1,
+      "maximum_scope": "room",
+      "spawn_policy": "maintain_population",
+      "flags": [
+        "emberwood_forest_reset"
+      ],
+      "tags": [
+        "canonical_reset_spawn"
+      ]
+    },
+    {
+      "id": "emberwood_spawn_18_emberwood_fox_fox_burrow",
+      "world_id": "shattered_realms",
+      "reset_profile_id": "emberwood_forest_population",
+      "zone_id": "emberwood_forest",
+      "entity_template_id": "emberwood_fox",
+      "room_id": "fox_burrow",
+      "quantity": 1,
+      "maximum_count": 1,
+      "maximum_scope": "room",
+      "spawn_policy": "maintain_population",
+      "flags": [
+        "emberwood_forest_reset"
+      ],
+      "tags": [
+        "canonical_reset_spawn"
+      ]
+    },
+    {
+      "id": "emberwood_spawn_19_forest_wolf_wolf_trail",
+      "world_id": "shattered_realms",
+      "reset_profile_id": "emberwood_forest_population",
+      "zone_id": "emberwood_forest",
+      "entity_template_id": "forest_wolf",
+      "room_id": "wolf_trail",
+      "quantity": 2,
+      "maximum_count": 2,
+      "maximum_scope": "room",
+      "spawn_policy": "maintain_population",
+      "flags": [
+        "emberwood_forest_reset"
+      ],
+      "tags": [
+        "canonical_reset_spawn"
+      ]
+    },
+    {
+      "id": "emberwood_spawn_20_dire_forest_wolf_deep_emberwood",
+      "world_id": "shattered_realms",
+      "reset_profile_id": "emberwood_forest_population",
+      "zone_id": "emberwood_forest",
+      "entity_template_id": "dire_forest_wolf",
+      "room_id": "deep_emberwood",
+      "quantity": 1,
+      "maximum_count": 2,
+      "maximum_scope": "zone",
+      "spawn_policy": "maintain_population",
+      "flags": [
+        "emberwood_forest_reset"
+      ],
+      "tags": [
+        "canonical_reset_spawn"
+      ]
+    },
+    {
+      "id": "emberwood_spawn_21_giant_wood_spider_spider_glade",
+      "world_id": "shattered_realms",
+      "reset_profile_id": "emberwood_forest_population",
+      "zone_id": "emberwood_forest",
+      "entity_template_id": "giant_wood_spider",
+      "room_id": "spider_glade",
+      "quantity": 2,
+      "maximum_count": 2,
+      "maximum_scope": "room",
+      "spawn_policy": "maintain_population",
+      "flags": [
+        "emberwood_forest_reset"
+      ],
+      "tags": [
+        "canonical_reset_spawn"
+      ]
+    },
+    {
+      "id": "emberwood_spawn_22_forest_wolf_wolf_den",
+      "world_id": "shattered_realms",
+      "reset_profile_id": "emberwood_forest_population",
+      "zone_id": "emberwood_forest",
+      "entity_template_id": "forest_wolf",
+      "room_id": "wolf_den",
+      "quantity": 2,
+      "maximum_count": 2,
+      "maximum_scope": "room",
+      "spawn_policy": "maintain_population",
+      "flags": [
+        "emberwood_forest_reset"
+      ],
+      "tags": [
+        "canonical_reset_spawn"
+      ]
+    },
+    {
+      "id": "emberwood_spawn_23_dire_forest_wolf_wolf_den",
+      "world_id": "shattered_realms",
+      "reset_profile_id": "emberwood_forest_population",
+      "zone_id": "emberwood_forest",
+      "entity_template_id": "dire_forest_wolf",
+      "room_id": "wolf_den",
+      "quantity": 1,
+      "maximum_count": 2,
+      "maximum_scope": "zone",
+      "spawn_policy": "maintain_population",
+      "flags": [
+        "emberwood_forest_reset"
+      ],
+      "tags": [
+        "canonical_reset_spawn"
+      ]
+    },
+    {
+      "id": "emberwood_spawn_24_ashback_bear_ancient_ember_grove",
+      "world_id": "shattered_realms",
+      "reset_profile_id": "emberwood_forest_population",
+      "zone_id": "emberwood_forest",
+      "entity_template_id": "ashback_bear",
+      "room_id": "ancient_ember_grove",
+      "quantity": 1,
+      "maximum_count": 1,
+      "maximum_scope": "zone",
+      "spawn_policy": "maintain_population",
+      "flags": [
+        "emberwood_forest_reset"
+      ],
+      "tags": [
+        "canonical_reset_spawn"
+      ]
+    }
+  ]
+}

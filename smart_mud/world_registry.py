@@ -300,6 +300,7 @@ class WorldRegistry:
             if field not in manifest:
                 errors.append(f"Manifest missing required field: {field}")
         rooms = by_id(_records(root, "rooms")); npcs = by_id(_records(root, "npcs")); items = by_id(_records(root, "items"))
+        spawns_raw = _records(root, "spawns"); spawns = by_id(spawns_raw); zones = by_id(_records(root, "zones")); areas = by_id(_records(root, "areas"))
         quests = by_id(_records(root, "quests")); classes = by_id(_records(root, "classes")); abilities = by_id(_records(root, "abilities"))
         races = by_id(_records(root, "races")); spells = by_id(_records(root, "spells")); skills = by_id(_records(root, "skills"))
         for label, records in (("room", rooms), ("NPC", npcs), ("item", items), ("quest", quests), ("class", classes), ("race", races)):
@@ -308,6 +309,26 @@ class WorldRegistry:
         start_room = manifest.get("default_starting_room")
         if start_room and str(start_room) not in rooms:
             errors.append(f"Default starting room references missing room: {start_room}")
+        spawn_ids = [str(x.get("id") or "") for x in spawns_raw if isinstance(x, dict)]
+        if len(spawn_ids) != len(set(spawn_ids)):
+            errors.append("Duplicate spawn ID in canonical spawns")
+        for spawn in spawns_raw:
+            sid = str(spawn.get("id") or "")
+            if not sid:
+                errors.append("A spawn record is missing an id")
+            tid = str(spawn.get("entity_template_id") or spawn.get("template_id") or "")
+            rid = str(spawn.get("room_id") or "")
+            zid = str(spawn.get("zone_id") or "")
+            aid = str(spawn.get("area_id") or "")
+            if tid and tid not in npcs:
+                errors.append(f"Spawn {sid} references missing entity template: {tid}")
+            if rid and rid not in rooms:
+                errors.append(f"Spawn {sid} references missing room: {rid}")
+            if zid and zid not in zones:
+                errors.append(f"Spawn {sid} references missing zone: {zid}")
+            if aid and aid not in areas:
+                errors.append(f"Spawn {sid} references missing area: {aid}")
+
         for room in rooms.values():
             for exit_data in room.get("exits", []) or []:
                 target = exit_data.get("to") or exit_data.get("room_id") or exit_data.get("target")

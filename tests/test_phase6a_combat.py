@@ -44,6 +44,34 @@ def test_natural_attack_body_profile_and_resistance():
     assert result.damage_event.final_damage == 4
 
 
+def test_authored_natural_weapon_identity_and_weighted_selection():
+    mods = ModifierRegistry()
+    mods.register(Modifier.create("accuracy", "override", 100, id="acc"))
+    mods.register(Modifier.create("defense_rating", "override", 0, id="def"))
+    bear = actor("bear", "Bear")
+    bear.combat_profile["natural_weapons"] = [
+        {"id": "bear_claw", "mechanical_family": "claw", "noun_plural": "claws", "verb_third_person": "claws", "selection_weight": 60, "damage_type": "slash", "base_damage": 2},
+        {"id": "bear_bite", "mechanical_family": "bite", "noun_plural": "teeth", "verb_third_person": "bites", "selection_weight": 25, "damage_type": "pierce", "base_damage": 2},
+        {"id": "bear_maul", "mechanical_family": "crush", "noun_plural": "maul", "verb_third_person": "mauls", "selection_weight": 15, "damage_type": "blunt", "base_damage": 2},
+    ]
+    engine = CombatEngine(FormulaEngine(modifiers=mods), seed="weighted")
+    seen = {}
+    messages = []
+    for tick in range(300):
+        engine.tick = tick
+        target = actor(f"target{tick}", "Target", hp=999)
+        result = engine.resolve_attack(bear, target)
+        wid = result.damage_event.weapon["id"]
+        seen[wid] = seen.get(wid, 0) + 1
+        messages.append(result.messages["victim"])
+    assert set(seen) == {"bear_claw", "bear_bite", "bear_maul"}
+    assert seen["bear_claw"] > seen["bear_bite"] > seen["bear_maul"]
+    assert any("claws you with its claws" in m for m in messages)
+    assert any("bites you with its teeth" in m for m in messages)
+    assert any("mauls you with its maul" in m for m in messages)
+    assert not any("punch" in m or "fist" in m for m in messages)
+
+
 def test_damage_api_death_handoff_corpse_and_respawn_queue(tmp_path):
     life = ActorLifecycleManager(tmp_path / "life.db", "world")
     mods = ModifierRegistry(); mods.register(Modifier.create("accuracy", "override", 100, id="acc")); mods.register(Modifier.create("attack_power", "override", 99, id="pow"))

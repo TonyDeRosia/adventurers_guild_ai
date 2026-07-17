@@ -559,15 +559,24 @@ class AbilityExecutionService:
         ab=self.registry.abilities.get(ability_id); pdata=(ab.plugin_data or {}) if ab else {}
         return str(pdata.get("success_message") or (ab.messages or {}).get("complete_self") or "").strip()
     def get_actor_abilities(self, actor_id: str) -> list[dict[str, Any]]:
-        grants = self._grants(actor_id)
+        lookup_ids = [str(actor_id)]
+        if str(actor_id).startswith("character:"):
+            lookup_ids.append(str(actor_id).split(":", 1)[1])
+        elif str(actor_id):
+            lookup_ids.append("character:" + str(actor_id))
+        grants = []
         progression=[]
         if self.db_path:
             try:
                 with sqlite3.connect(self.db_path) as c:
                     c.row_factory=sqlite3.Row
-                    progression=[dict(r) for r in c.execute("SELECT ability_id,rank,maximum_rank,proficiency,metadata_json FROM actor_ability_progression WHERE actor_id=? AND active=1", (actor_id,))]
+                    for lookup_id in dict.fromkeys(lookup_ids):
+                        grants.extend(self._grants(lookup_id))
+                        progression.extend([dict(r) for r in c.execute("SELECT ability_id,rank,maximum_rank,proficiency,metadata_json FROM actor_ability_progression WHERE actor_id=? AND active=1", (lookup_id,))])
             except Exception:
-                progression=[]
+                grants=[]; progression=[]
+        else:
+            grants = self._grants(actor_id)
         ids={g["ability_id"] for g in grants} | {p["ability_id"] for p in progression} | set(getattr(self.actors.get(actor_id), "plugin_data", {}).get("ability_ids", []) or [])
         out=[]
         for i in sorted(ids):

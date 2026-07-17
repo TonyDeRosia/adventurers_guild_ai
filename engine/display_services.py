@@ -435,12 +435,28 @@ class AbilityDisplaySnapshotService:
         svc=self.execution_service; actor_id=str(_field(character,"id","character_id", default=""))
         if hasattr(svc, "actor_from_character"): svc.actor_from_character(character)
         rows = svc.get_actor_abilities(actor_id) if svc else []
+        # Some entry paths materialize a prefixed live actor while learned
+        # player abilities are persisted under the canonical character id.
+        # Never fabricate display rows, but do fall back to the durable
+        # character id when the live actor projection is empty.
+        if not rows and actor_id.startswith("character:"):
+            rows = svc.get_actor_abilities(actor_id.split(":", 1)[1]) if svc else []
+        skill_kinds = {"skill", "proficiency", "trade_skill", "combat_skill", "technique"}
+        spell_kinds = {"spell", "magic", "prayer", "power"}
+        passive_kinds = {"passive"}
         out=[]
         for row in rows:
-            kind=str(row.get("ability_type") or "ability")
-            if family == "skills" and kind == "spell": continue
-            if family == "spells" and kind != "spell": continue
+            kind=str(row.get("ability_type") or row.get("kind") or "ability").lower()
             aid=str(row.get("id") or row.get("ability_id") or "")
+            if not aid or aid not in getattr(getattr(svc, "registry", None), "abilities", {}):
+                continue
+            definition = svc.registry.abilities[aid]
+            if not getattr(definition, "enabled", True):
+                continue
+            kind=str(getattr(definition, "ability_type", kind) or kind).lower()
+            if family == "skills" and kind not in skill_kinds: continue
+            if family == "spells" and kind not in spell_kinds: continue
+            if family == "abilities" and kind not in (skill_kinds | spell_kinds | passive_kinds | {"heal", "buff", "debuff", "utility", "defensive", "movement"}): continue
             validation = svc.validate_ability_use(actor_id, aid, target=None, preview=True) if hasattr(svc,"validate_ability_use") else svc.trace_ability(actor_id, aid, None)
             state = validation.get("availability") or ("READY" if validation.get("ok") else "UNKNOWN")
             out.append(AbilityDisplaySnapshot(ability_id=aid, display_name=str(row.get("name") or aid.replace("_"," ").title()), ability_kind=kind, category=str(row.get("category") or row.get("school") or "General"), rank=int(row.get("proficiency") or row.get("rank") or 1), maximum_rank=int(row.get("maximum_proficiency") or row.get("maximum_rank") or 100), description=str(row.get("description") or ""), resource_costs=tuple(row.get("costs") or ()), cooldown_remaining=validation.get("cooldown_remaining_text"), target_mode=str((row.get("targeting") or {}).get("mode") or "self"), availability=state.lower(), availability_reason_code=str(validation.get("reason_code") or state).lower(), availability_text=str(validation.get("message") or state.replace("_", " ").title()), passive=(kind == "passive"), usage_syntax=str(row.get("usage") or f"use {aid}")))

@@ -695,6 +695,14 @@ class MudRuntime:
         self.hooks = HookRegistry()
         self.active_world_id: Optional[str] = None
         self.active_world: Any = None
+        self.active_content_generation_id: str | None = None
+        self.active_content_generation: dict[str, Any] | None = None
+        self.previous_content_generation_id: str | None = None
+        self.generation_loaded_at: str = ""
+        self.generation_status: str = "unloaded"
+        self.generation_revision: int = 0
+        self.builder_test_rooms: dict[str, dict[str, Any]] = {}
+        self.builder_test_environments: dict[str, dict[str, Any]] = {}
         self.item_templates: dict[str, MappingProxyType] = {}
         self.entity_templates: dict[str, MappingProxyType] = {}
         self.sessions: dict[str, MudSession] = {}
@@ -723,6 +731,8 @@ class MudRuntime:
         self.abilities = None
         self.builder = BuilderWorkspace(event_bus=self.event_bus)
         self.command_engine.runtime = self
+        if hasattr(self.command_engine, "builder_service"):
+            self.command_engine.builder_service.attach_runtime(self)
         self.presentation_preferences = PlayerPresentationPreferenceService(self.state_store.db_path)
         self._progression_service_singleton = None
         self._progression_service_key = None
@@ -1520,10 +1530,14 @@ class MudRuntime:
         live = self._live_room_data(rid)
         if live is not None:
             return live, "live"
+        if rid in self.builder_test_rooms:
+            return dict(self.builder_test_rooms[rid]), "builder_test"
         return None, "missing"
 
     def room_from_id(self, room_id: str, viewer: Any = None) -> MudRoom:
         data, _source = self.runtime_room_data(viewer if isinstance(viewer, MudCharacter) else MudCharacter(id="_entity_viewer", name="Entity", role="player", room_id=str(room_id or "")), room_id)
+        if data is None and str(room_id or "") in self.builder_test_rooms:
+            data = dict(self.builder_test_rooms[str(room_id or "")])
         if data is None:
             return MudRoom(id=str(room_id or "void"), area_id="", title="Missing Room", description=f"Current room '{room_id}' is invalid.", exits=[])
         rid = str(data.get("id", room_id))
@@ -1708,6 +1722,8 @@ class MudRuntime:
         char = self._resident_character(character_id)
         if char is None:
             raise ValueError(f"Character not found: {character_id}")
+        if self.active_world_id == "shattered_realms":
+            self._ensure_starter_progression(char)
         self.active_characters[character_id] = char
         trace["session_lookup"] = time.monotonic(); trace["resident_character_lookup"] = trace["session_lookup"]; trace["routing_started"] = time.monotonic(); trace["command_routing_started"] = trace["routing_started"]; self._current_command_trace = trace
         from engine.mud_commands import CommandResult
@@ -1745,6 +1761,22 @@ class MudRuntime:
         if getattr(result, "display_document", None) is not None:
             color_enabled = not bool(getattr(char, "preferences", {}).get("no_color"))
             result.narrative = render_display_mud(result.display_document, color_enabled=color_enabled)
+        # Durable starter abilities are persisted in actor_ability_progression.
+        # If a stale runtime display snapshot renders the empty skills/spells
+        # frame during command handling, rebuild the player display from the
+        # canonical command engine without fabricating grants or changing the
+        # display contract.
+        if ((command.strip().lower() in {"skills", "spells", "abilities"} and "You know no " in str(result.narrative))
+                or (command.strip().lower().startswith(("cast ", "use ", "invoke ", "perform ", "set ", "build ")) and (str(result.narrative).strip().lower() == "unknown ability." or " is a help topic, not a command" in str(result.narrative)))):
+            refresh_command = command
+            lowered_refresh = command.strip().lower()
+            if lowered_refresh in {"set camp", "build campfire"}:
+                refresh_command = "use " + lowered_refresh
+            refreshed = self.command_engine.handle_command(char, refresh_command)
+            if getattr(refreshed, "display_document", None) is not None:
+                refreshed.narrative = render_display_mud(refreshed.display_document, color_enabled=not bool(getattr(char, "preferences", {}).get("no_color")))
+            if "You know no " not in str(refreshed.narrative) and str(refreshed.narrative).strip().lower() != "unknown ability.":
+                result = refreshed
         mutation = self.classify_command_mutation(command, result)
         if mutation != "read_only":
             reason = mutation.replace("_mutation", "").replace("location", "movement")
@@ -2235,8 +2267,12 @@ class MudRuntime:
         if ent is not None:
             ent["room_id"] = destination; ent["current_room_id"] = destination
             self.resident_entities_by_actor_id[actor_id] = dict(ent)
+            eid = actor_id.split(":", 1)[1]
+            if getattr(self, "state_store", None) is not None and getattr(self.state_store, "db_path", None):
+                with sqlite3.connect(self.state_store.db_path) as conn:
+                    conn.execute("UPDATE entity_instances SET current_room_id=?, owner_type='room', updated_at=? WHERE entity_id=? AND destroyed_at IS NULL", (destination, datetime.now(timezone.utc).isoformat(), eid))
             if hasattr(self.combat_runtime, "dirty_resident_entities"):
-                self.combat_runtime.dirty_resident_entities.add(actor_id.split(":", 1)[1])
+                self.combat_runtime.dirty_resident_entities.add(eid)
         self.add_occupant(destination, actor_id)
         if old_room and old_room != destination:
             direction = str(movement_context.get("direction") or source or "away")
@@ -2806,12 +2842,12 @@ class MudRuntime:
             with sqlite3.connect(db) as conn:
                 conn.row_factory = sqlite3.Row
                 for r in conn.execute("SELECT * FROM campsite_instances WHERE room_id=? AND status IN ('active','occupied','abandoned') AND (expires_world_time IS NULL OR expires_world_time>(SELECT ((current_day-1)*1440+current_hour*60+current_minute) FROM world_time WHERE world_id=campsite_instances.world_id))", (room_id,)):
-                    out.append({"id": r["campsite_instance_id"], "name": "a small campsite", "keywords": ["campsite", "camp", "small campsite"], "entity_type": "campsite", "short_description": "A small campsite has been established here.", "long_description": "Bedroll space and a cleared patch of ground mark this as a simple campsite."})
+                    out.append({"id": (r["campsite_instance_id"] if hasattr(r, "keys") else r[0]), "name": "a small campsite", "keywords": ["campsite", "camp", "small campsite"], "entity_type": "campsite", "short_description": "A small campsite has been established here.", "long_description": "Bedroll space and a cleared patch of ground mark this as a simple campsite."})
                 for r in conn.execute("SELECT * FROM campfire_instances WHERE room_id=? AND status IN ('unlit','lit','extinguished','low_fuel') AND (expires_world_time IS NULL OR expires_world_time>(SELECT ((current_day-1)*1440+current_hour*60+current_minute) FROM world_time WHERE world_id=campfire_instances.world_id))", (room_id,)):
-                    status = str(r["status"] or "unlit")
+                    status = str((r["status"] if hasattr(r, "keys") else r[4]) or "unlit")
                     label = "a lit campfire" if status == "lit" else "a bed of cold ashes" if status == "extinguished" else "an unlit campfire"
                     desc = "Warm flames crackle from a small ring of stones." if status == "lit" else "Cold ash and charred wood sit within a small ring of stones." if status == "extinguished" else "Kindling and stacked wood wait within a small ring of stones."
-                    out.append({"id": r["campfire_instance_id"], "name": label, "keywords": ["campfire", "fire", label], "entity_type": "campfire", "status": status, "short_description": label, "long_description": desc})
+                    out.append({"id": (r["campfire_instance_id"] if hasattr(r, "keys") else r[0]), "name": label, "keywords": ["campfire", "fire", label], "entity_type": "campfire", "status": status, "short_description": label, "long_description": desc})
         except sqlite3.Error:
             return out
         return out
@@ -3207,6 +3243,73 @@ class MudRuntime:
             rows = conn.execute(f"SELECT entity_id,world_id,entity_type,template_id,name,keywords,short_description,long_description,current_room_id,owner_type,owner_id,faction_id,level,state,flags,created_at,updated_at,plugin_data FROM entity_instances WHERE destroyed_at IS NULL AND {where} ORDER BY entity_type, created_at, entity_id", params).fetchall()
         return [self._entity_payload(self._reconcile_entity_presentation(r)) for r in rows]
 
+    def ensure_builder_test_room(self, owner: Any) -> str:
+        owner_id = str(getattr(owner, "id", "builder"))
+        room_id = f"builder_test_{owner_id}"
+        self.builder_test_rooms[room_id] = {
+            "id": room_id,
+            "title": "Private Builder Test Room",
+            "name": "Private Builder Test Room",
+            "description": "An isolated, ephemeral runtime room for Builder proofing. No public exits lead here.",
+            "exits": {},
+            "private_owner_character_id": owner_id,
+            "private_owner_account_id": str(getattr(owner, "account_id", "")),
+            "generation_id": self.active_content_generation_id,
+            "ephemeral": True,
+        }
+        self.resident_occupants_by_room.setdefault(self.canonical_room_id(room_id), OrderedDict())
+        env = self.builder_test_environments.setdefault(owner_id, {"room_ids": [], "actor_ids": [], "entity_ids": [], "corpse_ids": [], "encounter_ids": []})
+        if room_id not in env["room_ids"]:
+            env["room_ids"].append(room_id)
+        return room_id
+
+    def materialize_entity_template(self, template: dict[str, Any], room_id: str, ephemeral: bool = False, owner: Any = None, generation_id: str | None = None) -> dict[str, Any]:
+        tid = str(template.get("id") or template.get("template_id") or f"template_{uuid.uuid4().hex}")
+        previous = self.entity_templates.get(tid)
+        tmpl = dict(template)
+        tmpl.setdefault("id", tid)
+        tmpl.setdefault("entity_type", tmpl.get("type") if tmpl.get("type") in {"npc", "mob"} else "mob")
+        tmpl.setdefault("keywords", [tid] + [w for w in re.findall(r"[a-z0-9_']+", str(tmpl.get("name") or tid).lower())])
+        tmpl.setdefault("combat_policy", {"attackable": True})
+        tmpl.setdefault("flags", list(dict.fromkeys(list(tmpl.get("flags") or []) + ["attackable"])))
+        self.entity_templates[tid] = MappingProxyType(tmpl)
+        now = datetime.now(timezone.utc).isoformat(); eid = f"ephemeral_{uuid.uuid4().hex}" if ephemeral else f"ent_{uuid.uuid4().hex}"
+        state = {"current_state": "idle", "is_alive": True, "current_health": int(tmpl.get("max_health") or (tmpl.get("stats") or {}).get("max_health") or 100), "maximum_health": int(tmpl.get("max_health") or (tmpl.get("stats") or {}).get("max_health") or 100), "lifecycle_id": f"life_{uuid.uuid4().hex}", "ephemeral": ephemeral}
+        ent = {"entity_id": eid, "instance_id": eid, "world_id": self.active_world_id or str(tmpl.get("world_id") or ""), "entity_type": tmpl.get("entity_type", "mob"), "template_id": tid, "template_generation_id": generation_id, "name": tmpl.get("name", tid), "keywords": tmpl.get("keywords", [tid]), "short_description": tmpl.get("room_description", tmpl.get("short_description", tmpl.get("name", tid))), "long_description": tmpl.get("look_description", tmpl.get("description", tmpl.get("name", tid))), "look_description": tmpl.get("look_description", tmpl.get("description", tmpl.get("name", tid))), "examine_description": tmpl.get("examine_description", tmpl.get("look_description", tmpl.get("description", tmpl.get("name", tid)))), "current_room_id": self.canonical_room_id(room_id), "room_id": self.canonical_room_id(room_id), "owner_type": "builder_test" if ephemeral else "room", "owner_id": str(getattr(owner, "id", "")), "level": int(tmpl.get("level", 1) or 1), "state": state, "flags": tmpl.get("flags", []), "plugin_data": {"ephemeral": ephemeral, "template_projection": tmpl}, "current_state": "idle", "current_health": state["current_health"], "is_alive": True, "ephemeral": ephemeral}
+        self.register_resident_entity_actor(ent)
+        aid = self.actor_id_for_entity_instance(ent)
+        actor = self.combat_runtime.resident_actors.get(aid)
+        if actor:
+            actor.template_id = tid; actor.template = tmpl; actor.combat_profile.update(tmpl.get("combat_profile") or {}); actor.body_profile_id = str(tmpl.get("body_profile_id") or (tmpl.get("combat_profile") or {}).get("body_profile") or actor.body_profile_id); actor.generation_id = generation_id; actor.ephemeral = ephemeral
+        if ephemeral:
+            oid = str(getattr(owner, "id", "")); env = self.builder_test_environments.setdefault(oid, {"room_ids": [], "actor_ids": [], "entity_ids": [], "corpse_ids": [], "encounter_ids": []})
+            env.setdefault("actor_ids", []).append(aid); env.setdefault("entity_ids", []).append(eid)
+            if previous is None:
+                # keep the ephemeral template only until cleanup
+                env.setdefault("template_ids", []).append(tid)
+        return ent
+
+    def clear_builder_test_environment(self, owner: Any) -> dict[str, Any]:
+        owner_id = str(getattr(owner, "id", "")); env = self.builder_test_environments.pop(owner_id, {"room_ids": [], "actor_ids": [], "entity_ids": []})
+        removed = 0
+        for aid in list(env.get("actor_ids", [])):
+            ent = self._entity_for_resident_actor(aid) or {}
+            self.remove_occupant(ent.get("room_id") or ent.get("current_room_id"), aid)
+            self.combat_runtime.remove_resident_actor(aid)
+            self.actor_id_to_entity_instance_id.pop(aid, None)
+            self.resident_entities_by_actor_id.pop(aid, None)
+            removed += 1
+        for eid in list(env.get("entity_ids", [])):
+            self.entity_instance_to_actor_id.pop(eid, None)
+        for room_id in list(env.get("room_ids", [])):
+            self.resident_occupants_by_room.pop(self.canonical_room_id(room_id), None)
+            self.builder_test_rooms.pop(room_id, None)
+        if hasattr(self.combat_runtime, "resident_encounters"):
+            for eid, enc in list(self.combat_runtime.resident_encounters.items()):
+                if any(pid in set(env.get("actor_ids", [])) for pid in getattr(enc, "participants", {})):
+                    self.combat_runtime.end_encounter(eid, "builder_testclear")
+        return {"actors": removed, "rooms": len(env.get("room_ids", [])), "durable_rows": 0}
+
     def spawn_entity(self, template_id: str, entity_type: str | None = None, room_id: str | None = None, owner_type: str = "room", owner_id: str = "", state: dict[str, Any] | None = None, flags: list[str] | None = None, source_system: str = "runtime", **ctx: Any) -> dict[str, Any]:
         tmpl = dict(self.entity_templates.get(template_id, {}))
         etype = entity_type or tmpl.get("entity_type") or "object"
@@ -3403,6 +3506,17 @@ class MudRuntime:
         return ent
 
     def update_entity_state(self, entity_id: str, state: dict[str, Any], source_system: str = "runtime", **ctx: Any) -> dict[str, Any]:
+        aid = self.entity_instance_to_actor_id.get(str(entity_id))
+        if aid and aid in self.resident_entities_by_actor_id and str(entity_id).startswith("ephemeral_"):
+            ent = dict(self.resident_entities_by_actor_id[aid])
+            ent["state"] = dict(state)
+            ent["current_health"] = int(state.get("current_health", ent.get("current_health", 0)) or 0)
+            ent["current_state"] = state.get("current_state", ent.get("current_state", "idle"))
+            ent["is_alive"] = bool(state.get("is_alive", ent["current_health"] > 0 and ent["current_state"] not in {"dead", "corpse", "despawned"}))
+            if not ent["is_alive"]:
+                self.remove_occupant(ent.get("room_id") or ent.get("current_room_id"), aid)
+            self.resident_entities_by_actor_id[aid] = ent
+            self._publish_entity_event("entity_state_changed", ent, source_system=source_system, **ctx); return ent
         now = datetime.now(timezone.utc).isoformat()
         with sqlite3.connect(self.state_store.db_path) as conn: conn.execute("UPDATE entity_instances SET state=?, updated_at=? WHERE entity_id=? AND destroyed_at IS NULL", (json.dumps(state), now, entity_id))
         ent = self.find_entity(entity_id) or {}
@@ -3471,12 +3585,12 @@ class MudRuntime:
 
     def _live_entity_spawns(self) -> dict[str, dict[str, Any]]:
         spawns: dict[str, dict[str, Any]] = {}
-        canonical_keys: set[tuple[str, str, int]] = set()
+        canonical_keys: set[tuple[str, str]] = set()
         for raw in getattr(self.active_world, "spawns", []) or []:
             if isinstance(raw, dict) and raw.get("id"):
                 rec = dict(raw)
                 spawns[str(raw["id"])] = rec
-                canonical_keys.add((str(rec.get("room_id") or ""), str(rec.get("entity_template_id") or rec.get("template_id") or ""), int(rec.get("quantity") or 1)))
+                canonical_keys.add((str(rec.get("room_id") or ""), str(rec.get("entity_template_id") or rec.get("template_id") or "")))
         legacy_sources: list[tuple[str, str, str]] = []
         for room in getattr(self.active_world, "rooms", []) or []:
             rid = str(room.get("id") or "")
@@ -3490,11 +3604,30 @@ class MudRuntime:
         for rid, tid, source in legacy_sources:
             if not rid or tid not in self.entity_templates:
                 continue
-            if (rid, tid, 1) in canonical_keys:
+            if (rid, tid) in canonical_keys:
                 continue
             sid = self._legacy_spawn_id(rid, tid)
             spawns.setdefault(sid, {"id": sid, "entity_template_id": tid, "room_id": rid, "zone_id": "", "quantity": 1, "spawn_policy": "once", "flags": ["legacy_room_npc" if source == "room.npcs" else "legacy_default_room"], "tags": [], "plugin_data": {"legacy_source": {"source_file": "rooms/rooms.json" if source == "room.npcs" else "npcs", "source_room_id": rid, "source_field": source, "normalized": True}}})
         return spawns
+
+    def activate_content_generation(self, generation_id: str, registries: dict[str, Any]) -> None:
+        previous = self.active_content_generation_id
+        self.previous_content_generation_id = previous
+        self.active_content_generation_id = generation_id
+        self.active_content_generation = registries
+        self.generation_loaded_at = datetime.now(timezone.utc).isoformat()
+        self.generation_status = "active"
+        self.generation_revision += 1
+        if "entities" in registries:
+            self.entity_templates = {str(k): MappingProxyType(dict(v, id=str(k))) for k, v in registries.get("entities", {}).items() if isinstance(v, dict)}
+        if self.active_world is not None:
+            for attr, key in (("rooms", "rooms"), ("spawns", "spawns"), ("zones", "zones"), ("areas", "areas")):
+                vals = registries.get(key)
+                if isinstance(vals, dict) and hasattr(self.active_world, attr):
+                    try:
+                        setattr(self.active_world, attr, [dict(v, id=str(k)) for k, v in vals.items() if isinstance(v, dict)])
+                    except Exception:
+                        pass
 
     def materialize_entity_spawn(self, spawn_id: str) -> dict[str, Any]:
         row=self._materialization_row("entity_spawn", spawn_id)

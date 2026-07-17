@@ -253,7 +253,22 @@ class CombatEngine:
             return AttackProfile(id=str(natural_data.get("id","natural")), name=str(natural_data.get("name", "natural attack")), damage_type=str(natural_data.get("damage_type","physical")), base_damage=_num(natural_data.get("base_damage",1),1), speed=max(1,_num(natural_data.get("speed",1),1)), reach=_num(natural_data.get("reach",1),1), critical_multiplier=float(natural_data.get("critical_multiplier", 2.0)), source="natural", metadata={"weapon": natural_data.get("weapon", {}), "body_profile": self.body_profiles.get(actor.body_profile_id).id, "attack_profile": natural_data.get("attack_profile_record", {}), "damage_profile": natural_data.get("damage_profile_record", {}), "critical_profile": natural_data.get("critical_profile_record", {})})
         natural = (actor.combat_profile or {}).get("natural_weapons") or []
         if natural:
-            n = natural[0]; return AttackProfile(id=str(n.get("id","natural")), name=str(n.get("name", n.get("slot", "natural attack"))), damage_type=str(n.get("damage_type","physical")), base_damage=_num(n.get("base_damage",1),1), speed=max(1,_num(n.get("speed",1),1)), reach=_num(n.get("reach",1),1), source="natural", metadata={"body_profile": self.body_profiles.get(actor.body_profile_id).id, "anatomy": n.get("slot")})
+            choices = [n for n in natural if isinstance(n, dict) and _num(n.get("selection_weight", n.get("weight", 1)), 1) > 0]
+            total = sum(_num(n.get("selection_weight", n.get("weight", 1)), 1) for n in choices) or 1
+            roll = self.roller.roll_percent(actor.actor_id, self.tick, "natural_weapon") % total
+            acc = 0; n = choices[0] if choices else natural[0]
+            for candidate in choices:
+                acc += _num(candidate.get("selection_weight", candidate.get("weight", 1)), 1)
+                if roll < acc:
+                    n = candidate; break
+            family = str(n.get("mechanical_family") or n.get("family") or n.get("name") or n.get("slot") or "natural").lower()
+            base_damage = _num(n.get("base_damage", n.get("minimum_damage", 1)), 1)
+            weapon_meta = dict(n)
+            weapon_meta.setdefault("mechanical_family", family)
+            weapon_meta.setdefault("attack_verb", n.get("verb_third_person") or n.get("verb") or family)
+            weapon_meta.setdefault("attack_noun", n.get("noun_plural") or n.get("noun") or family)
+            bp = self.body_profiles.get(actor.body_profile_id)
+            return AttackProfile(id=str(n.get("id","natural")), name=family, damage_type=str(n.get("damage_type","physical")), base_damage=base_damage, speed=max(1,_num(n.get("speed",1),1)), reach=_num(n.get("reach",1),1), source="natural", metadata={"weapon": weapon_meta, "body_profile": getattr(bp, "id", actor.body_profile_id), "anatomy": n.get("slot"), "natural_weapon": weapon_meta})
         return AttackProfile()
 
     def consider(self, attacker: Actor, defender: Actor) -> str:
@@ -266,27 +281,35 @@ class CombatEngine:
     def _messages(self, a: Actor, d: Actor, outcome: str, e: DamageEvent | None) -> dict[str, str]:
         profile = ((e.attack_profile if e else {}) or {})
         weapon_rec = ((e.weapon if e else {}) or {})
-        family = str(profile.get("name") or weapon_rec.get("name") or "fist").lower().replace(" ", "_")
-        aliases = {"unarmed":"fist","unarmed_strike":"fist","natural_attack":"bite","claws":"claw","fangs":"bite","tusks":"gore","maul":"crush","blunt":"bludgeon"}
+        authored_verb = str(weapon_rec.get("verb_third_person") or weapon_rec.get("attack_verb") or "").strip()
+        authored_base = str(weapon_rec.get("verb_base") or "").strip()
+        authored_noun = str(weapon_rec.get("noun_plural") or weapon_rec.get("attack_noun") or "").strip()
+        family = str(weapon_rec.get("mechanical_family") or profile.get("name") or weapon_rec.get("name") or "fist").lower().replace(" ", "_")
+        aliases = {"unarmed":"fist","unarmed_strike":"fist","natural_attack":"bite","blunt":"bludgeon"}
         family = aliases.get(family, family)
         if family not in {"bite","claw","gore","crush","sting","slash","pierce","bludgeon","fist"}: family = "bite" if family in {"fang","fang_strike"} else family
         verbs = {"bite":("bite","bites"),"claw":("claw","claws"),"gore":("gore","gores"),"crush":("crush","crushes"),"sting":("sting","stings"),"slash":("slash","slashes"),"pierce":("pierce","pierces"),"bludgeon":("hit","hits"),"fist":("punch","punches")}
         base, third = verbs.get(family, ("hit","hits"))
+        if authored_verb:
+            third = authored_verb
+        if authored_base:
+            base = authored_base
+        display_noun = authored_noun or family
         aname, dname = a.identity.name, d.identity.name
         if outcome == "miss":
             return {"attacker":f"You try to {base} {dname}, but miss.","victim":f"{aname} tries to {base} you, but misses.","observers":f"{aname} tries to {base} {dname}, but misses."}
         dmg = max(0, e.final_damage if e else 0); maxhp=max(1,int(getattr(d.resources,"maximum_health",1) or 1)); rel=dmg/maxhp
         if dmg <= 0:
-            return {"attacker":f"Your {family} does no damage to {dname}.","victim":f"{aname}'s {family} does no damage to you.","observers":f"{aname}'s {family} does no damage to {dname}."}
+            return {"attacker":f"Your {display_noun} does no damage to {dname}.","victim":f"{aname}'s {display_noun} does no damage to you.","observers":f"{aname}'s {display_noun} does no damage to {dname}."}
         sev = "barely" if rel < .05 else "lightly" if rel < .12 else "" if rel < .25 else "hard" if rel < .45 else "very hard" if rel < .70 else "extremely hard"
         crit = bool(e and e.critical); lead = "ANNIHILATES" if crit else (third if not sev else f"{third} {sev}")
         bang = "!" if crit or rel >= .45 else "."
         if crit:
-            return {"attacker":f"You {lead} {dname} with your {family}{bang}","victim":f"{aname} {lead} you with its {family}{bang}","observers":f"{aname} {lead} {dname} with its {family}{bang}"}
+            return {"attacker":f"You {lead} {dname} with your {display_noun}{bang}","victim":f"{aname} {lead} you with its {display_noun}{bang}","observers":f"{aname} {lead} {dname} with its {display_noun}{bang}"}
         tail = (" " + sev) if sev else ""
         if family == "fist":
             return {"attacker":f"You {base} {dname}{tail}{bang}","victim":f"{aname} {third} you{tail}{bang}","observers":f"{aname} {third} {dname}{tail}{bang}"}
-        return {"attacker":f"You {base} {dname} with your {family}{tail}{bang}","victim":f"{aname} {third} you with its {family}{tail}{bang}","observers":f"{aname} {third} {dname} with its {family}{tail}{bang}"}
+        return {"attacker":f"You {base} {dname} with your {display_noun}{tail}{bang}","victim":f"{aname} {third} you with its {display_noun}{tail}{bang}","observers":f"{aname} {third} {dname} with its {display_noun}{tail}{bang}"}
 
 
 class CombatResolutionService:

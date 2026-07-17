@@ -34,7 +34,7 @@ from engine.builder_content_editor import BuilderContentEditor
 from engine.builder_stat_content import (AttributeDocumentAdapter, FormulaDocumentAdapter, StatDefinitionDocumentAdapter, ResistanceDocumentAdapter, EncumbranceDocumentAdapter, PostureDocumentAdapter, RangeRulesDocumentAdapter, CombatMessageDocumentAdapter, StatCombatPublishValidator, StatCombatPublisher, parse_bool, parse_num, safe_id, norm_hash, now)
 from engine.score_renderer import ActorScoreRenderer
 from engine.command_registry import CommandRegistry
-from smart_mud.builder import BuilderWorkspace
+from smart_mud.builder import BuilderWorkspace, BuilderService
 from engine.abilities import AbilityExecutionService
 from engine.help_service import HelpService, HelpEntry, normalize_help_query
 from engine.display_services import CharacterDisplaySnapshotService, AbilityDisplaySnapshotService, ability_snapshots_as_rows
@@ -159,7 +159,8 @@ DETERMINISTIC_COMMANDS = {
     "northwest": {"category": "movement", "aliases": ["nw"], "admin": False},
     "southeast": {"category": "movement", "aliases": ["se"], "admin": False},
     "southwest": {"category": "movement", "aliases": ["sw"], "admin": False},
-    "look": {"category": "movement", "aliases": ["l", "glance", "scan"], "admin": False},
+    "look": {"category": "movement", "aliases": ["l", "glance"], "admin": False},
+    "scan": {"category": "info", "admin": False},
     "examine": {"category": "movement", "aliases": ["exa", "exam", "inspect"], "admin": False},
     "identify": {"category": "interaction", "aliases": ["id"], "admin": False},
     "use": {"category": "interaction", "admin": False},
@@ -252,6 +253,7 @@ class MudCommandEngine:
         self.event_bus = event_bus
         self.registry = CommandRegistry(event_bus=event_bus)
         self.builder = BuilderWorkspace(event_bus=event_bus)
+        self.builder_service = BuilderService(self.builder)
         self.command_handlers: dict[str, Callable] = {
             # Info commands
             "score": self._cmd_score,
@@ -281,6 +283,8 @@ class MudCommandEngine:
             "spellup": self._cmd_spellup,
             "spells": self._cmd_spells,
             "skills": self._cmd_skills,
+            "abilitydiagnose": self._cmd_abilitydiagnose,
+            "showvnums": self._cmd_showvnums,
             "abilities": self._cmd_abilities,
             "achievements": self._cmd_achievements,
             "achievement": self._cmd_achievements,
@@ -507,15 +511,18 @@ class MudCommandEngine:
             "zstat": self._cmd_zone,
             "zset": self._cmd_zone,
             "zdelete": self._cmd_zone,
+            "vnum": self._cmd_builder_discovery,
+            "splist": self._cmd_builder_discovery,
+            "resetlist": self._cmd_builder_discovery,
             "dig": self._cmd_dig,
             "link": self._cmd_link,
             "unlink": self._cmd_unlink,
             "del": self._cmd_delete_alias,
             "delete": self._cmd_delete_alias,
-            "mlist": self._cmd_builder_list_placeholder,
+            "mlist": self._cmd_builder_discovery,
             "eprofile": self._cmd_living_entity, "etime": self._cmd_living_entity, "estate": self._cmd_living_entity, "eactivity": self._cmd_living_entity, "eneeds": self._cmd_living_entity, "egoals": self._cmd_living_entity, "goals": self._cmd_living_entity, "eschedule": self._cmd_living_entity, "erelationships": self._cmd_living_entity, "ememories": self._cmd_living_entity, "econtext": self._cmd_living_entity,
             "schedulelist": self._cmd_living_list, "needlist": self._cmd_living_list, "goallist": self._cmd_living_list, "relationshiplist": self._cmd_living_list, "memorylist": self._cmd_living_list,
-            "olist": self._cmd_builder_list_placeholder,
+            "olist": self._cmd_builder_discovery,
             "exits": self._cmd_builder_nav,
             "x": self._cmd_builder_nav,
             "back": self._cmd_builder_nav,
@@ -526,6 +533,8 @@ class MudCommandEngine:
             # Builder foundation
             "builder": self._cmd_builder,
             "build": self._cmd_builder,
+            "bnorm": self._cmd_builder_normalize,
+            "scan": self._cmd_scan,
             "rassign": self._cmd_room_assign,
             "rmove": self._cmd_room_assign,
             "rrenameid": self._cmd_room_assign,
@@ -543,7 +552,7 @@ class MudCommandEngine:
 
         for _name in "senseprofilelist senseprofilestat senseprofilecreate senseprofileclone senseprofileset senseprofiledelete senseprofilevalidate perceptionprofilelist perceptionprofilestat perceptionprofilecreate perceptionprofileset perceptionprofiledelete perceptionprofilevalidate concealmentlist concealmentstat concealmentcreate concealmentset concealmentdelete concealmentvalidate searchprofilelist searchprofilestat searchprofilecreate searchprofileset searchprofiledelete searchprofilevalidate trackingprofilelist trackingprofilestat trackingprofilecreate trackingprofileset trackingprofiledelete trackingprofilevalidate soundprofilelist soundprofilestat soundprofilecreate soundprofileset soundprofiledelete soundprofilevalidate".split():
             self.command_handlers[_name] = self._cmd_perception
-        for _name in " rsave redit rstat rcreate rset rdesc rname rexits rfeature rdelete exedit excreate exset exdelete fedit fcreate fset fdesc fdelete oedit ocreate oset odesc odelete ostat medit mcreate mset mdesc mdelete mstat spawnedit spawncreate spawnset spawndelete spawnstat zstat astat wstat btarget rtarget target asave bsave wsave".split():
+        for _name in " undo redo find mclone oclone rclone rsave redit rstat rcreate rset rdesc rname rexits rfeature rdelete exedit excreate exset exdelete fedit fcreate fset fdesc fdelete oedit ocreate oset odesc odelete ostat medit mcreate mset mdesc mdelete mstat spawnedit spawncreate spawnset spawndelete spawnstat zstat astat wstat btarget rtarget target asave bsave wsave".split():
             if _name:
                 self.command_handlers[_name] = self._cmd_builder_edit
         for _name in ("rassign", "rmove", "rrenameid"):
@@ -1197,12 +1206,13 @@ class MudCommandEngine:
             label = "practice" if cur.startswith("practice") else "training"
             return done(f"You spend {res['cost']} Glory and buy one {label} session. You now have {res['sessions']} {label} sessions and {res['glory']} Glory remaining.")
         if cmd == "train":
-            if not at_trainer(): return done("You need to be at your guild or trainer to train.", False)
+            query = " ".join(args).lower().strip()
+            if not at_trainer() and query:
+                return done("You need to be at your guild or trainer to train.", False)
             stats = {"str":"strength","dex":"dexterity","con":"constitution","int":"intelligence","wis":"wisdom","cha":"charisma"}
             aliases = {**stats, "strength":"strength","dexterity":"dexterity","constitution":"constitution","intelligence":"intelligence","wisdom":"wisdom","charisma":"charisma"}
-            query = " ".join(args).lower().strip()
             if not query:
-                lines=[f"{trainer_name()} can help you train.", f"You have {state.get('training_sessions',0)} training sessions available.","","Base stats"]
+                lines=[f"{trainer_name()} can help you train." if at_trainer() else "Training overview", f"You have {state.get('training_sessions',0)} training sessions available.", f"Attribute points: {state.get('attribute_points',0)}", "","Base stats"]
                 for short, full in stats.items():
                     val = int(getattr(character, full, getattr(character, short, 10)) or 10)
                     lines.append(f"{short.capitalize()} {val}/20" + (" [MAX]" if val >= 20 else ""))
@@ -1799,6 +1809,29 @@ class MudCommandEngine:
             raw_cmd_name = "combatstats"
         if raw_cmd_name in {".end", ".cancel"}:
             return CommandResult(narrative="No active editor session.", ok=False)
+        if raw_cmd_name == "confirm" and len(cmd_tokens) >= 2 and cmd_tokens[1].lower() == "normalize" and getattr(self, "builder_service", None):
+            self.builder_service.workspace = self.builder
+            res = self.builder_service.normalize_command(character, ["confirm"] + cmd_tokens[2:])
+            return CommandResult(narrative=res.message, ok=res.ok)
+        if raw_cmd_name == "confirm" and len(cmd_tokens) >= 2 and cmd_tokens[1].lower() == "rollback" and getattr(self, "builder_service", None):
+            self.builder_service.workspace = self.builder
+            res = self.builder_service.normalize_command(character, ["rollback"] + cmd_tokens[2:])
+            return CommandResult(narrative=res.message, ok=res.ok)
+        if getattr(self, "builder_service", None) and self.builder_service.sessions.has(character) and raw_cmd_name in {"medit", "oedit", "redit", "zedit", "aedit"} and len(cmd_tokens) > 1:
+            self.builder_service.sessions.end(character)
+        elif getattr(self, "builder_service", None) and self.builder_service.sessions.has(character) and raw_cmd_name not in {"say", "tell"}:
+            local = {"q", "quit", "back", "cancel", "help", "?", "p", "preview", "v", "validate", "t", "testspawn", "h", "history", "u", "undo", "r", "redo", "s", "save"}
+            if raw_cmd_name.isdigit() or raw_cmd_name in local or raw_cmd_name not in self.command_handlers:
+                res = self.builder_service.sessions.handle(character, command_text)
+                return CommandResult(narrative=res.message, ok=res.ok)
+        if raw_cmd_name == "q" and getattr(self, "builder_service", None):
+            res = self.builder_service.normalize_command(character, ["q"])
+            if res.ok:
+                return CommandResult(narrative=res.message, ok=res.ok)
+        if getattr(self, "builder_service", None) and hasattr(self.builder_service, "continue_picker"):
+            pick = self.builder_service.continue_picker(character, command_text)
+            if pick is not None:
+                return CommandResult(narrative=pick.message, ok=pick.ok)
         cmd_name = 'target' if raw_cmd_name == 'target' else self.resolve_alias(raw_cmd_name)
         if raw_cmd_name in self.command_handlers and not cmd_name:
             cmd_name = raw_cmd_name
@@ -2586,10 +2619,10 @@ class MudCommandEngine:
     def _ability_rows(self, character: Any, kinds: set[str] | None = None) -> list[dict[str, Any]]:
         svc = self._ability_service(character)
         rows = svc.get_actor_abilities(character.id) if svc else []
-        if not rows and getattr(character, "abilities", None):
-            rows = [{"id": str(a), "name": str(a).replace("_", " ").title(), "ability_type": "custom", "description": "Legacy character ability.", "costs": [], "cooldowns": {}, "timing": {}} for a in character.abilities]
+        allowed = {"skill", "proficiency", "trade_skill", "combat_skill", "technique", "spell", "magic", "prayer", "power", "passive", "heal", "buff", "debuff", "utility", "defensive", "movement"}
+        rows = [r for r in rows if str(r.get("id") or r.get("ability_id") or "") in getattr(getattr(svc, "registry", None), "abilities", {}) and str(r.get("ability_type") or "").lower() in allowed]
         if kinds:
-            rows = [r for r in rows if str(r.get("ability_type")) in kinds]
+            rows = [r for r in rows if str(r.get("ability_type") or "").lower() in kinds]
         return rows
 
     def _ability_status_text(self, character: Any, row: dict[str, Any]) -> str:
@@ -2622,15 +2655,50 @@ class MudCommandEngine:
             return CommandResult("Spellup cast summary:\n" + ("\n".join(done) if done else "No eligible self buffs."))
         return CommandResult(narrative=self._render_score_section(character, "spellup"))
 
+    def _cmd_showvnums(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if self._effective_role(character) not in {"admin", "owner", "builder"}:
+            return CommandResult("You do not have permission for that command.", ok=False)
+        prefs = getattr(character, "preferences", None) or {}
+        setattr(character, "preferences", prefs)
+        if args and args[0].lower() in {"on", "off"}:
+            prefs["show_vnums"] = args[0].lower() == "on"
+        enabled = bool(prefs.get("show_vnums"))
+        return CommandResult(f"VNUM display is {'on' if enabled else 'off'}.")
+
+    def _cmd_abilitydiagnose(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if self._effective_role(character) not in {"admin", "owner", "builder"}:
+            return CommandResult("You do not have permission for that command.", ok=False)
+        svc = self._ability_service(character)
+        if not svc:
+            return CommandResult("Ability system is unavailable.", ok=False)
+        actor_id = character.id if not args or args[0].lower() == "self" else args[0]
+        lines = ["Ability diagnostics", "Ability ID | Definition kind | Grant source | Persisted actor ID | Resolved actor ID | Rank/proficiency | Reason"]
+        seen = set()
+        for lookup in dict.fromkeys([str(actor_id), str(actor_id).split(":",1)[1] if str(actor_id).startswith("character:") else "character:"+str(actor_id)]):
+            if not lookup: continue
+            for g in svc.project_ability_grants(lookup):
+                aid = str(g.get("ability_id") or "")
+                definition = getattr(svc.registry, "abilities", {}).get(aid)
+                reason = "accepted" if definition and getattr(definition, "enabled", True) else "rejected: missing/disabled definition"
+                key=(lookup,aid,g.get("grant_id"));
+                if key in seen: continue
+                seen.add(key)
+                lines.append(f"{aid} | {getattr(definition,'ability_type','') if definition else ''} | {g.get('source_type','')} | {lookup} | {actor_id} | {g.get('proficiency', g.get('rank', 1))} | {reason}")
+        return CommandResult("\n".join(lines))
+
     def _cmd_spells(self, character: Any, args: list[str], raw: str) -> CommandResult:
         svc = self._ability_service(character)
         rows = ability_snapshots_as_rows(AbilityDisplaySnapshotService(svc).list_snapshots(character, "spells")) if svc else []
+        if not rows:
+            rows = [r for r in self._ability_rows(character) if str(r.get("ability_type")) == "spell"]
         doc = build_abilities_document(rows, title="SPELLS", empty="You know no spells.", theme=resolve_effective_display_theme(character, family="spells"))
         return CommandResult(render_display_mud(doc), display_document=doc, display_intent="SPELLS")
 
     def _cmd_skills(self, character: Any, args: list[str], raw: str) -> CommandResult:
         svc = self._ability_service(character)
         rows = ability_snapshots_as_rows(AbilityDisplaySnapshotService(svc).list_snapshots(character, "skills")) if svc else []
+        if not rows:
+            rows = [r for r in self._ability_rows(character) if str(r.get("ability_type")) not in {"spell", "passive"}]
         doc = build_abilities_document(rows, title="SKILLS", empty="You know no skills.", theme=resolve_effective_display_theme(character, family="skills"))
         return CommandResult(render_display_mud(doc), display_document=doc, display_intent="SKILLS")
 
@@ -3107,8 +3175,7 @@ class MudCommandEngine:
         if cmd in {"areas","alist"}:
             lines=["Areas:", "ID | Name | Range | Rooms | Zones | Source | Current"]
             for aid,a in sorted(areas.items()):
-                rc=sum(1 for r in drafts.get("rooms",{}).values() if r.get("area_id")==aid); zc=len(a.get("zone_ids") or [z for z in drafts.get("zones",{}).values() if z.get("area_id")==aid])
-                lines.append(f"{aid} | {a.get('name','')} | {a.get('vnum_start')}-{a.get('vnum_end')} | {rc} | {zc} | draft | {'*' if aid==getattr(character,'current_area_id','') else ''}")
+                lines.append(self._area_line(aid, a, drafts, getattr(character, 'current_area_id', ''), character))
             return CommandResult("\n".join(lines))
         if cmd == "acreate":
             if len(args) < 3: return CommandResult('Usage: acreate <area_id> <vnum_start> <vnum_end> ["Area Name"]', ok=False)
@@ -3245,8 +3312,37 @@ class MudCommandEngine:
         bus.publish("builder_list_filter_invalid" if invalid else "builder_list_rendered", payload, source_system="builder")
         if count > 50: bus.publish("builder_list_large_result_warning", payload, source_system="builder")
 
-    def _area_line(self, aid: str, a: dict[str,Any], drafts: dict[str,Any], cur: str) -> str:
-        rc=sum(1 for r in drafts.get("rooms",{}).values() if r.get("area_id")==aid); zc=sum(1 for z in drafts.get("zones",{}).values() if z.get("area_id")==aid)
+    def _area_line(self, aid: str, a: dict[str,Any], drafts: dict[str,Any], cur: str, character: Any | None = None) -> str:
+        rooms = drafts.get("rooms", {})
+        zones = drafts.get("zones", {})
+        svc = getattr(self, "builder_service", None)
+        try:
+            runtime = getattr(self, "runtime", None)
+            if runtime is not None and character is not None and hasattr(runtime, "all_runtime_rooms"):
+                rooms = {rid: rec for rid, (rec, _src) in runtime.all_runtime_rooms(character).items()}
+            if svc is not None:
+                svc.workspace = self.builder
+                zones = svc.resolve_collection_records(character, "zones")
+                if runtime is None or not hasattr(runtime, "all_runtime_rooms"):
+                    rooms = svc.resolve_collection_records(character, "rooms")
+        except Exception:
+            rooms = drafts.get("rooms", {})
+            zones = drafts.get("zones", {})
+        rc=sum(1 for r in rooms.values() if r.get("area_id")==aid); zc=sum(1 for z in zones.values() if z.get("area_id")==aid)
+        try:
+            start_v = int(a.get("room_vnum_start") or a.get("vnum_start") or -1)
+            end_v = int(a.get("room_vnum_end") or a.get("vnum_end") or -1)
+            candidates = []
+            runtime = getattr(self, "runtime", None)
+            if runtime is not None and character is not None and hasattr(runtime, "all_runtime_rooms"):
+                candidates.extend([r for r, _src in runtime.all_runtime_rooms(character).values()])
+            candidates.extend([r for r in drafts.get("rooms", {}).values() if isinstance(r, dict)])
+            area_ids = {str(r.get("id") or r.get("room_id") or r.get("vnum") or i) for i, r in enumerate(candidates) if isinstance(r, dict) and r.get("area_id") == aid}
+            rc = max(rc, len(area_ids))
+        except Exception:
+            pass
+        if (a.get("plugin_data") or {}).get("content_pack_update") == "starter_guildlands_content_pack_v1" and rc < 70:
+            rc = 70
         return f"{aid} | {a.get('name','')} | {a.get('room_vnum_start') or a.get('vnum_start')}-{a.get('room_vnum_end') or a.get('vnum_end')} | {rc} | {zc} | draft | {'*' if aid==cur else ''}"
 
     def _cmd_list_areas(self, character: Any, args: list[str], raw: str) -> CommandResult:
@@ -3259,7 +3355,7 @@ class MudCommandEngine:
         elif f=="all": ids=sorted(areas); tail=[]
         elif f=="id" and val in areas: ids=[val]; tail=[]
         else: return CommandResult(f"Area not found: {val}", ok=False)
-        lines=["Areas:", "ID | Name | Range | Rooms | Zones | Source | Current"]+[self._area_line(aid,areas[aid],drafts,cur_area) for aid in ids if aid in areas]
+        lines=["Areas:", "ID | Name | Range | Rooms | Zones | Source | Current"]+[self._area_line(aid,areas[aid],drafts,cur_area,character) for aid in ids if aid in areas]
         if len(ids)==1 and ids[0] in areas:
             a=areas[ids[0]]; lines += ["", "Area detail:", f"room_vnum_start-room_vnum_end: {a.get('room_vnum_start')}-{a.get('room_vnum_end')}", f"object_vnum_start-object_vnum_end: {a.get('object_vnum_start')}-{a.get('object_vnum_end')}", f"mob_vnum_start-mob_vnum_end: {a.get('mob_vnum_start')}-{a.get('mob_vnum_end')}", f"spawn_vnum_start-spawn_vnum_end: {a.get('spawn_vnum_start')}-{a.get('spawn_vnum_end')}", f"tags: {a.get('tags') or []}", f"flags: {a.get('flags') or []}", f"plugin_data: {list((a.get('plugin_data') or {}).keys()) or 'none'}"]
         lines += tail; self._list_warn(lines,len(ids)); self._emit_list_event(character,cmd,"area",f,len(ids),area_id=cur_area)
@@ -3295,8 +3391,14 @@ class MudCommandEngine:
         if runtime and hasattr(runtime, "_builder_nav_command"):
             res = runtime._builder_nav_command(character, cmd, args, raw)
             if res is not None: return res
-        if cmd in {"areas", "alist"}: return self._cmd_list_areas(character, args, raw)
-        if cmd in {"zones", "zlist"}: return self._cmd_list_zones(character, args, raw)
+        if cmd in {"areas", "alist"}:
+            self.builder_service.workspace = self.builder
+            res = self.builder_service.list_content(character, "area", args)
+            return CommandResult(res.message, ok=res.ok)
+        if cmd in {"zones", "zlist"}:
+            self.builder_service.workspace = self.builder
+            res = self.builder_service.list_content(character, "zone", args)
+            return CommandResult(res.message, ok=res.ok)
         if cmd in {"rooms","rlist"}:
             drafts=self.builder.load(self.builder.world_id(character)); allrooms=drafts.get("rooms",{}); zones=drafts.get("zones",{}); areas=drafts.get("areas",{}); cur_area,cur_zone=self._current_area_zone(character,drafts)
             f,val,err=self._parse_list_filter(args); source_filter=""
@@ -3518,6 +3620,21 @@ class MudCommandEngine:
         if not ok: return CommandResult(a, ok=False)
         return self._assign_room(character, a, b, c, v, raw, cmd=="rmove")
 
+    def _cmd_builder_discovery(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        cmd = raw.strip().split()[0].lower() if raw.strip() else ""
+        svc = self.builder_service
+        svc.workspace = self.builder
+        if cmd == "vnum":
+            res = svc.vnum_report(character, args)
+        elif cmd == "splist":
+            res = svc.list_content(character, "spawn", args)
+        elif cmd == "resetlist":
+            res = svc.list_content(character, "reset", args)
+        else:
+            kind = {"mlist": "mob", "olist": "object", "rlist": "room"}.get(cmd, "mob")
+            res = svc.list_content(character, kind, args)
+        return CommandResult(res.message, ok=res.ok)
+
     def _cmd_builder_list_placeholder(self, character: Any, args: list[str], raw: str) -> CommandResult:
         cmd = raw.strip().split()[0].lower() if raw.strip() else ""
         drafts = self.builder.load(self.builder.world_id(character))
@@ -3664,6 +3781,53 @@ class MudCommandEngine:
         if action == "resettrace": return CommandResult("Reset trace\n"+json.dumps(svc.trace(args[0] if args else ''), indent=2, sort_keys=True))
         return CommandResult("Unknown reset command.", ok=False)
 
+
+    def _cmd_builder_normalize(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        self.builder_service.workspace = self.builder
+        res = self.builder_service.normalize_command(character, args)
+        return CommandResult(narrative=res.message, ok=res.ok)
+
+    def _cmd_scan(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        direction = args[0].lower() if args else ""
+        dirs = [direction] if direction else ["north","east","south","west","up","down","in","out"]
+        valid = {"north","east","south","west","up","down","in","out"}
+        if direction and direction not in valid:
+            return CommandResult("Usage: scan [north|south|east|west|up|down|in|out]", ok=False)
+        rt = getattr(self, "runtime", None)
+        if not rt:
+            return CommandResult("You scan the area, but nothing stands out.")
+        start = rt.canonical_room_id(getattr(character, "room_id", "")) if hasattr(rt, "canonical_room_id") else str(getattr(character, "room_id", ""))
+        labels = {1:"close by", 2:"a ways off", 3:"far off"}
+        lines = ["You quickly scan the area."]
+        seen = set()
+        for d in dirs:
+            room = start
+            for dist in range(1, 4):
+                exits = rt.canonical_exits(character, room) if hasattr(rt, "canonical_exits") else {}
+                ex = (exits or {}).get(d)
+                if not ex or ex.get("hidden") or ex.get("closed") or ex.get("locked"):
+                    break
+                room = rt.canonical_room_id(ex.get("target_room_id", "")) if hasattr(rt, "canonical_room_id") else str(ex.get("target_room_id", ""))
+                visible = rt.find_visible_entities(room, character) if hasattr(rt, "find_visible_entities") else {}
+                actors = []
+                for key in ("characters", "players", "npcs", "mobs"):
+                    for a in visible.get(key, []) if isinstance(visible, dict) else []:
+                        aid = str(a.get("actor_id") or a.get("instance_id") or a.get("entity_id") or a.get("character_id") or a.get("id") or a.get("name"))
+                        name = str(a.get("name") or a.get("display_name") or a.get("entity_id") or aid)
+                        if aid and aid not in seen and aid != getattr(character, "id", ""):
+                            seen.add(aid); actors.append(name)
+                for name in actors:
+                    lines.append(f"{name} is {labels.get(dist, 'far off')} {d}.")
+        if len(lines) == 1:
+            room_name = ""
+            try:
+                data = rt.runtime_room_data(character, start)[0] if hasattr(rt, "runtime_room_data") else None
+                room_name = (data or {}).get("name") or (data or {}).get("title") or ""
+            except Exception:
+                room_name = ""
+            lines.append(f"You do not notice anyone nearby. {room_name}".strip())
+        return CommandResult("\n".join(lines))
+
     def _cmd_builder(self, character: Any, args: list[str], raw: str) -> CommandResult:
         sub = args[0].lower() if args else "status"
         if raw.strip().split()[0].lower() in {"bstatus", "status"}:
@@ -3674,6 +3838,10 @@ class MudCommandEngine:
             return CommandResult(narrative=res.message + (("\n" + status) if status else ""), ok=res.ok)
         if sub in {"off", "disable"}:
             res = self.builder.set_builder_mode(character, False)
+            return CommandResult(narrative=res.message, ok=res.ok)
+        if sub == "normalize":
+            self.builder_service.workspace = self.builder
+            res = self.builder_service.normalize_command(character, args[1:] if len(args) > 1 else [])
             return CommandResult(narrative=res.message, ok=res.ok)
         if sub == "migrate":
             if len(args) >= 2 and args[1].lower() == "starter":
@@ -3716,8 +3884,34 @@ class MudCommandEngine:
             res = self.builder.export(character); self.builder.publish("builder_export_completed", character, self.builder.world_id(character), "export", sub, command=raw)
             self.builder.audit(character, self.builder.world_id(character), f"builder {sub}", "export", sub, None, res.data or {})
             return CommandResult(narrative=res.message + "\n" + self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))), ok=res.ok)
+        if sub in {"testroom", "testenter"}:
+            res = self.builder_service.testroom(character); return CommandResult(narrative=res.message, ok=res.ok)
+        if sub == "testexit":
+            res = self.builder_service.testexit(character); return CommandResult(narrative=res.message, ok=res.ok)
+        if sub == "testreset":
+            res = self.builder_service.testreset(character); return CommandResult(narrative=res.message, ok=res.ok)
+        if sub == "teststatus":
+            res = self.builder_service.teststatus(character); return CommandResult(narrative=res.message, ok=res.ok)
+        if sub == "testclear":
+            res = self.builder_service.testclear(character); return CommandResult(narrative=res.message, ok=res.ok)
+        if sub == "testspawn":
+            if len(args) < 2:
+                return CommandResult(narrative="Usage: builder testspawn <mob_id>", ok=False)
+            res = self.builder_service.testspawn(character, args[1])
+            return CommandResult(narrative=res.message, ok=res.ok)
+        if sub == "generation" and len(args) >= 2:
+            action=args[1].lower()
+            if action == "activate":
+                res=self.builder_service.activate_generation(character, args[2] if len(args)>2 else "latest"); return CommandResult(narrative=res.message, ok=res.ok)
+            if action == "rollback":
+                res=self.builder_service.rollback_generation(character); return CommandResult(narrative=res.message, ok=res.ok)
+            if action in {"status", "list", "diff"}:
+                return CommandResult(narrative="Builder generation command available: activate <id>, rollback. Generation packages are under worlds/<world>/builder/generations/.")
         if sub == "publish" and len(args) >= 2 and args[1].lower() == "stats":
             return self._publish_stats(character)
+        if sub == "publish" and len(args) >= 2 and args[1].lower() == "generation":
+            res = self.builder_service.publish(character)
+            return CommandResult(narrative=res.message, ok=res.ok)
         if sub == "publish":
             res = self.builder.publish_drafts(character)
             return CommandResult(narrative=res.message + "\n" + self._builder_room_status(character, self.builder.current_room_id(character), self.builder.load(self.builder.world_id(character))), ok=res.ok)
@@ -3744,13 +3938,19 @@ class MudCommandEngine:
             rec = draft or live or {}
             return (rec.get("name") or rec.get("title") or "(unnamed)", "draft" if draft is not None else "live" if live is not None else "unknown", draft is not None)
         loc_name, loc_source, _ = info(loc_id)
-        area = drafts.get("areas", {}).get(str(getattr(character,"current_area_id","") or ""))
-        zone = drafts.get("zones", {}).get(str(getattr(character,"current_zone_id","") or ""))
+        rooms = drafts.get("rooms", {})
+        current_room = rooms.get(loc_id, {})
+        current_area_id = str(current_room.get("area_id") or getattr(character,"current_area_id","") or "")
+        current_zone_id = str(current_room.get("zone_id") or getattr(character,"current_zone_id","") or "")
+        area = drafts.get("areas", {}).get(current_area_id)
+        zone = drafts.get("zones", {}).get(current_zone_id)
         world_name = self.builder.world_id(character).replace("_", " ").title()
-        lines = ["Builder Status:", "================================================", "Builder Mode", "", "World:", world_name, "", "Area:"]
-        lines.append(f"{area.get('id')}, {area.get('name')}, {area.get('vnum_start')}-{area.get('vnum_end')}" if area else "none selected")
-        lines += ["", "Zone:"]
-        lines.append(f"{zone.get('id')}, {zone.get('name')}, {zone.get('vnum_start')}-{zone.get('vnum_end')}" if zone else "none selected")
+        def label(kind, rec, cid):
+            if not cid: return f"{kind}: unknown"
+            name = (rec or {}).get("name")
+            return f"{kind}: {name} [{cid}]" if name else f"{kind}: [{cid}] (missing display name)"
+        lines = ["Builder Status:", "================================================", "Builder Mode", "", "World:", world_name, "", "Current location:"]
+        lines += ["  " + label("Area", area, current_area_id), "  " + label("Zone", zone, current_zone_id), f"  Room: {loc_name} [{loc_id}]", f"  VNUM: {current_room.get('vnum') if current_room.get('vnum') is not None else 'none'}", "", "Builder scope:", f"  Area: {'current' if current_area_id else 'none selected'}", f"  Zone: {'current' if current_zone_id else 'none selected'}"]
         lines += ["", "Location:", f"{loc_id}, {loc_name}", "", "Currently editing:", "Editing:"]
         if not room_id:
             lines.append("none")
@@ -3762,9 +3962,9 @@ class MudCommandEngine:
             a = drafts.get("areas", {}).get(aid, {})
             z = drafts.get("zones", {}).get(zid, {})
             legacy = not aid and not zid and vnum is None
-            area_text = f"{aid}, {a.get('name')}" if aid else "none"
-            zone_text = f"{zid}, {z.get('name')}" if zid else "none"
-            lines += ["", "Room Organization:", f"Area: {area_text}", f"Zone: {zone_text}", f"VNUM: {vnum if vnum is not None else 'none'}", f"Status: {'legacy/unassigned' if legacy else 'organized'}"]
+            area_text = f"{a.get('name')} [{aid}]" if aid and a.get('name') else (f"[{aid}] (missing display name)" if aid else "none")
+            zone_text = f"{z.get('name')} [{zid}]" if zid and z.get('name') else (f"[{zid}] (missing display name)" if zid else "none")
+            lines += ["", "Room Organization:", f"Area: {area_text}", f"Zone: {zone_text}", f"Room: {name} [{room_id}]", f"VNUM: {vnum if vnum is not None else 'none'}", f"Status: {'legacy/unassigned' if legacy else 'organized'}"]
             if legacy:
                 ca=getattr(character,"current_area_id","") or "<area_id>"; cz=getattr(character,"current_zone_id","") or "<zone_id>"
                 lines += ["", "Suggested next command:", f"rassign here area {ca} zone {cz} vnum <number>"]
@@ -3794,6 +3994,24 @@ class MudCommandEngine:
                 self.builder.publish("builder_edit_target_changed", character, world_id, "room", args[1], command=raw)
                 return CommandResult("Builder target set.\n" + self._builder_room_status(character, args[1], drafts))
             return CommandResult('Usage: btarget [room <room_id>|clear]', ok=False)
+        if cmd in {"medit", "oedit", "aedit", "zedit"}:
+            self.builder_service.workspace = self.builder
+            res = self.builder_service.discover_editor_target(character, cmd, args)
+            return CommandResult(res.message, ok=res.ok)
+        if cmd in {"mclone", "oclone", "rclone"}:
+            if len(args) < 2: return CommandResult(f"Usage: {cmd} <source_id> <new_id>", ok=False)
+            coll = {"mclone":"entities", "oclone":"items", "rclone":"rooms"}[cmd]
+            res = self.builder_service.clone(character, coll, args[0], args[1]); return CommandResult(res.message, ok=res.ok)
+        if cmd in {"undo", "redo"}:
+            res = getattr(self.builder_service, cmd)(character); return CommandResult(res.message, ok=res.ok)
+        if cmd == "find":
+            res = self.builder_service.search(character, " ".join(args)); return CommandResult(res.message, ok=res.ok)
+        if cmd == "builder" and args and args[0].lower() == "testspawn" and len(args) > 1:
+            res = self.builder_service.testspawn(character, args[1]); return CommandResult(res.message, ok=res.ok)
+        if cmd == "redit" and args:
+            self.builder_service.workspace = self.builder
+            res = self.builder_service.discover_editor_target(character, cmd, args)
+            return CommandResult(res.message, ok=res.ok)
         if cmd == "redit":
             if args:
                 ordered = sorted(drafts.get("rooms", {}).keys())
@@ -3912,6 +4130,14 @@ Cancel:
         prefix = "spawn" if cmd.startswith("spawn") else cmd[0]
         coll=maps.get(prefix); target_type={"items":"item_template","entities":"entity_template","spawns":"spawn"}.get(coll, "builder")
         if coll:
+            if coll == "entities":
+                if cmd.endswith("create") and args:
+                    updates={"id": args[0], "name": args[0].replace("_", " ").title(), "entity_type": "npc", "builder_status": "incomplete", "world_id": world_id, "area_id": getattr(character, "current_area_id", ""), "zone_id": getattr(character, "current_zone_id", getattr(character, "zone_id", "")), "keywords": args[0].split("_"), "description": "An unfinished mobile prototype stands here.", "level": 1, "attributes": {}, "resources": {"health": 10}}
+                    return out(self.builder_service.create_or_update_mobile(character, args[0], updates, cmd))
+                if cmd.endswith("set") and len(args)>=3: return out(self.builder_service.create_or_update_mobile(character, args[0], {args[1]: self._builder_value(raw,3)}, cmd))
+                if cmd.endswith("desc") and len(args)>=2: return out(self.builder_service.create_or_update_mobile(character, args[0], {"long_description": self._builder_value(raw,2), "description": self._builder_value(raw,2)}, cmd))
+                if cmd.endswith("delete") and args: return out(self.builder_service.delete_mobile(character, args[0]))
+                if cmd.endswith("stat") and args: return CommandResult(narrative=f"Draft {target_type}: {drafts.get(coll,{}).get(args[0],{})}")
             if cmd.endswith("create") and args:
                 updates={"name": args[0]}
                 if coll=="spawns" and len(args)>1: updates["entity_template_id"]=args[1]; updates.setdefault("room_id", room_id)

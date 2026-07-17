@@ -52,7 +52,7 @@ class ZoneResetService:
                 out += [self.normalize_profile(x, world_id) for x in vals if isinstance(x,dict)]
         return out
     def normalize_profile(self, p, world_id=''):
-        p=dict(p); p['reset_profile_id']=str(p.get('reset_profile_id') or p.get('id') or ''); p['id']=p['reset_profile_id']; p['world_id']=str(p.get('world_id') or world_id); 
+        p=dict(p); p['reset_profile_id']=str(p.get('reset_profile_id') or p.get('id') or ''); p['id']=p['reset_profile_id']; p['world_id']=str(p.get('world_id') or world_id);
         if 'empty_required' in p and not p.get('reset_mode'): p['reset_mode']='when_empty' if p.get('empty_required') else 'always'
         p.setdefault('reset_mode','manual_only'); p.setdefault('enabled',True); p.setdefault('priority',100); p.setdefault('reset_interval_seconds',None); p.setdefault('definition_version','1'); p.setdefault('commands',[]); p.setdefault('metadata',{})
         return p
@@ -122,13 +122,26 @@ class ZoneResetService:
         _,_,_,_,rz=self._maps(world_id); chars=getattr(self.runtime,'characters',{}) or getattr(self.runtime,'active_characters',{}) or {}
         return [c for c in chars.values() if rz.get(str(getattr(c,'room_id', c.get('room_id','') if isinstance(c,dict) else ''))) == zone_id]
     def _count(self, typ, template_id, scope, room_id, zone_id, world_id):
-        table='entity_instances' if typ=='entity' else 'item_instances'; tcol='template_id'; w="destroyed_at IS NULL AND template_id=?"; params=[template_id]
+        table='entity_instances' if typ=='entity' else 'item_instances'; w="destroyed_at IS NULL AND template_id=?"; params=[template_id]
+        if typ == 'entity':
+            w += " AND owner_type='room' AND entity_type IN ('npc','mob')"
         if scope=='room': w += (' AND current_room_id=?' if typ=='entity' else ' AND room_id=? AND owner_type=\'room\''); params.append(room_id)
         elif scope=='zone':
             rz=self._maps(world_id)[4]; rooms=[r for r,z in rz.items() if z==zone_id] or ['']
             col='current_room_id' if typ=='entity' else 'room_id'; w += f" AND {col} IN ({','.join('?' for _ in rooms)})"; params+=rooms
         elif scope=='world': w += ' AND world_id=?'; params.append(world_id)
-        with sqlite3.connect(self.db_path) as c: return int(c.execute(f'SELECT COUNT(*) FROM {table} WHERE {w}', params).fetchone()[0])
+        with sqlite3.connect(self.db_path) as c:
+            if typ != 'entity':
+                return int(c.execute(f'SELECT COUNT(*) FROM {table} WHERE {w}', params).fetchone()[0])
+            rows=c.execute(f'SELECT state FROM {table} WHERE {w}', params).fetchall()
+        live=0
+        for (raw_state,) in rows:
+            try: state=json.loads(raw_state or '{}')
+            except Exception: state={}
+            if state.get('is_alive') is False or str(state.get('current_state') or '').lower() in {'dead','corpse','despawned','destroyed'}:
+                continue
+            live += 1
+        return live
     def _condition_ok(self, cond, plan, cmd, prev, refs):
         ct=cond.get('type') if isinstance(cond,dict) else str(cond or 'always')
         if ct=='always': return True,''
@@ -165,7 +178,7 @@ class ZoneResetService:
                     try:
                         if not preview: created, affected = self._apply(cmd, plan, refs)
                         else: created=[]; affected=[]
-                        counts['executed']+=1; counts['entities']+=sum(1 for x in created if str(x).startswith('entity_')); counts['items']+=sum(1 for x in created if str(x).startswith('item_')); counts['exits']+=1 if cmd.get('command_type')=='SET_EXIT_STATE' and status=='succeeded' else 0
+                        counts['executed']+=1; counts['entities']+=sum(1 for x in created if str(x).startswith(('entity_','ent_'))); counts['items']+=sum(1 for x in created if str(x).startswith('item_')); counts['exits']+=1 if cmd.get('command_type')=='SET_EXIT_STATE' and status=='succeeded' else 0
                     except Exception as exc:
                         status='failed'; reason=str(exc); counts['failed']+=1
                 if cmd.get('result_reference') and (created or affected): refs[cmd['result_reference']]=created or affected
@@ -184,7 +197,14 @@ class ZoneResetService:
         typ=cmd['command_type']; created=[]; affected=[]
         if typ=='SPAWN_ENTITY':
             cur=self._count('entity',cmd['entity_template_id'],cmd.get('maximum_scope','room'),cmd.get('room_id',''),plan.zone_id,plan.world_id); need=max(0, min(int(cmd.get('spawn_count',1)), int(cmd.get('maximum_count',1))-cur))
-            for _ in range(need): created.append(self.runtime.spawn_entity(cmd['entity_template_id'], room_id=cmd['room_id'], state=cmd.get('spawn_state') or {}, flags=cmd.get('spawn_flags') or [], source_system='zone_reset')['entity_id'])
+
+            for _ in range(need):
+                state=dict(cmd.get('spawn_state') or {})
+                state.setdefault('source_reset_profile_id', plan.profile_id)
+                state.setdefault('source_spawn_id', cmd.get('canonical_spawn_id') or cmd.get('reset_command_id') or cmd.get('id'))
+                state.setdefault('spawn_origin', cmd.get('room_id'))
+                state.setdefault('lifecycle_id', 'life_'+uuid.uuid4().hex)
+                created.append(self.runtime.spawn_entity(cmd['entity_template_id'], room_id=cmd['room_id'], state=state, flags=cmd.get('spawn_flags') or [], source_system='zone_reset')['entity_id'])
         elif typ=='SPAWN_ITEM':
             cur=self._count('item',cmd['item_template_id'],cmd.get('maximum_scope','room'),cmd.get('room_id',''),plan.zone_id,plan.world_id); need=max(0, min(int(cmd.get('spawn_count',1)), int(cmd.get('maximum_count',1))-cur))
             for _ in range(need): created.append(self.runtime.spawn_item(cmd['item_template_id'],'room',room_id=cmd['room_id'],stack_count=cmd.get('stack_count',1),custom_flags={'source_reset_profile_id':plan.profile_id})['instance_id'])
