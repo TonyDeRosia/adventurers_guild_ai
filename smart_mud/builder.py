@@ -2123,6 +2123,9 @@ class BuilderService:
             sess.dirty = True; sess.saved = False
             return BuilderResult(True, "Updated session scratch.\n" + self.render_session(sess))
         if low in {"q", "quit"}:
+            if sess.section:
+                sess.section = ""; sess.mode = "main_menu"
+                return BuilderResult(True, self.render_session(sess))
             if sess.dirty:
                 sess.quit_pending = True
                 return BuilderResult(True, "Unsaved changes: Save, Discard, or Cancel?")
@@ -2226,7 +2229,7 @@ class BuilderService:
             sess.working_record = self._normalize_entity_updates(sess.object_id, sess.working_record) if sess.collection == "entities" else sess.working_record
             sess.dirty=True; sess.saved=False
             return BuilderResult(True, "Updated session scratch.\n"+self.render_session(sess), sess.working_record)
-        return BuilderResult(True, self.render_session(sess))
+        return BuilderResult(False, "Invalid editor input. Use a menu number, back, save, quit, or help.\n" + self.render_session(sess))
 
     def search(self, actor: Any, query: str) -> BuilderResult:
         q = query.lower()

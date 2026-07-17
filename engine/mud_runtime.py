@@ -1727,6 +1727,7 @@ class MudRuntime:
         self.active_characters[character_id] = char
         trace["session_lookup"] = time.monotonic(); trace["resident_character_lookup"] = trace["session_lookup"]; trace["routing_started"] = time.monotonic(); trace["command_routing_started"] = trace["routing_started"]; self._current_command_trace = trace
         from engine.mud_commands import CommandResult
+        builder_session_active_before_command = bool(getattr(getattr(self.command_engine, "builder_service", None), "sessions", None) and self.command_engine.builder_service.sessions.has(char))
         if getattr(char, "builder_desc_editor_room_id", ""):
             line = command.rstrip("\n")
             if line.strip() == ".cancel":
@@ -1794,7 +1795,7 @@ class MudRuntime:
         turn = (session.command_count + 1) if session else 1
         history_start = time.monotonic()
         cmd_token = command.strip().lower().split()[0] if command.strip() else ""
-        if cmd_token not in {"kill", "attack"}:
+        if not builder_session_active_before_command and cmd_token not in {"kill", "attack"}:
             self.state_store.save_command(character_id, self.active_world_id or "", turn, command, session.account_id if session else "", session.session_id if session else "")
             self.state_store.save_scrollback(character_id, self.active_world_id or "", turn, result.narrative)
             trace["awaits"].append({"operation":"command_history_persistence","ms":(time.monotonic()-history_start)*1000.0})
@@ -2142,6 +2143,8 @@ class MudRuntime:
         return CommandResult(msg, ok=not failed)
 
     def _handle_runtime_command(self, char: MudCharacter, command: str):
+        if getattr(getattr(self.command_engine, "builder_service", None), "sessions", None) and self.command_engine.builder_service.sessions.has(char):
+            return self.command_engine.handle_command(char, command)
         normalized_command = re.sub(r"\s+", " ", str(command or "").strip()).lower()
         if normalized_command in getattr(self.command_engine, "SOCIAL_DEFINITIONS", {}):
             return self.command_engine.handle_command(char, command)
