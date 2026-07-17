@@ -94,7 +94,10 @@ def _load_json(p:Path, default):
     try: return json.loads(p.read_text())
     except Exception: return default
 
-def _cid(ch:Any)->str: return str(getattr(ch,'id',getattr(ch,'character_id','player_1')))
+def _cid(ch:Any)->str:
+    cid = getattr(ch,'id',None) or getattr(ch,'character_id',None) or getattr(ch,'equipment_owner_id',None) or getattr(ch,'actor_id',None) or 'player_1'
+    cid = str(cid)
+    return cid.split(':',1)[1] if cid.startswith('character:') else cid
 def _world_root(world_id='shattered_realms')->Path: return Path('worlds')/(world_id or 'shattered_realms')
 def _allowed_metadata(d): return d if isinstance(d,dict) else {}
 
@@ -136,8 +139,9 @@ class CharacterAttributeService:
         eq_profile=getattr(character,'equipment',None) or getattr(character,'equipment_profile',None) or {}
         items=[]
         if isinstance(eq_profile,dict):
-            vals=list(eq_profile.values()) if all(isinstance(v,dict) for v in eq_profile.values()) else []
-            for slot,item in zip(eq_profile.keys(), vals):
+            equipped_map = eq_profile.get('equipped') if isinstance(eq_profile.get('equipped'), dict) else eq_profile
+            vals=list(equipped_map.values()) if all(isinstance(v,dict) for v in equipped_map.values()) else []
+            for slot,item in zip(equipped_map.keys(), vals):
                 rec=dict(item); rec.setdefault('equipped_slot', slot); items.append(rec)
         elif isinstance(eq_profile,(list,tuple)): items=[dict(i) for i in eq_profile if isinstance(i,dict)]
         rt=self._runtime(context); weapon_map, armor_map, item_map=self._template_maps()
@@ -316,13 +320,15 @@ class CombatStatService:
         context=context or {}; aid=str((actor_or_character.get('id') or actor_or_character.get('template_id')) if isinstance(actor_or_character,dict) else _cid(actor_or_character))
         rt=context.get('runtime') or getattr(self.attribute_service,'runtime',None)
         attrs=getattr(actor_or_character,'attributes',None)
+        actor_eq=getattr(actor_or_character,'equipment_profile',None) or getattr(actor_or_character,'equipment',None)
+        actor_eq_sig=hashlib.sha1(json.dumps(actor_eq,sort_keys=True,default=str).encode()).hexdigest() if isinstance(actor_eq,(dict,list,tuple)) else ''
         attrs_sig=hashlib.sha1(json.dumps(attrs,sort_keys=True,default=str).encode()).hexdigest() if isinstance(attrs,dict) else ''
         eq_sig=''
         if rt and not hasattr(rt,'performance_counters') and hasattr(rt,'find_equipped_items'):
             try: eq_sig=hashlib.sha1(json.dumps(rt.find_equipped_items(aid),sort_keys=True,default=str).encode()).hexdigest()
             except Exception: eq_sig=''
         mods_sig=hashlib.sha1(json.dumps([asdict(m) if isinstance(m,StatModifier) else m for m in context.get('modifiers',[])],sort_keys=True,default=str).encode()).hexdigest()
-        gens=(getattr(actor_or_character,'actor_generation',0),getattr(actor_or_character,'attribute_generation',0),getattr(actor_or_character,'equipment_generation',0),getattr(actor_or_character,'effect_generation',0),getattr(actor_or_character,'body_generation',0),getattr(actor_or_character,'ability_generation',0),getattr(actor_or_character,'level_generation',0),getattr(actor_or_character,'stance_generation',0),getattr(actor_or_character,'template_generation',0),getattr(rt,'world_content_generation',0) if rt else 0,attrs_sig,eq_sig,mods_sig)
+        gens=(getattr(actor_or_character,'actor_generation',0),getattr(actor_or_character,'attribute_generation',0),getattr(actor_or_character,'equipment_generation',0),getattr(actor_or_character,'effect_generation',0),getattr(actor_or_character,'body_generation',0),getattr(actor_or_character,'ability_generation',0),getattr(actor_or_character,'level_generation',0),getattr(actor_or_character,'stance_generation',0),getattr(actor_or_character,'template_generation',0),getattr(rt,'world_content_generation',0) if rt else 0,attrs_sig,eq_sig,actor_eq_sig,mods_sig)
         return (aid,)+gens
     def build_actor_stat_input(self, actor_or_character, context=None):
         if isinstance(actor_or_character,ActorStatInput): return actor_or_character

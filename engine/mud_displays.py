@@ -1159,12 +1159,25 @@ def build_inventory_document(items: list[dict[str, Any]], *, carrying: str = "",
 
 def build_equipment_document(items: list[dict[str, Any]], slots: list[str], *, theme: Any = None) -> DisplayDocument:
     by: dict[str, dict[str, Any]] = {}
+    seen_instances: set[str] = set()
+    slot_aliases = {"body": "chest", "primary_weapon": "main_hand", "secondary_weapon": "off_hand", "shield": "off_hand"}
     for item in items:
-        for slot in str(item.get("equipped_slot") or "").split(","):
-            slot = slot.strip()
-            if slot == "both_hands":
-                by["main_hand"] = item; by["off_hand"] = item
-            elif slot:
+        inst = str(item.get("instance_id") or item.get("id") or "")
+        raw_slots = [slot_aliases.get(s.strip(), s.strip()) for s in str(item.get("equipped_slot") or "").split(",") if s.strip()]
+        if "both_hands" in raw_slots:
+            raw_slots = ["main_hand", "off_hand"]
+        # A single persisted item instance may not visually occupy unrelated
+        # slots.  Keep both hand slots only for intentionally two-handed items;
+        # otherwise prefer the first canonical slot and suppress duplicate light/
+        # off-hand projections such as one lantern showing twice.
+        if inst and inst in seen_instances:
+            continue
+        if inst:
+            seen_instances.add(inst)
+        if len(raw_slots) > 1 and "both_hands" not in str(item.get("equipped_slot") or ""):
+            raw_slots = raw_slots[:1]
+        for slot in raw_slots:
+            if slot and slot not in by:
                 by[slot] = item
     fields: list[DisplayField] = []
     for slot in slots:

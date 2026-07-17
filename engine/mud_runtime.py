@@ -2202,14 +2202,14 @@ class MudRuntime:
             if feature_result is not None:
                 self.event_bus.publish("command_executed", {"raw_input": command, "canonical_command": cmd_name, "arguments": args, "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id, "result_summary": feature_result.narrative[:120]}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
                 return feature_result
-            item_preview = self._handle_item_command(char, command, cmd_name, args)
-            if item_preview is not None and not item_preview.narrative.startswith("You don't see that") and not item_preview.narrative.startswith("Which do you mean") :
-                self.event_bus.publish("command_executed", {"raw_input": command, "canonical_command": cmd_name, "arguments": args, "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id, "result_summary": item_preview.narrative[:120]}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
-                return item_preview
             entity_result = self._look_entity(char.id, char.room_id, " ".join(args))
             if entity_result is not None:
                 from engine.mud_commands import CommandResult
                 return CommandResult(entity_result)
+            item_preview = self._handle_item_command(char, command, cmd_name, args)
+            if item_preview is not None and not item_preview.narrative.startswith("You don't see that") and not item_preview.narrative.startswith("Which do you mean") :
+                self.event_bus.publish("command_executed", {"raw_input": command, "canonical_command": cmd_name, "arguments": args, "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id, "result_summary": item_preview.narrative[:120]}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
+                return item_preview
         if cmd_name in {"cast", "invoke", "perform", "ability", "abilities", "skills", "spells", "cancel", "cooldowns", "abilitylist", "abilitystat", "abilitycreate", "abilityclone", "abilityset", "abilitydelete", "abilityvalidate", "abilitypreview", "abilitytrace", "loadoutlist", "loadoutstat", "loadoutcreate", "loadoutclone", "loadoutset", "loadoutability", "loadoutdelete", "loadoutvalidate", "abilitygrant", "abilityrevoke", "actorabilities", "abilitycooldowns", "abilitycasts"}:
             return self.command_engine.handle_command(char, command)
         if cmd_name == "use" and " ".join(args).lower() in self._player_ability_phrases():
@@ -2627,7 +2627,12 @@ class MudRuntime:
             eq_slots=set(str(eq.get("equipped_slot") or "").split(","))
             if "both_hands" in eq_slots: eq_slots.update({"main_hand","off_hand"})
             if eq_slots & conflicts: self.move_item(eq["instance_id"], "character", character_id)
-        moved=self.move_item(item["instance_id"], "equipment", character_id, equipped_slot=slot); self._publish_item_event("actor_equipment_modifiers_invalidated", moved, character_id=character_id, equipped_slot=slot); self._publish_item_event("item_equipped", moved, character_id=character_id, equipped_slot=slot); self._publish_item_event("equipment_changed", moved, character_id=character_id); self._publish_item_event("inventory_changed", moved, character_id=character_id); self._publish_item_event("after_item_equip", moved, character_id=character_id, equipped_slot=slot); return f"You equip {moved['name']} on {slot.replace('_',' ')}."
+        moved=self.move_item(item["instance_id"], "equipment", character_id, equipped_slot=slot)
+        try:
+            self.combat_stat_service._input_cache.clear(); self.combat_stat_service._snapshot_cache.clear(); self.combat_runtime.engine.resolution._snapshot_cache.clear()
+            self.combat_runtime.resident_actors.pop('character:'+character_id, None)
+        except Exception: pass
+        self._publish_item_event("actor_equipment_modifiers_invalidated", moved, character_id=character_id, equipped_slot=slot); self._publish_item_event("item_equipped", moved, character_id=character_id, equipped_slot=slot); self._publish_item_event("equipment_changed", moved, character_id=character_id); self._publish_item_event("inventory_changed", moved, character_id=character_id); self._publish_item_event("after_item_equip", moved, character_id=character_id, equipped_slot=slot); return f"You equip {moved['name']} on {slot.replace('_',' ')}."
 
     def unequip_item(self, character_id: str, query_or_slot: str) -> str:
         equipped=self.find_equipped_items(character_id); q=query_or_slot.lower().strip(); matches=[i for i in equipped if i.get("equipped_slot")==q]
@@ -2639,14 +2644,22 @@ class MudRuntime:
         from engine.mud_commands import CommandResult
         q=" ".join(args).strip()
         if cmd == "loot":
-            return CommandResult(self.loot_container(char, q or "corpse"))
+            target = q or "corpse"
+            if target.lower().startswith("all "):
+                target = target[4:].strip() or "corpse"
+            return CommandResult(self.loot_container(char, target))
+        if cmd in {"sacrifice", "sac"}:
+            return CommandResult(self.sacrifice_corpse(char, q or "corpse"))
         if cmd in {"inventory"}: return CommandResult(self._render_inventory(char.id))
         if cmd in {"equipment"}: return CommandResult(self._render_equipment(char.id))
         if cmd in {"get","take"}:
+            if len(args) >= 3 and "from" in [a.lower() for a in args]:
+                idx = [a.lower() for a in args].index("from")
+                return CommandResult(self.get_from_container(char, " ".join(args[:idx]) or "all", " ".join(args[idx+1:]) or "corpse"))
+            if len(args) >= 3 and args[-2].lower() in {"in"}:
+                return CommandResult(self.get_from_container(char, " ".join(args[:-2]), args[-1]))
             if len(args) >= 2 and args[-1].lower().startswith(("corp", "cor", "body")):
                 return CommandResult(self.get_from_container(char, " ".join(args[:-1]) or "all", args[-1]))
-            if len(args) >= 3 and args[-2].lower() in {"from", "in"}:
-                return CommandResult(self.get_from_container(char, " ".join(args[:-2]), args[-1]))
             if len(args) >= 3 and args[0].lower() in {"all", "everything"} and args[1].lower() in {"from", "in"}:
                 return CommandResult(self.get_from_container(char, "all", " ".join(args[2:])))
             if q in {"all", "everything"}: return CommandResult(self.bulk_get(char, q))
@@ -2753,6 +2766,32 @@ class MudRuntime:
     def loot_container(self, char: MudCharacter, container_query: str) -> str:
         return self.get_from_container(char, "all", container_query)
 
+    def sacrifice_corpse(self, char: MudCharacter, corpse_query: str) -> str:
+        query = str(corpse_query or "corpse").strip()
+        all_mode = query.lower().startswith("all.") or query.lower() in {"all corpse", "all.corpses"}
+        corpses = [e for e in self.find_room_entities(char.room_id) if e.get("entity_type") == "corpse"]
+        if not corpses:
+            return "You don't see any corpse here."
+        targets = corpses if all_mode else []
+        if not targets:
+            res = self.resolve_entity_keywords(query, corpses)
+            if res.get("status") != "ok":
+                return self._resolve_message(res, "You don't see that corpse here.")
+            targets = [res.get("entity")]
+        removed = []
+        for corpse in [c for c in targets if c]:
+            cid = str(corpse.get("entity_id") or corpse.get("instance_id") or "")
+            # TBA-style safety for this runtime: contents spill to the room so
+            # sacrifice never silently destroys loot or duplicates item rows.
+            for item in self.find_container_items(cid):
+                self.move_item(item["instance_id"], "room", char.room_id)
+            if self.destroy_entity(cid, reason="sacrificed", source_system="corpse_sacrifice", character_id=char.id):
+                removed.append(corpse)
+        if not removed:
+            return "There is nothing suitable to sacrifice."
+        self.event_bus.publish("corpse_sacrificed", {"character_id": char.id, "corpse_count": len(removed)}, source_system="runtime", world_id=self.active_world_id or "", character_id=char.id, room_id=char.room_id)
+        return "You sacrifice " + ("the corpses." if len(removed) > 1 else f"{removed[0].get('name') or 'the corpse'}.")
+
     def bulk_get(self, char: MudCharacter, selector: str = "all") -> str:
         items = [i for i in self.get_visible_room_items(char.room_id) if (i.get("template") or {}).get("portable", True)]
         self._publish_interaction_event("bulk_get", char, "get", f"get {selector}", {"item_count": len(items)})
@@ -2812,7 +2851,15 @@ class MudRuntime:
         return render_display_mud(build_inventory_document(items, carrying=carrying))
 
     def _render_equipment(self, character_id: str) -> str:
-        return render_display_mud(build_equipment_document(self.find_equipped_items(character_id), list(self.EQUIPMENT_SLOTS)))
+        items = self.find_equipped_items(character_id)
+        text = render_display_mud(build_equipment_document(items, list(self.EQUIPMENT_SLOTS)))
+        summaries = []
+        labels = {slot: slot.replace("_", " ").capitalize() for slot in self.EQUIPMENT_SLOTS}
+        for item in items:
+            slot = str(item.get("equipped_slot") or "").split(",")[0].strip()
+            if slot in labels:
+                summaries.append(f"{labels[slot]}: {item.get('name') or (item.get('template') or {}).get('name') or 'something'}")
+        return text + (("\n" + "\n".join(summaries)) if summaries else "")
 
     def _look_item(self, character_id: str, room_id: str, query: str) -> str:
         res=self.resolve_item_keywords(query, self.get_visible_room_items(room_id)+self.find_inventory_items(character_id)+self.find_equipped_items(character_id))
@@ -3860,9 +3907,12 @@ class MudRuntime:
             return
         from engine.rewards import RewardService
         svc = RewardService(runtime=self, world_id=self.active_world_id or "shattered_realms", event_bus=self.event_bus)
-        pkt = svc.resolve_loot_table(loot_table, {"source_type":"combat","source_id":str(source_ent.get("template_id")),"source_instance_id":str(ctx.get("death_id") or source_ent.get("entity_id")),"world_id":self.active_world_id or "","world_time":self.get_world_time(self.active_world_id or '').get('total_minutes',0)}, {"recipient_type":"corpse","recipient_id":corpse_id}, seed=str(ctx.get('death_id') or corpse_id))
-        svc.deliver_reward_packet(pkt["reward_packet_id"])
-        self.event_bus.publish("corpse_contents_generated", {"corpse_entity_id":corpse_id,"source_entity_id":source_ent.get("entity_id"),"loot_table_id":loot_table,"reward_packet_id":pkt["reward_packet_id"]}, source_system="runtime", world_id=self.active_world_id or "", room_id=corpse.get("room_id"))
+        try:
+            pkt = svc.resolve_loot_table(loot_table, {"source_type":"combat","source_id":str(source_ent.get("template_id")),"source_instance_id":str(ctx.get("death_id") or source_ent.get("entity_id")),"world_id":self.active_world_id or "","world_time":self.get_world_time(self.active_world_id or '').get('total_minutes',0)}, {"recipient_type":"corpse","recipient_id":corpse_id}, seed=str(ctx.get('death_id') or corpse_id))
+            svc.deliver_reward_packet(pkt["reward_packet_id"])
+            self.event_bus.publish("corpse_contents_generated", {"corpse_entity_id":corpse_id,"source_entity_id":source_ent.get("entity_id"),"loot_table_id":loot_table,"reward_packet_id":pkt["reward_packet_id"]}, source_system="runtime", world_id=self.active_world_id or "", room_id=corpse.get("room_id"))
+        except Exception:
+            logging.getLogger(__name__).debug("[corpse-loot] loot generation skipped corpse=%s table=%s", corpse_id, loot_table, exc_info=True)
 
     def find_container_items(self, owner_id: str) -> list[dict[str, Any]]:
         return self._fetch_items("owner_type IN ('corpse','container') AND owner_id=?", (owner_id,))
