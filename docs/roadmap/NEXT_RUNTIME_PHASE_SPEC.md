@@ -82,3 +82,12 @@ The customized Adventurer's Lair repository could not be cloned from this enviro
 ## Acceptance standard
 
 Phase 16B is complete only when the production movement path, persistence path, reset path, and tests all agree on one authoritative exit state model and the implementation documents any remaining Adventurer's Lair source uncertainty.
+
+## Phase 15C.0 Builder MEDIT/OEDIT Parity Audit
+
+Phase 15C.0 produced permanent design specifications for future Mob Builder and Object Builder work:
+
+- `docs/BUILDER_MEDIT_SPECIFICATION.md` defines MEDIT parity requirements, stats, NPC flags, AFF flags, loadout/loot, combat abilities, event reactions, scripts, dependency checks, and the 15C implementation sequence.
+- `docs/BUILDER_OEDIT_SPECIFICATION.md` defines OEDIT parity requirements, object type values, extra/wear flags, applies, permanent affects, extra descriptions, scripts, dependency checks, and the 15D implementation sequence.
+
+The specifications are intentionally architectural. They require behavioral parity through Smart MUD Builder sessions, drafts, validation, preview, publish, activation, and rollback; they explicitly forbid porting TBA C code, bitvectors, file formats, menu architecture, or compatibility wrappers.
