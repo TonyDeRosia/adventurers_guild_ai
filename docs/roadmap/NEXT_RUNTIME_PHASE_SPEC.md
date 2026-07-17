@@ -1,43 +1,84 @@
 # Next Runtime Phase Spec — Phase 16B
 
-## Exact objective
-Implement persistent exit and door state parity for closed, open, locked, unlocked, keyed, hidden, and one-way exits on Smart MUD's production movement path.
+## Decision
 
-## Source evidence
-Adventurer's Lair ownership is in `src/act.movement.c` command handlers, `src/db.c` room/exit loaders and reset handling, and `src/structs.h` exit/room flag structs.
+Proceed with Phase 16B unchanged: persistent exit and door state parity is the next implementation phase. This phase must not implement containers, object use, NPC AI, DG triggers, broad Builder UI, or unrelated combat changes.
 
-## Existing Smart MUD path
-Use `engine/mud_runtime.py`, `engine/mud_commands.py`, `smart_mud/event_bus.py`, world registry data, and existing Builder draft room/exit records.
+## Required runtime contract
 
-## Required runtime behavior
-Movement must block closed/locked exits, allow open exits, require matching keys to unlock, support no-key failure messages, preserve one-way exits, expose hidden exits only through appropriate observation rules, persist mutable configured door state, and accept reset restoration through the reset service.
+Implement a canonical door/exit state owner for runtime movement. The owner may live inside `engine/mud_runtime.py` only if it can remain testable and non-duplicative; otherwise introduce a narrow module dedicated to exit state. The contract must provide:
 
-## Architecture rules
-Runtime service first; commands call canonical operations; Builder only edits definitions; direct schema mutation is forbidden.
+- lookup by world id, room id, and direction;
+- reset/default state from canonical room/reset data;
+- mutable closed/open and locked/unlocked state;
+- key reference validation;
+- hidden/discovered state if current Smart MUD room data exposes it;
+- one-way exit behavior without manufacturing reverse exits;
+- persistence through `engine/mud_state_store.py` or the existing canonical persistence layer;
+- event publication for state changes;
+- restart survival tests.
 
-## Schemas and persistence
-Add minimal SQLite/world-state rows only if existing runtime store cannot represent mutable door state. Migrate conservatively.
+## Source evidence to inspect before coding
 
-## Events
-Publish `door_opened`, `door_closed`, `door_locked`, `door_unlocked`, `movement_blocked`, and `movement_completed`.
+### Smart MUD
 
-## Commands
-`open`, `close`, `lock`, `unlock`, `pick`, `bash`, and movement aliases; no broad REDIT/ZEDIT.
+- `engine/mud_runtime.py` — current movement and command execution owner.
+- `engine/mud_commands.py` — parser/command adapters for movement and door verbs.
+- `engine/world_registry.py` — canonical room/exit data access.
+- `engine/zone_resets.py` — reset application and ordering.
+- `engine/mud_state_store.py` — persistence owner.
+- `worlds/shattered_realms/rooms/rooms.json` — room/exit data.
+- `worlds/shattered_realms/resets/resets.json` — reset inputs.
+- Existing movement, room, reset, and persistence tests under `tests/`.
 
-## Validation
-Validate exit target references, key item references, reset door-state commands, one-way exits, and hidden-exit metadata.
+### Adventurer's Lair
 
-## Builder exposure requirements
-Only document dependency and preserve existing draft fields. Do not implement broad Builder UI in Phase 16B.
+- `src/act.movement.c` — movement and door verbs.
+- `src/act.item.c` — key/use interactions that affect locks.
+- `src/db.c` — room/exit loading and zone reset application.
+- `src/structs.h` — room direction, exit flags, key fields.
+- Zone/world files defining door reset commands.
 
-## Tests
-Unit and command tests for success/failure, key checks, persistence across runtime restart, reset behavior, one-way exits, hidden exits, and event publication.
+The customized Adventurer's Lair repository could not be cloned from this environment during Phase 16A.1 because GitHub access returned `CONNECT tunnel failed, response 403`. If implementation access is still blocked, use only previously documented behavior and mark remaining source-specific details as unverified.
 
-## Manual acceptance
-Create two rooms with a locked north/south door and key; fail to move north, unlock/open with key, move, restart, verify configured persistence/reset semantics.
+## Commands in scope
 
-## Exclusions
-No visual Builder, no new combat bash damage, no full trap system, no broad content migration.
+- Directional movement aliases.
+- `open` and `close` for exits.
+- `lock` and `unlock` for exits.
+- `pick` only if an existing command path is present; otherwise document as deferred.
+- `look`/room rendering only where necessary to reveal door/hidden-exit state.
 
-## Completion standard
-All focused tests pass and docs/matrix update from STRUCTURAL/FUNCTIONAL partial toward FULL for door capabilities.
+## Persistence requirements
+
+- Store only runtime deltas needed to survive restart and reset correctly.
+- Do not duplicate immutable room definitions.
+- Include a deterministic key: world id, room id, direction.
+- Persist closed/open, locked/unlocked, discovered/hidden runtime state if supported, updated timestamp, reset source if relevant.
+- Load persisted state before player movement can observe it.
+
+## Tests required for completion
+
+- Movement blocked by closed door.
+- Movement blocked by locked door without key.
+- Unlock/open/move success with valid key.
+- Lock/close state persists across restart.
+- Reset reapplies default door state according to reset rules.
+- One-way exit does not require a reverse exit.
+- Hidden exit is not shown until discovery if existing Smart MUD data supports hidden exits.
+- Events are emitted for door state changes.
+- Builder/content validation tests continue to pass or baseline deltas are documented.
+
+## Explicit exclusions
+
+- Containers and nested inventory.
+- Object consumption, lights, potions, scrolls, wands, staves.
+- Corpse looting/decay changes.
+- NPC AI/aggression/scavenging.
+- DG triggers or special procedure runtime.
+- Broad Builder UI/editor redesign.
+- Direct C architecture translation.
+
+## Acceptance standard
+
+Phase 16B is complete only when the production movement path, persistence path, reset path, and tests all agree on one authoritative exit state model and the implementation documents any remaining Adventurer's Lair source uncertainty.
