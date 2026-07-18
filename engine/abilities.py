@@ -1054,9 +1054,12 @@ class AbilityRegistry:
         return out
 
 class AbilityExecutionService:
-    def __init__(self, db_path: Path|str|None=None, package: Any|None=None, event_bus: Any|None=None, world_id: str="", actor_registry: ActorRegistry | None=None, combat_runtime: Any|None=None, combat_stat_service: Any|None=None, resource_service: Any|None=None, effect_service: Any|None=None, lifecycle_service: Any|None=None, item_service: Any|None=None, world_registry: Any|None=None, room_service: Any|None=None, formula_engine: Any|None=None, state_store: Any|None=None, death_runtime: Any|None=None, allow_isolated_combat_engine: bool=False):
+    def __init__(self, db_path: Path|str|None=None, package: Any|None=None, event_bus: Any|None=None, world_id: str="", actor_registry: ActorRegistry | None=None, combat_runtime: Any|None=None, combat_stat_service: Any|None=None, resource_service: Any|None=None, effect_service: Any|None=None, lifecycle_service: Any|None=None, item_service: Any|None=None, world_registry: Any|None=None, room_service: Any|None=None, formula_engine: Any|None=None, state_store: Any|None=None, death_runtime: Any|None=None, allow_isolated_combat_engine: bool=False, require_death_runtime: bool=False):
         self.db_path = Path(db_path) if db_path else None; self.registry=AbilityRegistry(package); self.event_bus=event_bus; self.world_id=world_id or getattr(package,"id","")
         self.combat_runtime = combat_runtime; self.combat_stat_service = combat_stat_service; self.resource_service = resource_service; self.effect_service = effect_service; self.lifecycle_service = lifecycle_service; self.item_service = item_service; self.world_registry = world_registry; self.room_service = room_service; self.formula_engine = formula_engine; self.state_store = state_store; self.death_runtime = death_runtime
+        self.require_death_runtime = bool(require_death_runtime)
+        if self.require_death_runtime and death_runtime is None:
+            raise RuntimeError("Normal AbilityExecutionService requires a DeathRuntimeService terminal-damage adapter")
         self.allow_isolated_combat_engine = bool(allow_isolated_combat_engine or combat_runtime is None)
         self.combat = CombatEngine(content=CombatContentRegistry(package)) if self.allow_isolated_combat_engine else None
         self.actor_registry = actor_registry or ActorRegistry(); self.actors = self.actor_registry.actors; self.availability = AbilityAvailabilityService(self); self.effect_operations = AbilityEffectOperationRegistry()
@@ -1993,6 +1996,8 @@ class AbilityExecutionService:
         """
         runtime = self.death_runtime
         if runtime is None:
+            if self.require_death_runtime and any(damage.get("terminal") for damage in damage_results):
+                raise RuntimeError("Terminal ability damage cannot be processed without DeathRuntimeService")
             return []
         from engine.death_runtime import DeathRequest
         linked=[]
