@@ -24,11 +24,11 @@ NPC, or calculate rewards.
 
 ## Honest acceptance status
 
-This repository does **not** currently wire `DeathRuntimeService` into `MudRuntime` or the
-normal `CombatRuntimeService` spell path.  Consequently terminal Magic Missile death, corpse,
-reward, and transport-projection acceptance cannot yet be claimed as production-proven.  Browser
-and Telnet do share the real transport boundary and renderer, but no Phase 21B.3 end-to-end
-terminal transport test is present.  Phase 21C is therefore **not unblocked**.
+`MudRuntime` now creates one canonical `DeathRuntimeService` and injects that exact instance
+into `AbilityExecutionService` during `load_world()`.  Normal ability construction requires that
+adapter, so terminal damage cannot silently skip Phase 20.  Browser and Telnet continue to share
+the real transport boundary and renderer.  Dedicated end-to-end terminal transport fixtures are
+still required; Phase 21C is therefore **not unblocked**.
 
 Telnet tests use `TelnetTransportAdapter` in-process; they open no socket, avoid port conflicts,
 and render ANSI text through `html_to_ansi_text`.  The default Telnet enablement remains unchanged.

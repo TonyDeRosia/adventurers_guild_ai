@@ -103,6 +103,7 @@ from engine.environment import EnvironmentService, init_environment_schema
 from engine.survival_needs import SurvivalNeedsService, init_survival_schema
 from engine.schedules import ScheduleService
 from engine.combat_runtime import CombatRuntimeService, init_combat_runtime_schema
+from engine.death_runtime import DeathRuntimeService
 from engine.combat_warmup import CombatWarmupService
 from engine.agent_runtime import AgentRuntimeGateway, DeterministicControllerEvaluator, init_agent_runtime_schema
 from engine.character_stats import CharacterAttributeService, CombatStatService
@@ -771,6 +772,15 @@ class MudRuntime:
         self.command_engine.character_display_snapshots = self.character_display_snapshots
         init_agent_runtime_schema(self.state_store.db_path)
         self.combat_runtime = CombatRuntimeService(self)
+        # Phase 21B.4: this is the sole production death authority.  It is
+        # intentionally created before a world-specific ability service so a
+        # reload cannot accidentally leave abilities with a no-op adapter.
+        self.death_runtime = DeathRuntimeService(
+            self.state_store.db_path,
+            actor_lookup=self._lookup_death_actor,
+            operations=self._death_runtime_operations(),
+            publish=self._publish_death_event,
+        )
         self._last_pulse_due_monotonic: float | None = None
         self.pulse_config = {"pulses_per_second": 10, "pulses_per_tick": 75, "ticks_per_game_hour": 1, "game_hours_per_day": 24, "days_per_month": 30, "months_per_year": 12, "years": 1, "base_pulse_ms": 100, "violence_pulse_count": 20, "mobile_pulse_count": 100, "point_update_pulse_count": 75, "zone_pulse_count": 600, "autosave_pulse_count": 300, "world_hour_pulse_count": 75, "corpse_decay_pulse_count": 50, "maximum_catchup_pulses": 5}
         self._runtime_pulse_counter = 0
@@ -825,6 +835,50 @@ class MudRuntime:
         except Exception:
             logger.exception("startup diagnostics failed")
             raise
+
+    def _lookup_death_actor(self, actor_id: str) -> Any | None:
+        """Resolve death participants from MudRuntime's shared actor registry."""
+        return self.actor_registry.get(str(actor_id))
+
+    def _publish_death_event(self, name: str, payload: dict[str, Any]) -> None:
+        self.event_bus.publish(name, payload, source_system="death_runtime",
+                               world_id=str(payload.get("world_id") or self.active_world_id or ""),
+                               room_id=str(payload.get("room_id") or ""))
+
+    def _death_runtime_operations(self) -> dict[str, Any]:
+        """Project canonical Phase 20 operations through existing runtime APIs."""
+        def entity_id(request: Any) -> str:
+            return str(request.victim_actor_id).split(":", 1)[-1]
+
+        def cleanup(request: Any, _credited: str | None, **_kw: Any) -> dict[str, Any]:
+            self.combat_runtime.clear_actor_combat_state(request.victim_actor_id, "death_runtime")
+            if request.immediate_source_actor_id:
+                self.combat_runtime.clear_actor_combat_state(request.immediate_source_actor_id, "target_death")
+            return {}
+
+        def corpse(request: Any, credited: str | None, **_kw: Any) -> dict[str, Any]:
+            if not str(request.victim_actor_id).startswith("entity:"):
+                return {}
+            result = self.create_corpse(entity_id(request), death_id=request.death_id,
+                                        killer_actor_id=credited, source_system="death_runtime")
+            return {"corpse_instance_id": str(result.get("entity_id") or "")}
+
+        def extract(request: Any, _credited: str | None, **_kw: Any) -> dict[str, Any]:
+            if str(request.victim_actor_id).startswith("entity:"):
+                self.destroy_entity(entity_id(request), reason="death_runtime", source_system="death_runtime",
+                                    death_id=request.death_id)
+                self.actor_registry.unregister(request.victim_actor_id)
+            return {}
+
+        def cry(request: Any, _credited: str | None, **_kw: Any) -> dict[str, Any]:
+            victim = self._lookup_death_actor(request.victim_actor_id)
+            name = str(getattr(getattr(victim, "identity", None), "name", "Someone"))
+            self.event_bus.publish("death_cry", {"death_id": request.death_id, "message": f"{name} dies."},
+                                   source_system="death_runtime", world_id=request.world_id, room_id=request.room_id)
+            return {}
+
+        return {"cleanup_combat": cleanup, "create_corpse": corpse, "extract_npc": extract,
+                "emit_cry": cry}
 
     def _assert_command_runtime_invariants(self) -> None:
         registry_ids = getattr(self, "_startup_command_registry_ids", {id(self.command_engine.registry)})
@@ -1306,11 +1360,13 @@ class MudRuntime:
             print(f"[zone-reset] startup tick skipped: {exc}")
         self.living_world.ensure_world_time(world_id)
         self.actor_registry = getattr(self, "actor_registry", ActorRegistry())
-        self.abilities = AbilityExecutionService(self.state_store.db_path, self.active_world, self.event_bus, world_id, actor_registry=self.actor_registry, combat_runtime=self.combat_runtime, combat_stat_service=self.combat_stat_service, resource_service=getattr(self, 'resource_service', None), effect_service=getattr(self, 'effect_service', None), lifecycle_service=getattr(self, 'lifecycle_service', None), item_service=getattr(self, 'inventory_service', None), world_registry=self.world_registry, room_service=getattr(self, 'environment', None), formula_engine=getattr(self, 'formula_engine', None), state_store=self.state_store)
+        self.abilities = AbilityExecutionService(self.state_store.db_path, self.active_world, self.event_bus, world_id, actor_registry=self.actor_registry, combat_runtime=self.combat_runtime, combat_stat_service=self.combat_stat_service, resource_service=getattr(self, 'resource_service', None), effect_service=getattr(self, 'effect_service', None), lifecycle_service=getattr(self, 'lifecycle_service', None), item_service=getattr(self, 'inventory_service', None), world_registry=self.world_registry, room_service=getattr(self, 'environment', None), formula_engine=getattr(self, 'formula_engine', None), state_store=self.state_store, death_runtime=self.death_runtime, require_death_runtime=True)
         self.abilities.runtime = self
         if self.abilities.actor_registry is not self.actor_registry:
             raise RuntimeError("AbilityExecutionService registry wiring failed during world load")
         self.abilities.assert_runtime_combat_authority()
+        if self.abilities.death_runtime is not self.death_runtime:
+            raise RuntimeError("AbilityExecutionService must use MudRuntime's canonical DeathRuntimeService")
         self.command_engine.ability_service = self.abilities
         self.command_engine.world_id = world_id
         self.environment = EnvironmentService(self.state_store.db_path, self.active_world.root, world_id, self.event_bus)
