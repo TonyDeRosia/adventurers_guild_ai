@@ -8,11 +8,11 @@ persistence, world-time cooldowns, and EventBus publishing.
 """
 from __future__ import annotations
 
-import json, math, re, sqlite3, uuid
+import json, math, re, sqlite3, uuid, random
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 from enum import Enum
 
 from engine.actors import Actor, ActorRegistry, actor_from_runtime_character
@@ -438,6 +438,19 @@ class AbilityCostPreview:
     costs: tuple[dict[str, Any], ...] = ()
 
 
+class AbilityRandomProvider(Protocol):
+    """Injectable randomness boundary for every runtime-owned ability roll."""
+    def roll_percent(self) -> int: ...
+    def randint(self, minimum: int, maximum: int) -> int: ...
+
+
+class PythonAbilityRandomProvider:
+    def roll_percent(self) -> int:
+        return random.randint(1, 100)
+    def randint(self, minimum: int, maximum: int) -> int:
+        return random.randint(minimum, maximum)
+
+
 class AbilityRuntimeService:
     """The canonical active-ability boundary.
 
@@ -446,8 +459,9 @@ class AbilityRuntimeService:
     effects, cooldown storage and persistence), while this class owns their
     ordering and the request receipt.
     """
-    def __init__(self, service: "AbilityExecutionService"):
+    def __init__(self, service: "AbilityExecutionService", random_provider: AbilityRandomProvider | None = None):
         self.service = service
+        self.random_provider = random_provider or PythonAbilityRandomProvider()
         self._ledger: dict[str, AbilityExecutionResult] = {}
 
     def resolve_definition(self, ability_reference: str) -> AbilityDefinition | None:
@@ -460,6 +474,9 @@ class AbilityRuntimeService:
         actor = self.service.actor_registry.get(request.actor_id)
         if actor is None:
             return AbilityValidationResult(False, "ACTOR_NOT_FOUND")
+        remaining = max(0, int(getattr(actor, "wait_state", 0) or 0))
+        if remaining:
+            return AbilityValidationResult(False, "WAIT_STATE", {"remaining_wait": remaining, "message": f"You must wait {remaining} more tick(s)."})
         trace = self.service.validate_ability_use(request.actor_id, request.ability_id,
             request.explicit_target_actor_id or request.raw_argument_text or "self", preview=True)
         if trace.get("ok"):
@@ -479,6 +496,10 @@ class AbilityRuntimeService:
 
     def execute(self, request: AbilityExecutionRequest) -> AbilityExecutionResult:
         key = request.idempotency_key or request.request_id
+        if key and key not in self._ledger:
+            stored = self._load_durable_result(request, key)
+            if stored is not None:
+                self._ledger[key] = stored
         if key and key in self._ledger:
             prior = self._ledger[key]
             self.service._pub("ability.duplicate_ignored", {"request_id": request.request_id, "actor_id": request.actor_id, "ability_id": request.ability_id})
@@ -503,30 +524,61 @@ class AbilityRuntimeService:
         self.service._pub("ability.cost.calculated", {"request_id": request.request_id, "costs": costs})
         self.service._pub("ability.resource.checked", {"request_id": request.request_id, "costs": costs})
         before = self.service._proficiency(actor.actor_id, ability.id)
-        # The legacy abilities had no failure roll; retain that behaviour while
-        # recording the centralized deterministic successful roll.
-        roll, threshold = 1, max(1, int(before or 100))
-        self.service._pub("ability.roll.completed", {"request_id": request.request_id, "roll": roll, "threshold": threshold, "success": True})
+        policy = str((ability.proficiency_policy or {}).get("success_policy") or "ALWAYS_SUCCEEDS").upper()
+        threshold = max(1, min(100, int(before or 100)))
+        roll = None if policy in {"ALWAYS_SUCCEEDS", "PASSIVE_NO_ROLL", "EFFECT_HANDLER_DEFINED"} else self.random_provider.roll_percent()
+        succeeded = policy not in {"LEARNED_PERCENT_ROLL", "OPPOSED_ROLL"} or bool(roll is not None and roll <= threshold)
+        self.service._pub("ability.roll.completed", {"request_id": request.request_id, "actor_id": actor.actor_id, "ability_id": ability.id, "roll": roll, "threshold": threshold, "policy": policy, "success": succeeded})
+        if not succeeded:
+            return AbilityExecutionResult(status="FAILED_ROLL", request_id=request.request_id, actor_id=actor.actor_id, ability_id=ability.id, ability_name=ability.name, invocation_type=request.invocation_type.value, stage_reached="success_roll", validation=validation, resolved_targets=targets, calculated_costs=costs, proficiency_before=before, success_roll=roll, success_threshold=threshold, metadata={"success_policy": policy}, player_message="You fail to execute the ability.")
         paid = self.service._pay_costs(actor, ability, "start")
         self.service._pub("ability.resource.paid", {"request_id": request.request_id, "costs": paid})
         cast_id = "runtime_" + request.request_id.replace(" ", "_") if request.request_id else "runtime_" + uuid.uuid4().hex
         self.service._pub("ability.effect.started", {"request_id": request.request_id, "cast_id": cast_id})
         effect = self.service.execute_effect_handler(actor, ability, targets, cast_id)
-        improvement = self.service.attempt_proficiency_improvement(actor.actor_id, ability.id)
+        improvement = self.service.attempt_proficiency_improvement(actor.actor_id, ability.id, random_provider=self.random_provider)
         after = self.service._proficiency(actor.actor_id, ability.id)
         if improvement.get("improved"):
             self.service._pub("ability.proficiency.changed", {"request_id": request.request_id, **improvement})
+        wait_before = max(0, int(getattr(actor, "wait_state", 0) or 0))
+        requested_wait = max(0, int((ability.timing or {}).get("wait_state", (ability.timing or {}).get("wait_duration", 0)) or 0))
+        applied_wait = requested_wait if effect.get("ok", True) else 0
+        if applied_wait:
+            # Actor.wait_state is the existing combat/death lifecycle field; no parallel timer is created.
+            actor.wait_state = wait_before + applied_wait
+            self.service._pub("ability.wait_state.applied", {"request_id": request.request_id, "actor_id": actor.actor_id, "ability_id": ability.id, "before": wait_before, "duration": applied_wait, "after": actor.wait_state, "policy": "ON_EFFECT_COMMIT"})
+        wait_receipt = {"before": wait_before, "requested_duration": requested_wait, "applied_duration": applied_wait, "after": max(0, int(getattr(actor, "wait_state", 0) or 0)), "policy": "ON_EFFECT_COMMIT"}
         self.service._start_cooldown(actor.actor_id, ability)
         cooldown = {"applied": bool(ability.cooldowns), "policy": "ON_EFFECT_COMMIT"}
         if cooldown["applied"]: self.service._pub("ability.cooldown.applied", {"request_id": request.request_id, **cooldown})
         result = AbilityExecutionResult(status="SUCCESS" if effect.get("ok", True) else "FAILED", request_id=request.request_id, ability_id=ability.id, ability_name=ability.name, actor_id=actor.actor_id,
             target_id=str((targets[0] if targets else {}).get("actor_id") or ""), invocation_type=request.invocation_type.value, stage_reached="effect_completed", validation=validation, resolved_targets=targets, calculated_costs=costs, paid_costs=paid,
-            proficiency_before=before, success_roll=roll, success_threshold=threshold, proficiency_result=improvement, proficiency_after=after, cooldown_applied=cooldown,
-            effect_results=list(effect.get("effect_events") or []), damage_results=list(effect.get("damage_events") or []), resource_changes=paid, cooldown_started=cooldown["applied"], player_message=str(effect.get("message") or self.service._ability_success_message(ability.id) or "Ability activated."), messages=[str(effect.get("message") or "")], metadata={"cast_id": cast_id, "payment_policy": "PAY_ON_ATTEMPT"})
+            proficiency_before=before, success_roll=roll, success_threshold=threshold, success_policy=policy, improvement_roll=improvement.get("roll"), improvement_threshold=improvement.get("threshold"), improvement_amount=int(improvement.get("amount", 0) or 0), proficiency_result=improvement, proficiency_after=after, wait_state_applied=wait_receipt, cooldown_applied=cooldown,
+            effect_results=list(effect.get("effect_events") or []), damage_results=list(effect.get("damage_events") or []), resource_changes=paid, cooldown_started=cooldown["applied"], player_message=str(effect.get("message") or self.service._ability_success_message(ability.id) or "Ability activated."), messages=[str(effect.get("message") or "")], metadata={"cast_id": cast_id, "payment_policy": "PAY_ON_ATTEMPT", "success_policy": policy})
         if key and result.ok:
             self._ledger[key] = result
+            self._store_durable_result(request, key, result)
         self.service._pub("ability.succeeded" if result.ok else "ability.failed", {"request_id": request.request_id, "actor_id": request.actor_id, "ability_id": request.ability_id, "status": result.status})
         return result
+
+
+    def _store_durable_result(self, request: AbilityExecutionRequest, key: str, result: "AbilityExecutionResult") -> None:
+        if not self.service.db_path:
+            return
+        summary = {"status": result.status, "ability_id": result.ability_id, "ability_name": result.ability_name, "target_id": result.target_id, "stage_reached": result.stage_reached, "player_message": result.player_message, "success_roll": result.success_roll, "success_threshold": result.success_threshold}
+        with sqlite3.connect(self.service.db_path) as con:
+            con.execute("DELETE FROM ability_execution_ledger WHERE expires_at IS NOT NULL AND expires_at < CURRENT_TIMESTAMP")
+            con.execute("INSERT OR REPLACE INTO ability_execution_ledger(world_id,idempotency_key,request_id,actor_id,actor_life_generation,ability_id,invocation_type,status,stage_reached,result_summary_json,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,datetime('now','+30 days'))", (request.world_id or self.service.world_id, key, request.request_id, request.actor_id, str(request.actor_life_generation or ""), request.ability_id, request.invocation_type.value, result.status, result.stage_reached, jdump(summary)))
+
+    def _load_durable_result(self, request: AbilityExecutionRequest, key: str) -> "AbilityExecutionResult | None":
+        if not self.service.db_path:
+            return None
+        with sqlite3.connect(self.service.db_path) as con:
+            row = con.execute("SELECT result_summary_json FROM ability_execution_ledger WHERE world_id=? AND idempotency_key=? AND actor_id=? AND actor_life_generation=? AND (expires_at IS NULL OR expires_at >= CURRENT_TIMESTAMP)", (request.world_id or self.service.world_id, key, request.actor_id, str(request.actor_life_generation or ""))).fetchone()
+        if not row:
+            return None
+        data = jload(row[0], {})
+        return AbilityExecutionResult(**{k: data[k] for k in AbilityExecutionResult.__dataclass_fields__ if k in data})
 
 
 @dataclass(frozen=True)
@@ -583,6 +635,10 @@ class AbilityExecutionResult:
     proficiency_before: int | None = None
     success_roll: int | None = None
     success_threshold: int | None = None
+    success_policy: str = ""
+    improvement_roll: int | None = None
+    improvement_threshold: int | None = None
+    improvement_amount: int = 0
     proficiency_result: dict[str, Any] = field(default_factory=dict)
     proficiency_after: int | None = None
     wait_state_applied: dict[str, Any] = field(default_factory=dict)
@@ -1694,7 +1750,7 @@ class AbilityExecutionService:
         except Exception:
             pass
 
-    def attempt_proficiency_improvement(self, actor_id: str, ability_id: str, context: dict[str, Any] | None = None) -> dict[str, Any]:
+    def attempt_proficiency_improvement(self, actor_id: str, ability_id: str, context: dict[str, Any] | None = None, random_provider: AbilityRandomProvider | None = None) -> dict[str, Any]:
         """Canonical +1% proficiency improvement hook for successful ability use."""
         if not self.db_path:
             return {"attempted": False, "reason": "no_store"}
@@ -1724,9 +1780,10 @@ class AbilityExecutionService:
             if state["successful_uses"] < minimum_successful_uses:
                 c.execute("UPDATE actor_ability_progression SET metadata_json=? WHERE actor_id=? AND ability_id=?", (jdump(meta), actor_id, ability_id))
                 return {"attempted": False, "reason": "minimum_successful_uses", "proficiency": current}
-            # Deterministic roll hook: 0 means disabled, >=1 means always succeeds; fractional formulas can be added here.
             attempted = chance > 0
-            improved = attempted and chance >= 1
+            threshold = max(0, min(100, int(chance * 100 if chance <= 1 else chance)))
+            roll = random_provider.roll_percent() if attempted and random_provider else (1 if attempted and chance >= 1 else None)
+            improved = attempted and bool(roll is not None and roll <= threshold)
             if improved:
                 current = min(maximum, current + 1)
                 state["last_improvement_at"] = now_ts
@@ -1734,7 +1791,7 @@ class AbilityExecutionService:
                 self._pub("ability_proficiency_increased", {"actor_id": actor_id, "ability_id": ability_id, "proficiency": current, "difficulty": difficulty})
             else:
                 c.execute("UPDATE actor_ability_progression SET metadata_json=? WHERE actor_id=? AND ability_id=?", (jdump(meta), actor_id, ability_id))
-            return {"attempted": attempted, "improved": improved, "proficiency": current, "chance": chance, "difficulty": difficulty, "cooldown_seconds": cooldown}
+            return {"attempted": attempted, "improved": improved, "proficiency": current, "chance": chance, "roll": roll, "threshold": threshold, "amount": 1 if improved else 0, "difficulty": difficulty, "cooldown_seconds": cooldown}
     def complete_ability(self, cast_id: str) -> dict[str, Any]:
         if not self.db_path: return {"ok":False,"message":"No cast store."}
         with sqlite3.connect(self.db_path) as c: row=c.execute("SELECT actor_id,ability_id,target_data_json,state FROM actor_ability_casts WHERE cast_id=?",(cast_id,)).fetchone()
@@ -1989,6 +2046,8 @@ class AbilityExecutionService:
 
 def init_ability_schema(db_path: Path|str) -> None:
     with sqlite3.connect(db_path) as c:
+        c.execute("CREATE TABLE IF NOT EXISTS ability_execution_ledger (world_id TEXT NOT NULL, idempotency_key TEXT NOT NULL, request_id TEXT NOT NULL, actor_id TEXT NOT NULL, actor_life_generation TEXT, ability_id TEXT NOT NULL, invocation_type TEXT, status TEXT NOT NULL, stage_reached TEXT, result_summary_json TEXT NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP, committed_at TEXT DEFAULT CURRENT_TIMESTAMP, expires_at TEXT, PRIMARY KEY(world_id,idempotency_key,actor_id,actor_life_generation))")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_ability_execution_ledger_expiry ON ability_execution_ledger(expires_at)")
         c.execute("CREATE TABLE IF NOT EXISTS actor_ability_grants (grant_id TEXT PRIMARY KEY, world_id TEXT, actor_type TEXT, actor_id TEXT, ability_id TEXT, source_type TEXT, source_id TEXT, source_instance_id TEXT, rank INTEGER, proficiency REAL, enabled INTEGER, temporary INTEGER, starts_at TEXT, expires_at TEXT, created_at TEXT, updated_at TEXT, metadata_json TEXT)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_actor_ability_grants_actor ON actor_ability_grants(world_id,actor_type,actor_id,enabled)")
         c.execute("CREATE TABLE IF NOT EXISTS actor_ability_cooldowns (cooldown_id TEXT PRIMARY KEY, world_id TEXT, actor_type TEXT, actor_id TEXT, ability_id TEXT, cooldown_group TEXT, started_world_time INTEGER, ready_world_time INTEGER, charges_current INTEGER, charges_maximum INTEGER, next_charge_world_time INTEGER, active INTEGER, created_at TEXT, updated_at TEXT, metadata_json TEXT)")

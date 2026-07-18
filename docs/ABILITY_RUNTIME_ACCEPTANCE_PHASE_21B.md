@@ -24,3 +24,10 @@ The runtime receipt now records request identity, validation, resolved targets,
 calculated and paid costs, roll/proficiency fields, cooldown policy, structured
 effect and damage results, messages, and failure information. The compatibility
 instant executor is no longer invoked by the request boundary.
+
+## Phase 21B.2 reliability evidence
+
+The runtime now has an injectable percent/random provider, durable SQLite
+idempotency (30-day bounded retention), and receipt-level wait-state policy data.
+`tests/test_phase21b2_runtime_reliability.py` recreates the service against the same
+database and proves a duplicate is ignored without another execution.
