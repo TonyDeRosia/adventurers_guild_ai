@@ -16,3 +16,7 @@ Attribution retains both immediate and credited source. Master/owner links are
 walked for at most 20 hops, cycles are safe, and the first player wins. Phase
 20B is deliberately reserved for XP, Glory, bounty, quest credit, penalties,
 and respawn.
+
+## Phase 20B extension
+
+Phase 20B consumes the completed foundation ledger through `process_rewards`; it does not recreate corpses, transfers, gold rolls, or NPC extraction. Its reward child rows make XP, rare bonuses, Glory, bounty, penalty, automation, quest credit, and respawn idempotent.
