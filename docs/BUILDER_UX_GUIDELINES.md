@@ -137,3 +137,9 @@ Wrong-context commands inside an active editor must be recognized and explained.
 Saving a Builder editor must explicitly confirm that the mobile draft was saved, include the mobile name, draft revision, dirty state, validation summary, publish readiness, current editor context, and a Builder audit/log line. Character autosave logs are not sufficient evidence of Builder draft persistence.
 
 Future editors must follow production-path integration testing: verify ordinary browser/API output, such as `/api/mud/input`, not only helper methods, and prove visible options are displayed before asking for input.
+
+## Interactive OLC visual presentation
+
+Smart MUD's interactive OLC presentation intentionally follows a compact TBA/CircleMUD-style terminal workflow, based specifically on Anthony's customized Adventurer's Lair Builder. This is a visual and interaction inheritance only: Smart MUD still uses its modern draft/publish Builder architecture, validation, locking, and canonical data model rather than the old TBA datastore or OLC internals.
+
+Builder screens should prefer dense record-oriented menus, direct numbered or lettered editing, inline descriptions where they help the builder act quickly, ANSI semantic colors, compact multi-column flag editors, dedicated subsystem editors, minimal permanent help, and one canonical layout shared by web and telnet. Builder UX must not be converted into a modern dashboard, card layout, web form, wizard, or inspector panel for these terminal-first OLC flows.

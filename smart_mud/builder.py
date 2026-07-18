@@ -1,7 +1,7 @@
 """Safe in-game Builder workspace services for Smart MUD."""
 from __future__ import annotations
 
-import json, shutil, re, os, hashlib, sqlite3, time
+import json, shutil, re, os, hashlib, sqlite3, time, textwrap
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
@@ -18,6 +18,39 @@ MOBILE_SIZES = ("tiny", "small", "medium", "large", "huge", "gargantuan")
 GENDER_PRESENTATIONS = ("neutral", "female", "male", "nonbinary", "unknown", "none")
 COMMON_SPECIES = ("human", "elf", "dwarf", "halfling", "orc", "goblin", "wolf", "bear", "dragon", "skeleton")
 SPECIES_RECOMMENDATIONS = {"human": ("humanoid", "medium"), "elf": ("humanoid", "medium"), "dwarf": ("humanoid", "medium"), "halfling": ("humanoid", "small"), "orc": ("humanoid", "medium"), "goblin": ("humanoid", "small"), "wolf": ("animal", "medium"), "bear": ("animal", "large"), "dragon": ("dragon", "huge"), "skeleton": ("undead", "medium")}
+
+
+def _medit_words(value: Any) -> str:
+    if value in (None, "", [], {}):
+        return ""
+    if isinstance(value, list):
+        return " ".join(str(x) for x in value)
+    return str(value)
+
+def _medit_title(value: Any, default: str = "") -> str:
+    v = _medit_words(value) or default
+    return v.replace("_", " ").title() if v else ""
+
+def _medit_flags(value: Any, nobits: bool = False) -> str:
+    vals = value or []
+    if isinstance(vals, str): vals = [vals]
+    out = " ".join(str(v).upper().replace("_", "-") for v in vals if str(v))
+    return out or ("NOBITS" if nobits else "NOBITS")
+
+def _medit_wrap(text: Any, width: int = 79, indent: str = "") -> list[str]:
+    raw = str(text or "")
+    if not raw:
+        return [""]
+    width = max(40, min(int(width or 79), 90))
+    lines: list[str] = []
+    for para in raw.splitlines() or [raw]:
+        if not para.strip():
+            lines.append("")
+            continue
+        wrapped = textwrap.wrap(para, width=max(20, width - len(indent)), replace_whitespace=False, drop_whitespace=True) or [""]
+        for line in wrapped:
+            lines.append(indent + line)
+    return lines
 
 DRAFT_FILES = {
     "world": "world.json", "display_themes": "display_themes.json",
@@ -2265,6 +2298,8 @@ class BuilderService:
             return "\n".join(lines)
         if sess.section:
             return self._render_mobile_section(sess, sess.section)
+        if sess.editor_type == "medit":
+            return self.menu(sess.editor_type, str(title), sess)
         return "\n".join(self._status_bar(sess)) + self.menu(sess.editor_type, str(title), sess) + "\n" + "\n".join(self._context_footer(sess))
 
     def _field_descriptors(self, sess: BuilderEditSession) -> list[OlcFieldDescriptor]:
@@ -2456,6 +2491,8 @@ class BuilderService:
         return "Multiline text editor. Enter text lines. Commands: .save .cancel .clear .show .help"
 
     def _render_flag_editor(self, sess: BuilderEditSession) -> str:
+        if sess.editor_type == "medit" and sess.section in {"mobile_flags", "affect_flags"}:
+            return self._render_medit_flags_screen(sess, aff=sess.section == "affect_flags")
         f = self._descriptor(sess, sess.active_field); cur = set(self._get_path(sess.working_record, f.path) or []) if f else set()
         lines = self._status_bar(sess) + [f"{sess.editor_type.upper()} {sess.object_id} > {f.label if f else 'Flags'}", "Choose one or more flags; selected values are marked with [X]."]
         for i, flag in enumerate((f.flags if f else ()), 1):
@@ -2492,7 +2529,21 @@ class BuilderService:
         lines = [f"MEDIT {section.replace('_',' ').title()}: {rec.get('name') or sess.object_id}"]
         descriptors = self._field_descriptors(sess)
         if section == "identity":
-            return self._render_identity_menu(sess)
+            return self._render_medit_identity_compact(sess)
+        if section == "attributes":
+            return self._render_medit_stats(sess)
+        if section == "mobile_flags":
+            return self._render_medit_flags_screen(sess, aff=False)
+        if section == "affect_flags":
+            return self._render_medit_flags_screen(sess, aff=True)
+        if section == "abilities":
+            return self._render_medit_simple_list(sess, "abilities")
+        if section == "event_reactions":
+            return self._render_medit_simple_list(sess, "events")
+        if section == "loadout":
+            return self._render_medit_simple_list(sess, "loadout")
+        if section == "scripts":
+            return self._render_medit_simple_list(sess, "scripts")
         if descriptors and section not in {"natural_weapons", "spawns", "diagnostics"}:
             lines = self._status_bar(sess) + [f"{sess.editor_type.upper()} {sess.object_id} > {section.replace('_',' ').title()}", f"Draft status: {'modified' if sess.dirty else 'clean'}", "Fields show purpose, current value, and safe edit numbers."]
             for i, f in enumerate(descriptors, 1):
@@ -2671,8 +2722,8 @@ class BuilderService:
                 if not sess.redo_stack: return BuilderResult(False, "Nothing to redo.")
                 sess.undo_stack.append(deepcopy(sess.working_record)); sess.working_record = sess.redo_stack.pop(); sess.dirty = sess.working_record != sess.savepoint; sess.saved = not sess.dirty
                 return BuilderResult(True, "Session redo applied.\n" + self._render_flag_editor(sess))
-            if low in cancel_words:
-                sess.mode = "section_menu"; sess.active_field = ""
+            if low in cancel_words or low == "0":
+                sess.mode = "main_menu"; sess.section = ""; sess.active_field = ""
                 return BuilderResult(True, self.render_session(sess))
             cur = set(self._get_path(sess.working_record, f.path) or [])
             if low in {"none","clear"}: new = []
@@ -2794,9 +2845,36 @@ class BuilderService:
                 sess.mode = "field_prompt"; return BuilderResult(True, self._render_field_prompt(sess))
         if sess.editor_type != "medit" and low in {"1","fields","edit"}:
             sess.section = "fields"; sess.mode = "section_menu"; return BuilderResult(True, self.render_session(sess))
-        section_map = {"1":"identity","identity":"identity", "2":"keywords", "keywords":"keywords", "aliases":"keywords", "3":"descriptions", "descriptions":"descriptions", "4":"traits", "traits":"traits", "5":"attributes", "attributes":"attributes", "level":"attributes", "6":"resources", "resources":"resources", "7":"natural_weapons", "combat":"combat", "8":"body_weapons", "body":"body_weapons", "body profile":"body_weapons", "weapons":"natural_weapons", "natural":"natural_weapons", "natural weapons":"natural_weapons", "natural attacks":"natural_weapons", "9":"positions", "positions":"positions", "10":"mobile_flags", "flags":"mobile_flags", "mobile flags":"mobile_flags", "11":"affect_flags", "affects":"affect_flags", "12":"equipment", "equipment":"equipment", "13":"inventory", "inventory":"inventory", "14":"loot", "loot":"loot", "15":"abilities", "abilities":"abilities", "16":"ai", "ai":"ai", "behavior":"ai", "17":"faction", "faction":"faction", "18":"scripts", "scripts":"scripts", "19":"spawns", "spawns":"spawns", "spawn":"spawns", "20":"diagnostics", "diagnostics":"diagnostics"}
+        if sess.editor_type == "medit" and not sess.section:
+            main_fields = {"1": ("identity", "gender"), "2": ("keywords", "keywords"), "3": ("descriptions", "short_description"), "4": ("descriptions", "room_description"), "5": ("descriptions", "look_description"), "6": ("positions", "spawn_position"), "7": ("positions", "default_position")}
+            if low in main_fields:
+                sess.section, sess.active_field = main_fields[low]
+                f = self._descriptor(sess, sess.active_field)
+                if f and not f.read_only:
+                    if f.input_type == "multiline":
+                        sess.mode = "multiline_text"; sess.multiline_lines = []
+                        return BuilderResult(True, self._render_multiline(sess))
+                    if f.input_type in {"string_list", "list"}:
+                        sess.mode = "list_editor"
+                        return BuilderResult(True, self._render_list_editor(sess))
+                    sess.mode = "field_prompt"
+                    return BuilderResult(True, self._render_field_prompt(sess))
+                sess.mode = "section_menu"
+                return BuilderResult(True, self.render_session(sess))
+            if low == "p":
+                sess.active_field = "pet_price"; sess.mode = "field_prompt"
+                return BuilderResult(True, "Current pet price: (default)\nEnter pet price, 0 to disable, or Q to cancel:")
+            if low == "w":
+                return BuilderResult(True, "Copy this mob to which new ID or VNUM?\nEnter destination or Q to cancel:")
+            if low == "x":
+                return BuilderResult(True, f"WARNING: Delete mob [{(sess.working_record or {}).get('vnum') or sess.object_id}] {(sess.working_record or {}).get('name') or sess.object_id}?\nType DELETE to confirm or Q to cancel:")
+        section_map = {"9":"attributes", "stats":"attributes", "stats menu":"attributes", "i":"identity", "identity":"identity", "traits":"identity", "a":"mobile_flags", "flags":"mobile_flags", "npc flags":"mobile_flags", "b":"affect_flags", "affects":"affect_flags", "aff flags":"affect_flags", "u":"abilities", "abilities":"abilities", "combat abilities":"abilities", "v":"event_reactions", "events":"event_reactions", "event reactions":"event_reactions", "r":"loadout", "loadout":"loadout", "loot":"loadout", "s":"scripts", "scripts":"scripts", "2":"keywords", "3":"descriptions", "4":"descriptions", "5":"descriptions", "6":"positions", "7":"positions", "8":"combat"}
         if low in section_map:
-            sess.section=section_map[low]; sess.mode="section_menu"; return BuilderResult(True, self.render_session(sess))
+            sess.section=section_map[low]; sess.mode="section_menu"
+            if sess.editor_type == "medit" and sess.section in {"mobile_flags", "affect_flags"}:
+                sess.active_field = sess.section
+                sess.mode = "flag_editor"
+            return BuilderResult(True, self.render_session(sess))
         if low in {"p", "preview"}: return self._session_preview(actor, sess)
         if low in {"v", "validate"}:
             issues = MobileTemplate.from_legacy(sess.working_record).validate() if sess.collection == "entities" else []
@@ -3005,29 +3083,105 @@ class BuilderService:
         result = rt.clear_builder_test_environment(actor)
         return BuilderResult(True, f"Cleared {result.get('actors', 0)} resident ephemeral Builder test actor(s), occupancy entries, combat encounters, AI tasks, timers, items, corpses, async messages, and private-room state.", result)
 
+    def _medit_header(self, sess: BuilderEditSession) -> str:
+        rec = sess.working_record or {}
+        v = rec.get("vnum") or rec.get("legacy_vnum")
+        sid = rec.get("id") or sess.object_id
+        if v:
+            return f"-- Mob Number: [{v}] ID: [{sid}]"
+        return f"-- Mob ID: [{sid}]"
+
+    def _render_medit_main(self, sess: BuilderEditSession) -> str:
+        rec = sess.working_record or {}
+        cp = rec.get("combat_profile") or {}
+        name = rec.get("name") or sess.object_id.replace("_", " ")
+        keywords = _medit_words(rec.get("keywords") or rec.get("aliases") or name.lower().split())
+        sex = rec.get("sex") or rec.get("gender") or rec.get("gender_presentation") or "neutral"
+        short = rec.get("short_description") or rec.get("sdesc") or name
+        ldesc = rec.get("room_description") or rec.get("long_description") or rec.get("description") or ""
+        ddesc = rec.get("look_description") or rec.get("examine_description") or rec.get("detailed_description") or rec.get("description") or ""
+        pos = rec.get("spawn_position") or rec.get("position") or "standing"
+        default = rec.get("default_position") or pos or "standing"
+        attack = cp.get("attack_type") or cp.get("damage_type") or rec.get("attack_type") or "fist"
+        scripts = rec.get("script_ids") or rec.get("scripts") or []
+        script_text = "Not Set." if not scripts else f"{len(scripts)} attached"
+        pet = rec.get("pet_price", None)
+        pet_text = "(default)" if pet in (None, "", []) else ("Disabled" if str(pet) == "0" else str(pet))
+        lines = [self._medit_header(sess), ""]
+        lines.append(f"1) Sex: {str(sex).replace('_',' ')}".ljust(29) + f"2) Keywords: {keywords}")
+        lines.append(f"3) S-Desc: {short}")
+        lines.append("4) L-Desc:-")
+        lines.extend(_medit_wrap(ldesc, 79))
+        lines.append("")
+        lines.append("5) D-Desc:-")
+        lines.extend(_medit_wrap(ddesc, 79, indent="   "))
+        lines.append("")
+        lines.append(f"6) Position  : {_medit_title(pos, 'Standing')}")
+        lines.append(f"7) Default   : {_medit_title(default, 'Standing')}")
+        lines.append(f"8) Attack    : {attack}")
+        lines.append("9) Stats Menu...")
+        lines.append("I) Identity / Traits")
+        lines.append(f"A) NPC Flags : {_medit_flags(rec.get('mobile_flags') or rec.get('npc_flags'))}")
+        lines.append(f"B) AFF Flags : {_medit_flags(rec.get('affect_flags'), True)}")
+        lines.append(f"P) Pet Price : {pet_text}")
+        lines.append("R) Loadout / Loot")
+        lines.append(f"S) Script    : {script_text}")
+        lines.append("U) Combat Abilities")
+        lines.append("V) Event Reactions")
+        lines.append("W) Copy mob")
+        lines.append("X) Delete mob")
+        lines.append("Q) Quit")
+        issues = MobileTemplate.from_legacy(rec).validate()
+        errs = sum(1 for i in issues if i.get("severity") == "error" or i.get("blocking")); warns = sum(1 for i in issues if i.get("severity") == "warning")
+        if errs or warns: lines.append(f"Validation: {errs} errors, {warns} warnings")
+        lines.append("Enter choice :")
+        return "\n".join(lines)
+
+    def _render_medit_stats(self, sess: BuilderEditSession) -> str:
+        rec=sess.working_record or {}; attrs=rec.get('attributes') or {}; res=rec.get('resources') or {}; cp=rec.get('combat_profile') or {}
+        level=int(rec.get('level') or 1); hp=int(res.get('health') or rec.get('health') or max(1, level*10)); dmg=int(cp.get('damage') or cp.get('attack_power_modifier') or max(1, level//2))
+        name=rec.get('name') or sess.object_id.replace('_',' '); v=rec.get('vnum') or sess.object_id
+        sep='-'*78
+        def row(k,l,v): return f"({k}) {l:<31} [{str(v):>5}]"
+        return "\n".join([sep,f"MOB BUILD: [{v}] {name}",sep,"QUICK BUILD",row('1','Level:',level),"(2) Reapply Recommended Stats","","Tip: Set the level first.","     After changing level, accept the Y/N prompt to fill recommended stats.","     Use option 2 later to refresh recommended values again.",sep,"HIT POINTS",row('3','HP NumDice:',res.get('hp_numdice',1)),row('4','HP SizeDice:',res.get('hp_sizedice',max(1,level))),row('5','HP Addition:',hp),f"    HP Preview:                    [{hp:>4} to {hp+max(1,level):>4}]",sep,"DAMAGE",row('6','DHD NumDice:',cp.get('damage_numdice',1)),row('7','DHD SizeDice:',cp.get('damage_sizedice',max(1,dmg))),row('8','Damroll:',cp.get('damroll',0)),f"    Damage Preview:                [{dmg:>4} to {dmg+max(1,int(cp.get('damroll') or 0)):>4}]",sep,"COMBAT",row('A','Armor:',cp.get('armor',0)),row('B','Hitroll:',cp.get('hitroll',0)),row('C','Evasion:',cp.get('evasion_modifier',0)),row('D','Alignment:',rec.get('alignment',0)),row('E','Wimpy Threshold:',cp.get('wimpy_threshold',0)),sep,"REWARDS",f"(F) Bonus XP:                      [ {rec.get('bonus_xp',0)} / {rec.get('bonus_xp_max',0)} ]",f"(G) Gold Min/Max:                  [ {rec.get('gold_min',0)} / {rec.get('gold_max',0)}]",f"    Base XP Preview:               [{level*12:>5}]",f"    Total XP Preview:              [{level*12+int(rec.get('bonus_xp') or 0):>5}]",sep,"ATTRIBUTES",f"(H) Str: [{attrs.get('strength',10):>2}/ 0]    (I) Int: [{attrs.get('intelligence',10):>2}]    (J) Wis: [{attrs.get('wisdom',10):>2}]",f"(K) Dex: [{attrs.get('dexterity',10):>2}]       (L) Con: [{attrs.get('constitution',10):>2}]    (M) Cha: [{attrs.get('charisma',10):>2}]",sep,"SAVING THROWS",row('N','Paralysis:',rec.get('save_paralysis',0)),row('O','Rods/Staves:',rec.get('save_rods',0)),row('P','Petrification:',rec.get('save_petrification',0)),row('R','Breath:',rec.get('save_breath',0)),row('S','Spells:',rec.get('save_spells',0)),sep,"(Q) Quit to main menu","Enter choice :"])
+
+    def _render_medit_identity_compact(self, sess: BuilderEditSession) -> str:
+        rec=sess.working_record or {}; name=rec.get('name') or sess.object_id.replace('_',' '); v=rec.get('vnum') or sess.object_id
+        return "\n".join([f"-- Mob Identity / Traits: [{v}] {name}","",f"1) Name           : {name}",f"2) Stable ID      : {rec.get('id') or sess.object_id}",f"3) Legacy VNUM    : {rec.get('vnum') or '(none)'}",f"4) Species        : {rec.get('species') or '(none)'}",f"5) Classification : {rec.get('classification') or '(none)'}",f"6) Size           : {rec.get('size') or '(none)'}",f"7) NPC Role       : {rec.get('entity_type') or 'npc'}",f"8) Enabled        : {'Yes' if rec.get('enabled', True) else 'No'}",f"9) Builder Tags   : {_medit_words(rec.get('tags')) or '(none)'}","Q) Quit to main menu","Enter choice :"])
+
+    def _render_medit_flags_screen(self, sess: BuilderEditSession, aff: bool=False) -> str:
+        flags = list(("blind","invisible","detect_alignment","detect_invisible","detect_magic","sense_life","waterwalk","sanctuary","group","curse","infra","poisoned","protect_evil","protect_good","sleeping","no_track","flying","scuba","sneak","hide","unused","charm","webbed","silenced","phase","marked","arcane_leak","time_snare","spell_lock","corroded","fearful","static","bloodlust","ward_fire","ward_cold","ward_lightning","ward_acid","stoneskin","mirror_image","burning","frozen","rooted","stunned","blind_mag","warded","hexed","shielded","regenerating","truesight","empowered","fortified","wraithform","barkskin","holy_aura","unholy_aura","death_ward","spell_reflect","adrenaline","clarity","infused","haste") if aff else ("sentinel","scavenger","aware","aggressive","stay_zone","wimpy","aggr_evil","aggr_good","aggr_neutral","memory","helper","no_charm","no_summon","no_sleep","no_bash","no_blind","no_kill","guild_master","ai_actor","teach_scribing","teach_alchemy","teach_enchanting","quest_master"))
+        cols=4 if aff else 2; rows=(len(flags)+cols-1)//cols; lines=[]
+        for r in range(rows):
+            parts=[]
+            for c in range(cols):
+                i=r+c*rows
+                if i < len(flags): parts.append(f"{i+1:>2}) {flags[i].upper().replace('_','-'):<18}")
+            lines.append("  ".join(parts).rstrip())
+        cur=_medit_flags((sess.working_record or {}).get('affect_flags' if aff else 'mobile_flags'), True)
+        lines += ["", f"Current flags : {cur}", f"Enter {'aff' if aff else 'mob'} flags (0 to quit) :"]
+        return "\n".join(lines)
+
+    def _render_medit_simple_list(self, sess: BuilderEditSession, kind: str) -> str:
+        rec=sess.working_record or {}; name=rec.get('name') or sess.object_id.replace('_',' '); v=rec.get('vnum') or sess.object_id
+        if kind == 'abilities':
+            items=rec.get('combat_abilities') or rec.get('granted_abilities') or []
+            rows=[f"Combat Abilities ({len(items)})"] + ([""]+[f"{i}) {x}" for i,x in enumerate(items,1)] if items else ["   [NONE]"]) + ["","A) Add   E) Edit   D) Delete   T) Toggle   Q) Quit","Enter choice:"]
+        elif kind == 'events':
+            items=rec.get('event_reactions') or []
+            rows=[f"Event Reactions ({len(items)})"] + ([""]+[f"{i}) {x}" for i,x in enumerate(items,1)] if items else ["   [NONE]"]) + ["","A) Add   E) Edit   D) Delete   T) Toggle   Q) Quit","Enter choice:"]
+        elif kind == 'loadout':
+            rows=[f"-- Loadout / Loot: [{v}] {name}","",f"E) Equipment       : {len(rec.get('equipment_loadout') or [])} entries",f"I) Inventory       : {len(rec.get('starting_inventory') or [])} entries",f"L) Loot / Corpse   : {len(rec.get('loot') or [])} entries","Q) Quit to main menu","Enter choice :"]
+        else:
+            items=rec.get('script_ids') or rec.get('scripts') or []
+            rows=[f"-- Scripts: [{v}] {name}",""] + ([f"{i}) [{x}]" for i,x in enumerate(items,1)] or ["   [NONE]"]) + ["","A) Add   D) Delete   V) View   Q) Quit","Enter choice :"]
+        return "\n".join(rows)
+
     def menu(self, editor: str, title: str, sess: BuilderEditSession | None = None) -> str:
         if editor == "medit":
-            rec = (sess.working_record if sess else {}) or {}
-            issues = MobileTemplate.from_legacy(rec).validate() if rec else []
-            errors = sum(1 for i in issues if i.get("severity") == "error")
-            warnings = sum(1 for i in issues if i.get("severity") == "warning")
-            status = "clean" if not sess or not sess.dirty else "dirty"
-            lines = [
-                f"Mobile Editor\nMOBILE EDITOR: {title}", f"Mobile ID: {(sess.object_id if sess else '')}", f"Draft revision: {(sess.draft_revision if sess else rec.get('_builder_revision', 0))}",
-                f"World: {(sess.world_id if sess else rec.get('world_id',''))}", f"Area: {rec.get('area_id','')}", f"Zone: {rec.get('zone_id','')}", f"Lock owner: {(sess.builder_character_id if sess else 'none')}",
-                f"Validation status: {errors} error(s), {warnings} warning(s)", f"Dirty status: {status}", f"Builder status: {rec.get('builder_status','incomplete')}", "",
-                "1. Identity", "   Name, species, classification, size, role, and Builder state.", "2. Keywords", "   Words players and commands may use to identify this mobile.",
-                "3. Descriptions", "   Room appearance, examine text, and detailed description.", "4. Stats", "   Level, attributes, health, mana, defense, damage, and rewards.",
-                "5. Resources", "   Health, mana, stamina, and other runtime pools.", "6. Combat", "   Combat statistics, armor, behavior, threat, and ability profiles.",
-                "7. Natural Weapons", "   Body-derived attacks and natural combat options.", "8. Body Profile", "   Anatomy profile used by equipment assumptions and natural attacks.",
-                "9. Positions", "   Spawn, idle, reset, and combat positions.", "10. Mobile Flags", "   Special movement, combat, service, and world behavior.",
-                "11. Permanent Affects", "   Always-active statuses, protections, senses, and movement effects.", "12. Equipment", "   Objects equipped when the mobile spawns.",
-                "13. Inventory", "   Objects carried when the mobile spawns.", "14. Loot / Corpse", "   Objects, currency, and corpse behavior after death.",
-                "15. Combat Abilities", "   Skills and spells the mobile may use in combat.", "16. Event Reactions", "   Actions triggered by speech, movement, combat, time, and events.",
-                "17. Faction", "   Faction membership, relationships, and hostility defaults.", "18. Scripts", "   Attached canonical script references and triggers.",
-                "19. Spawns", "   Spawn and reset references that place this mobile in the world.", "20. Diagnostics", "   Validation, dependencies, references, and runtime support.", "",
-                "P. Preview", "V. Validate", "T. Testspawn", "H. History", "U. Undo", "R. Redo", "S. Save", "Q. Quit"]
-            return "\n".join(lines)
+            if sess is not None:
+                return self._render_medit_main(sess)
+            return f"-- Mob ID: [{title}]\nEnter choice :"
         sections = {"redit": ["Title", "Description", "Exits", "Sector", "Flags", "Extra Descriptions", "Ambient Effects", "Spawn List", "Preview", "Validate", "Publish"], "oedit": ["Identity", "Keywords", "Type", "Wear Flags", "Extra Flags", "Stats", "Affects", "Values", "Container Data", "Weapon Data", "Armor Data", "Scripts", "Preview", "Validate", "Publish"], "aedit": ["Identity", "Zones", "Rooms", "Templates", "Spawns", "Preview", "Validate", "Publish"], "zedit": ["Identity", "Area", "Rooms", "Resets", "Spawns", "Preview", "Validate", "Publish"]}.get(editor, [])
         header = {"redit": "Room Editor", "oedit": "Object Editor", "aedit": "Area Editor", "zedit": "Zone Editor"}.get(editor, "Builder Editor")
         body = "\n".join(f"{i} {section}" for i, section in enumerate(sections, 1))
