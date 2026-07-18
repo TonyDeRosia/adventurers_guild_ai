@@ -153,4 +153,4 @@ class TelnetTransportAdapter(RuntimeTransportAdapter):
         if not rendered and view.get("html"):
             rendered = html_to_ansi_text(str(view.get("html") or ""))
         prompt = html_to_ansi_text(str(view.get("prompt") or ">"))
-        return TransportResponse(session=session, output=rendered, output_format=self.output_format, prompt=prompt, metadata={"used_mud_runtime": True})
+        return TransportResponse(session=session, output=rendered, output_format=self.output_format, prompt=prompt, metadata={"result": result, "used_mud_runtime": True})

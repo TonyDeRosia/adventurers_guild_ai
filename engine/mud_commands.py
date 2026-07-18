@@ -63,6 +63,10 @@ class CommandResult:
     display_document: Any = None
     display_intent: str = "SYSTEM"
     semantic_role: str = "system"
+    # The command boundary deliberately keeps the transport-neutral receipt so
+    # production adapters can expose authoritative outcomes without parsing
+    # narration.  Presentation clients may ignore it.
+    ability_result: Any = None
 
 
 # Known deterministic commands (no AI needed)
@@ -3024,7 +3028,7 @@ class MudCommandEngine:
             )
             result = runtime_service.execute(request)
             return CommandResult(result.player_message or ("Ability activated." if result.ok else "You cannot use that ability."), ok=result.ok,
-                state_updates={"render_room": result.ok and result.ability_id in {"set_camp", "build_campfire", "recall"}})
+                state_updates={"render_room": result.ok and result.ability_id in {"set_camp", "build_campfire", "recall"}}, ability_result=result)
         if canonical_cmd == "cast" and gateway and hasattr(gateway, "execute_by_id"):
             res = gateway.execute_by_id(character.id, aid, target or "self", {"command": raw, "source": canonical_cmd})
         else:

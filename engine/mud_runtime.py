@@ -2042,7 +2042,11 @@ class MudRuntime:
             self.performance_counters["kill_request_total_ms"] = int(trace.get("total_server_ms", 0))
             self.performance_counters["kill_response_build_ms"] = int((trace["response_ready"] - trace["command_execution_completed"]) * 1000)
             self.performance_counters["kill_response_send_ms"] = 0
-        return {"ok": result.ok, "request_id": request_id, "action_id": request_id, "output": render_semantic_plain(result.narrative), "semantic_output": result.narrative, "state_updates": updates, "view": view, "command_response": {"command": command, "semantic_text": result.narrative, "plain_text": render_semantic_plain(result.narrative), "html": "", "room_render": view, "prompt_snapshot": self.prompt_snapshot(character_id) if character_id in self.active_characters else {}, "state_updates": updates, "session_transition": updates.get("session_transition", ""), "mutation_state": mutation, "async_events": [], "delivery_policy": "direct_response"}, "delivery_policy": "direct_response", "mutation_state": mutation, "save_status": save_status, "async_followup_available": False, "trace": trace}
+        # This is an in-process authoritative receipt, not presentation text.
+        # Transport adapters retain the response dictionary in metadata, so
+        # Browser and Telnet callers observe the same gameplay outcome.
+        ability_result = getattr(result, "ability_result", None)
+        return {"ok": result.ok, "request_id": request_id, "action_id": request_id, "output": render_semantic_plain(result.narrative), "semantic_output": result.narrative, "state_updates": updates, "view": view, "ability_result": ability_result, "command_response": {"command": command, "semantic_text": result.narrative, "plain_text": render_semantic_plain(result.narrative), "html": "", "room_render": view, "prompt_snapshot": self.prompt_snapshot(character_id) if character_id in self.active_characters else {}, "state_updates": updates, "session_transition": updates.get("session_transition", ""), "mutation_state": mutation, "async_events": [], "delivery_policy": "direct_response"}, "delivery_policy": "direct_response", "mutation_state": mutation, "save_status": save_status, "async_followup_available": False, "trace": trace}
 
 
 

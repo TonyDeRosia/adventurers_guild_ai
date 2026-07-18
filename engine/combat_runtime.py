@@ -1035,6 +1035,13 @@ class CombatRuntimeService:
         return [eid for eid, enc in self.resident_encounters.items() if enc.room_id == room_id and enc.status == 'active']
 
     def _load_actor(self, actor_id:str)->Actor|None:
+        # Ability receipts use persisted character ids.  Normalize those ids
+        # at the combat boundary so normal command casts reach the resident
+        # actor rather than becoming a successful zero-damage action.
+        if actor_id and not actor_id.startswith(('character:', 'entity:')):
+            character_id = str(actor_id)
+            if character_id in getattr(self.runtime, 'active_characters', {}):
+                return self._load_actor(f'character:{character_id}')
         if actor_id in self.resident_actors:
             self.runtime.performance_counters["resident_actor_cache_hits"] = self.runtime.performance_counters.get("resident_actor_cache_hits", 0) + 1
             return self.resident_actors[actor_id]
