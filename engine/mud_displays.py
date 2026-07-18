@@ -891,7 +891,14 @@ def build_score_document(character: Any = None, *, snapshot: CharacterDisplaySna
     ]
     if (snap.age or {}).get("is_birthday") or (snap.age or {}).get("birthday_today"):
         rows.append(_score_row("*** It's your birthday today! ***"))
-    rows += [_score_divider(), _score_row(f"Alignment: {alignment}"), _score_row(), _score_row(f"Exp: {xp:<31} TNL: {tnl}"), _score_row(), _score_row(f"Carry Capacity: {curw} / {maxw} ({enc_text})"), _score_divider()]
+    res=snap.resources or {}
+    hp=_score_int(res.get("hp", res.get("health", getattr(character, "hp", 0) if character is not None else 0)), "resources.hp")
+    max_hp=_score_int(res.get("max_hp", res.get("maximum_health", getattr(character, "max_hp", hp) if character is not None else hp)), "resources.max_hp")
+    mana=_score_int(res.get("mana", getattr(character, "mana", 0) if character is not None else 0), "resources.mana")
+    max_mana=_score_int(res.get("max_mana", res.get("maximum_mana", getattr(character, "max_mana", mana) if character is not None else mana)), "resources.max_mana")
+    move=_score_int(res.get("movement", res.get("stamina", getattr(character, "stamina", 0) if character is not None else 0)), "resources.movement")
+    max_move=_score_int(res.get("max_movement", res.get("maximum_movement", res.get("max_stamina", getattr(character, "max_stamina", move) if character is not None else move))), "resources.max_movement")
+    rows += [_score_divider(), _score_row(f"HP: {hp}/{max_hp}  Mana: {mana}/{max_mana}  Move: {move}/{max_move}  Alignment: {alignment}"), _score_row(), _score_row(f"Exp: {xp:<31} TNL: {tnl}"), _score_row(), _score_row(f"Carry Capacity: {curw} / {maxw} ({enc_text})"), _score_divider()]
     rows += [_score_row(f"Base Stats: Str {_al_attr(snap,'str')} Dex {_al_attr(snap,'dex')} Con {_al_attr(snap,'con')}"), _score_row(f"            Int {_al_attr(snap,'int')} Wis {_al_attr(snap,'wis')} Cha {_al_attr(snap,'cha')}"), _score_row(), _score_row(f"Armor: {armor:<8} Evasion: {evasion:<5} Spell Saves: {spell_save}"), _score_row(), _score_row(f"Offense: Hitroll {hit:+d} Damroll {dam:+d} Accuracy: {acc}%")]
     unarmed=snap.unarmed_profile or {}; weapon=snap.weapon_profile or {}; weapon_active=bool(weapon and weapon.get("active") and (weapon.get("weapon_name") or weapon.get("name")) and str(weapon.get("name") or "").lower() != "unarmed")
     if not weapon_active and unarmed:

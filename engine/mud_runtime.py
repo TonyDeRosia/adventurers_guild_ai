@@ -1990,7 +1990,7 @@ class MudRuntime:
 
 
 
-    READ_ONLY_COMMANDS = {"look","l","score","sc","worth","equipment","eq","inventory","inv","i","affects","aff","saff","shortaff","effects","skills","spells","abilities","help","who","history","combatstats","attributes"}
+    READ_ONLY_COMMANDS = {"look","l","score","sc","worth","equipment","eq","inventory","inv","i","affects","aff","saff","shortaff","effects","skills","spells","spellinfo","abilities","help","who","history","combatstats","attributes"}
     MOVEMENT_COMMANDS = {"north","n","south","s","east","e","west","w","up","u","down","d","in","out"}
     EQUIPMENT_MUTATION_COMMANDS = {"wear","wield","hold","mainhand","offhand","dual","remove","rem","unwield","unequip"}
     INVENTORY_MUTATION_COMMANDS = {"get","drop","put","give","take"}
@@ -2389,7 +2389,7 @@ class MudRuntime:
             if item_preview is not None and not item_preview.narrative.startswith("You don't see that") and not item_preview.narrative.startswith("Which do you mean") :
                 self.event_bus.publish("command_executed", {"raw_input": command, "canonical_command": cmd_name, "arguments": args, "character_id": char.id, "character_name": char.name, "current_room_id": char.room_id, "result_summary": item_preview.narrative[:120]}, source_system="command", world_id=self.active_world_id or "", character_id=char.id, command=command)
                 return item_preview
-        if cmd_name in {"cast", "invoke", "perform", "ability", "abilities", "skills", "spells", "cancel", "cooldowns", "abilitylist", "abilitystat", "abilitycreate", "abilityclone", "abilityset", "abilitydelete", "abilityvalidate", "abilitypreview", "abilitytrace", "loadoutlist", "loadoutstat", "loadoutcreate", "loadoutclone", "loadoutset", "loadoutability", "loadoutdelete", "loadoutvalidate", "abilitygrant", "abilityrevoke", "actorabilities", "abilitycooldowns", "abilitycasts"}:
+        if cmd_name in {"cast", "invoke", "perform", "ability", "abilities", "skills", "spells", "cancel", "cooldowns", "abilitylist", "abilitystat", "abilitycreate", "abilityclone", "abilityset", "abilitydelete", "abilityvalidate", "abilitypreview", "abilitytrace", "loadoutlist", "loadoutstat", "loadoutcreate", "loadoutclone", "loadoutset", "loadoutability", "loadoutdelete", "loadoutvalidate", "abilitygrant", "abilityrevoke", "actorabilities", "abilitycooldowns", "abilitycasts", "spellinfo"}:
             return self.command_engine.handle_command(char, command)
         if cmd_name in {"sit", "stand", "rest", "sleep", "wake"}:
             return self.command_engine.handle_command(char, command)

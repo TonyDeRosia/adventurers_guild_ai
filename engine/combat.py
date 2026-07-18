@@ -226,7 +226,8 @@ class CombatEngine:
         acc = self._stat(attacker,"accuracy",50,trace); defense = self._stat(defender,"defense_rating",10,trace); roll = self.roller.roll_percent(attacker.actor_id, defender.actor_id, self.tick, "hit")
         hit = roll <= max(0, min(100, 50 + acc - defense))
         if not hit:
-            self.set_state(attacker, CombatState.RECOVERING); return CombatResult(False, None, self.states[attacker.actor_id].value, self.states[defender.actor_id].value, self._messages(attacker, defender, "miss", None), trace)
+            miss_event=DamageEvent(attacker.actor_id, defender.actor_id, dict(attack.metadata.get("weapon", {})), asdict(attack), attack.damage_type, 0, False, 0, 0, self.tick)
+            self.set_state(attacker, CombatState.RECOVERING); return CombatResult(False, None, self.states[attacker.actor_id].value, self.states[defender.actor_id].value, self._messages(attacker, defender, "miss", miss_event), trace)
         crit = self.roller.roll_percent(attacker.actor_id, defender.actor_id, self.tick, "crit") <= self._stat(attacker,"critical_chance",0,trace)
         power = self._stat(attacker,"attack_power",0,trace); base=max(0, attack.base_damage+power); raw=int(base*attack.critical_multiplier) if crit else base
         armor = 0 if attack.damage_type == "true" else self._stat(defender,"armor", self.content.armor_value((defender.equipment_profile or {}).get("equipped") or defender.equipment_profile or {}), trace)
