@@ -2622,13 +2622,13 @@ class BuilderService:
                 sess.active_field = "affect_flags"; sess.mode = "flag_editor"
                 return self._render_flag_editor(sess)
             if sess.editor_type == "medit" and sess.section == "equipment":
-                return medit_render.render_loadout(sess)
+                return self._render_medit_loadout(actor=None, sess=sess)
             if sess.editor_type == "medit" and sess.section == "scripts":
-                return medit_render.render_scripts(sess)
+                return self._render_medit_scripts(actor=None, sess=sess)
             if sess.editor_type == "medit" and sess.section in {"abilities", "combat_abilities"}:
-                return medit_render.render_simple_list(sess, "combat_abilities", "Combat Abilities")
+                return self._render_medit_advanced_list(sess, "combat_abilities")
             if sess.editor_type == "medit" and sess.section in {"reactions", "event_reactions", "ai"}:
-                return medit_render.render_simple_list(sess, "event_reactions", "Event Reactions")
+                return self._render_medit_advanced_list(sess, "event_reactions")
             if sess.editor_type == "medit" and sess.section == "spawns":
                 return self._render_spawns_editor(None, sess)
             return self._render_mobile_section(sess, sess.section)
@@ -3260,6 +3260,136 @@ class BuilderService:
             "faction": ("faction_id","organization_id","relationship_seed_ids","hostility_profile_id"), "scripts": ("script_ids","scripts"), "spawns": ("spawn_refs",), "diagnostics": ("schema_version","_builder_revision")}
         return "\n".join(f"- {k}: {rec.get(k,'')}" for k in mapping.get(section, ())) or "No fields configured."
 
+
+
+
+    def _resolve_item_id_for_medit(self, actor: Any, token: str) -> str | None:
+        rows=self.content_query.by_id_or_vnum(actor,"object",token)
+        if len(rows)==1: return rows[0].canonical_id
+        rec=self.resolve_reference(actor,"items",token)
+        return str(rec.get('id')) if rec else None
+
+    def _handle_medit_loadout(self, actor: Any, sess: BuilderEditSession, text: str) -> BuilderResult:
+        low=text.lower().strip(); load=sess.working_record.setdefault('equipment_loadout',{}); load.setdefault('equipped',{}); load.setdefault('carried',[])
+        if sess.confirmation_type in {'medit_equip','medit_inv_add','medit_loot_add'}:
+            typ=sess.confirmation_type
+            if low in {'q','quit','cancel'}:
+                sess.confirmation_type=''; return BuilderResult(True,"Cancelled.\n"+self._render_medit_loadout(actor,sess))
+            iid=self._resolve_item_id_for_medit(actor,text.strip())
+            if not iid: return BuilderResult(False,"Object not found. Enter object ID, VNUM, or search term (Q to cancel):")
+            self._session_checkpoint(sess)
+            if typ=='medit_equip':
+                item=self.resolve_collection_records(actor,'items').get(iid,{}) ; wear=list(item.get('wear_flags') or item.get('wear_slots') or VALID_WEAR_SLOTS); slot=next((w for w in wear if w in VALID_WEAR_SLOTS), sorted(VALID_WEAR_SLOTS)[0]); load['equipped'][slot]={'slot':slot,'item_template_id':iid,'quantity':1,'chance':100}; msg=f"Equipped {iid} in {self._slot_label(slot)}."
+            elif typ=='medit_inv_add': load['carried'].append({'item_template_id':iid,'quantity':1,'chance':100}); msg=f"Added {iid} to inventory."
+            else:
+                loot=sess.working_record.setdefault('loot',{}); loot.setdefault('entries',[]).append({'item_template_id':iid,'quantity':1,'chance':100}); msg=f"Added {iid} to loot."
+            sess.confirmation_type=''; sess.dirty=True; sess.saved=False; return BuilderResult(True,msg+"\n"+self._render_medit_loadout(actor,sess))
+        if low in {'q','quit','back'}: sess.section=''; sess.mode='main_menu'; return BuilderResult(True,self.render_session(sess))
+        if low=='a': sess.confirmation_type='medit_equip'; return BuilderResult(True,"Enter object ID, VNUM, or search term to equip (Q to cancel):")
+        if low=='b': sess.confirmation_type='medit_inv_add'; return BuilderResult(True,"Enter object ID, VNUM, or search term to add to inventory (Q to cancel):")
+        if low=='c': sess.confirmation_type='medit_loot_add'; return BuilderResult(True,"Enter object ID, VNUM, or search term to add to loot (Q to cancel):")
+        if low=='d':
+            occ=[(slot,e) for slot,e in (load.get('equipped') or {}).items() if isinstance(e,dict)]
+            if not occ: return BuilderResult(True,"No equipped items are available to remove.\n"+self._render_medit_loadout(actor,sess))
+            self._session_checkpoint(sess); slot,_=occ[0]; load['equipped'].pop(slot,None); sess.dirty=True; sess.saved=False; return BuilderResult(True,"Equipped item removed.\n"+self._render_medit_loadout(actor,sess))
+        if low=='e':
+            if not load.get('carried'): return BuilderResult(True,"No inventory items are available to remove.\n"+self._render_medit_loadout(actor,sess))
+            self._session_checkpoint(sess); load['carried'].pop(0); sess.dirty=True; sess.saved=False; return BuilderResult(True,"Inventory item removed.\n"+self._render_medit_loadout(actor,sess))
+        if low=='f':
+            loot=sess.working_record.setdefault('loot',{}); arr=loot.setdefault('entries',[])
+            if not arr: return BuilderResult(True,"No loot entries are available to remove.\n"+self._render_medit_loadout(actor,sess))
+            self._session_checkpoint(sess); arr.pop(0); sess.dirty=True; sess.saved=False; return BuilderResult(True,"Loot entry removed.\n"+self._render_medit_loadout(actor,sess))
+        return BuilderResult(False,"Invalid choice. Use A, B, C, D, E, F, or Q.\n"+self._render_medit_loadout(actor,sess))
+
+    def _handle_medit_scripts(self, actor: Any, sess: BuilderEditSession, text: str) -> BuilderResult:
+        low=text.lower().strip(); arr=sess.working_record.setdefault('script_attachments',[])
+        if low in {'q','quit','back'}: sess.section=''; sess.mode='main_menu'; return BuilderResult(True,self.render_session(sess))
+        if low=='a': self._session_checkpoint(sess); arr.append({'script_id':f'script_{len(arr)+1}','trigger':'event','enabled':True}); sess.dirty=True; sess.saved=False; return BuilderResult(True,"Script attached.\n"+self._render_medit_scripts(actor,sess))
+        if low=='d':
+            if not arr: return BuilderResult(True,"No scripts are available to delete.\n"+self._render_medit_scripts(actor,sess))
+            self._session_checkpoint(sess); arr.pop(0); sess.dirty=True; sess.saved=False; return BuilderResult(True,"Script deleted.\n"+self._render_medit_scripts(actor,sess))
+        if low=='v': return BuilderResult(True,(json.dumps(arr[0],indent=2,sort_keys=True) if arr else "No scripts are attached.")+"\n"+self._render_medit_scripts(actor,sess))
+        return BuilderResult(False,"Invalid choice. Use A, D, V, or Q.\n"+self._render_medit_scripts(actor,sess))
+
+    def _handle_medit_advanced(self, actor: Any, sess: BuilderEditSession, text: str) -> BuilderResult:
+        low=text.lower().strip(); key='combat_abilities' if sess.section in {'abilities','combat_abilities'} else 'event_reactions'; entries=sess.working_record.setdefault(key,[]); kind='combat_ability' if key=='combat_abilities' else 'event_reaction'
+        if sess.mode in {'medit_ability_slot','medit_reaction_slot'}:
+            if low in {'q','quit','back'}: sess.mode='section_menu'; return BuilderResult(True,self._render_medit_advanced_list(sess,key))
+            return BuilderResult(True,"Field editing prompt opened; enter a value or Q to cancel.\n"+(self._render_medit_ability_slot(sess) if key=='combat_abilities' else self._render_medit_reaction_slot(sess)))
+        if low in {'q','quit','back'}: sess.section=''; sess.mode='main_menu'; return BuilderResult(True,self.render_session(sess))
+        def commit(msg):
+            sess.working_record[key]=[_canonical_advanced_entry(e,sess.object_id,kind,i+1) for i,e in enumerate(entries)]; sess.dirty=True; sess.saved=False; return BuilderResult(True,msg+'\n'+self._render_medit_advanced_list(sess,key))
+        if low=='a': self._session_checkpoint(sess); entries.append({'ability_id':'','ability_type':'ability','trigger':'every_round','target_selector':'current_enemy','enabled':True} if key=='combat_abilities' else {'event_type':'spawn','action_type':'noop','target_selector':'self','enabled':True,'action_data':{}}); sess.pending_value=len(entries)-1; sess.mode='medit_ability_slot' if key=='combat_abilities' else 'medit_reaction_slot'; commit(''); return BuilderResult(True,self._render_medit_ability_slot(sess) if key=='combat_abilities' else self._render_medit_reaction_slot(sess))
+        if low in {'e','edit'}:
+            if not entries: return BuilderResult(False,"No entries are available to edit.\n"+self._render_medit_advanced_list(sess,key))
+            sess.pending_value=0; sess.mode='medit_ability_slot' if key=='combat_abilities' else 'medit_reaction_slot'; return BuilderResult(True,self._render_medit_ability_slot(sess) if key=='combat_abilities' else self._render_medit_reaction_slot(sess))
+        if low=='d':
+            if not entries: return BuilderResult(False,"No entries are available to delete.\n"+self._render_medit_advanced_list(sess,key))
+            self._session_checkpoint(sess); entries.pop(0); return commit('Entry deleted.')
+        if low=='t':
+            if not entries: return BuilderResult(False,"No entries are available to toggle.\n"+self._render_medit_advanced_list(sess,key))
+            self._session_checkpoint(sess); entries[0]['enabled']=not entries[0].get('enabled',True); return commit('Entry toggled.')
+        return BuilderResult(False,"Invalid choice. Use A, E, D, T, or Q.\n"+self._render_medit_advanced_list(sess,key))
+
+    def _slot_label(self, slot: str) -> str:
+        return str(slot).replace('_', ' ').replace('mainhand','wield').title()
+
+    def _obj_brief(self, actor: Any, item_id: str) -> str:
+        rec = self.resolve_collection_records(actor, "items").get(str(item_id), {}) if actor is not None else {}
+        name = rec.get('short_description') or rec.get('name') or str(item_id)
+        return f"[{item_id}] {name}"
+
+    def _render_medit_loadout(self, actor: Any, sess: BuilderEditSession) -> str:
+        rec=sess.working_record or {}; name=rec.get('name') or sess.object_id
+        load=rec.setdefault('equipment_loadout', {}) if isinstance(rec.setdefault('equipment_loadout', {}), dict) else {}
+        eq=load.get('equipped') or {}; inv=load.get('carried') or rec.get('starting_inventory') or []
+        loot=((rec.get('loot') or {}).get('entries') if isinstance(rec.get('loot'), dict) else rec.get('loot')) or []
+        lines=[f"-- Loadout / Loot: [{rec.get('vnum') or sess.object_id}] {name}","","EQUIPPED ITEMS",f"{name} is using:"]
+        for slot in sorted(VALID_WEAR_SLOTS):
+            ent=eq.get(slot) if isinstance(eq, dict) else None
+            iid=str((ent or {}).get('item_template_id') or (ent or {}).get('item_id') or '') if isinstance(ent, dict) else ''
+            lines.append(f"{self._slot_label(slot):<16} {self._obj_brief(actor, iid) if iid else '[NOTHING]'}")
+        lines += ["","INVENTORY ITEMS"]
+        if inv:
+            for i,e in enumerate(inv,1):
+                iid=str((e or {}).get('item_template_id') or (e or {}).get('item_id') or e) if not isinstance(e,str) else e; qty=(e or {}).get('quantity',1) if isinstance(e,dict) else 1
+                lines.append(f"{i}) {self._obj_brief(actor, iid):<40} qty:{qty}")
+        else: lines.append("   [NONE]")
+        lines += ["","LOOT TABLE"]
+        if loot:
+            for i,e in enumerate(loot,1):
+                iid=str((e or {}).get('item_template_id') or (e or {}).get('item_id') or (e or {}).get('object_id') or e) if not isinstance(e,str) else e; qty=(e or {}).get('quantity',1) if isinstance(e,dict) else 1; chance=(e or {}).get('chance') if isinstance(e,dict) else None
+                tail=f"chance:{chance}%   qty:{qty}" if chance is not None else f"qty:{qty}"
+                lines.append(f"{i}) [{iid}]      {tail}")
+        else: lines.append("   [NONE]")
+        lines += ["","A) Equip object","B) Add inventory item","C) Add loot item","D) Remove equipped item","E) Remove inventory item","F) Remove loot item","Q) Quit","Enter choice :"]
+        return "\n".join(lines)
+
+    def _render_medit_scripts(self, actor: Any, sess: BuilderEditSession) -> str:
+        rec=sess.working_record or {}; scripts=rec.get('script_attachments') or rec.get('script_ids') or rec.get('scripts') or []
+        lines=[f"-- Scripts: [{rec.get('vnum') or sess.object_id}] {rec.get('name') or sess.object_id}",""]
+        lines += [f"{i}) [{(x.get('script_id') if isinstance(x,dict) else x)}]" for i,x in enumerate(scripts,1)] or ['   [NONE]']
+        lines += ["","A) Add","D) Delete","V) View","Q) Quit","Enter choice :"]
+        return "\n".join(lines)
+
+    def _render_medit_advanced_list(self, sess: BuilderEditSession, key: str) -> str:
+        title='Combat Abilities' if key=='combat_abilities' else 'Event Reactions'; entries=sess.working_record.get(key) or []
+        lines=[f"{title} ({len(entries)})",""]
+        if not entries: lines.append('   [NONE]')
+        else:
+            for i,e in enumerate(entries,1):
+                if key=='combat_abilities': lines.append(f"{i}) {e.get('ability_id') or '<unset>':<10} target:{e.get('target_selector','current_enemy')}   trigger:{e.get('trigger','every_round')}   {'enabled' if e.get('enabled', True) else 'disabled'}")
+                else: lines.append(f"{i}) {str(e.get('event_type') or '<unset>').replace('_',' ')} -> {str(e.get('action_type') or '<unset>').replace('_',' ')}")
+        lines += ["","A) Add   E) Edit   D) Delete   T) Toggle   Q) Quit","Enter choice:"]
+        return "\n".join(lines)
+
+    def _render_medit_ability_slot(self, sess: BuilderEditSession) -> str:
+        entries=sess.working_record.get('combat_abilities') or []; idx=int(sess.pending_value or 0); e=entries[idx] if 0<=idx<len(entries) else {}
+        return "\n".join([f"Combat Ability Editor (slot {idx+1})","Choose what this mob can do during combat, who it targets, and when it should attempt the action.","",f"1) Type: {e.get('ability_type','ability')}",f"2) Spell/Skill: {e.get('ability_id') or '<unset>'}",f"3) Target: {e.get('target_selector','current_enemy')}",f"4) Trigger mode: {e.get('trigger','every_round')}","5) Timing / Condition Details","6) Usage Limits","7) Status Flags","Q) Back","Enter field:"])
+
+    def _render_medit_reaction_slot(self, sess: BuilderEditSession) -> str:
+        entries=sess.working_record.get('event_reactions') or []; idx=int(sess.pending_value or 0); e=entries[idx] if 0<=idx<len(entries) else {}
+        return "\n".join([f"Event Reaction Editor (slot {idx+1})","Choose what event triggers the reaction, what action is taken, and any cooldown or one-time limits.","",f"1) Event type: {str(e.get('event_type','spawn')).replace('_',' ')}",f"2) Action type: {str(e.get('action_type','noop')).replace('_',' ')}","3) Action Data",f"4) Target: {e.get('target_selector','self')}","5) Cooldown / Chance","6) Limits / Conditions","Q) Back","Enter field:"])
 
     def _item_label(self, actor: Any, item_id: str) -> str:
         rec = self.resolve_collection_records(actor, "items").get(str(item_id), {})
@@ -4046,7 +4176,7 @@ class BuilderService:
                 if low in cancel_words: sess.confirmation_type = ""; return BuilderResult(True, "Delete cancelled.\n" + self._render_oedit_menu(sess))
                 if text.strip() != "DELETE": return BuilderResult(False, "Type DELETE to confirm deletion, or Q to cancel.")
                 self.sessions.end(actor); return self.workspace.delete(actor, "items", sess.object_id, "item_template")
-        if low in {"q", "quit"}:
+        if low in {"q", "quit"} and not str(sess.confirmation_type).startswith("medit_") and not str(sess.mode).startswith("medit_"):
             if sess.section and low == "q":
                 sess.section = ""; sess.mode = "main_menu"
                 return BuilderResult(True, self.render_session(sess))
@@ -4059,11 +4189,13 @@ class BuilderService:
         if stats_handled is not None:
             return stats_handled
         if sess.editor_type == "medit" and sess.section == "equipment":
-            return self._handle_equipment_editor(actor, sess, text)
+            return self._handle_medit_loadout(actor, sess, text)
         if sess.editor_type == "medit" and sess.section == "spawns":
             return self._handle_spawns_editor(actor, sess, text)
-        if sess.editor_type == "medit" and sess.section in {"abilities", "combat_abilities", "reactions", "event_reactions", "scripts", "ai"}:
-            return self._handle_advanced_mobile_editor(actor, sess, text)
+        if sess.editor_type == "medit" and sess.section == "scripts":
+            return self._handle_medit_scripts(actor, sess, text)
+        if sess.editor_type == "medit" and sess.section in {"abilities", "combat_abilities", "reactions", "event_reactions", "ai"}:
+            return self._handle_medit_advanced(actor, sess, text)
         if sess.section and sess.section != "natural_weapons":
             field_token = parts[0].lower() if parts else ""
             desc = self._descriptor(sess, field_token)
