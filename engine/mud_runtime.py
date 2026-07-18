@@ -3626,6 +3626,34 @@ class MudRuntime:
             state = dict(state or tmpl.get("state", {}) or {})
             state["lifecycle_id"] = f"life_{uuid.uuid4().hex}"
         plugin_data = dict(tmpl.get("plugin_data", {})); plugin_data.update({"template_presentation_hash": self._template_presentation_hash(tmpl), "look_description": tmpl.get("look_description", tmpl.get("long_description", "")), "examine_description": tmpl.get("examine_description", tmpl.get("look_description", "")), "readable_text": tmpl.get("readable_text", ""), "interaction_hints": tmpl.get("interaction_hints", []), "respawn_message": tmpl.get("respawn_message", "")})
+        if etype in {"npc", "mob"}:
+            cp = dict(tmpl.get("combat_profile") or {})
+            resources = dict(tmpl.get("resources") or {})
+            plugin_data.update({
+                "builder_runtime_projection": {
+                    "default_position": tmpl.get("default_position") or "standing",
+                    "spawn_position": tmpl.get("spawn_position") or tmpl.get("default_position") or "standing",
+                    "mobile_flags": tmpl.get("mobile_flags") or tmpl.get("flags") or [],
+                    "permanent_affects": tmpl.get("affect_flags") or tmpl.get("permanent_affects") or [],
+                    "attributes": tmpl.get("attributes") or {},
+                    "resources": resources,
+                    "combat_profile": cp,
+                    "equipment_loadout": tmpl.get("equipment_loadout") or {},
+                    "starting_inventory": tmpl.get("starting_inventory") or tmpl.get("inventory") or [],
+                    "loot": tmpl.get("loot") or {"profile_id": tmpl.get("loot_table_id") or tmpl.get("loot_profile_id")},
+                    "combat_abilities": tmpl.get("combat_abilities") or [],
+                    "event_reactions": tmpl.get("event_reactions") or [],
+                    "script_attachments": tmpl.get("script_attachments") or tmpl.get("scripts") or [],
+                    "runtime_support_warnings": [
+                        "script attachments require the canonical script host before execution"
+                    ] + (["some combat ability triggers are unsupported by runtime hooks"] if any((a or {}).get("trigger") not in {"combat_start", "opening_move", "every_round", "random_round", "self_hp_threshold", "enemy_hp_threshold", "cooldown_ready", "near_death"} for a in (tmpl.get("combat_abilities") or []) if isinstance(a, dict)) else [])
+                }
+            })
+            state = dict(state or {})
+            state.setdefault("current_state", tmpl.get("spawn_position") or tmpl.get("default_position") or "standing")
+            health = (resources.get("health") or {}) if isinstance(resources.get("health"), dict) else {}
+            if health:
+                state.setdefault("maximum_health", health.get("maximum")); state.setdefault("current_health", health.get("starting", health.get("maximum")))
         payload = (eid, self.active_world_id or tmpl.get("world_id", ""), etype, template_id, tmpl.get("name", template_id), json.dumps(tmpl.get("keywords", [template_id])), tmpl.get("room_description", tmpl.get("short_description", tmpl.get("name", template_id))), tmpl.get("look_description", tmpl.get("long_description", tmpl.get("short_description", tmpl.get("name", template_id)))), room_id or tmpl.get("default_room_id", ""), owner_type, owner_id, tmpl.get("faction_id", ""), int(tmpl.get("level", 1) or 1), json.dumps(state if state is not None else tmpl.get("state", {})), json.dumps(flags if flags is not None else tmpl.get("flags", [])), now, now, json.dumps(plugin_data))
         with sqlite3.connect(self.state_store.db_path) as conn:
             conn.execute("INSERT INTO entity_instances(entity_id,world_id,entity_type,template_id,name,keywords,short_description,long_description,current_room_id,owner_type,owner_id,faction_id,level,state,flags,created_at,updated_at,plugin_data) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", payload)

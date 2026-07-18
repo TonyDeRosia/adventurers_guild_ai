@@ -1291,7 +1291,19 @@ class MobileTemplate:
         def rmax(name, legacy=None):
             val = resources.get(name)
             return (val or {}).get("maximum") if isinstance(val, dict) else (val if val is not None else rec.get(legacy or ""))
-        return {"template_id": rec.get("id"), "name": rec.get("name"), "level": rec.get("level",1), "keywords": deepcopy(rec.get("keywords") or []), "description": rec.get("description") or rec.get("look_description") or "", "default_position": rec.get("default_position"), "spawn_position": rec.get("spawn_position"), "mobile_flags": deepcopy(rec.get("mobile_flags") or []), "permanent_affects": deepcopy(rec.get("affect_flags") or []), "body_profile_id": rec.get("body_profile_id"), "combat_profile": deepcopy(rec.get("combat_profile") or {}), "attributes": deepcopy(rec.get("attributes") or {}), "resources": {"max_health": rmax("health","max_health"), "max_mana": rmax("mana","max_mana"), "max_move": rmax("movement","max_move") or rmax("stamina")}, "equipment_loadout": deepcopy(rec.get("equipment_loadout") or {}), "starting_inventory": deepcopy(rec.get("starting_inventory") or []), "loot": deepcopy(rec.get("loot") or {}), "combat_abilities": deepcopy(rec.get("combat_abilities") or []), "event_reactions": deepcopy(rec.get("event_reactions") or []), "script_attachments": deepcopy(rec.get("script_attachments") or [])}
+        abilities = deepcopy(rec.get("combat_abilities") or [])
+        reactions = deepcopy(rec.get("event_reactions") or [])
+        scripts = deepcopy(rec.get("script_attachments") or [])
+        for ability in abilities:
+            ability["runtime_supported"] = ability.get("enabled", True) and ability.get("trigger") in MEDIT_RUNTIME_SUPPORTED_ABILITY_TRIGGERS
+            ability["runtime_decision_reason"] = "eligible when target/cooldown/chance checks pass" if ability["runtime_supported"] else "trigger has no runtime combat hook"
+        for reaction in reactions:
+            reaction["runtime_supported"] = reaction.get("enabled", True) and reaction.get("event_type") in MEDIT_RUNTIME_SUPPORTED_REACTION_EVENTS and reaction.get("action_type") in MEDIT_RUNTIME_SUPPORTED_REACTION_ACTIONS
+            reaction["runtime_loop_guard"] = {"max_depth": 8, "deterministic_order": "priority,id", "same_event_republish_blocked": reaction.get("action_type") == "publish_event" and (reaction.get("action_data") or {}).get("event_type") == reaction.get("event_type")}
+        for script in scripts:
+            script["runtime_supported"] = False
+            script["runtime_decision_reason"] = "canonical script host required; preview never executes scripts"
+        return {"template_id": rec.get("id"), "name": rec.get("name"), "level": rec.get("level",1), "keywords": deepcopy(rec.get("keywords") or []), "description": rec.get("description") or rec.get("look_description") or "", "default_position": rec.get("default_position"), "spawn_position": rec.get("spawn_position"), "mobile_flags": deepcopy(rec.get("mobile_flags") or []), "permanent_affects": deepcopy(rec.get("affect_flags") or []), "body_profile_id": rec.get("body_profile_id"), "combat_profile": deepcopy(rec.get("combat_profile") or {}), "attributes": deepcopy(rec.get("attributes") or {}), "resources": {"max_health": rmax("health","max_health"), "max_mana": rmax("mana","max_mana"), "max_move": rmax("movement","max_move") or rmax("stamina")}, "equipment_loadout": deepcopy(rec.get("equipment_loadout") or {}), "starting_inventory": deepcopy(rec.get("starting_inventory") or []), "loot": deepcopy(rec.get("loot") or {}), "combat_abilities": abilities, "event_reactions": reactions, "script_attachments": scripts, "runtime_support": {"combat_abilities": "supported triggers execute through runtime combat hooks; unsupported triggers warn", "event_reactions": "supported event/action mappings execute through EventBus reaction dispatcher with depth guard", "script_attachments": "stored, validated, dependency-tracked; execution requires canonical script host"}}
 
     def diff(self, other: dict[str, Any]) -> dict[str, Any]:
         before = MobileTemplate.from_legacy(other or {}).to_canonical_dict(); after = self.to_canonical_dict()
@@ -1885,14 +1897,11 @@ class BuilderService:
         if collection == "items" and rec:
             issues.extend(validate_object_template(normalize_object_template(object_id, rec)))
         if collection == "entities" and rec:
-            for fld in ("id","name"):
-                if not rec.get(fld): issues.append({"severity":"error","code":"required_field","collection":collection,"object_id":object_id,"field_path":fld,"message":f"{fld} is required.","fix_hint":f"Set {fld}."})
-            if rec.get("natural_attacks") is not None: issues.append({"severity":"error","code":"deprecated_field","collection":collection,"object_id":object_id,"field_path":"natural_attacks","message":"natural_attacks is deprecated; use combat_profile.natural_weapons.","fix_hint":"Run migration or save through BuilderService."})
-            weapons=[_canonical_weapon(w, object_id) for w in ((rec.get("combat_profile") or {}).get("natural_weapons") or []) if isinstance(w, dict)]
-            if not weapons: issues.append({"severity":"warning","code":"no_natural_weapons","collection":collection,"object_id":object_id,"field_path":"combat_profile.natural_weapons","message":"Mob has no natural weapons.","fix_hint":"Add at least one non-humanoid natural weapon."})
-            for i,w in enumerate(weapons):
-                for fld in ("id","mechanical_family","noun_plural","verb_third_person","damage_type","damage_dice","selection_weight"):
-                    if not w.get(fld): issues.append({"severity":"error","code":"natural_weapon_required","collection":collection,"object_id":object_id,"field_path":f"combat_profile.natural_weapons[{i}].{fld}","message":f"Natural weapon {fld} is required.","fix_hint":"Edit the weapon field."})
+            canonical = MobileTemplate.from_legacy(rec).to_canonical_dict()
+            ability_catalog = set(self.resolve_collection_records(actor, "abilities")) | set(self.resolve_collection_records(actor, "ability_loadouts"))
+            if ability_catalog:
+                canonical["_ability_catalog"] = sorted(ability_catalog)
+            issues.extend(MobileTemplate.from_legacy(canonical).validate())
         lines=[f"{x['severity']}: {x['field_path']} {x['message']}" for x in issues] or ["- no focused issues"]
         return BuilderResult(not any(x['severity']=='error' for x in issues), "Validation for %s:\n%s" % (object_id, "\n".join(lines)), {"issues": issues})
 
@@ -1920,9 +1929,9 @@ class BuilderService:
             if weapons:
                 w=weapons[0]; lines += ["", "SAMPLE NORMAL HIT", str(w.get("observer_template", "{attacker} hits {victim}.")).format(attacker=name, victim="you", verb_third_person=w.get('verb_third_person'), verb_base=w.get('verb_base'), noun_plural=w.get('noun_plural'))]
             lines += ["", "ABILITY DECISION ORDER"]
-            lines += [f"- priority {a.get('priority')}: {a.get('ability_id') or 'missing'} trigger={a.get('trigger')} target={a.get('target_selector')} runtime={'supported' if a.get('trigger') in MEDIT_RUNTIME_SUPPORTED_ABILITY_TRIGGERS else 'deferred'}" for a in sorted(canonical.get('combat_abilities') or [], key=lambda x:(int(x.get('priority',0)), str(x.get('id',''))))] or ["- none"]
+            lines += [f"- priority {a.get('priority')}: {a.get('ability_id') or 'missing'} trigger={a.get('trigger')} target={a.get('target_selector')} chance={a.get('chance')} cooldown={a.get('cooldown',0)} runtime={'supported' if a.get('trigger') in MEDIT_RUNTIME_SUPPORTED_ABILITY_TRIGGERS else 'deferred'} reason={'eligible after cooldown/use-limit/chance/target checks' if a.get('trigger') in MEDIT_RUNTIME_SUPPORTED_ABILITY_TRIGGERS else 'no runtime combat hook'}" for a in sorted(canonical.get('combat_abilities') or [], key=lambda x:(int(x.get('priority',0)), str(x.get('id',''))))] or ["- none"]
             lines += ["", "EVENT REACTIONS"]
-            lines += [f"- priority {r.get('priority')}: {r.get('event_type')} -> {r.get('action_type')} runtime={'supported' if r.get('event_type') in MEDIT_RUNTIME_SUPPORTED_REACTION_EVENTS and r.get('action_type') in MEDIT_RUNTIME_SUPPORTED_REACTION_ACTIONS else 'deferred'}" for r in sorted(canonical.get('event_reactions') or [], key=lambda x:(int(x.get('priority',0)), str(x.get('id',''))))] or ["- none"]
+            lines += [f"- priority {r.get('priority')}: {r.get('event_type')} -> {r.get('action_type')} runtime={'supported' if r.get('event_type') in MEDIT_RUNTIME_SUPPORTED_REACTION_EVENTS and r.get('action_type') in MEDIT_RUNTIME_SUPPORTED_REACTION_ACTIONS else 'deferred'} loop_guard=max_depth_8" for r in sorted(canonical.get('event_reactions') or [], key=lambda x:(int(x.get('priority',0)), str(x.get('id',''))))] or ["- none"]
             lines += ["", "SCRIPT ATTACHMENTS"]
             lines += [f"- priority {a.get('priority')}: {a.get('script_id') or 'missing'} trigger={a.get('trigger')} runtime=canonical-host-required" for a in sorted(canonical.get('script_attachments') or [], key=lambda x:(int(x.get('priority',0)), str(x.get('id',''))))] or ["- none"]
             lines += ["", "SAMPLE DEATH/CORPSE", f"{name} dies. Corpse output uses loot profile {loot.get('profile_id') or 'none'} plus {len(loot.get('entries') or [])} explicit entries."]

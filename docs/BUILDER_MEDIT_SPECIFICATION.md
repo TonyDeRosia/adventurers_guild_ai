@@ -267,3 +267,32 @@ Draft save still writes Builder drafts only. Publish continues to validate draft
 ### Updated Roadmap
 
 Customized Adventurer's Lair MEDIT parity is now substantially complete at the Builder/editor, validation, dependency, preview, copy/delete, and lifecycle-integration layers. Remaining gaps are runtime execution depth for advanced Combat Ability triggers, Event Reaction action handlers, and script-host-backed execution. Those gaps should be finished with behaviorally tested canonical runtime services, not with MEDIT-only substitutes. Full OEDIT parity remains outside this phase and should proceed separately after the final advanced-runtime MEDIT gaps are accepted or closed.
+
+## Phase 15C.3 Final Completion Audit
+
+Phase 15C.3 closes MEDIT as a Builder-facing editor.  The remaining OLC work after this section is OEDIT parity, not another MEDIT implementation phase.
+
+### Production-ready MEDIT contract
+
+A builder can create, edit, copy, preview, validate, publish, activate, testspawn, testclear, stage delete, and hard-delete mobiles through Builder commands and MEDIT sessions.  MobileTemplate is the single canonical adapter for draft save, preview, validation, publish generation normalization, activation input, and runtime projection.  Publish validation now uses the same MobileTemplate validation as the interactive editor, including advanced combat ability, event reaction, and script attachment checks.
+
+### Runtime support classification
+
+MEDIT no longer treats authored fields as ambiguous "editor complete/runtime deferred" data.  Each advanced feature is classified as one of these states:
+
+| Feature | Runtime status | Builder behavior |
+| --- | --- | --- |
+| Identity, keywords, descriptions, level, attributes, resources, positions, flags, permanent affects, body profile, natural weapons, equipment loadout, starting inventory, loot/corpse projection, faction, spawn references | Runtime-supported where the current engine has a consumer | Included in preview, validation, publish snapshots, activation input, and spawned entity runtime projection metadata. |
+| Combat abilities on supported triggers (`combat_start`, `opening_move`, `every_round`, `random_round`, `self_hp_threshold`, `enemy_hp_threshold`, `cooldown_ready`, `near_death`) | Runtime-supported hook data | Preview shows deterministic priority order plus firing reasons: enabled state, trigger support, target selector, cooldown, use limit, chance, and target checks. |
+| Combat ability triggers outside the supported trigger set | Intentional runtime limitation | Validation warns with a fix hint; publish may proceed only as an explicit accepted warning. |
+| Event reactions using supported events/actions | Runtime-supported EventBus mapping data | Preview shows deterministic priority/id order and loop guard policy. Runtime projection carries reaction data and loop protection metadata. |
+| Event/action mappings outside the supported set | Intentional runtime limitation | Validation warns and preview labels the mapping as deferred instead of silently ignoring it. |
+| Script attachments | Stored, validated, dependency-visible; execution requires canonical script host | Preview performs dry-run dependency tracing only. It never executes scripts or destructive effects. Runtime projection labels the attachment as host-required. |
+
+### Final parity finding
+
+Practical Adventurer's Lair MEDIT parity is complete for authoring outcomes: builders can author all mobile data available to Smart MUD without raw JSON/YAML or developer commands.  Builders would not lose MEDIT authoring workflow compared to the customized Adventurer's Lair editor.  The known differences are engine-scope limitations, not missing MEDIT editor work: Smart MUD does not claim DG-compatible script execution or unsupported event/ability mappings until the corresponding canonical runtime systems exist.
+
+### Next Builder phase
+
+The next recommended Builder phase is **PHASE 15D — OEDIT PARITY**.
