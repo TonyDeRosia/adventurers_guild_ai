@@ -50,3 +50,11 @@ World/content definitions + learned ability projection
 * **G3 — Effect correctness:** durations, stack/exclusive rules, saves, cleanup on death/logout, and persistence recovery are tested.
 * **G4 — Actor parity:** player, NPC, summon, script, and builder callers reach the same validated action path where applicable.
 * **G5 — Content parity:** every concrete legacy row has migrated metadata and a status supported by automated tests.
+
+## Phase 21B runtime boundary
+
+`AbilityCommandRouter` (currently the command-engine ability route) constructs
+`AbilityExecutionRequest` and calls `AbilityRuntimeService`; the runtime
+delegates definition, target, cost, proficiency, cooldown, effect and
+Damage/Death dependencies to `AbilityExecutionService`.  This is the required
+edge for Phase 21C physical-skill migrations.

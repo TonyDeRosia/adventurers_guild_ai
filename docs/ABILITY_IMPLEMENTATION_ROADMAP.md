@@ -42,3 +42,10 @@ After source manifest completion, plan **18–30 bounded implementation phases**
 * Link every implementation PR to its row(s), prerequisite gate, tests, and status transition.
 * A status transition to `IMPLEMENTED` requires a player path plus applicable NPC/script/builder/persistence/death tests.
 * Preserve intentional architectural differences; do not port C globals, tables, bitvectors, formats, or special-procedure implementation patterns.
+
+## Phase 21B — Canonical Ability Runtime
+
+Phase 21B adds the typed `AbilityRuntimeService` request/result boundary and
+routes command ability execution through it.  The next bounded implementation
+phase is **Phase 21C — Core Physical Combat Commands** (flee, assist, rescue,
+kick, bash), using this runtime rather than a new combat-skill pipeline.

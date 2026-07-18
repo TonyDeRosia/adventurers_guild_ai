@@ -84,3 +84,11 @@ When G1 source access is restored, record each item below as **already exists**,
 | 18 | Bash | Large | Weapon/position, knockdown/control, wait state. |
 | 19 | Monster specials | Very Large | Custom special registry and NPC execution adapter. |
 | 20 | DG/scripted quest invocation | Very Large | Sandbox, trigger recursion, persistence, authorization. |
+
+## Phase 21B status
+
+The runtime foundation is production-wired for existing authored ability
+execution.  Magic Missile, Armor, Detect Magic, Strength, Build Campfire and
+Set Camp retain their existing production handlers through the shared registry
+and execution service.  This does **not** claim implementation of the remaining
+authored definitions or complete customized legacy parity.

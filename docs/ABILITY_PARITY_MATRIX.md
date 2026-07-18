@@ -113,3 +113,11 @@ These rows prevent a false “catalog complete” result when an ability is crea
 3. Parse class/practice tables and item spell values; join them to registrations by constant.
 4. Trace each implementation to cost, wait, position/target/weapon restrictions, success/save/formula, affects/stacking, duration, messages, AI/script callers, created objects/summons, corpse/death rules, and persistence.
 5. Replace each dynamic-family row with concrete rows and change `legacy constant: unknown` only where the source proves it. Reconcile statuses against runnable Smart MUD tests.
+
+## Phase 21B production evidence
+
+The known authored rows for Armor, Detect Magic, Magic Missile, Strength, Build
+Campfire and Set Camp now have a shared typed request/runtime boundary.  Their
+status remains evidence-based: only real command/runtime effects and persistence
+qualify as implemented; the 73 authored definitions are not a complete legacy
+inventory.

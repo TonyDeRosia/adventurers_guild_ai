@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from enum import Enum
 
 from engine.actors import Actor, ActorRegistry, actor_from_runtime_character
 from engine.combat import CombatEngine, DamageEvent
@@ -383,6 +384,120 @@ ABILITY_EXECUTION_STATUSES = {
     "ON_COOLDOWN", "ALREADY_ACTIVE", "TARGET_ALREADY_AFFECTED",
     "HANDLER_NOT_IMPLEMENTED", "EXECUTION_INTERRUPTED",
 }
+
+
+# Phase 21B deliberately keeps the mature execution implementation below, but
+# gives every caller one transport-neutral contract.  The old gateway remains a
+# compatibility adapter for integrations written before this contract existed.
+class AbilityInvocationType(str, Enum):
+    CAST_COMMAND = "CAST_COMMAND"
+    SKILL_COMMAND = "SKILL_COMMAND"
+    ITEM_ACTIVATION = "ITEM_ACTIVATION"
+    NPC_AI = "NPC_AI"
+    SCRIPT = "SCRIPT"
+    PASSIVE_TRIGGER = "PASSIVE_TRIGGER"
+    ADMIN_TEST = "ADMIN_TEST"
+
+
+@dataclass(frozen=True)
+class AbilityExecutionRequest:
+    """Transport-independent request accepted by :class:`AbilityRuntimeService`."""
+    request_id: str
+    world_id: str
+    actor_id: str
+    ability_id: str
+    invocation_type: AbilityInvocationType = AbilityInvocationType.CAST_COMMAND
+    raw_argument_text: str = ""
+    explicit_target_actor_id: str = ""
+    explicit_target_item_id: str = ""
+    explicit_target_room_id: str = ""
+    explicit_direction: str = ""
+    source_item_instance_id: str = ""
+    source_script_id: str = ""
+    source_command: str = ""
+    actor_life_generation: int | None = None
+    current_tick: int | None = None
+    engagement_id: str = ""
+    parent_event_id: str = ""
+    idempotency_key: str = ""
+    preview: bool = False
+    debug: bool = False
+    authorized_overrides: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class AbilityValidationResult:
+    valid: bool
+    failure_code: str = ""
+    details: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class AbilityCostPreview:
+    validation: AbilityValidationResult
+    costs: tuple[dict[str, Any], ...] = ()
+
+
+class AbilityRuntimeService:
+    """The canonical active-ability boundary.
+
+    Common validation, cost calculation/payment, cooldowns, proficiency and
+    effect orchestration stay in ``AbilityExecutionService``; this class makes
+    that production authority callable by commands, AI, scripts and items with
+    an identical typed request.  Its bounded ledger prevents retry keys from
+    producing a second committed gameplay action during this process lifetime.
+    """
+    def __init__(self, service: "AbilityExecutionService"):
+        self.service = service
+        self._ledger: dict[str, AbilityExecutionResult] = {}
+
+    def resolve_definition(self, ability_reference: str) -> AbilityDefinition | None:
+        aid = self.service.gateway().resolve_definition(ability_reference)
+        return self.service.registry.abilities.get(aid)
+
+    def validate(self, request: AbilityExecutionRequest) -> AbilityValidationResult:
+        if not request.ability_id or request.ability_id not in self.service.registry.abilities:
+            return AbilityValidationResult(False, "ABILITY_NOT_FOUND")
+        actor = self.service.actor_registry.get(request.actor_id)
+        if actor is None:
+            return AbilityValidationResult(False, "ACTOR_NOT_FOUND")
+        trace = self.service.validate_ability_use(request.actor_id, request.ability_id,
+            request.explicit_target_actor_id or request.raw_argument_text or "self", preview=True)
+        if trace.get("ok"):
+            return AbilityValidationResult(True, details={"trace": trace})
+        errors = trace.get("errors") or []
+        # Existing validators have stable detailed messages but not all historic
+        # reason codes.  Preserve them as details while exposing a stable code.
+        code = str(trace.get("reason_code") or ("INVALID_TARGET" if any("target" in str(x).lower() for x in errors) else "VALIDATION_FAILED"))
+        return AbilityValidationResult(False, code, {"trace": trace})
+
+    def preview_cost(self, request: AbilityExecutionRequest) -> AbilityCostPreview:
+        validation = self.validate(request)
+        costs: tuple[dict[str, Any], ...] = ()
+        if validation.details.get("trace"):
+            costs = tuple(validation.details["trace"].get("costs") or ())
+        return AbilityCostPreview(validation, costs)
+
+    def execute(self, request: AbilityExecutionRequest) -> AbilityExecutionResult:
+        key = request.idempotency_key or request.request_id
+        if key and key in self._ledger:
+            prior = self._ledger[key]
+            self.service._pub("ability.duplicate_ignored", {"request_id": request.request_id, "actor_id": request.actor_id, "ability_id": request.ability_id})
+            return AbilityExecutionResult(status="DUPLICATE_IGNORED", ability_id=prior.ability_id, ability_name=prior.ability_name,
+                actor_id=request.actor_id, target_id=prior.target_id, player_message="That ability request was already processed.", metadata={"original_status": prior.status})
+        if request.preview:
+            preview = self.preview_cost(request)
+            return AbilityExecutionResult(status="SUCCESS" if preview.validation.valid else "FAILED_VALIDATION", ability_id=request.ability_id,
+                actor_id=request.actor_id, metadata={"preview": True, "costs": list(preview.costs), "failure_code": preview.validation.failure_code})
+        self.service._pub("ability.requested", {"request_id": request.request_id, "actor_id": request.actor_id, "ability_id": request.ability_id, "invocation_type": request.invocation_type.value})
+        gateway = self.service.gateway()
+        result = gateway.execute_result(request.actor_id, request.ability_id,
+            request.explicit_target_actor_id or request.raw_argument_text or "self",
+            {"command": request.source_command, "source": request.invocation_type.value.lower(), "ability_pre_resolved": True, "request_id": request.request_id})
+        if key and result.ok:
+            self._ledger[key] = result
+        self.service._pub("ability.succeeded" if result.ok else "ability.failed", {"request_id": request.request_id, "actor_id": request.actor_id, "ability_id": request.ability_id, "status": result.status})
+        return result
 
 
 @dataclass(frozen=True)
@@ -827,6 +942,7 @@ class AbilityExecutionService:
         self.combat = CombatEngine(content=CombatContentRegistry(package)) if self.allow_isolated_combat_engine else None
         self.actor_registry = actor_registry or ActorRegistry(); self.actors = self.actor_registry.actors; self.availability = AbilityAvailabilityService(self); self.effect_operations = AbilityEffectOperationRegistry()
         self.target_resolver = AbilityTargetResolver(self); self.spell_costs = SpellResourceCostService(self); self._published_execution_events = []
+        self.runtime_service = AbilityRuntimeService(self)
         self.aura_runtime = AuraRuntimeService(self); self.stance_runtime = StanceRuntimeService(self); self.transformation_runtime = TransformationRuntimeService(self); self.summon_runtime = SummonRuntimeService(self); self.summon_profile_service = SummonProfileService(self); self.passive_trigger_service = PassiveTriggerService(self); self.item_ability_runtime = ItemAbilityRuntimeService(self); self.room_effect_runtime = RoomEffectRuntimeService(self)
         if combat_runtime is not None and self.combat is not None:
             raise RuntimeError("AbilityExecutionService cannot own a duplicate CombatEngine when CombatRuntimeService is injected")
@@ -851,6 +967,9 @@ class AbilityExecutionService:
     def actor_from_character(self, c: Any) -> Actor: a=actor_from_runtime_character(c,self.world_id); self.register_actor(a); return a
     def gateway(self) -> AbilityRuntimeGateway:
         return AbilityRuntimeGateway(self, getattr(self, "runtime", None))
+    def ability_runtime(self) -> AbilityRuntimeService:
+        """Return the sole typed entry point for active abilities."""
+        return self.runtime_service
     def assert_runtime_combat_authority(self) -> None:
         rt = getattr(self, "runtime", None)
         crt = self.combat_runtime or (getattr(rt, "combat_runtime", None) if rt else None)

@@ -35,7 +35,7 @@ from engine.builder_stat_content import (AttributeDocumentAdapter, FormulaDocume
 from engine.score_renderer import ActorScoreRenderer
 from engine.command_registry import CommandRegistry
 from smart_mud.builder import BuilderWorkspace, BuilderService
-from engine.abilities import AbilityExecutionService
+from engine.abilities import AbilityExecutionService, AbilityExecutionRequest, AbilityInvocationType
 from engine.help_service import HelpService, HelpEntry, normalize_help_query
 from engine.display_services import CharacterDisplaySnapshotService, AbilityDisplaySnapshotService, ability_snapshots_as_rows
 from engine.heartbeat import format_duration
@@ -3010,6 +3010,19 @@ class MudCommandEngine:
             aid, target = gateway.resolve_ability_prefix(character.id, query) if gateway else ("", "")
         if not aid:
             return CommandResult("Ability resolution failed before the canonical gateway.", ok=False)
+        # Commands only parse text.  The transport-neutral runtime owns the
+        # actual execution pipeline for both CAST and multiword skill routes.
+        runtime_service = svc.ability_runtime() if hasattr(svc, "ability_runtime") else None
+        if runtime_service:
+            invocation = AbilityInvocationType.CAST_COMMAND if canonical_cmd == "cast" else AbilityInvocationType.SKILL_COMMAND
+            request = AbilityExecutionRequest(
+                request_id=f"command:{character.id}:{__import__('uuid').uuid4().hex}", world_id=getattr(svc, "world_id", ""),
+                actor_id=character.id, ability_id=aid, invocation_type=invocation,
+                raw_argument_text=target or "self", source_command=raw,
+            )
+            result = runtime_service.execute(request)
+            return CommandResult(result.player_message or ("Ability activated." if result.ok else "You cannot use that ability."), ok=result.ok,
+                state_updates={"render_room": result.ok and result.ability_id in {"set_camp", "build_campfire", "recall"}})
         if canonical_cmd == "cast" and gateway and hasattr(gateway, "execute_by_id"):
             res = gateway.execute_by_id(character.id, aid, target or "self", {"command": raw, "source": canonical_cmd})
         else:
