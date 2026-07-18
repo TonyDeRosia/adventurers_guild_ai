@@ -32,8 +32,11 @@ class CommandRegistry:
         self.event_bus = event_bus
         self.commands: dict[str, CommandMeta] = {}
         self.aliases: dict[str, str] = {}
+        self._loading_defaults = True
+        self.duplicate_default_commands: list[str] = []
         for meta in DEFAULT_COMMANDS:
             self.register(meta)
+        self._loading_defaults = False
         self._apply_phase18g_minimums()
 
     def _apply_phase18g_minimums(self) -> None:
@@ -48,6 +51,14 @@ class CommandRegistry:
                 self.aliases[minimum] = command
 
     def register(self, meta: CommandMeta) -> None:
+        if meta.command in self.commands:
+            if getattr(self, "_loading_defaults", False):
+                self.duplicate_default_commands.append(meta.command)
+            else:
+                raise ValueError(f"Duplicate command registration for {meta.command!r}")
+        duplicate_aliases = [alias for alias in meta.aliases if alias in self.aliases]
+        if duplicate_aliases:
+            raise ValueError(f"Duplicate command alias registration for {meta.command!r}: {', '.join(duplicate_aliases)}")
         self.commands[meta.command] = meta
         self._publish("command_registered", {"command": meta.command, "category": meta.category, "status": meta.status})
         for alias in meta.aliases:

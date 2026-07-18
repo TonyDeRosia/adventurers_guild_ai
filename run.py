@@ -88,6 +88,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--host", default="127.0.0.1", help="Web host (web mode only)")
     parser.add_argument("--port", type=int, default=8000, help="Web port (web mode only)")
     parser.add_argument("--backend-only", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--ability-smoke-test", action="store_true", help="Run the production ability command smoke test and exit.")
     return parser.parse_args()
 
 
@@ -186,6 +187,52 @@ def _is_port_available(host: str, port: int) -> tuple[bool, str]:
     return True, ""
 
 
+def _run_ability_smoke_test() -> int:
+    """Exercise the desktop/web runtime composition without opening a browser."""
+    from app.web import WebRuntime
+
+    runtime = WebRuntime(project_root())
+    
+    try:
+        runtime.login_account({"username": "ability_smoke"})
+    except Exception:
+        runtime.create_account({"username": "ability_smoke", "password": ""})
+    runtime.select_world("shattered_realms")
+    name = "Ability Smoke " + chr(65 + int(time.time()) % 26) + chr(65 + (int(time.time()) // 26) % 26)
+    created = runtime.create_character({"name": name, "race_id": "human", "class_id": "mage"})["character"]
+    character_id = str(created.get("character_id") or created.get("id"))
+    # The smoke contract needs the four learned spells from the reported desktop
+    # session.  Persist them through the same progression table read by the live
+    # runtime rather than bypassing the ability services.
+    import sqlite3
+    with sqlite3.connect(runtime.mud_runtime.state_store.db_path) as conn:
+        for ability_id in ("armor", "detect_magic", "magic_missile", "strength"):
+            conn.execute(
+                "INSERT OR REPLACE INTO actor_ability_progression(actor_id, ability_id, rank, maximum_rank, proficiency, active) VALUES(?,?,?,?,?,1)",
+                (character_id, ability_id, 1, 100, 100),
+            )
+    runtime.enter_world(character_id)
+    for ability_id in ("armor", "detect_magic", "magic_missile", "strength"):
+        runtime.mud_runtime.abilities.grant_ability(character_id, ability_id, source_type="smoke")
+        runtime.mud_runtime.abilities.grant_ability("character:" + character_id, ability_id, source_type="smoke")
+    commands = ["spells", "c armor", "c armor self", "c detect magic", "c strength self", "c magic wolf", "c 'magic missile' wolf", "spellup", "aff"]
+    transcript: list[str] = []
+    ok = True
+    for command in commands:
+        result = runtime.handle_input(command)
+        output = str(result.get("output_text") or result.get("output") or result.get("command_result_text") or "").strip()
+        transcript.append(f"> {command}\n{output}")
+        lower = output.lower()
+        if any(bad in lower for bad in ('ability called "magic wolf"', 'ability called "magic missile wolf"', 'ability called "armor self"', 'ability called "\'magic missile\' wolf"')):
+            ok = False
+    print("\n\n".join(transcript))
+    diagnostics = getattr(runtime.mud_runtime, "startup_diagnostics", {})
+    if diagnostics:
+        print("\n[startup diagnostics]")
+        for key in sorted(diagnostics):
+            print(f"{key}: {diagnostics[key]}")
+    return 0 if ok else 1
+
 def _run_backend_server(host: str, port: int) -> int:
     from app.web import FastAPI, WebRuntime, _resolve_static_root, create_web_app, uvicorn
 
@@ -206,6 +253,9 @@ def main() -> int:
         args = _parse_args()
         _log_startup(f"Launch args parsed: mode={args.mode} terminal={args.terminal} host={args.host} port={args.port}")
         _initialize_paths()
+
+        if args.ability_smoke_test:
+            return _run_ability_smoke_test()
 
         launch_mode = "terminal" if args.terminal else args.mode
         if args.backend_only:

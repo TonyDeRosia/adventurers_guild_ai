@@ -2824,41 +2824,53 @@ class MudCommandEngine:
         if cr and cr.is_actor_in_active_combat(cr.actor_id_for_character(character)):
             return CommandResult("Spellup complete: 0 cast, 0 already active, 0 low mana, 1 blocked in combat.", ok=False)
         actor_id = character.id
-        rows = []
         known = svc.list_known_spells(actor_id) if hasattr(svc, "list_known_spells") else svc.get_actor_abilities(actor_id)
-        for r in known:
-            tags = set(r.get("tags") or [])
-            if r.get("ability_type") != "spell" or "spellup_eligible" not in tags or not r.get("enabled", True):
-                continue
-            if r.get("damage_components") or "offensive" in tags or "debuff" in tags:
-                continue
-            targeting = r.get("targeting") or {}
-            if targeting.get("mode", "self") != "self" or targeting.get("allow_self", True) is False:
-                continue
-            rows.append(r)
         cast=active=low=blocked=cooldown=unavailable=0; lines=[]
-        for r in sorted(rows, key=lambda x: ((x.get("plugin_data") or {}).get("spellup_priority", 100), x.get("id"))):
-            aid=str(r.get("id"))
-            # Execute through the same gateway used by CAST so known checks and handler status stay canonical.
-            gres = svc.gateway().execute(actor_id, aid, "self", {"command": f"spellup {aid}", "source": "spellup"})
+        diagnostics=[]
+        for r in sorted(known, key=lambda x: ((x.get("plugin_data") or {}).get("spellup_priority", 100), x.get("id"))):
+            aid=str(r.get("id")); name=str(r.get("name") or aid.replace("_", " ").title())
+            tags = set(r.get("tags") or [])
+            classification = "eligible"
+            if r.get("ability_type") != "spell" or not r.get("enabled", True):
+                classification = "unavailable handler"
+            elif r.get("damage_components") or "offensive" in tags or "debuff" in tags:
+                classification = "offensive"
+            elif "spellup_eligible" not in tags:
+                classification = "unavailable handler"
+            else:
+                targeting = r.get("targeting") or {}
+                if targeting.get("mode", "self") != "self" or targeting.get("allow_self", True) is False:
+                    classification = "invalid target mode"
+            diagnostics.append({"ability_id": aid, "name": name, "classification": classification, "actor_id": actor_id})
+            if classification == "offensive":
+                lines.append(f"{name}: offensive")
+                continue
+            if classification == "invalid target mode":
+                blocked += 1; lines.append(f"{name}: invalid target mode")
+                continue
+            if classification == "unavailable handler":
+                unavailable += 1; lines.append(f"{name}: unavailable")
+                continue
+            # Execute through the same ID-pre-resolved gateway used by CAST.
+            gres = svc.gateway().execute_by_id(actor_id, aid, "self", {"command": f"spellup {aid}", "source": "spellup"})
             res = {"ok": gres.ok, "message": gres.player_message, "reason_code": gres.reason_code, "effect_events": gres.effects_applied}
             if res.get("ok"):
                 if any(e.get("refreshed") for e in res.get("effect_events", []) if isinstance(e, dict)):
-                    active += 1; lines.append(f"{r.get('name')}: already active")
+                    active += 1; lines.append(f"{name}: already active")
                 else:
-                    cast += 1; lines.append(f"{r.get('name')}: cast")
+                    cast += 1; lines.append(f"{name}: cast")
             else:
                 msg=str(res.get("message") or "").lower(); reason=str(res.get("reason_code") or "").lower()
                 if "mana" in msg or "resource" in reason:
-                    low += 1; lines.append(f"{r.get('name')}: low mana")
+                    low += 1; lines.append(f"{name}: low mana")
                 elif "cooldown" in reason or "ready in" in msg:
-                    cooldown += 1; lines.append(f"{r.get('name')}: on cooldown")
-                elif "handler_not_implemented" in reason:
-                    unavailable += 1; lines.append(f"{r.get('name')}: unavailable")
+                    cooldown += 1; lines.append(f"{name}: on cooldown")
+                elif "handler_not_implemented" in reason or "unavailable" in reason:
+                    unavailable += 1; lines.append(f"{name}: unavailable")
                 else:
-                    blocked += 1; lines.append(f"{r.get('name')}: skipped")
+                    blocked += 1; lines.append(f"{name}: blocked")
         summary=f"Spellup complete: {cast} cast, {active} already active, {low} low mana, {blocked} blocked, {cooldown} on cooldown, {unavailable} unavailable."
-        return CommandResult(("\n".join(lines)+"\n" if lines else "") + summary)
+        return CommandResult(("\n".join(lines)+"\n" if lines else "") + summary, state_updates={"spellup_diagnostics": diagnostics})
 
     def _cmd_showvnums(self, character: Any, args: list[str], raw: str) -> CommandResult:
         if self._effective_role(character) not in {"admin", "owner", "builder"}:

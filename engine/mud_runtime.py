@@ -78,6 +78,11 @@ class _SQLBoundaryConnection:
         return self._conn.__exit__(*args)
     def __getattr__(self, name: str) -> Any:
         return getattr(self._conn, name)
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in {"_conn", "_recorder"}:
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self._conn, name, value)
 
 
 @contextmanager
@@ -742,6 +747,7 @@ class MudRuntime:
         self._play_view_inflight: set[str] = set()
         self.command_traces: dict[str, dict[str, Any]] = {}
         self.command_engine = MudCommandEngine(self.state_store, event_bus=self.event_bus)
+        self._startup_command_registry_ids = {id(self.command_engine.registry)}
         self.actor_registry = ActorRegistry()
         self.abilities = None
         self.builder = BuilderWorkspace(event_bus=self.event_bus)
@@ -784,7 +790,56 @@ class MudRuntime:
         self.environment = EnvironmentService(self.state_store.db_path, root / "worlds" / "shattered_realms", "shattered_realms", self.event_bus)
         self.sqlite_ready = (user_data_dir / "mud_state.db").exists()
         self.event_bus.publish("runtime_ready", {"sqlite_ready": self.sqlite_ready}, source_system="runtime")
+        self._log_startup_diagnostics()
         print("[mud-runtime] Smart MUD runtime initialized")
+
+    def _log_startup_diagnostics(self) -> None:
+        """Structured one-shot diagnostics for the production runtime composition."""
+        try:
+            import subprocess, inspect
+            import engine as engine_pkg
+            import engine.mud_commands as mud_commands_module
+            import engine.abilities as abilities_module
+            handler = self.command_engine.command_handlers.get("cast")
+            root = Path(__file__).resolve().parents[1]
+            try:
+                commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=str(root), text=True, stderr=subprocess.DEVNULL).strip()
+            except Exception:
+                commit = "unavailable"
+            payload = {
+                "runtime_root": str(root.resolve()),
+                "git_commit": commit,
+                "engine_module_path": str(Path(getattr(engine_pkg, "__file__", "")).resolve()),
+                "mud_commands_module_path": str(Path(getattr(mud_commands_module, "__file__", "")).resolve()),
+                "abilities_module_path": str(Path(getattr(abilities_module, "__file__", "")).resolve()),
+                "engine_module_name": getattr(engine_pkg, "__name__", "engine"),
+                "mud_commands_module_name": getattr(mud_commands_module, "__name__", "engine.mud_commands"),
+                "abilities_module_name": getattr(abilities_module, "__name__", "engine.abilities"),
+                "command_registry_object_id": id(self.command_engine.registry),
+                "cast_handler_qualified_name": f"{getattr(handler, '__module__', '')}.{getattr(handler, '__qualname__', '')}" if handler else "",
+                "cast_handler_source_file": str(Path(inspect.getsourcefile(handler) or "").resolve()) if handler else "",
+            }
+            logger.debug("smartmud_startup_diagnostics %s", json.dumps(payload, sort_keys=True))
+            self.startup_diagnostics = payload
+            self._assert_command_runtime_invariants()
+        except Exception:
+            logger.exception("startup diagnostics failed")
+            raise
+
+    def _assert_command_runtime_invariants(self) -> None:
+        registry_ids = getattr(self, "_startup_command_registry_ids", {id(self.command_engine.registry)})
+        if registry_ids != {id(self.command_engine.registry)}:
+            raise RuntimeError(f"Duplicate command registry active: {registry_ids} vs {id(self.command_engine.registry)}")
+        cast_handler = self.command_engine.command_handlers.get("cast")
+        if cast_handler is None or getattr(cast_handler, "__name__", "") != "_cmd_use_ability":
+            raise RuntimeError(f"cast must resolve to MudCommandEngine._cmd_use_ability, got {cast_handler}")
+        resolved_cast = self.command_engine.resolve_alias("cast")
+        resolved_c = self.command_engine.resolve_alias("c")
+        if resolved_cast != "cast" or resolved_c != "cast":
+            raise RuntimeError(f"cast/c alias invariant failed: cast={resolved_cast} c={resolved_c}")
+        from engine.abilities import AbilityRuntimeGateway
+        if not hasattr(AbilityRuntimeGateway, "resolve_spell_tokens") or not hasattr(AbilityRuntimeGateway, "execute_by_id"):
+            raise RuntimeError("cast handler cannot access canonical spell parser and execute_by_id")
 
     def start_runtime_scheduler(self) -> None:
         self.performance_counters["scheduler_duplicate_start_attempts"] += 1
@@ -1865,22 +1920,11 @@ class MudRuntime:
         if getattr(result, "display_document", None) is not None:
             color_enabled = not bool(getattr(char, "preferences", {}).get("no_color"))
             result.narrative = render_display_mud(result.display_document, color_enabled=color_enabled)
-        # Durable starter abilities are persisted in actor_ability_progression.
-        # If a stale runtime display snapshot renders the empty skills/spells
-        # frame during command handling, rebuild the player display from the
-        # canonical command engine without fabricating grants or changing the
-        # display contract.
-        if ((command.strip().lower() in {"skills", "spells", "abilities"} and "You know no " in str(result.narrative))
-                or (command.strip().lower().startswith(("cast ", "use ", "invoke ", "perform ", "set ", "build ")) and (str(result.narrative).strip().lower() == "unknown ability." or " is a help topic, not a command" in str(result.narrative)))):
-            refresh_command = command
-            lowered_refresh = command.strip().lower()
-            if lowered_refresh in {"set camp", "build campfire"}:
-                refresh_command = "use " + lowered_refresh
-            refreshed = self.command_engine.handle_command(char, refresh_command)
-            if getattr(refreshed, "display_document", None) is not None:
-                refreshed.narrative = render_display_mud(refreshed.display_document, color_enabled=not bool(getattr(char, "preferences", {}).get("no_color")))
-            if "You know no " not in str(refreshed.narrative) and str(refreshed.narrative).strip().lower() != "unknown ability.":
-                result = refreshed
+        # A player command must be resolved and dispatched exactly once.  Older
+        # compatibility refresh logic re-entered MudCommandEngine for display
+        # and ability commands, producing duplicate routing logs and repeated
+        # character/projection loads.  The canonical command result is now the
+        # only response path; stale snapshots must be fixed at their source.
         mutation = self.classify_command_mutation(command, result)
         if mutation != "read_only":
             reason = mutation.replace("_mutation", "").replace("location", "movement")

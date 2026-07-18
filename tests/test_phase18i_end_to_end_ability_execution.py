@@ -73,6 +73,6 @@ def test_phase18i_spellup_considers_known_buffs(tmp_path):
     char = rt.state_store.load_character(payload['character_id'])
     rt.register_live_character(char)
     out = rt.command_engine._cmd_spellup(char, [], 'spellup').narrative
-    assert 'Magic Missile:' not in out
+    assert 'Magic Missile: offensive' in out
     assert any(name in out for name in ('Armor:', 'Detect Magic:', 'Strength:', 'low mana', 'already active', 'cast'))
     assert '0 cast, 0 already active, 0 low mana, 0 blocked' not in out
