@@ -4,31 +4,74 @@ Smart MUD Builder is a draft-first, self-documenting world-building IDE. Editors
 
 ## Philosophy
 
-- The Builder itself is the documentation.
-- Menus explain current state, safe next actions, and available commands.
-- Field editors explain meaning, runtime usage, valid values, defaults, examples, warnings, and related commands.
+- The Builder itself is the documentation; help commands expand information but must not be the only way to discover it.
+- Menus explain current state, safe next actions, available commands, and publish readiness before builders ask.
+- Field editors explain meaning, runtime usage, valid values, defaults, examples, warnings, related fields, and safe recovery commands inline.
 - Validation is educational: every issue explains what happened, why it matters, how to fix it, whether it blocks publish, and what happens if ignored.
 - Draft/save/publish remains the required workflow. UX improvements must not replace BuilderService or create parallel builders.
 
-## Help Standards
+## Persistent Context Standard
 
-Every Builder menu and field prompt must accept `?`, `help`, `explain`, `commands`, `menu`, `options`, `show`, `list`, `values`, `examples`, `default`, and `defaults` when contextually meaningful. These commands must never produce generic invalid-input responses.
+Every Builder screen must answer these questions without relying on memory:
 
-Searchable help should support topics such as `help dragon`, `help health`, `help faction`, `help loot`, and `help flags`.
+- Where am I?
+- What editor is open?
+- What object is being edited?
+- Which submenu or field is active?
+- Are changes saved or modified?
+- Did validation pass?
+- Is publish blocked?
+- What commands are safe right now?
 
-## Field Standards
+Use a persistent status block with editor, object name, submenu, mode, modification state, validation issue counts, publish readiness, and unsaved-change state.
 
-Each editable field should include:
+## Field Presentation Standard
 
-- Description.
-- Runtime usage.
+Every editable field must display:
+
+- **What It Is**: the plain-language definition of the field.
+- **Why It Exists**: why builders should care about the data.
+- **Runtime Usage**: how preview, validation, publish, AI, combat, spawn, search, or lore systems consume it.
+- **Current Value**: formatted as `none` when blank.
+- **Required/Optional**: whether blank input is acceptable.
+- **Publishing Impact**: whether missing or invalid data blocks publish/save or is a quality warning.
+- **Runtime Impact**: whether the field changes generated runtime behavior.
+- **Inheritance**: whether the value is explicit or supplied by related profiles/defaults.
+- **Legal Values**: all enum or flag choices, numbered when selectable.
+- **Common Values**: frequently used entries grouped by concept where possible.
+- **Recommended Values**: practical guidance by level, NPC role, or content archetype.
+- **Examples**: concrete content examples such as `human — Town Guard` or `dragon — Ancient Red Dragon`.
+- **Related Fields**: sections that should be reviewed next, such as Body Profile, AI, Faction, Loot, or Spawns.
+- **Safe Commands**: `list`, `values`, `examples`, `inspect`, `help`, `details`, `advanced`, `clear`, and `back` where appropriate.
+
+## Enum and Picker Standard
+
+Do not ask builders to memorize enum values. When legal values exist:
+
+- Display all values inline before input.
+- Number values for selection when the editor supports it.
+- Allow typing either the value or a number when practical.
+- Explain rejected values by naming the entered value and showing accepted alternatives.
+
+## Inspector Mode
+
+Every field should support `inspect`. Inspector output must include:
+
 - Current value.
-- Legal values for enums/flags/references.
-- Recommended/default values when known.
-- Examples.
+- Default.
+- Recommended values.
+- Runtime effect.
+- Validation state.
+- Referenced by.
 - Related fields.
-- Warnings and common mistakes.
-- Safe commands including help, list, examples, default, clear, and back.
+- Inheritance behavior.
+- Publish status.
+
+Inspector mode is for deeper inspection; it is not a substitute for visible field education.
+
+## Search Standard
+
+Builder sessions should accept `search <query>` and `find <query>` for Builder concepts and data. Search results should return matching concepts such as species, dragon, undead, merchant, health, loot, faction, AI, body profile, and spawn references, with enough context to jump to the relevant section.
 
 ## Validation Standards
 
@@ -42,21 +85,37 @@ Each validation entry answers:
 - Is publish blocked?
 - What happens if ignored?
 
-## Prompt and Menu Standards
+Never simply report missing fields. Explain why health, mana, size, creature classification, species, body profile, keywords, and related data matter to runtime and publishing.
 
-- Include a persistent status section showing current editor, current field/mode, modification state, validation count, publish readiness, and unsaved-change state.
-- Include contextual footers with common commands.
-- Avoid `Invalid input`; report the exact input, why it was rejected, accepted alternatives, and how to discover values.
-- `back` and `cancel` must be safe and non-destructive.
-- Save output must clearly say whether the editor remains open.
+## Invalid Input and Recovery Standards
 
-## Consistency Rules
+Avoid generic `Invalid input`. Rejection messages must include:
 
-- Use title-case section names and consistent command casing.
-- Put state before choices, choices before footer commands.
-- Use one vocabulary across MEDIT, OEDIT, REDIT, ZEDIT, QUESTEDIT, and future editors.
-- Prefer natural synonyms where they do not conflict with data entry.
+- The exact input that was rejected.
+- What the Builder expected.
+- How to recover.
+- A safe command to redisplay values or leave the prompt.
+
+Example: `"dragonman" is not a known value for Creature Classification. Expected one of: ... Try list to view supported values, or back to cancel.`
+
+## World Command Recovery
+
+If a builder types a world command such as `medit`, `mlist`, `redit`, `goto`, `look`, or `inventory` while inside an editor, explain that they are currently editing an object and list safe editor commands: `back`, `save`, `cancel`, `quit`, and `preview`. Do not treat these as meaningless invalid input.
+
+## Menu Layout Standards
+
+- Use readable headers, subheaders, spacing, and aligned rows.
+- Put persistent context first, then editable fields, then commands.
+- Keep field rows scannable: number, label, current value, and a one-line description.
+- Use consistent footer vocabulary across Builder editors.
+- Prefer professional IDE language: Preview, Validate, Save, Undo, Redo, Return, Close.
+
+## Help Standards
+
+Every Builder menu and field prompt must accept `?`, `help`, `explain`, `details`, `advanced`, `commands`, `menu`, `options`, `show`, `list`, `values`, `examples`, `default`, and `defaults` when contextually meaningful. These commands must never produce generic invalid-input responses.
+
+Searchable help should support topics such as `help dragon`, `help health`, `help faction`, `help loot`, and `help flags`.
 
 ## Future Builder Requirements
 
-All future Builder editors must adopt the same contextual help, educational validation, safe cancellation, status bar, footer commands, searchable help, save clarity, and undo/redo change summaries before being considered feature complete.
+All future Builder editors must adopt the same contextual help, educational validation, safe cancellation, status bar, footer commands, searchable help, inspector mode, save clarity, and undo/redo change summaries before being considered feature complete.
