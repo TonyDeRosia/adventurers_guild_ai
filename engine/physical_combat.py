@@ -93,7 +93,8 @@ class PhysicalFormulaProfile:
 
 
 class DamageService:
-    def __init__(self, persist: Callable[[CombatActor], None] | None = None, publish: Callable[[str, dict], None] | None = None): self.persist=persist or (lambda a: None); self.publish=publish or (lambda n,p: None)
+    def __init__(self, persist: Callable[[CombatActor], None] | None = None, publish: Callable[[str, dict], None] | None = None, death_processor: Callable[[Any], Any] | None = None):
+        self.persist=persist or (lambda a: None); self.publish=publish or (lambda n,p: None); self.death_processor=death_processor
     def apply(self, attacker: CombatActor, target: CombatActor, *, engagement_id: str, source: dict[str, Any], critical: bool, raw: int, positioned: int, critical_damage: int, armor: int, final: int) -> DamageResult:
         before=target.hp; old=target.position; target.hp -= final; target.position=position_for_hp(target.hp, target.position)
         target.defeated = target.position == Position.DEAD
@@ -101,7 +102,13 @@ class DamageService:
         code="DEFEATED_PENDING_DEATH_PROCESSING" if target.defeated else "DAMAGE_APPLIED"
         result=DamageResult(attacker.actor_id,target.actor_id,engagement_id,str(source['id']),str(source['attack_type']),str(source['damage_type']),True,critical,raw,positioned,critical_damage,armor,final,final, before,before-final,old.name,target.position.name,target.defeated,code)
         self.publish("combat.damage.applied", result.__dict__)
-        if target.defeated: self.publish("combat.actor.defeated", result.__dict__)
+        if target.defeated:
+            self.publish("combat.actor.defeated", result.__dict__)
+            # The physical pipeline owns terminal detection only.  Runtime
+            # adapters inject the single canonical DeathRuntimeService path.
+            if self.death_processor:
+                from engine.death_runtime import DeathRequest
+                self.death_processor(DeathRequest(death_id=f"terminal:{target.actor_id}:{source['id']}:{before}:{target.hp}", world_id=target.world_id, room_id=target.room_id, victim_actor_id=target.actor_id, immediate_source_actor_id=attacker.actor_id, damage_source_id=str(source['id']), damage_type=str(source['damage_type']), attack_or_ability_id=str(source['attack_type']), engagement_id=engagement_id, terminal_damage_event_id=f"damage:{target.actor_id}:{before}:{target.hp}", hp_before=before, hp_after=target.hp, victim_position=target.position.name))
         return result
 
 
