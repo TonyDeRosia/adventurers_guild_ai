@@ -554,6 +554,61 @@ class AbilityRuntimeGateway:
         c=next(c for n,aid,c in matches if n==longest and aid==ids[0])
         return ids[0], q[len(c):].strip() or "self"
 
+
+    def tokenize_ability_input(self, text: str) -> list[str]:
+        import shlex
+        try:
+            return [self._normalize_query(t) for t in shlex.split(str(text or "")) if self._normalize_query(t)]
+        except ValueError:
+            return [self._normalize_query(t) for t in str(text or "").split() if self._normalize_query(t)]
+
+    def resolve_spell_tokens(self, actor_id: str, text: str, require_known: bool = True) -> dict[str, Any]:
+        tokens = self.tokenize_ability_input(text)
+        self.service._pub("spell_resolution_started", {"actor_id": actor_id, "input": text, "tokens": tokens})
+        if not tokens:
+            return {"status": "UNKNOWN_ABILITY", "ability_id": "", "consumed_tokens": 0, "target_text": "", "candidates": []}
+        learned = {str(r["id"]) for r in self.service.get_actor_abilities(actor_id)}
+        candidates: list[tuple[int, int, int, str, str]] = []
+        # score tuple: rank, consumed token count, matched character count, ability id, candidate phrase
+        for aid, ab in self.service.registry.abilities.items():
+            if str(ab.ability_type) != "spell":
+                continue
+            if require_known and aid not in learned:
+                continue
+            aliases = (ab.plugin_data or {}).get("aliases") or []
+            if isinstance(aliases, str): aliases=[aliases]
+            phrases = {self._normalize_query(aid), self._normalize_query(aid.replace("_"," ")), self._normalize_query(ab.name), self._normalize_query(ab.short_name)} | {self._normalize_query(a) for a in aliases}
+            for phrase in {p for p in phrases if p}:
+                ptoks = phrase.split()
+                maxn = min(len(tokens), len(ptoks))
+                for n in range(maxn, 0, -1):
+                    given = tokens[:n]
+                    if n == len(ptoks) and given == ptoks:
+                        rank = 100
+                    elif n == len(ptoks) and " ".join(given) == phrase:
+                        rank = 95
+                    elif all(ptoks[i].startswith(given[i]) for i in range(n)):
+                        rank = 80 + n
+                    elif n == 1 and phrase.startswith(given[0]):
+                        rank = 60
+                    else:
+                        continue
+                    candidates.append((rank, n, sum(map(len, given)), aid, phrase))
+                    break
+        if not candidates:
+            defined = self.resolve_definition(" ".join(tokens))
+            status = "NOT_KNOWN" if defined and defined not in learned else "UNKNOWN_ABILITY"
+            return {"status": status, "ability_id": defined if status == "NOT_KNOWN" else "", "consumed_tokens": 0, "target_text": " ".join(tokens), "candidates": []}
+        best_rank=max(c[0] for c in candidates); best=[c for c in candidates if c[0]==best_rank]
+        best_n=max(c[1] for c in best); best=[c for c in best if c[1]==best_n]
+        ids=sorted({c[3] for c in best})
+        if len(ids) != 1:
+            self.service._pub("spell_ambiguous", {"actor_id": actor_id, "input": text, "candidates": ids})
+            return {"status": "AMBIGUOUS_ABILITY", "ability_id": "", "consumed_tokens": 0, "target_text": " ".join(tokens), "candidates": ids}
+        aid=ids[0]; consumed=best[0][1]; target=" ".join(tokens[consumed:])
+        self.service._pub("spell_resolved", {"actor_id": actor_id, "input": text, "ability_id": aid, "consumed_tokens": consumed, "target_text": target})
+        return {"status": "RESOLVED", "ability_id": aid, "consumed_tokens": consumed, "target_text": target, "candidates": [aid], "match_type": "token_prefix", "normalized_input": " ".join(tokens)}
+
     def resolve_definition(self, query: str) -> str:
         """Resolve an ability definition independent of whether an actor knows it."""
         q = self._normalize_query(query)
@@ -1341,8 +1396,15 @@ class AbilityExecutionService:
         elif mode == "self" or q in {"", "self", "me"}: targets=[{"actor_id":actor.actor_id,"name":actor.identity.name,"target_type":"self"}]
         elif isinstance(target, Actor): targets=[{"actor_id":target.actor_id,"name":target.identity.name,"target_type":"actor"}]
         elif isinstance(target,str):
-            matches=[x for x in sorted(self.actors.values(), key=lambda z:z.actor_id) if x.actor_id.lower()==q or x.identity.name.lower()==q or q in x.identity.name.lower().split()]
-            targets=[{"actor_id":x.actor_id,"name":x.identity.name,"target_type":"actor"} for x in matches[:int((ab.targeting or {}).get("maximum_targets") or 1)]]
+            visible=[x for x in sorted(self.actors.values(), key=lambda z:z.actor_id) if getattr(x.identity, "current_location", "") == getattr(actor.identity, "current_location", "")]
+            exact=[x for x in visible if x.actor_id.lower()==q or x.identity.name.lower()==q or q in x.identity.name.lower().split()]
+            prefix=[x for x in visible if x not in exact and q and (x.actor_id.lower().startswith(q) or x.identity.name.lower().startswith(q) or any(part.startswith(q) for part in x.identity.name.lower().split()))]
+            matches=exact or prefix
+            max_targets=int((ab.targeting or {}).get("maximum_targets") or 1)
+            if len(matches) > max_targets:
+                return {"ok":False,"mode":mode,"targets":[],"target_type":"actor","invalid_reason":"ambiguous_target","candidates":[{"actor_id":x.actor_id,"name":x.identity.name} for x in matches],"runtime_instance_ids":[]}
+            targets=[{"actor_id":x.actor_id,"name":x.identity.name,"target_type":"actor"} for x in matches[:max_targets]]
+            if targets: self._pub("target_resolved", {"actor_id": actor.actor_id, "query": q, "target_id": targets[0].get("actor_id")})
         if mode == "current_target" and not targets:
             current=str((getattr(actor, "plugin_data", {}) or {}).get("current_combat_target") or "")
             if current and current in self.actors: targets=[{"actor_id":current,"name":self.actors[current].identity.name,"target_type":"actor"}]

@@ -1882,8 +1882,11 @@ class MudCommandEngine:
         else:
             cmd_name = 'target' if raw_cmd_name == 'target' else self.resolve_alias(raw_cmd_name)
         if not cmd_name:
-            choices = self.registry.resolve(raw_cmd_name)[1].split(":",1)[1].strip()
-            return CommandResult(narrative=f"Which command did you mean? {choices}", ok=False)
+            _resolved, reason = self.registry.resolve(raw_cmd_name)
+            if reason.startswith("ambiguous"):
+                choices = reason.split(":",1)[1].strip()
+                return CommandResult(narrative=f"That command is ambiguous. Did you mean: {choices}?", ok=False)
+            return CommandResult(narrative="Unknown command.", ok=False)
         args = cmd_tokens[1:]
         self._publish("command_received", character, command_text, raw_input=command_text, canonical_command=raw_cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""))
         
@@ -2919,7 +2922,8 @@ class MudCommandEngine:
         return CommandResult("Ability not found.", ok=False)
 
     def _cmd_direct_ability(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        cmd = raw.strip().split()[0].lower() if raw.strip() else ""
+        raw_cmd = raw.strip().split()[0].lower() if raw.strip() else ""
+        cmd = self.resolve_alias(raw_cmd) or raw_cmd
         return self._cmd_use_ability(character, [cmd] + list(args), raw)
 
     def _cmd_use_ability(self, character: Any, args: list[str], raw: str) -> CommandResult:
@@ -2950,10 +2954,26 @@ class MudCommandEngine:
             args = args[1:]
         gateway = svc.gateway() if hasattr(svc, "gateway") else None
         query = " ".join(args).strip()
-        aid, target = gateway.resolve_ability_prefix(character.id, query) if gateway else ("", "")
+        raw_cmd = raw.strip().split()[0].lower() if raw.strip() else ""
+        canonical_cmd = self.resolve_alias(raw_cmd) or raw_cmd
+        if canonical_cmd == "cast" and gateway:
+            spell = gateway.resolve_spell_tokens(character.id, query, require_known=True)
+            if spell.get("status") == "AMBIGUOUS_ABILITY":
+                return CommandResult("Which spell did you mean? " + ", ".join(str(x).replace("_", " ").title() for x in spell.get("candidates", [])), ok=False)
+            if spell.get("status") == "NOT_KNOWN":
+                name = str(spell.get("ability_id") or query).replace("_", " ").title()
+                return CommandResult(f"You do not know {name}.", ok=False)
+            if spell.get("status") != "RESOLVED":
+                defined = gateway.resolve_definition(query)
+                if defined and getattr(svc.registry.abilities.get(defined), "ability_type", "") != "spell":
+                    return CommandResult("You can only cast spells with CAST.", ok=False)
+                return CommandResult("Unknown spell.", ok=False)
+            aid = str(spell["ability_id"]); target = str(spell.get("target_text") or "self")
+        else:
+            aid, target = gateway.resolve_ability_prefix(character.id, query) if gateway else ("", "")
         if not aid:
             return CommandResult("Unknown ability.", ok=False)
-        res = gateway.execute(character.id, aid, target or "self", {"command": raw}) if gateway else None
+        res = gateway.execute(character.id, aid, target or "self", {"command": raw, "source": canonical_cmd}) if gateway else None
         if res is None:
             return CommandResult("Ability system is unavailable.", ok=False)
         return CommandResult(res.player_message or ("Ability activated." if res.ok else "You cannot use that ability."), ok=res.ok, state_updates={"render_room": res.ok and res.ability_id in {"set_camp","build_campfire","recall"}})

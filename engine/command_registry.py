@@ -10,6 +10,8 @@ STATUSES = ["implemented","placeholder","planned","intentionally_omitted","futur
 class CommandMeta:
     command: str
     aliases: tuple[str, ...] = ()
+    min_abbrev: str = ""
+    ability_id: str = ""
     category: str = "system"
     minimum_position: str = "standing"
     minimum_role: str = "player"
@@ -32,6 +34,18 @@ class CommandRegistry:
         self.aliases: dict[str, str] = {}
         for meta in DEFAULT_COMMANDS:
             self.register(meta)
+        self._apply_phase18g_minimums()
+
+    def _apply_phase18g_minimums(self) -> None:
+        for command, minimum, ability in (("cast","c",""),("look","l",""),("affects","aff",""),("north","n",""),("east","e",""),("south","s",""),("west","w",""),("up","u",""),("down","d",""),("kick","ki","kick"),("bash","bas","bash"),("bandage","band","bandage")):
+            old = self.commands.get(command)
+            if old:
+                self.commands[command] = CommandMeta(**{**old.__dict__, "min_abbrev": minimum, "ability_id": ability or old.ability_id, "status": "implemented", "implemented": True, "placeholder": False})
+            else:
+                self.commands[command] = CommandMeta(command=command, min_abbrev=minimum, ability_id=ability, category="combat", status="implemented", implemented=True, placeholder=False, short_help=f"{command.title()} ability command.", usage=f"{command} [target]")
+            if minimum and len(minimum) <= 2 and minimum not in self.aliases:
+                # Stable legacy one/two-letter command words are explicit aliases.
+                self.aliases[minimum] = command
 
     def register(self, meta: CommandMeta) -> None:
         self.commands[meta.command] = meta
@@ -41,13 +55,33 @@ class CommandRegistry:
             self._publish("command_alias_registered", {"command": meta.command, "alias": alias})
 
     def resolve(self, token: str) -> tuple[str, str]:
-        token = token.lower()
-        if token in self.commands: return token, "exact"
-        if token in self.aliases: return self.aliases[token], "alias"
-        matches = sorted({c for c in self.commands if c.startswith(token)} | {self.aliases[a] for a in self.aliases if a.startswith(token)})
-        if len(matches) == 1: return matches[0], "abbreviation"
-        if len(matches) > 1: return "", "ambiguous:" + ", ".join(matches)
-        return token, "unknown"
+        token = str(token or "").lower().strip()
+        self._publish("command_resolution_started", {"token": token})
+        if token in self.commands:
+            self._publish("command_resolved", {"token": token, "command": token, "match_type": "exact"})
+            return token, "exact"
+        if token in self.aliases:
+            command = self.aliases[token]
+            self._publish("command_resolved", {"token": token, "command": command, "match_type": "alias"})
+            return command, "alias"
+        exact_min = sorted(m.command for m in self.commands.values() if m.min_abbrev and token == m.min_abbrev)
+        prefix_matches = sorted({m.command for m in self.commands.values() if m.min_abbrev and len(token) >= len(m.min_abbrev) and m.command.startswith(token)})
+        if exact_min:
+            combined = sorted(set(exact_min) | set(prefix_matches))
+            if len(combined) == 1:
+                self._publish("command_resolved", {"token": token, "command": combined[0], "match_type": "minimum_abbreviation"})
+                return combined[0], "minimum_abbreviation"
+            self._publish("command_ambiguous", {"token": token, "candidates": combined})
+            return "", "ambiguous:" + ", ".join(combined)
+        matches = prefix_matches
+        if len(matches) == 1:
+            self._publish("command_resolved", {"token": token, "command": matches[0], "match_type": "prefix"})
+            return matches[0], "abbreviation"
+        if len(matches) > 1:
+            self._publish("command_ambiguous", {"token": token, "candidates": matches})
+            return "", "ambiguous:" + ", ".join(matches)
+        self._publish("command_unknown", {"token": token})
+        return "", "unknown"
 
     def available(self, role: str = "player", include_planned: bool = False) -> list[CommandMeta]:
         admin = role in {"admin", "owner", "implementor"}; builder = role in {"builder", "admin", "owner", "implementor"}
@@ -62,9 +96,9 @@ class CommandRegistry:
     def _publish(self, name: str, payload: dict[str, Any]) -> None:
         if self.event_bus: self.event_bus.publish(name, payload, source_system="command_registry")
 
-def cm(command, aliases=(), category="system", status="placeholder", short="", long="", phase="", admin=False, builder=False, handler="", usage=""):
+def cm(command, aliases=(), category="system", status="placeholder", short="", long="", phase="", admin=False, builder=False, handler="", usage="", min_abbrev="", ability_id=""):
     implemented=status=="implemented"; placeholder=status=="placeholder"
-    return CommandMeta(command, tuple(aliases), category, status=status, short_help=short, long_help=long or short, implemented=implemented, placeholder=placeholder, future_phase=phase, usage=usage or command, admin_only=admin, builder_only=builder, minimum_role="admin" if admin else "builder" if builder else "player", handler=handler)
+    return CommandMeta(command, tuple(aliases), min_abbrev, ability_id, category, status=status, short_help=short, long_help=long or short, implemented=implemented, placeholder=placeholder, future_phase=phase, usage=usage or command, admin_only=admin, builder_only=builder, minimum_role="admin" if admin else "builder" if builder else "player", handler=handler)
 
 DEFAULT_COMMANDS = [
 cm("north",("n",),"movement","implemented","Move north."),cm("south",("s",),"movement","implemented","Move south."),cm("east",("e",),"movement","implemented","Move east."),cm("west",("w",),"movement","implemented","Move west."),cm("up",("u",),"movement","implemented","Move up."),cm("down",("d",),"movement","implemented","Move down."),cm("enter",(),"movement","placeholder","Enter a place or portal."),cm("leave",(),"movement","placeholder","Leave a place."),cm("run",(),"movement","implemented","Run in a direction."),cm("walk",(),"movement","implemented","Walk in a direction."),cm("follow",(),"group","placeholder","Follow another character."),cm("unfollow",(),"group","placeholder","Stop following."),cm("mount",(),"movement","placeholder","No mount is ready here."),cm("dismount",(),"movement","placeholder","No mount is ready here."),cm("sit",(),"interaction","implemented","Sit down."),cm("stand",(),"interaction","implemented","Stand up."),cm("rest",(),"interaction","implemented","Rest."),cm("sleep",("lay","lie"),"interaction","implemented","Sleep."),cm("wake",(),"interaction","implemented","Wake up."),cm("cook",(),"crafting","implemented","Cook a known recipe.", usage="cook <recipe> [at campfire]"),cm("ingredients",(),"crafting","implemented","Show cooking recipe ingredients.", usage="ingredients for <recipe>"),cm("preserve",(),"crafting","implemented","Preserve food through CraftingService.", usage="preserve <item>"),cm("camp",(),"survival","implemented","Create or inspect a campsite.", usage="camp [here|status]"),cm("campfire",("fire",),"survival","implemented","Create, inspect, light, fuel, or extinguish a campfire.", usage="campfire [status|create|light|fuel|extinguish]"),cm("campsite",(),"survival","implemented","Inspect or dismantle a campsite.", usage="campsite [status|dismantle]"),cm("make",(),"survival","implemented","Make camp.", usage="make camp"),cm("break",(),"survival","implemented","Break camp.", usage="break camp"),cm("light",(),"survival","implemented","Light a campfire.", usage="light campfire"),cm("extinguish",(),"survival","implemented","Extinguish a campfire.", usage="extinguish campfire"),cm("add",(),"survival","implemented","Add fuel to a campfire.", usage="add fuel"),

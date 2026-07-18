@@ -238,3 +238,7 @@ Remaining follow-up is manual Windows acceptance by Tony on `main-v2` and any fu
 ## Phase 18E - Canonical class and ability repair
 
 Status: Implemented. Runtime class identity now hydrates from canonical progression state, starter ability grants are class-reconciled instead of universal, ability resolution distinguishes unknown/not-known/wrong-category/unimplemented outcomes, direct ability commands route through the shared gateway, spellup uses canonical known spell data, and SCORE blank rows before Name/Alignment were removed.
+
+## Phase 18G follow-up
+
+Next phase should attach the missing customized TBA/CircleMUD source ZIP to the workspace and complete source-verified parity for Kick, Bash, Bandage, Magic Missile, Armor, Bless, Strength, Spellup, and WAIT_STATE/action-delay timing. Phase 18G in this checkout repaired the canonical command/spell/target input path and added regression tests, but does not claim full legacy formula/message parity without the custom source.

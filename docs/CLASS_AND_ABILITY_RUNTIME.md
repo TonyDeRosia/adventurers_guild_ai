@@ -39,3 +39,7 @@ Cast and spellup effect application use the existing ability effect persistence 
 ## Migration/reconciliation behavior
 
 Existing characters are preserved. The class identity repair is idempotent and only fills missing canonical identity fields when valid source data exists. Ability reconciliation is conservative: it retires only legacy automatic `starter_character` rows outside the actor's class progression and never deletes unknown-origin, awarded, trained, admin, or manually learned rows.
+
+## Phase 18G command usability note
+
+Phase 18G connects displayed active skills and spells to player input by using the canonical command registry, the Phase 18F ability gateway, and shared spell/target token resolution. Completed abilities execute through `execute_result(...)`; known definitions without mechanics continue to return `HANDLER_NOT_IMPLEMENTED` rather than `UNKNOWN_ABILITY`.
