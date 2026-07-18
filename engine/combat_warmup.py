@@ -52,7 +52,17 @@ class CombatWarmupService:
     def warm(self) -> CombatWarmupReport:
         start=time.perf_counter(); rt=self.runtime; world_id=getattr(rt,'active_world_id','') or 'shattered_realms'; self.report=CombatWarmupReport(world_id)
         root=Path(getattr(getattr(rt,'active_world',None),'root','') or f'data/worlds/{world_id}')
-        formulas=self._section('world_formula_loading', lambda: self._read_json(root/'rules'/'combat.json', {})); self.report.formulas=len(formulas) if isinstance(formulas,dict) else 0
+        # A world override is optional.  Phase 19A has a versioned engine
+        # default, so an absent ``rules/combat.json`` can never make combat
+        # claim readiness with zero usable formulas.
+        formulas=self._section('world_formula_loading', lambda: self._read_json(root/'rules'/'combat.json', {}))
+        try:
+            from engine.physical_combat import PhysicalFormulaProfile
+            profile = PhysicalFormulaProfile.load(root/'rules'/'combat.json') if formulas else PhysicalFormulaProfile.load()
+            self.report.formulas=1
+            self.report.details.append({'formula_profile_id': profile.profile_id, 'version': profile.version, 'source': 'world_override' if formulas else 'engine_default', 'validation': 'valid', 'usable_formula_count': 1})
+        except Exception as exc:
+            self.report.formulas=0; self.report.errors.append(f'physical formula profile invalid: {exc}')
         self._section('formula_compilation', lambda: [hash(str(v)) for v in (formulas or {}).values()] if isinstance(formulas,dict) else [])
         templates=self._section('template_lookup', lambda: list(getattr(rt,'entity_templates',{}).values()) or self._read_json(root/'world'/'npcs.json', []));
         by_name={str(t.get('name')):dict(t) for t in templates if isinstance(t,dict)}
@@ -71,7 +81,7 @@ class CombatWarmupService:
         self._section('sqlite_prepared_statement_initialization', lambda: sqlite3.connect(rt.state_store.db_path).execute('SELECT 1').fetchone())
         for k in ['json_parsing','body_profile_construction','natural_weapon_construction','combat_stat_snapshot_construction','grammar_setup','effect_projection','equipment_projection','resident_npc_hydration','reward_quest_service_initialization','corpse_lifecycle_initialization','prompt_rendering']:
             self.report.timings.setdefault(k,0)
-        self.report.status='ready' if not self.report.errors else 'warning'; self.report.duration_ms=round((time.perf_counter()-start)*1000.0, 3)
+        self.report.status='ready' if self.report.formulas > 0 and not self.report.errors else 'unavailable'; self.report.duration_ms=round((time.perf_counter()-start)*1000.0, 3)
         print(f"[combat-warmup] world={world_id} formulas={self.report.formulas} body_profiles={self.report.body_profiles} natural_weapons={self.report.natural_weapons} entity_templates={self.report.entity_templates} message_tables={self.report.message_tables} duration_ms={self.report.duration_ms:.3f} status={self.report.status}")
         return self.report
     def _read_json(self,p:Path,default):

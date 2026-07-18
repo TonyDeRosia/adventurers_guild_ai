@@ -23,6 +23,14 @@ from engine.combat_equipment import CombatContentRegistry
 from engine.phase5f import ActorLifecycleManager, BodyProfileRegistry
 from engine.conditions import condition_key
 from engine.runtime_resources import RuntimeResourceService, ResourceMutationResult
+# Phase 19A's explicitly versioned physical pipeline is kept separate from the
+# older general ability resolver above so spells/skills can adopt the same
+# result and persistence boundary without inheriting weapon-only assumptions.
+from engine.physical_combat import (AttackResolutionService as PhysicalAttackResolutionService,
+    DamageService as PhysicalDamageService, CombatActor as PhysicalCombatActor,
+    PhysicalFormulaProfile, AttackRollResult as PhysicalAttackRollResult,
+    DamageResult as PhysicalDamageResult, Position as CombatPosition,
+    normalize_actor_id, trunc_toward_zero)
 
 
 class CombatState(StrEnum):

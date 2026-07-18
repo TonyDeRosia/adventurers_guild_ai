@@ -1,0 +1,6 @@
+{
+  "profile_id": "smartmud.tba_custom_physical.v1",
+  "version": 1,
+  "min_hit_chance": 5,
+  "max_hit_chance": 95
+}
