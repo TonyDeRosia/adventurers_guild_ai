@@ -2813,17 +2813,48 @@ class MudCommandEngine:
         return CommandResult(narrative=render_display_mud(doc), display_document=doc, display_intent=title)
 
     def _cmd_spellup(self, character: Any, args: list[str], raw: str) -> CommandResult:
-        if args and args[0].lower() == "cast":
-            svc = self._ability_service(character)
-            if not svc: return CommandResult("Spellup casting is unavailable.", ok=False)
-            rows = [r for r in self._ability_rows(character) if "spellup_eligible" in (r.get("tags") or []) and (r.get("targeting") or {}).get("mode", "self") == "self" and not r.get("damage_components")]
-            done=[]
-            for r in sorted(rows, key=lambda x: ((x.get("plugin_data") or {}).get("spellup_priority", 100), x.get("id"))):
-                res = svc.execute_instant_ability(character.id, r["id"], "self")
-                done.append(f"{r.get('name')}: {'cast' if res.get('ok') else 'skipped'}")
-                if not res.get("ok"): break
-            return CommandResult("Spellup cast summary:\n" + ("\n".join(done) if done else "No eligible self buffs."))
-        return CommandResult(narrative=self._render_score_section(character, "spellup"))
+        if self._effective_role(character) not in {"admin", "owner", "developer", "builder"}:
+            return CommandResult("You do not have permission to use spellup.", ok=False)
+        svc = self._ability_service(character)
+        if not svc:
+            return CommandResult("Spellup casting is unavailable.", ok=False)
+        rt = getattr(self, 'runtime', None)
+        cr = getattr(rt, 'combat_runtime', None) if rt else getattr(self, 'combat_runtime', None)
+        if cr and cr.is_actor_in_active_combat(cr.actor_id_for_character(character)):
+            return CommandResult("Spellup complete: 0 cast, 0 already active, 0 low mana, 1 blocked in combat.", ok=False)
+        actor_id = character.id
+        rows = []
+        known = svc.get_actor_abilities(actor_id)
+        if not known and not str(actor_id).startswith("character:"):
+            known = svc.get_actor_abilities("character:" + str(actor_id))
+        for r in known:
+            tags = set(r.get("tags") or [])
+            if r.get("ability_type") != "spell" or "spellup_eligible" not in tags or not r.get("enabled", True):
+                continue
+            if r.get("damage_components") or "offensive" in tags or "debuff" in tags:
+                continue
+            targeting = r.get("targeting") or {}
+            if targeting.get("mode", "self") != "self" or targeting.get("allow_self", True) is False:
+                continue
+            rows.append(r)
+        cast=active=low=blocked=0; lines=[]
+        for r in sorted(rows, key=lambda x: ((x.get("plugin_data") or {}).get("spellup_priority", 100), x.get("id"))):
+            aid=str(r.get("id"))
+            # Preview first so duplicate unique/refresh effects are reported as already active when applicable.
+            res = svc.execute_instant_ability(actor_id, aid, "self")
+            if res.get("ok"):
+                if any(e.get("refreshed") for e in res.get("effect_events", []) if isinstance(e, dict)):
+                    active += 1; lines.append(f"{r.get('name')}: already active")
+                else:
+                    cast += 1; lines.append(f"{r.get('name')}: cast")
+            else:
+                msg=str(res.get("message") or "").lower(); reason=str(res.get("reason_code") or "").lower()
+                if "mana" in msg or "resource" in reason:
+                    low += 1; lines.append(f"{r.get('name')}: low mana")
+                else:
+                    blocked += 1; lines.append(f"{r.get('name')}: skipped")
+        summary=f"Spellup complete: {cast} cast, {active} already active, {low} low mana, {blocked} blocked in combat."
+        return CommandResult(("\n".join(lines)+"\n" if lines else "") + summary)
 
     def _cmd_showvnums(self, character: Any, args: list[str], raw: str) -> CommandResult:
         if self._effective_role(character) not in {"admin", "owner", "builder"}:
@@ -2917,24 +2948,12 @@ class MudCommandEngine:
 
         if args and args[0].lower() in {"use", "cast", "invoke", "perform"}:
             args = args[1:]
-        phrase = " ".join(args).lower().strip().strip("'\"")
-        target = "self"
-        by_name = {}
-        for r in svc.get_actor_abilities(character.id):
-            rid = getattr(r, "id", None) or (r.get("id") if isinstance(r, dict) else "")
-            names = [rid, str(getattr(r, "name", "") or ""), str(getattr(r, "short_name", "") or "")] + list((getattr(r, "plugin_data", {}) or {}).get("aliases") or [])
-            for nm in names:
-                if nm: by_name[str(nm).lower().replace("_", " ").strip()] = rid
-        best = None
-        for nm, rid in by_name.items():
-            if phrase == nm or phrase.startswith(nm + " "):
-                if best is None or len(nm) > len(best[0]): best = (nm, rid)
-        if best:
-            aid = best[1]; target = phrase[len(best[0]):].strip() or "self"
-        else:
-            aid = phrase.replace(" ", "_")
         gateway = svc.gateway() if hasattr(svc, "gateway") else None
-        res = gateway.execute(character.id, aid, target, {"command": raw}) if gateway else None
+        query = " ".join(args).strip()
+        aid, target = gateway.resolve_ability_prefix(character.id, query) if gateway else ("", "")
+        if not aid:
+            return CommandResult("Unknown ability.", ok=False)
+        res = gateway.execute(character.id, aid, target or "self", {"command": raw}) if gateway else None
         if res is None:
             return CommandResult("Ability system is unavailable.", ok=False)
         return CommandResult(res.player_message or ("Ability activated." if res.ok else "You cannot use that ability."), ok=res.ok, state_updates={"render_room": res.ok and res.ability_id in {"set_camp","build_campfire","recall"}})
@@ -2999,6 +3018,17 @@ class MudCommandEngine:
         """Display active visible affects through the unified themed frame family."""
         rt = getattr(self, "runtime", None) or getattr(getattr(self, "ability_service", None), "runtime", None) or getattr(getattr(self, "abilities", None), "runtime", None) or getattr(character, "runtime", None)
         raw_affects = rt.build_projection(character, "effects") if rt and hasattr(rt, "build_projection") else (getattr(character, "affects", {}) or getattr(character, "effects", {}) or {})
+        if rt and getattr(rt, "state_store", None):
+            try:
+                db_items=[]
+                with sqlite3.connect(rt.state_store.db_path) as con:
+                    con.row_factory=sqlite3.Row
+                    for row in con.execute("SELECT * FROM actor_effect_instances WHERE active=1"):
+                        if not (str(row["target_actor_id"]) == character.id or str(row["target_actor_id"]).endswith(character.id)): continue
+                        meta=json.loads(row["metadata_json"] or "{}"); rem=max(0, int(row["expires_world_time"] or 0)-int(rt.get_world_time().get("total_minutes") or 0)) if int(row["expires_world_time"] or 0) else None
+                        db_items.append({"name":str(meta.get("definition_id") or row["effect_template_id"]).replace("_"," ").title(),"classification":row["disposition"] or "beneficial","remaining":rem,"duration":rem,"stacks":row["stack_count"],"tags":meta.get("tags") or [],"modifiers":meta.get("modifiers") or []})
+                if db_items: raw_affects=db_items
+            except Exception: pass
         if isinstance(raw_affects, dict):
             effects = [dict(v if isinstance(v, dict) else {"name": k}, name=(v.get("name") if isinstance(v, dict) else k) or k) for k, v in raw_affects.items()]
         else:

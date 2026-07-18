@@ -417,8 +417,34 @@ class AbilityRuntimeGateway:
 
     @staticmethod
     def _normalize_query(query: str) -> str:
-        value = re.sub(r"\s+", " ", str(query or "").lower().replace("_", " ")).strip()
+        value = str(query or "").strip()
+        value = re.sub(r"^[\'\"]+|[\'\"]+$", "", value)
+        value = re.sub(r"\s+", " ", value.lower().replace("_", " ").replace("-", " ")).strip()
         return re.sub(r"^(use|cast|perform|invoke)\s+", "", value).strip()
+
+    def resolve_ability_prefix(self, actor_id: str, query: str) -> tuple[str, str]:
+        raw = str(query or "").strip()
+        m = re.match(r"^[\'\"]([^\'\"]+)[\'\"](?:\s+(.*))?$", raw)
+        if m:
+            aid = self.resolve_ability(actor_id, m.group(1))
+            return (aid, (m.group(2) or "").strip() or "self") if aid else ("", "")
+        q = self._normalize_query(raw)
+        learned = {str(r["id"]) for r in self.service.get_actor_abilities(actor_id)}
+        matches=[]
+        for aid, ab in self.service.registry.abilities.items():
+            if aid not in learned: continue
+            aliases=(ab.plugin_data or {}).get("aliases") or []
+            if isinstance(aliases, str): aliases=[aliases]
+            candidates={self._normalize_query(aid), self._normalize_query(aid.replace("_"," ")), self._normalize_query(ab.name), self._normalize_query(ab.short_name)} | {self._normalize_query(a) for a in aliases}
+            for c in candidates:
+                if c and (q == c or q.startswith(c + " ")):
+                    matches.append((len(c), aid, c))
+        if not matches: return "", ""
+        longest=max(x[0] for x in matches)
+        ids=sorted({aid for n,aid,c in matches if n==longest})
+        if len(ids) != 1: return "", ""
+        c=next(c for n,aid,c in matches if n==longest and aid==ids[0])
+        return ids[0], q[len(c):].strip() or "self"
 
     def resolve_ability(self, actor_id: str, query: str) -> str:
         q = self._normalize_query(query)

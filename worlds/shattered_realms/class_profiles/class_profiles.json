@@ -258,6 +258,85 @@
       ],
       "training_gain_profile_id": "",
       "version": 1
+    },
+    {
+      "id": "scholar",
+      "name": "Scholar",
+      "description": "A learned observer who studies abilities, uncovers hidden knowledge, and can eventually pass mastered techniques to others.",
+      "class_type": "knowledge",
+      "playable": true,
+      "selectable": true,
+      "maximum_level": 100,
+      "primary_attribute_ids": [
+        "intelligence",
+        "wisdom"
+      ],
+      "secondary_attribute_ids": [
+        "charisma"
+      ],
+      "resource_profile_id": "",
+      "combat_profile_id": "",
+      "behavior_profile_id": "",
+      "ability_loadout_id": "",
+      "allowed_weapon_classes": [
+        "simple"
+      ],
+      "allowed_armor_classes": [
+        "light"
+      ],
+      "starting_abilities": [
+        "study",
+        "appraise"
+      ],
+      "level_ability_grants": {
+        "1": [
+          "study",
+          "appraise"
+        ],
+        "3": [
+          "identify"
+        ],
+        "5": [
+          "recall"
+        ],
+        "10": [
+          "analyze_ability"
+        ],
+        "15": [
+          "accelerated_study"
+        ],
+        "20": [
+          "comparative_theory"
+        ],
+        "50": [
+          "retain_observation"
+        ],
+        "80": [
+          "teach"
+        ],
+        "100": [
+          "master_instructor"
+        ]
+      },
+      "attribute_growth_profile_id": "standard_humanoid_attributes",
+      "resource_growth_profile_id": "standard_health_growth",
+      "derived_stat_growth_profile_id": "",
+      "experience_curve_id": "standard_adventurer_curve",
+      "practice_gain_profile_id": "",
+      "training_gain_profile_id": "",
+      "skill_point_gain_profile_id": "",
+      "advancement_requirements": [],
+      "multiclass_rules": {
+        "class_level_mode": "single_level",
+        "maximum_classes": 1
+      },
+      "remort_rules": {},
+      "tags": [
+        "scholar",
+        "starter"
+      ],
+      "plugin_data": {},
+      "version": 1
     }
   ]
 }

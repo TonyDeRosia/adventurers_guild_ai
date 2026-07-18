@@ -1121,9 +1121,14 @@ class MudRuntime:
         if not getattr(char, "thirst", None): setattr(char, "thirst", "Hydrated")
         if repair.get("applied") and hasattr(self, "projection_cache"):
             self.invalidate_character_projections(char.id, "progression_identity")
-        for aid in ("set_camp", "build_campfire", "recall", "kick", "bandage", "bash", "rescue", "hide", "sneak", "backstab", "track", "magic_missile", "cure_light", "heal", "bless", "armor", "strength", "haste", "invisibility", "detect_invisibility", "detect_magic", "detect_alignment", "sanctuary", "fly", "waterwalk", "poison", "remove_poison", "blindness", "cure_blind", "silence", "fireball"):
-            ps.learn_ability(char.id, aid, {"source_type":"starter_character","source_id":"starter_demonstration","default_proficiency":1,"maximum_proficiency":100,"maximum_rank":100})
-            ps.learn_ability("character:" + char.id, aid, {"source_type":"starter_character","source_id":"starter_actor_bridge","default_proficiency":1,"maximum_proficiency":100,"maximum_rank":100})
+        native = ["set_camp", "build_campfire", "recall", "kick", "bandage", "bash", "rescue", "hide", "sneak", "backstab", "track", "magic_missile", "cure_light", "heal", "bless", "armor", "strength", "haste", "invisibility", "detect_invisibility", "detect_magic", "detect_alignment", "sanctuary", "fly", "waterwalk", "poison", "remove_poison", "blindness", "cure_blind", "silence", "fireball"]
+        cls_id = str(getattr(char, "primary_class_id", "") or getattr(char, "actor_data", {}).get("class_id", ""))
+        if cls_id == "scholar":
+            level = int(getattr(char, "level", 1) or 1)
+            table = {1:["study","appraise"],3:["identify"],5:["recall"],10:["analyze_ability"],15:["accelerated_study"],20:["comparative_theory"],50:["retain_observation"],80:["teach"],100:["master_instructor"]}
+            native = [aid for lvl, aids in table.items() if level >= lvl for aid in aids]
+        for aid in native:
+            ps.learn_ability(char.id, aid, {"source_type":"class_progression" if cls_id == "scholar" else "starter_character","source_id":cls_id or "starter_demonstration","default_proficiency":1,"maximum_proficiency":100,"maximum_rank":100})
         if self.abilities:
             self.abilities.actor_from_character(char)
 
@@ -1283,6 +1288,14 @@ class MudRuntime:
             duplicate = conn.execute("SELECT 1 FROM characters WHERE world_id=? AND slug=?", (world_id, slug)).fetchone()
             if duplicate:
                 raise ValueError("A character with that name already exists in this world.")
+        valid_races = {str(r.get("id")) for r in getattr(self.active_world, "races", []) if r.get("id") and str(r.get("id")).lower() != "custom"}
+        valid_classes = {str(c.get("id")) for c in getattr(self.active_world, "classes", []) if c.get("id")}
+        race_id = race_id or ("human" if "human" in valid_races else sorted(valid_races)[0] if valid_races else "")
+        class_id = class_id or ("mage" if "mage" in valid_classes else sorted(valid_classes)[0] if valid_classes else "")
+        if race_id not in valid_races:
+            raise ValueError("Invalid race selection.")
+        if class_id not in valid_classes:
+            raise ValueError("Invalid class selection.")
         character_id = f"char_{world_id}_{slug}"
         start_room = getattr(self.active_world, "default_starting_room_id", "") or ""
         char = MudCharacter(

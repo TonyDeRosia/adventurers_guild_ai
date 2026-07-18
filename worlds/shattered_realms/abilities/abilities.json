@@ -2701,7 +2701,7 @@
     "plugin_data": {
       "success_message": "You cast Magic Missile.",
       "aliases": [
-        "magic missile"
+        "mm"
       ]
     },
     "version": "18.0.0"
@@ -3477,7 +3477,8 @@
       "spell",
       "beneficial",
       "buff",
-      "detection"
+      "detection",
+      "spellup_eligible"
     ],
     "enabled": true,
     "visibility": "normal",
@@ -3597,7 +3598,8 @@
       "spell",
       "beneficial",
       "buff",
-      "detection"
+      "detection",
+      "spellup_eligible"
     ],
     "enabled": true,
     "visibility": "normal",
@@ -3717,7 +3719,8 @@
       "spell",
       "beneficial",
       "buff",
-      "detection"
+      "detection",
+      "spellup_eligible"
     ],
     "enabled": true,
     "visibility": "normal",
@@ -3959,7 +3962,8 @@
       "beneficial",
       "buff",
       "movement",
-      "fly"
+      "fly",
+      "spellup_eligible"
     ],
     "enabled": true,
     "visibility": "normal",
@@ -4080,7 +4084,8 @@
       "beneficial",
       "buff",
       "movement",
-      "waterwalk"
+      "waterwalk",
+      "spellup_eligible"
     ],
     "enabled": true,
     "visibility": "normal",
@@ -4756,5 +4761,536 @@
         }
       }
     ]
+  },
+  {
+    "id": "study",
+    "name": "Study",
+    "short_name": "Study",
+    "description": "Scholar progression ability: Study.",
+    "ability_type": "skill",
+    "school": "scholarship",
+    "category": "knowledge",
+    "tags": [
+      "scholar",
+      "studyable"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "class_progression",
+      "trainer",
+      "study"
+    ],
+    "requirements": {
+      "minimum_level": 1
+    },
+    "targeting": {
+      "mode": "single_any",
+      "allow_self": false,
+      "require_same_room": true
+    },
+    "costs": [],
+    "cooldowns": {},
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "completes_immediately": true
+    },
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "messages": {
+      "complete_self": "Study is registered for Scholar progression; full lesson mechanics are deferred."
+    },
+    "plugin_data": {
+      "native_classes": [
+        "scholar"
+      ],
+      "native_unlock_level": 1,
+      "studyable": false,
+      "teachable": true,
+      "class_exclusive": false,
+      "minimum_learning_level": 1,
+      "governing_stats": [
+        "intelligence",
+        "wisdom"
+      ],
+      "cross_class_proficiency_cap": 75,
+      "acquisition_source": "scholar_native"
+    },
+    "version": "1.0.0"
+  },
+  {
+    "id": "appraise",
+    "name": "Appraise",
+    "short_name": "Appraise",
+    "description": "Scholar progression ability: Appraise.",
+    "ability_type": "skill",
+    "school": "scholarship",
+    "category": "knowledge",
+    "tags": [
+      "scholar",
+      "studyable"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "class_progression",
+      "trainer",
+      "study"
+    ],
+    "requirements": {
+      "minimum_level": 1
+    },
+    "targeting": {
+      "mode": "single_any",
+      "allow_self": false,
+      "require_same_room": true
+    },
+    "costs": [],
+    "cooldowns": {},
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "completes_immediately": true
+    },
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "messages": {
+      "complete_self": "Appraise is registered for Scholar progression; full lesson mechanics are deferred."
+    },
+    "plugin_data": {
+      "native_classes": [
+        "scholar"
+      ],
+      "native_unlock_level": 1,
+      "studyable": false,
+      "teachable": true,
+      "class_exclusive": false,
+      "minimum_learning_level": 1,
+      "governing_stats": [
+        "intelligence",
+        "wisdom"
+      ],
+      "cross_class_proficiency_cap": 75,
+      "acquisition_source": "scholar_native"
+    },
+    "version": "1.0.0"
+  },
+  {
+    "id": "identify",
+    "name": "Identify",
+    "short_name": "Identify",
+    "description": "Scholar progression ability: Identify.",
+    "ability_type": "skill",
+    "school": "scholarship",
+    "category": "knowledge",
+    "tags": [
+      "scholar",
+      "studyable"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "class_progression",
+      "trainer",
+      "study"
+    ],
+    "requirements": {
+      "minimum_level": 3
+    },
+    "targeting": {
+      "mode": "single_any",
+      "allow_self": false,
+      "require_same_room": true
+    },
+    "costs": [],
+    "cooldowns": {},
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "completes_immediately": true
+    },
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "messages": {
+      "complete_self": "Identify is registered for Scholar progression; full lesson mechanics are deferred."
+    },
+    "plugin_data": {
+      "native_classes": [
+        "scholar"
+      ],
+      "native_unlock_level": 3,
+      "studyable": false,
+      "teachable": true,
+      "class_exclusive": false,
+      "minimum_learning_level": 3,
+      "governing_stats": [
+        "intelligence",
+        "wisdom"
+      ],
+      "cross_class_proficiency_cap": 75,
+      "acquisition_source": "scholar_native"
+    },
+    "version": "1.0.0"
+  },
+  {
+    "id": "analyze_ability",
+    "name": "Analyze Ability",
+    "short_name": "Analyze Ability",
+    "description": "Scholar progression ability: Analyze Ability.",
+    "ability_type": "skill",
+    "school": "scholarship",
+    "category": "knowledge",
+    "tags": [
+      "scholar",
+      "studyable"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "class_progression",
+      "trainer",
+      "study"
+    ],
+    "requirements": {
+      "minimum_level": 10
+    },
+    "targeting": {
+      "mode": "single_any",
+      "allow_self": false,
+      "require_same_room": true
+    },
+    "costs": [],
+    "cooldowns": {},
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "completes_immediately": true
+    },
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "messages": {
+      "complete_self": "Analyze Ability is registered for Scholar progression; full lesson mechanics are deferred."
+    },
+    "plugin_data": {
+      "native_classes": [
+        "scholar"
+      ],
+      "native_unlock_level": 10,
+      "studyable": false,
+      "teachable": true,
+      "class_exclusive": false,
+      "minimum_learning_level": 10,
+      "governing_stats": [
+        "intelligence",
+        "wisdom"
+      ],
+      "cross_class_proficiency_cap": 75,
+      "acquisition_source": "scholar_native"
+    },
+    "version": "1.0.0"
+  },
+  {
+    "id": "accelerated_study",
+    "name": "Accelerated Study",
+    "short_name": "Accelerated Study",
+    "description": "Scholar progression ability: Accelerated Study.",
+    "ability_type": "passive",
+    "school": "scholarship",
+    "category": "knowledge",
+    "tags": [
+      "scholar",
+      "passive"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "class_progression",
+      "trainer",
+      "study"
+    ],
+    "requirements": {
+      "minimum_level": 15
+    },
+    "targeting": {
+      "mode": "none",
+      "allow_self": false,
+      "require_same_room": true
+    },
+    "costs": [],
+    "cooldowns": {},
+    "timing": {
+      "activation_type": "passive",
+      "cast_time": 0,
+      "completes_immediately": true
+    },
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "messages": {
+      "complete_self": "Accelerated Study is registered for Scholar progression; full lesson mechanics are deferred."
+    },
+    "plugin_data": {
+      "native_classes": [
+        "scholar"
+      ],
+      "native_unlock_level": 15,
+      "studyable": false,
+      "teachable": true,
+      "class_exclusive": false,
+      "minimum_learning_level": 15,
+      "governing_stats": [
+        "intelligence",
+        "wisdom"
+      ],
+      "cross_class_proficiency_cap": 75,
+      "acquisition_source": "scholar_native"
+    },
+    "version": "1.0.0"
+  },
+  {
+    "id": "comparative_theory",
+    "name": "Comparative Theory",
+    "short_name": "Comparative Theory",
+    "description": "Scholar progression ability: Comparative Theory.",
+    "ability_type": "passive",
+    "school": "scholarship",
+    "category": "knowledge",
+    "tags": [
+      "scholar",
+      "passive"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "class_progression",
+      "trainer",
+      "study"
+    ],
+    "requirements": {
+      "minimum_level": 20
+    },
+    "targeting": {
+      "mode": "none",
+      "allow_self": false,
+      "require_same_room": true
+    },
+    "costs": [],
+    "cooldowns": {},
+    "timing": {
+      "activation_type": "passive",
+      "cast_time": 0,
+      "completes_immediately": true
+    },
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "messages": {
+      "complete_self": "Comparative Theory is registered for Scholar progression; full lesson mechanics are deferred."
+    },
+    "plugin_data": {
+      "native_classes": [
+        "scholar"
+      ],
+      "native_unlock_level": 20,
+      "studyable": false,
+      "teachable": true,
+      "class_exclusive": false,
+      "minimum_learning_level": 20,
+      "governing_stats": [
+        "intelligence",
+        "wisdom"
+      ],
+      "cross_class_proficiency_cap": 75,
+      "acquisition_source": "scholar_native"
+    },
+    "version": "1.0.0"
+  },
+  {
+    "id": "retain_observation",
+    "name": "Retain Observation",
+    "short_name": "Retain Observation",
+    "description": "Scholar progression ability: Retain Observation.",
+    "ability_type": "passive",
+    "school": "scholarship",
+    "category": "knowledge",
+    "tags": [
+      "scholar",
+      "passive"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "class_progression",
+      "trainer",
+      "study"
+    ],
+    "requirements": {
+      "minimum_level": 50
+    },
+    "targeting": {
+      "mode": "none",
+      "allow_self": false,
+      "require_same_room": true
+    },
+    "costs": [],
+    "cooldowns": {},
+    "timing": {
+      "activation_type": "passive",
+      "cast_time": 0,
+      "completes_immediately": true
+    },
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "messages": {
+      "complete_self": "Retain Observation is registered for Scholar progression; full lesson mechanics are deferred."
+    },
+    "plugin_data": {
+      "native_classes": [
+        "scholar"
+      ],
+      "native_unlock_level": 50,
+      "studyable": false,
+      "teachable": true,
+      "class_exclusive": false,
+      "minimum_learning_level": 50,
+      "governing_stats": [
+        "intelligence",
+        "wisdom"
+      ],
+      "cross_class_proficiency_cap": 75,
+      "acquisition_source": "scholar_native"
+    },
+    "version": "1.0.0"
+  },
+  {
+    "id": "teach",
+    "name": "Teach",
+    "short_name": "Teach",
+    "description": "Scholar progression ability: Teach.",
+    "ability_type": "skill",
+    "school": "scholarship",
+    "category": "knowledge",
+    "tags": [
+      "scholar",
+      "studyable"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "class_progression",
+      "trainer",
+      "study"
+    ],
+    "requirements": {
+      "minimum_level": 80
+    },
+    "targeting": {
+      "mode": "single_any",
+      "allow_self": false,
+      "require_same_room": true
+    },
+    "costs": [],
+    "cooldowns": {},
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "completes_immediately": true
+    },
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "messages": {
+      "complete_self": "Teach is registered for Scholar progression; full lesson mechanics are deferred."
+    },
+    "plugin_data": {
+      "native_classes": [
+        "scholar"
+      ],
+      "native_unlock_level": 80,
+      "studyable": false,
+      "teachable": false,
+      "class_exclusive": false,
+      "minimum_learning_level": 80,
+      "governing_stats": [
+        "intelligence",
+        "wisdom"
+      ],
+      "cross_class_proficiency_cap": 75,
+      "acquisition_source": "scholar_native"
+    },
+    "version": "1.0.0"
+  },
+  {
+    "id": "master_instructor",
+    "name": "Master Instructor",
+    "short_name": "Master Instructor",
+    "description": "Scholar progression ability: Master Instructor.",
+    "ability_type": "passive",
+    "school": "scholarship",
+    "category": "knowledge",
+    "tags": [
+      "scholar",
+      "passive"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "class_progression",
+      "trainer",
+      "study"
+    ],
+    "requirements": {
+      "minimum_level": 100
+    },
+    "targeting": {
+      "mode": "none",
+      "allow_self": false,
+      "require_same_room": true
+    },
+    "costs": [],
+    "cooldowns": {},
+    "timing": {
+      "activation_type": "passive",
+      "cast_time": 0,
+      "completes_immediately": true
+    },
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "messages": {
+      "complete_self": "Master Instructor is registered for Scholar progression; full lesson mechanics are deferred."
+    },
+    "plugin_data": {
+      "native_classes": [
+        "scholar"
+      ],
+      "native_unlock_level": 100,
+      "studyable": false,
+      "teachable": false,
+      "class_exclusive": false,
+      "minimum_learning_level": 100,
+      "governing_stats": [
+        "intelligence",
+        "wisdom"
+      ],
+      "cross_class_proficiency_cap": 75,
+      "acquisition_source": "scholar_native"
+    },
+    "version": "1.0.0"
   }
 ]

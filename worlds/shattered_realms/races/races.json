@@ -142,21 +142,5 @@
     "tags": [
       "starter"
     ]
-  },
-  {
-    "id": "custom",
-    "name": "Custom",
-    "description": "Custom ancestry.",
-    "stat_bonuses": {},
-    "traits": [
-      "world-ready"
-    ],
-    "lore": "Custom lore in the Shattered Realms.",
-    "social_reactions": {
-      "default": "recognized as part of the Guild roads"
-    },
-    "tags": [
-      "starter"
-    ]
   }
 ]

@@ -377,5 +377,88 @@
       "starter"
     ],
     "ability_ids": []
+  },
+  {
+    "id": "scholar",
+    "name": "Scholar",
+    "description": "A learned observer who studies abilities, uncovers hidden knowledge, and can eventually pass mastered techniques to others.",
+    "primary_stats": [
+      "Intelligence",
+      "Wisdom"
+    ],
+    "starting_stats": {
+      "Strength": 5,
+      "Dexterity": 5,
+      "Constitution": 5,
+      "Intelligence": 5,
+      "Wisdom": 5,
+      "Charisma": 5
+    },
+    "base_stats": {
+      "Strength": 5,
+      "Dexterity": 5,
+      "Constitution": 5,
+      "Intelligence": 5,
+      "Wisdom": 5,
+      "Charisma": 5
+    },
+    "derived_resource": "class resource",
+    "resource_type": "Mana",
+    "allowed_armor": [
+      "light"
+    ],
+    "allowed_weapons": [
+      "simple"
+    ],
+    "starting_abilities": [
+      "study",
+      "appraise"
+    ],
+    "starting_items": [
+      "spellbook"
+    ],
+    "level_progression": {
+      "3": [
+        "identify"
+      ],
+      "5": [
+        "recall"
+      ],
+      "10": [
+        "analyze_ability"
+      ],
+      "15": [
+        "accelerated_study"
+      ],
+      "20": [
+        "comparative_theory"
+      ],
+      "50": [
+        "retain_observation"
+      ],
+      "80": [
+        "teach"
+      ],
+      "100": [
+        "master_instructor"
+      ]
+    },
+    "level_1_choices": [],
+    "tags": [
+      "scholar",
+      "starter"
+    ],
+    "ability_ids": [
+      "study",
+      "appraise",
+      "identify",
+      "recall",
+      "analyze_ability",
+      "accelerated_study",
+      "comparative_theory",
+      "retain_observation",
+      "teach",
+      "master_instructor"
+    ]
   }
 ]
