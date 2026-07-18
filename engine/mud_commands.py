@@ -38,6 +38,7 @@ from smart_mud.builder import BuilderWorkspace, BuilderService
 from engine.abilities import AbilityExecutionService
 from engine.help_service import HelpService, HelpEntry, normalize_help_query
 from engine.display_services import CharacterDisplaySnapshotService, AbilityDisplaySnapshotService, ability_snapshots_as_rows
+from engine.heartbeat import format_duration
 from engine.player_preferences import PlayerPresentationPreferenceService
 from engine.display_themes import preview_display_theme, resolve_effective_display_theme, load_display_themes, SUPPORTED_FAMILIES, ThemeResolutionMode
 from engine.combat_behavior import CombatBehaviorService
@@ -101,7 +102,8 @@ DETERMINISTIC_COMMANDS = {
     "title": {"category": "info", "admin": False},
     "accolades": {"category": "info", "admin": False},
     "profile": {"category": "info", "admin": False},
-    "affects": {"category": "info", "aliases": ["aff", "saff"], "admin": False},
+    "affects": {"category": "info", "aliases": ["aff"], "admin": False},
+    "saff": {"category": "info", "aliases": ["shortaff"], "admin": False},
     "spellup": {"category": "info", "admin": False},
     "resists": {"category": "info", "aliases": ["resistances"], "admin": False},
     "who": {"category": "info", "admin": False},
@@ -338,6 +340,9 @@ class MudCommandEngine:
             "abilitycooldowns": self._cmd_abilitycooldowns,
             "abilitycasts": self._cmd_abilitycasts,
             "affects": self._cmd_affects,
+            "aff": self._cmd_affects,
+            "saff": self._cmd_saff,
+            "shortaff": self._cmd_saff,
 
             "resetlist": self._cmd_builder_reset, "resetstat": self._cmd_builder_reset, "resetcreate": self._cmd_builder_reset, "resetclone": self._cmd_builder_reset, "resetset": self._cmd_builder_reset, "resetdelete": self._cmd_builder_reset, "resetcommand": self._cmd_builder_reset, "resetvalidate": self._cmd_builder_reset, "resetpreview": self._cmd_builder_reset, "resetrun": self._cmd_builder_reset, "resethistory": self._cmd_builder_reset, "resettrace": self._cmd_builder_reset, "zreset": self._cmd_builder_reset, "zresetstat": self._cmd_builder_reset, "zresetpreview": self._cmd_builder_reset, "zresetrun": self._cmd_builder_reset,
             "who": self._cmd_who,
@@ -2986,6 +2991,47 @@ class MudCommandEngine:
         theme = resolve_effective_display_theme(character, family="affects")
         doc = build_affects_document(effects, theme=theme)
         return CommandResult(narrative=render_display_mud(doc, color_enabled=theme.color_enabled), display_document=doc, display_intent="AFFECTS")
+
+
+    def _cmd_saff(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        """Compact duration-focused active-affect summary."""
+        rt = getattr(self, "runtime", None)
+        raw_affects = rt.build_projection(character, "effects") if rt and hasattr(rt, "build_projection") else (getattr(character, "affects", {}) or getattr(character, "effects", {}) or {})
+        items = []
+        if isinstance(raw_affects, dict):
+            vals = raw_affects.values()
+        else:
+            vals = raw_affects or []
+        for v in vals:
+            if not isinstance(v, dict):
+                continue
+            rem = v.get("remaining_ticks", v.get("remaining", v.get("duration")))
+            if rem is not None and not v.get("permanent") and int(rem or 0) <= 0:
+                continue
+            items.append(v)
+        cfg = getattr(rt, "heartbeat_config", None)
+        ppt = getattr(cfg, "pulses_per_tick", 1) if cfg else 1
+        pps = getattr(cfg, "pulses_per_second", 1) if cfg else 1
+        normal=[]; equip=[]
+        for eff in items:
+            name = str(eff.get("display_name") or eff.get("name") or eff.get("effect_template_id") or "unknown").replace("_", " ")
+            cat = str(eff.get("category") or "System").title()
+            if cat.lower() in {"skill","skills","technique"}: cat="Skill"
+            elif cat.lower() in {"spell","spells","buff","debuff","magic"}: cat="Spell"
+            elif cat.lower() in {"item","equipment"} or eff.get("equipment"): cat="Item"
+            dur = format_duration(eff, ppt, pps)
+            row=(cat, name.lower(), f"{cat:<8}: {name} ({dur})")
+            (equip if cat == "Item" or eff.get("equipment") else normal).append(row)
+        normal.sort(key=lambda r:(r[0], r[1])); equip.sort(key=lambda r:(r[0], r[1]))
+        lines=["You are affected by the following:", ""]
+        lines.extend(r[2] for r in normal)
+        if not normal: lines.append("None.")
+        lines += ["", "Equipment effects:"]
+        lines.extend("  "+r[2] for r in equip) if equip else lines.append("  None.")
+        skill_count=sum(1 for r in normal if r[0]=="Skill"); spell_count=sum(1 for r in normal if r[0]=="Spell")
+        def noun(n, one, many): return one if n == 1 else many
+        lines += ["", f"You are affected by {skill_count} {noun(skill_count, 'skill', 'skills')} and {spell_count} {noun(spell_count, 'spell', 'spells')}."]
+        return CommandResult("\n".join(lines), display_intent="SAFF")
 
     def _cmd_worth(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display net worth through the unified character display suite."""

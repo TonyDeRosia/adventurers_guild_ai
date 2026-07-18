@@ -101,6 +101,7 @@ from engine.combat_warmup import CombatWarmupService
 from engine.agent_runtime import AgentRuntimeGateway, DeterministicControllerEvaluator, init_agent_runtime_schema
 from engine.character_stats import CharacterAttributeService, CombatStatService
 from engine.runtime_resources import RuntimeResourceService
+from engine.heartbeat import HeartbeatConfig, GameClock, ActiveEffectService
 from engine.projection_cache import CharacterEntryContext, ProjectionCacheRegistry, ProjectionWarmupService, ActiveCharacterAutosaveService
 
 logger = logging.getLogger(__name__)
@@ -743,12 +744,15 @@ class MudRuntime:
         self.attribute_service.runtime = self
         self.combat_stat_service = CombatStatService(self.attribute_service)
         self.runtime_resources = RuntimeResourceService(self, world_id="shattered_realms")
+        self.heartbeat_config = HeartbeatConfig()
+        self.game_clock = GameClock(self.heartbeat_config)
+        self.active_effects = ActiveEffectService(self)
         self.command_engine.presentation_preferences = self.presentation_preferences
         self.command_engine.character_display_snapshots = self.character_display_snapshots
         init_agent_runtime_schema(self.state_store.db_path)
         self.combat_runtime = CombatRuntimeService(self)
         self._last_pulse_due_monotonic: float | None = None
-        self.pulse_config = {"base_pulse_ms": 100, "violence_pulse_count": 20, "mobile_pulse_count": 100, "point_update_pulse_count": 750, "zone_pulse_count": 600, "autosave_pulse_count": 300, "world_hour_pulse_count": 750, "corpse_decay_pulse_count": 50, "maximum_catchup_pulses": 5}
+        self.pulse_config = {"pulses_per_second": 10, "pulses_per_tick": 75, "ticks_per_game_hour": 1, "game_hours_per_day": 24, "days_per_month": 30, "months_per_year": 12, "years": 1, "base_pulse_ms": 100, "violence_pulse_count": 20, "mobile_pulse_count": 100, "point_update_pulse_count": 75, "zone_pulse_count": 600, "autosave_pulse_count": 300, "world_hour_pulse_count": 75, "corpse_decay_pulse_count": 50, "maximum_catchup_pulses": 5}
         self._runtime_pulse_counter = 0
         self._last_violence_bucket = -1
         self._last_point_bucket = -1
@@ -786,7 +790,9 @@ class MudRuntime:
         real_started = time.monotonic()
         started = real_started if now_monotonic is None else float(now_monotonic)
         cfg = getattr(self, "pulse_config", {}) or {}
-        base_ms = max(10, int(cfg.get("base_pulse_ms", 100) or 100))
+        self.heartbeat_config = HeartbeatConfig.from_mapping(cfg)
+        self.game_clock.config = self.heartbeat_config
+        base_ms = max(10, int(cfg.get("base_pulse_ms", self.heartbeat_config.base_pulse_ms) or self.heartbeat_config.base_pulse_ms))
         max_catchup = max(1, int(cfg.get("maximum_catchup_pulses", 5) or 5))
         if self._last_pulse_due_monotonic is None:
             anchor = float(getattr(getattr(self, "combat_runtime", None), "_real_start", started))
@@ -815,7 +821,7 @@ class MudRuntime:
         self.performance_counters["scheduler_lag_ms"] = int(max(0, scheduler_lag_ms))
         self.performance_counters["scheduler_max_lag_ms"] = max(self.performance_counters.get("scheduler_max_lag_ms", 0), int(max(0, scheduler_lag_ms)))
         def due_once(name: str, count_key: str, last_attr: str) -> bool:
-            count = max(1, int(cfg.get(count_key, 1) or 1))
+            count = max(1, int(cfg.get(count_key, cfg.get("pulses_per_tick") if count_key in {"point_update_pulse_count","world_hour_pulse_count"} else 1) or 1))
             bucket = self._runtime_pulse_counter // count
             if self._runtime_pulse_counter % count == 0 and getattr(self, last_attr, -1) != bucket:
                 setattr(self, last_attr, bucket)
@@ -841,6 +847,9 @@ class MudRuntime:
                         attempted.append("point_update")
                         count = self.runtime_resources.process_due_regeneration(started)
                         if count: processed.append("point_update")
+                        if getattr(self, "active_effects", None):
+                            expired = self.active_effects.process_tick()
+                            if expired: processed.append("effects")
                 except Exception as exc:
                     errors["point_update"] = str(exc)[:160]; logger.exception("point update pulse failed")
             if due_once("autosave", "autosave_pulse_count", "_last_autosave_bucket"):
@@ -862,6 +871,11 @@ class MudRuntime:
                     attempted.append("world_hour")
                     if self.active_world_id:
                         self.advance_world_time(self.active_world_id, 1)
+                        for ev, payload in self.game_clock.advance_tick():
+                            self.event_bus.publish(ev, payload, source_system="world_clock", world_id=self.active_world_id or "")
+                            if payload.get("message"):
+                                for ch in getattr(self, "active_characters", {}).values():
+                                    self._enqueue_room_output(ch.id, payload["message"], room_id=getattr(ch, "room_id", ""), category="world")
                         processed.append("world_hour")
                 except Exception as exc:
                     errors["world_hour"] = str(exc)[:160]; logger.exception("world hour pulse failed")
@@ -1861,7 +1875,7 @@ class MudRuntime:
 
 
 
-    READ_ONLY_COMMANDS = {"look","l","score","sc","worth","equipment","eq","inventory","inv","i","affects","effects","skills","spells","abilities","help","who","history","combatstats","attributes"}
+    READ_ONLY_COMMANDS = {"look","l","score","sc","worth","equipment","eq","inventory","inv","i","affects","aff","saff","shortaff","effects","skills","spells","abilities","help","who","history","combatstats","attributes"}
     MOVEMENT_COMMANDS = {"north","n","south","s","east","e","west","w","up","u","down","d","in","out"}
     EQUIPMENT_MUTATION_COMMANDS = {"wear","wield","hold","mainhand","offhand","dual","remove","rem","unwield","unequip"}
     INVENTORY_MUTATION_COMMANDS = {"get","drop","put","give","take"}
