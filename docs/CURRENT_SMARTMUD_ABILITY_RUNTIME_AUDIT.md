@@ -71,3 +71,13 @@ and appears in `spells`, but is offensive and therefore must not appear in the
 self-buff `spellup` narrative.  The regression was presentation leakage, not
 an eligibility or fixture-state issue.  The command now retains the offensive
 classification in diagnostics while omitting it from the player-facing output.
+
+## Phase 21B.3 trace update
+
+The verified input path is `WebTransportAdapter.handle_message` or
+`TelnetTransportAdapter.handle_message` -> `MudRuntime.handle_input` ->
+`MudCommandEngine._cmd_ability` -> `AbilityExecutionRequest` ->
+`AbilityRuntimeService.execute` -> `AbilityExecutionService.execute_effect_handler` ->
+`AbilityExecutionService._apply_damage_component`.  Structured Magic Missile damage receipts
+are retained by `AbilityExecutionResult.damage_results`.  Terminal delegation is available only
+when a `DeathRuntimeService` is injected; normal `MudRuntime` does not yet provide that wiring.

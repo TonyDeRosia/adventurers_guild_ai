@@ -128,3 +128,8 @@ Armor, Detect Magic, Magic Missile, Strength, Build Campfire, and Set Camp all
 enter `AbilityRuntimeService` from production commands. Magic Missile is the
 damaging entry and uses combat/death authorities; the other five use canonical
 affect or survival effect authorities.
+
+> **Phase 21B.3 status (2026-07-18):** Magic Missile structured damage receipts now preserve
+> request/source/target/HP linkage and durable duplicate references.  Terminal death linkage is
+> injectable but is not wired through normal `MudRuntime`; transport terminal acceptance remains
+> unproven, so Phase 21C is not unblocked.

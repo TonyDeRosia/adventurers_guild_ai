@@ -20,3 +20,8 @@ rescue, kick and bash through this runtime.
 
 Canonical ability requests now execute the shared lifecycle directly and return
 a structured execution receipt. Phase 21C remains a separate future phase.
+
+> **Phase 21B.3 status (2026-07-18):** Magic Missile structured damage receipts now preserve
+> request/source/target/HP linkage and durable duplicate references.  Terminal death linkage is
+> injectable but is not wired through normal `MudRuntime`; transport terminal acceptance remains
+> unproven, so Phase 21C is not unblocked.

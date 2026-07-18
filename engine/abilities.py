@@ -535,7 +535,13 @@ class AbilityRuntimeService:
         self.service._pub("ability.resource.paid", {"request_id": request.request_id, "costs": paid})
         cast_id = "runtime_" + request.request_id.replace(" ", "_") if request.request_id else "runtime_" + uuid.uuid4().hex
         self.service._pub("ability.effect.started", {"request_id": request.request_id, "cast_id": cast_id})
-        effect = self.service.execute_effect_handler(actor, ability, targets, cast_id)
+        effect = self.service.execute_effect_handler(actor, ability, targets, cast_id, request_id=request.request_id)
+        # The effect adapter returns the authoritative combat receipt, never a
+        # presentation-derived reconstruction.  Terminal handling is delegated
+        # to the injected Phase 20 runtime (when the host has wired one).
+        damage_results = list(effect.get("damage_events") or [])
+        death_results = self.service.link_terminal_ability_damage(
+            request, actor, ability, targets, damage_results)
         improvement = self.service.attempt_proficiency_improvement(actor.actor_id, ability.id, random_provider=self.random_provider)
         after = self.service._proficiency(actor.actor_id, ability.id)
         if improvement.get("improved"):
@@ -554,7 +560,7 @@ class AbilityRuntimeService:
         result = AbilityExecutionResult(status="SUCCESS" if effect.get("ok", True) else "FAILED", request_id=request.request_id, ability_id=ability.id, ability_name=ability.name, actor_id=actor.actor_id,
             target_id=str((targets[0] if targets else {}).get("actor_id") or ""), invocation_type=request.invocation_type.value, stage_reached="effect_completed", validation=validation, resolved_targets=targets, calculated_costs=costs, paid_costs=paid,
             proficiency_before=before, success_roll=roll, success_threshold=threshold, success_policy=policy, improvement_roll=improvement.get("roll"), improvement_threshold=improvement.get("threshold"), improvement_amount=int(improvement.get("amount", 0) or 0), proficiency_result=improvement, proficiency_after=after, wait_state_applied=wait_receipt, cooldown_applied=cooldown,
-            effect_results=list(effect.get("effect_events") or []), damage_results=list(effect.get("damage_events") or []), resource_changes=paid, cooldown_started=cooldown["applied"], player_message=str(effect.get("message") or self.service._ability_success_message(ability.id) or "Ability activated."), messages=[str(effect.get("message") or "")], metadata={"cast_id": cast_id, "payment_policy": "PAY_ON_ATTEMPT", "success_policy": policy})
+            effect_results=list(effect.get("effect_events") or []), damage_results=damage_results, death_results=death_results, resource_changes=paid, cooldown_started=cooldown["applied"], player_message=str(effect.get("message") or self.service._ability_success_message(ability.id) or "Ability activated."), messages=[str(effect.get("message") or "")], metadata={"cast_id": cast_id, "payment_policy": "PAY_ON_ATTEMPT", "success_policy": policy})
         if key and result.ok:
             self._ledger[key] = result
             self._store_durable_result(request, key, result)
@@ -565,7 +571,7 @@ class AbilityRuntimeService:
     def _store_durable_result(self, request: AbilityExecutionRequest, key: str, result: "AbilityExecutionResult") -> None:
         if not self.service.db_path:
             return
-        summary = {"status": result.status, "ability_id": result.ability_id, "ability_name": result.ability_name, "target_id": result.target_id, "stage_reached": result.stage_reached, "player_message": result.player_message, "success_roll": result.success_roll, "success_threshold": result.success_threshold}
+        summary = {"status": result.status, "request_id": result.request_id, "ability_id": result.ability_id, "ability_name": result.ability_name, "actor_id": result.actor_id, "target_id": result.target_id, "stage_reached": result.stage_reached, "player_message": result.player_message, "success_roll": result.success_roll, "success_threshold": result.success_threshold, "calculated_costs": result.calculated_costs, "paid_costs": result.paid_costs, "wait_state_applied": result.wait_state_applied, "cooldown_applied": result.cooldown_applied, "damage_results": result.damage_results, "death_results": result.death_results}
         with sqlite3.connect(self.service.db_path) as con:
             con.execute("DELETE FROM ability_execution_ledger WHERE expires_at IS NOT NULL AND expires_at < CURRENT_TIMESTAMP")
             con.execute("INSERT OR REPLACE INTO ability_execution_ledger(world_id,idempotency_key,request_id,actor_id,actor_life_generation,ability_id,invocation_type,status,stage_reached,result_summary_json,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,datetime('now','+30 days'))", (request.world_id or self.service.world_id, key, request.request_id, request.actor_id, str(request.actor_life_generation or ""), request.ability_id, request.invocation_type.value, result.status, result.stage_reached, jdump(summary)))
@@ -1048,9 +1054,9 @@ class AbilityRegistry:
         return out
 
 class AbilityExecutionService:
-    def __init__(self, db_path: Path|str|None=None, package: Any|None=None, event_bus: Any|None=None, world_id: str="", actor_registry: ActorRegistry | None=None, combat_runtime: Any|None=None, combat_stat_service: Any|None=None, resource_service: Any|None=None, effect_service: Any|None=None, lifecycle_service: Any|None=None, item_service: Any|None=None, world_registry: Any|None=None, room_service: Any|None=None, formula_engine: Any|None=None, state_store: Any|None=None, allow_isolated_combat_engine: bool=False):
+    def __init__(self, db_path: Path|str|None=None, package: Any|None=None, event_bus: Any|None=None, world_id: str="", actor_registry: ActorRegistry | None=None, combat_runtime: Any|None=None, combat_stat_service: Any|None=None, resource_service: Any|None=None, effect_service: Any|None=None, lifecycle_service: Any|None=None, item_service: Any|None=None, world_registry: Any|None=None, room_service: Any|None=None, formula_engine: Any|None=None, state_store: Any|None=None, death_runtime: Any|None=None, allow_isolated_combat_engine: bool=False):
         self.db_path = Path(db_path) if db_path else None; self.registry=AbilityRegistry(package); self.event_bus=event_bus; self.world_id=world_id or getattr(package,"id","")
-        self.combat_runtime = combat_runtime; self.combat_stat_service = combat_stat_service; self.resource_service = resource_service; self.effect_service = effect_service; self.lifecycle_service = lifecycle_service; self.item_service = item_service; self.world_registry = world_registry; self.room_service = room_service; self.formula_engine = formula_engine; self.state_store = state_store
+        self.combat_runtime = combat_runtime; self.combat_stat_service = combat_stat_service; self.resource_service = resource_service; self.effect_service = effect_service; self.lifecycle_service = lifecycle_service; self.item_service = item_service; self.world_registry = world_registry; self.room_service = room_service; self.formula_engine = formula_engine; self.state_store = state_store; self.death_runtime = death_runtime
         self.allow_isolated_combat_engine = bool(allow_isolated_combat_engine or combat_runtime is None)
         self.combat = CombatEngine(content=CombatContentRegistry(package)) if self.allow_isolated_combat_engine else None
         self.actor_registry = actor_registry or ActorRegistry(); self.actors = self.actor_registry.actors; self.availability = AbilityAvailabilityService(self); self.effect_operations = AbilityEffectOperationRegistry()
@@ -1347,7 +1353,7 @@ class AbilityExecutionService:
         result["proficiency_improvement"] = improvement
         self._pub("ability_completed", {"actor_id":actor_id,"ability_id":ability_id,"cast_id":cast_id,"proficiency_improvement":improvement}); return result
 
-    def execute_effect_handler(self, actor: Actor, ab: AbilityDefinition, targets: list[dict[str, Any]], cast_id: str) -> dict[str, Any]:
+    def execute_effect_handler(self, actor: Actor, ab: AbilityDefinition, targets: list[dict[str, Any]], cast_id: str, request_id: str = "") -> dict[str, Any]:
         """Effect-only adapter used by :class:`AbilityRuntimeService`.
 
         It intentionally contains no authorization, resource payment, generic
@@ -1360,7 +1366,7 @@ class AbilityExecutionService:
             target_actor=self.actors.get(t.get("actor_id"))
             if not target_actor: continue
             for comp in ab.damage_components:
-                result["damage_events"].append(self._apply_damage_component(actor,target_actor,ab,comp,cast_id))
+                result["damage_events"].append(self._apply_damage_component(actor,target_actor,ab,comp,cast_id,request_id=request_id))
             for comp in ab.healing_components:
                 amount=int(num(comp.get("base_amount", comp.get("amount", 0))))
                 result["healing_events"].append(asdict(self.apply_healing(actor.actor_id,target_actor.actor_id,amount,ab.id,comp.get("id"),{"cast_id":cast_id,"formula_id":comp.get("formula_id")})))
@@ -1934,7 +1940,9 @@ class AbilityExecutionService:
             metadata = jdump({"time_unit":"world_minutes","time_domain":"world_time","source_action":"ability_start"})
             with sqlite3.connect(self.db_path) as c: c.execute("INSERT OR REPLACE INTO actor_ability_cooldowns VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (cid,self.world_id,"actor",actor_id,ab.id,str((ab.cooldowns or {}).get("cooldown_group") or ab.id),wt,wt+dur,max(0,charges-1) if charges else 0,charges,wt+int(num((ab.cooldowns or {}).get("charge_recovery",dur))),1,now(),now(),metadata))
             self._pub("ability_cooldown_started", {"actor_id":actor_id,"ability_id":ab.id,"ready_world_time":wt+dur})
-    def _apply_damage_component(self, actor: Actor, target: Actor, ab: AbilityDefinition, comp: dict[str,Any], cast_id: str) -> dict[str,Any]:
+    def _apply_damage_component(self, actor: Actor, target: Actor, ab: AbilityDefinition, comp: dict[str,Any], cast_id: str, request_id: str = "") -> dict[str,Any]:
+        hp_before = int(num(target.resources.health, 0))
+        damage_result_id = "damage:" + (request_id or cast_id) + ":" + str(comp.get("id") or ab.id) + ":" + target.actor_id
         rt = getattr(self, "runtime", None)
         crt = self.combat_runtime or (getattr(rt, "combat_runtime", None) if rt else None)
         if crt:
@@ -1960,10 +1968,11 @@ class AbilityExecutionService:
                 save_definition=dict(comp.get("save") or comp.get("save_definition") or {}),
                 source_type="ability",
                 source_id=str(comp.get("id") or ab.id),
-                metadata={"cast_id": cast_id, "component_id": str(comp.get("id") or "")},
+                metadata={"cast_id": cast_id, "component_id": str(comp.get("id") or ""), "ability_request_id": request_id, "damage_result_id": damage_result_id},
             )
             rr = crt.submit_action(req)
-            ev = {"ability_id": ab.id, "cast_id": cast_id, "component_id": comp.get("id"), "source_actor_id": actor.actor_id, "target_actor_id": target.actor_id, "action_id": req.action_id, "ok": bool(getattr(rr, "ok", False)), "messages": list(getattr(rr, "messages", []) or []), "final_amount": int((getattr(crt, "last_resolution", {}) or {}).get("damage", 0) or 0), "combat_result": getattr(rr, "__dict__", {})}
+            final = int((getattr(crt, "last_resolution", {}) or {}).get("damage", 0) or 0)
+            ev = {"damage_result_id": damage_result_id, "ability_request_id": request_id, "ability_id": ab.id, "cast_id": cast_id, "component_id": comp.get("id"), "source_actor_id": actor.actor_id, "immediate_source_actor_id": actor.actor_id, "owner_actor_id": actor.actor_id, "target_actor_id": target.actor_id, "engagement_id": req.round_id, "damage_type": req.damage_type, "raw_damage": req.base_amount, "hp_before": hp_before, "hp_after": int(num(target.resources.health, hp_before - final)), "terminal": int(num(target.resources.health, hp_before - final)) <= 0, "action_id": req.action_id, "ok": bool(getattr(rr, "ok", False)), "messages": list(getattr(rr, "messages", []) or []), "final_amount": final, "combat_result": getattr(rr, "__dict__", {})}
             self._pub("ability_damage_applied", ev); return ev
         if self.combat is None:
             raise RuntimeError("Ability damage requires CombatRuntimeService in normal runtime")
@@ -1972,8 +1981,47 @@ class AbilityExecutionService:
         res=self.combat.resolve_attack(actor,target,world_time=self.world_time())
         if old is None: actor.combat_profile.pop("natural_weapons",None)
         else: actor.combat_profile["natural_weapons"]=old
-        ev=asdict(res.damage_event) if res.damage_event else {}; ev.update({"ability_id":ab.id,"cast_id":cast_id,"component_id":comp.get("id"),"source_actor_id":actor.actor_id,"target_actor_id":target.actor_id,"damage_profile_id":comp.get("damage_profile_id"),"final_amount":ev.get("final_damage",0),"trace":res.trace})
+        ev=asdict(res.damage_event) if res.damage_event else {}; final=int(ev.get("final_damage", 0) or 0); hp_after=int(num(target.resources.health, hp_before - final)); ev.update({"damage_result_id":damage_result_id,"ability_request_id":request_id,"ability_id":ab.id,"cast_id":cast_id,"component_id":comp.get("id"),"source_actor_id":actor.actor_id,"immediate_source_actor_id":actor.actor_id,"owner_actor_id":actor.actor_id,"target_actor_id":target.actor_id,"engagement_id":"","raw_damage":int(comp.get("base_amount",1)),"hp_before":hp_before,"hp_after":hp_after,"terminal":hp_after <= 0,"damage_profile_id":comp.get("damage_profile_id"),"final_amount":final,"trace":res.trace})
         self._pub("ability_damage_applied", ev); return ev
+    def link_terminal_ability_damage(self, request: AbilityExecutionRequest, actor: Actor, ability: AbilityDefinition,
+                                     targets: list[dict[str, Any]], damage_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Delegate terminal ability damage to the one injected death authority.
+
+        This adapter owns no corpse, extraction, or reward logic.  It only
+        turns the canonical damage receipt into a DeathRequest and retains the
+        stable Phase 20 receipt for the ability idempotency record.
+        """
+        runtime = self.death_runtime
+        if runtime is None:
+            return []
+        from engine.death_runtime import DeathRequest
+        linked=[]
+        for damage in damage_results:
+            if not damage.get("terminal"):
+                continue
+            target_id=str(damage.get("target_actor_id") or "")
+            target=self.actor_registry.get(target_id)
+            death_id="death:" + str(damage.get("damage_result_id") or request.request_id)
+            death_request=DeathRequest(death_id=death_id, world_id=request.world_id or self.world_id,
+                room_id=str(getattr(getattr(target, "identity", None), "current_location", "")), victim_actor_id=target_id,
+                immediate_source_actor_id=actor.actor_id, damage_source_id=str(damage.get("damage_result_id") or ""),
+                damage_type=str(damage.get("damage_type") or ""), attack_or_ability_id=ability.id,
+                engagement_id=str(damage.get("engagement_id") or ""), terminal_damage_event_id=str(damage.get("damage_result_id") or ""),
+                hp_before=int(damage.get("hp_before") or 0), hp_after=int(damage.get("hp_after") or 0),
+                source_metadata={"ability_request_id": request.request_id, "ability_id": ability.id,
+                    "damage_result_id": damage.get("damage_result_id")})
+            foundation=runtime.process_death(death_request)
+            final=runtime.process_rewards(death_request)
+            receipt={"death_id": final.death_id, "status": final.status, "victim_actor_id": final.victim_actor_id,
+                "credited_killer_actor_id": final.credited_killer_actor_id, "immediate_source_actor_id": final.immediate_source_actor_id,
+                "ability_id": ability.id, "ability_request_id": request.request_id, "damage_result_id": damage.get("damage_result_id"),
+                "corpse_id": final.corpse_instance_id, "victim_removed": final.victim_removed,
+                "foundation_status": foundation.status, "reward_stage_status": final.status, "event_ids": list(final.event_ids)}
+            linked.append(receipt)
+            self._pub("ability.damage.completed", {**damage, "request_id": request.request_id})
+            self._pub("ability.death.completed", receipt)
+        return linked
+
     def apply_healing(self, source_actor_id: str, target_actor_id: str, amount: int, ability_id: str|None=None, component_id: str|None=None, metadata: dict[str,Any]|None=None) -> HealingEvent:
         target=self._get_actor(target_actor_id)
         if target is None: raise ValueError(f"Actor not registered: {target_actor_id}")

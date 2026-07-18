@@ -43,3 +43,8 @@ roll record, effect-only invocation, improvement, cooldown, and structured
 result construction. `AbilityExecutionService.execute_effect_handler` is the
 legacy-effect adapter; direct `execute_instant_ability` remains compatibility
 only and is not the production command path.
+
+> **Phase 21B.3 status (2026-07-18):** Magic Missile structured damage receipts now preserve
+> request/source/target/HP linkage and durable duplicate references.  Terminal death linkage is
+> injectable but is not wired through normal `MudRuntime`; transport terminal acceptance remains
+> unproven, so Phase 21C is not unblocked.

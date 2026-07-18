@@ -54,3 +54,8 @@ kick, bash), using this runtime rather than a new combat-skill pipeline.
 
 Common request orchestration is now explicit in `AbilityRuntimeService`; no
 Phase 21C physical-command work is included in this update.
+
+> **Phase 21B.3 status (2026-07-18):** Magic Missile structured damage receipts now preserve
+> request/source/target/HP linkage and durable duplicate references.  Terminal death linkage is
+> injectable but is not wired through normal `MudRuntime`; transport terminal acceptance remains
+> unproven, so Phase 21C is not unblocked.
