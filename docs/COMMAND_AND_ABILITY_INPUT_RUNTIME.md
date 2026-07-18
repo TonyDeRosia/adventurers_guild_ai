@@ -30,3 +30,7 @@ Phase 18K keeps command dispatch single-pass while allowing exact multiword acti
 Active skills expose invocation metadata in the skill display. `Build Campfire` shows `command: build campfire`; `Set Camp` shows `command: set camp`. If an active ability lacks an implemented handler, the canonical ability gateway returns `HANDLER_NOT_IMPLEMENTED` rather than allowing a help-topic collision to be the only outcome.
 
 Cast parsing continues to resolve quoted, full, and abbreviated spell names before passing remaining words as target text. Named target failures are target failures; target text is not appended back into the spell name.
+
+## Phase 19C spell resources and natural weapons
+
+Phase 19C adds canonical legacy spell mana costs via `SpellResourceCostService`. Magic Missile uses `mana_max=25`, `mana_min=10`, `mana_change=3`, and class-specific unlock level 1 for Adventurer and Magic User/Mage, producing costs 25/22/19/16/13/10 by level. Cast and spellup validation consume the same service result; low-mana cast failures now show required and available mana. Resource payment is centralized through `RuntimeResourceService` so live score/prompt state and persistence stay aligned. The forest wolf natural attack miss path now carries the selected bite profile rather than falling back to punch wording.

@@ -296,6 +296,7 @@ class MudCommandEngine:
             "inspect": self._cmd_runtime_item,
             "resists": self._cmd_resists,
             "spellup": self._cmd_spellup,
+            "spellinfo": self._cmd_spellinfo,
             "spells": self._cmd_spells,
             "skills": self._cmd_skills,
             "abilitydiagnose": self._cmd_abilitydiagnose,
@@ -2815,6 +2816,31 @@ class MudCommandEngine:
         doc = build_abilities_document(rows, title=title, empty=empty, theme=resolve_effective_display_theme(getattr(self, "_format_character", None), family=title.lower()))
         return CommandResult(narrative=render_display_mud(doc), display_document=doc, display_intent=title)
 
+
+    def _cmd_spellinfo(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        if not args:
+            return CommandResult("Spellinfo which spell?", ok=False)
+        svc = self._ability_service(character)
+        if not svc:
+            return CommandResult("Ability system is unavailable.", ok=False)
+        query = " ".join(args).strip()
+        gw = svc.gateway()
+        resolved = gw.resolve_definition(query) or gw.resolve_ability(character.id, query)
+        ab = svc.registry.abilities.get(resolved or "")
+        if not ab or ab.ability_type != "spell":
+            return CommandResult("Spell not found.", ok=False)
+        actor = svc.actor_from_character(character)
+        calc = svc.spell_costs.calculate(actor, ab)
+        prof = svc._proficiency(actor.actor_id, ab.id) or 1
+        text = (f"{ab.name}\n"
+                f"Current cost: {calc.final_cost} mana\n"
+                f"Minimum cost: {calc.mana_min} mana\n"
+                f"Base maximum cost: {calc.mana_max} mana\n"
+                f"Mana change per level: {calc.mana_change}\n"
+                f"Class unlock level: {calc.class_unlock_level} ({calc.actor_class_id})\n"
+                f"Proficiency: {prof}%")
+        return CommandResult(text)
+
     def _cmd_spellup(self, character: Any, args: list[str], raw: str) -> CommandResult:
         svc = self._ability_service(character)
         if not svc:
@@ -2862,7 +2888,11 @@ class MudCommandEngine:
             else:
                 msg=str(res.get("message") or "").lower(); reason=str(res.get("reason_code") or "").lower()
                 if "mana" in msg or "resource" in reason:
-                    low += 1; lines.append(f"{name}: low mana")
+                    low += 1
+                    if msg:
+                        lines.append(f"{name}: low mana ({res.get('message')})")
+                    else:
+                        lines.append(f"{name}: low mana")
                 elif "cooldown" in reason or "ready in" in msg:
                     cooldown += 1; lines.append(f"{name}: on cooldown")
                 elif "handler_not_implemented" in reason or "unavailable" in reason:

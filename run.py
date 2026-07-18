@@ -90,6 +90,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--backend-only", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--ability-smoke-test", action="store_true", help="Run the production ability command smoke test and exit.")
     parser.add_argument("--target-smoke-test", action="store_true", help="Run the production room target smoke test and exit.")
+    parser.add_argument("--spell-resource-smoke-test", action="store_true", help="Run the production spell resource smoke test and exit.")
     return parser.parse_args()
 
 
@@ -244,6 +245,41 @@ def _run_ability_smoke_test() -> int:
             print(f"{key}: {diagnostics[key]}")
     return 0 if ok else 1
 
+def _run_spell_resource_smoke_test() -> int:
+    """Production composition smoke for Phase 19C spell resource visibility."""
+    from app.web import WebRuntime
+    import sqlite3
+    runtime = WebRuntime(project_root())
+    try:
+        runtime.login_account({"username": "spell_resource_smoke"})
+    except Exception:
+        runtime.create_account({"username": "spell_resource_smoke", "password": ""})
+    runtime.select_world("shattered_realms")
+    name = "Spell Resource Smoke " + chr(65 + int(time.time()) % 26) + chr(65 + (int(time.time()) // 26) % 26)
+    character_id = str(runtime.create_character({"name": name, "race_id": "human", "class_id": "mage"})["character"].get("character_id"))
+    with sqlite3.connect(runtime.mud_runtime.state_store.db_path) as conn:
+        for ability_id in ("magic_missile", "armor", "detect_magic", "strength"):
+            conn.execute("INSERT OR REPLACE INTO actor_ability_progression(actor_id, ability_id, rank, maximum_rank, proficiency, active) VALUES(?,?,?,?,?,1)", (character_id, ability_id, 1, 100, 100))
+    runtime.enter_world(character_id)
+    mud = runtime.mud_runtime; ch = mud.active_characters[character_id]
+    old_room = ch.room_id; ch.room_id = "emberwood_hunting_trail"; ch.mana = 30; ch.max_mana = 30
+    mud.move_occupant("character:" + character_id, old_room, ch.room_id); mud.state_store.save_character(ch, mud.active_world_id or "shattered_realms")
+    actor = mud.actor_registry.get(character_id)
+    if actor:
+        actor.identity.current_location = ch.room_id; actor.resources.mana = 30; actor.resources.maximum_mana = 30; actor.plugin_data["primary_class_id"] = "mage"
+    commands = ["score", "spellinfo magic missile", "cast magic wolf", "score", "c 'magic missile' wolf", "rest", "sleep", "score", "kill wolf"]
+    transcript=[]; ok=True; before=None; after=None
+    for command in commands:
+        result = runtime.handle_input(command)
+        output = str(result.get("output_text") or result.get("output") or result.get("command_result_text") or "").strip()
+        transcript.append(f"> {command}\n{output}")
+        low=output.lower()
+        if command == "spellinfo magic missile" and "current cost: 25 mana" not in low: ok=False
+        if command == "c 'magic missile' wolf" and "insufficient resources" in low: ok=False
+        if "punch" in low and "wolf" in low: ok=False
+    print("\n\n".join(transcript))
+    return 0 if ok else 1
+
 def _run_target_smoke_test() -> int:
     """Exercise canonical room actor targeting in desktop/web composition."""
     from app.web import WebRuntime
@@ -318,6 +354,8 @@ def main() -> int:
             return _run_ability_smoke_test()
         if args.target_smoke_test:
             return _run_target_smoke_test()
+        if args.spell_resource_smoke_test:
+            return _run_spell_resource_smoke_test()
 
         launch_mode = "terminal" if args.terminal else args.mode
         if args.backend_only:

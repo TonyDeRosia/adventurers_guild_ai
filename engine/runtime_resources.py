@@ -85,7 +85,9 @@ class RuntimeResourceService:
         if self.event_bus: self.event_bus.publish(name, payload, source_system="runtime_resources", world_id=payload.get("world_id") or self.world_id)
 
     def _cid(self, actor: Actor) -> str:
-        return actor.actor_id.split(":", 1)[1] if actor.actor_id.startswith("character:") else ""
+        if actor.actor_id.startswith("character:"):
+            return actor.actor_id.split(":", 1)[1]
+        return actor.actor_id if getattr(actor, "actor_type", "") == "player" else ""
 
     def _sync_character(self, actor: Actor, resource: str, after: int, maximum: int, con: sqlite3.Connection | None = None) -> None:
         cid = self._cid(actor)
@@ -104,7 +106,10 @@ class RuntimeResourceService:
         except sqlite3.OperationalError:
             cols = {"health": ("hp", "max_hp"), "mana": ("mana", "max_mana"), "stamina": ("stamina", "max_stamina")}.get(resource)
             if cols:
-                con.execute(f"UPDATE character_stats SET {cols[0]}=?,{cols[1]}=?,updated_at=CURRENT_TIMESTAMP WHERE character_id=?", (after, maximum, cid))
+                try:
+                    con.execute(f"UPDATE character_stats SET {cols[0]}=?,{cols[1]}=?,updated_at=CURRENT_TIMESTAMP WHERE character_id=?", (after, maximum, cid))
+                except sqlite3.OperationalError:
+                    pass
         if close: con.commit(); con.close()
 
     def _actor_ids(self, actor_or_character_id: Any) -> list[str]:
@@ -201,9 +206,11 @@ class RuntimeResourceService:
 
     def _sync_runtime_character(self, actor: Actor, *, reason: str = "resource_change") -> None:
         rt = self.runtime
-        if rt is None or not actor.actor_id.startswith("character:"):
+        if rt is None:
             return
-        cid = actor.actor_id.split(":", 1)[1]
+        cid = actor.actor_id.split(":", 1)[1] if actor.actor_id.startswith("character:") else (actor.actor_id if getattr(actor, "actor_type", "") == "player" else "")
+        if not cid:
+            return
         ch = getattr(rt, "active_characters", {}).get(cid)
         if not ch:
             return

@@ -284,6 +284,13 @@ def actor_from_runtime_character(character: Any, world_id: str = "") -> Actor:
     actor.resources.stamina = getattr(character, "stamina", actor.resources.stamina)
     actor.resources.maximum_stamina = getattr(character, "max_stamina", actor.resources.maximum_stamina)
     actor.progression_profile.update({"level": getattr(character, "level", 1), "experience": getattr(character, "xp", 0)})
+    for _key in ("primary_class_id", "class_id", "canonical_class_id"):
+        _val = getattr(character, _key, None) or (actor_data.get(_key) if isinstance(actor_data, dict) else None)
+        if _val:
+            actor.plugin_data[_key] = _val
+            actor.progression_profile[_key] = _val
+    if getattr(character, "class_name", None):
+        actor.plugin_data["class_name"] = getattr(character, "class_name")
     actor.equipment_profile.setdefault("equipped", getattr(character, "equipment", {}) or {})
     actor.effect_container.setdefault("affects", getattr(character, "affects", {}) or {})
     actor.builder_metadata.setdefault("role", getattr(character, "role", "player"))

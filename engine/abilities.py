@@ -22,7 +22,7 @@ from engine.combat_equipment import CombatContentRegistry
 ABILITY_TYPES = {"skill","spell","technique","heal","buff","debuff","utility","defensive","movement","racial","profession","monster","natural","item","passive","administrative","custom"}
 TARGET_MODES = {"self","single_actor","single_enemy","single_ally","single_any","current_target","room_enemy","room_ally","room_all","room","direction","item","equipped_item","corpse","none","custom"}
 ACTIVATION_TYPES = {"instant","cast","channel","charged","passive","toggle","custom"}
-COST_TYPES = {"flat","formula","percentage_current","percentage_maximum","all_current","custom"}
+COST_TYPES = {"flat","formula","percentage_current","percentage_maximum","all_current","custom","legacy_spell_mana"}
 CONSUME_ON = {"start","completion","success","hit","effect_application"}
 REFUNDS = {"none","full_on_interrupt","partial_on_interrupt","full_on_failure","custom"}
 CAST_STATES = {"pending","casting","channeling","completed","interrupted","failed","cancelled"}
@@ -100,6 +100,77 @@ class RuntimeEffectInstance:
     effect_instance_id: str; definition_id: str; source_ability_id: str = ""; source_actor_id: str = ""; source_item_id: str = ""; target_actor_id: str = ""; target_item_id: str = ""; target_room_id: str = ""
     applied_at: int = 0; expires_at: int | None = None; duration_domain: str = "world_minutes"; next_tick_at: int | None = None; tick_interval: int = 0
     stacks: int = 1; intensity: int = 1; state: str = "active"; tags: tuple[str, ...] = (); modifiers: tuple[dict[str, Any], ...] = (); origin_action_id: str = ""; source_versions: dict[str, Any] = field(default_factory=dict); metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class SpellManaCostResult:
+    ability_id: str
+    actor_id: str
+    actor_class_id: str
+    actor_level: int
+    class_unlock_level: int
+    mana_max: int
+    mana_min: int
+    mana_change: int
+    base_scaled_cost: int
+    empowered_reduction: int = 0
+    discipline_reduction: int = 0
+    tactical_memory_reduction: int = 0
+    enchanters_focus_reduction: int = 0
+    total_additive_reduction_pct: int = 0
+    final_cost: int = 0
+    current_mana: int = 0
+    sufficient: bool = False
+
+
+class SpellResourceCostService:
+    """Canonical legacy-TBA spell mana cost calculator."""
+    CLASS_ALIASES = {"mage": "magic_user", "magic user": "magic_user", "magic-user": "magic_user", "adventurer": "adventurer"}
+    DEFAULT_UNLOCKS = {"magic_missile": {"adventurer": 1, "magic_user": 1, "mage": 1}}
+
+    def __init__(self, service: "AbilityExecutionService"):
+        self.service = service
+
+    def actor_class_id(self, actor: Actor) -> str:
+        for src in (getattr(actor, "plugin_data", {}) or {}, getattr(actor, "builder_metadata", {}) or {}, getattr(actor, "progression_profile", {}) or {}):
+            for key in ("primary_class_id", "class_id", "canonical_class_id"):
+                if src.get(key):
+                    raw = str(src.get(key)).lower().replace(" ", "_").replace("-", "_")
+                    return self.CLASS_ALIASES.get(raw, raw)
+        return "adventurer"
+
+    def _metadata(self, ab: AbilityDefinition) -> tuple[int, int, int, dict[str, int]]:
+        meta = dict((ab.plugin_data or {}).get("legacy_mana") or {})
+        if ab.id == "magic_missile" and not meta:
+            meta = {"mana_max": 25, "mana_min": 10, "mana_change": 3, "class_unlock_levels": {"adventurer": 1, "magic_user": 1, "mage": 1}}
+        if not meta:
+            cost = next((c for c in ab.costs if str(c.get("resource_id")) == "mana"), {})
+            amount = int(num(cost.get("amount"), 0))
+            meta = {"mana_max": amount, "mana_min": amount, "mana_change": 0, "class_unlock_levels": {}}
+        unlocks = {str(k).lower().replace(" ", "_").replace("-", "_"): int(v) for k, v in (meta.get("class_unlock_levels") or self.DEFAULT_UNLOCKS.get(ab.id, {})).items()}
+        return int(meta.get("mana_max", 0)), int(meta.get("mana_min", 0)), int(meta.get("mana_change", 0)), unlocks
+
+    def calculate(self, actor: Actor, ab: AbilityDefinition) -> SpellManaCostResult:
+        cls = self.actor_class_id(actor)
+        level = max(1, int((getattr(actor, "progression_profile", {}) or {}).get("level", 1) or 1))
+        mana_max, mana_min, mana_change, unlocks = self._metadata(ab)
+        unlock = int(unlocks.get(cls, unlocks.get(self.CLASS_ALIASES.get(cls, cls), 1)) or 1)
+        base = max(mana_max - mana_change * (level - unlock), mana_min)
+        cost = base
+        affects = getattr(actor, "effect_container", {}) or {}
+        flags = set((getattr(actor, "plugin_data", {}) or {}).get("affect_flags", []) or []) | set(affects.get("flags", []) or [])
+        empowered = 10 if "AFF_EMPOWERED" in flags or "empowered" in flags else 0
+        if empowered:
+            cost = max(1, cost * 90 // 100)
+        pdata = getattr(actor, "plugin_data", {}) or {}
+        discipline = 5 if pdata.get("supreme_caster_discipline") else 0
+        tactical = 5 if pdata.get("tactical_spell_memory") else 0
+        focus = 10 if pdata.get("enchanters_focus") else 0
+        additive = min(20, discipline + tactical + focus)
+        if additive:
+            cost = max(1, cost * (100 - additive) // 100)
+        cur = int(getattr(actor.resources, "mana", 0) or 0)
+        return SpellManaCostResult(ab.id, actor.actor_id, cls, level, unlock, mana_max, mana_min, mana_change, base, empowered, discipline, tactical, focus, additive, max(1, cost), cur, cur >= max(1, cost))
 
 @dataclass(frozen=True)
 class AbilityUseRequest:
@@ -755,7 +826,7 @@ class AbilityExecutionService:
         self.allow_isolated_combat_engine = bool(allow_isolated_combat_engine or combat_runtime is None)
         self.combat = CombatEngine(content=CombatContentRegistry(package)) if self.allow_isolated_combat_engine else None
         self.actor_registry = actor_registry or ActorRegistry(); self.actors = self.actor_registry.actors; self.availability = AbilityAvailabilityService(self); self.effect_operations = AbilityEffectOperationRegistry()
-        self.target_resolver = AbilityTargetResolver(self); self._published_execution_events = []
+        self.target_resolver = AbilityTargetResolver(self); self.spell_costs = SpellResourceCostService(self); self._published_execution_events = []
         self.aura_runtime = AuraRuntimeService(self); self.stance_runtime = StanceRuntimeService(self); self.transformation_runtime = TransformationRuntimeService(self); self.summon_runtime = SummonRuntimeService(self); self.summon_profile_service = SummonProfileService(self); self.passive_trigger_service = PassiveTriggerService(self); self.item_ability_runtime = ItemAbilityRuntimeService(self); self.room_effect_runtime = RoomEffectRuntimeService(self)
         if combat_runtime is not None and self.combat is not None:
             raise RuntimeError("AbilityExecutionService cannot own a duplicate CombatEngine when CombatRuntimeService is injected")
@@ -932,7 +1003,10 @@ class AbilityExecutionService:
                 if name == "validate_resources":
                     costs=step.get("costs") or []
                     need=next((c for c in costs if not c.get("affordable", True)), None)
-                    msg=f"Requires {int(num(need.get('amount'),0))} {need.get('resource_id')}." if need else "Insufficient resources."
+                    if need and str(need.get('resource_id')) == 'mana' and ab.ability_type == 'spell':
+                        msg=f"You need {int(num(need.get('amount'),0))} mana to cast {ab.name}, but you only have {int(num(need.get('current'),0))}."
+                    else:
+                        msg=f"Requires {int(num(need.get('amount'),0))} {need.get('resource_id')}." if need else "Insufficient resources."
                     return self._validation_result(tr, "BLOCKED_RESOURCE", msg, resource_affordability={str(c.get("resource_id")): bool(c.get("affordable", True)) for c in costs})
                 if name == "resolve_target" and target is None:
                     mode=str((ab.targeting or {}).get("mode") or "self")
@@ -1558,8 +1632,16 @@ class AbilityExecutionService:
     def _validate_costs(self, actor: Actor, ab: AbilityDefinition) -> dict[str, Any]:
         out=[]; ok=True
         for c in ab.costs:
-            amt=self._cost_amount(actor,c); res=str(c.get("resource_id")); cur=num(getattr(actor.resources,res,0)); needed=cur>=amt and amt>=0
-            out.append({"resource_id":res,"amount":amt,"current":cur,"ok":needed}); ok &= needed
+            res=str(c.get("resource_id"))
+            if ab.ability_type == "spell" and res == "mana":
+                calc = self.spell_costs.calculate(actor, ab)
+                amt=calc.final_cost; cur=calc.current_mana; needed=calc.sufficient
+                rec={"resource_id":res,"amount":amt,"current":cur,"ok":needed,"affordable":needed,"spell_mana_cost":asdict(calc)}
+                out.append(rec); ok &= needed; self._pub("spell_cost_calculated", asdict(calc));
+                if not needed: self._pub("spell_resource_validation_failed", asdict(calc))
+                continue
+            amt=self._cost_amount(actor,c); cur=num(getattr(actor.resources,res,0)); needed=cur>=amt and amt>=0
+            out.append({"resource_id":res,"amount":amt,"current":cur,"ok":needed,"affordable":needed}); ok &= needed
         return {"ok":ok,"costs":out}
     def _cost_amount(self, actor: Actor, c: dict[str,Any]) -> int:
         typ=str(c.get("cost_type","flat")); res=str(c.get("resource_id")); cur=num(getattr(actor.resources,res,0)); mx=num(getattr(actor.resources,"maximum_"+res,cur))
@@ -1574,7 +1656,7 @@ class AbilityExecutionService:
         paid=[]
         for c in ab.costs:
             if str(c.get("consume_on","start")) != consume_on: continue
-            amt=self._cost_amount(actor,c); rr=RuntimeResourceService(getattr(self,"runtime",None), db_path=self.db_path, event_bus=self.event_bus, world_id=self.world_id).pay_cost(actor,str(c.get("resource_id")),amt,metadata={"source":"ability_cost","ability_id":ab.id}); trace={"resource":rr.resource,"operation":rr.operation,"before":rr.before,"amount":rr.applied_amount,"after":rr.after,"reason_code":rr.reason_code}; paid.append(trace); self._pub("ability_cost_paid", dict(trace, ability_id=ab.id, actor_id=actor.actor_id))
+            res=str(c.get("resource_id")); amt=self.spell_costs.calculate(actor, ab).final_cost if ab.ability_type == "spell" and res == "mana" else self._cost_amount(actor,c); rr=RuntimeResourceService(getattr(self,"runtime",None), db_path=self.db_path, event_bus=self.event_bus, world_id=self.world_id).pay_cost(actor,res,amt,metadata={"source":"ability_cost","ability_id":ab.id}); trace={"resource":rr.resource,"operation":rr.operation,"before":rr.before,"amount":rr.applied_amount,"after":rr.after,"reason_code":rr.reason_code}; paid.append(trace); self._pub("ability_cost_paid", dict(trace, ability_id=ab.id, actor_id=actor.actor_id)); self._pub("spell_resource_spent" if ab.ability_type == "spell" and res == "mana" else "mana_changed", dict(trace, ability_id=ab.id, actor_id=actor.actor_id, payment_reason=consume_on))
         return paid
     def _cooldown_status(self, actor_id: str, ab: AbilityDefinition) -> dict[str, Any]:
         wt=self.world_time(); rows=[]

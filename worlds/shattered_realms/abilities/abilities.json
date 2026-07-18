@@ -2634,7 +2634,9 @@
     "requirements": {
       "minimum_level": 1,
       "allowed_classes": [
-        "adventurer"
+        "adventurer",
+        "mage",
+        "magic_user"
       ]
     },
     "targeting": {
@@ -2648,8 +2650,8 @@
     "costs": [
       {
         "resource_id": "mana",
-        "cost_type": "flat",
-        "amount": 5,
+        "cost_type": "legacy_spell_mana",
+        "amount": 25,
         "consume_on": "start",
         "refund_policy": "none"
       }
@@ -2702,7 +2704,17 @@
       "success_message": "You cast Magic Missile.",
       "aliases": [
         "mm"
-      ]
+      ],
+      "legacy_mana": {
+        "mana_max": 25,
+        "mana_min": 10,
+        "mana_change": 3,
+        "class_unlock_levels": {
+          "adventurer": 1,
+          "magic_user": 1,
+          "mage": 1
+        }
+      }
     },
     "version": "18.0.0"
   },
