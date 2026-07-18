@@ -905,8 +905,9 @@ class OlcFieldDescriptor:
 
 
 
-BUILDER_HELP_WORDS = {"?", "help", "explain", "commands", "menu", "options", "show"}
+BUILDER_HELP_WORDS = {"?", "help", "explain", "commands", "menu", "options", "show", "details", "advanced"}
 BUILDER_LIST_WORDS = {"list", "values", "examples", "default", "defaults"}
+EDITOR_BLOCKED_WORLD_COMMANDS = {"medit", "mlist", "redit", "rlist", "oedit", "olist", "zedit", "goto", "look", "inventory", "inv", "equipment", "score"}
 MOBILE_TYPE_GUIDES = {
     "guard": {"classification": "guard", "level": 8, "health": 75, "body": "humanoid", "keywords": "guard watch patrol", "notes": "Use guard for lawkeepers, sentries, and patrol NPCs."},
     "merchant": {"classification": "merchant", "level": 3, "health": 35, "body": "humanoid", "keywords": "merchant shopkeeper vendor", "notes": "Use merchant/vendor for shop NPCs; add shop data in economy tooling when available."},
@@ -2084,23 +2085,113 @@ class BuilderService:
     def _context_footer(self, sess: BuilderEditSession) -> list[str]:
         return ["", "Commands", "1-20 Edit | ? Help | commands Options | list Values | examples Examples", "preview Preview | validate Validate | undo Undo | redo Redo | save Save | back Return | quit Close"]
 
+    def _field_profile(self, f: OlcFieldDescriptor | None) -> dict[str, Any]:
+        key = f.key if f else ""
+        common = {
+            "species": ["human", "elf", "dark elf", "dwarf", "halfling", "orc", "dragon", "wolf", "bear", "goblin", "skeleton", "zombie", "demon", "angel"],
+            "race": ["human", "elf", "dwarf", "orc", "goblin", "undead", "construct"],
+            "size": ["tiny", "small", "medium", "large", "huge", "gargantuan"],
+            "gender": ["none", "female", "male", "nonbinary", "unknown"],
+            "alignment": ["lawful_good", "neutral", "chaotic_evil", "unaligned"],
+            "default_position": ["standing", "sitting", "resting", "sleeping"],
+            "spawn_position": ["standing", "sitting", "resting", "sleeping"],
+            "builder_status": ["incomplete", "draft", "review", "approved", "published"],
+        }
+        examples = {
+            "species": ["human — Town Guard", "elf — Forest Ranger", "wolf — Forest Predator", "dragon — Ancient Red Dragon", "skeleton — Skeleton Warrior"],
+            "entity_type": ["guard — city sentry", "merchant — shopkeeper", "dragon — legendary boss", "quest_giver — dialog NPC"],
+            "level": ["1 for starter townsfolk", "10 for trained threats", "25+ for elite/boss content"],
+            "keywords": ["guard watch patrol", "lina apprentice mage", "wolf forest predator"],
+        }
+        descriptions = {
+            "name": "The player-facing display name for this NPC.",
+            "id": "The stable Builder identifier used by references and draft files.",
+            "vnum": "Legacy numeric identifier for builders who organize content by MUD-style ranges.",
+            "entity_type": "Classifies the NPC's content role so Builder tools can recommend AI, flags, validation, and search facets.",
+            "keywords": "Words players and builders can use to find, target, or search for this NPC.",
+            "species": "Determines the biological or lore race of this NPC.",
+            "race": "Legacy or alternate race label used by lore, searches, and compatibility data.",
+            "size": "Physical scale used by body assumptions, combat readability, and encounter design.",
+            "level": "Overall challenge and progression tier used as the primary recommendation signal.",
+            "body_profile_id": "Reference to the anatomical profile that supplies body parts and natural attack defaults.",
+        }
+        return {
+            "description": descriptions.get(key) or (f.help if f and f.help else f"{f.label if f else 'This field'} controls authoring data used by previews, validation, publish checks, and runtime projection."),
+            "typical": common.get(key) or list(f.choices or f.flags or ()),
+            "recommended": {
+                "level": ["Level 1: health 20-40", "Level 10: health 80-120", "Boss: health 1000+"],
+                "entity_type": ["Use guard/merchant/villager for towns", "Use animal/beast/monster/undead for encounters", "Use boss/dragon for rare high-impact threats"],
+                "species": ["Use a lore race for people", "Use animal species for wildlife", "Use undead/construct for nonliving beings"],
+            }.get(key, ["Choose the simplest accurate value; leave optional references blank until the related system exists."]),
+            "examples": examples.get(key, ["Town Guard", "Forest Wolf", "Apprentice Mage Lina"]),
+            "related": {
+                "species": ["Body Profile", "Creature Classification", "Natural Weapons", "AI Profile", "Quick Build"],
+                "entity_type": ["Species", "AI", "Faction", "Loot", "Spawns"],
+                "body_profile_id": ["Species", "Size", "Natural Weapons", "Combat"],
+                "level": ["Resources", "Attributes", "Combat", "Loot", "Abilities"],
+                "keywords": ["Name", "Descriptions", "Builder Search", "Player Targeting"],
+            }.get(key, ["Preview", "Validate", "Save", "Publish"]),
+        }
+
     def _field_help(self, sess: BuilderEditSession, f: OlcFieldDescriptor | None = None, topic: str = "") -> str:
         rec = sess.working_record or {}
         if f is None and sess.active_field:
             f = self._descriptor(sess, sess.active_field)
         if f is None and topic:
             f = self._descriptor(sess, topic)
+        label = f.label if f else (topic.title() if topic else "Builder Help")
         cur = self._fmt_value(self._get_path(rec, f.path)) if f else "none"
-        label = f.label if f else (topic or "Builder Help")
-        current_line = f"Current {label.lower()}: {cur}"
-        help_text = (f.help if f else "") or f"{label} controls author data used by preview, validation, publish, and runtime projection."
-        lines = [current_line, label, "Description", help_text, "", "Runtime Usage", "• Author data shown in previews", "• Focused validation before save/publish", "• Runtime projection during content generation", "", "Current Value", cur, "", "Commands", "? help explain - field documentation", "list values - legal values when available", "examples - practical example inputs", "default - recommended Builder default", "clear - remove optional value", "back - cancel safely"]
-        if f and f.choices:
-            lines += ["", "Legal Values"] + [f"• {v}" for v in f.choices]
-        if f and f.flags:
-            lines += ["", "Legal Flags"] + [f"• {v}" for v in f.flags]
+        profile = self._field_profile(f)
+        lines = [
+            "╔════════════════════════════════════════════════════╗",
+            f"║ {label:<50} ║",
+            "╚════════════════════════════════════════════════════╝",
+            "What It Is", profile["description"], "",
+            "Why It Exists", "Keeps Builder data understandable, searchable, reusable, and safe to publish.", "",
+            "Runtime Usage", "• Preview and runtime projection", "• Validation and publish readiness", "• Search, AI recommendations, spawn/combat defaults when applicable", "",
+            f"Current {label.lower()}: {cur}", "Current Value", cur, "",
+            "Required", "Yes" if f and f.required else "No", "Optional", "No" if f and f.required else "Yes", "Affects Publishing", "Yes" if f and f.required else "Warnings/quality unless referenced by validation", "Affects Runtime", "Yes", "Inherited", "No; explicit draft value unless a related profile supplies defaults", "",
+        ]
+        values = list(f.choices or f.flags or ()) if f else []
+        typical = profile["typical"]
+        if values:
+            lines += ["Legal Values"] + [f"{i}. {v}" for i, v in enumerate(values, 1)] + [""]
+        if typical:
+            lines += ["Common Values"] + [f"• {v}" for v in typical[:20]] + [""]
+        lines += ["Recommended"] + [f"• {v}" for v in profile["recommended"]] + ["", "Examples"] + [f"• {v}" for v in profile["examples"]] + ["", "Related Fields"] + [f"• {v}" for v in profile["related"]] + ["", "Safe Commands", "list | values | examples | inspect | help | details | advanced | clear | back"]
         return "\n".join(lines)
 
+    def _field_inspect(self, sess: BuilderEditSession, f: OlcFieldDescriptor | None = None) -> str:
+        f = f or self._descriptor(sess, sess.active_field)
+        if not f: return "No active field to inspect. Choose a field first, or type help <field>."
+        cur = self._fmt_value(self._get_path(sess.working_record, f.path))
+        issues = MobileTemplate.from_legacy(sess.working_record).validate() if sess.collection == "entities" else []
+        state = "valid" if not [i for i in issues if str(i.get("field_path","")).startswith(".".join(f.path))] else "needs attention"
+        profile = self._field_profile(f)
+        return "\n".join(["Inspector", f"Field: {f.label}", f"Current value: {cur}", "Default: none unless Quick Build or referenced profiles provide one", "Recommended: " + "; ".join(profile["recommended"]), "Runtime effect: preview, validation, publish checks, and generated runtime projection", f"Validation state: {state}", "Referenced by: " + ", ".join(profile["related"]), "Related fields: " + ", ".join(profile["related"]), "Inheritance: explicit draft value; profile references may supply downstream defaults", f"Publish status: {'blocks publish when missing' if f.required else 'does not block by itself'}"])
+
+    def _world_command_recovery(self, sess: BuilderEditSession, text: str) -> str:
+        name = (sess.working_record or {}).get("name") or sess.object_id
+        return "\n".join([f'"{text}" is a world command, but you are currently editing {name}.', f"Editor: {sess.editor_type.upper()}", f"Submenu: {sess.section or 'main menu'}", f"Modified: {'Yes' if sess.dirty else 'No'}", "Finish editing or type one of these safe editor commands:", "back — return to the previous Builder menu", "save — save the draft", "cancel — leave the current prompt", "quit — close the editor", "preview — inspect the draft before leaving"])
+
+
+    def _search_builder_concepts(self, sess: BuilderEditSession, query: str) -> str:
+        q = query.lower().strip()
+        rows: list[str] = []
+        for section in ("identity","keywords","descriptions","traits","attributes","resources","body_weapons","combat","positions","mobile_flags","affect_flags","equipment","inventory","loot","abilities","ai","faction","scripts"):
+            old_section = sess.section
+            sess.section = section
+            try:
+                for f in self._field_descriptors(sess):
+                    profile = self._field_profile(f)
+                    hay = " ".join([section, f.key, f.label, profile["description"], " ".join(profile["related"]), " ".join(profile["examples"])]) .lower()
+                    if q in hay:
+                        rows.append(f"• {section.replace('_',' ').title()} → {f.label}: {profile['description']}")
+            finally:
+                sess.section = old_section
+        if not rows:
+            return f'Builder Search: "{query}"\n- No concepts matched. Try species, health, loot, faction, dragon, undead, merchant, or a field name.'
+        return f'Builder Search: "{query}"\n' + "\n".join(rows[:20])
     def _builder_help(self, sess: BuilderEditSession, topic: str = "") -> str:
         q = topic.lower().strip()
         if q in MOBILE_TYPE_GUIDES:
@@ -2240,25 +2331,25 @@ class BuilderService:
         rng = f" [{f.minimum}-{f.maximum}]" if f.minimum is not None or f.maximum is not None else ""
         choices = "\nChoices: " + ", ".join(f.choices) if f.choices else ""
         clear = " Use clear/none/unset to remove optional values." if not f.required else ""
-        return self._field_help(sess, f) + f"\n\nEnter new {f.label.lower()}{rng}, or back to cancel.{clear}{choices}"
+        return "\n".join(self._status_bar(sess)) + self._field_help(sess, f) + f"\n\nEnter new {f.label.lower()}{rng}, or back to cancel.{clear}{choices}"
 
     def _render_multiline(self, sess: BuilderEditSession) -> str:
         return "Multiline text editor. Enter text lines. Commands: .save .cancel .clear .show .help"
 
     def _render_flag_editor(self, sess: BuilderEditSession) -> str:
         f = self._descriptor(sess, sess.active_field); cur = set(self._get_path(sess.working_record, f.path) or []) if f else set()
-        lines = [f"{sess.editor_type.upper()} {sess.object_id} > {f.label if f else 'Flags'}"]
+        lines = self._status_bar(sess) + [f"{sess.editor_type.upper()} {sess.object_id} > {f.label if f else 'Flags'}", "Choose one or more flags; selected values are marked with [X]."]
         for i, flag in enumerate((f.flags if f else ()), 1):
             lines.append(f"{i}. {flag.upper():<18} [{'X' if flag in cur else ' '}]")
-        lines += ["Q. Back", "Commands: number toggles, all, none, clear, back"]
+        lines += self._context_footer(sess)
         return "\n".join(lines)
 
     def _render_list_editor(self, sess: BuilderEditSession) -> str:
         f = self._descriptor(sess, sess.active_field); cur = self._get_path(sess.working_record, f.path) if f else []
         cur = cur if isinstance(cur, list) else ([] if cur in (None,"") else [cur])
-        lines = [f"{f.label if f else 'List'} list editor"]
+        lines = self._status_bar(sess) + [f"{f.label if f else 'List'} list editor", "Use ordered entries when runtime consumes priority or display order."]
         lines += [f"{i}. {v}" for i, v in enumerate(cur, 1)] or ["- none"]
-        lines.append("Commands: list, values, examples, add <value>, remove <number|value>, move <from> <to>, clear, help, back")
+        lines += ["", "Commands", "list Values | examples Examples | add <value> | remove <number|value> | move <from> <to> | clear | inspect | help | back"]
         return "\n".join(lines)
 
     def _render_reference_selector(self, actor: Any | None, sess: BuilderEditSession) -> str:
@@ -2270,10 +2361,10 @@ class BuilderService:
             if q:
                 rows = [(k,v) for k,v in rows if q in k.lower() or q in str(v.get("name") or v.get("display_name") or "").lower()]
         cur = self._get_path(sess.working_record, f.path) if f else None
-        lines = [f"{f.label if f else 'Reference'} selector", f"Current: {self._fmt_value(cur)}"]
+        lines = self._status_bar(sess) + [f"{f.label if f else 'Reference'} selector", "Choose an existing Builder record; search narrows the list without leaving the editor.", f"Current: {self._fmt_value(cur)}"]
         for i, (oid, rec) in enumerate(rows[:25], 1):
             lines.append(f"{i}. {rec.get('vnum','----')} {oid} - {rec.get('name') or rec.get('display_name') or oid}")
-        lines.append("Commands: number, stable ID, search <text>, unset, back")
+        lines += ["", "Commands", "number | stable ID | search <text> | list | inspect | unset | back"]
         return "\n".join(lines)
 
     def _render_mobile_section(self, sess: BuilderEditSession, section: str) -> str:
@@ -2282,11 +2373,13 @@ class BuilderService:
         lines = [f"MEDIT {section.replace('_',' ').title()}: {rec.get('name') or sess.object_id}"]
         descriptors = self._field_descriptors(sess)
         if descriptors and section not in {"natural_weapons", "spawns", "diagnostics"}:
-            lines = [f"{sess.editor_type.upper()} {sess.object_id} > {section.replace('_',' ').title()}", f"Draft status: {'modified' if sess.dirty else 'clean'}"]
+            lines = self._status_bar(sess) + [f"{sess.editor_type.upper()} {sess.object_id} > {section.replace('_',' ').title()}", f"Draft status: {'modified' if sess.dirty else 'clean'}", "Fields show purpose, current value, and safe edit numbers."]
             for i, f in enumerate(descriptors, 1):
                 suffix = " (read-only)" if f.read_only else ""
-                lines.append(f"{i}. {f.label:<28}: {self._fmt_value(self._get_path(rec, f.path))}{suffix}")
-            lines += ["", "Q. Back", "V. Validate", "U. Undo", "R. Redo", "S. Save"]
+                profile = self._field_profile(f)
+                lines.append(f"{i:>2}. {f.label:<28}: {self._fmt_value(self._get_path(rec, f.path))}{suffix}")
+                lines.append(f"    {profile['description']}")
+            lines += self._context_footer(sess)
             return "\n".join(lines)
         if section == "identity":
             lines += [f"1. Mobile ID: {sess.object_id}", f"2. Display name: {rec.get('name','')}", f"3. Entity type: {rec.get('entity_type','npc')}", f"4. Builder status: {rec.get('builder_status','incomplete')}", f"5. World: {rec.get('world_id', sess.world_id)}", f"6. Area: {rec.get('area_id','')}", f"7. Zone: {rec.get('zone_id','')}", f"8. Legacy VNUM: {rec.get('vnum','')}", f"9. Tags: {', '.join(rec.get('tags') or [])}", "Commands: name <value>, type <value>, status <value>, area <id>, zone <id>, vnum <n>, tag add/remove <tag>, back"]
@@ -2345,14 +2438,14 @@ class BuilderService:
         try:
             if f.input_type == "integer":
                 if not re.fullmatch(r"[0-9]+", raw):
-                    return BuilderResult(False, f"{f.label} must be a whole number.")
+                    return BuilderResult(False, f'Expected a whole number for {f.label}, but you entered "{raw}". Try a value in the displayed range, or type back to cancel.')
                 val = int(raw)
                 if f.minimum is not None and val < f.minimum: return BuilderResult(False, f"{f.label} must be between {f.minimum} and {f.maximum}.")
                 if f.maximum is not None and val > f.maximum: return BuilderResult(False, f"{f.label} must be between {f.minimum} and {f.maximum}.")
                 return BuilderResult(True, "", {"value": val})
             if f.input_type == "enum":
                 choices = {c.lower(): c for c in f.choices}
-                if raw.lower() not in choices: return BuilderResult(False, f"{f.label} must be one of: {', '.join(f.choices)}.")
+                if raw.lower() not in choices: return BuilderResult(False, f'"{raw}" is not a known value for {f.label}. Expected one of: {", ".join(f.choices)}. Try list to view supported values, or back to cancel.')
                 return BuilderResult(True, "", {"value": choices[raw.lower()]})
             if f.input_type == "slug":
                 if not re.fullmatch(r"[a-zA-Z0-9_:-]+", raw): return BuilderResult(False, f"{f.label} must be an identifier using letters, numbers, underscore, colon, or dash.")
@@ -2387,6 +2480,9 @@ class BuilderService:
     def handle_session_input(self, actor: Any, sess: BuilderEditSession, text: str) -> BuilderResult:
         low = text.lower().strip(); sess.last_activity_at = self.workspace.stamp()
         parts = text.split()
+        if parts and parts[0].lower() in EDITOR_BLOCKED_WORLD_COMMANDS:
+            return BuilderResult(False, self._world_command_recovery(sess, text))
+        parts = text.split()
         cancel_words = {"q","quit","cancel","back"}
         if sess.mode == "multiline_text":
             if low == ".cancel" or low in cancel_words:
@@ -2411,6 +2507,7 @@ class BuilderService:
                 sess.mode = "section_menu"; sess.active_field = ""
                 return BuilderResult(True, "Edit cancelled safely. No changes were applied.\n" + self.render_session(sess))
             f = self._descriptor(sess, sess.active_field)
+            if low == "inspect": return BuilderResult(True, self._field_inspect(sess, f))
             if low in BUILDER_HELP_WORDS or low in BUILDER_LIST_WORDS:
                 return BuilderResult(True, self._field_help(sess, f, low))
             parsed = self._parse_field_value(sess, f, text)
@@ -2448,6 +2545,7 @@ class BuilderService:
             cur = list(cur) if isinstance(cur, list) else []
             cmd = parts[0].lower() if parts else "list"
             if cmd in {"list","values","examples"}: return BuilderResult(True, self._render_list_editor(sess) + "\n\n" + self._field_help(sess, f))
+            if cmd == "inspect": return BuilderResult(True, self._field_inspect(sess, f))
             if cmd in BUILDER_HELP_WORDS: return BuilderResult(True, self._field_help(sess, f))
             if cmd == "add" and len(parts) > 1:
                 val = " ".join(parts[1:]).strip()
@@ -2469,6 +2567,7 @@ class BuilderService:
             if low in cancel_words:
                 sess.mode = "section_menu"; sess.active_field = ""
                 return BuilderResult(True, self.render_session(sess))
+            if low == "inspect": return BuilderResult(True, self._field_inspect(sess, f))
             if low in BUILDER_HELP_WORDS or low in BUILDER_LIST_WORDS:
                 return BuilderResult(True, self._render_reference_selector(actor, sess) + "\n\n" + self._field_help(sess, f))
             if low.startswith("search ") or low.startswith("find "):
@@ -2522,7 +2621,9 @@ class BuilderService:
                 return BuilderResult(True, "Unsaved changes: Save, Discard, or Cancel?")
             self.sessions.end(actor); return BuilderResult(True, "Editor closed and lock released.")
         if low in {"back", "cancel"}: sess.section=""; sess.mode="main_menu"; return BuilderResult(True, self.render_session(sess))
-        if low in BUILDER_HELP_WORDS or low in BUILDER_LIST_WORDS or low.startswith("help ") or low.startswith("search ") or low.startswith("find "):
+        if low.startswith("search ") or low.startswith("find "):
+            return BuilderResult(True, self._search_builder_concepts(sess, text.split(" ",1)[1]))
+        if low in BUILDER_HELP_WORDS or low in BUILDER_LIST_WORDS or low.startswith("help "):
             topic = text.split(" ",1)[1] if " " in text else ""
             return BuilderResult(True, self._builder_help(sess, topic))
         if low.startswith("quickbuild"):
@@ -2640,7 +2741,7 @@ class BuilderService:
                 rec["keywords"] = kws
             else:
                 sess.undo_stack.pop()
-                return BuilderResult(False, "Invalid input for this menu. Use set/add/remove, a listed field command, back, save, or help.")
+                return BuilderResult(False, f'"{text}" was not accepted in this Builder menu. Expected set/add/remove, a listed field command, back, save, validate, or help. Type list to redisplay editable fields.')
             sess.working_record = self._normalize_entity_updates(sess.object_id, rec) if sess.collection == "entities" else rec
             sess.dirty=True; sess.saved=False
             return BuilderResult(True, "Updated session scratch.\n" + self.render_session(sess), sess.working_record)
