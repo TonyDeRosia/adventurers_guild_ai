@@ -40,6 +40,19 @@ MEDIT_ADVANCED_SCRIPT_TRIGGERS = ("spawn", "death", "combat_start", "combat_roun
 MEDIT_RUNTIME_SUPPORTED_ABILITY_TRIGGERS = {"combat_start", "opening_move", "every_round", "random_round", "self_hp_threshold", "enemy_hp_threshold", "cooldown_ready", "near_death"}
 MEDIT_RUNTIME_SUPPORTED_REACTION_ACTIONS = {"say", "emote", "social", "attack", "assist", "flee", "use_ability", "cast", "publish_event", "wait", "noop"}
 MEDIT_RUNTIME_SUPPORTED_REACTION_EVENTS = {"spawn", "death", "combat_starts", "attacked", "speech_heard", "keyword_spoken", "player_enters", "reset", "despawn"}
+ALIGNMENT_MIN = -1000
+ALIGNMENT_MAX = 1000
+ALIGNMENT_DEFAULT = 0
+
+def normalize_alignment_value(value: Any, *, default: int = ALIGNMENT_DEFAULT) -> int:
+    if value in (None, ""):
+        return default
+    if isinstance(value, str):
+        key = value.strip().lower()
+        named = {"neutral": 0, "good": 350, "evil": -350}
+        if key in named:
+            return named[key]
+    return int(value)
 
 def _stable_nested_id(parent_id: str, kind: str, index: int, seed: str = "") -> str:
     base = re.sub(r"[^a-z0-9_:-]+", "_", str(seed or f"{parent_id}_{kind}_{index}").lower()).strip("_")
@@ -1159,6 +1172,12 @@ class MobileTemplate:
         if not (rec.get("room_description") or rec.get("description") or rec.get("long_description")): issue("error","missing_room_description","room_description","Long room description is required.","Set the room-visible description.")
         if not (rec.get("look_description") or rec.get("examine_description")): issue("warning","missing_detail_description","look_description","Detailed examine description is empty.","Add look/examine text.")
         try:
+            alignment = normalize_alignment_value(rec.get("alignment"))
+            if not ALIGNMENT_MIN <= alignment <= ALIGNMENT_MAX:
+                issue("error", "alignment_range", "alignment", f"Mobile `{oid}` has alignment {alignment}, outside the supported range {ALIGNMENT_MIN} to {ALIGNMENT_MAX}.", "Set alignment to a whole number in the canonical range.")
+        except Exception:
+            issue("error", "alignment_number", "alignment", f"Alignment must be a whole number in the supported range {ALIGNMENT_MIN} to {ALIGNMENT_MAX}.")
+        try:
             level = int(rec.get("level", 1) or 1)
             if not 1 <= level <= 100: issue("error","level_range","level","Level must be 1-100.")
         except Exception: issue("error","level_number","level","Level must be a whole number.")
@@ -1258,6 +1277,7 @@ class MobileTemplate:
         if rec.get("gender") and not rec.get("sex"):
             rec["sex"] = rec.get("gender")
         rec.setdefault("sex", "neutral")
+        rec["alignment"] = normalize_alignment_value(rec.get("alignment"))
         rec.setdefault("enabled", True)
         rec.setdefault("default_position", rec.get("spawn_position") or "standing")
         rec.setdefault("spawn_position", rec.get("default_position") or "standing")
@@ -1305,7 +1325,7 @@ class MobileTemplate:
         for script in scripts:
             script["runtime_supported"] = False
             script["runtime_decision_reason"] = "canonical script host required; preview never executes scripts"
-        return {"template_id": rec.get("id"), "name": rec.get("name"), "level": rec.get("level",1), "keywords": deepcopy(rec.get("keywords") or []), "description": rec.get("description") or rec.get("look_description") or "", "default_position": rec.get("default_position"), "spawn_position": rec.get("spawn_position"), "mobile_flags": deepcopy(rec.get("mobile_flags") or []), "permanent_affects": deepcopy(rec.get("affect_flags") or []), "body_profile_id": rec.get("body_profile_id"), "combat_profile": deepcopy(rec.get("combat_profile") or {}), "attributes": deepcopy(rec.get("attributes") or {}), "resources": {"max_health": rmax("health","max_health"), "max_mana": rmax("mana","max_mana"), "max_move": rmax("movement","max_move") or rmax("stamina")}, "equipment_loadout": deepcopy(rec.get("equipment_loadout") or {}), "starting_inventory": deepcopy(rec.get("starting_inventory") or []), "loot": deepcopy(rec.get("loot") or {}), "combat_abilities": abilities, "event_reactions": reactions, "script_attachments": scripts, "runtime_support": {"combat_abilities": "supported triggers execute through runtime combat hooks; unsupported triggers warn", "event_reactions": "supported event/action mappings execute through EventBus reaction dispatcher with depth guard", "script_attachments": "stored, validated, dependency-tracked; execution requires canonical script host"}}
+        return {"template_id": rec.get("id"), "name": rec.get("name"), "level": rec.get("level",1), "alignment": normalize_alignment_value(rec.get("alignment")), "keywords": deepcopy(rec.get("keywords") or []), "description": rec.get("description") or rec.get("look_description") or "", "default_position": rec.get("default_position"), "spawn_position": rec.get("spawn_position"), "mobile_flags": deepcopy(rec.get("mobile_flags") or []), "permanent_affects": deepcopy(rec.get("affect_flags") or []), "body_profile_id": rec.get("body_profile_id"), "combat_profile": deepcopy(rec.get("combat_profile") or {}), "attributes": deepcopy(rec.get("attributes") or {}), "resources": {"max_health": rmax("health","max_health"), "max_mana": rmax("mana","max_mana"), "max_move": rmax("movement","max_move") or rmax("stamina")}, "equipment_loadout": deepcopy(rec.get("equipment_loadout") or {}), "starting_inventory": deepcopy(rec.get("starting_inventory") or []), "loot": deepcopy(rec.get("loot") or {}), "combat_abilities": abilities, "event_reactions": reactions, "script_attachments": scripts, "runtime_support": {"combat_abilities": "supported triggers execute through runtime combat hooks; unsupported triggers warn", "event_reactions": "supported event/action mappings execute through EventBus reaction dispatcher with depth guard", "script_attachments": "stored, validated, dependency-tracked; execution requires canonical script host"}}
 
     def diff(self, other: dict[str, Any]) -> dict[str, Any]:
         before = MobileTemplate.from_legacy(other or {}).to_canonical_dict(); after = self.to_canonical_dict()
@@ -3018,7 +3038,7 @@ class BuilderService:
         recs = MobileRecommendationService().recommend(level=rec.get("level", 1), archetype=str(rec.get("archetype") or "standard creature"), attack_style=str((rec.get("combat_profile") or {}).get("attack_type") or "hit"))
         vals = recs["values"]; cp = rec.get("combat_profile") or {}; rcp = vals["combat_profile"]
         lines=[f"MEDIT Stats Menu / Attributes / Resources: {rec.get('name') or sess.object_id}", f"Recommendation source: {recs['version']}", f"Draft status: {'modified' if sess.dirty else 'clean'}", "", "Editable stats with authored/recommended/resolved values:"]
-        rows=[("1", "Level", rec.get("level",1), vals["level"]), ("2", "Archetype", rec.get("archetype") or "unset", vals["archetype"])]
+        rows=[("1", "Level", rec.get("level",1), vals["level"]), ("2", "Archetype", rec.get("archetype") or "unset", vals["archetype"]), ("D", "Alignment", rec.get("alignment", ALIGNMENT_DEFAULT), ALIGNMENT_DEFAULT)]
         for i,a in enumerate(("strength","dexterity","constitution","intelligence","wisdom","charisma"),3): rows.append((str(i), a.title(), (rec.get("attributes") or {}).get(a), vals["attributes"][a]))
         rows += [("9","Health", self._resource_max(rec,"health"), vals["resources"]["health"]["maximum"]),("10","Mana", self._resource_max(rec,"mana"), vals["resources"]["mana"]["maximum"]),("11","Movement/stamina", self._resource_max(rec,"stamina") or self._resource_max(rec,"movement"), vals["resources"]["stamina"]["maximum"]),("12","Armor/defense", cp.get("armor") or cp.get("defense"), rcp["armor"]),("13","Accuracy/hitroll", cp.get("accuracy") or cp.get("hitroll"), rcp["accuracy"]),("14","Damage bonus/damroll", cp.get("damage_bonus") or cp.get("damroll"), rcp["damage_bonus"]),("15","Base damage dice", cp.get("damage_dice"), rcp["damage_dice"]),("16","Attack type", cp.get("attack_type") or rec.get("attack_type") or "hit", rcp["attack_type"]),("17","Attacks per round", cp.get("attacks_per_round"), rcp["attacks_per_round"]),("18","Experience reward", cp.get("experience_reward"), rcp["experience_reward"]),("19","Currency reward", cp.get("gold_reward"), rcp["gold_reward"])]
         for num,label,auth,recval in rows:
@@ -3030,8 +3050,11 @@ class BuilderService:
     def _handle_stats_menu(self, actor: Any, sess: BuilderEditSession, text: str, low: str) -> BuilderResult | None:
         if sess.editor_type != "medit" or sess.section not in {"attributes","resources"}: return None
         parts=text.split(); cmd=parts[0].lower() if parts else ""
-        stat_map={"1":"level","level":"level","2":"archetype","archetype":"archetype","3":"strength","strength":"strength","4":"dexterity","dexterity":"dexterity","5":"constitution","constitution":"constitution","6":"intelligence","intelligence":"intelligence","7":"wisdom","wisdom":"wisdom","8":"charisma","charisma":"charisma","9":"health","health":"health","10":"mana","mana":"mana","11":"stamina","movement":"stamina","stamina":"stamina","12":"armor","armor":"armor","defense":"armor","13":"accuracy","accuracy":"accuracy","hitroll":"accuracy","14":"damage_bonus","damage_bonus":"damage_bonus","damroll":"damage_bonus","15":"damage_dice","damage_dice":"damage_dice","dice":"damage_dice","16":"attack_type","attack_type":"attack_type","17":"attacks_per_round","attacks_per_round":"attacks_per_round","18":"experience_reward","experience_reward":"experience_reward","xp":"experience_reward","19":"gold_reward","currency":"gold_reward","gold_reward":"gold_reward"}
+        stat_map={"1":"level","level":"level","2":"archetype","archetype":"archetype","3":"strength","strength":"strength","4":"dexterity","dexterity":"dexterity","5":"constitution","constitution":"constitution","6":"intelligence","intelligence":"intelligence","7":"wisdom","wisdom":"wisdom","8":"charisma","charisma":"charisma","9":"health","health":"health","10":"mana","mana":"mana","11":"stamina","movement":"stamina","stamina":"stamina","12":"armor","armor":"armor","defense":"armor","13":"accuracy","accuracy":"accuracy","hitroll":"accuracy","14":"damage_bonus","damage_bonus":"damage_bonus","damroll":"damage_bonus","15":"damage_dice","damage_dice":"damage_dice","dice":"damage_dice","16":"attack_type","attack_type":"attack_type","17":"attacks_per_round","attacks_per_round":"attacks_per_round","18":"experience_reward","experience_reward":"experience_reward","xp":"experience_reward","19":"gold_reward","currency":"gold_reward","gold_reward":"gold_reward", "d":"alignment", "alignment":"alignment"}
         if sess.active_field.startswith("stats:") and cmd and cmd not in {"quickbuild","quickdiff","applyquick","clear"}:
+            if cmd in {"q", "quit", "cancel"}:
+                sess.active_field = ""
+                return BuilderResult(True, "Edit cancelled.\n" + self._render_stats_menu(sess))
             field=sess.active_field.split(":",1)[1]; text = field + " " + text; parts=text.split(); cmd=field; sess.active_field=""
         if cmd in {"quickbuild","quickdiff"}:
             lvl=int(parts[1]) if len(parts)>1 and parts[1].isdigit() else int(sess.working_record.get("level") or 1); arche=" ".join(parts[2:]) if len(parts)>2 else str(sess.working_record.get("archetype") or "standard creature")
@@ -3066,6 +3089,17 @@ class BuilderService:
             elif field in {"damage_dice","attack_type"}:
                 if value is None: rec.setdefault("combat_profile",{}).pop(field,None)
                 else: rec.setdefault("combat_profile",{})[field]=value
+            elif field == "alignment":
+                if value is None: rec["alignment"] = ALIGNMENT_DEFAULT
+                else:
+                    try: align = int(value)
+                    except Exception:
+                        sess.active_field = "stats:alignment"
+                        return BuilderResult(False, f"Alignment must be numeric. Accepted range: {ALIGNMENT_MIN} to {ALIGNMENT_MAX}.")
+                    if not ALIGNMENT_MIN <= align <= ALIGNMENT_MAX:
+                        sess.active_field = "stats:alignment"
+                        return BuilderResult(False, f"Alignment {align} is outside the accepted range {ALIGNMENT_MIN} to {ALIGNMENT_MAX}.")
+                    rec["alignment"] = align
             else:
                 if value is None: rec.pop(field,None)
                 else: rec[field]=int(value) if field=="level" and str(value).isdigit() else value
@@ -3074,6 +3108,8 @@ class BuilderService:
         if field:
             sess.active_field="stats:"+field
             label = "health maximum" if field == "health" else field.replace("_", " ")
+            if field == "alignment":
+                return BuilderResult(True, f"Current alignment: {normalize_alignment_value(sess.working_record.get('alignment'))}\nEnter new alignment value or Q to cancel:\nAccepted range: {ALIGNMENT_MIN} to {ALIGNMENT_MAX}.")
             return BuilderResult(True, f"Current {label}: {self._fmt_value(self._resource_max(sess.working_record, field) if field in {'health','mana','stamina'} else ((sess.working_record.get('combat_profile') or {}).get(field) if field not in {'level','archetype','strength','dexterity','constitution','intelligence','wisdom','charisma'} else (sess.working_record.get(field) if field in {'level','archetype'} else (sess.working_record.get('attributes') or {}).get(field))))}\nEnter new {label}, or Q to cancel. Use clear {field} to restore inherited/default behavior.")
         return None
 

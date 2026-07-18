@@ -34,7 +34,7 @@ def test_score_matches_adventurers_lair_line_order_and_removes_modern_sections()
     ordered = ["CHARACTER STATUS", "Name: Aster", "Title: the Bold", "Race: Human", "Age: 22 years old", "Exp:", "Carry Capacity:", "Base Stats:", "Armor:", "Gold:", "Quests completed:", "Play time:", "Hunger:"]
     positions = [joined.index(token) for token in ordered]
     assert positions == sorted(positions)
-    for forbidden in ["PRIMARY STATISTICS", "SECONDARY COMBAT", "Damage", "Resistances", "Speed", "Mechanics", "Location", "ACTIVE EFFECTS", "HP:", "Mana:", "Movement:"]:
+    for forbidden in ["PRIMARY STATISTICS", "SECONDARY COMBAT", "Damage", "Resistances", "Speed", "Mechanics", "Location", "ACTIVE EFFECTS", "Movement:"]:
         assert forbidden not in joined
 
 
@@ -44,7 +44,7 @@ def test_score_detailed_is_immortal_only_diagnostics():
     snap = CharacterDisplaySnapshot(**{**snap.__dict__, "identity": {**snap.identity, "immortal": True, "builder_zone": "old_gate"}})
     immortal = render_display_plain(build_score_document(snapshot=snap, mode="detailed", detailed_allowed=True))
     assert "IMMORTAL INFORMATION" not in normal
-    assert "IMMORTAL INFORMATION" not in immortal
+    assert "IMMORTAL INFORMATION" in immortal
     assert "POOFIN: Aster appears with an ear-splitting bang." in immortal
     assert "Your current zone: old_gate" in immortal
 

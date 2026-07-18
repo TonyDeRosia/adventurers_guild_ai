@@ -833,8 +833,26 @@ def _score_status(snap: CharacterDisplaySnapshot) -> str:
     if posture == "sitting" and sitting_on: return f"Sitting on {sitting_on}"
     return mapping.get(posture, "Floating")
 
+def _score_resource_lines(snap: CharacterDisplaySnapshot, character: Any = None) -> list[DisplayLine]:
+    res = snap.resources or {}
+    def pick(*keys: str, default: Any = 0) -> Any:
+        for key in keys:
+            if key in res:
+                return res.get(key)
+            if character is not None and hasattr(character, key):
+                return getattr(character, key)
+        return default
+    hp, max_hp = pick("hp", "health"), pick("max_hp", "maximum_health")
+    mana, max_mana = pick("mana"), pick("max_mana", "maximum_mana")
+    move, max_move = pick("move", "movement", "stamina"), pick("max_move", "max_movement", "max_stamina", "maximum_stamina")
+    alignment = snap.alignment if snap.alignment not in (None, "") else ((snap.identity or {}).get("alignment") if isinstance(snap.identity, Mapping) else None)
+    if alignment in (None, "") and character is not None:
+        alignment = getattr(character, "alignment", 0)
+    line = f"HP: {hp}/{max_hp}  Mana: {mana}/{max_mana}  Move: {move}/{max_move}  Alignment: {alignment if alignment not in (None, '') else 0}"
+    return [_score_row(part.rstrip()) for part in _wrap_visible(line, SCORE_CONTENT_WIDTH - 2)]
+
 def build_score_document(character: Any = None, *, snapshot: CharacterDisplaySnapshot | None = None, theme: Any = None, mode: str = "score", detailed_allowed: bool = False) -> DisplayDocument:
-    """Render normal SCORE in Adventurer's Lair order, minus prompt resources/alignment."""
+    """Render normal SCORE in Adventurer's Lair order with classic resources/alignment restored."""
     snap=snapshot or build_character_display_snapshot(character)
     mode=(mode or "score").lower()
     if mode not in SCORE_MODES: raise ValueError(f"Unsupported score display mode: {mode}")
@@ -877,6 +895,7 @@ def build_score_document(character: Any = None, *, snapshot: CharacterDisplaySna
     hunger=_required_score_text(surv.get("hunger"), "survival.hunger"); thirst=_required_score_text(surv.get("thirst"), "survival.thirst")
     rows=[
         _score_row("CHARACTER STATUS"), _score_divider(),
+        *_score_resource_lines(snap, character), _score_divider(),
         _score_row(f"Name: {name:<22} Title: {title}"),
         _score_row(f"Race: {race:<22} Class: {cls}"),
         _score_row(f"Level: {level:<21} Age: {age}"),
@@ -918,7 +937,7 @@ def build_score_document(character: Any = None, *, snapshot: CharacterDisplaySna
     frame=DisplayFrame(title="CHARACTER STATUS", width=SCORE_VISIBLE_WIDTH, frame_style="classic_double", title_alignment="left")
     doc=DisplayDocument(DisplayIntent.SCORE, semantic_role="character_value", title_role="character_title", frames=[frame])
     doc.lines=[_frame_segments(frame, kind="top"), *[_frame_segments(frame, kind=r.kind) if isinstance(r, DisplayDivider) else _frame_segments(frame, segments=[DisplaySegment(_line_text(r), r.role, True)]) for r in rows], _frame_segments(frame, kind="bottom")]
-    doc.debug_metadata.update({"snapshot_version": version, "mode": mode, "reference": "Adventurer's Lair ACMD(do_score) parity without HP/Mana/Move/Alignment"})
+    doc.debug_metadata.update({"snapshot_version": version, "mode": mode, "reference": "Adventurer's Lair ACMD(do_score) parity with HP/Mana/Move/Alignment resource row"})
     return doc
 
 def build_worth_document(character: Any = None, *, snapshot: CharacterDisplaySnapshot | None = None, worth_snapshot: Any = None, theme: Any = None) -> DisplayDocument:

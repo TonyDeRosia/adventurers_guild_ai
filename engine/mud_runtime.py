@@ -682,6 +682,19 @@ class MudStateStore:
         print(f"[mud-builder] Audit: {builder_id} {action} {target_type}:{target_id}")
 
 
+def _runtime_alignment(value: Any) -> int:
+    if value in (None, ""):
+        return 0
+    if isinstance(value, str):
+        key = value.strip().lower()
+        if key in {"neutral", "none", "unspecified"}:
+            return 0
+        if key == "good":
+            return 350
+        if key == "evil":
+            return -350
+    return int(value)
+
 class MudRuntime:
     """Primary Smart MUD application runtime."""
 
@@ -3485,7 +3498,7 @@ class MudRuntime:
                 "faction_id": str(raw.get("faction_id") or ""), "level": level,
                 "id": tid,
                 "race": str(raw.get("race") or raw.get("species") or ""), "class": str(raw.get("class") or raw.get("occupation") or ""),
-                "gender": str(raw.get("gender") or ""), "size": str(raw.get("size") or "medium"), "alignment": str(raw.get("alignment") or "neutral"),
+                "gender": str(raw.get("gender") or ""), "size": str(raw.get("size") or "medium"), "alignment": _runtime_alignment(raw.get("alignment")),
                 "spawn_group": str(raw.get("spawn_group") or raw.get("spawn_id") or tid),
                 "spawn_rules": raw.get("spawn_rules") or {"spawn_room": raw.get("default_room_id") or raw.get("room_id") or "", "spawn_count": int(raw.get("spawn_count") or 1), "maximum_population": int(raw.get("max_alive") or raw.get("maximum_population") or 1), "respawn_delay": int(raw.get("respawn_delay_seconds") or raw.get("respawn_delay") or 0), "spawn_probability": float(raw.get("spawn_probability") or 1)},
                 "wander_rules": raw.get("wander_rules") or {"allowed_exits": raw.get("allowed_exits") or [], "wander_probability": float(raw.get("wander_probability") or 0), "wander_delay": int(raw.get("wander_delay") or 0), "restricted_rooms": raw.get("restricted_rooms") or [], "sentinel": bool(raw.get("sentinel") or "sentinel" in (raw.get("flags") or []))},
