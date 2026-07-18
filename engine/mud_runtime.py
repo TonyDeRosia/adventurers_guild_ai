@@ -1121,14 +1121,33 @@ class MudRuntime:
         if not getattr(char, "thirst", None): setattr(char, "thirst", "Hydrated")
         if repair.get("applied") and hasattr(self, "projection_cache"):
             self.invalidate_character_projections(char.id, "progression_identity")
-        native = ["set_camp", "build_campfire", "recall", "kick", "bandage", "bash", "rescue", "hide", "sneak", "backstab", "track", "magic_missile", "cure_light", "heal", "bless", "armor", "strength", "haste", "invisibility", "detect_invisibility", "detect_magic", "detect_alignment", "sanctuary", "fly", "waterwalk", "poison", "remove_poison", "blindness", "cure_blind", "silence", "fireball"]
-        cls_id = str(getattr(char, "primary_class_id", "") or getattr(char, "actor_data", {}).get("class_id", ""))
-        if cls_id == "scholar":
-            level = int(getattr(char, "level", 1) or 1)
-            table = {1:["study","appraise"],3:["identify"],5:["recall"],10:["analyze_ability"],15:["accelerated_study"],20:["comparative_theory"],50:["retain_observation"],80:["teach"],100:["master_instructor"]}
-            native = [aid for lvl, aids in table.items() if level >= lvl for aid in aids]
-        for aid in native:
-            ps.learn_ability(char.id, aid, {"source_type":"class_progression" if cls_id == "scholar" else "starter_character","source_id":cls_id or "starter_demonstration","default_proficiency":1,"maximum_proficiency":100,"maximum_rank":100})
+        cls_id = str(getattr(char, "primary_class_id", "") or getattr(char, "actor_data", {}).get("class_id", "")).lower()
+        level = int(getattr(char, "level", 1) or 1)
+        # Class starter reconciliation is intentionally data-shaped and conservative:
+        # legacy phase18 starter_character rows proved accidental, so only rows from
+        # that origin are deactivated when they are not in the current class plan.
+        class_starter = {
+            "warrior": {1: ["kick", "bandage", "bash", "rescue"]},
+            "mage": {1: ["magic_missile", "armor", "detect_magic", "strength"]},
+            "cleric": {1: ["cure_light", "bless", "armor", "detect_alignment"]},
+            "rogue": {1: ["hide", "sneak", "backstab", "track"]},
+            "adventurer": {1: ["set_camp", "build_campfire", "recall"]},
+        }
+        # Prefer authored class profile grants when available; the starter map
+        # covers current shipped profiles that still have empty grant fields.
+        profile = ps.content.get("class_profiles", cls_id) or {}
+        table = {int(k): list(v or []) for k, v in (profile.get("level_ability_grants") or {}).items() if str(k).isdigit()}
+        if profile.get("starting_abilities"):
+            table.setdefault(1, list(profile.get("starting_abilities") or []))
+        if not table:
+            table = class_starter.get(cls_id, {})
+        universal = ["set_camp", "build_campfire"]
+        native = list(dict.fromkeys(universal + [aid for lvl, aids in sorted(table.items()) if level >= int(lvl) for aid in aids]))
+        if hasattr(ps, "reconcile_class_abilities"):
+            ps.reconcile_class_abilities(char.id, cls_id, native, actor_type="player", source_id=cls_id or "unknown")
+        else:
+            for aid in native:
+                ps.learn_ability(char.id, aid, {"source_type":"class_progression","source_id":cls_id or "class","class_id":cls_id,"default_proficiency":1,"maximum_proficiency":100,"maximum_rank":100})
         if self.abilities:
             self.abilities.actor_from_character(char)
 

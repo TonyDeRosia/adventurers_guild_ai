@@ -885,14 +885,13 @@ def build_score_document(character: Any = None, *, snapshot: CharacterDisplaySna
     alignment = _score_alignment_value(snap, character)
     rows=[
         _score_row("CHARACTER STATUS"), _score_divider(),
-        _score_row(),
         _score_row(f"Name: {name:<22} Title: {title}"),
         _score_row(f"Race: {race:<22} Class: {cls}"),
         _score_row(f"Level: {level:<21} Age: {age}"),
     ]
     if (snap.age or {}).get("is_birthday") or (snap.age or {}).get("birthday_today"):
         rows.append(_score_row("*** It's your birthday today! ***"))
-    rows += [_score_divider(), _score_row(), _score_row(f"Alignment: {alignment}"), _score_row(), _score_row(f"Exp: {xp:<31} TNL: {tnl}"), _score_row(), _score_row(f"Carry Capacity: {curw} / {maxw} ({enc_text})"), _score_divider()]
+    rows += [_score_divider(), _score_row(f"Alignment: {alignment}"), _score_row(), _score_row(f"Exp: {xp:<31} TNL: {tnl}"), _score_row(), _score_row(f"Carry Capacity: {curw} / {maxw} ({enc_text})"), _score_divider()]
     rows += [_score_row(f"Base Stats: Str {_al_attr(snap,'str')} Dex {_al_attr(snap,'dex')} Con {_al_attr(snap,'con')}"), _score_row(f"            Int {_al_attr(snap,'int')} Wis {_al_attr(snap,'wis')} Cha {_al_attr(snap,'cha')}"), _score_row(), _score_row(f"Armor: {armor:<8} Evasion: {evasion:<5} Spell Saves: {spell_save}"), _score_row(), _score_row(f"Offense: Hitroll {hit:+d} Damroll {dam:+d} Accuracy: {acc}%")]
     unarmed=snap.unarmed_profile or {}; weapon=snap.weapon_profile or {}; weapon_active=bool(weapon and weapon.get("active") and (weapon.get("weapon_name") or weapon.get("name")) and str(weapon.get("name") or "").lower() != "unarmed")
     if not weapon_active and unarmed:

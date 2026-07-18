@@ -400,10 +400,22 @@ class AbilityRuntimeGateway:
         if actor is None:
             self.service._log_missing_actor(character_id, ability_query, invocation_context or {})
             return AbilityUseResult(False, reason_code="actor_registration_missing", player_message="Your character is not ready to use abilities yet. Please re-enter the world.", actor_id=character_id)
+        invocation_context = invocation_context or {}
         resolved = self.resolve_ability(actor.actor_id, ability_query) or self.resolve_ability(character_id, ability_query)
-        if not resolved:
-            return AbilityUseResult(False, reason_code="unknown_ability", player_message="Unknown ability.", actor_id=character_id)
-        ab = self.service.registry.abilities[resolved]
+        known_ids = {str(r.get("id")) for r in self.service.get_actor_abilities(actor.actor_id)} | {str(r.get("id")) for r in self.service.get_actor_abilities(character_id)}
+        defined = resolved or self.resolve_definition(ability_query)
+        if not defined:
+            return AbilityUseResult(False, reason_code="unknown_ability", player_message=f'You do not recognize an ability called "{self._normalize_query(ability_query) or ability_query}".', actor_id=character_id)
+        ab = self.service.registry.abilities[defined]
+        command = str(invocation_context.get("command") or "").strip().split()
+        verb = command[0].lower() if command else str(invocation_context.get("verb") or "")
+        if verb == "cast" and ab.ability_type != "spell":
+            return AbilityUseResult(False, ability_id=defined, ability_name=ab.name, reason_code="wrong_category", player_message=f"{ab.name} is a {ab.ability_type}, not a spell.", actor_id=character_id)
+        if defined not in known_ids:
+            return AbilityUseResult(False, ability_id=defined, ability_name=ab.name, reason_code="not_known", player_message=f"You do not know {ab.name}.", actor_id=character_id)
+        if not (ab.damage_components or ab.healing_components or ab.effects_applied or ab.effects_removed or ab.state_changes or ab.ordered_effects):
+            return AbilityUseResult(False, ability_id=defined, ability_name=ab.name, reason_code="handler_not_implemented", player_message=f"{ab.name} is recognized, but its gameplay handler is not implemented yet.", actor_id=character_id)
+        resolved = defined
         before = self.service._proficiency(actor.actor_id, resolved)
         res = self.service.start_ability(actor.actor_id, resolved, target_query or "self")
         after = self.service._proficiency(actor.actor_id, resolved)
@@ -445,6 +457,21 @@ class AbilityRuntimeGateway:
         if len(ids) != 1: return "", ""
         c=next(c for n,aid,c in matches if n==longest and aid==ids[0])
         return ids[0], q[len(c):].strip() or "self"
+
+    def resolve_definition(self, query: str) -> str:
+        """Resolve an ability definition independent of whether an actor knows it."""
+        q = self._normalize_query(query)
+        matches: list[str] = []
+        for aid, ab in self.service.registry.abilities.items():
+            pdata = ab.plugin_data or {}
+            aliases = pdata.get("aliases") or []
+            if isinstance(aliases, str):
+                aliases = [aliases]
+            candidates = {self._normalize_query(aid), self._normalize_query(aid.replace("_", " ")), self._normalize_query(str(ab.name)), self._normalize_query(str(ab.short_name)), self._normalize_query(str(pdata.get("command") or ""))} | {self._normalize_query(str(a)) for a in aliases}
+            if q and q in {c for c in candidates if c}:
+                matches.append(aid)
+        unique = sorted(set(matches))
+        return unique[0] if len(unique) == 1 else ""
 
     def resolve_ability(self, actor_id: str, query: str) -> str:
         q = self._normalize_query(query)

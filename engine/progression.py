@@ -411,6 +411,39 @@ class ProgressionService:
         final = self.get_actor_progression(actor_id, actor_type) or existing or {}
         return {"character_id": actor_id, "row_exists": bool(final), "changed_fields": sorted(changes), "proposed_race_id": race, "proposed_class_id": cls, "proposed_track_id": track, "definition_validation": "valid", "applied": bool(apply and changes), "state": final}
 
+
+    def reconcile_class_abilities(self, actor_id: str, class_id: str, expected_ability_ids: list[str], actor_type: str="player", source_id: str="") -> dict[str, Any]:
+        """Idempotently apply canonical class grants and retire proven legacy universal grants.
+
+        Only rows whose metadata says source_type=starter_character are considered
+        accidental universal starter grants. Unknown, trained, awarded, admin, and
+        manually learned rows are preserved.
+        """
+        expected = [str(a) for a in expected_ability_ids if a]
+        added: list[str] = []
+        retired: list[str] = []
+        for aid in expected:
+            before = self.get_ability_rank(actor_id, aid)
+            self.learn_ability(actor_id, aid, {"source_type":"class_progression", "source_id": source_id or class_id, "class_id": class_id, "default_proficiency":1, "maximum_proficiency":100, "maximum_rank":100}, actor_type)
+            if not before:
+                added.append(aid)
+        with self.store.connect() as con:
+            con.row_factory = sqlite3.Row
+            rows = con.execute("SELECT ability_id,metadata_json FROM actor_ability_progression WHERE actor_id=? AND active=1", (actor_id,)).fetchall()
+            for row in rows:
+                aid = str(row["ability_id"])
+                if aid in expected:
+                    continue
+                meta = _loads(row["metadata_json"], {})
+                if str(meta.get("source_type") or "") == "starter_character":
+                    meta["reconciled_from"] = "starter_character"
+                    meta["reconciled_reason"] = "not_in_canonical_class_progression"
+                    meta["reconciled_class_id"] = class_id
+                    meta["reconciled_at"] = utc_now()
+                    con.execute("UPDATE actor_ability_progression SET active=0, metadata_json=? WHERE actor_id=? AND ability_id=?", (_json(meta), actor_id, aid))
+                    retired.append(aid)
+        return {"actor_id": actor_id, "class_id": class_id, "added": added, "retired": retired, "preserved_unknown_origin": True}
+
     def trace_ability_learning(self, actor_id, ability_id, actor_type="player"):
         with self.store.connect() as con: r=con.execute("SELECT * FROM actor_ability_progression WHERE actor_id=? AND ability_id=?",(actor_id,ability_id)).fetchone()
         return {"actor_id":actor_id,"ability_id":ability_id,"known":bool(r),"grant":dict(r) if r else None}

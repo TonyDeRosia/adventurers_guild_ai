@@ -235,3 +235,6 @@ Living NPC room rendering and combat target resolution now share `MudRuntime.res
 Completed hotfix scope: restore SCORE/WORTH shared progression projections by replacing blind `dict(row)` conversion with explicit progression SELECT columns and canonical row-to-mapping conversion.  No SCORE redesign, content mutation, SQLite reset, Kraevok recreation, or resident combat authority change is part of this phase.
 
 Remaining follow-up is manual Windows acceptance by Tony on `main-v2` and any future broad progression-authority residency work, which should be planned separately from this hotfix.
+## Phase 18E - Canonical class and ability repair
+
+Status: Implemented. Runtime class identity now hydrates from canonical progression state, starter ability grants are class-reconciled instead of universal, ability resolution distinguishes unknown/not-known/wrong-category/unimplemented outcomes, direct ability commands route through the shared gateway, spellup uses canonical known spell data, and SCORE blank rows before Name/Alignment were removed.
