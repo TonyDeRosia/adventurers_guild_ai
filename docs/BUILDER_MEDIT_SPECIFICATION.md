@@ -198,3 +198,37 @@ Phase 15C.1 establishes the functional Smart MUD MEDIT foundation on the existin
 The editor intentionally distinguishes fully editable foundation sections from advanced references. Ability loadouts, behavior/AI profiles, factions, and scripts are preserved, previewed, and validated as references where current runtime support exists; full advanced editors remain later MEDIT phases. Pet/economy data is stored, validated, and previewed, but runtime purchasing remains limited unless a world supplies the corresponding shop/service flow.
 
 Normalization is deterministic and backward-compatible: legacy `natural_attacks` and top-level `natural_weapons` migrate into `combat_profile.natural_weapons`; aliases can seed keywords; resources can be represented as explicit named resource objects; mobile flags and permanent affects use named lists rather than integer bitvectors. Normalization must not infer a creature species from body, combat, behavior, faction, or loot profile names.
+
+## Phase 15C.2A Core Parity Clarification
+
+Phase 15C.2A completes the core, non-advanced MEDIT parity layer while preserving the Phase 15C.1 architecture. Combat Abilities, Event Reactions, and full Script Attachment editing remain deferred to Phase 15C.2B.
+
+### Main menu honesty
+
+The MEDIT main menu must identify the draft as a Builder-authored mobile, display VNUM, revision, world, area, zone, lock owner, validation counts, dirty status, builder completeness, publish status, and runtime activation status. Menu summaries must distinguish editable Builder systems from profile references and deferred runtime behavior. Resource summaries must display resolved named resource values rather than raw empty dictionaries.
+
+### Stats Menu and Quick Build
+
+The Stats Menu is the canonical nested editor for level, archetype, attributes, health, mana, stamina/movement, armor/defense, accuracy/hitroll, damage bonus/damroll, base damage dice, attack type, attacks per round, experience reward, and currency reward. It displays authored override, recommendation source, and resolved runtime value when those layers exist.
+
+Quick Build recommendations are produced by `MobileRecommendationService` version `smartmud-medit-quick-build/v1`. The service is deterministic and separate from runtime materialization. It accepts level, archetype, durability, offense, defense, resource style, attack style, reward style, and difficulty rank inputs, can render a diff without mutating the draft, and applies accepted values as one undo checkpoint.
+
+### Balance and reward validation
+
+Validation includes non-destructive balance warnings using the same recommendation source/version. Warnings are publish-allowed unless paired with a separate blocking schema error. Current warnings cover unusually low/high health, excessive/insufficient XP, caster/support archetypes without mana or equivalent resources, contradictory mobile flags, contradictory permanent affects, and pet price without pet eligibility.
+
+### Flags, affects, pet data, loadout, loot, attacks, and positions
+
+Mobile flags and permanent affects remain named lists and preserve unknown compatible names through normalization. The grouped flag editor supports numeric and named toggles, clear/none, all, validate, undo, redo, and back. Runtime behavior is only claimed where a runtime consumer observes the projected field; otherwise the field is authoring-only or runtime-deferred.
+
+Pet price remains canonical Builder data with validation. Runtime purchasing is deferred unless the world supplies a matching shop/service handler.
+
+Equipment loadout, starting inventory, loot, corpse settings, attack type, natural attacks, spawn position, and default position are normalized into canonical mobile records and included in preview/runtime projections. Chance-based and service-dependent behaviors are preserved and labeled as authored/runtime-deferred when no runtime consumer exists.
+
+### Preview and runtime projection
+
+The consolidated preview covers identity, traits, stats, combat, item content, sample natural attack text, and death/corpse summary. Preview is deterministic and must not mutate the draft. Runtime projection includes keywords, descriptions, positions, flags, permanent affects, attributes, resources, combat profile, equipment loadout, starting inventory, and loot/corpse data so tests can prove fields advertised as runtime-supported are observable.
+
+### Session consistency
+
+Nested Stats, flag, equipment, spawn, list, reference, and multiline editors must honor back, save, discard/quit, validate, preview where applicable, undo, redo, and help. No-op field writes do not create checkpoints.

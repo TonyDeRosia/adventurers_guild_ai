@@ -20,6 +20,42 @@ MEDIT_ATTACK_TYPES = ("hit","sting","whip","slash","bite","bludgeon","crush","po
 MEDIT_MOBILE_FLAGS = ("sentinel","stay_zone","wander","no_wander","aggressive","wimpy","memory","helper","no_kill","elite","boss","scavenger","mountable","pet","purchasable","companion","no_charm","shopkeeper","trainer","guildmaster","questmaster","banker","healer","ai_actor","scripted_only","behavior_profile_controlled","immortal","protected","unique","no_purge","debug_only")
 MEDIT_AFFECT_FLAGS = ("detect_invisible","darkvision","detect_magic","awareness","invisible","hidden","camouflage","sanctuary","protection","shield","flying","water_breathing","swimming","pass_door","haste","slow","poison","disease","blindness","silence","fear","charm","rooted","stunned","sleeping")
 
+MEDIT_QUICK_BUILD_VERSION = "smartmud-medit-quick-build/v1"
+MEDIT_ARCHETYPES = ("harmless civilian","civilian","weak creature","standard creature","skirmisher","brute","soldier","guardian","rogue","caster","healer/support","elite","boss","custom")
+MEDIT_DURABILITY = ("fragile","low","standard","durable","very durable","boss")
+MEDIT_OFFENSE = ("very low","low","standard","high","extreme")
+MEDIT_DEFENSE = ("very low","low","standard","high","extreme")
+MEDIT_RESOURCE_STYLES = ("health only","martial","mana user","stamina user","hybrid","custom")
+MEDIT_REWARD_STYLES = ("none","low","standard","generous","elite","boss","custom")
+MEDIT_DIFFICULTY_RANKS = ("trivial","normal","veteran","elite","miniboss","boss","raid/world boss")
+
+class MobileRecommendationService:
+    """Deterministic, versioned MEDIT recommendation helper kept separate from routing/runtime."""
+    version = MEDIT_QUICK_BUILD_VERSION
+    _mul = {"very low":0.55,"low":0.75,"standard":1.0,"high":1.3,"extreme":1.65,"fragile":0.55,"durable":1.25,"very durable":1.55,"boss":2.4,"none":0.0,"generous":1.45,"elite":1.8,"trivial":0.7,"normal":1.0,"veteran":1.2,"miniboss":1.7,"raid/world boss":3.0}
+    _arch = {"harmless civilian":0.35,"civilian":0.55,"weak creature":0.75,"standard creature":1.0,"skirmisher":1.05,"brute":1.25,"soldier":1.15,"guardian":1.2,"rogue":1.05,"caster":0.9,"healer/support":0.85,"elite":1.5,"boss":2.2,"custom":1.0}
+    def recommend(self, level:int=1, archetype:str="standard creature", durability:str="standard", offense:str="standard", defense:str="standard", resource_style:str="health only", attack_style:str="hit", reward_style:str="standard", difficulty_rank:str="normal") -> dict[str, Any]:
+        lvl=max(1,min(100,int(level or 1))); am=self._arch.get(archetype,1.0); dm=self._mul.get(durability,1.0)*self._mul.get(difficulty_rank,1.0); om=self._mul.get(offense,1.0)*am; defm=self._mul.get(defense,1.0)
+        attr_base=max(3,min(100,10+lvl//3)); attrs={k:attr_base for k in ("strength","dexterity","constitution","intelligence","wisdom","charisma")}
+        if "brute" in archetype or archetype in {"soldier","guardian","boss"}: attrs["strength"]+=3; attrs["constitution"]+=2
+        if archetype in {"rogue","skirmisher"}: attrs["dexterity"]+=3
+        if archetype in {"caster","healer/support"}: attrs["intelligence"]+=3; attrs["wisdom"]+=3
+        hp=int((18+lvl*14)*dm*am); mana=0; stamina=int(20+lvl*6)
+        if resource_style in {"mana user","hybrid"} or archetype in {"caster","healer/support"}: mana=int(12+lvl*9)
+        if resource_style == "health only": stamina=0
+        sides=max(2,min(12,2+lvl//4)); dice_count=max(1,min(6,1+lvl//10)); reward=self._mul.get(reward_style,1.0)
+        return {"version":self.version,"inputs":{"level":lvl,"archetype":archetype,"durability":durability,"offense":offense,"defense":defense,"resource_style":resource_style,"attack_style":attack_style,"reward_style":reward_style,"difficulty_rank":difficulty_rank},"values":{"level":lvl,"archetype":archetype,"attributes":attrs,"resources":{"health":{"maximum":hp,"starting":hp,"enabled":True},"mana":{"maximum":mana,"starting":mana,"enabled":mana>0},"stamina":{"maximum":stamina,"starting":stamina,"enabled":stamina>0}},"combat_profile":{"armor":int(lvl*defm*1.4),"defense":int(lvl*defm),"accuracy":int(lvl*om/2),"damage_bonus":int(lvl*om/3),"damage_dice":f"{dice_count}d{sides}","attack_type":attack_style if attack_style in MEDIT_ATTACK_TYPES else "hit","attacks_per_round":1+(1 if om>1.4 and lvl>=8 else 0)+(1 if om>2.0 and lvl>=20 else 0),"experience_reward":int(lvl*25*reward*am),"gold_reward":int(lvl*4*reward)}}}
+    def diff(self, record:dict[str,Any], recs:dict[str,Any]) -> dict[str,Any]:
+        values=recs.get("values",{}); out={}
+        for k,v in values.items():
+            if k in {"attributes","resources","combat_profile"}:
+                cur=record.get(k) or {}
+                for nk,nv in v.items():
+                    before=(cur or {}).get(nk); out[f"{k}.{nk}"]={"before":before,"after":nv,"would_overwrite":before not in (None,"",{},[])}
+            else: out[k]={"before":record.get(k),"after":v,"would_overwrite":record.get(k) not in (None,"")}
+        return out
+
+
 DRAFT_FILES = {
     "world": "world.json", "display_themes": "display_themes.json",
     "areas": "areas.json", "zones": "zones.json", "rooms": "rooms.json",
@@ -1088,6 +1124,21 @@ class MobileTemplate:
         if "wander" in flags and "no_wander" in flags: issue("warning","contradictory_flags","mobile_flags","wander and no_wander are both authored.")
         if "pet" not in flags and (rec.get("pet_price") or (rec.get("economy") or {}).get("purchase_price")): issue("warning","pet_price_without_pet","pet_price","Pet price is set but pet flag is not enabled.")
         if "haste" in affects and "slow" in affects: issue("warning","contradictory_affects","affect_flags","haste and slow are both permanent affects.")
+        recs = MobileRecommendationService().recommend(level=rec.get("level", 1), archetype=str(rec.get("archetype") or "standard creature"))
+        vals = recs["values"]; hp = ((rec.get("resources") or {}).get("health") or {}).get("maximum")
+        try:
+            hp_int = int(hp)
+            exp_hp = int(vals["resources"]["health"]["maximum"]);
+            if hp_int < exp_hp * 0.5: issue("warning","balance_low_health","resources.health.maximum",f"Health {hp_int} is below expected range {exp_hp//2}-{exp_hp*2} from {MobileRecommendationService.version}; publish allowed.")
+            if hp_int > exp_hp * 2: issue("warning","balance_high_health","resources.health.maximum",f"Health {hp_int} is above expected range {exp_hp//2}-{exp_hp*2} from {MobileRecommendationService.version}; publish allowed.")
+        except Exception: pass
+        cp = rec.get("combat_profile") or {}; xp = cp.get("experience_reward") or rec.get("experience_reward")
+        try:
+            xp_int=int(xp); exp_xp=int(vals["combat_profile"]["experience_reward"])
+            if xp_int > exp_xp*3: issue("warning","balance_excessive_xp","combat_profile.experience_reward",f"XP {xp_int} exceeds expected range 0-{exp_xp*3} from {MobileRecommendationService.version}; publish allowed.")
+            if xp_int and xp_int < max(1, exp_xp//4): issue("warning","balance_insufficient_xp","combat_profile.experience_reward",f"XP {xp_int} is below expected range {max(1, exp_xp//4)}-{exp_xp*3} from {MobileRecommendationService.version}; publish allowed.")
+        except Exception: pass
+        if (rec.get("archetype") == "caster" or rec.get("archetype") == "healer/support") and not (((rec.get("resources") or {}).get("mana") or {}).get("maximum")): issue("warning","caster_without_mana","resources.mana.maximum","Caster/support archetype has no mana or equivalent resource; publish allowed.")
         return issues
 
     def to_canonical_dict(self) -> dict[str, Any]:
@@ -1131,7 +1182,11 @@ class MobileTemplate:
 
     def to_runtime_projection(self) -> dict[str, Any]:
         rec = self.to_canonical_dict()
-        return {"template_id": rec.get("id"), "name": rec.get("name"), "level": rec.get("level",1), "description": rec.get("description") or rec.get("look_description") or "", "body_profile_id": rec.get("body_profile_id"), "combat_profile": deepcopy(rec.get("combat_profile") or {}), "attributes": deepcopy(rec.get("attributes") or {}), "resources": {"max_health": rec.get("max_health"), "max_mana": rec.get("max_mana"), "max_move": rec.get("max_move")}}
+        resources = rec.get("resources") or {}
+        def rmax(name, legacy=None):
+            val = resources.get(name)
+            return (val or {}).get("maximum") if isinstance(val, dict) else (val if val is not None else rec.get(legacy or ""))
+        return {"template_id": rec.get("id"), "name": rec.get("name"), "level": rec.get("level",1), "keywords": deepcopy(rec.get("keywords") or []), "description": rec.get("description") or rec.get("look_description") or "", "default_position": rec.get("default_position"), "spawn_position": rec.get("spawn_position"), "mobile_flags": deepcopy(rec.get("mobile_flags") or []), "permanent_affects": deepcopy(rec.get("affect_flags") or []), "body_profile_id": rec.get("body_profile_id"), "combat_profile": deepcopy(rec.get("combat_profile") or {}), "attributes": deepcopy(rec.get("attributes") or {}), "resources": {"max_health": rmax("health","max_health"), "max_mana": rmax("mana","max_mana"), "max_move": rmax("movement","max_move") or rmax("stamina")}, "equipment_loadout": deepcopy(rec.get("equipment_loadout") or {}), "starting_inventory": deepcopy(rec.get("starting_inventory") or []), "loot": deepcopy(rec.get("loot") or {})}
 
     def diff(self, other: dict[str, Any]) -> dict[str, Any]:
         before = MobileTemplate.from_legacy(other or {}).to_canonical_dict(); after = self.to_canonical_dict()
@@ -1932,14 +1987,16 @@ class BuilderService:
         fmt = "  ".join("{:<" + str(w) + "}" for w in widths)
         return "\n".join([fmt.format(*headers), "  ".join("-" * w for w in widths)] + [fmt.format(*[str(c) for c in row]) for row in rows])
 
-    def _builder_list_header(self, title: str, total: int, world_id: str, area_id: str, zone_id: str, room_id: str, page: int, pages: int) -> list[str]:
+    def _builder_list_header(self, title: str, total: int, world_id: str, area_id: str, zone_id: str, room_id: str, page: int, pages: int, actor: Any | None = None) -> list[str]:
         rule = "-" * 56
-        areas = self.resolve_collection_records(None, "areas")
-        zones = self.resolve_collection_records(None, "zones")
-        rooms = self.resolve_collection_records(None, "rooms")
+        areas = self.resolve_collection_records(actor, "areas")
+        zones = self.resolve_collection_records(actor, "zones")
+        rooms = self.resolve_collection_records(actor, "rooms")
         room = rooms.get(room_id, {})
         room_label = ((f"[{int(room.get('vnum')):04d}] " if room.get('vnum') is not None else "") + str(room.get('name') or room.get('title') or room_id or 'unassigned'))
-        return [rule, f"{title} ({total} {'record' if total == 1 else 'records'})", f"World: {world_id}", f"Area : {areas.get(area_id, {}).get('name') or area_id or 'unassigned'}", f"Zone : {zones.get(zone_id, {}).get('name') or zone_id or 'unassigned'}", f"Room : {room_label}", f"Page : {page} / {pages}", rule]
+        area_name = areas.get(area_id, {}).get('name') or zones.get(zone_id, {}).get('name') or area_id or 'unassigned'
+        zone_name = zones.get(zone_id, {}).get('name') or zone_id or 'unassigned'
+        return [rule, f"{title} ({total} {'record' if total == 1 else 'records'})", f"World: {world_id}", f"Area : {area_name}", f"Zone : {zone_name}", f"Room : {room_label}", f"Page : {page} / {pages}", rule]
 
     def list_content(self, actor: Any, kind: str, args: list[str] | None = None) -> BuilderResult:
         args = list(args or [])
@@ -2092,7 +2149,7 @@ class BuilderService:
         headers=[h for h,k in zip(headers,keep) if k]; table_rows=[[str(c) for c,k in zip(row,keep) if k] for row in table_rows]
         if kind == "mob": title = "Mob List - Mobiles in " + world_id.replace("_", " ").title()
         elif kind == "object": title = "Object List - Objects in " + world_id.replace("_", " ").title()
-        lines = self._builder_list_header(title, total, world_id, cur_area if mode not in {"all","world"} else "", cur_zone if mode not in {"all","world"} else "", cur_room, page, pages)
+        lines = self._builder_list_header(title, total, world_id, cur_area if mode not in {"all","world"} else "", cur_zone if mode not in {"all","world"} else "", cur_room, page, pages, actor)
         if kind in {"mob", "object"}:
             lines.append(f"Current zone: {cur_zone or 'none'}")
             lines.append(f"Usage: {'mlist 1500-1599' if kind == 'mob' else 'olist 1300-1399'}; {kind}list all; zone; area; id; vnum; source draft/active/live")
@@ -2435,6 +2492,8 @@ class BuilderService:
         if sess.section:
             if sess.editor_type == "medit" and sess.section == "equipment":
                 return self._render_equipment_editor(None, sess)
+            if sess.editor_type == "medit" and sess.section in {"attributes", "resources"}:
+                return self._render_stats_menu(sess)
             if sess.editor_type == "medit" and sess.section == "spawns":
                 return self._render_spawns_editor(None, sess)
             return self._render_mobile_section(sess, sess.section)
@@ -2703,7 +2762,7 @@ class BuilderService:
         def yn(values): return ", ".join(map(str, values or [])) or "none"
         def desc_count(): return len(rec.get("extra_descriptions") or [])
         def apply_count(): return len(rec.get("affects") or rec.get("applies") or [])
-        lines = [f"-- Item number : [{rec.get('vnum', sess.object_id)}]", f"Object ID     : {sess.object_id}", f"Draft status  : {'modified' if sess.dirty else 'clean'}", ""]
+        lines = ["Object Editor", f"-- Item number : [{rec.get('vnum', sess.object_id)}]", f"Object ID     : {sess.object_id}", f"Draft status  : {'modified' if sess.dirty else 'clean'}", ""]
         rows = [
             ("1", "Keywords", yn(rec.get("keywords"))),
             ("2", "S-Desc", rec.get("short_description") or rec.get("name") or ""),
@@ -2812,6 +2871,75 @@ class BuilderService:
             lines.append(f"{i}. {f.label:<18}: {self._fmt_value(self._get_path(rec, f.path))}")
         lines += ["", "Q. Back", "Commands: number edits a value, validate, preview, undo, redo, save"]
         return "\n".join(lines)
+
+
+    def _resource_max(self, rec: dict[str, Any], name: str) -> Any:
+        val = (rec.get("resources") or {}).get(name)
+        return (val or {}).get("maximum") if isinstance(val, dict) else val
+
+    def _render_stats_menu(self, sess: BuilderEditSession) -> str:
+        rec = MobileTemplate.from_legacy(sess.working_record).to_canonical_dict()
+        recs = MobileRecommendationService().recommend(level=rec.get("level", 1), archetype=str(rec.get("archetype") or "standard creature"), attack_style=str((rec.get("combat_profile") or {}).get("attack_type") or "hit"))
+        vals = recs["values"]; cp = rec.get("combat_profile") or {}; rcp = vals["combat_profile"]
+        lines=[f"MEDIT Stats Menu / Attributes / Resources: {rec.get('name') or sess.object_id}", f"Recommendation source: {recs['version']}", f"Draft status: {'modified' if sess.dirty else 'clean'}", "", "Editable stats with authored/recommended/resolved values:"]
+        rows=[("1", "Level", rec.get("level",1), vals["level"]), ("2", "Archetype", rec.get("archetype") or "unset", vals["archetype"])]
+        for i,a in enumerate(("strength","dexterity","constitution","intelligence","wisdom","charisma"),3): rows.append((str(i), a.title(), (rec.get("attributes") or {}).get(a), vals["attributes"][a]))
+        rows += [("9","Health", self._resource_max(rec,"health"), vals["resources"]["health"]["maximum"]),("10","Mana", self._resource_max(rec,"mana"), vals["resources"]["mana"]["maximum"]),("11","Movement/stamina", self._resource_max(rec,"stamina") or self._resource_max(rec,"movement"), vals["resources"]["stamina"]["maximum"]),("12","Armor/defense", cp.get("armor") or cp.get("defense"), rcp["armor"]),("13","Accuracy/hitroll", cp.get("accuracy") or cp.get("hitroll"), rcp["accuracy"]),("14","Damage bonus/damroll", cp.get("damage_bonus") or cp.get("damroll"), rcp["damage_bonus"]),("15","Base damage dice", cp.get("damage_dice"), rcp["damage_dice"]),("16","Attack type", cp.get("attack_type") or rec.get("attack_type") or "hit", rcp["attack_type"]),("17","Attacks per round", cp.get("attacks_per_round"), rcp["attacks_per_round"]),("18","Experience reward", cp.get("experience_reward"), rcp["experience_reward"]),("19","Currency reward", cp.get("gold_reward"), rcp["gold_reward"])]
+        for num,label,auth,recval in rows:
+            resolved = auth if auth not in (None, "", {}, []) else recval
+            lines.append(f"{num}. {label}: Authored override: {self._fmt_value(auth)} | Recommended: {recval} | Resolved runtime value: {resolved}")
+        lines += ["", "Commands: number/name edits, clear <field>, quickbuild <level> [archetype], quickdiff, applyquick all|<fields>, validate, preview, undo, redo, back", "Quick Build choices: archetypes=" + ", ".join(MEDIT_ARCHETYPES)]
+        return "\n".join(lines)
+
+    def _handle_stats_menu(self, actor: Any, sess: BuilderEditSession, text: str, low: str) -> BuilderResult | None:
+        if sess.editor_type != "medit" or sess.section not in {"attributes","resources"}: return None
+        parts=text.split(); cmd=parts[0].lower() if parts else ""
+        stat_map={"1":"level","level":"level","2":"archetype","archetype":"archetype","3":"strength","strength":"strength","4":"dexterity","dexterity":"dexterity","5":"constitution","constitution":"constitution","6":"intelligence","intelligence":"intelligence","7":"wisdom","wisdom":"wisdom","8":"charisma","charisma":"charisma","9":"health","health":"health","10":"mana","mana":"mana","11":"stamina","movement":"stamina","stamina":"stamina","12":"armor","armor":"armor","defense":"armor","13":"accuracy","accuracy":"accuracy","hitroll":"accuracy","14":"damage_bonus","damage_bonus":"damage_bonus","damroll":"damage_bonus","15":"damage_dice","damage_dice":"damage_dice","dice":"damage_dice","16":"attack_type","attack_type":"attack_type","17":"attacks_per_round","attacks_per_round":"attacks_per_round","18":"experience_reward","experience_reward":"experience_reward","xp":"experience_reward","19":"gold_reward","currency":"gold_reward","gold_reward":"gold_reward"}
+        if sess.active_field.startswith("stats:") and cmd and cmd not in {"quickbuild","quickdiff","applyquick","clear"}:
+            field=sess.active_field.split(":",1)[1]; text = field + " " + text; parts=text.split(); cmd=field; sess.active_field=""
+        if cmd in {"quickbuild","quickdiff"}:
+            lvl=int(parts[1]) if len(parts)>1 and parts[1].isdigit() else int(sess.working_record.get("level") or 1); arche=" ".join(parts[2:]) if len(parts)>2 else str(sess.working_record.get("archetype") or "standard creature")
+            recs=MobileRecommendationService().recommend(level=lvl, archetype=arche); sess.pending_value={"quickbuild":recs}; diff=MobileRecommendationService().diff(sess.working_record,recs)
+            body="Quick Build recommendations (no mutation yet):\n"+"\n".join(f"- {k}: {v['before']} -> {v['after']}" for k,v in diff.items())+"\nApply with: applyquick all or applyquick field1 field2"
+            return BuilderResult(True, body, {"diff":diff})
+        if cmd == "applyquick":
+            recs=((sess.pending_value or {}).get("quickbuild") if isinstance(sess.pending_value,dict) else None) or MobileRecommendationService().recommend(level=sess.working_record.get("level",1))
+            fields=set(parts[1:]) if len(parts)>1 and parts[1].lower()!="all" else {"all"}; vals=recs["values"]; self._session_checkpoint(sess); rec=sess.working_record
+            def wants(name): return "all" in fields or name in fields
+            for k,v in vals.items():
+                if k=="attributes" and wants(k): rec.setdefault("attributes",{}).update(v)
+                elif k=="resources" and wants(k): rec.setdefault("resources",{}).update(v)
+                elif k=="combat_profile" and wants(k): rec.setdefault("combat_profile",{}).update(v)
+                elif wants(k): rec[k]=v
+            sess.working_record=self._normalize_entity_updates(sess.object_id, rec); sess.dirty=True; sess.saved=False
+            return BuilderResult(True, "Quick Build applied as one undo checkpoint.\n"+self._render_stats_menu(sess), sess.working_record)
+        if cmd == "clear" and len(parts)>1: field=stat_map.get(parts[1].lower())
+        else: field=stat_map.get(cmd)
+        if field and (cmd == "clear" or len(parts)>1):
+            value=None if cmd=="clear" else " ".join(parts[1:])
+            self._session_checkpoint(sess); rec=sess.working_record
+            if field in {"strength","dexterity","constitution","intelligence","wisdom","charisma"}:
+                if value is None: rec.setdefault("attributes",{}).pop(field,None)
+                else: rec.setdefault("attributes",{})[field]=int(value)
+            elif field in {"health","mana","stamina"}:
+                if value is None: rec.setdefault("resources",{}).pop(field,None)
+                else: rec.setdefault("resources",{})[field]={"maximum":int(value),"starting":int(value),"enabled":int(value)>0}
+            elif field in {"armor","accuracy","damage_bonus","attacks_per_round","experience_reward","gold_reward"}:
+                if value is None: rec.setdefault("combat_profile",{}).pop(field,None)
+                else: rec.setdefault("combat_profile",{})[field]=int(value)
+            elif field in {"damage_dice","attack_type"}:
+                if value is None: rec.setdefault("combat_profile",{}).pop(field,None)
+                else: rec.setdefault("combat_profile",{})[field]=value
+            else:
+                if value is None: rec.pop(field,None)
+                else: rec[field]=int(value) if field=="level" and str(value).isdigit() else value
+            sess.working_record=self._normalize_entity_updates(sess.object_id, rec); sess.dirty=True; sess.saved=False
+            return BuilderResult(True, (("Health maximum changed. Stats value updated" if field == "health" else ("Level changed. Stats value updated" if field == "level" else "Stats value updated")) + ".\n")+self._render_stats_menu(sess), sess.working_record)
+        if field:
+            sess.active_field="stats:"+field
+            label = "health maximum" if field == "health" else field.replace("_", " ")
+            return BuilderResult(True, f"Current {label}: {self._fmt_value(self._resource_max(sess.working_record, field) if field in {'health','mana','stamina'} else ((sess.working_record.get('combat_profile') or {}).get(field) if field not in {'level','archetype','strength','dexterity','constitution','intelligence','wisdom','charisma'} else (sess.working_record.get(field) if field in {'level','archetype'} else (sess.working_record.get('attributes') or {}).get(field))))}\nEnter new {label}, or Q to cancel. Use clear {field} to restore inherited/default behavior.")
+        return None
 
     def _field_descriptors(self, sess: BuilderEditSession) -> list[OlcFieldDescriptor]:
         if sess.editor_type == "medit":
@@ -3693,6 +3821,9 @@ class BuilderService:
                 return BuilderResult(True, "You have unsaved room changes.\n\nS) Save Draft\nD) Discard Changes\nC) Continue Editing" if sess.editor_type == "redit" else "Unsaved changes: Save, Discard, or Cancel?")
             self.sessions.end(actor); return BuilderResult(True, "Editor closed and lock released.")
         if low in {"back", "cancel"}: sess.section=""; sess.mode="main_menu"; return BuilderResult(True, self.render_session(sess))
+        stats_handled = self._handle_stats_menu(actor, sess, text, low)
+        if stats_handled is not None:
+            return stats_handled
         if sess.editor_type == "medit" and sess.section == "equipment":
             return self._handle_equipment_editor(actor, sess, text)
         if sess.editor_type == "medit" and sess.section == "spawns":
@@ -3735,7 +3866,7 @@ class BuilderService:
                 sess.confirmation_type = "delete"; return BuilderResult(True, "Delete object: type DELETE to confirm, or Q to cancel.")
         if sess.editor_type != "medit" and low in {"1","fields","edit"}:
             sess.section = "fields"; sess.mode = "section_menu"; return BuilderResult(True, self.render_session(sess))
-        section_map = {"1":"identity","identity":"identity", "2":"keywords", "keywords":"keywords", "aliases":"keywords", "3":"descriptions", "descriptions":"descriptions", "4":"traits", "traits":"traits", "5":"attributes", "attributes":"attributes", "level":"attributes", "6":"resources", "resources":"resources", "7":"natural_weapons", "combat":"combat", "8":"body_weapons", "body":"body_weapons", "body profile":"body_weapons", "weapons":"natural_weapons", "natural":"natural_weapons", "natural weapons":"natural_weapons", "natural attacks":"natural_weapons", "9":"positions", "positions":"positions", "10":"mobile_flags", "flags":"mobile_flags", "mobile flags":"mobile_flags", "11":"affect_flags", "affects":"affect_flags", "12":"equipment", "equipment":"equipment", "13":"inventory", "inventory":"inventory", "14":"loot", "loot":"loot", "15":"abilities", "abilities":"abilities", "16":"ai", "ai":"ai", "behavior":"ai", "17":"faction", "faction":"faction", "18":"scripts", "scripts":"scripts", "19":"spawns", "spawns":"spawns", "spawn":"spawns", "20":"diagnostics", "diagnostics":"diagnostics"}
+        section_map = {"1":"identity","identity":"identity", "2":"keywords", "keywords":"keywords", "aliases":"keywords", "3":"descriptions", "descriptions":"descriptions", "4":"traits", "traits":"traits", "5":"attributes", "stats":"attributes", "stats menu":"attributes", "attributes":"attributes", "level":"attributes", "6":"resources", "resources":"resources", "7":"natural_weapons", "combat":"combat", "8":"body_weapons", "body":"body_weapons", "body profile":"body_weapons", "weapons":"natural_weapons", "natural":"natural_weapons", "natural weapons":"natural_weapons", "natural attacks":"natural_weapons", "9":"positions", "positions":"positions", "10":"mobile_flags", "flags":"mobile_flags", "mobile flags":"mobile_flags", "11":"affect_flags", "affects":"affect_flags", "12":"equipment", "equipment":"equipment", "13":"inventory", "inventory":"inventory", "14":"loot", "loot":"loot", "15":"abilities", "abilities":"abilities", "16":"ai", "ai":"ai", "behavior":"ai", "17":"faction", "faction":"faction", "18":"scripts", "scripts":"scripts", "19":"spawns", "spawns":"spawns", "spawn":"spawns", "20":"diagnostics", "diagnostics":"diagnostics"}
         if low in section_map:
             sess.section=section_map[low]; sess.mode="section_menu"; return BuilderResult(True, self.render_session(sess))
         if low in {"p", "preview"}: return self._session_preview(actor, sess)
@@ -3942,16 +4073,16 @@ class BuilderService:
             warnings = sum(1 for i in issues if i.get("severity") == "warning")
             status = "clean" if not sess or not sess.dirty else "dirty"
             lines = [
-                f"Mobile Editor\nMOBILE EDITOR: {title}", f"Mobile ID: {(sess.object_id if sess else '')}", f"Draft revision: {(sess.draft_revision if sess else rec.get('_builder_revision', 0))}",
+                f"Mobile Editor\nMOBILE EDITOR: {title}", f"Mobile ID: {(sess.object_id if sess else '')}", f"VNUM: {rec.get('vnum', 'unset')}", f"Draft revision: {(sess.draft_revision if sess else rec.get('_builder_revision', 0))}",
                 f"World: {(sess.world_id if sess else rec.get('world_id',''))}", f"Area: {rec.get('area_id','')}", f"Zone: {rec.get('zone_id','')}", f"Lock owner: {(sess.builder_character_id if sess else 'none')}",
-                f"Validation status: {errors} error(s), {warnings} warning(s)", f"Dirty status: {status}", f"Builder status: {rec.get('builder_status','incomplete')}", "",
+                f"Validation status: {errors} error(s), {warnings} warning(s)", f"Dirty status: {status}", f"Builder completeness: {rec.get('builder_status','incomplete')}", f"Publish status: {rec.get('publish_status','draft/unpublished')}", f"Runtime activation status: {rec.get('runtime_status','not activated or unknown')}", "",
                 "1. Identity - " + str(rec.get('name') or ''), "2. Keywords and aliases - " + str(', '.join(rec.get('keywords') or rec.get('aliases') or [])),
                 "3. Descriptions - " + str(rec.get('room_description') or rec.get('description') or '')[:50], "4. Basic identity traits - species=" + str(rec.get('species') or rec.get('race') or 'unset') + " body=" + str(rec.get('body_profile_id') or 'unset'),
-                "5. Level and attributes - level " + str(rec.get('level', 1)), "6. Resources - " + str(rec.get('resources') or {}),
-                "7. Combat statistics and profiles - editable stats, profile " + str((rec.get('combat_profile') or {}).get('combat_profile_id') or (rec.get('combat_profile') or {}).get('combat_behavior_profile_id','default')), "8. Body profile and Natural Weapons / Natural Attacks - body=" + str(rec.get('body_profile_id') or (rec.get('combat_profile') or {}).get('body_profile','unset')) + " attacks=" + str(len((rec.get('combat_profile') or {}).get('natural_weapons') or [])),
-                "9. Positions and posture - " + str(rec.get('default_position') or rec.get('spawn_position') or 'standing'), "10. Mobile flags - " + str(', '.join(rec.get('mobile_flags') or rec.get('flags') or [])),
-                "11. Affect/status flags - " + str(', '.join(rec.get('affect_flags') or [])), "12. Equipment loadout - " + str(len(rec.get('equipment_loadout') or rec.get('equipment') or {})),
-                "13. Starting inventory - " + str(len(rec.get('starting_inventory') or rec.get('inventory') or [])), "14. Loot and corpse behavior - " + str(rec.get('loot_table_id') or rec.get('corpse_profile_id') or 'unset'),
+                "5. Stats Menu - editable/runtime-supported level " + str(rec.get('level', 1)), "6. Resources - editable via Stats Menu; health=" + str(((rec.get('resources') or {}).get('health') or {}).get('maximum') if isinstance(((rec.get('resources') or {}).get('health') or {}), dict) else ((rec.get('resources') or {}).get('health') or 'unset')),
+                "7. Combat statistics and profiles - editable; attack type " + str((rec.get('combat_profile') or {}).get('attack_type') or rec.get('attack_type') or 'hit'), "8. Body profile and Natural Weapons / Natural Attacks - body=" + str(rec.get('body_profile_id') or (rec.get('combat_profile') or {}).get('body_profile','unset')) + " attacks=" + str(len((rec.get('combat_profile') or {}).get('natural_weapons') or [])),
+                "9. Positions and posture - " + str(rec.get('default_position') or rec.get('spawn_position') or 'standing'), "10. Mobile flags - editable grouped flags count=" + str(len(rec.get('mobile_flags') or rec.get('flags') or [])),
+                "11. Affect/status flags - editable grouped permanent affects count=" + str(len(rec.get('affect_flags') or [])), "12. Equipment loadout - " + str(len(rec.get('equipment_loadout') or rec.get('equipment') or {})),
+                "13. Starting inventory - " + str(len(rec.get('starting_inventory') or rec.get('inventory') or [])), "14. Loadout / Loot overview - editable equipment/inventory/loot/corpse; profile=" + str(((rec.get('loot') or {}).get('profile_id')) or rec.get('loot_table_id') or 'unset') + " entries=" + str(len(((rec.get('loot') or {}).get('entries') or []))),
                 "15. Abilities and spell loadout - " + str(rec.get('ability_loadout_id') or (rec.get('combat_profile') or {}).get('ability_loadout_id') or 'unset'), "16. Behavior and AI - " + str(rec.get('behavior_profile_id') or rec.get('ai_actor_enabled') or 'unset'),
                 "17. Faction and relationships - " + str(rec.get('faction_id') or 'unset'), "18. Scripts and triggers - " + str(len(rec.get('script_ids') or rec.get('scripts') or [])),
                 "19. Spawn and reset references - read-only diagnostics/add draft references", "20. Diagnostics and references - validation, references, runtime preview", "",

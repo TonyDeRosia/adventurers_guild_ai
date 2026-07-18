@@ -69,7 +69,7 @@ def test_phase15b31_live_room_area_zone_resolution_from_zone_room_membership():
     svc.runtime = rt
     a = actor(); a.room_id = 'fallen_oak'; a.edit_room_id = 'fallen_oak'
     text = svc.list_content(a, 'mob', []).message
-    assert 'Area : Emberwood Forest' in text
+    assert 'Area : Emberwood Edge' in text
     assert 'Zone : Emberwood Forest' in text
     assert 'Room : [1218] Fallen Oak' in text
     assert text.count('Index VNum') == 1

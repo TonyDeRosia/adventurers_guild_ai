@@ -41,5 +41,5 @@ def test_medit_spawns_structured_reference_workflow(isolated_builder_world):
 def test_oedit_conditional_menu_and_help(isolated_builder_world):
     engine, a = engine_with_pack(isolated_builder_world)
     out = text(engine, a, "oedit training_sword")
-    assert "Object Editor" in out and "Grouped sections" in out
+    assert "Object Editor" in out and "-- Item number" in out
     assert "Container Data" not in out

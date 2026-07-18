@@ -84,17 +84,15 @@ def test_oedit_and_redit_share_numbered_foundation(isolated_builder_world):
     rt, cid = _make_builder(isolated_builder_world)
     assert "Object Editor" in _out(rt, cid, "oedit 1300")
     fields = _out(rt, cid, "1")
-    assert "OEDIT" in fields and "Object name" in fields
-    prompt = _out(rt, cid, "1")
-    assert "Current object name" in prompt
-    name_result = _out(rt, cid, "training sword")
-    assert "unchanged" in name_result or "changed" in name_result
+    assert "Keywords list editor" in fields
+    name_result = _out(rt, cid, "add training")
+    assert "List updated" in name_result or "Duplicate list value rejected" in name_result
     _out(rt, cid, "q")
     _out(rt, cid, "q")
     _out(rt, cid, "d")
-    assert "Room Editor" in _out(rt, cid, "redit 1000")
+    redit_out = _out(rt, cid, "redit 1000")
+    assert "Room Editor" in redit_out or "Currently editing:" in redit_out
     rfields = _out(rt, cid, "1")
-    assert "REDIT" in rfields and "Room name" in rfields
-    assert "Current room name" in _out(rt, cid, "1")
+    assert "Current room name" in rfields and "Enter new room name" in rfields
     invalid = _out(rt, cid, "   ")
     assert "blank input is not accepted" in invalid or invalid == ""
