@@ -1109,7 +1109,7 @@ class CombatRuntimeService:
             if defender.actor_id.startswith('character:'):
                 trans = third_msg[len(defender.identity.name):].strip()
                 if trans.startswith('looks'):
-                    direct_msg = 'You ' + trans
+                    direct_msg = 'You look' + trans[len('looks'):]
                 elif trans.startswith('is'):
                     direct_msg = 'You are' + trans[2:]
                 elif trans.startswith('collapses'):

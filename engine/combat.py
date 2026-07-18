@@ -295,7 +295,8 @@ class CombatEngine:
         family = str(weapon_rec.get("mechanical_family") or profile.get("name") or weapon_rec.get("name") or "fist").lower().replace(" ", "_")
         aliases = {"unarmed":"fist","unarmed_strike":"fist","natural_attack":"bite","blunt":"bludgeon"}
         family = aliases.get(family, family)
-        if family not in {"bite","claw","gore","crush","sting","slash","pierce","bludgeon","fist"}: family = "bite" if family in {"fang","fang_strike"} else family
+        if family not in {"bite","claw","gore","crush","sting","slash","pierce","bludgeon","fist"}:
+            family = "bite" if any(token in family for token in ("bite", "fang", "tooth", "teeth")) else ("claw" if "claw" in family else ("sting" if "sting" in family else family))
         verbs = {"bite":("bite","bites"),"claw":("claw","claws"),"gore":("gore","gores"),"crush":("crush","crushes"),"sting":("sting","stings"),"slash":("slash","slashes"),"pierce":("pierce","pierces"),"bludgeon":("hit","hits"),"fist":("punch","punches")}
         base, third = verbs.get(family, ("hit","hits"))
         if authored_verb:

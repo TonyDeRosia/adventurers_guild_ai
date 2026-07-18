@@ -936,6 +936,7 @@ class AbilityExecutionService:
                     return self._validation_result(tr, "BLOCKED_RESOURCE", msg, resource_affordability={str(c.get("resource_id")): bool(c.get("affordable", True)) for c in costs})
                 if name == "resolve_target" and target is None:
                     mode=str((ab.targeting or {}).get("mode") or "self")
+                    if mode in {"single_enemy", "current_target"}: return self._validation_result(tr, "BLOCKED_TARGET", "No current opponent.", target_requirement=mode)
                     if mode not in {"self","none","room"}: return self._validation_result(tr, "READY_NEEDS_TARGET", "Ready — requires a visible hostile target.", target_requirement=mode)
                 if name == "resolve_target": return self._validation_result(tr, "BLOCKED_TARGET", "Invalid target.")
 
@@ -1474,7 +1475,7 @@ class AbilityExecutionService:
         if isinstance(target,list) and target and isinstance(target[0],dict): targets=target
         elif mode in {"none"}: targets=[]
         elif mode == "room": return {"ok": True, "mode": mode, "targets": [], "target_room": getattr(actor.identity, "current_location", ""), "target_type": "room", "runtime_instance_ids": []}
-        elif mode == "self" or q in {"", "self", "me"}: targets=[{"actor_id":actor.actor_id,"name":actor.identity.name,"target_type":"self"}]
+        elif mode == "self" or (q in {"self", "me"} and allow_self): targets=[{"actor_id":actor.actor_id,"name":actor.identity.name,"target_type":"self"}]
         elif isinstance(target, Actor): targets=[{"actor_id":target.actor_id,"name":target.identity.name,"target_type":"actor"}]
         elif isinstance(target,str):
             visible=[x for x in sorted(self.actors.values(), key=lambda z:z.actor_id) if getattr(x.identity, "current_location", "") == getattr(actor.identity, "current_location", "")]
@@ -1486,8 +1487,17 @@ class AbilityExecutionService:
                 return {"ok":False,"mode":mode,"targets":[],"target_type":"actor","invalid_reason":"ambiguous_target","candidates":[{"actor_id":x.actor_id,"name":x.identity.name} for x in matches],"runtime_instance_ids":[]}
             targets=[{"actor_id":x.actor_id,"name":x.identity.name,"target_type":"actor"} for x in matches[:max_targets]]
             if targets: self._pub("target_resolved", {"actor_id": actor.actor_id, "query": q, "target_id": targets[0].get("actor_id")})
-        if mode == "current_target" and not targets:
+        if mode in {"single_enemy", "current_target"} and not targets and not q:
             current=str((getattr(actor, "plugin_data", {}) or {}).get("current_combat_target") or "")
+            crt = self.combat_runtime or (getattr(getattr(self, "runtime", None), "combat_runtime", None) if getattr(self, "runtime", None) else None)
+            if not current and crt:
+                try:
+                    eid = crt.find_actor_encounter(actor.actor_id)
+                    enc = getattr(crt, "resident_encounters", {}).get(eid) if eid else None
+                    part = enc.participants.get(actor.actor_id) if enc else None
+                    current = str(getattr(part, "target_actor_id", "") or "")
+                except Exception:
+                    current = ""
             if current and current in self.actors: targets=[{"actor_id":current,"name":self.actors[current].identity.name,"target_type":"actor"}]
         if mode.startswith("room_") and not target:
             maxn=int((ab.targeting or {}).get("maximum_targets") or 99); targets=[{"actor_id":x.actor_id,"name":x.identity.name,"target_type":"actor"} for x in sorted(self.actors.values(), key=lambda z:z.actor_id)[:maxn]]

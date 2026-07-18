@@ -61,3 +61,16 @@ kill wolf
 ```
 
 After restart, active encounters are cancelled rather than replayed, while persisted character health, retired entities, corpses, loot, and generated runtime records remain in SQLite.
+
+
+## Phase 18K canonical combat lifecycle
+
+Offensive commands and abilities now share the active encounter as the single source of truth. `kill`, `hit`, `murder`, queued skills such as `kick` and `bash`, Magic Missile, future offensive abilities, NPC aggression, and pet/summon hooks enter combat by joining the existing `CombatRuntimeService` encounter instead of creating duplicate combat state. Once participants are fighting, their resident participant record is the canonical current opponent. Violent single-enemy spells with no typed target resolve that opponent exactly like legacy `TAR_FIGHT_VICT`; if combat has ended and no target was supplied, the command reports that no current opponent is available rather than returning a false invalid-room-target error.
+
+The damage lifecycle remains Ability → validation → target resolution → `DamageService`/combat action request → `CombatRuntimeService` resolution → health mutation → death check → lifecycle death handler → corpse creation → XP/reward hooks → EventBus publication. Spell damage does not own a parallel damage path; Magic Missile submits a combat action so kill credit, corpse creation, XP, audit rows, and cleanup are performed once by the runtime.
+
+Combat exit clears participant targets on death, flee, disconnect, movement, and encounter completion. Dead actors are marked defeated, reciprocal target references are removed, pending resident actions are ignored when targets are invalid, corpses are created from the lifecycle transition with transferred contents, and `combat_ended`/death/corpse/XP events remain the integration points for future group, pet, summon, assist, skinning, butchering, and resurrection work.
+
+Natural weapon wording is authored-first. Runtime actors retain body/profile natural weapons and combat messages normalize wolf bites, snake bites, bear claws/bites, bird pecks, and similar authored attacks instead of falling back to generic unarmed punch wording when a natural weapon exists. Health transitions use perspective-specific grammar: players see `You look wounded.`, victims and observers see third-person names such as `Forest Wolf looks wounded.`
+
+Wait-state parity is represented by canonical queued/recovery combat actions: melee rounds advance on the violence pulse, kick/bash/cast actions enter the same queue and recovery timing, movement/flee clear combat through the exit path, and future recovery tuning should be expressed in combat action timing rather than separate cooldown-only mechanics.

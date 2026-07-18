@@ -74,3 +74,18 @@ def test_phase18g_ambiguous_target_spends_no_mana(tmp_path):
     res=svc.gateway().execute_result('hero', 'magic missile', 'gob', {'command':'c magic gob'})
     assert res.status == 'INVALID_TARGET'
     assert hero.resources.mana == before
+
+
+def test_phase18k_magic_missile_no_target_uses_current_opponent_not_self(tmp_path):
+    svc, hero, gob, ally, bus = service(tmp_path)
+    hero.plugin_data['current_combat_target'] = 'goblin'
+    before_hero = hero.resources.health
+    before_gob = gob.resources.health
+    out = svc.execute_instant_ability('hero', 'magic_missile')
+    assert out['ok']
+    assert gob.resources.health < before_gob
+    assert hero.resources.health == before_hero
+    hero.plugin_data.pop('current_combat_target')
+    res = svc.validate_ability_use('hero', 'magic_missile')
+    assert not res['ok']
+    assert res['message'] == 'No current opponent.'
