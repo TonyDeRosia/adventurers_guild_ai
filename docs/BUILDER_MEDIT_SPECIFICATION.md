@@ -232,3 +232,38 @@ The consolidated preview covers identity, traits, stats, combat, item content, s
 ### Session consistency
 
 Nested Stats, flag, equipment, spawn, list, reference, and multiline editors must honor back, save, discard/quit, validate, preview where applicable, undo, redo, and help. No-op field writes do not create checkpoints.
+
+## Phase 15C.2B Advanced Parity and Lifecycle Hardening Clarification
+
+Phase 15C.2B adds canonical, draft-backed advanced MEDIT sections for `combat_abilities`, `event_reactions`, and `script_attachments`. These records are normalized from compatible legacy forms such as explicit ability arrays, reaction arrays, script ID lists, and trigger arrays. Normalization is deterministic: missing nested IDs are generated from stable parent/entry seeds, missing priorities are filled from list order, chance strings such as `50%` become integer percentages, and legacy target/trigger names are lowercased with spaces converted to underscores. Unknown authored fields are preserved on the nested record rather than silently converted into scripts or reactions.
+
+### Combat Abilities
+
+Combat Abilities are structured data, not arbitrary JSON and not scripts. Each entry stores a stable `id`, `ability_type`, `ability_id`, enabled state, priority, optional builder label, target selector, trigger, chance, cooldowns, round bounds, resource costs, status/tag conditions, use limits, and classification flags. The editor supports add, edit, delete, copy, move, move up/down, toggle, inspect, preview, validate, dependency report, undo, redo, save, and back. Preview prints a deterministic decision trace with trigger, target, cooldown, use-limit, and runtime-support status. Runtime projection includes the canonical ability records, but runtime execution is only claimed for supported trigger mappings; unsupported mappings are warnings and remain editor-complete/runtime-deferred.
+
+### Event Reactions
+
+Event Reactions are canonical event/action records mapped to Smart MUD EventBus concepts. Each entry stores stable identity, event type, filters, action type, action data, target selector, chance, cooldowns, use limits, conditions/tags, priority, enabled state, and stop-processing behavior. The editor supports add, edit, delete, copy, reorder, toggle, inspect, validate, preview, dependency report, undo, redo, save, and back. Preview is simulated and must not publish live EventBus events. Runtime support is explicitly labeled per event/action mapping; deferred mappings remain publish-visible warnings rather than hidden behavior.
+
+### Script Attachments
+
+Script Attachments store approved script/trigger references, not a MEDIT-only scripting language. Each attachment stores a stable attachment ID, script reference, enabled state, priority, trigger/event binding, parameters, conditions, and execution policy. The editor supports list/add/remove/copy/reorder/toggle/inspect/validate/preview/dependency/back with undo/redo and draft save. Preview is a dry-run dependency trace only and never executes destructive script behavior. Runtime execution depends on the canonical script host, so script attachments are classified as editor complete/runtime host required unless that host validates the script.
+
+### Diagnostics, Validation, Preview, and Lifecycle
+
+Advanced nested sections participate in MobileTemplate validation and runtime projection. Validation now catches duplicate nested IDs, duplicate priorities, invalid chance/cooldown/limits, invalid targets, invalid ability types, invalid triggers/events/actions, missing ability/script references, contradictory required/forbidden statuses, contradictory required/forbidden tags, and event-loop risk. Warnings distinguish runtime-deferred ability triggers, runtime-deferred reaction mappings, and script attachments that require a canonical script host.
+
+The consolidated MEDIT preview now includes ability decision order, event reaction summaries, script attachment summaries, runtime-support labeling, and simulated-only language. Preview remains deterministic, non-mutating, and side-effect free: it does not persist runtime instances, publish EventBus events, or run destructive scripts.
+
+Draft save still writes Builder drafts only. Publish continues to validate drafts and create immutable generation snapshots through the canonical Builder lifecycle. Activation continues through generation activation rather than direct MEDIT mutation. Rollback remains generation-based and does not introduce a MEDIT-only rollback path. Copying entity templates normalizes advanced sections for the destination ID, refreshes nested IDs where needed, preserves intentional external references, resets publish/runtime/deletion metadata, and creates only a draft. Deletion remains dependency-protected with staged soft deletion when references exist and hard deletion only when no blocking references remain.
+
+### Runtime Consumption Classification After 15C.2B
+
+- Identity, keywords, descriptions, positions, flags, permanent affects, attributes, resources, combat profile, natural weapons, equipment, inventory, and loot are consumed or projected through existing Builder/runtime materialization paths.
+- Combat Abilities are fully authored and projected; runtime behavior is supported only for explicitly supported trigger mappings and remains deferred for unsupported triggers until canonical combat services cover them behaviorally.
+- Event Reactions are fully authored and projected; runtime behavior is supported only for explicitly supported EventBus/action mappings and remains deferred for unsupported mappings until canonical handlers exist.
+- Script Attachments are fully authored and projected; runtime execution requires the canonical script host and security validation.
+
+### Updated Roadmap
+
+Customized Adventurer's Lair MEDIT parity is now substantially complete at the Builder/editor, validation, dependency, preview, copy/delete, and lifecycle-integration layers. Remaining gaps are runtime execution depth for advanced Combat Ability triggers, Event Reaction action handlers, and script-host-backed execution. Those gaps should be finished with behaviorally tested canonical runtime services, not with MEDIT-only substitutes. Full OEDIT parity remains outside this phase and should proceed separately after the final advanced-runtime MEDIT gaps are accepted or closed.

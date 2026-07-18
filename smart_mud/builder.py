@@ -29,6 +29,71 @@ MEDIT_RESOURCE_STYLES = ("health only","martial","mana user","stamina user","hyb
 MEDIT_REWARD_STYLES = ("none","low","standard","generous","elite","boss","custom")
 MEDIT_DIFFICULTY_RANKS = ("trivial","normal","veteran","elite","miniboss","boss","raid/world boss")
 
+MEDIT_ADVANCED_ABILITY_TYPES = ("ability", "skill", "spell", "special")
+MEDIT_ADVANCED_TARGETS = ("self", "current_enemy", "random_enemy", "weakest_enemy", "strongest_enemy", "nearest_enemy", "ally", "weakest_ally", "strongest_ally", "leader", "owner", "master", "room", "custom")
+MEDIT_ADVANCED_ABILITY_TRIGGERS = ("combat_start", "opening_move", "every_round", "random_round", "self_hp_threshold", "enemy_hp_threshold", "ally_hp_threshold", "enemy_casting", "ally_condition", "required_status_present", "required_status_absent", "cooldown_ready", "near_death", "target_death")
+MEDIT_ADVANCED_EVENT_TYPES = ("player_enters", "player_leaves", "mobile_enters", "mobile_leaves", "sees_target", "loses_sight", "speech_heard", "keyword_spoken", "tell_received", "emote_observed", "receives_item", "is_given_item", "item_shown", "examined", "used", "trade_attempted", "pet_purchase_attempted", "combat_starts", "attacked", "ally_attacked", "enemy_defeated", "ally_defeated", "self_hp_threshold", "ally_hp_threshold", "enemy_hp_threshold", "combat_ends", "self_flees", "target_flees", "reset", "repop", "time_of_day", "weather_change", "world_event", "quest_state_change", "faction_standing_change", "area_state_change", "zone_state_change", "spawn", "death", "corpse_created", "despawn")
+MEDIT_ADVANCED_ACTION_TYPES = ("say", "tell", "emote", "social", "move", "flee", "attack", "assist", "use_ability", "cast", "give_item", "take_item", "drop_item", "equip_item", "summon_mobile", "spawn_object", "call_guards", "change_faction_standing", "start_dialogue", "offer_quest", "advance_quest", "set_state", "set_tag", "trigger_script", "publish_event", "wait", "noop")
+MEDIT_ADVANCED_SCRIPT_TRIGGERS = ("spawn", "death", "combat_start", "combat_round", "speech_heard", "keyword_spoken", "item_given", "examined", "used", "reset", "despawn", "event")
+MEDIT_RUNTIME_SUPPORTED_ABILITY_TRIGGERS = {"combat_start", "opening_move", "every_round", "random_round", "self_hp_threshold", "enemy_hp_threshold", "cooldown_ready", "near_death"}
+MEDIT_RUNTIME_SUPPORTED_REACTION_ACTIONS = {"say", "emote", "social", "attack", "assist", "flee", "use_ability", "cast", "publish_event", "wait", "noop"}
+MEDIT_RUNTIME_SUPPORTED_REACTION_EVENTS = {"spawn", "death", "combat_starts", "attacked", "speech_heard", "keyword_spoken", "player_enters", "reset", "despawn"}
+
+def _stable_nested_id(parent_id: str, kind: str, index: int, seed: str = "") -> str:
+    base = re.sub(r"[^a-z0-9_:-]+", "_", str(seed or f"{parent_id}_{kind}_{index}").lower()).strip("_")
+    return base or f"{parent_id}_{kind}_{index}"
+
+def _chance_int(value: Any, default: int = 100) -> int:
+    if isinstance(value, str) and value.strip().endswith("%"):
+        value = value.strip()[:-1]
+    try: return int(float(value))
+    except Exception: return default
+
+def _canonical_advanced_entry(raw: dict[str, Any], parent_id: str, kind: str, index: int) -> dict[str, Any]:
+    rec = deepcopy(raw or {})
+    rec["id"] = _stable_nested_id(parent_id, kind, index, rec.get("id") or rec.get("entry_id") or rec.get("reaction_id") or rec.get("attachment_id") or rec.get("ability_id") or rec.get("script_id"))
+    rec.setdefault("enabled", True); rec["priority"] = int(rec.get("priority") if rec.get("priority") is not None else rec.get("order", index))
+    rec.setdefault("builder_label", rec.get("label") or rec.get("name") or "")
+    rec["chance"] = _chance_int(rec.get("chance", 100))
+    for fld in ("cooldown", "initial_cooldown", "minimum_round", "maximum_round", "resource_cost", "uses_per_combat", "uses_per_life", "uses_per_reset"):
+        if fld in rec and rec.get(fld) not in (None, ""):
+            try: rec[fld] = int(rec.get(fld))
+            except Exception: pass
+    for fld in ("required_status", "forbidden_status", "required_target_status", "forbidden_target_status", "required_tags", "forbidden_tags", "required_conditions", "forbidden_conditions"):
+        val = rec.get(fld)
+        if isinstance(val, str): rec[fld] = [x.strip() for x in val.split(",") if x.strip()]
+        elif val is None: rec[fld] = []
+    if kind == "combat_ability":
+        rec["ability_type"] = str(rec.get("ability_type") or rec.get("type") or "ability").lower()
+        rec["ability_id"] = str(rec.get("ability_id") or rec.get("ability") or rec.get("skill_id") or rec.get("spell_id") or "")
+        rec["target_selector"] = str(rec.get("target_selector") or rec.get("target") or "current_enemy").lower().replace(" ", "_")
+        rec["trigger"] = str(rec.get("trigger") or rec.get("trigger_mode") or "every_round").lower().replace(" ", "_")
+        rec.setdefault("classification_flags", list(rec.get("flags") or []))
+    elif kind == "event_reaction":
+        rec["event_type"] = str(rec.get("event_type") or rec.get("event") or "spawn").lower().replace(" ", "_")
+        rec["action_type"] = str(rec.get("action_type") or rec.get("action") or "noop").lower().replace(" ", "_")
+        rec["target_selector"] = str(rec.get("target_selector") or rec.get("target") or "self").lower().replace(" ", "_")
+        rec.setdefault("event_filters", rec.get("filters") or {})
+        rec.setdefault("action_data", rec.get("parameters") or rec.get("data") or {})
+        rec.setdefault("stop_processing", bool(rec.get("stop_processing", False)))
+    else:
+        rec["script_id"] = str(rec.get("script_id") or rec.get("trigger_id") or rec.get("id") or "")
+        rec["trigger"] = str(rec.get("trigger") or rec.get("event_binding") or "event").lower().replace(" ", "_")
+        rec.setdefault("parameters", rec.get("params") or {})
+        rec.setdefault("conditions", rec.get("conditions") or [])
+        rec.setdefault("execution_policy", rec.get("execution_policy") or "canonical_service_host")
+    return rec
+
+def _normalize_advanced_mobile_sections(rec: dict[str, Any], oid: str) -> dict[str, Any]:
+    rec["combat_abilities"] = [_canonical_advanced_entry(x, oid, "combat_ability", i + 1) for i, x in enumerate(rec.get("combat_abilities") or rec.get("abilities") or rec.get("explicit_abilities") or []) if isinstance(x, dict)]
+    rec["event_reactions"] = [_canonical_advanced_entry(x, oid, "event_reaction", i + 1) for i, x in enumerate(rec.get("event_reactions") or rec.get("reactions") or []) if isinstance(x, dict)]
+    raw_scripts = rec.get("script_attachments") or rec.get("scripts") or rec.get("script_ids") or rec.get("triggers") or []
+    normalized_scripts=[]
+    for i, x in enumerate(raw_scripts):
+        normalized_scripts.append(_canonical_advanced_entry(x if isinstance(x, dict) else {"script_id": x}, oid, "script_attachment", i + 1))
+    rec["script_attachments"] = normalized_scripts
+    return rec
+
 class MobileRecommendationService:
     """Deterministic, versioned MEDIT recommendation helper kept separate from routing/runtime."""
     version = MEDIT_QUICK_BUILD_VERSION
@@ -1139,6 +1204,45 @@ class MobileTemplate:
             if xp_int and xp_int < max(1, exp_xp//4): issue("warning","balance_insufficient_xp","combat_profile.experience_reward",f"XP {xp_int} is below expected range {max(1, exp_xp//4)}-{exp_xp*3} from {MobileRecommendationService.version}; publish allowed.")
         except Exception: pass
         if (rec.get("archetype") == "caster" or rec.get("archetype") == "healer/support") and not (((rec.get("resources") or {}).get("mana") or {}).get("maximum")): issue("warning","caster_without_mana","resources.mana.maximum","Caster/support archetype has no mana or equivalent resource; publish allowed.")
+        abilities_catalog = set((rec.get("_ability_catalog") or []))
+        def overlap(a, b): return sorted(set(a or []) & set(b or []))
+        for section, id_field in (("combat_abilities", "ability_id"), ("event_reactions", "id"), ("script_attachments", "script_id")):
+            entries = rec.get(section) or []; seen_ids=set(); seen_priorities=set()
+            for i, ent in enumerate(entries):
+                eid = str(ent.get("id") or ent.get(id_field) or "")
+                if not eid: issue("error", "missing_nested_id", f"{section}[{i}].id", "Nested entry stable ID is required.", "Copy/recreate the entry to generate a stable ID.")
+                if eid in seen_ids: issue("error", "duplicate_nested_id", f"{section}[{i}].id", f"Duplicate nested ID {eid}.", "Rename or copy the entry so each nested ID is unique.")
+                seen_ids.add(eid)
+                pr = ent.get("priority")
+                if pr in seen_priorities: issue("warning", "duplicate_priority", f"{section}[{i}].priority", f"Priority {pr} is duplicated; deterministic list order will break ties.", "Use unique priorities when decision order matters.")
+                seen_priorities.add(pr)
+                ch = _chance_int(ent.get("chance", 100));
+                if ch < 0 or ch > 100: issue("error", "invalid_chance", f"{section}[{i}].chance", "Chance must be 0-100.", "Set chance to a whole percentage.")
+                for fld in ("cooldown", "initial_cooldown", "uses_per_combat", "uses_per_life", "uses_per_reset"):
+                    if ent.get(fld) not in (None, ""):
+                        try:
+                            if int(ent.get(fld)) < 0: issue("error", "negative_limit", f"{section}[{i}].{fld}", f"{fld} cannot be negative.", "Use zero or a positive whole number.")
+                        except Exception: issue("error", "invalid_number", f"{section}[{i}].{fld}", f"{fld} must be a whole number.", "Use a numeric value.")
+                if overlap(ent.get("required_status"), ent.get("forbidden_status")): issue("error", "contradictory_status", f"{section}[{i}].required_status", "Required and forbidden statuses overlap.", "Remove the status from one side.")
+                if overlap(ent.get("required_tags"), ent.get("forbidden_tags")): issue("error", "contradictory_tags", f"{section}[{i}].required_tags", "Required and forbidden tags overlap.", "Remove the tag from one side.")
+        for i, ent in enumerate(rec.get("combat_abilities") or []):
+            if ent.get("ability_type") not in MEDIT_ADVANCED_ABILITY_TYPES: issue("error", "unknown_ability_type", f"combat_abilities[{i}].ability_type", "Unknown ability type.", "Use ability, skill, spell, or special.")
+            if not ent.get("ability_id"): issue("error", "missing_ability", f"combat_abilities[{i}].ability_id", "Combat ability is missing an ability reference.", "Choose an ability/skill/spell ID.")
+            if ent.get("target_selector") not in MEDIT_ADVANCED_TARGETS: issue("error", "invalid_target", f"combat_abilities[{i}].target_selector", "Invalid target selector.", "Choose a canonical MEDIT target selector.")
+            if ent.get("trigger") not in MEDIT_ADVANCED_ABILITY_TRIGGERS: issue("error", "invalid_trigger", f"combat_abilities[{i}].trigger", "Invalid ability trigger.", "Choose a canonical combat trigger.")
+            if ent.get("trigger") not in MEDIT_RUNTIME_SUPPORTED_ABILITY_TRIGGERS: issue("warning", "ability_runtime_deferred", f"combat_abilities[{i}].trigger", "Ability editor data is canonical, but this trigger is runtime-deferred.", "Publish only if deferred runtime behavior is acceptable.")
+            if abilities_catalog and ent.get("ability_id") not in abilities_catalog: issue("error", "missing_ability_reference", f"combat_abilities[{i}].ability_id", "Referenced ability is not present in the ability registry.", "Create or select an existing ability.")
+            if ent.get("minimum_round") and ent.get("maximum_round") and int(ent.get("minimum_round")) > int(ent.get("maximum_round")): issue("error", "round_range", f"combat_abilities[{i}].minimum_round", "Minimum round cannot be after maximum round.", "Adjust timing bounds.")
+        for i, ent in enumerate(rec.get("event_reactions") or []):
+            if ent.get("event_type") not in MEDIT_ADVANCED_EVENT_TYPES: issue("error", "unknown_event", f"event_reactions[{i}].event_type", "Unknown EventBus event mapping.", "Choose a canonical event type.")
+            if ent.get("action_type") not in MEDIT_ADVANCED_ACTION_TYPES: issue("error", "unsupported_action", f"event_reactions[{i}].action_type", "Unsupported reaction action.", "Choose a canonical action type.")
+            if ent.get("target_selector") not in MEDIT_ADVANCED_TARGETS: issue("error", "invalid_target", f"event_reactions[{i}].target_selector", "Invalid target selector.", "Choose a canonical target selector.")
+            if ent.get("event_type") not in MEDIT_RUNTIME_SUPPORTED_REACTION_EVENTS or ent.get("action_type") not in MEDIT_RUNTIME_SUPPORTED_REACTION_ACTIONS: issue("warning", "reaction_runtime_deferred", f"event_reactions[{i}].runtime", "Reaction is editor-complete but runtime-deferred for this event/action mapping.", "Use supported mappings or accept a runtime limitation.")
+            if ent.get("action_type") == "publish_event" and (ent.get("action_data") or {}).get("event_type") == ent.get("event_type"): issue("warning", "reaction_loop_risk", f"event_reactions[{i}].action_data", "Reaction may publish the same event and loop; runtime depth protection will stop recursion.", "Add cooldown/conditions or publish a different event.")
+        for i, ent in enumerate(rec.get("script_attachments") or []):
+            if not ent.get("script_id"): issue("error", "missing_script", f"script_attachments[{i}].script_id", "Script attachment is missing a script reference.", "Choose an approved script/trigger ID.")
+            if ent.get("trigger") not in MEDIT_ADVANCED_SCRIPT_TRIGGERS: issue("error", "unsupported_script_trigger", f"script_attachments[{i}].trigger", "Unsupported script trigger binding.", "Choose a canonical script trigger.")
+            issue("warning", "script_runtime_host_deferred", f"script_attachments[{i}].runtime", "Script attachment management is complete, but source execution depends on the canonical script host.", "Validate the script host before activation.")
         return issues
 
     def to_canonical_dict(self) -> dict[str, Any]:
@@ -1178,6 +1282,7 @@ class MobileTemplate:
         if rec.get("attack_type") and not cp.get("attack_type"):
             cp["attack_type"] = rec.get("attack_type")
         rec["combat_profile"] = cp
+        rec = _normalize_advanced_mobile_sections(rec, str(rec.get("id") or "mobile"))
         return rec
 
     def to_runtime_projection(self) -> dict[str, Any]:
@@ -1186,7 +1291,7 @@ class MobileTemplate:
         def rmax(name, legacy=None):
             val = resources.get(name)
             return (val or {}).get("maximum") if isinstance(val, dict) else (val if val is not None else rec.get(legacy or ""))
-        return {"template_id": rec.get("id"), "name": rec.get("name"), "level": rec.get("level",1), "keywords": deepcopy(rec.get("keywords") or []), "description": rec.get("description") or rec.get("look_description") or "", "default_position": rec.get("default_position"), "spawn_position": rec.get("spawn_position"), "mobile_flags": deepcopy(rec.get("mobile_flags") or []), "permanent_affects": deepcopy(rec.get("affect_flags") or []), "body_profile_id": rec.get("body_profile_id"), "combat_profile": deepcopy(rec.get("combat_profile") or {}), "attributes": deepcopy(rec.get("attributes") or {}), "resources": {"max_health": rmax("health","max_health"), "max_mana": rmax("mana","max_mana"), "max_move": rmax("movement","max_move") or rmax("stamina")}, "equipment_loadout": deepcopy(rec.get("equipment_loadout") or {}), "starting_inventory": deepcopy(rec.get("starting_inventory") or []), "loot": deepcopy(rec.get("loot") or {})}
+        return {"template_id": rec.get("id"), "name": rec.get("name"), "level": rec.get("level",1), "keywords": deepcopy(rec.get("keywords") or []), "description": rec.get("description") or rec.get("look_description") or "", "default_position": rec.get("default_position"), "spawn_position": rec.get("spawn_position"), "mobile_flags": deepcopy(rec.get("mobile_flags") or []), "permanent_affects": deepcopy(rec.get("affect_flags") or []), "body_profile_id": rec.get("body_profile_id"), "combat_profile": deepcopy(rec.get("combat_profile") or {}), "attributes": deepcopy(rec.get("attributes") or {}), "resources": {"max_health": rmax("health","max_health"), "max_mana": rmax("mana","max_mana"), "max_move": rmax("movement","max_move") or rmax("stamina")}, "equipment_loadout": deepcopy(rec.get("equipment_loadout") or {}), "starting_inventory": deepcopy(rec.get("starting_inventory") or []), "loot": deepcopy(rec.get("loot") or {}), "combat_abilities": deepcopy(rec.get("combat_abilities") or []), "event_reactions": deepcopy(rec.get("event_reactions") or []), "script_attachments": deepcopy(rec.get("script_attachments") or [])}
 
     def diff(self, other: dict[str, Any]) -> dict[str, Any]:
         before = MobileTemplate.from_legacy(other or {}).to_canonical_dict(); after = self.to_canonical_dict()
@@ -1690,7 +1795,7 @@ class BuilderService:
         lock = self.acquire_lock(actor, collection, new_id, admin=True)
         if not lock.ok: return lock
         try:
-            rec=deepcopy(src); rec["id"]=new_id; rec["name"]=display_name or new_id.replace("_", " ").title(); rec["keywords"]=keywords or new_id.replace("_", " ").split(); rec["builder_status"]="incomplete"; rec.pop("_builder_revision", None)
+            rec=deepcopy(src); rec["id"]=new_id; rec["name"]=display_name or new_id.replace("_", " ").title(); rec["keywords"]=keywords or new_id.replace("_", " ").split(); rec["builder_status"]="incomplete"; rec.pop("_builder_revision", None); rec.pop("publish_status", None); rec.pop("runtime_status", None); rec.pop("deletion_state", None); rec=_normalize_advanced_mobile_sections(rec, new_id) if collection == "entities" else rec
             return self.mutate(actor, collection, new_id, rec, "clone", admin_override=True)
         finally:
             self.release_lock(actor, collection, new_id)
@@ -1810,10 +1915,16 @@ class BuilderService:
             weapons=((projection.get("combat_profile") or {}).get("natural_weapons") or [])
             loadout = canonical.get("equipment_loadout") or {}
             loot = canonical.get("loot") or {}
-            lines += ["", "RESOLVED TRAITS", f"species: {canonical.get('species') or canonical.get('race') or 'unset'}", f"body profile: {canonical.get('body_profile_id') or (canonical.get('combat_profile') or {}).get('body_profile') or 'unset'}", f"size: {canonical.get('size') or 'unset'}", f"positions: default={canonical.get('default_position')} spawn={canonical.get('spawn_position')}", f"flags: {', '.join(canonical.get('mobile_flags') or []) or 'none'}", f"permanent effects: {', '.join(canonical.get('affect_flags') or []) or 'none'}", "", "RESOLVED STATS", f"attributes: {json.dumps(canonical.get('attributes') or {}, sort_keys=True)}", f"resources: {json.dumps(canonical.get('resources') or {}, sort_keys=True)}", f"combat profile: {json.dumps(canonical.get('combat_profile') or {}, sort_keys=True)[:500]}", "", "CONTENT", f"equipment: {len(loadout.get('equipped') or {})} equipped slot(s)", f"inventory: {len(canonical.get('starting_inventory') or [])} carried entries", f"loot: profile={loot.get('profile_id') or 'unset'} explicit={len(loot.get('entries') or [])} corpse_enabled={loot.get('corpse_enabled')}", f"abilities: {canonical.get('ability_loadout_id') or (canonical.get('combat_profile') or {}).get('ability_loadout_id') or 'unset'}", f"behavior: {canonical.get('behavior_profile_id') or 'unset'}", f"faction: {canonical.get('faction_id') or 'unset'}", f"scripts: {', '.join(canonical.get('script_ids') or canonical.get('scripts') or []) or 'none'}", "", "COMBAT SNAPSHOT", f"natural weapons: {len(weapons)}", "NATURAL ATTACK LIST"]
+            lines += ["", "RESOLVED TRAITS", f"species: {canonical.get('species') or canonical.get('race') or 'unset'}", f"body profile: {canonical.get('body_profile_id') or (canonical.get('combat_profile') or {}).get('body_profile') or 'unset'}", f"size: {canonical.get('size') or 'unset'}", f"positions: default={canonical.get('default_position')} spawn={canonical.get('spawn_position')}", f"flags: {', '.join(canonical.get('mobile_flags') or []) or 'none'}", f"permanent effects: {', '.join(canonical.get('affect_flags') or []) or 'none'}", "", "RESOLVED STATS", f"attributes: {json.dumps(canonical.get('attributes') or {}, sort_keys=True)}", f"resources: {json.dumps(canonical.get('resources') or {}, sort_keys=True)}", f"combat profile: {json.dumps(canonical.get('combat_profile') or {}, sort_keys=True)[:500]}", "", "CONTENT", f"equipment: {len(loadout.get('equipped') or {})} equipped slot(s)", f"inventory: {len(canonical.get('starting_inventory') or [])} carried entries", f"loot: profile={loot.get('profile_id') or 'unset'} explicit={len(loot.get('entries') or [])} corpse_enabled={loot.get('corpse_enabled')}", f"abilities: structured={len(canonical.get('combat_abilities') or [])} profile={canonical.get('ability_loadout_id') or (canonical.get('combat_profile') or {}).get('ability_loadout_id') or 'unset'}", f"behavior: {canonical.get('behavior_profile_id') or 'unset'} reactions={len(canonical.get('event_reactions') or [])}", f"faction: {canonical.get('faction_id') or 'unset'}", f"scripts: {len(canonical.get('script_attachments') or [])} structured attachment(s)", "", "COMBAT SNAPSHOT", f"natural weapons: {len(weapons)}", "NATURAL ATTACK LIST"]
             lines += [f"- {w.get('id')} {w.get('mechanical_family')} {w.get('verb_third_person')} with {w.get('noun_plural')} ({w.get('damage_dice')}, weight {w.get('selection_weight')})" for w in weapons] or ["- none"]
             if weapons:
                 w=weapons[0]; lines += ["", "SAMPLE NORMAL HIT", str(w.get("observer_template", "{attacker} hits {victim}.")).format(attacker=name, victim="you", verb_third_person=w.get('verb_third_person'), verb_base=w.get('verb_base'), noun_plural=w.get('noun_plural'))]
+            lines += ["", "ABILITY DECISION ORDER"]
+            lines += [f"- priority {a.get('priority')}: {a.get('ability_id') or 'missing'} trigger={a.get('trigger')} target={a.get('target_selector')} runtime={'supported' if a.get('trigger') in MEDIT_RUNTIME_SUPPORTED_ABILITY_TRIGGERS else 'deferred'}" for a in sorted(canonical.get('combat_abilities') or [], key=lambda x:(int(x.get('priority',0)), str(x.get('id',''))))] or ["- none"]
+            lines += ["", "EVENT REACTIONS"]
+            lines += [f"- priority {r.get('priority')}: {r.get('event_type')} -> {r.get('action_type')} runtime={'supported' if r.get('event_type') in MEDIT_RUNTIME_SUPPORTED_REACTION_EVENTS and r.get('action_type') in MEDIT_RUNTIME_SUPPORTED_REACTION_ACTIONS else 'deferred'}" for r in sorted(canonical.get('event_reactions') or [], key=lambda x:(int(x.get('priority',0)), str(x.get('id',''))))] or ["- none"]
+            lines += ["", "SCRIPT ATTACHMENTS"]
+            lines += [f"- priority {a.get('priority')}: {a.get('script_id') or 'missing'} trigger={a.get('trigger')} runtime=canonical-host-required" for a in sorted(canonical.get('script_attachments') or [], key=lambda x:(int(x.get('priority',0)), str(x.get('id',''))))] or ["- none"]
             lines += ["", "SAMPLE DEATH/CORPSE", f"{name} dies. Corpse output uses loot profile {loot.get('profile_id') or 'none'} plus {len(loot.get('entries') or [])} explicit entries."]
             return BuilderResult(True, "\n".join(lines), {"record": rec, "runtime_projection": projection})
         return BuilderResult(True, "\n".join(lines), {"record": rec})
@@ -2496,6 +2607,8 @@ class BuilderService:
                 return self._render_stats_menu(sess)
             if sess.editor_type == "medit" and sess.section == "spawns":
                 return self._render_spawns_editor(None, sess)
+            if sess.editor_type == "medit" and sess.section in {"abilities", "combat_abilities", "reactions", "event_reactions", "scripts", "ai"}:
+                return self._render_advanced_mobile_editor(None, sess)
             return self._render_mobile_section(sess, sess.section)
         return self.menu(sess.editor_type, str(title), sess)
 
@@ -3259,6 +3372,98 @@ class BuilderService:
             self._session_checkpoint(sess); spawns[related[idx][0]][field]=val; self.workspace.save_drafts(world,drafts); sess.dirty=True; sess.saved=False; return BuilderResult(True,"Spawn reference updated.\n"+self._render_spawns_editor(actor,sess))
         return BuilderResult(False,"Spawn editor command not understood. Use add, edit, remove, preview, trace, validate, undo, redo, back.")
 
+
+    def _advanced_section_config(self, section: str) -> tuple[str, str, str]:
+        if section in {"abilities", "combat_abilities"}: return ("combat_abilities", "Combat Abilities", "combat_ability")
+        if section in {"reactions", "event_reactions", "ai"}: return ("event_reactions", "Event Reactions", "event_reaction")
+        return ("script_attachments", "Script Attachments", "script_attachment")
+
+    def _render_advanced_mobile_editor(self, actor: Any, sess: BuilderEditSession) -> str:
+        key, title, kind = self._advanced_section_config(sess.section)
+        entries = sorted(sess.working_record.get(key) or [], key=lambda e: (int(e.get("priority", 0)), str(e.get("id", ""))))
+        lines=[f"MEDIT {title}: {(sess.working_record or {}).get('name') or sess.object_id}", f"Draft status: {'modified' if sess.dirty else 'clean'}", f"Entries: {len(entries)}"]
+        for i,e in enumerate(entries,1):
+            if key == "combat_abilities": summary=f"{e.get('ability_type')}:{e.get('ability_id') or 'missing'} trigger={e.get('trigger')} target={e.get('target_selector')} chance={e.get('chance')} cooldown={e.get('cooldown',0)} runtime={'supported' if e.get('trigger') in MEDIT_RUNTIME_SUPPORTED_ABILITY_TRIGGERS else 'deferred'}"
+            elif key == "event_reactions": summary=f"event={e.get('event_type')} action={e.get('action_type')} target={e.get('target_selector')} chance={e.get('chance')} cooldown={e.get('cooldown',0)} runtime={'supported' if e.get('event_type') in MEDIT_RUNTIME_SUPPORTED_REACTION_EVENTS and e.get('action_type') in MEDIT_RUNTIME_SUPPORTED_REACTION_ACTIONS else 'deferred'}"
+            else: summary=f"script={e.get('script_id') or 'missing'} trigger={e.get('trigger')} priority={e.get('priority')} runtime=canonical-host-required"
+            lines.append(f"{i}. {e.get('id')} [{'on' if e.get('enabled', True) else 'off'}] priority={e.get('priority')} {summary}")
+        if not entries: lines.append("- none")
+        lines += ["Commands: add <ref>, edit <#> <field> <value>, delete <#>, copy <#>, move <#> <to>, up <#>, down <#>, toggle <#>, inspect <#>, preview, validate, dependency, undo, redo, save, back"]
+        return "\n".join(lines)
+
+    def _advanced_preview(self, sess: BuilderEditSession, key: str, entries: list[dict[str, Any]]) -> str:
+        title={"combat_abilities":"Combat ability decision trace", "event_reactions":"Event reaction trace", "script_attachments":"Script attachment dry-run"}[key]
+        lines=[title, "Simulated only: no template mutation, EventBus publication, runtime persistence, or destructive script execution."]
+        for e in sorted(entries, key=lambda x:(int(x.get('priority',0)), str(x.get('id','')))):
+            if key == "combat_abilities": lines.append(f"- priority {e.get('priority')}: {e.get('ability_id') or 'missing ability'} on {e.get('trigger')} -> {e.get('target_selector')} chance={e.get('chance')} cooldown={e.get('cooldown',0)} uses/combat={e.get('uses_per_combat','unlimited')} runtime={'supported' if e.get('trigger') in MEDIT_RUNTIME_SUPPORTED_ABILITY_TRIGGERS else 'deferred'}")
+            elif key == "event_reactions": lines.append(f"- priority {e.get('priority')}: when {e.get('event_type')} then {e.get('action_type')} target={e.get('target_selector')} stop={e.get('stop_processing',False)} runtime={'supported' if e.get('event_type') in MEDIT_RUNTIME_SUPPORTED_REACTION_EVENTS and e.get('action_type') in MEDIT_RUNTIME_SUPPORTED_REACTION_ACTIONS else 'deferred'}")
+            else: lines.append(f"- priority {e.get('priority')}: attach {e.get('script_id') or 'missing script'} on {e.get('trigger')} policy={e.get('execution_policy')} dry-run only")
+        return "\n".join(lines)
+
+    def _handle_advanced_mobile_editor(self, actor: Any, sess: BuilderEditSession, text: str) -> BuilderResult:
+        low=text.lower().strip(); parts=text.split(); key, title, kind = self._advanced_section_config(sess.section)
+        entries=list(sess.working_record.get(key) or [])
+        if low in {"q","back","quit","main"}: sess.section=""; sess.mode="main_menu"; return BuilderResult(True,self.render_session(sess))
+        if low in {"u","undo"}:
+            if not sess.undo_stack: return BuilderResult(False,"Nothing to undo.")
+            sess.redo_stack.append(deepcopy(sess.working_record)); sess.working_record=sess.undo_stack.pop(); sess.dirty=sess.working_record!=sess.savepoint; sess.saved=not sess.dirty; return BuilderResult(True,"Session undo applied.\n"+self._render_advanced_mobile_editor(actor,sess))
+        if low in {"r","redo"}:
+            if not sess.redo_stack: return BuilderResult(False,"Nothing to redo.")
+            sess.undo_stack.append(deepcopy(sess.working_record)); sess.working_record=sess.redo_stack.pop(); sess.dirty=sess.working_record!=sess.savepoint; sess.saved=not sess.dirty; return BuilderResult(True,"Session redo applied.\n"+self._render_advanced_mobile_editor(actor,sess))
+        if low in {"s","save"}: return self._session_save(actor, sess)
+        if low in {"v","validate"}:
+            issues=[x for x in MobileTemplate.from_legacy(sess.working_record).validate() if x.get("field_path","").startswith(key)]
+            lines=[f"{x['severity']}: {x['field_path']} {x['message']} Hint: {x.get('fix_hint','')}" for x in issues] or ["- no focused issues"]
+            return BuilderResult(not any(x.get('severity')=='error' for x in issues), f"{title} validation:\n"+"\n".join(lines), {"issues":issues})
+        if low in {"p","preview"}: return BuilderResult(True, self._advanced_preview(sess, key, entries))
+        if low in {"dependency","dependencies","deps"}: return BuilderResult(True, f"{title} dependencies:\n"+"\n".join(f"- {key}.{e.get('id')} -> {e.get('ability_id') or e.get('script_id') or (e.get('action_data') or {})}" for e in entries) if entries else f"{title} dependencies:\n- none")
+        if parts and parts[0].lower() in {"inspect","i"} and len(parts)>=2 and parts[1].isdigit():
+            idx=int(parts[1])-1
+            if not 0<=idx<len(entries): return BuilderResult(False,"Entry index out of range.")
+            return BuilderResult(True, json.dumps(entries[idx], indent=2, sort_keys=True))
+        def commit(msg):
+            sess.working_record[key]=[_canonical_advanced_entry(e, sess.object_id, kind, i+1) for i,e in enumerate(entries)]
+            sess.dirty=True; sess.saved=False
+            return BuilderResult(True,msg+"\n"+self._render_advanced_mobile_editor(actor,sess), sess.working_record)
+        if parts and parts[0].lower() in {"add","a"}:
+            ref=parts[1] if len(parts)>1 else ""
+            self._session_checkpoint(sess)
+            if key=="combat_abilities": entries.append({"ability_id":ref,"ability_type":"ability","trigger":"every_round","target_selector":"current_enemy","priority":len(entries)+1,"chance":100,"enabled":True})
+            elif key=="event_reactions": entries.append({"event_type":ref or "spawn","action_type":"noop","target_selector":"self","priority":len(entries)+1,"chance":100,"enabled":True,"action_data":{}})
+            else: entries.append({"script_id":ref,"trigger":"event","priority":len(entries)+1,"chance":100,"enabled":True,"parameters":{}})
+            return commit(f"{title} entry added.")
+        if parts and parts[0].lower() in {"delete","remove","d"} and len(parts)>=2 and parts[1].isdigit():
+            idx=int(parts[1])-1
+            if not 0<=idx<len(entries): return BuilderResult(False,"Entry index out of range.")
+            self._session_checkpoint(sess); entries.pop(idx); return commit(f"{title} entry deleted.")
+        if parts and parts[0].lower() in {"copy","clone","c"} and len(parts)>=2 and parts[1].isdigit():
+            idx=int(parts[1])-1
+            if not 0<=idx<len(entries): return BuilderResult(False,"Entry index out of range.")
+            self._session_checkpoint(sess); new=deepcopy(entries[idx]); new.pop("id",None); new["priority"]=len(entries)+1; entries.append(new); return commit(f"{title} entry copied with a fresh nested ID.")
+        if parts and parts[0].lower() in {"toggle","t"} and len(parts)>=2 and parts[1].isdigit():
+            idx=int(parts[1])-1
+            if not 0<=idx<len(entries): return BuilderResult(False,"Entry index out of range.")
+            self._session_checkpoint(sess); entries[idx]["enabled"]=not bool(entries[idx].get("enabled",True)); return commit(f"{title} entry toggled.")
+        if parts and parts[0].lower() in {"move","m"} and len(parts)>=3 and parts[1].isdigit() and parts[2].isdigit():
+            a,b=int(parts[1])-1,int(parts[2])-1
+            if not (0<=a<len(entries) and 0<=b<len(entries)): return BuilderResult(False,"Move indexes are out of range.")
+            self._session_checkpoint(sess); val=entries.pop(a); entries.insert(b,val); return commit(f"{title} entry moved.")
+        if parts and parts[0].lower() in {"up","down"} and len(parts)>=2 and parts[1].isdigit():
+            idx=int(parts[1])-1; to=idx-1 if parts[0].lower()=="up" else idx+1
+            if not (0<=idx<len(entries) and 0<=to<len(entries)): return BuilderResult(False,"Entry cannot move further.")
+            self._session_checkpoint(sess); entries[idx],entries[to]=entries[to],entries[idx]; return commit(f"{title} entry moved.")
+        if parts and parts[0].lower() in {"edit","set","e"} and len(parts)>=4 and parts[1].isdigit():
+            idx=int(parts[1])-1
+            if not 0<=idx<len(entries): return BuilderResult(False,"Entry index out of range.")
+            field=parts[2]; value=" ".join(parts[3:])
+            if field in {"enabled","stop_processing"}: value=value.lower() in {"1","yes","true","on"}
+            elif field in {"priority","chance","cooldown","initial_cooldown","minimum_round","maximum_round","uses_per_combat","uses_per_life","uses_per_reset","resource_cost"}:
+                try: value=int(value)
+                except Exception: return BuilderResult(False, f"{field} must be a whole number.")
+            elif field in {"required_status","forbidden_status","required_tags","forbidden_tags","required_target_status","forbidden_target_status"}: value=[x.strip() for x in value.split(",") if x.strip()]
+            self._session_checkpoint(sess); entries[idx][field]=value; return commit(f"{title} entry updated.")
+        return BuilderResult(False, f"{title} command not understood. Use add, edit, delete, copy, move, up, down, toggle, inspect, preview, validate, dependency, undo, redo, save, or back.")
+
     def _session_checkpoint(self, sess: BuilderEditSession) -> None:
         sess.undo_stack.append(deepcopy(sess.working_record))
         sess.undo_stack = sess.undo_stack[-100:]
@@ -3828,6 +4033,8 @@ class BuilderService:
             return self._handle_equipment_editor(actor, sess, text)
         if sess.editor_type == "medit" and sess.section == "spawns":
             return self._handle_spawns_editor(actor, sess, text)
+        if sess.editor_type == "medit" and sess.section in {"abilities", "combat_abilities", "reactions", "event_reactions", "scripts", "ai"}:
+            return self._handle_advanced_mobile_editor(actor, sess, text)
         if sess.section and sess.section != "natural_weapons":
             field_token = parts[0].lower() if parts else ""
             desc = self._descriptor(sess, field_token)
@@ -3866,7 +4073,7 @@ class BuilderService:
                 sess.confirmation_type = "delete"; return BuilderResult(True, "Delete object: type DELETE to confirm, or Q to cancel.")
         if sess.editor_type != "medit" and low in {"1","fields","edit"}:
             sess.section = "fields"; sess.mode = "section_menu"; return BuilderResult(True, self.render_session(sess))
-        section_map = {"1":"identity","identity":"identity", "2":"keywords", "keywords":"keywords", "aliases":"keywords", "3":"descriptions", "descriptions":"descriptions", "4":"traits", "traits":"traits", "5":"attributes", "stats":"attributes", "stats menu":"attributes", "attributes":"attributes", "level":"attributes", "6":"resources", "resources":"resources", "7":"natural_weapons", "combat":"combat", "8":"body_weapons", "body":"body_weapons", "body profile":"body_weapons", "weapons":"natural_weapons", "natural":"natural_weapons", "natural weapons":"natural_weapons", "natural attacks":"natural_weapons", "9":"positions", "positions":"positions", "10":"mobile_flags", "flags":"mobile_flags", "mobile flags":"mobile_flags", "11":"affect_flags", "affects":"affect_flags", "12":"equipment", "equipment":"equipment", "13":"inventory", "inventory":"inventory", "14":"loot", "loot":"loot", "15":"abilities", "abilities":"abilities", "16":"ai", "ai":"ai", "behavior":"ai", "17":"faction", "faction":"faction", "18":"scripts", "scripts":"scripts", "19":"spawns", "spawns":"spawns", "spawn":"spawns", "20":"diagnostics", "diagnostics":"diagnostics"}
+        section_map = {"1":"identity","identity":"identity", "2":"keywords", "keywords":"keywords", "aliases":"keywords", "3":"descriptions", "descriptions":"descriptions", "4":"traits", "traits":"traits", "5":"attributes", "stats":"attributes", "stats menu":"attributes", "attributes":"attributes", "level":"attributes", "6":"resources", "resources":"resources", "7":"natural_weapons", "combat":"combat", "8":"body_weapons", "body":"body_weapons", "body profile":"body_weapons", "weapons":"natural_weapons", "natural":"natural_weapons", "natural weapons":"natural_weapons", "natural attacks":"natural_weapons", "9":"positions", "positions":"positions", "10":"mobile_flags", "flags":"mobile_flags", "mobile flags":"mobile_flags", "11":"affect_flags", "affects":"affect_flags", "12":"equipment", "equipment":"equipment", "13":"inventory", "inventory":"inventory", "14":"loot", "loot":"loot", "15":"abilities", "abilities":"abilities", "16":"ai", "ai":"ai", "behavior":"ai", "reactions":"event_reactions", "event reactions":"event_reactions", "combat abilities":"combat_abilities", "17":"faction", "faction":"faction", "18":"scripts", "scripts":"scripts", "19":"spawns", "spawns":"spawns", "spawn":"spawns", "20":"diagnostics", "diagnostics":"diagnostics"}
         if low in section_map:
             sess.section=section_map[low]; sess.mode="section_menu"; return BuilderResult(True, self.render_session(sess))
         if low in {"p", "preview"}: return self._session_preview(actor, sess)
