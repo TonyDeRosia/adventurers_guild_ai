@@ -119,3 +119,21 @@ Searchable help should support topics such as `help dragon`, `help health`, `hel
 ## Future Builder Requirements
 
 All future Builder editors must adopt the same contextual help, educational validation, safe cancellation, status bar, footer commands, searchable help, inspector mode, save clarity, and undo/redo change summaries before being considered feature complete.
+
+## Phase 16B visible-by-default MEDIT guidance
+
+MEDIT identity screens must explain field purpose, current value, required/optional status, runtime effect, publish effect, and safe commands before the Builder types `help`, `?`, `inspect`, `examples`, `list`, or `values`. Hidden help may expand the explanation, but the ordinary menu must be sufficient for first-time use.
+
+Finite Identity fields must use numbered pickers rather than blind free text. Pickers must show display names, short explanations, current selection, recommendations when available, examples from authored world data where inexpensive, and clear/back commands when applicable.
+
+Booleans must render as human-readable Yes/No with consequences. `Enabled: Yes` means the mobile may participate in normal publish, activation, and spawn workflows; `Enabled: No` retains the draft while normal runtime use is blocked or skipped by lifecycle checks.
+
+MEDIT uses `NPC Role` for the existing `entity_type` field: a gameplay role/function used by Builder search, recommendations, AI defaults, validation hints, and previews. Creature taxonomy is a separate `classification` field; physical scale is a separate `size` field; biological/lore identity is `species`.
+
+Species is currently a named reference on the mobile draft, not an automatically-created registry record. Species pickers should show common built-ins, values already used by other mobiles, search, custom named entry, clear, and back.
+
+Wrong-context commands inside an active editor must be recognized and explained. Commands such as `medit`, `mlist`, and `look` must not produce only generic invalid input; the response must identify the active editor context and safe commands.
+
+Saving a Builder editor must explicitly confirm that the mobile draft was saved, include the mobile name, draft revision, dirty state, validation summary, publish readiness, current editor context, and a Builder audit/log line. Character autosave logs are not sufficient evidence of Builder draft persistence.
+
+Future editors must follow production-path integration testing: verify ordinary browser/API output, such as `/api/mud/input`, not only helper methods, and prove visible options are displayed before asking for input.

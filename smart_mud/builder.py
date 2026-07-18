@@ -13,6 +13,11 @@ from smart_mud.world_registry import WORLDS_DIR, _records
 BUILDER_ROLES = {"builder", "admin", "owner"}
 VALID_WEAR_SLOTS = {"head","face","neck","shoulders","back","chest","body","torso","arms","wrists","hands","finger","wrist","finger_left","finger_right","waist","legs","feet","mainhand","main_hand","primary_weapon","offhand","off_hand","secondary_weapon","held","wield","shield","quiver","ammo","ranged","light","accessory_1","accessory_2"}
 VALID_ENTITY_TYPES = {"npc", "mob", "civilian", "guard", "merchant", "animal", "beast", "monster", "dragon", "undead", "boss", "pet", "trainer", "quest_giver", "vendor", "summon", "banker", "healer", "critter", "object"}
+CREATURE_CLASSIFICATIONS = ("humanoid", "animal", "beast", "undead", "construct", "dragon", "elemental", "demon", "celestial", "plant", "ooze", "other")
+MOBILE_SIZES = ("tiny", "small", "medium", "large", "huge", "gargantuan")
+GENDER_PRESENTATIONS = ("neutral", "female", "male", "nonbinary", "unknown", "none")
+COMMON_SPECIES = ("human", "elf", "dwarf", "halfling", "orc", "goblin", "wolf", "bear", "dragon", "skeleton")
+SPECIES_RECOMMENDATIONS = {"human": ("humanoid", "medium"), "elf": ("humanoid", "medium"), "dwarf": ("humanoid", "medium"), "halfling": ("humanoid", "small"), "orc": ("humanoid", "medium"), "goblin": ("humanoid", "small"), "wolf": ("animal", "medium"), "bear": ("animal", "large"), "dragon": ("dragon", "huge"), "skeleton": ("undead", "medium")}
 
 DRAFT_FILES = {
     "world": "world.json", "display_themes": "display_themes.json",
@@ -2172,7 +2177,13 @@ class BuilderService:
 
     def _world_command_recovery(self, sess: BuilderEditSession, text: str) -> str:
         name = (sess.working_record or {}).get("name") or sess.object_id
-        return "\n".join([f'"{text}" is a world command, but you are currently editing {name}.', f"Editor: {sess.editor_type.upper()}", f"Submenu: {sess.section or 'main menu'}", f"Modified: {'Yes' if sess.dirty else 'No'}", "Finish editing or type one of these safe editor commands:", "back — return to the previous Builder menu", "save — save the draft", "cancel — leave the current prompt", "quit — close the editor", "preview — inspect the draft before leaving"])
+        cmd = text.split()[0].lower() if text.split() else text.lower()
+        extra = []
+        if cmd == "medit":
+            extra = ["", f'The command "{text}" normally opens another mobile, but an edit session is already active.', "Choose one:", "save and exit", "discard and exit", "back", "quit", "switch <mobile id> (confirm after saving or discarding unsaved changes)"]
+        elif cmd == "mlist":
+            extra = ["", f'The command "{text}" is a read-only mobile-list world command. This editor keeps your draft open; use back/quit after saving, or run lists outside the editor in a separate session when available.']
+        return "\n".join(["You are currently editing:", "(recognized world command inside Builder editor)", "", str(name), f"{sess.editor_type.upper()} > {sess.section.replace('_',' ').title() if sess.section else 'Main Menu'}", "", f"Modified: {'Yes' if sess.dirty else 'No'}"] + extra + ["", "Safe editor commands:", "back — return to the previous Builder menu", "save — save the draft", "cancel — leave the current prompt", "quit — close the editor", "preview — inspect the draft before leaving"])
 
 
     def _search_builder_concepts(self, sess: BuilderEditSession, query: str) -> str:
@@ -2260,7 +2271,18 @@ class BuilderService:
         if sess.editor_type == "medit":
             attrs = ("strength","dexterity","constitution","intelligence","wisdom","charisma")
             if sess.section == "identity":
-                return [OlcFieldDescriptor("name","Display name",("name",),"string",required=True), OlcFieldDescriptor("id","Stable mobile ID",("id",),"slug",read_only=True), OlcFieldDescriptor("vnum","Legacy VNUM",("vnum",),"integer",minimum=1,maximum=999999), OlcFieldDescriptor("entity_type","Creature Classification",("entity_type",),"enum",help="Determines the fundamental role of this NPC. Runtime uses it for AI defaults, Quick Build, validation, search, and spawn recommendations.",choices=tuple(sorted(VALID_ENTITY_TYPES)))]
+                return [
+                    OlcFieldDescriptor("name","Display Name",("name",),"string",required=True,help="The player/admin-facing mobile name shown in Builder menus, previews, logs, and administrative tools."),
+                    OlcFieldDescriptor("id","Stable Mobile ID",("id",),"slug",read_only=True,help="Permanent internal identifier used by references and draft files; read-only after creation to avoid breaking links."),
+                    OlcFieldDescriptor("vnum","Legacy VNUM",("vnum",),"integer",minimum=1,maximum=999999,help="Optional numeric compatibility identifier for classic MUD tools; leave blank when no VNUM workflow is needed."),
+                    OlcFieldDescriptor("species","Species / Race",("species",),"species",help="Biological or lore race stored as a named reference; it does not create a registry record by itself."),
+                    OlcFieldDescriptor("gender","Sex / Gender Presentation",("gender",),"enum",help="Presentation used in descriptions and pronoun-aware systems.",choices=GENDER_PRESENTATIONS),
+                    OlcFieldDescriptor("size","Size",("size",),"enum",help="Physical scale used by combat, equipment, movement readability, and validation.",choices=MOBILE_SIZES),
+                    OlcFieldDescriptor("classification","Creature Classification",("classification",),"enum",help="Broad creature taxonomy such as humanoid, animal, undead, construct, dragon, or elemental. This is not size or job role.",choices=CREATURE_CLASSIFICATIONS),
+                    OlcFieldDescriptor("entity_type","NPC Role",("entity_type",),"enum",help="Gameplay role/function used by Builder recommendations, search facets, AI defaults, and validation hints.",choices=tuple(sorted(VALID_ENTITY_TYPES))),
+                    OlcFieldDescriptor("enabled","Enabled",("enabled",),"bool",help="Whether this mobile may be published, activated, and spawned normally."),
+                    OlcFieldDescriptor("tags","Builder Tags",("tags",),"string_list",help="Internal search and organization labels. Tags have no direct gameplay effect."),
+                ]
             if sess.section == "keywords":
                 return [OlcFieldDescriptor("keywords","Keywords",("keywords",),"string_list",required=True)]
             if sess.section == "descriptions":
@@ -2324,10 +2346,107 @@ class BuilderService:
         if isinstance(value, dict): return json.dumps(value, sort_keys=True)
         return str(value)
 
+
+    def _display_value(self, f: OlcFieldDescriptor, value: Any) -> str:
+        if f.input_type == "bool":
+            return "Yes" if value is None else ("Yes" if bool(value) else "No")
+        v = self._fmt_value(value)
+        return "Not assigned" if v == "none" and f.key == "vnum" else (v.replace("_", " ").title() if f.key in {"species","gender","size","classification","entity_type"} and v != "none" else v)
+
+    def _identity_summary_warnings(self, rec: dict[str, Any]) -> list[str]:
+        warnings = []
+        et = str(rec.get("entity_type") or "").lower()
+        if et in MOBILE_SIZES and not rec.get("size"):
+            warnings.append(f'Legacy data warning: NPC Role contains size value "{et}". Use Size to store physical scale; choose a real NPC Role before saving.')
+        cl = str(rec.get("classification") or "").lower()
+        if cl in MOBILE_SIZES:
+            warnings.append(f'Legacy data warning: Creature Classification contains size value "{cl}". Use Size to store physical scale; choose a real Classification before saving.')
+        return warnings
+
+    def _species_examples(self, sess: BuilderEditSession, key: str, field: str = "species", limit: int = 2) -> list[str]:
+        out=[]
+        try:
+            for _oid, r in self.resolve_collection_records(None, "entities").items():
+                if str(r.get(field) or "").lower() == key.lower():
+                    out.append(str(r.get("name") or _oid))
+                    if len(out) >= limit: break
+        except Exception:
+            pass
+        return out
+
+    def _recommendation_lines(self, rec: dict[str, Any]) -> list[str]:
+        sp=str(rec.get("species") or "").lower()
+        recs=SPECIES_RECOMMENDATIONS.get(sp)
+        if not recs: return []
+        return [f"Recommended classification: {recs[0].title()}", f"Recommended size: {recs[1].title()}", f"Reason: {sp.title()} species normally uses {recs[0].title()} classification and {recs[1].title()} size."]
+
+    def _render_identity_menu(self, sess: BuilderEditSession) -> str:
+        rec=sess.working_record or {}; title=rec.get("name") or sess.object_id.replace("_"," ").title()
+        issues = MobileTemplate.from_legacy(rec).validate()
+        errors=sum(1 for i in issues if i.get("severity")=="error" or i.get("blocking")); warnings=sum(1 for i in issues if i.get("severity")=="warning")
+        enabled=bool(rec.get("enabled", True))
+        fields=self._field_descriptors(sess); by={f.key:f for f in fields}
+        def row(n,key,desc):
+            f=by[key]; return [f"{n}. {f.label}", f"   {self._display_value(f, self._get_path(rec,f.path))}", f"   {desc}", ""]
+        lines=["================================================================", f"MEDIT — {title}", "Identity", "================================================================", "", f"Draft: {'Modified' if sess.dirty else 'Clean'}", f"Validation: {errors} errors, {warnings} warnings", f"Publish: {'Blocked' if errors else 'Ready'}", f"Status: {'Enabled' if enabled else 'Disabled'}", ""]
+        warns=self._identity_summary_warnings(rec)
+        if warns: lines += ["DATA WARNINGS"] + warns + [""]
+        lines += ["BASIC IDENTITY", ""]
+        lines += row(1,"name","The name shown in Builder menus, previews, logs, and administrative tools.")
+        lines += row(2,"id","Permanent internal identifier. Read-only after creation so references do not break.")
+        lines += row(3,"vnum","Optional numeric compatibility identifier for classic MUD tools; may remain blank.")
+        lines += ["BIOLOGICAL / PHYSICAL IDENTITY", ""]
+        lines += row(4,"species","Biological or lore race. Examples: human, elf, wolf, dragon. Named reference only unless a registry is later added.")
+        lines += row(5,"gender","Presentation used in descriptions and pronoun-aware systems. Choices are shown when edited.")
+        lines += row(6,"size","Physical scale used by combat readability, equipment assumptions, movement, and validation.")
+        lines += ["ROLE / CLASSIFICATION", ""]
+        lines += row(7,"classification","Broad biological category. Examples: humanoid, animal, undead, construct, dragon, elemental.")
+        lines += row(8,"entity_type","Gameplay role/function. Examples: civilian, guard, merchant, caster, trainer, quest giver, boss.")
+        lines += ["BUILDER STATE", ""]
+        lines += row(9,"enabled","Yes means publish/activation/spawn workflows may use this mobile; No keeps the draft but blocks or skips normal runtime use.")
+        lines += row(10,"tags","Internal search and organization labels. No direct gameplay effect.")
+        rec_lines=self._recommendation_lines(rec)
+        if rec_lines: lines += ["RECOMMENDATIONS"] + rec_lines + ["Type apply recommended while editing Classification or Size to use the suggestion.", ""]
+        lines += ["COMMANDS", "1-10  Edit a field", "P     Preview", "V     Validate", "S     Save", "U     Undo", "R     Redo", "Q     Back", "?     Expanded help"]
+        return "\n".join(lines)
+
+    def _picker_option_text(self, key: str, value: str) -> str:
+        text={"humanoid":"People-shaped living creatures such as humans, elves, and orcs.","animal":"Ordinary natural wildlife such as wolves, horses, and bears.","beast":"Monstrous or magical animal-like creatures.","undead":"Animated dead such as skeletons, zombies, and vampires.","construct":"Artificial creatures such as golems and animated armor.","dragon":"Draconic creatures and related variants.","elemental":"Creatures composed of elemental forces.","demon":"Infernal or abyssal creatures.","celestial":"Divine or heavenly creatures.","plant":"Mobile plant creatures.","ooze":"Slimes, jellies, and amorphous creatures.","other":"Use only when no standard classification fits.","tiny":"Very small creatures; affects readability and equipment/body validation.","small":"Below human scale; common for goblins and halflings.","medium":"Human-scale default; common for people and wolves.","large":"Above human scale; common for bears and ogres.","huge":"Massive creatures; common for dragons and giants.","gargantuan":"Extremely large set-piece creatures.","neutral":"Neutral presentation for descriptions and pronoun-aware systems.","female":"Feminine presentation.","male":"Masculine presentation.","nonbinary":"Nonbinary presentation.","unknown":"Unknown or intentionally unspecified presentation.","none":"No presentation value stored."}
+        return text.get(value, "Gameplay role used by Builder recommendations, search, AI defaults, validation hints, and previews.")
+
+    def _render_identity_picker(self, sess: BuilderEditSession, f: OlcFieldDescriptor) -> str:
+        rec=sess.working_record or {}; cur=self._get_path(rec,f.path)
+        if f.input_type == "species":
+            choices=[]
+            seen=set()
+            for v in list(COMMON_SPECIES)+[str(r.get("species")) for r in self.resolve_collection_records(None,"entities").values() if r.get("species")]:
+                k=v.lower();
+                if k not in seen: seen.add(k); choices.append(v)
+            lines=["Species / Race", "", "This is currently a named reference on the mobile draft; choosing a custom value stores that name and does not create a registry record.", f"Current: {self._fmt_value(cur).title()}", "", "Existing/common choices:"]
+            for i,v in enumerate(choices[:25],1):
+                ex=self._species_examples(sess,v,"species")
+                lines.append(f"{i}. {v.title()}" + ("\n   Used by: " + ", ".join(ex) if ex else ""))
+            lines += ["", "Commands:", "search <text>   Search available species", "custom <name>   Use a custom named species", "clear           Remove this optional value", "back            Cancel", "", "Choose a number or type a species name."]
+            return "\n".join(lines)
+        if f.input_type == "bool":
+            cur_bool = True if cur is None else bool(cur)
+            return "\n".join(["Enabled Status", "", "1. Yes — Active", "   The mobile may be published, activated, and spawned.", "", "2. No — Disabled", "   Keep the draft, but prevent normal runtime use.", "", f"Current: {'Yes' if cur_bool else 'No'}", "", "Choose 1 or 2. Also accepts yes/no, true/false, enabled/disabled, on/off.", "Back cancels without changing the value."])
+        lines=[f.label, "", f.help or "Choose a legal value.", ""]
+        for i,v in enumerate(f.choices or (),1):
+            ex=self._species_examples(sess,v,"classification" if f.key=="classification" else f.key)
+            lines.append(f"{i}. {str(v).replace('_',' ').title()}")
+            lines.append(f"   {self._picker_option_text(f.key, str(v))}")
+            if ex: lines.append("   Used by: " + ", ".join(ex))
+            lines.append("")
+        lines += [f"Current: {self._display_value(f, cur)}"] + self._recommendation_lines(rec) + ["", "Choose a number or name. Type back to cancel."]
+        return "\n".join(lines)
+
     def _render_field_prompt(self, sess: BuilderEditSession) -> str:
         f = self._descriptor(sess, sess.active_field)
         if not f: return "No active field."
         cur = self._get_path(sess.working_record, f.path)
+        if sess.section == "identity" and f.input_type in {"enum", "bool", "species"}:
+            return self._render_identity_picker(sess, f)
         rng = f" [{f.minimum}-{f.maximum}]" if f.minimum is not None or f.maximum is not None else ""
         choices = "\nChoices: " + ", ".join(f.choices) if f.choices else ""
         clear = " Use clear/none/unset to remove optional values." if not f.required else ""
@@ -2372,6 +2491,8 @@ class BuilderService:
         cp = rec.get("combat_profile") or {}
         lines = [f"MEDIT {section.replace('_',' ').title()}: {rec.get('name') or sess.object_id}"]
         descriptors = self._field_descriptors(sess)
+        if section == "identity":
+            return self._render_identity_menu(sess)
         if descriptors and section not in {"natural_weapons", "spawns", "diagnostics"}:
             lines = self._status_bar(sess) + [f"{sess.editor_type.upper()} {sess.object_id} > {section.replace('_',' ').title()}", f"Draft status: {'modified' if sess.dirty else 'clean'}", "Fields show purpose, current value, and safe edit numbers."]
             for i, f in enumerate(descriptors, 1):
@@ -2443,10 +2564,36 @@ class BuilderService:
                 if f.minimum is not None and val < f.minimum: return BuilderResult(False, f"{f.label} must be between {f.minimum} and {f.maximum}.")
                 if f.maximum is not None and val > f.maximum: return BuilderResult(False, f"{f.label} must be between {f.minimum} and {f.maximum}.")
                 return BuilderResult(True, "", {"value": val})
+            if f.input_type == "bool":
+                yes={"1","yes","y","true","enabled","enable","on","active"}; no={"2","no","n","false","disabled","disable","off","inactive"}
+                r=raw.lower()
+                if r in yes: return BuilderResult(True, "", {"value": True})
+                if r in no: return BuilderResult(True, "", {"value": False})
+                return BuilderResult(False, f'"{raw}" is not a valid Enabled choice. Choose 1/2, yes/no, true/false, enabled/disabled, or on/off.')
+            if f.input_type == "species":
+                if raw.lower().startswith("custom "):
+                    raw = raw.split(" ",1)[1].strip()
+                if raw.lower().startswith("search "):
+                    q=raw.split(" ",1)[1].lower(); vals=[v for v in COMMON_SPECIES if q in v.lower()]
+                    return BuilderResult(False, "Species search results: " + (", ".join(v.title() for v in vals) or "none") + "\n" + self._render_field_prompt(sess))
+                choices=[]; seen=set()
+                for v in list(COMMON_SPECIES)+[str(r.get("species")) for r in self.resolve_collection_records(None,"entities").values() if r.get("species")]:
+                    k=v.lower()
+                    if k not in seen: seen.add(k); choices.append(v)
+                if raw.isdigit() and 1 <= int(raw) <= len(choices): return BuilderResult(True, "", {"value": choices[int(raw)-1].lower()})
+                if not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9 _-]{0,63}", raw): return BuilderResult(False, f'Species value "{raw}" is not a safe named reference. Use a listed number, a species name, custom <name>, clear, or back.')
+                return BuilderResult(True, "", {"value": raw.lower().replace(" ", "_")})
             if f.input_type == "enum":
-                choices = {c.lower(): c for c in f.choices}
-                if raw.lower() not in choices: return BuilderResult(False, f'"{raw}" is not a known value for {f.label}. Expected one of: {", ".join(f.choices)}. Try list to view supported values, or back to cancel.')
-                return BuilderResult(True, "", {"value": choices[raw.lower()]})
+                vals=list(f.choices or ())
+                if raw.isdigit() and 1 <= int(raw) <= len(vals): return BuilderResult(True, "", {"value": vals[int(raw)-1]})
+                choices = {str(c).lower().replace(" ","_"): c for c in vals}
+                key=raw.lower().replace(" ","_")
+                if key == "apply_recommended":
+                    recs=SPECIES_RECOMMENDATIONS.get(str(sess.working_record.get("species") or "").lower())
+                    if recs and f.key == "classification": return BuilderResult(True, "", {"value": recs[0]})
+                    if recs and f.key == "size": return BuilderResult(True, "", {"value": recs[1]})
+                if key not in choices: return BuilderResult(False, f'"{raw}" is not a known value for {f.label}. Choose a displayed number/name, apply recommended where shown, or back to cancel.')
+                return BuilderResult(True, "", {"value": choices[key]})
             if f.input_type == "slug":
                 if not re.fullmatch(r"[a-zA-Z0-9_:-]+", raw): return BuilderResult(False, f"{f.label} must be an identifier using letters, numbers, underscore, colon, or dash.")
                 return BuilderResult(True, "", {"value": raw})
@@ -2666,8 +2813,12 @@ class BuilderService:
                 sess.draft_revision = int((res.data or {}).get("_builder_revision") or sess.draft_revision)
                 sess.savepoint = deepcopy(res.data or sess.working_record); sess.dirty = False; sess.saved = True
             if res.ok:
-                summary = self._validation_report(sess, MobileTemplate.from_legacy(sess.working_record).validate() if sess.collection == "entities" else [])
-                return BuilderResult(True, "Saved successfully.\n" + summary + "\nYou are still inside the editor; type quit to close or continue editing.", res.data)
+                issues = MobileTemplate.from_legacy(sess.working_record).validate() if sess.collection == "entities" else []
+                errs = sum(1 for i in issues if i.get("severity") == "error" or i.get("blocking")); warns = sum(1 for i in issues if i.get("severity") == "warning")
+                rev = int((res.data or {}).get("_builder_revision") or sess.draft_revision)
+                name = (sess.working_record or {}).get("name") or sess.object_id
+                print(f"[builder] Saved mobile draft {sess.object_id} revision={rev}")
+                return BuilderResult(True, "\n".join(["Saved successfully.", "", "Mobile:", str(name), "", "Draft revision:", str(rev), "", "Unsaved changes:", "No", "", "Validation:", f"{errs} errors, {warns} warnings", "", "Publish readiness:", ("Blocked" if errs else f"Ready — {warns} warnings do not block publishing."), "", "You remain in:", f"{sess.editor_type.upper()} > {sess.section.replace('_',' ').title() if sess.section else 'Main Menu'}", "", "Commands:", "continue | preview | validate | back | quit", "", "You are still inside the editor; type quit to close or continue editing."]), res.data)
             return res
         if low in {"u", "undo"}:
             if not sess.undo_stack: return BuilderResult(False, "Nothing to undo.")
@@ -2865,16 +3016,16 @@ class BuilderService:
                 f"Mobile Editor\nMOBILE EDITOR: {title}", f"Mobile ID: {(sess.object_id if sess else '')}", f"Draft revision: {(sess.draft_revision if sess else rec.get('_builder_revision', 0))}",
                 f"World: {(sess.world_id if sess else rec.get('world_id',''))}", f"Area: {rec.get('area_id','')}", f"Zone: {rec.get('zone_id','')}", f"Lock owner: {(sess.builder_character_id if sess else 'none')}",
                 f"Validation status: {errors} error(s), {warnings} warning(s)", f"Dirty status: {status}", f"Builder status: {rec.get('builder_status','incomplete')}", "",
-                "1. Identity - " + str(rec.get('name') or ''), "2. Keywords and aliases - " + str(', '.join(rec.get('keywords') or rec.get('aliases') or [])),
-                "3. Descriptions - " + str(rec.get('room_description') or rec.get('description') or '')[:50], "4. Basic identity traits - " + str(rec.get('race') or rec.get('species') or rec.get('body_profile_id') or 'unset'),
-                "5. Level and attributes - level " + str(rec.get('level', 1)), "6. Resources - " + str(rec.get('resources') or {}),
-                "7. Combat statistics and profiles - " + str((rec.get('combat_profile') or {}).get('combat_behavior_profile_id','default')), "8. Body profile and Natural Weapons / Natural Attacks - " + str(rec.get('body_profile_id') or (rec.get('combat_profile') or {}).get('body_profile','unset')),
-                "9. Positions and posture - " + str(rec.get('default_position') or rec.get('spawn_position') or 'standing'), "10. Mobile flags - " + str(', '.join(rec.get('mobile_flags') or rec.get('flags') or [])),
-                "11. Affect/status flags - " + str(', '.join(rec.get('affect_flags') or [])), "12. Equipment loadout - " + str(len(rec.get('equipment_loadout') or rec.get('equipment') or {})),
-                "13. Starting inventory - " + str(len(rec.get('starting_inventory') or rec.get('inventory') or [])), "14. Loot and corpse behavior - " + str(rec.get('loot_table_id') or rec.get('corpse_profile_id') or 'unset'),
-                "15. Abilities and spell loadout - " + str(rec.get('ability_loadout_id') or (rec.get('combat_profile') or {}).get('ability_loadout_id') or 'unset'), "16. Behavior and AI - " + str(rec.get('behavior_profile_id') or rec.get('ai_actor_enabled') or 'unset'),
-                "17. Faction and relationships - " + str(rec.get('faction_id') or 'unset'), "18. Scripts and triggers - " + str(len(rec.get('script_ids') or rec.get('scripts') or [])),
-                "19. Spawn and reset references - use diagnostics/create spawn commands", "20. Diagnostics and references - validation, references, runtime preview", "",
+                "1. Identity", "   Name, species, classification, size, role, and Builder state.", "2. Keywords", "   Words players and commands may use to identify this mobile.",
+                "3. Descriptions", "   Room appearance, examine text, and detailed description.", "4. Stats", "   Level, attributes, health, mana, defense, damage, and rewards.",
+                "5. Resources", "   Health, mana, stamina, and other runtime pools.", "6. Combat", "   Combat statistics, armor, behavior, threat, and ability profiles.",
+                "7. Natural Weapons", "   Body-derived attacks and natural combat options.", "8. Body Profile", "   Anatomy profile used by equipment assumptions and natural attacks.",
+                "9. Positions", "   Spawn, idle, reset, and combat positions.", "10. Mobile Flags", "   Special movement, combat, service, and world behavior.",
+                "11. Permanent Affects", "   Always-active statuses, protections, senses, and movement effects.", "12. Equipment", "   Objects equipped when the mobile spawns.",
+                "13. Inventory", "   Objects carried when the mobile spawns.", "14. Loot / Corpse", "   Objects, currency, and corpse behavior after death.",
+                "15. Combat Abilities", "   Skills and spells the mobile may use in combat.", "16. Event Reactions", "   Actions triggered by speech, movement, combat, time, and events.",
+                "17. Faction", "   Faction membership, relationships, and hostility defaults.", "18. Scripts", "   Attached canonical script references and triggers.",
+                "19. Spawns", "   Spawn and reset references that place this mobile in the world.", "20. Diagnostics", "   Validation, dependencies, references, and runtime support.", "",
                 "P. Preview", "V. Validate", "T. Testspawn", "H. History", "U. Undo", "R. Redo", "S. Save", "Q. Quit"]
             return "\n".join(lines)
         sections = {"redit": ["Title", "Description", "Exits", "Sector", "Flags", "Extra Descriptions", "Ambient Effects", "Spawn List", "Preview", "Validate", "Publish"], "oedit": ["Identity", "Keywords", "Type", "Wear Flags", "Extra Flags", "Stats", "Affects", "Values", "Container Data", "Weapon Data", "Armor Data", "Scripts", "Preview", "Validate", "Publish"], "aedit": ["Identity", "Zones", "Rooms", "Templates", "Spawns", "Preview", "Validate", "Publish"], "zedit": ["Identity", "Area", "Rooms", "Resets", "Spawns", "Preview", "Validate", "Publish"]}.get(editor, [])
