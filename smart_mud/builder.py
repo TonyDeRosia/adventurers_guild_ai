@@ -10,9 +10,10 @@ from typing import Any
 
 from smart_mud.world_registry import WORLDS_DIR, _records
 from smart_mud.builder_rendering import medit as medit_render
+from engine.equipment_slots import CANONICAL_EQUIPMENT_SLOT_IDS, EQUIPMENT_SLOT_LABELS, EQUIPMENT_SLOT_ALIASES, normalize_equipment_slot, equipment_slot_label, canonicalize_slot_list
 
 BUILDER_ROLES = {"builder", "admin", "owner"}
-VALID_WEAR_SLOTS = {"head","face","neck","shoulders","back","chest","body","torso","arms","wrists","hands","finger","wrist","finger_left","finger_right","waist","legs","feet","mainhand","main_hand","primary_weapon","offhand","off_hand","secondary_weapon","held","wield","shield","quiver","ammo","ranged","light","accessory_1","accessory_2"}
+VALID_WEAR_SLOTS = set(CANONICAL_EQUIPMENT_SLOT_IDS)
 VALID_ENTITY_TYPES = {"npc", "mob", "merchant", "trainer", "banker", "healer", "critter", "object"}
 MEDIT_SEX_VALUES = ("neutral","male","female","nonbinary","unknown","custom")
 MEDIT_SIZE_VALUES = ("tiny","small","medium","large","huge","gargantuan","custom")
@@ -953,7 +954,7 @@ class BuilderWorkspace:
         for iid, item in drafts["items"].items():
             if not item.get("name"): errors.append(f"item {iid} missing name")
             for slot in item.get("wear_slots", []) if isinstance(item.get("wear_slots", []), list) else []:
-                if str(slot) not in VALID_WEAR_SLOTS: errors.append(f"item {iid} invalid wear slot {slot}")
+                if normalize_equipment_slot(slot) not in VALID_WEAR_SLOTS: errors.append(f"item {iid} invalid wear slot {slot}")
             if isinstance(item.get("plugin_data"), str):
                 try: json.loads(item["plugin_data"])
                 except json.JSONDecodeError: errors.append(f"item {iid} invalid plugin_data JSON")
@@ -3271,6 +3272,17 @@ class BuilderService:
 
     def _handle_medit_loadout(self, actor: Any, sess: BuilderEditSession, text: str) -> BuilderResult:
         low=text.lower().strip(); load=sess.working_record.setdefault('equipment_loadout',{}); load.setdefault('equipped',{}); load.setdefault('carried',[])
+        if sess.confirmation_type == 'medit_equip_slot':
+            choices=list(sess.pending_choices or [])
+            if low in {'q','quit','cancel'}:
+                sess.confirmation_type=''; sess.pending_choices=[]; sess.pending_value=None; return BuilderResult(True,"Cancelled.\n"+self._render_medit_loadout(actor,sess))
+            idx=int(low)-1 if low.isdigit() else -1
+            slot=choices[idx] if 0 <= idx < len(choices) else normalize_equipment_slot(low)
+            if slot not in choices: return BuilderResult(False,"Choose a listed canonical slot (or Q to cancel):")
+            iid=str(sess.pending_value or '')
+            self._session_checkpoint(sess); load['equipped'][slot]={'slot':slot,'item_template_id':iid,'quantity':1,'chance':100}
+            sess.confirmation_type=''; sess.pending_choices=[]; sess.pending_value=None; sess.dirty=True; sess.saved=False
+            return BuilderResult(True,f"Equipped {iid} in {self._slot_label(slot)}.\n"+self._render_medit_loadout(actor,sess))
         if sess.confirmation_type in {'medit_equip','medit_inv_add','medit_loot_add'}:
             typ=sess.confirmation_type
             if low in {'q','quit','cancel'}:
@@ -3279,7 +3291,12 @@ class BuilderService:
             if not iid: return BuilderResult(False,"Object not found. Enter object ID, VNUM, or search term (Q to cancel):")
             self._session_checkpoint(sess)
             if typ=='medit_equip':
-                item=self.resolve_collection_records(actor,'items').get(iid,{}) ; wear=list(item.get('wear_flags') or item.get('wear_slots') or VALID_WEAR_SLOTS); slot=next((w for w in wear if w in VALID_WEAR_SLOTS), sorted(VALID_WEAR_SLOTS)[0]); load['equipped'][slot]={'slot':slot,'item_template_id':iid,'quantity':1,'chance':100}; msg=f"Equipped {iid} in {self._slot_label(slot)}."
+                item=self.resolve_collection_records(actor,'items').get(iid,{}) ; choices=self._compatible_equipment_slots_for_item(item)
+                if not choices: return BuilderResult(False,f"{iid} has no compatible canonical equipment slots.")
+                if len(choices)>1:
+                    sess.confirmation_type='medit_equip_slot'; sess.pending_value=iid; sess.pending_choices=choices
+                    return BuilderResult(True,"Choose equipment slot:\n"+"\n".join(f"{i}) {self._slot_label(slot)}" for i,slot in enumerate(choices,1))+"\nQ) Cancel")
+                slot=choices[0]; load['equipped'][slot]={'slot':slot,'item_template_id':iid,'quantity':1,'chance':100}; msg=f"Equipped {iid} in {self._slot_label(slot)}."
             elif typ=='medit_inv_add': load['carried'].append({'item_template_id':iid,'quantity':1,'chance':100}); msg=f"Added {iid} to inventory."
             else:
                 loot=sess.working_record.setdefault('loot',{}); loot.setdefault('entries',[]).append({'item_template_id':iid,'quantity':1,'chance':100}); msg=f"Added {iid} to loot."
@@ -3391,12 +3408,46 @@ class BuilderService:
         return BuilderResult(False,"Invalid choice. Use A, E, D, T, or Q.\n"+self._render_medit_advanced_list(sess,key))
 
     def _slot_label(self, slot: str) -> str:
-        return str(slot).replace('_', ' ').replace('mainhand','wield').title()
+        return equipment_slot_label(slot)
 
     def _obj_brief(self, actor: Any, item_id: str) -> str:
         rec = self.resolve_collection_records(actor, "items").get(str(item_id), {}) if actor is not None else {}
         name = rec.get('short_description') or rec.get('name') or str(item_id)
         return f"[{item_id}] {name}"
+
+
+
+    def _compatible_equipment_slots_for_item(self, item: dict[str, Any]) -> list[str]:
+        raw = item.get('wear_flags') or item.get('wear_slots') or item.get('equipment_slots') or item.get('occupies_slots') or []
+        slots = canonicalize_slot_list(raw)
+        if not slots:
+            item_type = str(item.get('item_type') or item.get('type') or '').lower()
+            keywords = {str(k).lower() for k in (item.get('keywords') or [])}
+            name = str(item.get('name') or item.get('id') or '').lower()
+            if item_type == 'weapon':
+                slots = ['main_hand', 'off_hand']
+            elif keywords & {'sword', 'blade', 'staff', 'mace', 'club', 'weapon'} or any(word in name for word in ('sword', 'staff', 'mace', 'club')):
+                slots = ['main_hand']
+            elif item_type == 'armor':
+                slots = ['chest']
+        return [slot for slot in CANONICAL_EQUIPMENT_SLOT_IDS if slot in slots]
+
+    def _normalized_equipped_map(self, equipped: dict[str, Any], mobile_id: str) -> tuple[dict[str, Any], list[str]]:
+        normalized: dict[str, Any] = {}
+        errors: list[str] = []
+        for raw_slot, entry in (equipped or {}).items():
+            slot = normalize_equipment_slot(raw_slot)
+            iid = str((entry or {}).get("item_template_id") or (entry or {}).get("item_id") or "") if isinstance(entry, dict) else ""
+            if slot not in VALID_WEAR_SLOTS:
+                errors.append(f"Mobile `{mobile_id}` assigns `{iid}` to unknown slot `{raw_slot}`.")
+                continue
+            if slot in normalized and normalized[slot] != entry:
+                existing = normalized[slot]
+                existing_iid = str((existing or {}).get("item_template_id") or (existing or {}).get("item_id") or "") if isinstance(existing, dict) else ""
+                errors.append(f"Equipment slot conflict: `{raw_slot}` and `{slot}` both contain items on mobile `{mobile_id}` ({existing_iid}, {iid}). Resolve before publish.")
+                continue
+            normalized[slot] = entry
+        return normalized, errors
 
     def _render_medit_loadout(self, actor: Any, sess: BuilderEditSession) -> str:
         rec=sess.working_record or {}; name=rec.get('name') or sess.object_id
@@ -3404,8 +3455,9 @@ class BuilderService:
         eq=load.get('equipped') or {}; inv=load.get('carried') or rec.get('starting_inventory') or []
         loot=((rec.get('loot') or {}).get('entries') if isinstance(rec.get('loot'), dict) else rec.get('loot')) or []
         lines=[f"-- Loadout / Loot: [{rec.get('vnum') or sess.object_id}] {name}","","EQUIPPED ITEMS",f"{name} is using:"]
-        for slot in sorted(VALID_WEAR_SLOTS):
-            ent=eq.get(slot) if isinstance(eq, dict) else None
+        normalized_eq, _slot_errors = self._normalized_equipped_map(eq if isinstance(eq, dict) else {}, name)
+        for slot in CANONICAL_EQUIPMENT_SLOT_IDS:
+            ent=normalized_eq.get(slot) if isinstance(normalized_eq, dict) else None
             iid=str((ent or {}).get('item_template_id') or (ent or {}).get('item_id') or '') if isinstance(ent, dict) else ''
             lines.append(f"{self._slot_label(slot):<16} {self._obj_brief(actor, iid) if iid else '[NOTHING]'}")
         lines += ["","INVENTORY ITEMS"]
@@ -3460,9 +3512,9 @@ class BuilderService:
         equipped = loadout.get("equipped") if isinstance(loadout, dict) else {}
         carried = loadout.get("carried") if isinstance(loadout, dict) else []
         lines = [f"MEDIT Equipment Loadout: {rec.get('name') or sess.object_id}", f"Draft status: {'modified' if sess.dirty else 'clean'}", "", "Equipped slots:"]
-        slots = sorted(VALID_WEAR_SLOTS)
-        for slot in slots:
-            entry = (equipped or {}).get(slot) if isinstance(equipped, dict) else None
+        normalized_eq, _slot_errors = self._normalized_equipped_map(equipped if isinstance(equipped, dict) else {}, rec.get('name') or sess.object_id)
+        for slot in CANONICAL_EQUIPMENT_SLOT_IDS:
+            entry = (normalized_eq or {}).get(slot) if isinstance(normalized_eq, dict) else None
             if isinstance(entry, dict):
                 lines.append(f"- {slot}: {self._item_label(actor, entry.get('item_template_id',''))} chance={entry.get('chance',100)} qty={entry.get('quantity',1)}")
             else:
@@ -3478,14 +3530,18 @@ class BuilderService:
         items = self.resolve_collection_records(actor, "items")
         loadout = (sess.working_record or {}).get("equipment_loadout") or {}
         errors=[]
+        _normalized, collision_errors = self._normalized_equipped_map(loadout.get("equipped") or {}, sess.object_id)
+        errors.extend(collision_errors)
         for slot, entry in (loadout.get("equipped") or {}).items():
             iid = str((entry or {}).get("item_template_id") or "")
             rec = items.get(iid)
-            if slot not in VALID_WEAR_SLOTS: errors.append(f"equipment.slot {slot}: invalid equipment slot")
+            normalized_slot = normalize_equipment_slot(slot)
+            if normalized_slot not in VALID_WEAR_SLOTS: errors.append(f"Mobile `{sess.object_id}` assigns `{iid}` to unknown slot `{slot}`.")
+            elif normalized_slot != slot: errors.append(f"Equipment slot conflict/alias on mobile `{sess.object_id}`: `{slot}` should be normalized to `{normalized_slot}` before publish.")
             if not rec: errors.append(f"equipment.{slot}: missing object template {iid}")
             else:
-                wear=set(rec.get("wear_flags") or rec.get("wear_slots") or rec.get("slot_restrictions") or [])
-                if wear and slot not in wear and not ({slot,"mainhand","wield","main_hand"} & wear): errors.append(f"equipment.{slot}: object cannot be worn in selected slot")
+                wear=set(canonicalize_slot_list(rec.get("wear_flags") or rec.get("wear_slots") or rec.get("slot_restrictions") or []))
+                if wear and normalized_slot not in wear: errors.append(f"Mobile `{sess.object_id}` assigns `{iid}` to incompatible slot `{slot}`. Valid canonical slots: {', '.join(wear)}")
             try:
                 ch=int((entry or {}).get("chance",100)); qty=int((entry or {}).get("quantity",1))
                 if ch < 0 or ch > 100: errors.append(f"equipment.{slot}: chance must be 0-100")
@@ -3516,11 +3572,11 @@ class BuilderService:
         if low in {"g","clear"}:
             self._session_checkpoint(sess); sess.working_record["equipment_loadout"]={"equipped":{},"carried":[]}; sess.dirty=True; sess.saved=False; return BuilderResult(True,"Equipment loadout cleared.\n"+self._render_equipment_editor(actor,sess))
         if parts and parts[0].lower() in {"assign","a"} and len(parts)>=3:
-            slot=parts[1].lower(); match=self.content_query.by_id_or_vnum(actor,"object",parts[2]);
-            if slot not in VALID_WEAR_SLOTS: return BuilderResult(False,f"Invalid equipment slot {slot}.")
+            slot=normalize_equipment_slot(parts[1].lower()); match=self.content_query.by_id_or_vnum(actor,"object",parts[2]);
+            if slot not in VALID_WEAR_SLOTS: return BuilderResult(False,f"Invalid equipment slot {parts[1]}.")
             if len(match)!=1: return BuilderResult(False,"Object selection is ambiguous or missing; use search <text> then exact ID.")
-            item=match[0]; wear=set(item.record.get("wear_flags") or item.record.get("wear_slots") or [])
-            if wear and slot not in wear and not ({slot,"mainhand","wield","main_hand"} & wear): return BuilderResult(False,f"{item.canonical_id} cannot be worn in {slot}. Valid wear locations: {', '.join(sorted(wear)) or 'none'}.")
+            item=match[0]; wear=set(self._compatible_equipment_slots_for_item(item.record))
+            if wear and slot not in wear: return BuilderResult(False,f"{item.canonical_id} cannot be worn in {self._slot_label(slot)}. Valid wear locations: {', '.join(equipment_slot_label(w) for w in wear) or 'none'}.")
             chance=int(parts[3]) if len(parts)>3 and parts[3].isdigit() else 100; qty=int(parts[4]) if len(parts)>4 and parts[4].isdigit() else 1
             if not (0<=chance<=100) or qty<=0: return BuilderResult(False,"Chance must be 0-100 and quantity must be positive.")
             self._session_checkpoint(sess); load=sess.working_record.setdefault("equipment_loadout",{}); load.setdefault("equipped",{})[slot]={"slot":slot,"item_template_id":item.canonical_id,"chance":chance,"quantity":qty}; load.setdefault("carried",[]); sess.dirty=True; sess.saved=False
@@ -3538,7 +3594,7 @@ class BuilderService:
                 arr=load.setdefault("carried",[]); idx=int(tok)-1
                 if not 0<=idx<len(arr): sess.undo_stack.pop(); return BuilderResult(False,"Carried inventory index out of range.")
                 arr.pop(idx)
-            else: load.setdefault("equipped",{}).pop(tok,None)
+            else: load.setdefault("equipped",{}).pop(normalize_equipment_slot(tok),None)
             sess.dirty=True; sess.saved=False; return BuilderResult(True,"Loadout entry removed.\n"+self._render_equipment_editor(actor,sess))
         return BuilderResult(False,"Equipment editor command not understood. Use assign, carry, remove, clear, preview, validate, undo, redo, back, or help equipment.")
 

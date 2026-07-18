@@ -1,6 +1,8 @@
 """Canonical zone reset service for Smart MUD Phase 15A."""
 from __future__ import annotations
 
+from engine.equipment_slots import normalize_equipment_slot
+
 import json, sqlite3, time, uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
@@ -211,7 +213,7 @@ class ZoneResetService:
         elif typ in {'GIVE_ITEM','EQUIP_ITEM','PUT_ITEM'}:
             target=(refs.get(cmd.get('target_reference') or cmd.get('container_reference')) or [None])[0]
             if not target: raise ValueError('target reference missing')
-            item=self.runtime.spawn_item(cmd['item_template_id'],'entity' if typ!='EQUIP_ITEM' else 'equipment',owner_id=target,equipped_slot=cmd.get('equipment_slot') if typ=='EQUIP_ITEM' else '',stack_count=cmd.get('stack_count',1),custom_flags={'source_reset_profile_id':plan.profile_id})
+            item=self.runtime.spawn_item(cmd['item_template_id'],'entity' if typ!='EQUIP_ITEM' else 'equipment',owner_id=target,equipped_slot=normalize_equipment_slot(cmd.get('equipment_slot')) if typ=='EQUIP_ITEM' else '',stack_count=cmd.get('stack_count',1),custom_flags={'source_reset_profile_id':plan.profile_id})
             created.append(item['instance_id']); affected.append(target)
         elif typ=='SET_EXIT_STATE':
             if hasattr(self.runtime,'set_exit_state'): self.runtime.set_exit_state(cmd['room_id'], cmd['direction'], {k:cmd.get(k) for k in ('closed','locked','pickproof','hidden','state_flags') if k in cmd})

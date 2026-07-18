@@ -20,6 +20,7 @@ from datetime import datetime, timezone, timedelta
 from engine.mud_commands import MudCommandEngine
 from engine.performance_counters import make_initial_counters
 from engine.mud_displays import render_object, render_prompt, render_room, semantic, build_inventory_document, build_equipment_document, render_display_mud, render_display_plain
+from engine.equipment_slots import CANONICAL_EQUIPMENT_SLOT_IDS, normalize_equipment_slot, canonicalize_slot_list
 from engine.player_preferences import PlayerPresentationPreferenceService
 from engine.display_services import CharacterDisplaySnapshotService
 from engine.conditions import condition_label
@@ -2525,7 +2526,7 @@ class MudRuntime:
         by_id = {str(item.get("id")): item for item in getattr(self.active_world, "items", [])}
         return [by_id.get(str(value), value) if not isinstance(value, dict) else value for value in values]
 
-    EQUIPMENT_SLOTS = ["head","face","neck","shoulders","back","chest","arms","wrists","hands","finger_left","finger_right","waist","legs","feet","main_hand","off_hand","accessory_1","accessory_2","light"]
+    EQUIPMENT_SLOTS = list(CANONICAL_EQUIPMENT_SLOT_IDS)
     HAND_SLOTS = {"main_hand", "off_hand", "both_hands", "light"}
     ARTICLES = {"a", "an", "the"}
 
@@ -2551,9 +2552,9 @@ class MudRuntime:
                 "examine_description": str(raw.get("examine_description") or raw.get("look_description") or raw.get("long_description") or raw.get("description") or raw.get("short_description") or raw.get("name") or tid),
                 "item_type": str(raw.get("item_type") or raw.get("type") or "misc"),
                 "weight": raw.get("weight", 0), "value": raw.get("value", 0),
-                "wear_slots": [str(v) for v in (raw.get("occupies_slots") or raw.get("equipment_slots") or wear_slots) if str(v) in self.EQUIPMENT_SLOTS],
-                "equipment_slots": [str(v) for v in (raw.get("occupies_slots") or raw.get("equipment_slots") or wear_slots) if str(v) in self.EQUIPMENT_SLOTS],
-                "occupies_slots": [str(v) for v in (raw.get("occupies_slots") or raw.get("equipment_slots") or wear_slots) if str(v) in self.EQUIPMENT_SLOTS],
+                "wear_slots": canonicalize_slot_list(raw.get("occupies_slots") or raw.get("equipment_slots") or wear_slots),
+                "equipment_slots": canonicalize_slot_list(raw.get("occupies_slots") or raw.get("equipment_slots") or wear_slots),
+                "occupies_slots": canonicalize_slot_list(raw.get("occupies_slots") or raw.get("equipment_slots") or wear_slots),
                 "requires_item_tag": raw.get("requires_item_tag") or raw.get("requires_item_tags") or [],
                 "modifiers": list(raw.get("modifiers") or []),
                 "weapon_flags": raw.get("weapon_flags") or raw.get("flags") or [],
@@ -2742,8 +2743,7 @@ class MudRuntime:
         return {"status":"ambiguous" if partial else "missing", "matches": partial}
 
     def _normalize_equipment_slot(self, slot: str | None) -> str:
-        aliases = {"body": "chest", "shield": "off_hand", "primary_weapon": "main_hand", "secondary_weapon": "off_hand"}
-        return aliases.get(str(slot or "").strip(), str(slot or "").strip())
+        return normalize_equipment_slot(slot)
 
     def validate_equipment(self, character_id: str, item_instance: dict[str, Any], slot: str | None = None) -> dict[str, Any]:
         tmpl = item_instance.get("template") or {}
