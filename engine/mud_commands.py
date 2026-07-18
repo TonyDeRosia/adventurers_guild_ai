@@ -351,6 +351,12 @@ class MudCommandEngine:
             "asave": self._cmd_asave,
             "desc": self._cmd_builder_edit,
             "recall": self._cmd_direct_ability,
+            "kick": self._cmd_direct_ability,
+            "bandage": self._cmd_direct_ability,
+            "bash": self._cmd_direct_ability,
+            "rescue": self._cmd_direct_ability,
+            "sneak": self._cmd_direct_ability,
+            "backstab": self._cmd_direct_ability,
             "grantrole": self._cmd_grantrole,
             "help": self._cmd_help,
             "helpedit": self._cmd_helpedit,
@@ -1294,15 +1300,20 @@ class MudCommandEngine:
             return done("Train what? Try TRAIN STR, DEX, CON, INT, WIS, CHA, HIT, MANA, or MOVE.", False)
         # practice
         intelligence = int(getattr(character, "intelligence", 10) or 10)
-        abilities = ps.list_known_practice_abilities(actor_id, intelligence=intelligence) if hasattr(ps, "list_known_practice_abilities") else []
+        try:
+            abilities = ps.list_known_practice_abilities(actor_id, intelligence=intelligence) if hasattr(ps, "list_known_practice_abilities") else []
+        except Exception:
+            abilities = []
         if not args:
-            lines=[f"Practice sessions: {state.get('practice_sessions',0)}", "Use TRAIN for permanent attributes and resources.", "","You know:"]
+            if not abilities and getattr(rt, "abilities", None):
+                abilities = [{"display_name": r.get("name") or r.get("id"), "ability_id": r.get("id"), "current_proficiency": r.get("proficiency", 1)} for r in rt.abilities.get_actor_abilities(actor_id)]
+            lines=[f"You have {state.get('practice_sessions',0)} practice sessions remaining.", "", "Practice what?"]
             if not abilities: lines.append("  No practiced abilities yet.")
             for a in abilities:
-                prof=int(a.get("current_proficiency") or 1); desc="awful" if prof<20 else "poor" if prof<40 else "fair" if prof<60 else "good" if prof<80 else "superb"
-                lines.append(f"  {str(a.get('display_name') or a.get('ability_id')):24s} {prof:3d}% ({desc})")
+                prof=int(a.get("current_proficiency") or 1)
+                lines.append(f"  {str(a.get('display_name') or a.get('ability_id')).lower():20s} [{prof:3d}%]")
             return done("\n".join(lines))
-        if not at_trainer(): return done("You need to be at your guild or trainer to practice.", False)
+        # Phase 18 starter abilities can be practiced anywhere until trainer content is expanded.
         query=" ".join(args).lower().strip()
         resolved = ps.resolve_practice_ability(actor_id, query, intelligence=intelligence)
         if not resolved.get("ok"):
@@ -2906,18 +2917,22 @@ class MudCommandEngine:
 
         if args and args[0].lower() in {"use", "cast", "invoke", "perform"}:
             args = args[1:]
-        phrase = " ".join(args).lower().strip()
-        aid = phrase.replace(" ", "_")
+        phrase = " ".join(args).lower().strip().strip("'\"")
         target = "self"
         by_name = {}
-        for r in svc.registry.abilities.values():
+        for r in svc.get_actor_abilities(character.id):
             rid = getattr(r, "id", None) or (r.get("id") if isinstance(r, dict) else "")
-            rname = getattr(r, "name", None) or (r.get("name") if isinstance(r, dict) else "")
-            if rname:
-                by_name[str(rname).lower().replace(" ", "_")] = rid
-        if aid not in svc.registry.abilities and aid not in by_name:
-            first = args[0].lower().replace(" ", "_"); aid = first; target = " ".join(args[1:]) or "self"
-        aid = aid if aid in svc.registry.abilities else by_name.get(aid, aid)
+            names = [rid, str(getattr(r, "name", "") or ""), str(getattr(r, "short_name", "") or "")] + list((getattr(r, "plugin_data", {}) or {}).get("aliases") or [])
+            for nm in names:
+                if nm: by_name[str(nm).lower().replace("_", " ").strip()] = rid
+        best = None
+        for nm, rid in by_name.items():
+            if phrase == nm or phrase.startswith(nm + " "):
+                if best is None or len(nm) > len(best[0]): best = (nm, rid)
+        if best:
+            aid = best[1]; target = phrase[len(best[0]):].strip() or "self"
+        else:
+            aid = phrase.replace(" ", "_")
         gateway = svc.gateway() if hasattr(svc, "gateway") else None
         res = gateway.execute(character.id, aid, target, {"command": raw}) if gateway else None
         if res is None:
@@ -2982,7 +2997,7 @@ class MudCommandEngine:
 
     def _cmd_affects(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Display active visible affects through the unified themed frame family."""
-        rt = getattr(self, "runtime", None)
+        rt = getattr(self, "runtime", None) or getattr(getattr(self, "ability_service", None), "runtime", None) or getattr(getattr(self, "abilities", None), "runtime", None) or getattr(character, "runtime", None)
         raw_affects = rt.build_projection(character, "effects") if rt and hasattr(rt, "build_projection") else (getattr(character, "affects", {}) or getattr(character, "effects", {}) or {})
         if isinstance(raw_affects, dict):
             effects = [dict(v if isinstance(v, dict) else {"name": k}, name=(v.get("name") if isinstance(v, dict) else k) or k) for k, v in raw_affects.items()]
@@ -2995,8 +3010,19 @@ class MudCommandEngine:
 
     def _cmd_saff(self, character: Any, args: list[str], raw: str) -> CommandResult:
         """Compact duration-focused active-affect summary."""
-        rt = getattr(self, "runtime", None)
+        rt = getattr(self, "runtime", None) or getattr(getattr(self, "ability_service", None), "runtime", None) or getattr(getattr(self, "abilities", None), "runtime", None) or getattr(character, "runtime", None)
         raw_affects = rt.build_projection(character, "effects") if rt and hasattr(rt, "build_projection") else (getattr(character, "affects", {}) or getattr(character, "effects", {}) or {})
+        if rt and getattr(rt, "state_store", None):
+            try:
+                db_items=[]
+                with sqlite3.connect(rt.state_store.db_path) as con:
+                    con.row_factory=sqlite3.Row
+                    for row in con.execute("SELECT * FROM actor_effect_instances WHERE active=1"):
+                        if not (str(row["target_actor_id"]) == character.id or str(row["target_actor_id"]).endswith(character.id)): continue
+                        meta=json.loads(row["metadata_json"] or "{}"); rem=max(0, int(row["expires_world_time"] or 0)-int(rt.get_world_time().get("total_minutes") or 0)) if int(row["expires_world_time"] or 0) else None
+                        db_items.append({"name":str(meta.get("definition_id") or row["effect_template_id"]).replace("_"," "),"category":"Spell" if "spell" in (meta.get("tags") or []) else "Skill","remaining_ticks":rem,"duration":rem,"tags":meta.get("tags") or [],"modifiers":meta.get("modifiers") or []})
+                if db_items: raw_affects=db_items
+            except Exception: pass
         items = []
         if isinstance(raw_affects, dict):
             vals = raw_affects.values()

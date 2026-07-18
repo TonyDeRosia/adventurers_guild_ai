@@ -813,11 +813,28 @@ class AbilityExecutionService:
         wt=self.world_time(); dur=eff.get("duration") or {}; amount=int(num(dur.get("amount", eff.get("duration_amount", 0)),0)); domain=str(dur.get("domain") or "world_minutes"); expires=None if domain in {"permanent","while_equipped","while_source_exists"} else wt+amount
         tick=int(num(eff.get("tick_interval") or (eff.get("parameters") or {}).get("tick_interval"),0)); eid="eff_"+uuid.uuid4().hex; tags=list(eff.get("tags") or [])
         modifiers=list((eff.get("parameters") or {}).get("modifiers") or [])
-        rec={"effect_instance_id":eid,"definition_id":str(eff.get("effect_id") or eff.get("operation")),"source_actor_id":actor.actor_id,"target_actor_id":target.actor_id,"source_ability_id":ab.id,"state":"active","tags":tags,"modifiers":modifiers,"stacks":int(num((eff.get("stacking") or {}).get("stacks",1),1)),"operation":eff.get("operation"),"origin_action_id":cast_id,"wear_off_messages":eff.get("messages") or {},"tick":{"operation":eff.get("operation"),"amount":eff.get("base_value",0),"damage_type":eff.get("damage_type","poison"),"resource":eff.get("resource","health")}}
-        target.effect_container.setdefault("affects",{}).setdefault("canonical",[]).append(rec)
-        if self.db_path:
+        stack_group=str((eff.get("stacking") or {}).get("exclusive_group") or eff.get("effect_id") or eff.get("operation"))
+        policy=str((eff.get("stacking") or {}).get("policy") or "unique")
+        rec={"effect_instance_id":eid,"definition_id":str(eff.get("effect_id") or eff.get("operation")),"source_actor_id":actor.actor_id,"target_actor_id":target.actor_id,"source_ability_id":ab.id,"state":"active","tags":tags,"modifiers":modifiers,"stacks":int(num((eff.get("stacking") or {}).get("stacks",1),1)),"operation":eff.get("operation"),"origin_action_id":cast_id,"wear_off_messages":eff.get("messages") or {},"tick_interval":tick,"tick":{"operation":eff.get("operation"),"amount":eff.get("base_value",0),"damage_type":eff.get("damage_type","poison"),"resource":eff.get("resource","health")}}
+        existing=None
+        if self.db_path and policy in {"refresh_duration","replace","unique","unique_by_ability"}:
             with sqlite3.connect(self.db_path) as c:
-                c.execute("INSERT OR REPLACE INTO actor_effect_instances(effect_instance_id,world_id,effect_template_id,target_actor_type,target_actor_id,source_actor_type,source_actor_id,source_ability_id,category,disposition,visibility,stack_group,stack_count,maximum_stacks,started_world_time,expires_world_time,next_tick_world_time,active,suspended,created_at,updated_at,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (eid,self.world_id,rec["definition_id"],"actor",target.actor_id,"actor",actor.actor_id,ab.id,",".join(tags),"harmful" if "poison" in tags or "debuff" in tags else "beneficial","public",str((eff.get("stacking") or {}).get("exclusive_group") or rec["definition_id"]),rec["stacks"],int(num((eff.get("stacking") or {}).get("maximum_stacks",1),1)),wt,expires or 0,wt+tick if tick else 0,1,0,now(),now(),jdump(rec)))
+                c.row_factory=sqlite3.Row
+                existing=c.execute("SELECT effect_instance_id,metadata_json FROM actor_effect_instances WHERE target_actor_id=? AND active=1 AND stack_group=? ORDER BY started_world_time DESC LIMIT 1", (target.actor_id, stack_group)).fetchone()
+                if existing:
+                    eid=existing["effect_instance_id"]; rec["effect_instance_id"]=eid
+                    c.execute("UPDATE actor_effect_instances SET expires_world_time=?,next_tick_world_time=?,updated_at=?,metadata_json=? WHERE effect_instance_id=?", (expires or 0, wt+tick if tick else 0, now(), jdump(rec), eid))
+        if not existing:
+            target.effect_container.setdefault("affects",{}).setdefault("canonical",[]).append(rec)
+            if self.db_path:
+                with sqlite3.connect(self.db_path) as c:
+                    c.execute("INSERT OR REPLACE INTO actor_effect_instances(effect_instance_id,world_id,effect_template_id,target_actor_type,target_actor_id,source_actor_type,source_actor_id,source_ability_id,category,disposition,visibility,stack_group,stack_count,maximum_stacks,started_world_time,expires_world_time,next_tick_world_time,active,suspended,created_at,updated_at,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (eid,self.world_id,rec["definition_id"],"actor",target.actor_id,"actor",actor.actor_id,ab.id,",".join(tags),"harmful" if "poison" in tags or "debuff" in tags else "beneficial","public",stack_group,rec["stacks"],int(num((eff.get("stacking") or {}).get("maximum_stacks",1),1)),wt,expires or 0,wt+tick if tick else 0,1,0,now(),now(),jdump(rec)))
+        else:
+            rec["refreshed"] = True
+        rt = getattr(self, "runtime", None)
+        if rt and hasattr(rt, "invalidate_character_projections"):
+            for key in dict.fromkeys([str(target.actor_id), str(target.actor_id).split(":", 1)[1] if str(target.actor_id).startswith("character:") else str(target.actor_id)]):
+                if key: rt.invalidate_character_projections(key, "effects")
         return rec
 
     def remove_effects(self, target_actor_id: str, criteria: dict[str, Any], reason: str="removed") -> dict[str, Any]:

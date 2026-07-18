@@ -300,26 +300,34 @@
     "id": "bless",
     "name": "Bless",
     "short_name": "Bless",
-    "description": "Apply the Blessed Example effect to yourself or an ally. Tagged for safe spellup casting when self-targeted.",
-    "ability_type": "buff",
-    "school": "restoration",
-    "category": "blessing",
+    "description": "Phase 18 starter Bless.",
+    "ability_type": "spell",
+    "school": "arcane",
+    "category": "buff",
     "tags": [
+      "phase18",
       "starter",
       "spell",
       "beneficial",
+      "buff",
       "spellup_eligible"
     ],
     "enabled": true,
     "visibility": "normal",
     "source_types": [
-      "loadout",
-      "builder_grant"
+      "starter_character",
+      "npc",
+      "script"
     ],
-    "requirements": {},
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
     "targeting": {
       "mode": "self",
-      "minimum_targets": 1,
+      "minimum_targets": 0,
       "maximum_targets": 1,
       "allow_self": true,
       "allow_dead": false,
@@ -331,13 +339,12 @@
         "cost_type": "flat",
         "amount": 6,
         "consume_on": "start",
-        "refund_policy": "full_on_interrupt"
+        "refund_policy": "none"
       }
     ],
     "cooldowns": {
-      "cooldown_duration": 8,
-      "cooldown_group": "blessings",
-      "global_cooldown": 1,
+      "cooldown_duration": 1,
+      "cooldown_group": "bless",
       "starts_on": "start"
     },
     "timing": {
@@ -352,31 +359,62 @@
     "formulas": {},
     "damage_components": [],
     "healing_components": [],
-    "effects_applied": [
-      {
-        "id": "blessed_self",
-        "effect_template_id": "blessed_example",
-        "chance": 100,
-        "duration": 600,
-        "stacks": 1,
-        "target_selector": "self",
-        "apply_on": "success",
-        "category": "positive"
-      }
-    ],
+    "effects_applied": [],
     "effects_removed": [],
     "movement_components": [],
-    "state_requirements": {},
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
     "state_changes": [],
     "interrupt_rules": {},
     "messages": {
-      "effect_self": "A quiet blessing settles over you."
+      "complete_self": "You feel righteous."
     },
-    "ai_hints": {},
+    "ai_hints": {
+      "usable_by_npc": true
+    },
     "plugin_data": {
-      "spellup_priority": 10
+      "success_message": "You feel righteous.",
+      "aliases": [
+        "bless"
+      ]
     },
-    "version": "1.0.0"
+    "version": "18.0.0",
+    "canonical_effects": [
+      {
+        "effect_id": "bless",
+        "operation": "apply_affect",
+        "target_selector": "self",
+        "duration": {
+          "domain": "world_minutes",
+          "amount": 10
+        },
+        "stacking": {
+          "policy": "refresh_duration",
+          "exclusive_group": "bless"
+        },
+        "tags": [
+          "spell",
+          "buff",
+          "bless"
+        ],
+        "parameters": {
+          "modifiers": [
+            {
+              "stat": "HITROLL",
+              "amount": 2
+            }
+          ]
+        },
+        "messages": {
+          "actor_success": "You feel righteous.",
+          "refresh_self": "You are already affected by Bless; it is renewed.",
+          "expire_self": "You feel less righteous."
+        }
+      }
+    ]
   },
   {
     "id": "poison_bite",
@@ -1720,5 +1758,3003 @@
         }
       ]
     }
+  },
+  {
+    "id": "kick",
+    "name": "Kick",
+    "short_name": "Kick",
+    "description": "Phase 18 starter Kick.",
+    "ability_type": "skill",
+    "school": "martial",
+    "category": "combat",
+    "tags": [
+      "phase18",
+      "starter",
+      "skill"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "single_enemy",
+      "minimum_targets": 1,
+      "maximum_targets": 1,
+      "allow_self": false,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "stamina",
+        "cost_type": "flat",
+        "amount": 5,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 2,
+      "cooldown_group": "kick",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [
+      {
+        "id": "kick_damage",
+        "damage_type": "physical",
+        "base_amount": 5,
+        "requires_hit_roll": true,
+        "can_critical": false
+      }
+    ],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "You kick your target."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "You kick your target.",
+      "aliases": [
+        "kick"
+      ]
+    },
+    "version": "18.0.0"
+  },
+  {
+    "id": "bash",
+    "name": "Bash",
+    "short_name": "Bash",
+    "description": "Phase 18 starter Bash.",
+    "ability_type": "skill",
+    "school": "martial",
+    "category": "combat",
+    "tags": [
+      "phase18",
+      "starter",
+      "skill"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "single_enemy",
+      "minimum_targets": 1,
+      "maximum_targets": 1,
+      "allow_self": false,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "stamina",
+        "cost_type": "flat",
+        "amount": 8,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 3,
+      "cooldown_group": "bash",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [
+      {
+        "id": "bash_damage",
+        "damage_type": "physical",
+        "base_amount": 4,
+        "requires_hit_roll": true,
+        "can_critical": false
+      }
+    ],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "You bash your target."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "You bash your target.",
+      "aliases": [
+        "bash"
+      ]
+    },
+    "version": "18.0.0"
+  },
+  {
+    "id": "backstab",
+    "name": "Backstab",
+    "short_name": "Backstab",
+    "description": "Phase 18 starter Backstab.",
+    "ability_type": "skill",
+    "school": "martial",
+    "category": "combat",
+    "tags": [
+      "phase18",
+      "starter",
+      "skill"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "single_enemy",
+      "minimum_targets": 1,
+      "maximum_targets": 1,
+      "allow_self": false,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "stamina",
+        "cost_type": "flat",
+        "amount": 10,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 4,
+      "cooldown_group": "backstab",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [
+      {
+        "id": "backstab_damage",
+        "damage_type": "physical",
+        "base_amount": 12,
+        "requires_hit_roll": true,
+        "can_critical": true
+      }
+    ],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "You backstab your target."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "You backstab your target.",
+      "aliases": [
+        "backstab"
+      ]
+    },
+    "version": "18.0.0"
+  },
+  {
+    "id": "bandage",
+    "name": "Bandage",
+    "short_name": "Bandage",
+    "description": "Phase 18 starter Bandage.",
+    "ability_type": "skill",
+    "school": "martial",
+    "category": "healing",
+    "tags": [
+      "phase18",
+      "starter",
+      "skill"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "self",
+      "minimum_targets": 0,
+      "maximum_targets": 1,
+      "allow_self": true,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "stamina",
+        "cost_type": "flat",
+        "amount": 4,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 5,
+      "cooldown_group": "bandage",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [
+      {
+        "id": "bandage_heal",
+        "base_amount": 8
+      }
+    ],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "You bind wounds with a clean bandage."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "You bind wounds with a clean bandage.",
+      "aliases": [
+        "bandage"
+      ]
+    },
+    "version": "18.0.0",
+    "canonical_effects": [
+      {
+        "effect_id": "bandaged",
+        "operation": "apply_affect",
+        "target_selector": "self",
+        "duration": {
+          "domain": "world_minutes",
+          "amount": 3
+        },
+        "stacking": {
+          "policy": "refresh_duration",
+          "exclusive_group": "bandaged"
+        },
+        "tags": [
+          "skill",
+          "cooldown"
+        ],
+        "parameters": {
+          "modifiers": []
+        },
+        "messages": {
+          "actor_success": "You finish bandaging.",
+          "expire_self": "You can bandage again."
+        }
+      }
+    ]
+  },
+  {
+    "id": "rescue",
+    "name": "Rescue",
+    "short_name": "Rescue",
+    "description": "Phase 18 starter Rescue.",
+    "ability_type": "skill",
+    "school": "martial",
+    "category": "utility",
+    "tags": [
+      "phase18",
+      "starter",
+      "skill"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "self",
+      "minimum_targets": 0,
+      "maximum_targets": 1,
+      "allow_self": true,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "stamina",
+        "cost_type": "flat",
+        "amount": 3,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 2,
+      "cooldown_group": "rescue",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "You move to rescue your ally."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "You move to rescue your ally.",
+      "aliases": [
+        "rescue"
+      ]
+    },
+    "version": "18.0.0",
+    "canonical_effects": [
+      {
+        "effect_id": "rescue",
+        "operation": "apply_affect",
+        "target_selector": "self",
+        "duration": {
+          "domain": "world_minutes",
+          "amount": 5
+        },
+        "stacking": {
+          "policy": "refresh_duration",
+          "exclusive_group": "rescue"
+        },
+        "tags": [
+          "skill",
+          "rescue"
+        ],
+        "parameters": {
+          "modifiers": [
+            {
+              "stat": "RESCUE",
+              "amount": 1
+            }
+          ]
+        },
+        "messages": {
+          "actor_success": "You move to rescue your ally.",
+          "expire_self": "Rescue fades."
+        }
+      }
+    ]
+  },
+  {
+    "id": "hide",
+    "name": "Hide",
+    "short_name": "Hide",
+    "description": "Phase 18 starter Hide.",
+    "ability_type": "skill",
+    "school": "martial",
+    "category": "utility",
+    "tags": [
+      "phase18",
+      "starter",
+      "skill"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "self",
+      "minimum_targets": 0,
+      "maximum_targets": 1,
+      "allow_self": true,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "stamina",
+        "cost_type": "flat",
+        "amount": 3,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 2,
+      "cooldown_group": "hide",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "You attempt to hide."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "You attempt to hide.",
+      "aliases": [
+        "hide"
+      ]
+    },
+    "version": "18.0.0",
+    "canonical_effects": [
+      {
+        "effect_id": "hide",
+        "operation": "apply_affect",
+        "target_selector": "self",
+        "duration": {
+          "domain": "world_minutes",
+          "amount": 5
+        },
+        "stacking": {
+          "policy": "refresh_duration",
+          "exclusive_group": "hide"
+        },
+        "tags": [
+          "skill",
+          "hidden"
+        ],
+        "parameters": {
+          "modifiers": [
+            {
+              "stat": "HIDDEN",
+              "amount": 1
+            }
+          ]
+        },
+        "messages": {
+          "actor_success": "You attempt to hide.",
+          "expire_self": "Hide fades."
+        }
+      }
+    ]
+  },
+  {
+    "id": "sneak",
+    "name": "Sneak",
+    "short_name": "Sneak",
+    "description": "Phase 18 starter Sneak.",
+    "ability_type": "skill",
+    "school": "martial",
+    "category": "utility",
+    "tags": [
+      "phase18",
+      "starter",
+      "skill"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "self",
+      "minimum_targets": 0,
+      "maximum_targets": 1,
+      "allow_self": true,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "stamina",
+        "cost_type": "flat",
+        "amount": 3,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 2,
+      "cooldown_group": "sneak",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "You begin moving silently."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "You begin moving silently.",
+      "aliases": [
+        "sneak"
+      ]
+    },
+    "version": "18.0.0",
+    "canonical_effects": [
+      {
+        "effect_id": "sneak",
+        "operation": "apply_affect",
+        "target_selector": "self",
+        "duration": {
+          "domain": "world_minutes",
+          "amount": 5
+        },
+        "stacking": {
+          "policy": "refresh_duration",
+          "exclusive_group": "sneak"
+        },
+        "tags": [
+          "skill",
+          "sneak"
+        ],
+        "parameters": {
+          "modifiers": [
+            {
+              "stat": "SNEAK",
+              "amount": 1
+            }
+          ]
+        },
+        "messages": {
+          "actor_success": "You begin moving silently.",
+          "expire_self": "Sneak fades."
+        }
+      }
+    ]
+  },
+  {
+    "id": "track",
+    "name": "Track",
+    "short_name": "Track",
+    "description": "Phase 18 starter Track.",
+    "ability_type": "skill",
+    "school": "martial",
+    "category": "utility",
+    "tags": [
+      "phase18",
+      "starter",
+      "skill"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "none",
+      "minimum_targets": 0,
+      "maximum_targets": 1,
+      "allow_self": false,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "stamina",
+        "cost_type": "flat",
+        "amount": 3,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 2,
+      "cooldown_group": "track",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "You study the trail and find a likely direction."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "You study the trail and find a likely direction.",
+      "aliases": [
+        "track"
+      ]
+    },
+    "version": "18.0.0",
+    "canonical_effects": [
+      {
+        "effect_id": "track",
+        "operation": "apply_affect",
+        "target_selector": "self",
+        "duration": {
+          "domain": "world_minutes",
+          "amount": 5
+        },
+        "stacking": {
+          "policy": "refresh_duration",
+          "exclusive_group": "track"
+        },
+        "tags": [
+          "skill",
+          "track"
+        ],
+        "parameters": {
+          "modifiers": [
+            {
+              "stat": "TRACK",
+              "amount": 1
+            }
+          ]
+        },
+        "messages": {
+          "actor_success": "You study the trail and find a likely direction.",
+          "expire_self": "Track fades."
+        }
+      }
+    ]
+  },
+  {
+    "id": "magic_missile",
+    "name": "Magic Missile",
+    "short_name": "Magic Missile",
+    "description": "Phase 18 starter Magic Missile.",
+    "ability_type": "spell",
+    "school": "arcane",
+    "category": "damage",
+    "tags": [
+      "phase18",
+      "starter",
+      "spell",
+      "offensive"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "single_enemy",
+      "minimum_targets": 1,
+      "maximum_targets": 1,
+      "allow_self": false,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "mana",
+        "cost_type": "flat",
+        "amount": 5,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "magic_missile",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [
+      {
+        "id": "magic_missile_damage",
+        "damage_type": "arcane",
+        "base_amount": 7,
+        "requires_hit_roll": false,
+        "can_critical": false,
+        "save_definition": {
+          "policy": "none"
+        }
+      }
+    ],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "You cast Magic Missile."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "You cast Magic Missile.",
+      "aliases": [
+        "magic missile"
+      ]
+    },
+    "version": "18.0.0"
+  },
+  {
+    "id": "fireball",
+    "name": "Fireball",
+    "short_name": "Fireball",
+    "description": "Phase 18 starter Fireball.",
+    "ability_type": "spell",
+    "school": "arcane",
+    "category": "damage",
+    "tags": [
+      "phase18",
+      "starter",
+      "spell",
+      "offensive"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "single_enemy",
+      "minimum_targets": 1,
+      "maximum_targets": 1,
+      "allow_self": false,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "mana",
+        "cost_type": "flat",
+        "amount": 18,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 3,
+      "cooldown_group": "fireball",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [
+      {
+        "id": "fireball_damage",
+        "damage_type": "fire",
+        "base_amount": 18,
+        "requires_hit_roll": false,
+        "can_critical": false,
+        "save_definition": {
+          "policy": "half"
+        }
+      }
+    ],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "You hurl a fireball."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "You hurl a fireball.",
+      "aliases": [
+        "fireball"
+      ]
+    },
+    "version": "18.0.0"
+  },
+  {
+    "id": "cure_light",
+    "name": "Cure Light",
+    "short_name": "Cure Light",
+    "description": "Phase 18 starter Cure Light.",
+    "ability_type": "spell",
+    "school": "arcane",
+    "category": "healing",
+    "tags": [
+      "phase18",
+      "starter",
+      "spell",
+      "beneficial"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "self",
+      "minimum_targets": 0,
+      "maximum_targets": 1,
+      "allow_self": true,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "mana",
+        "cost_type": "flat",
+        "amount": 6,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "cure_light",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [
+      {
+        "id": "cure_light_heal",
+        "base_amount": 10
+      }
+    ],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "You cast Cure Light."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "You cast Cure Light.",
+      "aliases": [
+        "cure light"
+      ]
+    },
+    "version": "18.0.0"
+  },
+  {
+    "id": "heal",
+    "name": "Heal",
+    "short_name": "Heal",
+    "description": "Phase 18 starter Heal.",
+    "ability_type": "spell",
+    "school": "arcane",
+    "category": "healing",
+    "tags": [
+      "phase18",
+      "starter",
+      "spell",
+      "beneficial"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "self",
+      "minimum_targets": 0,
+      "maximum_targets": 1,
+      "allow_self": true,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "mana",
+        "cost_type": "flat",
+        "amount": 20,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "heal",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [
+      {
+        "id": "heal_heal",
+        "base_amount": 30
+      }
+    ],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "You call on greater healing."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "You call on greater healing.",
+      "aliases": [
+        "heal"
+      ]
+    },
+    "version": "18.0.0"
+  },
+  {
+    "id": "armor",
+    "name": "Armor",
+    "short_name": "Armor",
+    "description": "Phase 18 starter Armor.",
+    "ability_type": "spell",
+    "school": "arcane",
+    "category": "buff",
+    "tags": [
+      "phase18",
+      "starter",
+      "spell",
+      "beneficial",
+      "buff",
+      "spellup_eligible"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "self",
+      "minimum_targets": 0,
+      "maximum_targets": 1,
+      "allow_self": true,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "mana",
+        "cost_type": "flat",
+        "amount": 8,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "armor",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "A shimmering armor surrounds you."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "A shimmering armor surrounds you.",
+      "aliases": [
+        "armor"
+      ]
+    },
+    "version": "18.0.0",
+    "canonical_effects": [
+      {
+        "effect_id": "armor",
+        "operation": "apply_affect",
+        "target_selector": "self",
+        "duration": {
+          "domain": "world_minutes",
+          "amount": 10
+        },
+        "stacking": {
+          "policy": "refresh_duration",
+          "exclusive_group": "armor"
+        },
+        "tags": [
+          "spell",
+          "buff",
+          "armor"
+        ],
+        "parameters": {
+          "modifiers": [
+            {
+              "stat": "ARMOR",
+              "amount": 20
+            }
+          ]
+        },
+        "messages": {
+          "actor_success": "A shimmering armor surrounds you.",
+          "refresh_self": "You are already affected by Armor; it is renewed.",
+          "expire_self": "Your magical protection fades."
+        }
+      }
+    ]
+  },
+  {
+    "id": "strength",
+    "name": "Strength",
+    "short_name": "Strength",
+    "description": "Phase 18 starter Strength.",
+    "ability_type": "spell",
+    "school": "arcane",
+    "category": "buff",
+    "tags": [
+      "phase18",
+      "starter",
+      "spell",
+      "beneficial",
+      "buff",
+      "spellup_eligible"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "self",
+      "minimum_targets": 0,
+      "maximum_targets": 1,
+      "allow_self": true,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "mana",
+        "cost_type": "flat",
+        "amount": 8,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "strength",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "Strength surges through you."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "Strength surges through you.",
+      "aliases": [
+        "strength"
+      ]
+    },
+    "version": "18.0.0",
+    "canonical_effects": [
+      {
+        "effect_id": "strength",
+        "operation": "apply_affect",
+        "target_selector": "self",
+        "duration": {
+          "domain": "world_minutes",
+          "amount": 10
+        },
+        "stacking": {
+          "policy": "refresh_duration",
+          "exclusive_group": "strength"
+        },
+        "tags": [
+          "spell",
+          "buff",
+          "strength"
+        ],
+        "parameters": {
+          "modifiers": [
+            {
+              "stat": "STR",
+              "amount": 2
+            }
+          ]
+        },
+        "messages": {
+          "actor_success": "Strength surges through you.",
+          "refresh_self": "You are already affected by Strength; it is renewed.",
+          "expire_self": "You feel weaker."
+        }
+      }
+    ]
+  },
+  {
+    "id": "haste",
+    "name": "Haste",
+    "short_name": "Haste",
+    "description": "Phase 18 starter Haste.",
+    "ability_type": "spell",
+    "school": "arcane",
+    "category": "buff",
+    "tags": [
+      "phase18",
+      "starter",
+      "spell",
+      "beneficial",
+      "buff",
+      "spellup_eligible",
+      "haste"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "self",
+      "minimum_targets": 0,
+      "maximum_targets": 1,
+      "allow_self": true,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "mana",
+        "cost_type": "flat",
+        "amount": 12,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "haste",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "The world seems to slow around you."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "The world seems to slow around you.",
+      "aliases": [
+        "haste"
+      ]
+    },
+    "version": "18.0.0",
+    "canonical_effects": [
+      {
+        "effect_id": "haste",
+        "operation": "apply_affect",
+        "target_selector": "self",
+        "duration": {
+          "domain": "world_minutes",
+          "amount": 8
+        },
+        "stacking": {
+          "policy": "refresh_duration",
+          "exclusive_group": "haste"
+        },
+        "tags": [
+          "spell",
+          "buff",
+          "haste"
+        ],
+        "parameters": {
+          "modifiers": [
+            {
+              "stat": "HASTE",
+              "amount": 1
+            }
+          ]
+        },
+        "messages": {
+          "actor_success": "The world seems to slow around you.",
+          "refresh_self": "You are already affected by Haste; it is renewed.",
+          "expire_self": "You feel yourself slow down."
+        }
+      }
+    ]
+  },
+  {
+    "id": "invisibility",
+    "name": "Invisibility",
+    "short_name": "Invisibility",
+    "description": "Phase 18 starter Invisibility.",
+    "ability_type": "spell",
+    "school": "arcane",
+    "category": "buff",
+    "tags": [
+      "phase18",
+      "starter",
+      "spell",
+      "beneficial",
+      "buff",
+      "invis"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "self",
+      "minimum_targets": 0,
+      "maximum_targets": 1,
+      "allow_self": true,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "mana",
+        "cost_type": "flat",
+        "amount": 10,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "invisibility",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "You fade from sight."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "You fade from sight.",
+      "aliases": [
+        "invisibility"
+      ]
+    },
+    "version": "18.0.0",
+    "canonical_effects": [
+      {
+        "effect_id": "invisibility",
+        "operation": "apply_affect",
+        "target_selector": "self",
+        "duration": {
+          "domain": "world_minutes",
+          "amount": 8
+        },
+        "stacking": {
+          "policy": "refresh_duration",
+          "exclusive_group": "invisibility"
+        },
+        "tags": [
+          "spell",
+          "buff",
+          "invisibility"
+        ],
+        "parameters": {
+          "modifiers": [
+            {
+              "stat": "INVIS",
+              "amount": 1
+            }
+          ]
+        },
+        "messages": {
+          "actor_success": "You fade from sight.",
+          "refresh_self": "You are already affected by Invisibility; it is renewed.",
+          "expire_self": "You fade into existence."
+        }
+      }
+    ]
+  },
+  {
+    "id": "detect_invisibility",
+    "name": "Detect Invisibility",
+    "short_name": "Detect Invisibility",
+    "description": "Phase 18 starter Detect Invisibility.",
+    "ability_type": "spell",
+    "school": "arcane",
+    "category": "buff",
+    "tags": [
+      "phase18",
+      "starter",
+      "spell",
+      "beneficial",
+      "buff",
+      "detection"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "self",
+      "minimum_targets": 0,
+      "maximum_targets": 1,
+      "allow_self": true,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "mana",
+        "cost_type": "flat",
+        "amount": 6,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "detect_invisibility",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "Your eyes tingle."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "Your eyes tingle.",
+      "aliases": [
+        "detect invisibility"
+      ]
+    },
+    "version": "18.0.0",
+    "canonical_effects": [
+      {
+        "effect_id": "detect_invisibility",
+        "operation": "apply_affect",
+        "target_selector": "self",
+        "duration": {
+          "domain": "world_minutes",
+          "amount": 10
+        },
+        "stacking": {
+          "policy": "refresh_duration",
+          "exclusive_group": "detect_invisibility"
+        },
+        "tags": [
+          "spell",
+          "buff",
+          "detect_invisibility"
+        ],
+        "parameters": {
+          "modifiers": [
+            {
+              "stat": "DETECT_INVISIBLE",
+              "amount": 1
+            }
+          ]
+        },
+        "messages": {
+          "actor_success": "Your eyes tingle.",
+          "refresh_self": "You are already affected by Detect Invisibility; it is renewed.",
+          "expire_self": "Your eyes stop tingling."
+        }
+      }
+    ]
+  },
+  {
+    "id": "detect_magic",
+    "name": "Detect Magic",
+    "short_name": "Detect Magic",
+    "description": "Phase 18 starter Detect Magic.",
+    "ability_type": "spell",
+    "school": "arcane",
+    "category": "buff",
+    "tags": [
+      "phase18",
+      "starter",
+      "spell",
+      "beneficial",
+      "buff",
+      "detection"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "self",
+      "minimum_targets": 0,
+      "maximum_targets": 1,
+      "allow_self": true,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "mana",
+        "cost_type": "flat",
+        "amount": 5,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "detect_magic",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "Magical auras sharpen."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "Magical auras sharpen.",
+      "aliases": [
+        "detect magic"
+      ]
+    },
+    "version": "18.0.0",
+    "canonical_effects": [
+      {
+        "effect_id": "detect_magic",
+        "operation": "apply_affect",
+        "target_selector": "self",
+        "duration": {
+          "domain": "world_minutes",
+          "amount": 10
+        },
+        "stacking": {
+          "policy": "refresh_duration",
+          "exclusive_group": "detect_magic"
+        },
+        "tags": [
+          "spell",
+          "buff",
+          "detect_magic"
+        ],
+        "parameters": {
+          "modifiers": [
+            {
+              "stat": "DETECT_MAGIC",
+              "amount": 1
+            }
+          ]
+        },
+        "messages": {
+          "actor_success": "Magical auras sharpen.",
+          "refresh_self": "You are already affected by Detect Magic; it is renewed.",
+          "expire_self": "The detect magic wears off."
+        }
+      }
+    ]
+  },
+  {
+    "id": "detect_alignment",
+    "name": "Detect Alignment",
+    "short_name": "Detect Alignment",
+    "description": "Phase 18 starter Detect Alignment.",
+    "ability_type": "spell",
+    "school": "arcane",
+    "category": "buff",
+    "tags": [
+      "phase18",
+      "starter",
+      "spell",
+      "beneficial",
+      "buff",
+      "detection"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "self",
+      "minimum_targets": 0,
+      "maximum_targets": 1,
+      "allow_self": true,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "mana",
+        "cost_type": "flat",
+        "amount": 5,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "detect_alignment",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "Moral auras become clear."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "Moral auras become clear.",
+      "aliases": [
+        "detect alignment"
+      ]
+    },
+    "version": "18.0.0",
+    "canonical_effects": [
+      {
+        "effect_id": "detect_alignment",
+        "operation": "apply_affect",
+        "target_selector": "self",
+        "duration": {
+          "domain": "world_minutes",
+          "amount": 10
+        },
+        "stacking": {
+          "policy": "refresh_duration",
+          "exclusive_group": "detect_alignment"
+        },
+        "tags": [
+          "spell",
+          "buff",
+          "detect_alignment"
+        ],
+        "parameters": {
+          "modifiers": [
+            {
+              "stat": "DETECT_ALIGNMENT",
+              "amount": 1
+            }
+          ]
+        },
+        "messages": {
+          "actor_success": "Moral auras become clear.",
+          "refresh_self": "You are already affected by Detect Alignment; it is renewed.",
+          "expire_self": "Your sense of moral auras fades."
+        }
+      }
+    ]
+  },
+  {
+    "id": "sanctuary",
+    "name": "Sanctuary",
+    "short_name": "Sanctuary",
+    "description": "Phase 18 starter Sanctuary.",
+    "ability_type": "spell",
+    "school": "arcane",
+    "category": "buff",
+    "tags": [
+      "phase18",
+      "starter",
+      "spell",
+      "beneficial",
+      "buff",
+      "spellup_eligible",
+      "sanctuary"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "self",
+      "minimum_targets": 0,
+      "maximum_targets": 1,
+      "allow_self": true,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "mana",
+        "cost_type": "flat",
+        "amount": 18,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "sanctuary",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "A holy sanctuary surrounds you."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "A holy sanctuary surrounds you.",
+      "aliases": [
+        "sanctuary"
+      ]
+    },
+    "version": "18.0.0",
+    "canonical_effects": [
+      {
+        "effect_id": "sanctuary",
+        "operation": "apply_affect",
+        "target_selector": "self",
+        "duration": {
+          "domain": "world_minutes",
+          "amount": 6
+        },
+        "stacking": {
+          "policy": "refresh_duration",
+          "exclusive_group": "sanctuary"
+        },
+        "tags": [
+          "spell",
+          "buff",
+          "sanctuary"
+        ],
+        "parameters": {
+          "modifiers": [
+            {
+              "stat": "SANCTUARY",
+              "amount": 1
+            }
+          ]
+        },
+        "messages": {
+          "actor_success": "A holy sanctuary surrounds you.",
+          "refresh_self": "You are already affected by Sanctuary; it is renewed.",
+          "expire_self": "You feel less protected."
+        }
+      }
+    ]
+  },
+  {
+    "id": "fly",
+    "name": "Fly",
+    "short_name": "Fly",
+    "description": "Phase 18 starter Fly.",
+    "ability_type": "spell",
+    "school": "arcane",
+    "category": "buff",
+    "tags": [
+      "phase18",
+      "starter",
+      "spell",
+      "beneficial",
+      "buff",
+      "movement",
+      "fly"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "self",
+      "minimum_targets": 0,
+      "maximum_targets": 1,
+      "allow_self": true,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "mana",
+        "cost_type": "flat",
+        "amount": 12,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "fly",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "You rise into the air."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "You rise into the air.",
+      "aliases": [
+        "fly"
+      ]
+    },
+    "version": "18.0.0",
+    "canonical_effects": [
+      {
+        "effect_id": "fly",
+        "operation": "apply_affect",
+        "target_selector": "self",
+        "duration": {
+          "domain": "world_minutes",
+          "amount": 8
+        },
+        "stacking": {
+          "policy": "refresh_duration",
+          "exclusive_group": "fly"
+        },
+        "tags": [
+          "spell",
+          "buff",
+          "fly"
+        ],
+        "parameters": {
+          "modifiers": [
+            {
+              "stat": "FLY",
+              "amount": 1
+            }
+          ]
+        },
+        "messages": {
+          "actor_success": "You rise into the air.",
+          "refresh_self": "You are already affected by Fly; it is renewed.",
+          "expire_self": "You drift gently to the ground."
+        }
+      }
+    ]
+  },
+  {
+    "id": "waterwalk",
+    "name": "Waterwalk",
+    "short_name": "Waterwalk",
+    "description": "Phase 18 starter Waterwalk.",
+    "ability_type": "spell",
+    "school": "arcane",
+    "category": "buff",
+    "tags": [
+      "phase18",
+      "starter",
+      "spell",
+      "beneficial",
+      "buff",
+      "movement",
+      "waterwalk"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "self",
+      "minimum_targets": 0,
+      "maximum_targets": 1,
+      "allow_self": true,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "mana",
+        "cost_type": "flat",
+        "amount": 8,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "waterwalk",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "You can walk upon water."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "You can walk upon water.",
+      "aliases": [
+        "waterwalk"
+      ]
+    },
+    "version": "18.0.0",
+    "canonical_effects": [
+      {
+        "effect_id": "waterwalk",
+        "operation": "apply_affect",
+        "target_selector": "self",
+        "duration": {
+          "domain": "world_minutes",
+          "amount": 8
+        },
+        "stacking": {
+          "policy": "refresh_duration",
+          "exclusive_group": "waterwalk"
+        },
+        "tags": [
+          "spell",
+          "buff",
+          "waterwalk"
+        ],
+        "parameters": {
+          "modifiers": [
+            {
+              "stat": "WATERWALK",
+              "amount": 1
+            }
+          ]
+        },
+        "messages": {
+          "actor_success": "You can walk upon water.",
+          "refresh_self": "You are already affected by Waterwalk; it is renewed.",
+          "expire_self": "The waterwalking magic fades."
+        }
+      }
+    ]
+  },
+  {
+    "id": "poison",
+    "name": "Poison",
+    "short_name": "Poison",
+    "description": "Phase 18 starter Poison.",
+    "ability_type": "spell",
+    "school": "arcane",
+    "category": "debuff",
+    "tags": [
+      "phase18",
+      "starter",
+      "spell",
+      "debuff",
+      "poison"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "single_enemy",
+      "minimum_targets": 1,
+      "maximum_targets": 1,
+      "allow_self": false,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "mana",
+        "cost_type": "flat",
+        "amount": 10,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 2,
+      "cooldown_group": "poison",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "You poison your target."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "You poison your target.",
+      "aliases": [
+        "poison"
+      ]
+    },
+    "version": "18.0.0",
+    "canonical_effects": [
+      {
+        "effect_id": "poison",
+        "operation": "damage_over_time",
+        "target_selector": "target",
+        "base_value": 2,
+        "damage_type": "poison",
+        "tick_interval": 1,
+        "duration": {
+          "domain": "world_minutes",
+          "amount": 3
+        },
+        "stacking": {
+          "policy": "refresh_duration",
+          "exclusive_group": "poison"
+        },
+        "tags": [
+          "spell",
+          "debuff",
+          "poison"
+        ],
+        "parameters": {
+          "modifiers": [
+            {
+              "stat": "POISON",
+              "amount": 1
+            }
+          ]
+        },
+        "messages": {
+          "actor_success": "You poison your target.",
+          "expire_self": "You feel less sick."
+        },
+        "save_definition": {
+          "policy": "negate",
+          "save_type": "spell"
+        }
+      }
+    ]
+  },
+  {
+    "id": "blindness",
+    "name": "Blindness",
+    "short_name": "Blindness",
+    "description": "Phase 18 starter Blindness.",
+    "ability_type": "spell",
+    "school": "arcane",
+    "category": "debuff",
+    "tags": [
+      "phase18",
+      "starter",
+      "spell",
+      "debuff",
+      "blind"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "single_enemy",
+      "minimum_targets": 1,
+      "maximum_targets": 1,
+      "allow_self": false,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "mana",
+        "cost_type": "flat",
+        "amount": 10,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 2,
+      "cooldown_group": "blindness",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "You call darkness over your target."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "You call darkness over your target.",
+      "aliases": [
+        "blindness"
+      ]
+    },
+    "version": "18.0.0",
+    "canonical_effects": [
+      {
+        "effect_id": "blindness",
+        "operation": "apply_affect",
+        "target_selector": "target",
+        "base_value": 0,
+        "damage_type": "poison",
+        "tick_interval": 0,
+        "duration": {
+          "domain": "world_minutes",
+          "amount": 2
+        },
+        "stacking": {
+          "policy": "refresh_duration",
+          "exclusive_group": "blindness"
+        },
+        "tags": [
+          "spell",
+          "debuff",
+          "blind"
+        ],
+        "parameters": {
+          "modifiers": [
+            {
+              "stat": "BLIND",
+              "amount": 1
+            }
+          ]
+        },
+        "messages": {
+          "actor_success": "You call darkness over your target.",
+          "expire_self": "You can see again."
+        },
+        "save_definition": {
+          "policy": "negate",
+          "save_type": "spell"
+        }
+      }
+    ]
+  },
+  {
+    "id": "silence",
+    "name": "Silence",
+    "short_name": "Silence",
+    "description": "Phase 18 starter Silence.",
+    "ability_type": "spell",
+    "school": "arcane",
+    "category": "debuff",
+    "tags": [
+      "phase18",
+      "starter",
+      "spell",
+      "debuff",
+      "silenced"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "single_enemy",
+      "minimum_targets": 1,
+      "maximum_targets": 1,
+      "allow_self": false,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "mana",
+        "cost_type": "flat",
+        "amount": 10,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 2,
+      "cooldown_group": "silence",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "You silence your target."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "You silence your target.",
+      "aliases": [
+        "silence"
+      ]
+    },
+    "version": "18.0.0",
+    "canonical_effects": [
+      {
+        "effect_id": "silence",
+        "operation": "apply_affect",
+        "target_selector": "target",
+        "base_value": 0,
+        "damage_type": "poison",
+        "tick_interval": 0,
+        "duration": {
+          "domain": "world_minutes",
+          "amount": 2
+        },
+        "stacking": {
+          "policy": "refresh_duration",
+          "exclusive_group": "silence"
+        },
+        "tags": [
+          "spell",
+          "debuff",
+          "silenced"
+        ],
+        "parameters": {
+          "modifiers": [
+            {
+              "stat": "SILENCED",
+              "amount": 1
+            }
+          ]
+        },
+        "messages": {
+          "actor_success": "You silence your target.",
+          "expire_self": "Your voice returns."
+        },
+        "save_definition": {
+          "policy": "negate",
+          "save_type": "spell"
+        }
+      }
+    ]
+  },
+  {
+    "id": "remove_poison",
+    "name": "Remove Poison",
+    "short_name": "Remove Poison",
+    "description": "Phase 18 starter Remove Poison.",
+    "ability_type": "spell",
+    "school": "arcane",
+    "category": "cure",
+    "tags": [
+      "phase18",
+      "starter",
+      "spell",
+      "beneficial"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "self",
+      "minimum_targets": 0,
+      "maximum_targets": 1,
+      "allow_self": true,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "mana",
+        "cost_type": "flat",
+        "amount": 8,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "remove_poison",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "You draw poison from the target."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "You draw poison from the target.",
+      "aliases": [
+        "remove poison"
+      ]
+    },
+    "version": "18.0.0",
+    "canonical_effects": [
+      {
+        "effect_id": "remove_poison",
+        "operation": "cleanse",
+        "target_selector": "target",
+        "tags": [
+          "poison"
+        ],
+        "messages": {
+          "actor_success": "You draw poison from the target."
+        }
+      }
+    ]
+  },
+  {
+    "id": "cure_blind",
+    "name": "Cure Blind",
+    "short_name": "Cure Blind",
+    "description": "Phase 18 starter Cure Blind.",
+    "ability_type": "spell",
+    "school": "arcane",
+    "category": "cure",
+    "tags": [
+      "phase18",
+      "starter",
+      "spell",
+      "beneficial"
+    ],
+    "enabled": true,
+    "visibility": "normal",
+    "source_types": [
+      "starter_character",
+      "npc",
+      "script"
+    ],
+    "requirements": {
+      "minimum_level": 1,
+      "allowed_classes": [
+        "adventurer"
+      ]
+    },
+    "targeting": {
+      "mode": "self",
+      "minimum_targets": 0,
+      "maximum_targets": 1,
+      "allow_self": true,
+      "allow_dead": false,
+      "require_same_room": true
+    },
+    "costs": [
+      {
+        "resource_id": "mana",
+        "cost_type": "flat",
+        "amount": 8,
+        "consume_on": "start",
+        "refund_policy": "none"
+      }
+    ],
+    "cooldowns": {
+      "cooldown_duration": 1,
+      "cooldown_group": "cure_blind",
+      "starts_on": "start"
+    },
+    "timing": {
+      "activation_type": "instant",
+      "cast_time": 0,
+      "interruptible": false,
+      "completes_immediately": true
+    },
+    "range": {
+      "maximum_room_distance": 0
+    },
+    "formulas": {},
+    "damage_components": [],
+    "healing_components": [],
+    "effects_applied": [],
+    "effects_removed": [],
+    "movement_components": [],
+    "state_requirements": {
+      "positions": [
+        "standing"
+      ]
+    },
+    "state_changes": [],
+    "interrupt_rules": {},
+    "messages": {
+      "complete_self": "You restore sight to the target."
+    },
+    "ai_hints": {
+      "usable_by_npc": true
+    },
+    "plugin_data": {
+      "success_message": "You restore sight to the target.",
+      "aliases": [
+        "cure blind"
+      ]
+    },
+    "version": "18.0.0",
+    "canonical_effects": [
+      {
+        "effect_id": "cure_blind",
+        "operation": "cleanse",
+        "target_selector": "target",
+        "tags": [
+          "blind"
+        ],
+        "messages": {
+          "actor_success": "You restore sight to the target."
+        }
+      }
+    ]
   }
 ]

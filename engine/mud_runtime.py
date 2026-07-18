@@ -961,7 +961,14 @@ class MudRuntime:
         world_id=self.active_world_id or ''
         wt=self.advance_world_time(world_id, max(1, int(minutes))) if world_id else {'total_minutes':0}
         if getattr(self, 'abilities', None):
-            try: self.abilities.process_ability_casts(world_id, int(wt.get('total_minutes') or 0))
+            try:
+                now_minutes = int(wt.get('total_minutes') or 0)
+                self.abilities.process_ability_casts(world_id, now_minutes)
+                self.abilities.process_effect_ticks(now_minutes)
+                for expired in self.abilities.process_effect_expirations(now_minutes):
+                    for msg in (expired.get('messages') or {}).values():
+                        if msg:
+                            self.enqueue_actor_message(expired.get('target_actor_id',''), str(msg)) if hasattr(self, 'enqueue_actor_message') else None
             except Exception: pass
         self.process_runtime_pulse(time.monotonic())
         self.process_due_agent_controllers(int(wt.get('total_minutes') or 0))
@@ -1114,8 +1121,9 @@ class MudRuntime:
         if not getattr(char, "thirst", None): setattr(char, "thirst", "Hydrated")
         if repair.get("applied") and hasattr(self, "projection_cache"):
             self.invalidate_character_projections(char.id, "progression_identity")
-        for aid in ("set_camp", "build_campfire", "recall"):
+        for aid in ("set_camp", "build_campfire", "recall", "kick", "bandage", "bash", "rescue", "hide", "sneak", "backstab", "track", "magic_missile", "cure_light", "heal", "bless", "armor", "strength", "haste", "invisibility", "detect_invisibility", "detect_magic", "detect_alignment", "sanctuary", "fly", "waterwalk", "poison", "remove_poison", "blindness", "cure_blind", "silence", "fireball"):
             ps.learn_ability(char.id, aid, {"source_type":"starter_character","source_id":"starter_demonstration","default_proficiency":1,"maximum_proficiency":100,"maximum_rank":100})
+            ps.learn_ability("character:" + char.id, aid, {"source_type":"starter_character","source_id":"starter_actor_bridge","default_proficiency":1,"maximum_proficiency":100,"maximum_rank":100})
         if self.abilities:
             self.abilities.actor_from_character(char)
 
@@ -1382,7 +1390,7 @@ class MudRuntime:
             "ability_availability": ("ability_grants", "cooldowns", "equipment", "effects", "world_definitions"),
         }.get(projection_type, (projection_type,))
         key = self.projection_cache.source_key(character, projection_type, deps)
-        cached = self.projection_cache.get(character, projection_type, key)
+        cached = None if projection_type == "effects" else self.projection_cache.get(character, projection_type, key)
         if cached is not None:
             if origin == "background": self.performance_counters["warmup_cache_hits"] += 1
             return cached
@@ -1397,6 +1405,22 @@ class MudRuntime:
             value = list(getattr(character, "inventory", []) or [])
         elif projection_type == "effects":
             value = getattr(character, "affects", {}) or getattr(character, "effects", {}) or {}
+            db_items = []
+            try:
+                with sqlite3.connect(self.state_store.db_path) as con:
+                    con.row_factory = sqlite3.Row
+                    for row in con.execute("SELECT * FROM actor_effect_instances WHERE target_actor_id IN (?, ?) AND active=1 ORDER BY started_world_time,effect_instance_id", (character.id, "character:" + character.id)):
+                        meta = json.loads(row["metadata_json"] or "{}")
+                        name = str(meta.get("definition_id") or row["effect_template_id"] or row["source_ability_id"]).replace("_", " ")
+                        remaining = max(0, int(row["expires_world_time"] or 0) - int(self.get_world_time().get("total_minutes") or 0)) if int(row["expires_world_time"] or 0) else None
+                        mods = meta.get("modifiers") or []
+                        summary = ", ".join(f"{m.get('stat')} {m.get('amount'):+}" for m in mods if isinstance(m, dict)) or ", ".join(meta.get("tags") or [])
+                        db_items.append({"name": name, "display_name": name, "category": "Spell" if "spell" in (meta.get("tags") or []) else "Skill", "remaining_ticks": remaining, "duration": remaining, "summary": summary, "mechanical_summary": summary, "tags": meta.get("tags") or [], "modifiers": mods, "permanent": remaining is None})
+            except Exception:
+                db_items = []
+            if db_items:
+                base = list(value.values()) if isinstance(value, dict) else list(value or [])
+                value = base + db_items
         elif projection_type == "abilities":
             svc = getattr(self.command_engine, "ability_service", None) or getattr(self, "abilities", None)
             value = svc.get_actor_abilities(character.id) if svc and hasattr(svc, "get_actor_abilities") else list(getattr(character, "abilities", []) or [])
@@ -1769,6 +1793,7 @@ class MudRuntime:
             raise ValueError(f"Character not found: {character_id}")
         if self.active_world_id == "shattered_realms":
             self._ensure_starter_progression(char)
+        setattr(char, "runtime", self)
         self.active_characters[character_id] = char
         trace["session_lookup"] = time.monotonic(); trace["resident_character_lookup"] = trace["session_lookup"]; trace["routing_started"] = time.monotonic(); trace["command_routing_started"] = trace["routing_started"]; self._current_command_trace = trace
         from engine.mud_commands import CommandResult
