@@ -1,51 +1,21 @@
 # Class and Ability Runtime
 
-## Canonical class identity
+## Progression authority
 
-The canonical player class key is `actor_progression_state.primary_class_id`. Character creation accepts aliases/user input only before validation, saves the canonical class ID in `MudCharacter.actor_data`, and initializes progression with the same ID. Runtime entry calls `MudRuntime._ensure_starter_progression`, which hydrates `primary_class_id`, `primary_class_track_id`, `race_id`, and display `class_name` from `ProgressionService.progression_identity_snapshot`.
+Smart MUD currently preserves its authored class starter progression. In `shattered_realms`, level-1 mages intentionally start with Armor, Detect Magic, Magic Missile, and Strength; adventurers start with Set Camp, Build Campfire, and Recall; warriors start with Kick, Bandage, Bash, and Rescue. These are reconciled as persisted `actor_ability_progression` rows, not display-only rows.
 
-Display names are derived from class profiles and tracks. SCORE renders the display name from the character display snapshot and does not use display text as a database key.
+## Learned-grant invariant
 
-## Known ability source of truth
+`skills`, `spells`, command parsing, direct ability commands, cast, spellup, and gateway validation all consume `AbilityExecutionService.list_known_abilities` and its spell/skill filters. For every displayed row, `knows(actor, row.id)` must be true. Executing a displayed canonical ID may fail for target, resources, cooldown, position, or missing handler, but must not return unknown or not known.
 
-`AbilityExecutionService.get_actor_abilities(actor_id)` is the runtime source of truth for known abilities. It merges active ability grants, persisted `actor_ability_progression` rows, and live actor plugin grants, then filters through enabled ability definitions.
+## Character creation lifecycle
 
-`MudRuntime._ensure_starter_progression` reconciles class ability progression. It uses authored class profile grants when present, otherwise a small current-runtime starter map for shipped classes. It adds expected class abilities and retires only legacy `source_type=starter_character` rows that are not part of the canonical class set.
+Character creation selects class/race, initializes progression state, reconciles class starter abilities idempotently, persists progression/proficiency rows, and hydrates the runtime actor. Reconciliation uses class progression metadata and does not duplicate grants on login.
 
-## Ability name resolution and gateway
+## Spellup lifecycle
 
-`AbilityRuntimeGateway` normalizes case, underscores, hyphens, repeated whitespace, and single/double quoted multi-word ability names. Prefix parsing is used for commands such as `cast 'magic missile' fox`, returning the ability ID and remaining target text.
+`spellup` enumerates `list_known_spells`, filters to beneficial `spellup_eligible` buffs, excludes Magic Missile and other harmful spells, executes candidates by canonical ID against self, and reports cast/already-active/low-mana/blocked counts.
 
-The gateway distinguishes failures:
+## Displayed skills
 
-- `unknown_ability` for no matching definition;
-- `not_known` for a definition the actor has not learned;
-- `wrong_category` when a spell command names a skill;
-- `handler_not_implemented` for definition-only abilities;
-- downstream validation/resource/target reasons from `AbilityExecutionService`.
-
-## Execution routing
-
-`cast`, `invoke`, `perform`, and direct commands such as `kick`, `bandage`, and `bash` route through `MudCommandEngine._cmd_use_ability`, which delegates to `AbilityRuntimeGateway`. Direct commands no longer depend on a separate executable ability list.
-
-## Spellup
-
-`spellup` obtains known spells from `AbilityExecutionService.get_actor_abilities`, filters to enabled beneficial self-targeted spellup metadata, skips offensive/debuff entries, and executes each candidate through the same `AbilityExecutionService.execute_instant_ability` path used by normal instant casts. It reports cast, already-active, low-mana, and blocked counts.
-
-## Active effects
-
-Cast and spellup effect application use the existing ability effect persistence (`actor_effect_instances`) plus live actor effect containers. `aff`, `saff`, and SCORE-related affect views read the same canonical persisted/runtime effect state, so spellup duplicate checks and display are aligned.
-
-## Migration/reconciliation behavior
-
-Existing characters are preserved. The class identity repair is idempotent and only fills missing canonical identity fields when valid source data exists. Ability reconciliation is conservative: it retires only legacy automatic `starter_character` rows outside the actor's class progression and never deletes unknown-origin, awarded, trained, admin, or manually learned rows.
-
-## Phase 18G command usability note
-
-Phase 18G connects displayed active skills and spells to player input by using the canonical command registry, the Phase 18F ability gateway, and shared spell/target token resolution. Completed abilities execute through `execute_result(...)`; known definitions without mechanics continue to return `HANDLER_NOT_IMPLEMENTED` rather than `UNKNOWN_ABILITY`.
-
-## Phase 18H canonical learned ability lifecycle
-
-`AbilityExecutionService.list_known_abilities()` is the single learned-ability source of truth. It accepts either the durable character id or the live `character:<id>` actor id, merges active `actor_ability_grants`, active `actor_ability_progression`, and live actor plugin grants, and filters every row through the enabled ability registry. `get_actor_abilities()` remains only as a compatibility wrapper.
-
-Displays, command parsing, gateway validation, and execution all consume this service. `skills` and `spells` do not fall back to formatting-only projections, and `trace_ability` no longer performs an independent learned check.
+Build Campfire and Set Camp are canonical active skills. They can be invoked by direct ability command names or generic `use` syntax, and currently return a real handler outcome when camp prerequisites are met or a truthful blocked/handler status when they are not.

@@ -246,3 +246,7 @@ Next phase should attach the missing customized TBA/CircleMUD source ZIP to the 
 ## Phase 18H ability truth invariant
 
 Phase 18H establishes a single learned-ability service: `AbilityExecutionService.list_known_abilities()`. `skills`, `spells`, direct ability commands, `cast`, `spellup`, and gateway validation consume the same projection, so a displayed ability must either execute or return the gateway's handler-not-implemented classification. Formatting-only ability fallbacks and the old player-facing `spellup` permission gate were removed.
+
+### Phase 18I — End-to-End Ability Execution Repair
+
+Status: Implemented. Cast parsing is now a two-part operation that resolves an actor-known spell ID and preserves target text, including quoted spell names and token-prefix spell matching. The cast path executes pre-resolved canonical IDs through the ability gateway, displayed spell/skill rows are validated against canonical learned state, and spellup enumerates the same known-spell projection used by display and casting. New runtime integration coverage verifies `c magic wolf`, quoted Magic Missile casts, self buffs, displayed-row knowledge invariants, and spellup candidate handling.

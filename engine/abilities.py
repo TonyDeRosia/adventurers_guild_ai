@@ -459,13 +459,19 @@ class AbilityRuntimeGateway:
         self.service = service
         self.runtime = runtime or getattr(service, "runtime", None)
 
+    def execute_by_id(self, character_id: str, ability_id: str, target_query: Any=None, invocation_context: dict[str, Any] | None=None) -> AbilityUseResult:
+        ctx = dict(invocation_context or {})
+        ctx["ability_pre_resolved"] = True
+        return self.execute(character_id, ability_id, target_query, ctx)
+
     def execute(self, character_id: str, ability_query: str, target_query: Any=None, invocation_context: dict[str, Any] | None=None) -> AbilityUseResult:
         actor = self.service.actor_registry.get(character_id)
         if actor is None:
             self.service._log_missing_actor(character_id, ability_query, invocation_context or {})
             return AbilityUseResult(False, reason_code="actor_registration_missing", player_message="Your character is not ready to use abilities yet. Please re-enter the world.", actor_id=character_id)
         invocation_context = invocation_context or {}
-        resolved = self.resolve_ability(actor.actor_id, ability_query) or self.resolve_ability(character_id, ability_query)
+        pre_resolved = bool(invocation_context.get("ability_pre_resolved"))
+        resolved = str(ability_query) if pre_resolved and str(ability_query) in self.service.registry.abilities else (self.resolve_ability(actor.actor_id, ability_query) or self.resolve_ability(character_id, ability_query))
         known_ids = {str(r.get("id")) for r in self.service.get_actor_abilities(actor.actor_id)} | {str(r.get("id")) for r in self.service.get_actor_abilities(character_id)}
         defined = resolved or self.resolve_definition(ability_query)
         if not defined:
@@ -555,59 +561,87 @@ class AbilityRuntimeGateway:
         return ids[0], q[len(c):].strip() or "self"
 
 
-    def tokenize_ability_input(self, text: str) -> list[str]:
-        import shlex
-        try:
-            return [self._normalize_query(t) for t in shlex.split(str(text or "")) if self._normalize_query(t)]
-        except ValueError:
-            return [self._normalize_query(t) for t in str(text or "").split() if self._normalize_query(t)]
+    def _split_quoted_spell_input(self, text: str) -> dict[str, Any] | None:
+        raw = str(text or "").strip()
+        if not raw or raw[0] not in {"'", '"'}:
+            return None
+        quote = raw[0]
+        escaped = False
+        chars: list[str] = []
+        for idx, ch in enumerate(raw[1:], start=1):
+            if escaped:
+                chars.append(ch); escaped = False; continue
+            if ch == "\\":
+                escaped = True; continue
+            if ch == quote:
+                return {"status": "OK", "spell_text": "".join(chars).strip(), "target_text": raw[idx + 1:].strip(), "quote": quote}
+            chars.append(ch)
+        return {"status": "UNTERMINATED_QUOTE", "spell_text": "".join(chars).strip(), "target_text": "", "quote": quote}
 
-    def resolve_spell_tokens(self, actor_id: str, text: str, require_known: bool = True) -> dict[str, Any]:
-        tokens = self.tokenize_ability_input(text)
-        self.service._pub("spell_resolution_started", {"actor_id": actor_id, "input": text, "tokens": tokens})
+    def tokenize_ability_input(self, text: str) -> list[str]:
+        return [self._normalize_query(t) for t in str(text or "").split() if self._normalize_query(t)]
+
+    def _spell_phrases(self, ab: AbilityDefinition) -> set[str]:
+        aliases = (ab.plugin_data or {}).get("aliases") or []
+        if isinstance(aliases, str): aliases=[aliases]
+        return {p for p in ({self._normalize_query(ab.id), self._normalize_query(ab.id.replace("_"," ")), self._normalize_query(ab.name), self._normalize_query(ab.short_name)} | {self._normalize_query(a) for a in aliases}) if p}
+
+    def _match_known_spell_query(self, actor_id: str, spell_text: str, require_known: bool = True) -> dict[str, Any]:
+        tokens = self.tokenize_ability_input(spell_text)
         if not tokens:
-            return {"status": "UNKNOWN_ABILITY", "ability_id": "", "consumed_tokens": 0, "target_text": "", "candidates": []}
+            return {"status": "UNKNOWN_ABILITY", "ability_id": "", "consumed_tokens": 0, "candidates": []}
         learned = {str(r["id"]) for r in self.service.list_known_abilities(actor_id)}
         candidates: list[tuple[int, int, int, str, str]] = []
-        # score tuple: rank, consumed token count, matched character count, ability id, candidate phrase
         for aid, ab in self.service.registry.abilities.items():
             if str(ab.ability_type) != "spell":
                 continue
             if require_known and aid not in learned:
                 continue
-            aliases = (ab.plugin_data or {}).get("aliases") or []
-            if isinstance(aliases, str): aliases=[aliases]
-            phrases = {self._normalize_query(aid), self._normalize_query(aid.replace("_"," ")), self._normalize_query(ab.name), self._normalize_query(ab.short_name)} | {self._normalize_query(a) for a in aliases}
-            for phrase in {p for p in phrases if p}:
-                ptoks = phrase.split()
-                maxn = min(len(tokens), len(ptoks))
+            for phrase in self._spell_phrases(ab):
+                ptoks = phrase.split(); maxn = min(len(tokens), len(ptoks))
                 for n in range(maxn, 0, -1):
                     given = tokens[:n]
                     if n == len(ptoks) and given == ptoks:
                         rank = 100
-                    elif n == len(ptoks) and " ".join(given) == phrase:
-                        rank = 95
                     elif all(ptoks[i].startswith(given[i]) for i in range(n)):
                         rank = 80 + n
                     elif n == 1 and phrase.startswith(given[0]):
                         rank = 60
                     else:
                         continue
-                    candidates.append((rank, n, sum(map(len, given)), aid, phrase))
-                    break
+                    candidates.append((rank, n, sum(map(len, given)), aid, phrase)); break
         if not candidates:
             defined = self.resolve_definition(" ".join(tokens))
-            status = "NOT_KNOWN" if defined and defined not in learned else "UNKNOWN_ABILITY"
-            return {"status": status, "ability_id": defined if status == "NOT_KNOWN" else "", "consumed_tokens": 0, "target_text": " ".join(tokens), "candidates": []}
+            return {"status": "NOT_KNOWN" if defined and defined not in learned else "UNKNOWN_ABILITY", "ability_id": defined if defined and defined not in learned else "", "consumed_tokens": 0, "candidates": []}
         best_rank=max(c[0] for c in candidates); best=[c for c in candidates if c[0]==best_rank]
         best_n=max(c[1] for c in best); best=[c for c in best if c[1]==best_n]
         ids=sorted({c[3] for c in best})
         if len(ids) != 1:
-            self.service._pub("spell_ambiguous", {"actor_id": actor_id, "input": text, "candidates": ids})
-            return {"status": "AMBIGUOUS_ABILITY", "ability_id": "", "consumed_tokens": 0, "target_text": " ".join(tokens), "candidates": ids}
-        aid=ids[0]; consumed=best[0][1]; target=" ".join(tokens[consumed:])
-        self.service._pub("spell_resolved", {"actor_id": actor_id, "input": text, "ability_id": aid, "consumed_tokens": consumed, "target_text": target})
-        return {"status": "RESOLVED", "ability_id": aid, "consumed_tokens": consumed, "target_text": target, "candidates": [aid], "match_type": "token_prefix", "normalized_input": " ".join(tokens)}
+            return {"status": "AMBIGUOUS_ABILITY", "ability_id": "", "consumed_tokens": 0, "candidates": ids}
+        return {"status": "RESOLVED", "ability_id": ids[0], "consumed_tokens": best_n, "candidates": [ids[0]], "match_type": "token_prefix"}
+
+    def resolve_spell_tokens(self, actor_id: str, text: str, require_known: bool = True) -> dict[str, Any]:
+        quoted = self._split_quoted_spell_input(text)
+        self.service._pub("cast_parse_started", {"actor_id": actor_id, "raw_input": text})
+        if quoted:
+            if quoted["status"] != "OK":
+                return {"status": "UNTERMINATED_QUOTE", "ability_id": "", "canonical_name": "", "matched_text": quoted.get("spell_text", ""), "consumed_tokens": 0, "target_text": "", "match_type": "quoted", "candidates": []}
+            match = self._match_known_spell_query(actor_id, quoted["spell_text"], require_known=require_known)
+            aid = str(match.get("ability_id") or "")
+            ab = self.service.registry.abilities.get(aid)
+            result = {**match, "canonical_name": ab.name if ab else "", "matched_text": quoted["spell_text"], "consumed_tokens": len(self.tokenize_ability_input(quoted["spell_text"])), "target_text": quoted["target_text"], "match_type": "quoted", "ambiguity_candidates": match.get("candidates", [])}
+            self.service._pub("cast_target_text_extracted", {"actor_id": actor_id, "parsed_spell_text": quoted["spell_text"], "target_text": quoted["target_text"], "ability_id": aid, "status": result.get("status")})
+            return result
+        tokens = self.tokenize_ability_input(text)
+        if not tokens:
+            return {"status": "UNKNOWN_ABILITY", "ability_id": "", "canonical_name": "", "matched_text": "", "consumed_tokens": 0, "target_text": "", "match_type": "empty", "candidates": []}
+        match = self._match_known_spell_query(actor_id, " ".join(tokens), require_known=require_known)
+        consumed = int(match.get("consumed_tokens") or 0)
+        aid = str(match.get("ability_id") or "")
+        ab = self.service.registry.abilities.get(aid)
+        result = {**match, "canonical_name": ab.name if ab else "", "matched_text": " ".join(tokens[:consumed]), "target_text": " ".join(tokens[consumed:]), "ambiguity_candidates": match.get("candidates", [])}
+        self.service._pub("cast_spell_text_resolved", {"actor_id": actor_id, "raw_input": text, "ability_id": aid, "parsed_spell_text": result.get("matched_text"), "consumed_token_count": consumed, "target_text": result.get("target_text"), "status": result.get("status")})
+        return result
 
     def resolve_definition(self, query: str) -> str:
         """Resolve an ability definition independent of whether an actor knows it."""

@@ -2836,7 +2836,7 @@ class MudCommandEngine:
             if targeting.get("mode", "self") != "self" or targeting.get("allow_self", True) is False:
                 continue
             rows.append(r)
-        cast=active=low=blocked=0; lines=[]
+        cast=active=low=blocked=cooldown=unavailable=0; lines=[]
         for r in sorted(rows, key=lambda x: ((x.get("plugin_data") or {}).get("spellup_priority", 100), x.get("id"))):
             aid=str(r.get("id"))
             # Execute through the same gateway used by CAST so known checks and handler status stay canonical.
@@ -2851,9 +2851,13 @@ class MudCommandEngine:
                 msg=str(res.get("message") or "").lower(); reason=str(res.get("reason_code") or "").lower()
                 if "mana" in msg or "resource" in reason:
                     low += 1; lines.append(f"{r.get('name')}: low mana")
+                elif "cooldown" in reason or "ready in" in msg:
+                    cooldown += 1; lines.append(f"{r.get('name')}: on cooldown")
+                elif "handler_not_implemented" in reason:
+                    unavailable += 1; lines.append(f"{r.get('name')}: unavailable")
                 else:
                     blocked += 1; lines.append(f"{r.get('name')}: skipped")
-        summary=f"Spellup complete: {cast} cast, {active} already active, {low} low mana, {blocked} blocked in combat."
+        summary=f"Spellup complete: {cast} cast, {active} already active, {low} low mana, {blocked} blocked, {cooldown} on cooldown, {unavailable} unavailable."
         return CommandResult(("\n".join(lines)+"\n" if lines else "") + summary)
 
     def _cmd_showvnums(self, character: Any, args: list[str], raw: str) -> CommandResult:
@@ -2954,19 +2958,20 @@ class MudCommandEngine:
         if canonical_cmd == "cast" and gateway:
             spell = gateway.resolve_spell_tokens(character.id, query, require_known=True)
             if spell.get("status") == "AMBIGUOUS_ABILITY":
-                return CommandResult("Which spell did you mean? " + ", ".join(str(x).replace("_", " ").title() for x in spell.get("candidates", [])), ok=False)
+                return CommandResult("Ambiguous spell name. Did you mean: " + ", ".join(str(x).replace("_", " ").title() for x in spell.get("ambiguity_candidates") or spell.get("candidates", [])) + "?", ok=False)
+            if spell.get("status") == "UNTERMINATED_QUOTE":
+                return CommandResult("Your spell quote is missing a closing quote.", ok=False)
             if spell.get("status") != "RESOLVED":
-                defined = gateway.resolve_definition(query)
-                if defined and getattr(svc.registry.abilities.get(defined), "ability_type", "") != "spell":
-                    return CommandResult("You can only cast spells with CAST.", ok=False)
-                aid = defined or query; target = "self"
-            else:
-                aid = str(spell["ability_id"]); target = str(spell.get("target_text") or "self")
+                return CommandResult(f'You do not recognize an ability called "{query}".', ok=False)
+            aid = str(spell["ability_id"]); target = str(spell.get("target_text") or "self")
         else:
             aid, target = gateway.resolve_ability_prefix(character.id, query) if gateway else ("", "")
         if not aid:
             return CommandResult("Ability resolution failed before the canonical gateway.", ok=False)
-        res = gateway.execute(character.id, aid, target or "self", {"command": raw, "source": canonical_cmd}) if gateway else None
+        if canonical_cmd == "cast" and gateway and hasattr(gateway, "execute_by_id"):
+            res = gateway.execute_by_id(character.id, aid, target or "self", {"command": raw, "source": canonical_cmd})
+        else:
+            res = gateway.execute(character.id, aid, target or "self", {"command": raw, "source": canonical_cmd}) if gateway else None
         if res is None:
             return CommandResult("Ability system is unavailable.", ok=False)
         return CommandResult(res.player_message or ("Ability activated." if res.ok else "You cannot use that ability."), ok=res.ok, state_updates={"render_room": res.ok and res.ability_id in {"set_camp","build_campfire","recall"}})

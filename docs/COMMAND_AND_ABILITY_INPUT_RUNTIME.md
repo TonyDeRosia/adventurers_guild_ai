@@ -1,58 +1,24 @@
 # Command and Ability Input Runtime
 
-## Canonical command registry
+## Cast parsing model
 
-`engine.command_registry.CommandRegistry` is the canonical command registry. Each command can now carry:
+`cast` and `c` now parse spell invocation as two values: a canonical spell ID and remaining target text. The cast command never sends the entire post-command argument string to generic ability execution as the ability name.
 
-- canonical command word;
-- explicit aliases;
-- stable minimum abbreviation;
-- ability ID for direct ability commands;
-- command category/status/help metadata.
+The internal parse result is shaped as a spell invocation result with status, ability ID, canonical name, matched text, consumed token count, target text, match type, and ambiguity candidates.
 
-## Command abbreviation algorithm
+## Quoted spell input
 
-Resolution order is:
+If the first non-space character is `'` or `"`, the parser captures text up to the matching closing quote as the spell phrase, removes both quotes, skips spaces after the quote, and preserves the remainder as target text. Unterminated quotes return `UNTERMINATED_QUOTE` and do not spend mana or enter the gateway.
 
-1. exact canonical command;
-2. exact explicit alias;
-3. configured minimum abbreviation;
-4. longer unambiguous prefix whose length satisfies the command's minimum abbreviation;
-5. ambiguous/unknown typed failure.
+Examples:
 
-Prefixes shorter than the configured minimum do not resolve unless they are explicit aliases. Ambiguous commands return candidates instead of selecting by insertion order.
+- `c 'magic missile' wolf` resolves spell text `magic missile` and target `wolf`.
+- `c "magic missile" wolf` resolves spell text `magic missile` and target `wolf`.
 
-Phase 18G configured minimum abbreviations include `cast (c)`, `kick (ki)`, `bash (bas)`, `bandage (band)`, `look (l)`, `affects (aff)`, and the six movement abbreviations `n/e/s/w/u/d`.
+## Unquoted spell input
 
-## Spell token parsing
+Unquoted input is matched from the beginning of the argument with actor-known spell token prefixes. The resolver supports full names and per-token prefixes such as `magic`, `magic missile`, and `mag mis` for `Magic Missile`. It records exactly how many leading tokens were consumed and returns the remaining words to target resolution.
 
-The Phase 18G spell resolver lives on the Phase 18F ability gateway and is reusable outside `cast` as `resolve_spell_tokens(...)`. It:
+## Execution by canonical ID
 
-- normalizes case and repeated whitespace;
-- honors single-quoted and double-quoted phrases via shared tokenization;
-- filters to actor-known spells for normal player casting;
-- matches canonical names, IDs, short names, and aliases;
-- supports token-by-token prefixes such as `mag mis` for `Magic Missile`;
-- returns consumed spell-token count and the remaining target text.
-
-## Spell/target boundary
-
-For unquoted input, the resolver scores possible spell token spans and consumes only the winning span. The rest of the input is preserved as target text. Example: `c magic goblin` resolves `magic` to `magic_missile` when unambiguous and leaves `goblin` as the target.
-
-## Target abbreviations
-
-Canonical target resolution now supports exact visible room matches first, then unambiguous visible prefixes. Ambiguous target prefixes return `INVALID_TARGET` without spending resources.
-
-## Direct skill routing
-
-`kick`, `bash`, and `bandage` route through `_cmd_direct_ability`, canonicalize the command word, and then enter the same Phase 18F ability gateway used by `cast` and `use`.
-
-## Action delays versus cooldowns
-
-Cooldowns remain ability-specific readiness timers tracked by the ability service. Full legacy WAIT_STATE/action-delay parity is documented as deferred until the customized TBA source is available; this pass does not conflate cooldowns with action delay.
-
-## Phase 18H ability input truth
-
-The spell parser resolves names only. It may identify the best spell token prefix and target text, but command execution must enter `AbilityRuntimeGateway`, which asks `AbilityExecutionService.list_known_abilities()` / `knows()` whether the actor knows the resolved ability. Command-layer `Unknown spell` and `You do not know ...` responses are not used for abilities displayed by `spells`.
-
-`spellup` is a normal player gameplay command. It enumerates eligible known self-buff spells from the canonical service and executes each through the same gateway path as `cast`.
+Once the parser resolves a spell ID, `MudCommandEngine._cmd_use_ability` calls `AbilityRuntimeGateway.execute_by_id`. The gateway then validates knowledge, target rules, resources, cooldowns, and handlers for that exact canonical ID without reconstructing the spell name from raw text.
