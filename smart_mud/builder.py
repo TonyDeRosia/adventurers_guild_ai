@@ -194,8 +194,8 @@ OBJECT_BUILDER_SECTIONS = {
 }
 
 TBA_OEDIT_EXTRA_FLAGS = ("glow", "hum", "dark", "lock", "evil", "invisible", "magic", "nodrop", "bless", "anti_good", "anti_evil", "anti_neutral", "noremove", "inventory", "unique")
-TBA_OEDIT_WEAR_FLAGS = ("take", "finger", "neck", "body", "head", "legs", "feet", "hands", "arms", "shield", "about", "waist", "wrist", "wield", "hold", "float", "light", "mainhand", "offhand")
-TBA_OEDIT_PERM_AFFECTS = ("blind", "invisible", "detect_invisible", "detect_magic", "sense_life", "waterwalk", "sanctuary", "group", "curse", "infravision", "poison", "protect_evil", "protect_good", "sleep", "notrack", "flying")
+TBA_OEDIT_WEAR_FLAGS = ("take",) + CANONICAL_EQUIPMENT_SLOT_IDS
+TBA_OEDIT_PERM_AFFECTS = MEDIT_AFFECT_FLAGS
 TBA_ITEM_TYPES = ("light", "scroll", "wand", "staff", "potion", "weapon", "armor", "container", "drink_container", "fountain", "food", "money", "furniture", "note", "other", "worn", "treasure", "trash", "key", "pen", "boat", "misc")
 REDIT_DIRECTIONS = ("north", "east", "south", "west", "up", "down")
 REDIT_REVERSE_DIRECTIONS = {"north": "south", "south": "north", "east": "west", "west": "east", "up": "down", "down": "up"}
@@ -2912,37 +2912,54 @@ class BuilderService:
         lines += ["F) Extra descriptions menu", "R) Room Resets", f"S) Script      : {script_summary}", "W) Copy Room", "X) Delete Room", "Q) Quit", "Enter choice :"]
         return "\n".join(lines)
 
+    def _oedit_display_id(self, rec: dict[str, Any], object_id: str) -> str:
+        vnum = rec.get("vnum")
+        if vnum not in (None, "") and str(vnum) != str(object_id):
+            return f"-- Object ID: [{object_id}]  VNUM: [{vnum}]"
+        return f"-- Item number : [{vnum if vnum not in (None, '') else object_id}]"
+
+    def _oedit_bits(self, values: Any) -> str:
+        vals = [str(v).upper() for v in (values if isinstance(values, list) else ([] if values in (None, "") else [values])) if str(v).strip()]
+        return " ".join(vals) if vals else "NOBITS"
+
     def _render_oedit_menu(self, sess: BuilderEditSession) -> str:
         rec = normalize_object_template(sess.object_id, sess.working_record or {})
-        item_type = str(rec.get("item_type") or rec.get("type") or "misc").lower()
-        def yn(values): return ", ".join(map(str, values or [])) or "none"
-        def desc_count(): return len(rec.get("extra_descriptions") or [])
-        def apply_count(): return len(rec.get("affects") or rec.get("applies") or [])
-        lines = ["Object Editor", f"-- Item number : [{rec.get('vnum', sess.object_id)}]", f"Object ID     : {sess.object_id}", f"Draft status  : {'modified' if sess.dirty else 'clean'}", ""]
-        rows = [
-            ("1", "Keywords", yn(rec.get("keywords"))),
-            ("2", "S-Desc", rec.get("short_description") or rec.get("name") or ""),
-            ("3", "L-Desc", rec.get("long_description") or ""),
-            ("4", "A-Desc", rec.get("look_description") or rec.get("action_description") or ""),
-            ("5", "Type", item_type),
-            ("6", "Extra flags", yn(rec.get("extra_flags"))),
-            ("7", "Wear flags", yn(rec.get("wear_flags"))),
-            ("8", "Weight", rec.get("weight", 0)),
-            ("9", "Cost", rec.get("cost", 0)),
-            ("A", "Cost/Day", rec.get("cost_per_day", rec.get("rent", 0))),
-            ("B", "Timer", rec.get("destroy_timer", rec.get("timer", 0))),
-            ("C", "Values", self._oedit_values_summary(rec)),
-            ("D", "Applies menu", f"{apply_count()} applies"),
-            ("E", "Extra descriptions menu", f"{desc_count()} descriptions"),
-            ("M", "Min Level", rec.get("min_level", 0)),
-            ("P", "Perm Affects", yn(rec.get("perm_affects"))),
-            ("S", "Script", yn(rec.get("scripts")) if rec.get("scripts") else "unsupported by runtime"),
-            ("W", "Copy object", "choose destination"),
-            ("X", "Delete object", "dependency-protected"),
-            ("Q", "Quit", "save/discard/abort"),
+        item_type = str(rec.get("item_type") or rec.get("type") or "misc").upper()
+        keywords = " ".join(map(str, rec.get("keywords") or [])) or "Not Set."
+        sdesc = rec.get("short_description") or rec.get("name") or "Not Set."
+        ldesc = str(rec.get("long_description") or "Not Set.").rstrip()
+        adesc = str(rec.get("look_description") or rec.get("action_description") or "Not Set.").rstrip()
+        extras = rec.get("extra_descriptions") or []
+        scripts = rec.get("scripts") or rec.get("script_ids") or rec.get("script_attachments") or []
+        script_summary = "Set." if scripts else "Not Set."
+        extra_summary = "Set." if extras else "Not Set."
+        lines = [self._oedit_display_id(rec, sess.object_id), ""]
+        lines += [
+            f"1) Keywords     : {keywords}",
+            f"2) S-Desc       : {sdesc}",
+            "3) L-Desc       :-",
+            ldesc,
+            "",
+            "4) A-Desc       :-",
+            adesc,
+            "",
+            f"5) Type         : {item_type}",
+            f"6) Extra flags  : {self._oedit_bits(rec.get('extra_flags'))}",
+            f"7) Wear flags   : {self._oedit_bits(rec.get('wear_flags'))}",
+            f"8) Weight       : {rec.get('weight', 0)}",
+            f"9) Cost         : {rec.get('cost', 0)}",
+            f"B) Timer        : {rec.get('destroy_timer', rec.get('timer', 0))}",
+            f"C) Values       : {self._oedit_values_summary(rec)}",
+            "D) Applies menu",
+            f"E) Extra descriptions menu: {extra_summary}",
+            f"M) Min Level    : {rec.get('min_level', 0)}",
+            f"P) Perm Affects : {self._oedit_bits(rec.get('perm_affects'))}",
+            f"S) Script       : {script_summary}",
+            "W) Copy object",
+            "X) Delete object",
+            "Q) Quit",
+            "Enter choice :",
         ]
-        lines += [f"{k}) {label:<28}: {value}" for k, label, value in rows]
-        lines += ["", "V) Validate   R) Preview   U) Undo   Y) Redo   H) Help", "Enter choice:"]
         return "\n".join(lines)
 
     def _oedit_values_summary(self, rec: dict[str, Any]) -> str:
@@ -2955,8 +2972,17 @@ class BuilderService:
             "staff": ("spell_storage", "charges"), "scroll": ("spell_storage",), "potion": ("spell_storage",),
             "money": ("currency", "amount"), "furniture": ("capacity",), "key": ("key_id",), "boat": ("capacity",),
         }.get(typ, ("subtype", "category"))
-        vals = [f"{k}={self._fmt_value(rec.get(k))}" for k in keys if rec.get(k) not in (None, "", [], {})]
-        return "; ".join(vals) if vals else f"{typ} defaults"
+        if typ == "food":
+            vals = [rec.get("nutrition", 0) or 0, 0, 0, 1 if rec.get("poison") else 0]
+            return f"{vals[0]} {vals[1]} {vals[2]} {vals[3]}  (hunger thirst sated poison)"
+        labels = {
+            "weapon_type": "type", "damage_dice": "dice", "attack_type": "damage", "armor_values": "armor",
+            "resistances": "resist", "weight_capacity": "capacity", "container_flags": "flags", "key_id": "key",
+            "brightness": "brightness", "burn_time": "duration", "liquid_type": "liquid", "servings": "servings",
+            "currency": "currency", "amount": "amount", "subtype": "subtype", "category": "category",
+        }
+        vals = [f"{labels.get(k, k)}={self._fmt_value(rec.get(k))}" for k in keys if rec.get(k) not in (None, "", [], {})]
+        return "; ".join(vals) if vals else f"{typ.upper()} defaults"
 
     def _oedit_value_descriptors(self, sess: BuilderEditSession) -> list[OlcFieldDescriptor]:
         rec = sess.working_record or {}
@@ -3022,10 +3048,10 @@ class BuilderService:
     def _render_oedit_values_editor(self, sess: BuilderEditSession) -> str:
         rec = sess.working_record or {}
         typ = str(rec.get("item_type") or rec.get("type") or "misc").lower()
-        lines = [f"OEDIT Values: {typ}", f"Draft status: {'modified' if sess.dirty else 'clean'}"]
+        lines = [f"-- Object Values: [{sess.object_id}] {typ.upper()}", ""]
         for i, f in enumerate(self._oedit_value_descriptors(sess), 1):
-            lines.append(f"{i}. {f.label:<18}: {self._fmt_value(self._get_path(rec, f.path))}")
-        lines += ["", "Q. Back", "Commands: number edits a value, validate, preview, undo, redo, save"]
+            lines.append(f"{i}) {f.label:<18}: {self._fmt_value(self._get_path(rec, f.path))}")
+        lines += ["Q) Quit to OEDIT", "Enter choice :"]
         return "\n".join(lines)
 
 
@@ -3827,6 +3853,8 @@ class BuilderService:
                 return BuilderResult(True, "", {"value": val})
             if f.input_type == "enum":
                 choices = {c.lower(): c for c in f.choices}
+                if raw.isdigit() and 1 <= int(raw) <= len(f.choices):
+                    return BuilderResult(True, "", {"value": f.choices[int(raw)-1]})
                 if raw.lower() not in choices: return BuilderResult(False, f"{f.label} must be one of: {', '.join(f.choices)}.")
                 return BuilderResult(True, "", {"value": choices[raw.lower()]})
             if f.input_type == "boolean":
@@ -4214,7 +4242,7 @@ class BuilderService:
                 return BuilderResult(True, ("Continue editing." if sess.editor_type == "redit" else "Quit cancelled.") + "\n" + self.render_session(sess))
             if sess.editor_type == "redit":
                 return BuilderResult(False, "You have unsaved room changes.\n\nS) Save Draft\nD) Discard Changes\nC) Continue Editing")
-            return BuilderResult(False, "Unsaved changes: type Save, Discard, or Cancel.")
+            return BuilderResult(False, "Object has unsaved changes.\n\nS) Save and quit\nD) Discard and quit\nC) Continue editing\nEnter choice :")
         if parts and parts[0].lower() == "name" and len(parts) > 1:
             self._session_checkpoint(sess)
             sess.working_record["name"] = text[len(parts[0]):].strip(); sess.dirty = True; sess.saved = False
@@ -4333,7 +4361,7 @@ class BuilderService:
                 return BuilderResult(True, self.render_session(sess))
             if sess.dirty:
                 sess.quit_pending = True
-                return BuilderResult(True, "You have unsaved room changes.\n\nS) Save Draft\nD) Discard Changes\nC) Continue Editing" if sess.editor_type == "redit" else "Unsaved changes: Save, Discard, or Cancel?")
+                return BuilderResult(True, "You have unsaved room changes.\n\nS) Save Draft\nD) Discard Changes\nC) Continue Editing" if sess.editor_type == "redit" else "Object has unsaved changes.\n\nS) Save and quit\nD) Discard and quit\nC) Continue editing\nEnter choice :")
             self.sessions.end(actor); return BuilderResult(True, "Editor closed and lock released.")
         if low in {"back", "cancel"}: sess.section=""; sess.mode="main_menu"; return BuilderResult(True, self.render_session(sess))
         stats_handled = self._handle_stats_menu(actor, sess, text, low)
@@ -4378,11 +4406,11 @@ class BuilderService:
                 if desc.input_type in {"string_list","list"}: sess.mode = "list_editor"; return BuilderResult(True, self._render_list_editor(sess))
                 sess.mode = "field_prompt"; return BuilderResult(True, self._render_field_prompt(sess))
             if low == "w":
-                sess.confirmation_type = "copy"; return BuilderResult(True, "Copy object:\n- to <new_object_id> clones the current object into a new draft.\n- from <source_object_id> copies another object into this draft after confirmation.\nEnter a destination ID as shorthand for to <new_object_id>, or Q to cancel.")
+                sess.confirmation_type = "copy"; return BuilderResult(True, "Copy this object to which new stable ID or VNUM?\nEnter destination or Q to cancel:")
             if low == "x":
                 deps = self.object_dependencies(actor, sess.object_id).data.get("matches", []) if self.object_dependencies(actor, sess.object_id).data else []
                 if deps: return BuilderResult(False, "Delete protected; dependencies exist:\n" + "\n".join(f"- {d}" for d in deps) + "\n" + self._render_oedit_menu(sess))
-                sess.confirmation_type = "delete"; return BuilderResult(True, "Delete object: type DELETE to confirm, or Q to cancel.")
+                sess.confirmation_type = "delete"; return BuilderResult(True, f"WARNING: Delete object [{sess.object_id}] {sess.working_record.get('short_description') or sess.working_record.get('name') or sess.object_id}?\nType DELETE to confirm or Q to cancel:")
         if sess.editor_type != "medit" and low in {"1","fields","edit"}:
             sess.section = "fields"; sess.mode = "section_menu"; return BuilderResult(True, self.render_session(sess))
         if sess.editor_type == "medit" and not sess.section:

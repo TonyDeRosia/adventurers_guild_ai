@@ -40,7 +40,7 @@ def test_oedit_type_values_are_meaningful_persistent_and_use_same_session(tmp_pa
     sid = sess.session_id
     values = s.sessions.handle(a, "c")
     assert values.ok
-    assert "OEDIT Values: weapon" in values.message
+    assert "-- Object Values: [training_sword] WEAPON" in values.message
     assert "Damage dice" in values.message and "Weapon type" in values.message
     assert s.sessions.active[s.sessions.actor_key(a)].session_id == sid
     assert "Current damage dice" in s.sessions.handle(a, "2").message
@@ -68,7 +68,7 @@ def test_oedit_validation_preview_undo_redo_and_quit_choices(tmp_path):
     assert s.sessions.handle(a, "redo").ok
     assert s.sessions.active[s.sessions.actor_key(a)].working_record["weight"] == 7
     prompt = s.sessions.handle(a, "quit")
-    assert prompt.ok and "Unsaved changes" in prompt.message and s.sessions.has(a)
+    assert prompt.ok and "Object has unsaved changes" in prompt.message and s.sessions.has(a)
     cancel = s.sessions.handle(a, "cancel")
     assert cancel.ok and "Quit cancelled" in cancel.message and s.sessions.has(a)
     assert s.sessions.handle(a, "quit").ok
@@ -81,11 +81,11 @@ def test_oedit_validation_preview_undo_redo_and_quit_choices(tmp_path):
 def test_oedit_copy_modes_and_dependency_safe_delete(tmp_path):
     s = svc(tmp_path); a = actor(); seed(s, a); seed(s, a, "source_mace", damage_dice="3d5")
     assert s.object_menu(a, "training_sword").ok
-    assert "Copy object" in s.sessions.handle(a, "w").message
+    assert "Copy this object" in s.sessions.handle(a, "w").message
     assert "COPY DESTINATION" in s.sessions.handle(a, "to cloned_sword").message
     assert s.sessions.handle(a, "COPY DESTINATION").ok
     assert "cloned_sword" in s.workspace.load(a.world_id)["items"]
-    assert "Copy object" in s.sessions.handle(a, "w").message
+    assert "Copy this object" in s.sessions.handle(a, "w").message
     assert "COPY SOURCE" in s.sessions.handle(a, "from source_mace").message
     assert s.sessions.handle(a, "COPY SOURCE").ok
     assert s.sessions.active[s.sessions.actor_key(a)].working_record["damage_dice"] == "3d5"
@@ -98,9 +98,9 @@ def test_oedit_copy_modes_and_dependency_safe_delete(tmp_path):
     assert "training_sword" in s.workspace.load(a.world_id)["items"]
     s.sessions.end(a)
     assert s.object_menu(a, "cloned_sword").ok
-    assert "type DELETE" in s.sessions.handle(a, "x").message
+    assert "Type DELETE" in s.sessions.handle(a, "x").message
     assert "Delete cancelled" in s.sessions.handle(a, "q").message
-    assert "type DELETE" in s.sessions.handle(a, "x").message
+    assert "Type DELETE" in s.sessions.handle(a, "x").message
     deleted = s.sessions.handle(a, "DELETE")
     assert deleted.ok and "deleted" in deleted.message
     assert "cloned_sword" not in s.workspace.load(a.world_id)["items"]
