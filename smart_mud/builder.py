@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from smart_mud.world_registry import WORLDS_DIR, _records
+from smart_mud.builder_rendering import medit as medit_render
 
 BUILDER_ROLES = {"builder", "admin", "owner"}
 VALID_WEAR_SLOTS = {"head","face","neck","shoulders","back","chest","body","torso","arms","wrists","hands","finger","wrist","finger_left","finger_right","waist","legs","feet","mainhand","main_hand","primary_weapon","offhand","off_hand","secondary_weapon","held","wield","shield","quiver","ammo","ranged","light","accessory_1","accessory_2"}
@@ -2610,14 +2611,26 @@ class BuilderService:
             lines += ["", "Q. Back", "V. Validate", "U. Undo", "R. Redo", "S. Save"]
             return "\n".join(lines)
         if sess.section:
-            if sess.editor_type == "medit" and sess.section == "equipment":
-                return self._render_equipment_editor(None, sess)
+            if sess.editor_type == "medit" and sess.section == "identity":
+                return medit_render.render_medit_identity(sess)
             if sess.editor_type == "medit" and sess.section in {"attributes", "resources"}:
-                return self._render_stats_menu(sess)
+                return medit_render.render_medit_stats(sess)
+            if sess.editor_type == "medit" and sess.section == "mobile_flags":
+                sess.active_field = "mobile_flags"; sess.mode = "flag_editor"
+                return self._render_flag_editor(sess)
+            if sess.editor_type == "medit" and sess.section == "affect_flags":
+                sess.active_field = "affect_flags"; sess.mode = "flag_editor"
+                return self._render_flag_editor(sess)
+            if sess.editor_type == "medit" and sess.section == "equipment":
+                return medit_render.render_loadout(sess)
+            if sess.editor_type == "medit" and sess.section == "scripts":
+                return medit_render.render_scripts(sess)
+            if sess.editor_type == "medit" and sess.section in {"abilities", "combat_abilities"}:
+                return medit_render.render_simple_list(sess, "combat_abilities", "Combat Abilities")
+            if sess.editor_type == "medit" and sess.section in {"reactions", "event_reactions", "ai"}:
+                return medit_render.render_simple_list(sess, "event_reactions", "Event Reactions")
             if sess.editor_type == "medit" and sess.section == "spawns":
                 return self._render_spawns_editor(None, sess)
-            if sess.editor_type == "medit" and sess.section in {"abilities", "combat_abilities", "reactions", "event_reactions", "scripts", "ai"}:
-                return self._render_advanced_mobile_editor(None, sess)
             return self._render_mobile_section(sess, sess.section)
         return self.menu(sess.editor_type, str(title), sess)
 
@@ -3115,6 +3128,9 @@ class BuilderService:
         return []
 
     def _descriptor(self, sess: BuilderEditSession, token: str) -> OlcFieldDescriptor | None:
+        direct = getattr(sess, "_medit_direct_descriptor", None)
+        if direct is not None and (token == direct.key or not sess.section):
+            return direct
         if sess.editor_type == "oedit" and (sess.mode == "oedit_values" or sess.section == "values"):
             fields = self._oedit_value_descriptors(sess)
             if str(token).isdigit():
@@ -3161,7 +3177,10 @@ class BuilderService:
         return "Multiline text editor. Enter text lines. Commands: .save .cancel .clear .show .help"
 
     def _render_flag_editor(self, sess: BuilderEditSession) -> str:
-        f = self._descriptor(sess, sess.active_field); cur = set(self._get_path(sess.working_record, f.path) or []) if f else set()
+        f = self._descriptor(sess, sess.active_field); field = f.path[0] if f and f.path else sess.active_field
+        if sess.editor_type == "medit" and field in {"mobile_flags", "affect_flags"}:
+            return medit_render.render_medit_flags(sess, field, f.flags if f else (), 79)
+        cur = set(self._get_path(sess.working_record, f.path) or []) if f else set()
         lines = [f"{sess.editor_type.upper()} {sess.object_id} > {f.label if f else 'Flags'}"]
         for i, flag in enumerate((f.flags if f else ()), 1):
             lines.append(f"{i}. {flag.upper():<18} [{'X' if flag in cur else ' '}]")
@@ -3816,7 +3835,8 @@ class BuilderService:
                 issues = MobileTemplate.from_legacy(sess.working_record).validate() if sess.collection == "entities" else validate_object_template(normalize_object_template(sess.object_id, sess.working_record))
                 lines=[f"{x['severity']}: {x['field_path']} {x['message']}" for x in issues] or ["- no focused issues"]
                 return BuilderResult(not any(x.get("severity")=="error" for x in issues), "Validation for %s:\n%s" % (sess.object_id, "\n".join(lines)), {"issues": issues})
-            if low in cancel_words:
+            if low in cancel_words or low == "0":
+                if sess.editor_type == "medit": sess.section = ""
                 sess.mode = "section_menu"; sess.active_field = ""
                 return BuilderResult(True, self.render_session(sess))
             cur = set(self._get_path(sess.working_record, f.path) or [])
@@ -4082,6 +4102,31 @@ class BuilderService:
                 sess.confirmation_type = "delete"; return BuilderResult(True, "Delete object: type DELETE to confirm, or Q to cancel.")
         if sess.editor_type != "medit" and low in {"1","fields","edit"}:
             sess.section = "fields"; sess.mode = "section_menu"; return BuilderResult(True, self.render_session(sess))
+        if sess.editor_type == "medit" and not sess.section:
+            main_map = {"9":"attributes", "stats":"attributes", "i":"identity", "identity":"identity", "a":"mobile_flags", "b":"affect_flags", "r":"equipment", "loadout":"equipment", "loot":"equipment", "s":"scripts", "script":"scripts", "u":"combat_abilities", "combat abilities":"combat_abilities", "v":"event_reactions", "event reactions":"event_reactions"}
+            if low in main_map:
+                sess.section = main_map[low]; sess.mode = "section_menu"; sess.active_field = ""
+                return BuilderResult(True, self.render_session(sess))
+            field_map = {"1":"sex", "2":"keywords", "3":"short_description", "4":"room_description", "5":"look_description", "6":"spawn_position", "7":"default_position", "8":"attack_type", "p":"pet_price"}
+            if low in field_map:
+                fld = field_map[low]
+                desc = {
+                    "sex": OlcFieldDescriptor("sex","Sex",("sex",),"enum",choices=MEDIT_SEX_VALUES),
+                    "keywords": OlcFieldDescriptor("keywords","Keywords",("keywords",),"string_list"),
+                    "short_description": OlcFieldDescriptor("short_description","Short description",("short_description",),"string"),
+                    "room_description": OlcFieldDescriptor("room_description","Long description",("room_description",),"multiline"),
+                    "look_description": OlcFieldDescriptor("look_description","Detailed description",("look_description",),"multiline"),
+                    "spawn_position": OlcFieldDescriptor("spawn_position","Position",("spawn_position",),"enum",choices=MEDIT_POSITIONS),
+                    "default_position": OlcFieldDescriptor("default_position","Default position",("default_position",),"enum",choices=MEDIT_POSITIONS),
+                    "attack_type": OlcFieldDescriptor("attack_type","Attack type",("combat_profile","attack_type"),"enum",choices=MEDIT_ATTACK_TYPES),
+                    "pet_price": OlcFieldDescriptor("pet_price","Pet price",("pet_price",),"integer",minimum=0,maximum=100000000),
+                }[fld]
+                sess.active_field = desc.key; sess._medit_direct_descriptor = desc
+                if desc.input_type == "multiline": sess.mode = "multiline_text"; sess.multiline_lines = []; return BuilderResult(True, self._render_multiline(sess))
+                if desc.input_type == "string_list": sess.mode = "list_editor"; return BuilderResult(True, self._render_list_editor(sess))
+                sess.mode = "field_prompt"; return BuilderResult(True, self._render_field_prompt(sess))
+            if low == "w": sess.confirmation_type = "copy"; return BuilderResult(True, "Copy this mob to which new ID or VNUM?\nEnter destination or Q to cancel:")
+            if low == "x": sess.confirmation_type = "delete"; return BuilderResult(True, f"WARNING: Delete mob [{(sess.working_record or {}).get('vnum') or sess.object_id}] {(sess.working_record or {}).get('name') or sess.object_id}?\nType DELETE to confirm or Q to cancel:")
         section_map = {"1":"identity","identity":"identity", "2":"keywords", "keywords":"keywords", "aliases":"keywords", "3":"descriptions", "descriptions":"descriptions", "4":"traits", "traits":"traits", "5":"attributes", "stats":"attributes", "stats menu":"attributes", "attributes":"attributes", "level":"attributes", "6":"resources", "resources":"resources", "7":"natural_weapons", "combat":"combat", "8":"body_weapons", "body":"body_weapons", "body profile":"body_weapons", "weapons":"natural_weapons", "natural":"natural_weapons", "natural weapons":"natural_weapons", "natural attacks":"natural_weapons", "9":"positions", "positions":"positions", "10":"mobile_flags", "flags":"mobile_flags", "mobile flags":"mobile_flags", "11":"affect_flags", "affects":"affect_flags", "12":"equipment", "equipment":"equipment", "13":"inventory", "inventory":"inventory", "14":"loot", "loot":"loot", "15":"abilities", "abilities":"abilities", "16":"ai", "ai":"ai", "behavior":"ai", "reactions":"event_reactions", "event reactions":"event_reactions", "combat abilities":"combat_abilities", "17":"faction", "faction":"faction", "18":"scripts", "scripts":"scripts", "19":"spawns", "spawns":"spawns", "spawn":"spawns", "20":"diagnostics", "diagnostics":"diagnostics"}
         if low in section_map:
             sess.section=section_map[low]; sess.mode="section_menu"; return BuilderResult(True, self.render_session(sess))
@@ -4283,6 +4328,7 @@ class BuilderService:
 
     def menu(self, editor: str, title: str, sess: BuilderEditSession | None = None) -> str:
         if editor == "medit":
+            return medit_render.render_medit_main(sess) if sess else "Enter choice :"
             rec = (sess.working_record if sess else {}) or {}
             issues = MobileTemplate.from_legacy(rec).validate() if rec else []
             errors = sum(1 for i in issues if i.get("severity") == "error")

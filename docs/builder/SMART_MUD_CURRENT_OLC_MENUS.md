@@ -25,3 +25,6 @@ Implemented production routes:
 ## Remaining OLC editors
 
 REDIT, ZEDIT, AEDIT, QEDIT, script/trigger editing, shop editing, help/social editing, and desktop visual Builder are not fully implemented in this phase. Their current Smart MUD state is implementation/specification pending and should not be claimed complete from documentation-only menus.
+
+
+See `MEDIT_TBA_STYLE_OLC.md` for the Phase 16E compact TBA/CircleMUD-style MEDIT presentation principles.
