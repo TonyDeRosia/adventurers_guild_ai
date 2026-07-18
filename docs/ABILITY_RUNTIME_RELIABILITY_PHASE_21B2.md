@@ -31,3 +31,8 @@ runtime request path; their comprehensive transport and terminal-death integrati
 coverage remains outside this narrowly scoped reliability patch. Damage/death
 receipts continue to expose the structured results returned by the existing combat
 and Phase 20 services.
+
+> **Phase 21B.3 status (2026-07-18):** Magic Missile structured damage receipts now preserve
+> request/source/target/HP linkage and durable duplicate references.  Terminal death linkage is
+> injectable but is not wired through normal `MudRuntime`; transport terminal acceptance remains
+> unproven, so Phase 21C is not unblocked.

@@ -20,3 +20,8 @@
 | damage component adapter | PRODUCTION_WIRED | Magic Missile dispatches through `_apply_damage_component` to combat runtime. |
 | camp/campfire adapter | PRODUCTION_WIRED | Registered effects call the survival-needs authority. |
 | legacy instant executor | PARTIALLY_WIRED | Retained for compatibility callers; production requests no longer delegate to it. |
+
+> **Phase 21B.3 status (2026-07-18):** Magic Missile structured damage receipts now preserve
+> request/source/target/HP linkage and durable duplicate references.  Terminal death linkage is
+> injectable but is not wired through normal `MudRuntime`; transport terminal acceptance remains
+> unproven, so Phase 21C is not unblocked.

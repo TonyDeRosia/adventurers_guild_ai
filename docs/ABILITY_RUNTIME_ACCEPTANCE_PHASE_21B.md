@@ -31,3 +31,8 @@ The runtime now has an injectable percent/random provider, durable SQLite
 idempotency (30-day bounded retention), and receipt-level wait-state policy data.
 `tests/test_phase21b2_runtime_reliability.py` recreates the service against the same
 database and proves a duplicate is ignored without another execution.
+
+> **Phase 21B.3 status (2026-07-18):** Magic Missile structured damage receipts now preserve
+> request/source/target/HP linkage and durable duplicate references.  Terminal death linkage is
+> injectable but is not wired through normal `MudRuntime`; transport terminal acceptance remains
+> unproven, so Phase 21C is not unblocked.

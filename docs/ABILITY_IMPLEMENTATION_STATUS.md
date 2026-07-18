@@ -98,3 +98,8 @@ authored definitions or complete customized legacy parity.
 The six shipped abilities are **PRODUCTION_WIRED** through the request runtime.
 The former instant executor is **PARTIALLY_WIRED** solely as a compatibility
 adapter for older direct callers.
+
+> **Phase 21B.3 status (2026-07-18):** Magic Missile structured damage receipts now preserve
+> request/source/target/HP linkage and durable duplicate references.  Terminal death linkage is
+> injectable but is not wired through normal `MudRuntime`; transport terminal acceptance remains
+> unproven, so Phase 21C is not unblocked.
