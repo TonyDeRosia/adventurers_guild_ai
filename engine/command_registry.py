@@ -2,6 +2,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
+from engine.character_state import COMMAND_MINIMUM_POSITIONS
 
 CATEGORIES = ["movement","informational","interaction","object","equipment","communication","social","character","magic","combat","group","economy","quest","reward","property","gathering","clan","toggle","builder","admin","system"]
 STATUSES = ["implemented","placeholder","planned","intentionally_omitted","future_builder","future_admin","future_combat","future_magic","future_economy","future_quest"]
@@ -38,6 +39,14 @@ class CommandRegistry:
             self.register(meta)
         self._loading_defaults = False
         self._apply_phase18g_minimums()
+        self._apply_position_policy()
+
+    def _apply_position_policy(self) -> None:
+        """Expose the router's canonical admission policy as command metadata."""
+        for command, position in COMMAND_MINIMUM_POSITIONS.items():
+            old = self.commands.get(command)
+            if old:
+                self.commands[command] = CommandMeta(**{**old.__dict__, "minimum_position": position.name.lower()})
 
     def _apply_phase18g_minimums(self) -> None:
         for command, minimum, ability in (("cast","c",""),("look","l",""),("affects","aff",""),("north","n",""),("east","e",""),("south","s",""),("west","w",""),("up","u",""),("down","d",""),("kick","ki","kick"),("bash","bas","bash"),("bandage","band","bandage")):
