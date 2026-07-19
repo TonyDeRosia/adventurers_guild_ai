@@ -27,7 +27,7 @@ def _command_exception_context(character: Any, command_text: str, resolved_comma
 from pathlib import Path
 from engine.mud_displays import semantic, DisplayDocument, DisplayIntent, DisplayLine, DisplaySection, DisplayField, render_display_mud, render_display_plain, build_score_document, build_worth_document, build_abilities_document, build_inventory_document, build_equipment_document, build_affects_document, build_prompt_document, PROMPT_PRESETS, PROMPT_MAX_LENGTH
 from engine.actors import actor_from_runtime_character
-from engine.character_state import build_action_state, reconcile_actor_position, derive_position_from_health
+from engine.character_state import build_action_state, reconcile_actor_position, derive_position_from_health, command_position_admission
 from engine.formulas import FormulaEngine
 from engine.character_stats import CharacterAttributeService, CombatStatService, _load_json
 from engine.builder_content_editor import BuilderContentEditor
@@ -1924,6 +1924,25 @@ class MudCommandEngine:
                 result = CommandResult(narrative="You do not have permission for that command.", ok=False)
                 self._publish("command_executed", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary=result.narrative[:120])
                 return result
+
+        # Transport-neutral command admission.  This is intentionally before
+        # every deterministic handler, including magic and combat handlers.
+        # Runtime input is shared by browser and Telnet, so neither transport
+        # can bypass posture policy or trigger target/resource side effects.
+        runtime = getattr(self, "runtime", None)
+        resident = None
+        combat_runtime = getattr(runtime, "combat_runtime", None)
+        if combat_runtime is not None:
+            resident = getattr(combat_runtime, "resident_actors", {}).get(f"character:{getattr(character, 'id', '')}")
+            if resident is None and hasattr(combat_runtime, "_resident_character_actor"):
+                resident = combat_runtime._resident_character_actor(character)
+        admitted, rejection = command_position_admission(resident, cmd_name, runtime)
+        if not admitted:
+            result = CommandResult(narrative=rejection, ok=False)
+            self._publish("command_rejected_position", character, command_text, canonical_command=cmd_name,
+                          minimum_position=str(cmd_name), current_position=getattr(getattr(resident, "combat_profile", {}), "get", lambda *_: "")("position"))
+            self._publish("command_executed", character, command_text, raw_input=command_text, canonical_command=cmd_name, arguments=args, current_room_id=getattr(character, "room_id", ""), result_summary=result.narrative[:120])
+            return result
         
         # Route to deterministic handler if exists
         if cmd_name in self.command_handlers:

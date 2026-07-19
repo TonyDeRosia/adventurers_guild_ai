@@ -1,6 +1,7 @@
 """Canonical character action-state and Adventurer's Lair HP/position reconciliation."""
 from __future__ import annotations
 from dataclasses import dataclass
+from enum import IntEnum
 from typing import Any
 
 NEGATIVE_HEALTH_THRESHOLDS = {
@@ -11,6 +12,66 @@ NEGATIVE_HEALTH_THRESHOLDS = {
 }
 POSITIVE_POSITIONS = {"standing", "sitting", "resting", "sleeping", "fighting", "in_combat", "idle"}
 DOWN_POSITIONS = {"stunned", "incapacitated", "mortally_wounded", "mortallyw", "dead", "unconscious"}
+
+
+class ActorPosition(IntEnum):
+    """The one ordered posture vocabulary used for command and combat admission."""
+    DEAD = 0
+    MORTALLY_WOUNDED = 1
+    INCAPACITATED = 2
+    STUNNED = 3
+    SLEEPING = 4
+    RESTING = 5
+    SITTING = 6
+    FIGHTING = 7
+    STANDING = 8
+
+
+_POSITION_VALUES = {p.name.lower(): p for p in ActorPosition}
+_POSITION_VALUES.update({"in_combat": ActorPosition.FIGHTING, "idle": ActorPosition.STANDING,
+                         "mortallyw": ActorPosition.MORTALLY_WOUNDED})
+
+# This policy is deliberately evaluated before a handler can resolve a target,
+# spend resources, or create an encounter.  Aliases resolve to the same command.
+COMMAND_MINIMUM_POSITIONS = {
+    "look": ActorPosition.RESTING, "examine": ActorPosition.RESTING, "scan": ActorPosition.RESTING,
+    "score": ActorPosition.RESTING, "report": ActorPosition.RESTING, "inventory": ActorPosition.RESTING,
+    "equipment": ActorPosition.RESTING, "skills": ActorPosition.RESTING, "spells": ActorPosition.RESTING,
+    "spellup": ActorPosition.RESTING, "cast": ActorPosition.SITTING,
+    "north": ActorPosition.STANDING, "south": ActorPosition.STANDING, "east": ActorPosition.STANDING,
+    "west": ActorPosition.STANDING, "up": ActorPosition.STANDING, "down": ActorPosition.STANDING,
+    "northeast": ActorPosition.STANDING, "northwest": ActorPosition.STANDING,
+    "southeast": ActorPosition.STANDING, "southwest": ActorPosition.STANDING,
+    "run": ActorPosition.STANDING, "walk": ActorPosition.STANDING,
+    "kill": ActorPosition.FIGHTING, "attack": ActorPosition.FIGHTING,
+    "kick": ActorPosition.FIGHTING, "bash": ActorPosition.FIGHTING,
+    "camp": ActorPosition.STANDING, "campfire": ActorPosition.STANDING, "make": ActorPosition.STANDING,
+    "wake": ActorPosition.SLEEPING,
+}
+
+def position_rank(value: Any) -> ActorPosition:
+    return _POSITION_VALUES.get(normalize_position(value), ActorPosition.STANDING)
+
+def command_position_admission(actor: Any, command: str, runtime: Any = None) -> tuple[bool, str]:
+    """Return admission for a canonical command using the resident Actor state."""
+    minimum = COMMAND_MINIMUM_POSITIONS.get(str(command or "").lower())
+    if minimum is None:
+        return True, ""
+    if actor is None:
+        return True, ""  # Compatibility callers without a resident runtime.
+    reconcile_actor_position(actor, runtime, reason="command_position_admission")
+    current = position_rank(get_actor_position(actor))
+    if current >= minimum:
+        return True, ""
+    return False, {
+        ActorPosition.DEAD: "Lie still; you are DEAD!!! :-(",
+        ActorPosition.MORTALLY_WOUNDED: "You are in a pretty bad shape, unable to do anything!",
+        ActorPosition.INCAPACITATED: "You are in a pretty bad shape, unable to do anything!",
+        ActorPosition.STUNNED: "All you can do right now is think about the stars!",
+        ActorPosition.SLEEPING: "In your dreams, or what?",
+        ActorPosition.RESTING: "Nah... You feel too relaxed to do that..",
+        ActorPosition.SITTING: "Maybe you should get on your feet first?",
+    }.get(current, "No way! You're fighting for your life!")
 
 @dataclass(frozen=True)
 class CharacterActionState:

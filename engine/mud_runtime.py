@@ -4046,6 +4046,10 @@ class MudRuntime:
             if filters.get("visible_to") is not None and not self.is_entity_visible(ent, filters.get("visible_to")):
                 continue
             cands.append(ent)
+        # ``occupants_in_room`` is the canonical room presentation order.  It
+        # is shared by browser and Telnet; preserve it before keyword/ordinal
+        # resolution so ``1.wolf`` and ``2.wolf`` select the same visible
+        # resident instances users see in room output.
         resolved = self.resolve_entity_keywords(query, cands)
         ent = resolved.get("entity")
         return {"status": resolved.get("status", "missing"), "entity": ent, "matches": resolved.get("matches", []), "actor": self.combat_runtime.resident_actors.get(self.actor_id_for_entity_instance(ent or {})) if ent else None}
