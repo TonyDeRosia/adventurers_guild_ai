@@ -45,3 +45,13 @@ alternative is **Set Camp**.
 stable duplicate identity emits only `ability.duplicate_ignored`; it returns
 the original damage/death receipts and does not republish the listed
 consequences.
+
+### Phase 21B12 verification
+
+Completed focused verification for compact SKILLS presentation, canonical generic
+NPC target resolution (including Forest Wolf and stable ordinals), targetability
+catalog validation, safe missing targets, idempotent corpse creation, absolute
+random 180--300 second NPC expiry, legacy migration, and SQLite restart expiry
+persistence.  No Phase 21C work is included.  Browser/Telnet semantic parity is
+covered by the existing production transport acceptance tests; manual server
+observation remains a documented limitation.

@@ -60,6 +60,10 @@ def test_phase18k_magic_missile_forms_and_skill_invocations(tmp_path):
         assert "invalid target" not in output
         assert "magic missile" in output or "cooldown" in output or "mana" in output or "ready in" in output
     skills = rt.handle_input("skills")["output_text"].lower()
-    assert "build campfire" in skills and "command: build campfire" in skills
-    assert "set camp" in skills and "command: set camp" in skills
-    assert "help topic" not in rt.handle_input("build campfire")["output_text"].lower()
+    # SKILLS is deliberately a compact discoverability display, not help text.
+    assert "build campfire" in skills and "set camp" in skills and "100%" in skills
+    assert "command:" not in skills and "build_campfire" not in skills and "set_camp" not in skills
+    # Routing remains independently covered: the registry command still reaches
+    # the canonical ability gateway rather than falling through to HELP.
+    routed = rt.handle_input("build campfire")["output_text"].lower()
+    assert "help topic" not in routed

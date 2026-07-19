@@ -115,3 +115,13 @@ resources before rendering.  See `ABILITY_PHASE_21B_FINAL_ACCEPTANCE.md`.
 ## Phase 21B closure update
 
 Phase 21B remains **IN PROGRESS** and Phase 21C remains **NOT UNBLOCKED** until the required focused and full-suite terminal results are captured.  The current evidence matrix and scope limitation are recorded in [ABILITY_PHASE_21B_CLOSURE.md](ABILITY_PHASE_21B_CLOSURE.md).
+
+### Phase 21B12 verification
+
+Completed focused verification for compact SKILLS presentation, canonical generic
+NPC target resolution (including Forest Wolf and stable ordinals), targetability
+catalog validation, safe missing targets, idempotent corpse creation, absolute
+random 180--300 second NPC expiry, legacy migration, and SQLite restart expiry
+persistence.  No Phase 21C work is included.  Browser/Telnet semantic parity is
+covered by the existing production transport acceptance tests; manual server
+observation remains a documented limitation.
