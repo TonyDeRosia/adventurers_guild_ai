@@ -1851,10 +1851,27 @@ class AbilityExecutionService:
         elif mode == "self" or (q in {"self", "me"} and allow_self): targets=[{"actor_id":actor.actor_id,"name":actor.identity.name,"target_type":"self"}]
         elif isinstance(target, Actor): targets=[{"actor_id":target.actor_id,"name":target.identity.name,"target_type":"actor"}]
         elif isinstance(target,str):
-            visible=[x for x in sorted(self.actors.values(), key=lambda z:z.actor_id) if getattr(x.identity, "current_location", "") == getattr(actor.identity, "current_location", "")]
-            exact=[x for x in visible if x.actor_id.lower()==q or x.identity.name.lower()==q or q in x.identity.name.lower().split()]
-            prefix=[x for x in visible if x not in exact and q and (x.actor_id.lower().startswith(q) or x.identity.name.lower().startswith(q) or any(part.startswith(q) for part in x.identity.name.lower().split()))]
-            matches=exact or prefix
+            # NPC identity comes from the canonical resident entity contract,
+            # not an actor id or the renderer's display text.
+            runtime = getattr(self, "runtime", None)
+            resolved = runtime.find_occupant(getattr(actor.identity, "current_location", ""), str(target),
+                                             {"living": not allow_dead, "visible_to": actor}) if runtime is not None and hasattr(runtime, "find_occupant") else None
+            if resolved is not None:
+                status = str(resolved.get("status") or "missing")
+                matches = [runtime.combat_runtime.resident_actors.get(runtime.actor_id_for_entity_instance(e)) for e in resolved.get("matches", [])]
+                matches = [x for x in matches if x is not None]
+                if status == "ok" and resolved.get("actor") is not None:
+                    matches = [resolved["actor"]]
+                    ordinal = 1  # Room resolver already applied a requested ordinal.
+                if status == "ambiguous":
+                    return {"ok":False,"mode":mode,"targets":[],"target_type":"actor","invalid_reason":"ambiguous_target","candidates":[{"actor_id":x.actor_id,"name":x.identity.name} for x in matches],"runtime_instance_ids":[]}
+                if status not in {"ok", "missing_ordinal"}:
+                    return {"ok":False,"mode":mode,"targets":[],"target_type":"actor","invalid_reason":"not_found","runtime_instance_ids":[]}
+            else:
+                visible=[x for x in sorted(self.actors.values(), key=lambda z:z.actor_id) if getattr(x.identity, "current_location", "") == getattr(actor.identity, "current_location", "")]
+                exact=[x for x in visible if x.actor_id.lower()==q or x.identity.name.lower()==q or q in x.identity.name.lower().split()]
+                prefix=[x for x in visible if x not in exact and q and (x.actor_id.lower().startswith(q) or x.identity.name.lower().startswith(q) or any(part.startswith(q) for part in x.identity.name.lower().split()))]
+                matches=exact or prefix
             max_targets=int((ab.targeting or {}).get("maximum_targets") or 1)
             if len(matches) > max_targets and ordinal == 1:
                 return {"ok":False,"mode":mode,"targets":[],"target_type":"actor","invalid_reason":"ambiguous_target","candidates":[{"actor_id":x.actor_id,"name":x.identity.name} for x in matches],"runtime_instance_ids":[]}

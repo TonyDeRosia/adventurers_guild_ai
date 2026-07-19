@@ -786,9 +786,11 @@ class MudRuntime:
             publish=self._publish_death_event,
         )
         self._last_pulse_due_monotonic: float | None = None
-        # Corpse duration is expressed in the same 75-second object-update
-        # tick used by the reference game.  Seconds are derived at creation;
-        # there is deliberately no second, independently configurable timer.
+        # Corpse expiry uses UTC timestamps (seconds), never pulse counts.  Tests
+        # may replace these two dependencies without sleeping.
+        self.corpse_clock = lambda: datetime.now(timezone.utc)
+        self.corpse_decay_random_provider = __import__("random")
+        # Scheduler cadence is independent from corpse lifetime.
         self.pulse_config = {"pulses_per_second": 10, "pulses_per_tick": 75, "ticks_per_game_hour": 1, "game_hours_per_day": 24, "days_per_month": 30, "months_per_year": 12, "years": 1, "base_pulse_ms": 100, "violence_pulse_count": 20, "mobile_pulse_count": 100, "point_update_pulse_count": 75, "zone_pulse_count": 600, "autosave_pulse_count": 300, "world_hour_pulse_count": 75, "corpse_decay_pulse_count": 75, "npc_corpse_ticks": 5, "player_corpse_ticks": 10, "maximum_catchup_pulses": 5}
         self._runtime_pulse_counter = 0
         self._last_violence_bucket = -1
@@ -1036,14 +1038,25 @@ class MudRuntime:
         return saved
 
     def process_corpse_decay(self, now_monotonic: float | None = None) -> int:
-        now_utc = datetime.now(timezone.utc)
+        now_utc = self.corpse_clock()
         decayed = 0
         for corpse in list(self.find_entities(entity_type="corpse")):
             st = corpse.get("state") or {}
             cid = str(corpse.get("entity_id") or corpse.get("instance_id") or "")
             decay_at_raw = st.get("decay_at_utc")
+            if st.get("corpse_kind") == "npc" and st.get("decay_policy") != "NPC_RANDOM_3_TO_5_MINUTES":
+                # One-time compatibility migration for tick-era corpse rows.
+                try: created = datetime.fromisoformat(str(st.get("created_at_utc") or now_utc.isoformat()).replace('Z','+00:00'))
+                except Exception: created = now_utc
+                seconds = max(180, min(300, int(float(st.get("decay_seconds") or 180))))
+                st.update({"created_at_utc": created.isoformat(), "decay_at_utc": (created + timedelta(seconds=seconds)).isoformat(), "decay_seconds": seconds, "decay_policy": "NPC_RANDOM_3_TO_5_MINUTES", "decay_minimum_seconds": 180, "decay_maximum_seconds": 300})
+                self.update_entity_state(cid, st, source_system="corpse_decay_policy_migration")
+                decay_at_raw = st["decay_at_utc"]
             if not decay_at_raw:
-                seconds = float(st.get("decay_seconds") or 180.0)
+                # Legacy tick-derived values (notably 37.5 seconds) are not a
+                # valid NPC policy duration.  Migrate them to the approved
+                # lower bound rather than preserving premature decay.
+                seconds = max(180.0, min(300.0, float(st.get("decay_seconds") or 180.0)))
                 created_raw = st.get("created_at_utc") or datetime.now(timezone.utc).isoformat()
                 try: created = datetime.fromisoformat(str(created_raw).replace('Z','+00:00'))
                 except Exception: created = now_utc
@@ -1056,9 +1069,14 @@ class MudRuntime:
             if decay_at > now_utc:
                 continue
             room_id = str(corpse.get("room_id") or "")
+            if st.get("decay_state") in {"completed", "extracted"}:
+                continue
+            st["decay_state"] = "decaying"
+            self.update_entity_state(cid, st, source_system="corpse_decay_claim")
             for item in self.find_container_items(cid):
                 self.move_item(item["instance_id"], "room", room_id)
             name = str(corpse.get("name") or "the corpse")
+            st["decay_state"] = "completed"
             self.destroy_entity(cid, reason="corpse_decay", source_system="corpse_decay")
             # Decay is a room lifecycle event.  Reuse the canonical async
             # transport queue so browser and Telnet observers receive the same
@@ -3712,12 +3730,21 @@ class MudRuntime:
                 continue
             kind = str(raw.get("entity_type") or raw.get("kind") or "npc").lower()
             entity_type = "mob" if kind in {"mob", "monster", "creature"} else "npc"
-            keywords = raw.get("keywords") or str(raw.get("name") or tid).replace("-", " ").replace("'", "").split() + [tid]
+            authored_name = str(raw.get("name") or tid)
+            raw_keywords = raw.get("keywords") or []
+            if isinstance(raw_keywords, str): raw_keywords = [raw_keywords]
+            aliases = raw.get("aliases") or []
+            if isinstance(aliases, str): aliases = [aliases]
+            # Materialization always supplies safe player target terms, even
+            # when old authored NPC rows omit keyword metadata.
+            name_terms = re.findall(r"[a-z0-9_']+", authored_name.lower())
+            keywords = list(raw_keywords) + list(aliases) + name_terms + [" ".join(name_terms), tid]
             level_range = raw.get("level_range") or [raw.get("level", 1)]
             level = int((level_range[0] if isinstance(level_range, list) and level_range else raw.get("level", 1)) or 1)
             templates[tid] = MappingProxyType({
                 "template_id": tid, "entity_type": entity_type, "name": str(raw.get("name") or tid).title(),
-                "keywords": [str(k).lower() for k in keywords if str(k).strip()],
+                "keywords": list(dict.fromkeys(" ".join(re.findall(r"[a-z0-9_']+", str(k).lower())) for k in keywords if str(k).strip())),
+                "aliases": list(dict.fromkeys(" ".join(re.findall(r"[a-z0-9_']+", str(k).lower())) for k in aliases if str(k).strip())),
                 "short_description": str(raw.get("short_description") or raw.get("description") or raw.get("name") or tid),
                 "long_description": str(raw.get("long_description") or raw.get("description") or raw.get("short_description") or raw.get("name") or tid),
                 "room_description": str(raw.get("room_description") or raw.get("description") or raw.get("short_description") or raw.get("name") or tid),
@@ -4463,15 +4490,10 @@ class MudRuntime:
         state = dict(ent.get("state") or {})
         state.update({"current_state":"dead", "is_alive": False, "current_health": 0})
         self.update_entity_state(entity_id, state, source_system=ctx.get("source_system", "runtime"))
-        now = datetime.now(timezone.utc)
-        # NPC corpses are the currently supported corpse kind.  Keep the
-        # canonical tick count and its derived seconds together in state so a
-        # restart preserves the original absolute expiry rather than resetting
-        # it during room rendering or projection rebuilding.
-        tick_seconds = float(self.pulse_config["point_update_pulse_count"] * self.pulse_config["base_pulse_ms"]) / 1000.0
-        corpse_ticks = int(self.pulse_config["npc_corpse_ticks"])
-        decay_seconds = tick_seconds * corpse_ticks
-        corpse_state={"current_state":"corpse", "source_entity_id": entity_id, "source_template_id": ent.get("template_id"), "source_actor_name": name, "source_lifecycle_id": source_lifecycle_id, "death_id": death_id, "killer_actor_id": str(ctx.get("killer_actor_id") or ""), "is_alive": False, "container_open": True, "decay_state": "fresh", "created_world_time": self.get_world_time(self.active_world_id or '').get('total_minutes', 0), "created_at_utc": now.isoformat(), "decay_at_utc": (now + __import__("datetime").timedelta(seconds=decay_seconds)).isoformat(), "decay_seconds": decay_seconds, "decay_tick_seconds": tick_seconds, "decay_ticks": corpse_ticks, "corpse_kind": "npc", "skinned": False, "butchered": False}
+        now = self.corpse_clock()
+        provider = self.corpse_decay_random_provider
+        decay_seconds = int(provider.randint(180, 300))
+        corpse_state={"current_state":"corpse", "source_entity_id": entity_id, "source_template_id": ent.get("template_id"), "source_actor_name": name, "source_lifecycle_id": source_lifecycle_id, "death_id": death_id, "killer_actor_id": str(ctx.get("killer_actor_id") or ""), "is_alive": False, "container_open": True, "decay_state": "active", "created_world_time": self.get_world_time(self.active_world_id or '').get('total_minutes', 0), "created_at_utc": now.isoformat(), "decay_at_utc": (now + timedelta(seconds=decay_seconds)).isoformat(), "decay_seconds": decay_seconds, "decay_policy": "NPC_RANDOM_3_TO_5_MINUTES", "decay_minimum_seconds": 180, "decay_maximum_seconds": 300, "corpse_kind": "npc", "skinned": False, "butchered": False}
         corpse = self.spawn_entity(ent.get("template_id", "corpse"), entity_type="corpse", room_id=ent.get("room_id"), state=corpse_state, flags=["corpse"], **ctx)
         corpse_name = f"The corpse of {name.lower()}"
         now = datetime.now(timezone.utc).isoformat()
