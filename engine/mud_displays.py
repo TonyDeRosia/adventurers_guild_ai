@@ -959,9 +959,10 @@ def build_abilities_document(rows: list[dict[str, Any]], *, title: str="ABILITIE
         name=str(r.get('name') or r.get('id') or 'Ability').replace('_',' ').title()
         proficiency=max(1, min(100, int(r.get('proficiency') or r.get('rank') or 1)))
         rank = f"{proficiency}%"
-        usage = str(r.get('usage_syntax') or '').strip()
-        if compact and usage and title == "SKILLS":
-            name = f"{name}  command: {usage}"
+        # Compact ability lists are a roster, not command documentation.  The
+        # registry retains invocation metadata for HELP/ABILITY, but exposing
+        # it here makes names unstable and breaks the fixed-width proficiency
+        # column.
         out.append(DisplayRow([DisplayCell(name,width=48, role="character_value"),DisplayCell(rank,width=17,align='right', role="character_value", wrap=False)], role="character_value"))
         if not compact:
             status=str(r.get('status_text') or r.get('availability_text') or ('Passive' if r.get('passive') else 'Availability unknown.'))

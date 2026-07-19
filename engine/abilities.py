@@ -1838,6 +1838,13 @@ class AbilityExecutionService:
     def _resolve_target_canonical(self, actor: Actor, ab: AbilityDefinition, target: Any=None) -> dict[str, Any]:
         mode=str((ab.targeting or {}).get("mode") or "self"); allow_dead=bool((ab.targeting or {}).get("allow_dead",False)); allow_self=bool((ab.targeting or {}).get("allow_self", True)); targets=[]; invalid=""
         q=str(target or "").lower().strip()
+        # Circle/TBA-style ordinal target forms address a visible instance,
+        # rather than exposing runtime entity IDs in player commands.
+        ordinal = 1
+        import re
+        ordinal_match = re.match(r"^(\\d+)\\.(.+)$", q)
+        if ordinal_match:
+            ordinal, q = int(ordinal_match.group(1)), ordinal_match.group(2).strip()
         if isinstance(target,list) and target and isinstance(target[0],dict): targets=target
         elif mode in {"none"}: targets=[]
         elif mode == "room": return {"ok": True, "mode": mode, "targets": [], "target_room": getattr(actor.identity, "current_location", ""), "target_type": "room", "runtime_instance_ids": []}
@@ -1849,8 +1856,10 @@ class AbilityExecutionService:
             prefix=[x for x in visible if x not in exact and q and (x.actor_id.lower().startswith(q) or x.identity.name.lower().startswith(q) or any(part.startswith(q) for part in x.identity.name.lower().split()))]
             matches=exact or prefix
             max_targets=int((ab.targeting or {}).get("maximum_targets") or 1)
-            if len(matches) > max_targets:
+            if len(matches) > max_targets and ordinal == 1:
                 return {"ok":False,"mode":mode,"targets":[],"target_type":"actor","invalid_reason":"ambiguous_target","candidates":[{"actor_id":x.actor_id,"name":x.identity.name} for x in matches],"runtime_instance_ids":[]}
+            if ordinal > 1:
+                matches = matches[ordinal - 1:ordinal]
             targets=[{"actor_id":x.actor_id,"name":x.identity.name,"target_type":"actor"} for x in matches[:max_targets]]
             if targets: self._pub("target_resolved", {"actor_id": actor.actor_id, "query": q, "target_id": targets[0].get("actor_id")})
         if mode in {"single_enemy", "current_target"} and not targets and not q:

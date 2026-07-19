@@ -3027,8 +3027,11 @@ class MudCommandEngine:
             if spell.get("status") == "UNTERMINATED_QUOTE":
                 return CommandResult("Your spell quote is missing a closing quote.", ok=False)
             if spell.get("status") != "RESOLVED":
-                return CommandResult(f'You do not recognize an ability called "{query}".', ok=False)
+                return CommandResult("You do not know any spell by that name.", ok=False)
             aid = str(spell["ability_id"]); target = str(spell.get("target_text") or "self")
+            ability = svc.registry.abilities.get(aid)
+            if not str(spell.get("target_text") or "").strip() and ability and str((ability.targeting or {}).get("mode") or "") in {"single_enemy", "current_target"}:
+                return CommandResult(f"Cast {ability.name} at whom?", ok=False)
         else:
             aid, target = gateway.resolve_ability_prefix(character.id, query) if gateway else ("", "")
         if not aid:

@@ -745,6 +745,10 @@ class MudRuntime:
         self.autosave_service = ActiveCharacterAutosaveService(self)
         self._async_sequences: dict[str, int] = {}
         self._async_messages: dict[str, list[dict[str, Any]]] = {}
+        # Runtime-only, per-resident-character revision of the server-rendered
+        # prompt.  It is deliberately not persisted: a new resident session
+        # rehydrates the canonical Actor and receives its current projection.
+        self._prompt_revisions: dict[str, int] = {}
         self._play_view_inflight: set[str] = set()
         self.command_traces: dict[str, dict[str, Any]] = {}
         self.command_engine = MudCommandEngine(self.state_store, event_bus=self.event_bus)
@@ -1048,9 +1052,19 @@ class MudRuntime:
             except Exception: decay_at = now_utc
             if decay_at > now_utc:
                 continue
+            room_id = str(corpse.get("room_id") or "")
             for item in self.find_container_items(cid):
-                self.move_item(item["instance_id"], "room", str(corpse.get("room_id") or ""))
+                self.move_item(item["instance_id"], "room", room_id)
+            name = str(corpse.get("name") or "the corpse")
             self.destroy_entity(cid, reason="corpse_decay", source_system="corpse_decay")
+            # Decay is a room lifecycle event.  Reuse the canonical async
+            # transport queue so browser and Telnet observers receive the same
+            # plain semantic message; objects are never rendered as owners.
+            message = f"{name} decays into dust."
+            for character_id, character in list(self.active_characters.items()):
+                if str(getattr(character, "room_id", "")) == room_id:
+                    self._enqueue_room_output(character_id, message, room_id=room_id, category="corpse_decay")
+            self.event_bus.publish("corpse.decayed", {"corpse_instance_id": cid, "room_id": room_id, "message": message}, source_system="corpse_decay", world_id=self.active_world_id or "", room_id=room_id)
             decayed += 1
         self.performance_counters["corpse_decays"] = self.performance_counters.get("corpse_decays", 0) + decayed
         return decayed
@@ -1699,10 +1713,12 @@ class MudRuntime:
     def prompt_snapshot(self, character_id: str) -> dict[str, Any]:
         char = self._resident_character(character_id)
         if char is None:
-            return {"prompt_html": "", "prompt_text": ""}
+            return {"prompt_html": "", "prompt_text": "", "prompt_revision": 0}
         cached = self.build_projection(char, "prompt")
         self.performance_counters["prompt_renders"] += 1
-        return dict(cached or {"prompt_html": "", "prompt_text": ""})
+        result = dict(cached or {"prompt_html": "", "prompt_text": ""})
+        result["prompt_revision"] = self._prompt_revisions.get(character_id, 0)
+        return result
 
     def play_view(self, character_id: str) -> dict[str, Any]:
         """Render the current room using the resident active character when available."""
@@ -1722,7 +1738,7 @@ class MudRuntime:
             self.performance_counters["prompt_renders"] += 1
             self.event_bus.publish("prompt_rendered", {"world_id": self.active_world_id or "", "character_id": char.id, "room_id": char.room_id, "output_format": "web_html", "render_kind": "prompt"}, source_system="render", world_id=self.active_world_id or "", character_id=char.id)
             async_messages = self.drain_session_output(character_id)
-            return {"html": rendered.get("html", ""), "text": rendered.get("text", ""), "prompt": prompt_data.get("prompt_html", ""), "room_id": char.room_id, "async_messages": async_messages, "async_cursor": self._async_sequences.get(character_id, 0)}
+            return {"html": rendered.get("html", ""), "text": rendered.get("text", ""), "prompt": prompt_data.get("prompt_html", ""), "prompt_html": prompt_data.get("prompt_html", ""), "prompt_text": prompt_data.get("prompt_text", ""), "prompt_revision": self._prompt_revisions.get(character_id, 0), "room_id": char.room_id, "async_messages": async_messages, "async_cursor": self._async_sequences.get(character_id, 0)}
         finally:
             self._play_view_inflight.discard(character_id)
 
@@ -1742,8 +1758,12 @@ class MudRuntime:
         resource_changed = any(bool(m.get("resource_changed")) for m in new)
         position_changed = any(bool(m.get("position_changed")) for m in new)
         condition_changed = any(bool(m.get("condition_changed")) for m in new)
-        prompt = next((m for m in reversed(new) if m.get("prompt_html") or m.get("prompt_text")), {})
-        return {"ok": True, "messages": new, "cursor": self._async_sequences.get(character_id, max(int(after or 0), 0)), "prompt_invalidated": prompt_changed, "prompt_changed": prompt_changed, "resource_changed": resource_changed, "position_changed": position_changed, "condition_changed": condition_changed, "prompt_html": prompt.get("prompt_html", ""), "prompt_text": prompt.get("prompt_text", "")}
+        # A poll is a read only operation.  It never advances the revision,
+        # but may carry the latest complete prompt even when no text packet was
+        # queued (for example a silent regeneration pulse).
+        prompt_data = self.prompt_snapshot(character_id)
+        revision = int(prompt_data.get("prompt_revision") or 0)
+        return {"ok": True, "messages": new, "cursor": self._async_sequences.get(character_id, max(int(after or 0), 0)), "prompt_invalidated": prompt_changed or bool(new), "prompt_changed": prompt_changed or bool(new), "resource_changed": resource_changed, "position_changed": position_changed, "condition_changed": condition_changed, "prompt_html": prompt_data.get("prompt_html", ""), "prompt_text": prompt_data.get("prompt_text", ""), "prompt_revision": revision}
 
 
     def _builder_visible(self, char: MudCharacter) -> bool:
@@ -2123,6 +2143,10 @@ class MudRuntime:
         state = self.character_dirty_state.setdefault(character_id, {"dirty_generation": 0, "dirty_reasons": set(), "last_saved_generation": 0, "save_in_flight": False, "save_error": ""})
         state["is_dirty"] = True; state["dirty_generation"] = int(state.get("dirty_generation", 0)) + 1; state.setdefault("dirty_reasons", set()).add(reason); state["last_mutation_at"] = now
         self.invalidate_character_projections(character_id, reason)
+        # Dirtying is the mutation boundary used by canonical resources,
+        # combat, position, death and administrative updates.  Revisions are
+        # thus authoritative mutation counters, never polling counters.
+        self._prompt_revisions[character_id] = self._prompt_revisions.get(character_id, 0) + 1
 
     def save_character_if_dirty(self, char: MudCharacter, reason: str = "command", *, force: bool = False, final: bool = False) -> dict[str, Any]:
         cid = char.id
