@@ -226,6 +226,7 @@ DETERMINISTIC_COMMANDS = {
     "give": {"category": "interaction", "admin": False},
     "put": {"category": "interaction", "admin": False},
     "say": {"category": "communication", "admin": False},
+    "report": {"category": "communication", "admin": False},
     "emote": {"category": "communication", "admin": False},
     "restart": {"category": "system", "admin": False},
     "reconnect": {"category": "system", "admin": False},
@@ -265,6 +266,7 @@ class MudCommandEngine:
         self.command_handlers: dict[str, Callable] = {
             # Info commands
             "score": self._cmd_score,
+            "report": self._cmd_report,
             "progressioninspect": self._cmd_progression_repair,
             "progressionrepair": self._cmd_progression_repair,
             "advancementinspect": self._cmd_advancement_repair,
@@ -2075,8 +2077,23 @@ class MudCommandEngine:
         return str(getattr(character, "role", "player")).lower() in {"builder", "admin", "owner"} or bool(getattr(character, "builder_enabled", False)) or bool(getattr(character, "builder_mode", False))
 
     def _render_score_section(self, character: Any, section: str = "all") -> str:
-        actor = actor_from_runtime_character(character, getattr(self, "world_id", ""))
+        rt = getattr(self, "runtime", None)
+        actor = (rt.actor_registry.get(character.id) if rt and getattr(rt, "actor_registry", None) else None) or actor_from_runtime_character(character, getattr(self, "world_id", ""))
         return ActorScoreRenderer().render(actor, section, admin=self._is_score_admin(character))
+
+    def _cmd_report(self, character: Any, args: list[str], raw: str) -> CommandResult:
+        """Classic room REPORT, composed from the resident Actor resource bag."""
+        rt = getattr(self, "runtime", None)
+        actor = rt.actor_registry.get(character.id) if rt and getattr(rt, "actor_registry", None) else None
+        if actor is None:
+            actor = actor_from_runtime_character(character, getattr(self, "world_id", ""))
+        r = actor.resources
+        text = (f'I have {int(r.health)}/{int(r.maximum_health)} hit points, '
+                f'{int(r.mana)}/{int(r.maximum_mana)} mana, and '
+                f'{int(getattr(r, "movement", r.stamina))}/{int(getattr(r, "maximum_movement", r.maximum_stamina))} movement.')
+        if rt:
+            rt.deliver_room_action(getattr(character, "room_id", ""), f'{character.name} reports, "{text}"', actor_id=f"character:{character.id}", category="report")
+        return CommandResult(f'You report, "{text}"')
 
 
     def _perception_service(self) -> PerceptionService:
