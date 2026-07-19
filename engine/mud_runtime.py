@@ -97,7 +97,7 @@ def trace_sqlite_boundary(recorder: dict[str, Any]):
         sqlite3.connect = original
 from engine.abilities import AbilityExecutionService, init_ability_schema
 from engine.actors import ActorRegistry, actor_from_runtime_character
-from engine.character_state import reconcile_actor_position
+from engine.character_state import reconcile_actor_position, normalize_position
 from engine.crafting import init_crafting_schema
 from engine.environment import EnvironmentService, init_environment_schema
 from engine.survival_needs import SurvivalNeedsService, init_survival_schema
@@ -1457,13 +1457,15 @@ class MudRuntime:
         if not hasattr(self, "actor_registry"):
             self.actor_registry = ActorRegistry()
         actor = actor_from_runtime_character(character, self.active_world_id or getattr(character, "world_id", ""))
-        actor.actor_id = f"character:{character.id}"
         reconcile_actor_position(actor, self, reason="character_entry", persist_dirty=True)
         if getattr(self, "combat_runtime", None):
             self.combat_runtime.resident_actors[actor.actor_id] = actor
-        registry_actor = actor_from_runtime_character(character, self.active_world_id or getattr(character, "world_id", ""))
-        reconcile_actor_position(registry_actor, self, reason="character_entry", persist_dirty=False)
-        self.actor_registry.register(registry_actor)
+        # This exact resident Actor is shared by combat and abilities.  Do not
+        # materialize a second Actor for the ability registry: doing so creates
+        # two mutable resource bags (the historical 50/50 prompt, 0 mana cast
+        # failure defect).
+        self.actor_registry.register(actor)
+        self.actor_registry.actors[character.id] = actor  # explicit compatibility lookup alias
         data = character.actor_data if isinstance(getattr(character, "actor_data", {}), dict) else {}
         data["hydration_generation"] = int(data.get("hydration_generation", 0) or 0) + 1
         data.update({"position": actor.combat_profile.get("position", "standing"), "posture": actor.combat_profile.get("position", "standing"), "actor_projection": actor.to_dict()})
@@ -1474,7 +1476,7 @@ class MudRuntime:
             if hasattr(self.abilities, "runtime"):
                 self.abilities.runtime = self
         registered = self.actor_registry.get(character.id)
-        if registered is None or registered.actor_id != character.id:
+        if registered is not actor or registered.actor_id != actor.actor_id:
             raise RuntimeError(f"Canonical actor registration failed for {character.id}")
         if getattr(self, "abilities", None) and self.abilities.actor_registry is not self.actor_registry:
             raise RuntimeError("AbilityExecutionService is not using MudRuntime.actor_registry")
@@ -1492,6 +1494,32 @@ class MudRuntime:
         if getattr(self, "abilities", None):
             self.abilities.unregister_actor(character_id)
             self.abilities.unregister_actor(actor_id)
+
+    def synchronize_character_projection(self, character: MudCharacter) -> MudCharacter:
+        """Project the one live Actor into the command/display facade.
+
+        ``MudCharacter`` is a persistence/transport adapter, never an
+        independent resource authority.  This deliberately avoids SQLite
+        overlays on the request path: an in-memory gameplay mutation must be
+        visible in the response that completes that same command.
+        """
+        actor = self.actor_registry.get(character.id) if getattr(self, "actor_registry", None) else None
+        if actor is None and getattr(self, "combat_runtime", None):
+            actor = self.combat_runtime.resident_actors.get(f"character:{character.id}")
+        if actor is None:
+            return character
+        resources = actor.resources
+        character.hp, character.max_hp = int(resources.health), int(resources.maximum_health)
+        character.mana, character.max_mana = int(resources.mana), int(resources.maximum_mana)
+        character.stamina, character.max_stamina = int(resources.stamina), int(resources.maximum_stamina)
+        data = character.actor_data if isinstance(getattr(character, "actor_data", {}), dict) else {}
+        position = normalize_position(actor.combat_profile.get("position") or actor.combat_profile.get("combat_state") or "standing")
+        data["position"] = data["posture"] = position
+        character.actor_data = data
+        # Legacy renderers use these direct fields for position tokens.
+        character.posture = position
+        character.combat_state = actor.combat_profile.get("combat_state", "idle")
+        return character
 
 
     def _source_versions_for_character(self, character: MudCharacter) -> dict[str, Any]:
@@ -1515,6 +1543,7 @@ class MudRuntime:
         }
 
     def build_projection(self, character: MudCharacter, projection_type: str, *, origin: str = "sync") -> Any:
+        self.synchronize_character_projection(character)
         projection_type = {"score_compact": "score", "effects_display": "effects", "equipment_display": "equipment"}.get(projection_type, projection_type)
         deps = {
             "score": ("character", "attributes", "progression", "progression_identity", "birth_state", "currency", "inventory", "equipment", "effects", "location", "world_definitions"),
@@ -1979,13 +2008,12 @@ class MudRuntime:
             trace["gameplay_sql_before_response"] = int(sql_trace.get("count", 0))
             trace["gameplay_sql_statements"] = list(sql_trace.get("statements", []))
         trace["command_execution_completed"] = time.monotonic(); trace.setdefault("response_returned_from_command_engine", trace["command_execution_completed"])
-        # Ability resource payment is authoritative in RuntimeResourceService.
-        # Refresh the resident character before prompt/room projections so an
-        # immediate transport response cannot display pre-cast mana.
-        if getattr(result, "ability_result", None) is not None:
-            self.state_store._overlay_canonical_resources(char)
-            if hasattr(self, "projection_cache"):
-                self.projection_cache.evict_character(character_id)
+        # Every completed command, including failed validation, produces a
+        # projection from the resident Actor.  A failure must never skip prompt
+        # synchronization.
+        self.synchronize_character_projection(char)
+        if hasattr(self, "projection_cache"):
+            self.projection_cache.evict_character(character_id)
         if getattr(result, "display_document", None) is not None:
             color_enabled = not bool(getattr(char, "preferences", {}).get("no_color"))
             result.narrative = render_display_mud(result.display_document, color_enabled=color_enabled)
@@ -2028,7 +2056,8 @@ class MudRuntime:
                 view = self.play_view(character_id)
         else:
             with trace_sqlite_boundary(view_sql_trace):
-                view = {**self.prompt_snapshot(character_id), "html": "", "text": "", "room_id": getattr(char, "room_id", ""), "async_cursor": self._async_sequences.get(character_id, 0)}
+                prompt_data = self.prompt_snapshot(character_id)
+                view = {**prompt_data, "prompt": prompt_data.get("prompt_html", ">"), "html": "", "text": "", "room_id": getattr(char, "room_id", ""), "async_cursor": self._async_sequences.get(character_id, 0)}
         trace["gameplay_sql_response_render"] = int(view_sql_trace.get("count", 0))
         trace["gameplay_sql_response_statements"] = list(view_sql_trace.get("statements", []))
         trace["gameplay_sql_total"] = int(trace.get("gameplay_sql_before_response", 0)) + int(trace.get("gameplay_sql_response_render", 0))
