@@ -24,8 +24,12 @@ Telnet rendering remains ANSI/plain text and never serializes browser HTML.
 
 ## Scope and status
 
-This adds concrete replay and nonterminal cross-transport evidence.  It does
-not claim the wider Phase 21B checklist (event-chain completeness, failure-mode
-matrix, non-damaging ability, heartbeat, and full focused regression) is
-complete until those dedicated tests are present and passing.  Therefore Phase
-21B remains **IN PROGRESS** and Phase 21C remains **NOT UNBLOCKED**.
+The Phase 21B closure matrix is now complete.  See
+[ABILITY_PHASE_21B_CLOSURE.md](ABILITY_PHASE_21B_CLOSURE.md) for the passing
+transport failure, non-damaging, event-chain, duplicate, and heartbeat evidence.
+Phase 21B remains **IN PROGRESS** and Phase 21C remains **NOT UNBLOCKED** until the required focused and full-suite terminal results are captured.
+
+
+## Phase 21B closure update
+
+Phase 21B remains **IN PROGRESS** and Phase 21C remains **NOT UNBLOCKED** until the required focused and full-suite terminal results are captured.  The current evidence matrix and scope limitation are recorded in [ABILITY_PHASE_21B_CLOSURE.md](ABILITY_PHASE_21B_CLOSURE.md).

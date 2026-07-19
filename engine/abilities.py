@@ -523,7 +523,11 @@ class AbilityRuntimeService:
         validation = self.validate(request)
         if not validation.valid:
             self.service._pub("ability.validation.failed", {"request_id": request.request_id, "failure_code": validation.failure_code})
-            return AbilityExecutionResult(status="FAILED_VALIDATION", request_id=request.request_id, actor_id=request.actor_id, ability_id=request.ability_id, invocation_type=request.invocation_type.value, stage_reached="validation", validation=validation, failure_code=validation.failure_code, failure_details=validation.details, player_message=str((validation.details.get("trace") or {}).get("message") or "You cannot use that ability."))
+            trace = validation.details.get("trace") or {}
+            # Validation is still an authoritative receipt: resource admission
+            # failures must retain the canonical preview so transports do not
+            # have to parse the narrative to report required/available values.
+            return AbilityExecutionResult(status="FAILED_VALIDATION", request_id=request.request_id, actor_id=request.actor_id, ability_id=request.ability_id, invocation_type=request.invocation_type.value, stage_reached="validation", validation=validation, resolved_targets=list(trace.get("targets") or trace.get("resolved_targets") or []), calculated_costs=list(trace.get("costs") or trace.get("resource_costs") or []), failure_code=validation.failure_code, failure_details=validation.details, player_message=str(trace.get("message") or validation.details.get("message") or "You cannot use that ability."))
         trace = validation.details["trace"]
         actor = self.service.actor_registry.get(request.actor_id)
         ability = self.service.registry.abilities[request.ability_id]
@@ -1244,6 +1248,12 @@ class AbilityExecutionService:
         if cd.get("remaining") is not None:
             rem = int(cd.get("remaining") or 0)
             tr["cooldown_remaining_text"] = f"{rem} game minute" + ("" if rem == 1 else "s")
+        # Cooldown is an admission gate.  Check it before target diagnostics so
+        # a just-defeated target cannot mask the stable cooldown receipt for a
+        # repeated command.
+        if cd.get("ready") is False:
+            remaining = tr.get("cooldown_remaining_text") or "0 game minutes"
+            return self._validation_result(tr, "BLOCKED_COOLDOWN", f"Ready in {remaining}", cooldown_remaining=cd.get("remaining"))
         for step in tr.get("trace", []):
             name=str(step.get("step") or "")
             if step.get("ready") is False:

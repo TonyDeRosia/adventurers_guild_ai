@@ -39,3 +39,8 @@ Transport-neutral request identity now reaches the canonical ability request
 through both production adapters.  Durable duplicate receipts retain original
 damage/death references, and prompt projections refresh canonical paid
 resources before rendering.  See `ABILITY_PHASE_21B_FINAL_ACCEPTANCE.md`.
+
+
+## Phase 21B closure update
+
+Phase 21B remains **IN PROGRESS** and Phase 21C remains **NOT UNBLOCKED** until the required focused and full-suite terminal results are captured.  The current evidence matrix and scope limitation are recorded in [ABILITY_PHASE_21B_CLOSURE.md](ABILITY_PHASE_21B_CLOSURE.md).

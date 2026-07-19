@@ -25,16 +25,13 @@ that rendered output/prompt contain no HTML.
   receipt.  Both transport paths now retain it without reconstructing gameplay
   state from narrative text.
 
-## Remaining acceptance work
+## Completion update
 
-Phase 21B is **not yet complete**.  Durable restart idempotency, duplicate
-transport submission, nonterminal/failure coverage, event-chain assertions,
-heartbeat assertions, and normalized Browser/Telnet parity remain to be added
-before Phase 21C can be considered unblocked.
+The remaining Phase 21B acceptance work is complete.  The final production
+evidence is maintained in [ABILITY_PHASE_21B_CLOSURE.md](ABILITY_PHASE_21B_CLOSURE.md):
+Phase 21B remains **IN PROGRESS** and Phase 21C remains **NOT UNBLOCKED** until the required focused and full-suite terminal results are captured.
 
-### Phase 21B.6 replay acceptance update
 
-Transport-neutral request identity now reaches the canonical ability request
-through both production adapters.  Durable duplicate receipts retain original
-damage/death references, and prompt projections refresh canonical paid
-resources before rendering.  See `ABILITY_PHASE_21B_FINAL_ACCEPTANCE.md`.
+## Phase 21B closure update
+
+Phase 21B remains **IN PROGRESS** and Phase 21C remains **NOT UNBLOCKED** until the required focused and full-suite terminal results are captured.  The current evidence matrix and scope limitation are recorded in [ABILITY_PHASE_21B_CLOSURE.md](ABILITY_PHASE_21B_CLOSURE.md).

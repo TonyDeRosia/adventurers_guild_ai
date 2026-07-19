@@ -55,7 +55,17 @@ class DeathRuntimeService:
             con.execute("CREATE UNIQUE INDEX IF NOT EXISTS death_ledger_terminal_once ON death_ledger(world_id,victim_actor_id,life_generation,terminal_damage_event_id)")
             con.execute("CREATE TABLE IF NOT EXISTS death_reward_awards(death_id TEXT, recipient_id TEXT, award_type TEXT, payload_json TEXT NOT NULL, PRIMARY KEY(death_id,recipient_id,award_type))")
     def _event(self, name: str, req: DeathRequest, **data: Any) -> str:
-        event_id=f"{name}:{req.death_id}"; self.publish(name, {"event_id":event_id,"death_id":req.death_id,"victim_actor_id":req.victim_actor_id,**data}); return event_id
+        event_id=f"{name}:{req.death_id}"
+        # Preserve the originating ability/damage identity on every Phase 20
+        # lifecycle event without introducing a parallel event contract.
+        linkage = {key: value for key, value in (req.source_metadata or {}).items()
+                   if key in {"ability_request_id", "ability_id", "damage_result_id"}}
+        self.publish(name, {"event_id":event_id,"death_id":req.death_id,
+                            "victim_actor_id":req.victim_actor_id,
+                            "world_id":req.world_id, "engagement_id":req.engagement_id,
+                            "terminal_damage_event_id":req.terminal_damage_event_id,
+                            **linkage, **data})
+        return event_id
     def resolve_credited_killer(self, source_id: str | None, explicit: str | None = None) -> str | None:
         if explicit: return explicit
         if not source_id: return None
